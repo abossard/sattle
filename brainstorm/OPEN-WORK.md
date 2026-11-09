@@ -13,7 +13,12 @@
 - [x] Inspect desktop and narrow layouts; correct the map axis and mobile heading overflow.
 - [x] Complete final package and route checks.
 - [x] Publish site version 21.
-- [ ] Upload the source to abossard/sattle under brainstorm.
+- [x] Upload the source to abossard/sattle under brainstorm (commit d7554a0).
+
+## GitHub Pages
+- [x] Add an automated build, verification and deployment workflow.
+- [ ] Enable GitHub Pages with GitHub Actions as its source; requires an authenticated settings session.
+- [ ] Verify the published GitHub Pages URL.
 
 ## Further work
 - [ ] User review of the visual pacing and color assignments.
