@@ -1,0 +1,284 @@
+{
+  "files": [
+    {
+      "path": ".gitignore",
+      "sha256": "6c568c5056da186bec353fe76397a0c029fb27ba5f70749680f53fdcc9959e82"
+    },
+    {
+      "path": "Directory.Build.props",
+      "sha256": "48612cfb5401ec3eacb47231812512a9018f4d289d6a86f7ff2bdeb9507493d4"
+    },
+    {
+      "path": "NuGet.Config",
+      "sha256": "9508cae5f76364f56e80eb97cb16493977243cf38e5cca6284e3d74f83b20a2c"
+    },
+    {
+      "path": "OPEN-WORK.md",
+      "sha256": "9e54d5700ed253be999ab2ea2e4e3d00fe3fdf9ba0b8a655f6c388a99a0550ac"
+    },
+    {
+      "path": "README.md",
+      "sha256": "0734ad1d7eb3436a20a73308fb260a3f598d39091d66b7112c881f9ec75e21c6"
+    },
+    {
+      "path": "Sattle.Design.sln",
+      "sha256": "c1858fc40ae7bf309d6263b0112feedcbcd14a3a897d713977de537b7614ab82"
+    },
+    {
+      "path": "docs/ADAPTERS.md",
+      "sha256": "340ac61ac6057731d92d4a4f6da765826473ef5fa0c536432c9d7af6d16a671e"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "sha256": "d55b27dc5b06f699dab0e59de3ac5265e64a3d1b035b71adb4225c8efc49ce9b"
+    },
+    {
+      "path": "docs/DECISIONS.md",
+      "sha256": "79b6f434f687908ccdc272c188df2448f804e1fcc6a43285befcaf29a0ccf36e"
+    },
+    {
+      "path": "docs/LANGUAGE-REVIEW.md",
+      "sha256": "eb2efcbe3e86f8d89df2cd8997f9efbef6c48df2590e29e119fab9c10da5220d"
+    },
+    {
+      "path": "docs/REVIEWS.md",
+      "sha256": "e823a346ba15c94ea3161f8dff848882c3508fcd9509b5142e8fd2f0ae79188e"
+    },
+    {
+      "path": "docs/SITE-REVIEW.md",
+      "sha256": "a906349c6a9bec4b290bfd36d21b10f208a85fdaadfe8ad286941e3d8d9e2c05"
+    },
+    {
+      "path": "docs/SOURCES.md",
+      "sha256": "6c10f3758739af983a35da1520eea472cdaad12ffbe351393ab84539f0975f6e"
+    },
+    {
+      "path": "docs/VERIFICATION.md",
+      "sha256": "25e36fe289016c0527a3a7cc5fa34bcc284f4bcac9472845e0766cc5259c6842"
+    },
+    {
+      "path": "docs/architecture.png",
+      "sha256": "e9fb4f9129d1d1a985e1dddb28bfb5cfa7a275b52ab7f70dc15881dd7bab8931"
+    },
+    {
+      "path": "docs/architecture.svg",
+      "sha256": "f0f54dbfce15e7d252aaf9e126396e17ff4b0b47cbbc26d8c0905ebcbec4bf18"
+    },
+    {
+      "path": "docs/compiler-test-results.json",
+      "sha256": "2a052dc5c2e85ef0f8d2e0678fb649110223ec7c043ae6e6acb7cca0bdcfbdd0"
+    },
+    {
+      "path": "docs/reference-test-results.json",
+      "sha256": "913dbab383795172a475a02a3c1612be4f1603378609749ef2cbe355482885e8"
+    },
+    {
+      "path": "docs/schema-test-results.json",
+      "sha256": "0cac5d9bd4fa0ff52509d8e97a3f7d05d0ae97d78535c0d6377aed3b1f253fdc"
+    },
+    {
+      "path": "examples/azure-resource-graph.json",
+      "sha256": "5940bd8ad0c92a03b897c1d8a558ce3bc1c32cb41a3d217cf2b57f65f0c90e83"
+    },
+    {
+      "path": "examples/document-projection.json",
+      "sha256": "62b1598d8a9515f39c4709320fc56e834d9c6d06942b95f6bec264246a8a80ee"
+    },
+    {
+      "path": "examples/document.json",
+      "sha256": "3ef645f1c816a881e4d9870bc1314d83dc6c1d0e1d14dd623647cc4440e75455"
+    },
+    {
+      "path": "examples/graph-patch.json",
+      "sha256": "4794df463b6ccd6ba9c27668a3ef7417dd3b0a72422cf3c4acc892efb130d793"
+    },
+    {
+      "path": "examples/graph-projection.json",
+      "sha256": "715688177d86262514d2cf2bcf468e29189b29f7088fa727a4b49fe70d6f677a"
+    },
+    {
+      "path": "examples/graph-space.json",
+      "sha256": "7337347434a5ec152629bb500df6fcfff24c216745a312f1bd30e459fedd9b32"
+    },
+    {
+      "path": "examples/hubble.json",
+      "sha256": "2918d40d33e2db4f48fb8a73d3731475b12c1fb0bdb27e1778ad41ec8130c4fa"
+    },
+    {
+      "path": "examples/identity.json",
+      "sha256": "54c48bb389e26eaa182a07edb4dcb223ad175110e2c8e4cdb3220cb511d8f0ce"
+    },
+    {
+      "path": "examples/kubernetes-delete.json",
+      "sha256": "9b1a390c38cb5fb1970712c7fddd6986f22644acfd39a089ad8d23f019b6d16f"
+    },
+    {
+      "path": "examples/kubernetes-event.json",
+      "sha256": "7868f1b10d1a941f9f2ff6b021abb2a8948524415ff3b580d30029fd041a777f"
+    },
+    {
+      "path": "examples/mapping-scenarios.yaml",
+      "sha256": "9806aba65989f67b2733f4bba587668bfa417f6e6e84508396ea927f92ab1177"
+    },
+    {
+      "path": "examples/network-watcher.json",
+      "sha256": "908921c570d4bf6c43a849548ad485423995baec57378132aa61726fe665cbb6"
+    },
+    {
+      "path": "examples/ontology-business.json",
+      "sha256": "65d840f01f64752b9aadaada37d4d49283cbd8bf55680a4150ade99b34811a3c"
+    },
+    {
+      "path": "examples/ontology-metrics.json",
+      "sha256": "8c6212f98e0c6a4439841b9424d1642cd54a94b1473d5103e8f89a14777992a4"
+    },
+    {
+      "path": "examples/ontology.json",
+      "sha256": "77039e493a15f44622c77f1912f54c2a5aba83ecddc32276ab98a419e4e69b9e"
+    },
+    {
+      "path": "examples/otel.json",
+      "sha256": "674e6002b1d574999275c25eefccd43e37d94edcf6ca79d080c86de61f4cf372"
+    },
+    {
+      "path": "examples/service-health.md",
+      "sha256": "e77ab236863bc30600de9b1b9073600be1ad5da82d7b01d61de857c074fec68f"
+    },
+    {
+      "path": "examples/signed-delta.json",
+      "sha256": "4322b2cc27013c5c1bca67fbf4a9bc2854e1322a48501b4f7da420392df829c4"
+    },
+    {
+      "path": "global.json",
+      "sha256": "a63b77552b51f013c7db69270edd0055d64edbe77cdd5b0b9584dfdeefac10c5"
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "756cc9e506ae4ee1a6f6c0507088b5cfc0dc8ba350fb2d2d46f1ffa72033adb6"
+    },
+    {
+      "path": "schemas/AlgebraRequest.schema.json",
+      "sha256": "e9f30fd0a9c9a481ca3c21b08cf33f74bb6f00de145f911b835a39671a9a537c"
+    },
+    {
+      "path": "schemas/DocumentPatch.schema.json",
+      "sha256": "f2d140ad1e6d653bd242e62c0662827d9437bd6054a2ac130ed641a3ce609220"
+    },
+    {
+      "path": "schemas/DocumentProjectionDefinition.schema.json",
+      "sha256": "656406ca2f4971c7cd99e79e920ee6226426732f3a9c583ee2fa4b7dcbc8d606"
+    },
+    {
+      "path": "schemas/DocumentSnapshot.schema.json",
+      "sha256": "5351b09c7f5794d1520d628ae91a1dd9b63a8edde0ef03182fad137e532522de"
+    },
+    {
+      "path": "schemas/EngineInput.schema.json",
+      "sha256": "c665ae582b19bf3dc046958548631d1f519ecf3887384024d7fe1405740cceef"
+    },
+    {
+      "path": "schemas/GraphDescriptor.schema.json",
+      "sha256": "4027caefc43732cc13a4e2a64ce1936a154b27735d2e1f9d763f6aae89ec7b6d"
+    },
+    {
+      "path": "schemas/GraphPatch.schema.json",
+      "sha256": "b86701fc0e0aebe3ae105adc08c52a26ae531d813c5e941f839edc59dd6c8707"
+    },
+    {
+      "path": "schemas/GraphSpaceDefinition.schema.json",
+      "sha256": "0efb9f7e9b878d49033307eaf5758fe268a62c870400a1975052a85bbd5bb99b"
+    },
+    {
+      "path": "schemas/IdentityEntry.schema.json",
+      "sha256": "da347c9ecb888f8497cd09a823d939b7d8b9314c957aa917952542b4cb7e1f9f"
+    },
+    {
+      "path": "schemas/OntologyDefinition.schema.json",
+      "sha256": "7f2cdce14a3567295519b2b239aa42e1724cfffbade43ea86cf113f0f1eb59c0"
+    },
+    {
+      "path": "schemas/ProjectionDefinition.schema.json",
+      "sha256": "ae1ff4d6877f80a601ce955e143765d6a54161cabfe92f710a100697e0884ec1"
+    },
+    {
+      "path": "schemas/SignedDelta.schema.json",
+      "sha256": "2bed6b09b91e24a221cee7cd1fdfefc6f2f742ce257b9cd7e21dca428bf43e4b"
+    },
+    {
+      "path": "src/Sattle.Adapters/Adapters.cs",
+      "sha256": "39e50e5e265bfae92c84e641b27030ac8c9c306982c1b6ca8407d6dddc80afc9"
+    },
+    {
+      "path": "src/Sattle.Adapters/Sattle.Adapters.csproj",
+      "sha256": "bffb7d6fa48f2e781b31c1fc71371805b3d07b5f380a6891599969c49dafdb26"
+    },
+    {
+      "path": "src/Sattle.Documents/Documents.cs",
+      "sha256": "a0cce1e189645d0aa2d445ce16c4ea2b185e2d9a3683d67e0841231edd84f206"
+    },
+    {
+      "path": "src/Sattle.Documents/Sattle.Documents.csproj",
+      "sha256": "bffb7d6fa48f2e781b31c1fc71371805b3d07b5f380a6891599969c49dafdb26"
+    },
+    {
+      "path": "src/Sattle.Model/Model.cs",
+      "sha256": "d3955e307d0ff8b0d64812ce195f7daf961b18514b0875b13c7f4c162678a1c1"
+    },
+    {
+      "path": "src/Sattle.Model/Sattle.Model.csproj",
+      "sha256": "0a65763d4c1fcc0bce798be9c62d1ea905cb1e5df6957df6fd2ab4a3d4f23c43"
+    },
+    {
+      "path": "src/Sattle.Projections/GraphComposition.cs",
+      "sha256": "9ac1918e5f2a758051f7aad193f483ea752b92f5479846fde2ddc96aa22b4b10"
+    },
+    {
+      "path": "src/Sattle.Projections/Projection.cs",
+      "sha256": "e88ed45fd15cbb7fcb5b71eafeb0c8300332d155d12c5ece1f29020b3074cd3b"
+    },
+    {
+      "path": "src/Sattle.Projections/Sattle.Projections.csproj",
+      "sha256": "f67a24f07d95e1c61708c838aa1c97b21b5c2dbcc4af12c46eb003f83a563721"
+    },
+    {
+      "path": "src/Sattle.Runtime/ChangeAlgebra.cs",
+      "sha256": "863176dd832265dac5e33853ff029e18be3bb3e4ec34818b956715a57f566518"
+    },
+    {
+      "path": "src/Sattle.Runtime/Ports.cs",
+      "sha256": "05fb35b079afc8239cb44f50cb8b82cb5f6a7aa9f23b15701c09f686b2dff7f8"
+    },
+    {
+      "path": "src/Sattle.Runtime/Sattle.Runtime.csproj",
+      "sha256": "788ad6db0b00216803a6f8b3e29d017f59490b88a003d35a04d7244d3df7d53e"
+    },
+    {
+      "path": "tests/Sattle.Specification/Program.cs",
+      "sha256": "a9bc1aed05ce1aa423abfd3f777e7f4b95491c729264c800d05b5ff8c3e609c6"
+    },
+    {
+      "path": "tests/Sattle.Specification/ReferenceModel.cs",
+      "sha256": "319151913f199d428d428d57b611432304d1c9393bee058d5e16fadd30ca6cba"
+    },
+    {
+      "path": "tests/Sattle.Specification/Sattle.Specification.csproj",
+      "sha256": "7666449b399a27d09d25ecd122bf3c6acd8c480495395b0c6353aa7d0234ecf9"
+    },
+    {
+      "path": "tests/Sattle.Specification/SchemaWriter.cs",
+      "sha256": "dc7ba81acaed13da5a4c7b5d2df52bba366b8cbe5925b0adc896db5dfbedc0e2"
+    },
+    {
+      "path": "tests/compile_contracts.py",
+      "sha256": "75cd3df4af908b7619928f4cbf284baefc18182f8dd57cc11e53cd5e6d33f4cc"
+    },
+    {
+      "path": "tests/validate_schemas.py",
+      "sha256": "6de366cc66009810793eda8903a440da839b8de438ca5eb760fa370c61ad6358"
+    },
+    {
+      "path": "tools/verify.py",
+      "sha256": "1e364b2b6de2547024ff2a1e774be107663cdca72e79c16b297c3d3e18ace7e5"
+    }
+  ]
+}

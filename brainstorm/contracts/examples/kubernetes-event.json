@@ -1,0 +1,23 @@
+{
+  "apiVersion": "events.k8s.io/v1",
+  "kind": "Event",
+  "metadata": {
+    "name": "payments-warning",
+    "namespace": "shop",
+    "uid": "event-uid",
+    "resourceVersion": "123"
+  },
+  "regarding": {
+    "kind": "Pod",
+    "namespace": "shop",
+    "name": "payments-1",
+    "uid": "pod-uid-a"
+  },
+  "reason": "Unhealthy",
+  "note": "Readiness probe failed",
+  "type": "Warning",
+  "eventTime": "2026-11-09T20:00:00.000000Z",
+  "reportingController": "kubernetes.io/kubelet",
+  "reportingInstance": "node-a",
+  "action": "ProbeFailed"
+}

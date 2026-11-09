@@ -1,0 +1,254 @@
+{
+  "schemaVersion": "1.0",
+  "reference": {
+    "id": "infra",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example"
+    }
+  },
+  "noEntityType": {
+    "value": "NoType"
+  },
+  "noRelationshipType": {
+    "value": "NoType"
+  },
+  "properties": [
+    {
+      "id": {
+        "value": "name"
+      },
+      "valueKind": "text",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    },
+    {
+      "id": {
+        "value": "health"
+      },
+      "valueKind": "text",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    },
+    {
+      "id": {
+        "value": "address"
+      },
+      "valueKind": "text",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    },
+    {
+      "id": {
+        "value": "bytes"
+      },
+      "valueKind": "integer",
+      "nullable": false,
+      "itemKind": null,
+      "unit": "By",
+      "role": "telemetry"
+    },
+    {
+      "id": {
+        "value": "requests"
+      },
+      "valueKind": "integer",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "telemetry"
+    }
+  ],
+  "entityTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "Service"
+      },
+      "properties": [
+        {
+          "value": "name"
+        },
+        {
+          "value": "health"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "Pod"
+      },
+      "properties": [
+        {
+          "value": "name"
+        },
+        {
+          "value": "health"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "Deployment"
+      },
+      "properties": [
+        {
+          "value": "name"
+        },
+        {
+          "value": "health"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "AzureResource"
+      },
+      "properties": [
+        {
+          "value": "name"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "NetworkEndpoint"
+      },
+      "properties": [
+        {
+          "value": "address"
+        }
+      ]
+    }
+  ],
+  "relationshipTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "sourceTypes": [],
+      "targetTypes": [],
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "Calls"
+      },
+      "sourceTypes": [
+        {
+          "value": "Service"
+        },
+        {
+          "value": "Pod"
+        },
+        {
+          "value": "NetworkEndpoint"
+        }
+      ],
+      "targetTypes": [
+        {
+          "value": "Service"
+        },
+        {
+          "value": "Pod"
+        },
+        {
+          "value": "NetworkEndpoint"
+        }
+      ],
+      "properties": [
+        {
+          "value": "health"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "MemberOf"
+      },
+      "sourceTypes": [
+        {
+          "value": "Pod"
+        }
+      ],
+      "targetTypes": [
+        {
+          "value": "Deployment"
+        }
+      ],
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "HostedOn"
+      },
+      "sourceTypes": [
+        {
+          "value": "Service"
+        },
+        {
+          "value": "Pod"
+        }
+      ],
+      "targetTypes": [
+        {
+          "value": "AzureResource"
+        }
+      ],
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "DependsOn"
+      },
+      "sourceTypes": [
+        {
+          "value": "Service"
+        },
+        {
+          "value": "Deployment"
+        }
+      ],
+      "targetTypes": [
+        {
+          "value": "Service"
+        },
+        {
+          "value": "Deployment"
+        }
+      ],
+      "properties": [
+        {
+          "value": "health"
+        }
+      ]
+    },
+    {
+      "id": {
+        "value": "ExpectedCall"
+      },
+      "sourceTypes": [
+        {
+          "value": "Service"
+        }
+      ],
+      "targetTypes": [
+        {
+          "value": "Service"
+        }
+      ],
+      "properties": []
+    }
+  ]
+}

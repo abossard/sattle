@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "1.0",
+  "version": {
+    "tenant": {
+      "value": "demo"
+    },
+    "document": {
+      "value": "report"
+    },
+    "revision": {
+      "value": "0"
+    }
+  },
+  "projectionVersion": "1",
+  "sources": [
+    {
+      "tenant": {
+        "value": "demo"
+      },
+      "graph": {
+        "value": "g"
+      },
+      "revision": {
+        "value": "2"
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "kind": "heading",
+      "level": 1,
+      "text": "Service health",
+      "id": {
+        "value": "title"
+      }
+    },
+    {
+      "kind": "table",
+      "columns": [
+        "Service",
+        "Health"
+      ],
+      "rows": [
+        {
+          "key": "a",
+          "cells": [
+            "a",
+            "degraded"
+          ]
+        },
+        {
+          "key": "b",
+          "cells": [
+            "b",
+            "healthy"
+          ]
+        }
+      ],
+      "id": {
+        "value": "services"
+      }
+    }
+  ],
+  "completeness": "complete"
+}

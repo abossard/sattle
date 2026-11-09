@@ -1,0 +1,64 @@
+{
+  "suite": "finite mathematical reference model",
+  "seed": 63421,
+  "testGroups": 14,
+  "assertions": 1921,
+  "results": [
+    {
+      "name": "Patch application, reversal, batching and associative composition",
+      "status": "passed"
+    },
+    {
+      "name": "Signed deltas form an additive group; graph application remains partial",
+      "status": "passed"
+    },
+    {
+      "name": "Patch-to-delta conversion preserves endpoint state and loses chronology",
+      "status": "passed"
+    },
+    {
+      "name": "Retyping preserves edge identity; uniqueness and dangling edges",
+      "status": "passed"
+    },
+    {
+      "name": "Positive finite-domain recursion converges and withdrawal removes unsupported closure",
+      "status": "passed"
+    },
+    {
+      "name": "Derived edge remains while another support exists",
+      "status": "passed"
+    },
+    {
+      "name": "Stored and virtual representations agree on a finite requested scope",
+      "status": "passed"
+    },
+    {
+      "name": "Lens laws hold on supported edit domain with retained complement",
+      "status": "passed"
+    },
+    {
+      "name": "Document patch reorders blocks without changing IDs and reverses exactly",
+      "status": "passed"
+    },
+    {
+      "name": "Markdown rendering is deterministic and escapes native text",
+      "status": "passed"
+    },
+    {
+      "name": "Wire round-trip preserves polymorphic graph and document data",
+      "status": "passed"
+    },
+    {
+      "name": "Graph canonicalization ignores property-map ordering",
+      "status": "passed"
+    },
+    {
+      "name": "Portable graph and document projection definitions deserialize and round-trip",
+      "status": "passed"
+    },
+    {
+      "name": "Generated graph transitions reconstruct and reverse across random update sequences",
+      "status": "passed"
+    }
+  ]
+}

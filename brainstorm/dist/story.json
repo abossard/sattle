@@ -1,0 +1,4073 @@
+[
+  {
+    "number": 1,
+    "title": "The master graph feeds derived views.",
+    "short": "The master graph",
+    "group": "Foundation",
+    "topic": "views",
+    "intro": "The master graph holds shared facts. Projections select, reshape and combine those facts into derived graphs.",
+    "rule": "Every graph space declares one master graph. Each derived graph is connected to it, directly or through other projections.",
+    "limit": "Each graph has its own revision. An update can be visible in one projection before another catches up.",
+    "refs": [
+      "GraphSpaceDefinition",
+      "MasterGraphDefinition",
+      "ProjectionGraphInput"
+    ],
+    "frames": [
+      {
+        "title": "Start with shared facts",
+        "copy": "The master contains the infrastructure facts. Two projections have consumed master revision 12.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master graph",
+            "detail": "master \u00b7 r12",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Service graph",
+            "detail": "services \u00b7 r8",
+            "color": "blue",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Business graph",
+            "detail": "business \u00b7 r4",
+            "color": "purple",
+            "pos": 3,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "m",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "m"
+        ]
+      },
+      {
+        "title": "A fact changes",
+        "copy": "A network observation changes the master to r13. Derived graphs still show their previous revisions.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master graph",
+            "detail": "master \u00b7 r13 + change",
+            "color": "amber",
+            "pos": 0,
+            "role": "master",
+            "mark": "\u0394"
+          },
+          {
+            "id": "s",
+            "label": "Service graph",
+            "detail": "services \u00b7 r8",
+            "color": "blue",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Business graph",
+            "detail": "business \u00b7 r4",
+            "color": "purple",
+            "pos": 3,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "m",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "m"
+        ]
+      },
+      {
+        "title": "Service view advances",
+        "copy": "The service projection consumes the master change and commits its own r9.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master graph",
+            "detail": "master \u00b7 r13",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Service graph",
+            "detail": "services \u00b7 r9",
+            "color": "amber",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u0394"
+          },
+          {
+            "id": "b",
+            "label": "Business graph",
+            "detail": "business \u00b7 r4",
+            "color": "purple",
+            "pos": 3,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "m",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "s"
+        ]
+      },
+      {
+        "title": "Business view advances",
+        "copy": "The business projection now commits r5. The graph identities stayed the same throughout.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master graph",
+            "detail": "master \u00b7 r13",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Service graph",
+            "detail": "services \u00b7 r9",
+            "color": "blue",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Business graph",
+            "detail": "business \u00b7 r5",
+            "color": "amber",
+            "pos": 3,
+            "role": "projection",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "m",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "b"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 2,
+    "title": "Events, batches, files and gRPC use async streams.",
+    "short": "Async ingestion",
+    "group": "Foundation",
+    "topic": "ingest",
+    "intro": "An event feed, a finite file, a batch job and a gRPC client can all supply the same ordered asynchronous sequence.",
+    "rule": "Preserve the input order, event boundaries and logical-time controls when changing batch sizes.",
+    "limit": "Each record in a transport batch can be accepted or rejected. Each projection commits its changes independently.",
+    "refs": [
+      "IProjectionEngine",
+      "IngestBatch",
+      "EngineInput"
+    ],
+    "frames": [
+      {
+        "title": "Events arrive",
+        "copy": "Three ordered records arrive separately.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Event A",
+            "detail": "sequence 41",
+            "color": "teal",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Event B",
+            "detail": "sequence 42",
+            "color": "blue",
+            "pos": 1,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "Event C",
+            "detail": "sequence 43",
+            "color": "purple",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "c",
+            "label": ""
+          }
+        ],
+        "formula": "A \u2192 B \u2192 C",
+        "active": [
+          "a"
+        ]
+      },
+      {
+        "title": "Batch the delivery",
+        "copy": "The same records travel together. Their order and boundaries remain visible.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Batch [A, B, C]",
+            "detail": "one transport carrier",
+            "color": "amber",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "g",
+            "label": "Record stream",
+            "detail": "41 \u2192 42 \u2192 43",
+            "color": "blue",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "g",
+            "label": ""
+          }
+        ],
+        "formula": "Batch [A, B, C] preserves three record boundaries",
+        "active": [
+          "g"
+        ]
+      },
+      {
+        "title": "Read a finite file",
+        "copy": "A file reader yields the same ordered stream, then completes.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "File",
+            "detail": "3 native records",
+            "color": "purple",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "g",
+            "label": "Record stream",
+            "detail": "41 \u2192 42 \u2192 43",
+            "color": "blue",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "g",
+            "label": ""
+          }
+        ],
+        "formula": "await foreach (var item in inputs)",
+        "active": [
+          "g"
+        ]
+      },
+      {
+        "title": "Use gRPC",
+        "copy": "The delivery can stay open. The engine still observes individual ordered inputs.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "gRPC feed",
+            "detail": "A \u00b7 B \u00b7 C \u00b7 \u2026",
+            "color": "teal",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "g",
+            "label": "Record stream",
+            "detail": "41 \u2192 42 \u2192 43",
+            "color": "blue",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "g",
+            "label": ""
+          }
+        ],
+        "formula": "Same initial state + rules + inputs + time \u2192 same result",
+        "active": [
+          "g"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "input",
+        "label": "Input"
+      }
+    ]
+  },
+  {
+    "number": 3,
+    "title": "Adapters map native records to graph observations.",
+    "short": "Source adapters",
+    "group": "Foundation",
+    "topic": "ingest",
+    "intro": "Each adapter interprets a versioned native format and produces entity candidates, relationship candidates, properties and evidence.",
+    "rule": "The first families are Hubble/Cilium, Azure Resource Graph, Kubernetes, Azure Network Watcher and OpenTelemetry.",
+    "limit": "Kubernetes Events provide observations. Removing resources absent from an ARG result requires a declared coverage and reconciliation policy.",
+    "refs": [
+      "IGraphAdapter",
+      "GraphObservation",
+      "AdaptedWithdrawal"
+    ],
+    "frames": [
+      {
+        "title": "A Hubble flow arrives",
+        "copy": "A native network observation identifies an API endpoint, a database endpoint and the flow verdict.",
+        "nodes": [
+          {
+            "id": "raw",
+            "label": "Hubble flow",
+            "detail": "src=api \u00b7 dst=db",
+            "color": "amber",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "ad",
+            "label": "Hubble adapter",
+            "detail": "format + version",
+            "color": "blue",
+            "pos": 2,
+            "role": "rule",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "ad",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "ad"
+        ]
+      },
+      {
+        "title": "Produce a graph observation",
+        "copy": "The adapter proposes endpoint identities and an observed Calls relationship, with the native record retained as evidence.",
+        "nodes": [
+          {
+            "id": "api",
+            "label": "API endpoint",
+            "detail": "identity candidate",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "db",
+            "label": "DB endpoint",
+            "detail": "identity candidate",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "obs",
+            "label": "Calls",
+            "detail": "observed connection",
+            "color": "blue",
+            "pos": 4,
+            "role": "master",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "api",
+            "b": "obs",
+            "label": ""
+          },
+          {
+            "a": "obs",
+            "b": "db",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "obs"
+        ]
+      },
+      {
+        "title": "Adapt a Kubernetes record",
+        "copy": "A Kubernetes watch record goes through its own adapter to produce a pod observation.",
+        "nodes": [
+          {
+            "id": "raw",
+            "label": "Kubernetes record",
+            "detail": "uid=pod-7",
+            "color": "amber",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "ad",
+            "label": "Kubernetes adapter",
+            "detail": "resource watch",
+            "color": "blue",
+            "pos": 1,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "pod",
+            "label": "Pod candidate",
+            "detail": "uid=pod-7",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "ad",
+            "label": ""
+          },
+          {
+            "a": "ad",
+            "b": "pod",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "pod"
+        ]
+      },
+      {
+        "title": "Withdraw a contribution",
+        "copy": "An explicit deletion withdraws this source contribution. Other evidence may still support the entity.",
+        "nodes": [
+          {
+            "id": "raw",
+            "label": "DELETED pod-7",
+            "detail": "explicit source signal",
+            "color": "coral",
+            "pos": 0,
+            "role": "input",
+            "mark": "\u2212"
+          },
+          {
+            "id": "ad",
+            "label": "Withdrawal",
+            "detail": "source + contribution",
+            "color": "amber",
+            "pos": 2,
+            "role": "rule",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "raw",
+            "b": "ad",
+            "label": ""
+          }
+        ],
+        "formula": "Other contributions can continue supporting the entity",
+        "active": [
+          "ad"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "input",
+        "label": "Input"
+      },
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 4,
+    "title": "Nodes and edges carry typed data.",
+    "short": "Graph structure",
+    "group": "Foundation",
+    "topic": "transforms",
+    "intro": "Entities represent resources, services or other domain objects. Directed relationships connect them. Both carry an ID, a type and typed properties.",
+    "rule": "A relationship has entity endpoints and its own projection-specific ID. Different relationship types can connect the same pair.",
+    "limit": "Removing a node may leave an unresolved endpoint. Missing and not-yet-examined are distinct read outcomes.",
+    "refs": [
+      "EntityState",
+      "RelationshipState",
+      "GraphValue"
+    ],
+    "frames": [
+      {
+        "title": "Two entities",
+        "copy": "Each entity has a stable ID and a type in this graph\u2019s ontology.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Payment API",
+            "detail": "entity e17 \u00b7 Service",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Ledger DB",
+            "detail": "entity e31 \u00b7 Service",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Add a relationship",
+        "copy": "The directed relationship also has an ID. It describes an observed call.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Payment API",
+            "detail": "entity e17 \u00b7 Service",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Ledger DB",
+            "detail": "entity e31 \u00b7 Service",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Calls",
+            "detail": "edge r6 \u00b7 e17 \u2192 e31",
+            "color": "blue",
+            "pos": 4,
+            "role": "master",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "r",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Attach edge data",
+        "copy": "A declared property records the call\u2019s health on the relationship itself.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Payment API",
+            "detail": "name = payments",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Ledger DB",
+            "detail": "name = ledger",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Calls",
+            "detail": "health = degraded",
+            "color": "coral",
+            "pos": 4,
+            "role": "master",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "r",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Represent observed and expected calls",
+        "copy": "ExpectedCall can coexist with Calls. Intended structure and observed traffic answer different questions.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Payment API",
+            "detail": "e17",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Ledger DB",
+            "detail": "e31",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Calls \u00b7 r6",
+            "detail": "observed",
+            "color": "blue",
+            "pos": 4,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "x",
+            "label": "ExpectedCall \u00b7 r9",
+            "detail": "intended",
+            "color": "amber",
+            "pos": 3,
+            "role": "master",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "r",
+            "b": "b",
+            "label": ""
+          },
+          {
+            "a": "a",
+            "b": "x",
+            "label": ""
+          },
+          {
+            "a": "x",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "x"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      }
+    ]
+  },
+  {
+    "number": 5,
+    "title": "Views share timeless entity identity.",
+    "short": "Timeless identity",
+    "group": "Foundation",
+    "topic": "ontology",
+    "intro": "A shared identity table binds a tenant-scoped, canonical key to an entity ID. The ID persists across changes to graph type and properties.",
+    "rule": "Projections reuse an identity when they refer to the same entity. An aggregate, such as a deployment containing several pods, receives its own identity.",
+    "limit": "Renames, aliases, merges and splits require explicit policies and evidence for identity equivalence.",
+    "refs": [
+      "IdentityKey",
+      "IdentityEntry",
+      "IIdentityCatalog"
+    ],
+    "frames": [
+      {
+        "title": "Resolve a stable key",
+        "copy": "The Kubernetes UID identifies the object independently of its current display name.",
+        "nodes": [
+          {
+            "id": "k",
+            "label": "Tenant + UID",
+            "detail": "team-a / pod-7",
+            "color": "blue",
+            "pos": 0,
+            "role": "identity",
+            "mark": ""
+          },
+          {
+            "id": "id",
+            "label": "Identity table",
+            "detail": "\u2192 entity e17",
+            "color": "teal",
+            "pos": 2,
+            "role": "identity",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "k",
+            "b": "id",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "id"
+        ]
+      },
+      {
+        "title": "Show it in two graphs",
+        "copy": "Both projections refer to e17, even when they attach different meanings or properties.",
+        "nodes": [
+          {
+            "id": "id",
+            "label": "Identity table",
+            "detail": "entity e17",
+            "color": "teal",
+            "pos": 0,
+            "role": "identity",
+            "mark": ""
+          },
+          {
+            "id": "a",
+            "label": "Infrastructure",
+            "detail": "e17 \u00b7 Pod",
+            "color": "blue",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Operations",
+            "detail": "e17 \u00b7 Workload",
+            "color": "purple",
+            "pos": 3,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "id",
+            "b": "a",
+            "label": ""
+          },
+          {
+            "a": "id",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "A property changes",
+        "copy": "A new display name changes graph state; the canonical key and entity ID remain fixed.",
+        "nodes": [
+          {
+            "id": "id",
+            "label": "Identity table",
+            "detail": "entity e17",
+            "color": "teal",
+            "pos": 0,
+            "role": "identity",
+            "mark": ""
+          },
+          {
+            "id": "a",
+            "label": "New display name",
+            "detail": "e17 \u00b7 Pod",
+            "color": "amber",
+            "pos": 2,
+            "role": "master",
+            "mark": "\u0394"
+          },
+          {
+            "id": "b",
+            "label": "Operations",
+            "detail": "e17 \u00b7 Workload",
+            "color": "purple",
+            "pos": 3,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "id",
+            "b": "a",
+            "label": ""
+          },
+          {
+            "a": "id",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "a"
+        ]
+      },
+      {
+        "title": "Assign an aggregate identity",
+        "copy": "A deployment aggregates multiple pods and receives its own identity.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Pod e17",
+            "detail": "member",
+            "color": "blue",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Pod e18",
+            "detail": "member",
+            "color": "purple",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "d",
+            "label": "Deployment e50",
+            "detail": "new aggregate identity",
+            "color": "amber",
+            "pos": 2,
+            "role": "projection",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "d",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "d",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "d"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "identity",
+        "label": "Identity"
+      }
+    ]
+  },
+  {
+    "number": 6,
+    "title": "An ontology defines types and properties.",
+    "short": "Versioned ontologies",
+    "group": "Foundation",
+    "topic": "ontology",
+    "intro": "An ontology declares entity types, relationship types and property value kinds. Every graph pins an ontology version and digest.",
+    "rule": "Activation requires validation of the portable definition. Generated C# types are planned to check property and relationship types during compilation.",
+    "limit": "A property name is local to its ontology. The same spelling in another ontology can have a different meaning and type.",
+    "refs": [
+      "OntologyDefinition",
+      "PropertyDefinition",
+      "OntologyRef"
+    ],
+    "frames": [
+      {
+        "title": "Declare the contract",
+        "copy": "This ontology declares Service.health as text.",
+        "nodes": [
+          {
+            "id": "o",
+            "label": "infra / v1",
+            "detail": "Service.health : text",
+            "color": "purple",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "health = \"ok\"",
+            "detail": "text value",
+            "color": "teal",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "o",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "o"
+        ]
+      },
+      {
+        "title": "Validate a compatible value",
+        "copy": "The supplied type matches the declared property kind.",
+        "nodes": [
+          {
+            "id": "o",
+            "label": "infra / v1",
+            "detail": "digest pinned",
+            "color": "purple",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "health = \"ok\"",
+            "detail": "accepted shape",
+            "color": "teal",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "o",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "text \u2192 text \u2713",
+        "active": [
+          "v"
+        ]
+      },
+      {
+        "title": "Reject an incompatible value",
+        "copy": "The boolean value fails validation against the declared text property.",
+        "nodes": [
+          {
+            "id": "o",
+            "label": "infra / v1",
+            "detail": "health : text",
+            "color": "purple",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "health = true",
+            "detail": "type mismatch",
+            "color": "coral",
+            "pos": 2,
+            "role": "input",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "o",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "boolean \u2192 text \u2715",
+        "active": [
+          "v"
+        ]
+      },
+      {
+        "title": "Pin a changed definition",
+        "copy": "An ontology change creates a new pinned definition and requires validation of dependent projections.",
+        "nodes": [
+          {
+            "id": "o",
+            "label": "infra / v2",
+            "detail": "new digest",
+            "color": "amber",
+            "pos": 0,
+            "role": "rule",
+            "mark": "\u0394"
+          },
+          {
+            "id": "v",
+            "label": "Revalidate dependents",
+            "detail": "check dependent definitions",
+            "color": "blue",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "o",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "o"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "input",
+        "label": "Input"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 7,
+    "title": "Patterns produce bindings for later operators.",
+    "short": "Pattern matching",
+    "group": "Projection",
+    "topic": "transforms",
+    "intro": "A graph pattern names the entities and relationships to find. Matching produces bindings that later operators can filter, group or emit.",
+    "rule": "Resolve pattern types and properties against the ontology of the selected input binding.",
+    "limit": "Matching produces rows of bound entities and relationships. Emit operators define changes to the output graph.",
+    "refs": [
+      "MatchOperator",
+      "GraphPattern",
+      "FilterOperator"
+    ],
+    "frames": [
+      {
+        "title": "Declare a pattern",
+        "copy": "Find a Pod that calls a Service.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "p : Pod",
+            "detail": "pattern variable",
+            "color": "blue",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "s : Service",
+            "detail": "pattern variable",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": "Calls"
+          }
+        ],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Find a candidate",
+        "copy": "The source graph contains a matching relationship from pod-7 to ledger.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "pod-7",
+            "detail": "Pod",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "ledger",
+            "detail": "Service",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "dns",
+            "detail": "Service",
+            "color": "gray",
+            "pos": 3,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": "Calls"
+          }
+        ],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Bind the result",
+        "copy": "The operator produces a row containing the matched entity identities.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "p = e17",
+            "detail": "matched pod",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "s = e31",
+            "detail": "matched service",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "row",
+            "label": "Binding row",
+            "detail": "p=e17 \u00b7 s=e31",
+            "color": "amber",
+            "pos": 4,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "row",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "row",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "row"
+        ]
+      },
+      {
+        "title": "Filter the bound rows",
+        "copy": "A filter can retain only unhealthy dependencies. A rejected row emits nothing.",
+        "nodes": [
+          {
+            "id": "row",
+            "label": "health = healthy",
+            "detail": "predicate is false",
+            "color": "gray",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "out",
+            "label": "No output row",
+            "detail": "master unchanged",
+            "color": "blue",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "row",
+            "b": "out",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "out"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 8,
+    "title": "A projection is a configuration graph.",
+    "short": "Transformation rules",
+    "group": "Projection",
+    "topic": "transforms",
+    "intro": "Portable operators and typed wires describe how input bindings become an output graph. The definition can include expected structure as a scaffold.",
+    "rule": "Keep selection, identity and emission explicit. The compiler owns type checks and diagnostics; the runtime owns execution and commits.",
+    "limit": "The typed authoring API currently covers expressions and a subset of row composition. Portable definitions require field, type and reference validation.",
+    "refs": [
+      "ProjectionDefinition",
+      "EmitEntityOperator",
+      "IProjectionCompiler"
+    ],
+    "frames": [
+      {
+        "title": "Select source facts",
+        "copy": "Match workload facts in the source ontology.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Match workloads",
+            "detail": "infra ontology",
+            "color": "blue",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Emit service",
+            "detail": "output ontology",
+            "color": "gray",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "e",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "m"
+        ]
+      },
+      {
+        "title": "Choose identity",
+        "copy": "A declared domain and key decide which observations describe the same output entity.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Match workloads",
+            "detail": "bindings",
+            "color": "blue",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "k",
+            "label": "Identity expression",
+            "detail": "service domain + key",
+            "color": "amber",
+            "pos": 1,
+            "role": "identity",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Emit service",
+            "detail": "output ontology",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "k",
+            "label": ""
+          },
+          {
+            "a": "k",
+            "b": "e",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "k"
+        ]
+      },
+      {
+        "title": "Validate the definition",
+        "copy": "The compiler checks references, input fields and output property ownership.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Definition",
+            "detail": "operators + wires",
+            "color": "blue",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Compiled projection",
+            "detail": "pinned digest",
+            "color": "teal",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "e",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "e"
+        ]
+      },
+      {
+        "title": "Reject a broken wire",
+        "copy": "A missing operator or wrong field type returns a diagnostic before activation.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Missing field",
+            "detail": "unknown binding",
+            "color": "coral",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Compilation rejected",
+            "detail": "diagnostic + location",
+            "color": "coral",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "e",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "e"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      },
+      {
+        "id": "identity",
+        "label": "Identity"
+      }
+    ]
+  },
+  {
+    "number": 9,
+    "title": "Stack projections through named graph inputs.",
+    "short": "Stacked projections",
+    "group": "Projection",
+    "topic": "views",
+    "intro": "A service graph can feed a capability graph. The service projection groups infrastructure details into the entities and relationships used by the capability projection.",
+    "rule": "Graph inputs name their source projection and expected ontology. Ordinary dependencies form an acyclic graph rooted at the master.",
+    "limit": "Reverse lens edits use a separate command path. The forward graph dependencies remain acyclic.",
+    "refs": [
+      "ProjectionGraphSource",
+      "GraphProjectionDefinition",
+      "InputFrontier"
+    ],
+    "frames": [
+      {
+        "title": "Three levels of detail",
+        "copy": "Each graph is separately versioned.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master",
+            "detail": "r30 \u00b7 infrastructure",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Services",
+            "detail": "r12 \u00b7 service model",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Capabilities",
+            "detail": "r6 \u00b7 business model",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "s",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "m"
+        ]
+      },
+      {
+        "title": "Master changes",
+        "copy": "A new dependency changes master r30 to r31.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master",
+            "detail": "r31 \u00b7 new dependency",
+            "color": "amber",
+            "pos": 0,
+            "role": "master",
+            "mark": "\u0394"
+          },
+          {
+            "id": "s",
+            "label": "Services",
+            "detail": "r12",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Capabilities",
+            "detail": "r6",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "s",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "m"
+        ]
+      },
+      {
+        "title": "Services consume r31",
+        "copy": "The service graph commits r13 and records the input version it used.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master",
+            "detail": "r31",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Services",
+            "detail": "r13 \u2190 master r31",
+            "color": "amber",
+            "pos": 1,
+            "role": "projection",
+            "mark": "\u0394"
+          },
+          {
+            "id": "b",
+            "label": "Capabilities",
+            "detail": "r6",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "s",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "s"
+        ]
+      },
+      {
+        "title": "Capabilities consume r13",
+        "copy": "The capability graph commits r7 after consuming service revision r13. Each stage has committed separately.",
+        "nodes": [
+          {
+            "id": "m",
+            "label": "Master",
+            "detail": "r31",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Services",
+            "detail": "r13",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Capabilities",
+            "detail": "r7 \u2190 services r13",
+            "color": "amber",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "m",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "s",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "b"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 10,
+    "title": "Combine graph inputs with union and join.",
+    "short": "Union and join",
+    "group": "Projection",
+    "topic": "views",
+    "intro": "A projection can consume multiple graph inputs. Union collects compatible rows. Join relates rows using a declared predicate or correspondence.",
+    "rule": "Each input keeps its own ontology pin and graph revision. Duplicate facts need an explicit conflict policy.",
+    "limit": "The recorded frontier identifies the consumed versions. Branches may reflect different master revisions; aligning them requires a separate consistency policy.",
+    "refs": [
+      "UnionOperator",
+      "JoinOperator",
+      "ProjectionGraphInput"
+    ],
+    "frames": [
+      {
+        "title": "Two independent inputs",
+        "copy": "One input contains observed calls; another contains expected calls.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Observed",
+            "detail": "A\u2192B \u00b7 B\u2192C",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Expected",
+            "detail": "A\u2192B \u00b7 A\u2192D",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Union the rows",
+        "copy": "First select each relationship\u2019s endpoints into a common {source, target} row schema. Union collects three distinct pairs; observed and expected relationship facts remain in their upstream graphs.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Observed",
+            "detail": "A\u2192B \u00b7 B\u2192C",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Expected",
+            "detail": "A\u2192B \u00b7 A\u2192D",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Union",
+            "detail": "A\u2192B \u00b7 B\u2192C \u00b7 A\u2192D",
+            "color": "amber",
+            "pos": 4,
+            "role": "projection",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "Union requires a declared conflict policy",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Join on endpoints",
+        "copy": "An equality join finds the pair present in both input relations.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Observed",
+            "detail": "A\u2192B \u00b7 B\u2192C",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Expected",
+            "detail": "A\u2192B \u00b7 A\u2192D",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Join result",
+            "detail": "A\u2192B",
+            "color": "blue",
+            "pos": 4,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "observed.source = expected.source \u2227 targets equal",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Record the consumed versions",
+        "copy": "The result records observed r8 from master revision 13 and expected r3 from master revision 12.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Observed r8",
+            "detail": "master frontier 13",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Expected r3",
+            "detail": "master frontier 12",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Combined r5",
+            "detail": "inputs: [r8, r3]",
+            "color": "amber",
+            "pos": 4,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "r"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 11,
+    "title": "Map between input and output ontologies.",
+    "short": "Cross-ontology views",
+    "group": "Projection",
+    "topic": "ontology",
+    "intro": "A source graph can describe infrastructure while its projection describes business capabilities. The mapping declares how source entities contribute to target entities.",
+    "rule": "Match against each input ontology. Emit against the output ontology. Validate both sides, including conflicting local type and property names.",
+    "limit": "Source and target types retain their definitions. Shared identity requires both representations to describe the same entity.",
+    "refs": [
+      "ProjectionGraphInput",
+      "GraphProjectionDefinition",
+      "OntologyRef"
+    ],
+    "frames": [
+      {
+        "title": "Start in infrastructure",
+        "copy": "The source graph pins infra v1 and describes a deployment.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Payment deployment",
+            "detail": "infra v1 \u00b7 Deployment",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Business view",
+            "detail": "business v1",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "s"
+        ]
+      },
+      {
+        "title": "Apply a named mapping",
+        "copy": "The projection groups infrastructure evidence under a capability identity.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Payment deployment",
+            "detail": "source e50",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "rule",
+            "label": "payments-to-capability",
+            "detail": "declared key mapping",
+            "color": "amber",
+            "pos": 1,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Accept payments",
+            "detail": "Capability e90",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "s",
+            "b": "rule",
+            "label": ""
+          },
+          {
+            "a": "rule",
+            "b": "t",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "rule",
+          "t"
+        ]
+      },
+      {
+        "title": "Keep source lineage",
+        "copy": "The capability has its own meaning and identity. The correspondence records where it came from.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Deployment e50",
+            "detail": "infra v1",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "rule",
+            "label": "Correspondence",
+            "detail": "e50 \u2194 e90",
+            "color": "blue",
+            "pos": 1,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Capability e90",
+            "detail": "business v1",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "s",
+            "b": "rule",
+            "label": ""
+          },
+          {
+            "a": "rule",
+            "b": "t",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "rule"
+        ]
+      },
+      {
+        "title": "Reject accidental type reuse",
+        "copy": "Emission requires a type declared in the output ontology. Business v1 has no Deployment type.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Emit Deployment",
+            "detail": "target = business v1",
+            "color": "coral",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Unknown target type",
+            "detail": "definition rejected",
+            "color": "coral",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "s",
+            "b": "t",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "t"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 12,
+    "title": "Aggregate dependency signals with a declared rule.",
+    "short": "Health propagation",
+    "group": "Projection",
+    "topic": "impact",
+    "intro": "A health projection aggregates dependency signals into service or capability properties. Its rule defines how dependency states determine the result.",
+    "rule": "Make the rule part of the projection: for example, any required dependency failing makes the service degraded.",
+    "limit": "Each health projection defines its own interpretation. A causal diagnosis would require additional evidence and rules.",
+    "refs": [
+      "GroupOperator",
+      "MapOperator",
+      "Expr"
+    ],
+    "frames": [
+      {
+        "title": "All required dependencies pass",
+        "copy": "The service uses an all-required-dependencies rule.",
+        "nodes": [
+          {
+            "id": "db",
+            "label": "Ledger DB",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "dns",
+            "label": "DNS",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "api",
+            "label": "Payment service",
+            "detail": "healthy",
+            "color": "blue",
+            "pos": 4,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "api",
+            "label": ""
+          },
+          {
+            "a": "dns",
+            "b": "api",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "api"
+        ]
+      },
+      {
+        "title": "A signal changes",
+        "copy": "The database dependency becomes unavailable. The service still shows its previous revision.",
+        "nodes": [
+          {
+            "id": "db",
+            "label": "Ledger DB",
+            "detail": "unavailable",
+            "color": "coral",
+            "pos": 0,
+            "role": "master",
+            "mark": "\u0394"
+          },
+          {
+            "id": "dns",
+            "label": "DNS",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "api",
+            "label": "Payment service",
+            "detail": "healthy \u00b7 prior revision",
+            "color": "blue",
+            "pos": 4,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "api",
+            "label": ""
+          },
+          {
+            "a": "dns",
+            "b": "api",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "db"
+        ]
+      },
+      {
+        "title": "Apply the rollup",
+        "copy": "The declared rule emits a degraded service property.",
+        "nodes": [
+          {
+            "id": "db",
+            "label": "Ledger DB",
+            "detail": "unavailable",
+            "color": "coral",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "dns",
+            "label": "DNS",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "api",
+            "label": "Payment service",
+            "detail": "degraded",
+            "color": "amber",
+            "pos": 4,
+            "role": "projection",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "api",
+            "label": ""
+          },
+          {
+            "a": "dns",
+            "b": "api",
+            "label": ""
+          }
+        ],
+        "formula": "any(required dependency unavailable) \u2192 degraded",
+        "active": [
+          "api"
+        ]
+      },
+      {
+        "title": "Recovery is another input",
+        "copy": "When the dependency recovers, the rule derives healthy again and emits a new change.",
+        "nodes": [
+          {
+            "id": "db",
+            "label": "Ledger DB",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "dns",
+            "label": "DNS",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "api",
+            "label": "Payment service",
+            "detail": "healthy \u00b7 next revision",
+            "color": "teal",
+            "pos": 4,
+            "role": "projection",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "db",
+            "b": "api",
+            "label": ""
+          },
+          {
+            "a": "dns",
+            "b": "api",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "api"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 13,
+    "title": "A graph patch records one state transition.",
+    "short": "Ordered graph diffs",
+    "group": "Change",
+    "topic": "stream",
+    "intro": "A graph patch describes a transition between two versions. Its edits contain before and after values, and its cause points to the inputs that produced the change.",
+    "rule": "An input that leaves graph state unchanged emits no graph patch. Acceptance, progress and telemetry remain separate.",
+    "limit": "Batching keeps constituent patches and their revision boundaries. Squashing is a distinct operation that can discard intermediate history.",
+    "refs": [
+      "GraphPatch",
+      "EntityEdit",
+      "PatchBatch"
+    ],
+    "frames": [
+      {
+        "title": "Before the event",
+        "copy": "The service is healthy at graph revision 8.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Service graph",
+            "detail": "r8 \u00b7 healthy",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Input 42",
+            "detail": "health = degraded",
+            "color": "amber",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "e"
+        ]
+      },
+      {
+        "title": "Commit one transition",
+        "copy": "The changed property produces a patch from r8 to r9.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Service graph",
+            "detail": "r9 \u00b7 degraded",
+            "color": "amber",
+            "pos": 0,
+            "role": "projection",
+            "mark": "\u0394"
+          },
+          {
+            "id": "p",
+            "label": "Patch r8 \u2192 r9",
+            "detail": "healthy \u2192 degraded",
+            "color": "blue",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "g",
+            "b": "p",
+            "label": ""
+          }
+        ],
+        "formula": "before: healthy   after: degraded",
+        "active": [
+          "g",
+          "p"
+        ]
+      },
+      {
+        "title": "Repeat the same fact",
+        "copy": "A separate delivery repeats the current health value. The graph stays at r9.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Service graph",
+            "detail": "r9 \u00b7 degraded",
+            "color": "amber",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "e",
+            "label": "Input 43",
+            "detail": "health = degraded",
+            "color": "purple",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "e",
+            "b": "g",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "e"
+        ]
+      },
+      {
+        "title": "No change, no graph diff",
+        "copy": "Progress advances while the graph revision and retained evidence history stay unchanged.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Service graph",
+            "detail": "still r9",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "p",
+            "label": "No graph patch",
+            "detail": "progress advances",
+            "color": "blue",
+            "pos": 2,
+            "role": "diff",
+            "mark": "0"
+          }
+        ],
+        "edges": [],
+        "formula": "\u0394graph = \u2205",
+        "active": [
+          "p"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "input",
+        "label": "Input"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "diff",
+        "label": "Diff"
+      }
+    ]
+  },
+  {
+    "number": 14,
+    "title": "Compose patches and add signed deltas.",
+    "short": "Diff arithmetic",
+    "group": "Change",
+    "topic": "stream",
+    "intro": "Ordered patches compose transitions with preconditions. Signed deltas add and subtract weighted graph facts. Separate C# types require an explicit conversion between them.",
+    "rule": "Patch composition requires adjacent compatible versions. Delta-to-patch conversion needs a base graph and validity checks.",
+    "limit": "Signed-delta arithmetic permits negative weights. Materialization validates the resulting graph. Conversion reports any loss of chronology.",
+    "refs": [
+      "PatchThen",
+      "PatchInverse",
+      "DeltaAdd",
+      "ConvertDeltaToPatch"
+    ],
+    "frames": [
+      {
+        "title": "Compose ordered patches",
+        "copy": "Apply healthy\u2192degraded, then degraded\u2192failed.",
+        "nodes": [
+          {
+            "id": "p",
+            "label": "Patch P",
+            "detail": "healthy \u2192 degraded",
+            "color": "blue",
+            "pos": 0,
+            "role": "diff",
+            "mark": ""
+          },
+          {
+            "id": "q",
+            "label": "Patch Q",
+            "detail": "degraded \u2192 failed",
+            "color": "purple",
+            "pos": 2,
+            "role": "diff",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "p",
+            "b": "q",
+            "label": ""
+          }
+        ],
+        "formula": "P then Q : healthy \u2192 failed",
+        "active": [
+          "q"
+        ]
+      },
+      {
+        "title": "Try the opposite order",
+        "copy": "Q requires a degraded starting state. Applying it to healthy fails its before-value precondition.",
+        "nodes": [
+          {
+            "id": "q",
+            "label": "Patch Q first",
+            "detail": "needs degraded",
+            "color": "coral",
+            "pos": 0,
+            "role": "diff",
+            "mark": ""
+          },
+          {
+            "id": "p",
+            "label": "Precondition fails",
+            "detail": "base is healthy",
+            "color": "coral",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "q",
+            "b": "p",
+            "label": ""
+          }
+        ],
+        "formula": "P then Q \u2260 Q then P",
+        "active": [
+          "p"
+        ]
+      },
+      {
+        "title": "Add signed facts",
+        "copy": "F denotes one exact immutable graph fact, including identity and state. Opposite coefficients for that same fact cancel.",
+        "nodes": [
+          {
+            "id": "p",
+            "label": "+1 \u00d7 Calls(A,B)",
+            "detail": "add graph fact",
+            "color": "teal",
+            "pos": 0,
+            "role": "diff",
+            "mark": "+"
+          },
+          {
+            "id": "q",
+            "label": "\u22121 \u00d7 Calls(A,B)",
+            "detail": "remove graph fact",
+            "color": "coral",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u2212"
+          },
+          {
+            "id": "z",
+            "label": "Zero delta",
+            "detail": "no net fact",
+            "color": "blue",
+            "pos": 4,
+            "role": "diff",
+            "mark": "0"
+          }
+        ],
+        "edges": [
+          {
+            "a": "p",
+            "b": "z",
+            "label": ""
+          },
+          {
+            "a": "q",
+            "b": "z",
+            "label": ""
+          }
+        ],
+        "formula": "+F + (\u2212F) = 0",
+        "active": [
+          "z"
+        ]
+      },
+      {
+        "title": "Materialize with validation",
+        "copy": "Materialization rejects a negative remaining fact multiplicity at the chosen base graph.",
+        "nodes": [
+          {
+            "id": "p",
+            "label": "\u22121 \u00d7 Calls(A,B)",
+            "detail": "base(F) = 0",
+            "color": "purple",
+            "pos": 0,
+            "role": "diff",
+            "mark": ""
+          },
+          {
+            "id": "q",
+            "label": "Materialization rejected",
+            "detail": "0 \u2212 1 = \u22121",
+            "color": "coral",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "p",
+            "b": "q",
+            "label": ""
+          }
+        ],
+        "formula": "Materialization validates fact weights at the base graph",
+        "active": [
+          "q"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "diff",
+        "label": "Diff"
+      }
+    ]
+  },
+  {
+    "number": 15,
+    "title": "Read stored and virtual graphs through one interface.",
+    "short": "The infinite graph",
+    "group": "Change",
+    "topic": "runtime",
+    "intro": "A graph can hold stored facts, derive facts through a virtual provider, or combine both. Callers read a specified scope at a pinned revision.",
+    "rule": "Reads pin a revision, scope and work budget, and report whether the answer is complete.",
+    "limit": "Infinite extents require finite query scopes. Symbolic patches for virtual-definition changes remain an open design decision.",
+    "refs": [
+      "IGraphSpace",
+      "IVirtualGraphProvider",
+      "GraphReadPage",
+      "ReadCompletion"
+    ],
+    "frames": [
+      {
+        "title": "Choose a finite question",
+        "copy": "Ask for the neighborhood of e17, at depth 1, within a fixed budget.",
+        "nodes": [
+          {
+            "id": "q",
+            "label": "Bounded read",
+            "detail": "root=e17 \u00b7 depth=1",
+            "color": "amber",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "Stored facts",
+            "detail": "paged index",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "Virtual facts",
+            "detail": "pinned provider",
+            "color": "purple",
+            "pos": 3,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "q",
+            "b": "s",
+            "label": ""
+          },
+          {
+            "a": "q",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "q"
+        ]
+      },
+      {
+        "title": "Read stored facts",
+        "copy": "A stored index supplies the known neighbors for the pinned graph revision.",
+        "nodes": [
+          {
+            "id": "q",
+            "label": "Same bounded read",
+            "detail": "graph r20",
+            "color": "amber",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "s",
+            "label": "e17 \u2192 e31",
+            "detail": "stored result",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "q",
+            "b": "s",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "s"
+        ]
+      },
+      {
+        "title": "Derive virtual facts",
+        "copy": "A deterministic provider answers the same supported finite scope.",
+        "nodes": [
+          {
+            "id": "q",
+            "label": "Same bounded read",
+            "detail": "graph r20",
+            "color": "amber",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "e17 \u2192 e31",
+            "detail": "derived result",
+            "color": "purple",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "q",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "v"
+        ]
+      },
+      {
+        "title": "Report budget exhaustion",
+        "copy": "A larger scope exhausts its budget. The response identifies the examined portion and reports BudgetExhausted.",
+        "nodes": [
+          {
+            "id": "q",
+            "label": "Larger request",
+            "detail": "budget = 100 facts",
+            "color": "amber",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "BudgetExhausted",
+            "detail": "partial + continuation",
+            "color": "coral",
+            "pos": 2,
+            "role": "master",
+            "mark": "\u2026"
+          }
+        ],
+        "edges": [
+          {
+            "a": "q",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "Completion status: BudgetExhausted",
+        "active": [
+          "v"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 16,
+    "title": "Derive indirect dependencies to a fixed point.",
+    "short": "Explicit recursion",
+    "group": "Change",
+    "topic": "transforms",
+    "intro": "A fixed-point operator can derive indirect dependencies by repeatedly adding newly justified facts.",
+    "rule": "The proposed initial fragment is positive recursion over a pinned finite domain. Ordinary operator cycles fail validation.",
+    "limit": "Iteration and fact budgets bound the work. Convergence requires a separate argument for the admitted language fragment.",
+    "refs": [
+      "FixpointOperator",
+      "RuleProgram"
+    ],
+    "frames": [
+      {
+        "title": "Seed the relation",
+        "copy": "Direct dependencies are A\u2192B and B\u2192C.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "A",
+            "detail": "service",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "detail": "service",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "C",
+            "detail": "service",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "c",
+            "label": ""
+          }
+        ],
+        "formula": "R\u2080 = { A\u2192B, B\u2192C }",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Derive a new fact",
+        "copy": "Transitivity adds A\u2192C within the finite domain.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "A",
+            "detail": "service",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "detail": "service",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "C",
+            "detail": "service",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": "+"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "c",
+            "label": ""
+          },
+          {
+            "a": "a",
+            "b": "c",
+            "label": "derived"
+          }
+        ],
+        "formula": "R\u2081 = R\u2080 \u222a { A\u2192C }",
+        "active": [
+          "c"
+        ]
+      },
+      {
+        "title": "Reach the fixed point",
+        "copy": "Another iteration produces no new facts. The relation has converged for this example.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "A",
+            "detail": "service",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "detail": "service",
+            "color": "blue",
+            "pos": 1,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "C",
+            "detail": "service",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "c",
+            "label": ""
+          },
+          {
+            "a": "a",
+            "b": "c",
+            "label": "derived"
+          }
+        ],
+        "formula": "R\u2082 = R\u2081  \u2713",
+        "active": [
+          "a",
+          "b",
+          "c"
+        ]
+      },
+      {
+        "title": "Reject unsupported recursion",
+        "copy": "A recursive rule that continually creates fresh identities is outside the initial finite fragment.",
+        "nodes": [
+          {
+            "id": "r",
+            "label": "Create fresh ID",
+            "detail": "on every iteration",
+            "color": "coral",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "Definition rejected",
+            "detail": "outside finite fragment",
+            "color": "coral",
+            "pos": 2,
+            "role": "rule",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "r",
+            "b": "v",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "v"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 17,
+    "title": "Relate source and target through correspondence.",
+    "short": "Triple graph grammars",
+    "group": "Consistency",
+    "topic": "transforms",
+    "intro": "A triple graph grammar describes consistency between three graphs: the source, the target, and a correspondence relating their elements.",
+    "rule": "Correspondence records which source and target elements a rule relates. Many source entities can map to one target entity.",
+    "limit": "Identity equivalence requires an identity rule. Backward updates require a declared transformation with verified lens laws.",
+    "refs": [
+      "Correspondence",
+      "CorrespondenceTemplate",
+      "BidirectionalRule"
+    ],
+    "frames": [
+      {
+        "title": "Start with source structure",
+        "copy": "Two pods belong to one service group.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Pod e17",
+            "detail": "group=payments",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Pod e18",
+            "detail": "group=payments",
+            "color": "teal",
+            "pos": 3,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Create the target",
+        "copy": "The target graph contains one service entity with its own identity.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Pod e17",
+            "detail": "source",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Pod e18",
+            "detail": "source",
+            "color": "teal",
+            "pos": 3,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Service e50",
+            "detail": "target",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": "+"
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "t"
+        ]
+      },
+      {
+        "title": "Record correspondence",
+        "copy": "Transformation metadata relates both source pods to the target service. These links belong to the correspondence graph.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Pod e17",
+            "detail": "source",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Pod e18",
+            "detail": "source",
+            "color": "teal",
+            "pos": 3,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "Correspondence",
+            "detail": "rule: pod-to-service",
+            "color": "amber",
+            "pos": 1,
+            "role": "rule",
+            "mark": "+"
+          },
+          {
+            "id": "t",
+            "label": "Service e50",
+            "detail": "target",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "c",
+            "label": ""
+          },
+          {
+            "a": "b",
+            "b": "c",
+            "label": ""
+          },
+          {
+            "a": "c",
+            "b": "t",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "c"
+        ]
+      },
+      {
+        "title": "Inspect the relationship",
+        "copy": "The linked IDs remain distinct. The correspondence can also retain information omitted from the view.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Source set",
+            "detail": "{ e17, e18 }",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "Rule + complement",
+            "detail": "versioned context",
+            "color": "amber",
+            "pos": 1,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "t",
+            "label": "Target set",
+            "detail": "{ e50 }",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "c",
+            "label": ""
+          },
+          {
+            "a": "c",
+            "b": "t",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "c"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      }
+    ]
+  },
+  {
+    "number": 18,
+    "title": "Declared lenses translate view edits upstream.",
+    "short": "Bidirectional lenses",
+    "group": "Consistency",
+    "topic": "transforms",
+    "intro": "A declared bidirectional transformation translates a supported view edit into a proposed upstream change using its rule and versioned complement.",
+    "rule": "GetPut preserves the source after an unchanged view is put back. PutGet returns the accepted view after a supported edit is applied.",
+    "limit": "Read-only projections reject edits. Each bidirectional rule requires validation of its lens laws and conflict handling.",
+    "refs": [
+      "IBidirectionalProjection",
+      "LensContext",
+      "BackwardProposal",
+      "LensLaw"
+    ],
+    "frames": [
+      {
+        "title": "A declared forward view",
+        "copy": "This example exposes the source label and retains the omitted source data in a complement.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Source e17",
+            "detail": "label = API",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "Editable view",
+            "detail": "label = API",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "s",
+            "b": "v",
+            "label": "get"
+          }
+        ],
+        "formula": "",
+        "active": [
+          "v"
+        ]
+      },
+      {
+        "title": "Edit the supported field",
+        "copy": "The caller proposes a new label against pinned source and view versions.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Source e17",
+            "detail": "label = API",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "View edit",
+            "detail": "label = Payments",
+            "color": "amber",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "v",
+            "b": "s",
+            "label": "put"
+          }
+        ],
+        "formula": "",
+        "active": [
+          "v"
+        ]
+      },
+      {
+        "title": "Propose the upstream change",
+        "copy": "The backward rule uses the complement to preserve information omitted from the view.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Source proposal",
+            "detail": "label = Payments",
+            "color": "amber",
+            "pos": 0,
+            "role": "master",
+            "mark": "\u0394"
+          },
+          {
+            "id": "v",
+            "label": "Forward result",
+            "detail": "label = Payments",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "s",
+            "b": "v",
+            "label": "get"
+          }
+        ],
+        "formula": "get(put(source, editedView)) = editedView",
+        "active": [
+          "s"
+        ]
+      },
+      {
+        "title": "Reject a read-only edit",
+        "copy": "The read-only projection rejects the edit because it has no backward rule.",
+        "nodes": [
+          {
+            "id": "s",
+            "label": "Read-only projection",
+            "detail": "no backward rule",
+            "color": "blue",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "v",
+            "label": "Edit rejected",
+            "detail": "capability unavailable",
+            "color": "coral",
+            "pos": 2,
+            "role": "projection",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "v",
+            "b": "s",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "v"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      }
+    ]
+  },
+  {
+    "number": 19,
+    "title": "Change the rule, then replay retained evidence.",
+    "short": "Configuration replay",
+    "group": "Consistency",
+    "topic": "replay",
+    "intro": "A projection edit starts from the previous graph and replays the deduplicated union of retained inputs in their recorded order.",
+    "rule": "Queue new inputs during replay. Publish the final graph difference, and preserve eligible histories for surviving elements.",
+    "limit": "Each element retains its recent N graph-changing inputs. Earlier and unchanged inputs are omitted. Lens complements are stored separately.",
+    "refs": [
+      "EditProjection",
+      "RetainedInput",
+      "ElementHistory"
+    ],
+    "frames": [
+      {
+        "title": "Retain relevant evidence",
+        "copy": "Each element keeps a bounded history of inputs that changed its graph state.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Element e17",
+            "detail": "inputs [4, 7, 9]",
+            "color": "teal",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Element e31",
+            "detail": "inputs [7, 8]",
+            "color": "purple",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "",
+        "active": [
+          "a",
+          "b"
+        ]
+      },
+      {
+        "title": "Union and order",
+        "copy": "The replay sequence deduplicates shared input 7 and uses original ingestion order.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Replay queue",
+            "detail": "4 \u2192 7 \u2192 8 \u2192 9",
+            "color": "amber",
+            "pos": 0,
+            "role": "input",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "New arrivals",
+            "detail": "queued separately",
+            "color": "blue",
+            "pos": 2,
+            "role": "input",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "deduplicated union = [4, 7, 8, 9]",
+        "active": [
+          "a"
+        ]
+      },
+      {
+        "title": "Evaluate the changed rule",
+        "copy": "The previous graph and retained inputs produce a candidate under the new definition.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Prior graph",
+            "detail": "configuration v1",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Revised projection",
+            "detail": "configuration v2",
+            "color": "amber",
+            "pos": 1,
+            "role": "rule",
+            "mark": "\u0394"
+          },
+          {
+            "id": "b",
+            "label": "Candidate graph",
+            "detail": "replay complete",
+            "color": "purple",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "r",
+            "label": ""
+          },
+          {
+            "a": "r",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Emit one final difference",
+        "copy": "Publish the change between the old graph and the completed candidate, then resume queued inputs.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "Old graph",
+            "detail": "r20",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "Final patch",
+            "detail": "r20 \u2192 r21",
+            "color": "blue",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "a",
+            "b": "b",
+            "label": ""
+          }
+        ],
+        "formula": "Intermediate replay states stay unpublished",
+        "active": [
+          "b"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "input",
+        "label": "Input"
+      },
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      },
+      {
+        "id": "diff",
+        "label": "Diff"
+      }
+    ]
+  },
+  {
+    "number": 20,
+    "title": "Project graph data into document blocks.",
+    "short": "Document projections",
+    "group": "Output",
+    "topic": "views",
+    "intro": "A document projection selects finite graph data and produces typed blocks. A renderer encodes those blocks as Markdown, HTML or plain text.",
+    "rule": "Block and row identities are stable and separate from display order. Document patches describe structural changes before rendering.",
+    "limit": "The renderer produces output text. Editing that text requires a separately designed input mapping. Document overflow either rejects the request or marks truncation.",
+    "refs": [
+      "DocumentTemplate",
+      "DocumentPatch",
+      "IDocumentProjection",
+      "IDocumentRenderer"
+    ],
+    "frames": [
+      {
+        "title": "Select finite graph rows",
+        "copy": "Choose the payment service and its dependencies from a pinned graph revision.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Service graph",
+            "detail": "r9 \u00b7 finite selection",
+            "color": "teal",
+            "pos": 0,
+            "role": "projection",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Selected rows",
+            "detail": "payments \u00b7 ledger",
+            "color": "blue",
+            "pos": 2,
+            "role": "projection",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "g",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Project typed blocks",
+        "copy": "The heading and table have stable block IDs. Table rows also carry stable keys.",
+        "nodes": [
+          {
+            "id": "h",
+            "label": "Heading",
+            "detail": "block: title",
+            "color": "purple",
+            "pos": 0,
+            "role": "document",
+            "mark": "+"
+          },
+          {
+            "id": "t",
+            "label": "Dependency table",
+            "detail": "block: deps \u00b7 rows e17,e31",
+            "color": "blue",
+            "pos": 2,
+            "role": "document",
+            "mark": "+"
+          }
+        ],
+        "edges": [],
+        "formula": "Document = Heading + Table",
+        "active": [
+          "h",
+          "t"
+        ]
+      },
+      {
+        "title": "Render Markdown",
+        "copy": "The renderer escapes values and produces the requested encoding from the typed structure.",
+        "nodes": [
+          {
+            "id": "t",
+            "label": "Typed blocks",
+            "detail": "document r3",
+            "color": "purple",
+            "pos": 0,
+            "role": "document",
+            "mark": ""
+          },
+          {
+            "id": "md",
+            "label": "Markdown output",
+            "detail": "full rendered document",
+            "color": "amber",
+            "pos": 2,
+            "role": "document",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "t",
+            "b": "md",
+            "label": ""
+          }
+        ],
+        "formula": "# Payments\n\n| Service | Health |\n| --- | --- |\n| Payments | Healthy |\n| Ledger | Healthy |",
+        "active": [
+          "md"
+        ]
+      },
+      {
+        "title": "Reorder, preserve identity",
+        "copy": "Sorting changes display order. The table block and row keys remain the same, so the change is a document edit.",
+        "nodes": [
+          {
+            "id": "t",
+            "label": "Table block: deps",
+            "detail": "rows e31, e17",
+            "color": "blue",
+            "pos": 0,
+            "role": "document",
+            "mark": "\u0394"
+          },
+          {
+            "id": "p",
+            "label": "Document patch",
+            "detail": "r3 \u2192 r4",
+            "color": "amber",
+            "pos": 2,
+            "role": "diff",
+            "mark": "\u0394"
+          }
+        ],
+        "edges": [
+          {
+            "a": "t",
+            "b": "p",
+            "label": ""
+          }
+        ],
+        "formula": "row order changed \u00b7 row identity preserved",
+        "active": [
+          "p"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "projection",
+        "label": "Projection"
+      },
+      {
+        "id": "document",
+        "label": "Document"
+      },
+      {
+        "id": "diff",
+        "label": "Diff"
+      }
+    ]
+  },
+  {
+    "number": 21,
+    "title": "Verify contract laws with finite examples.",
+    "short": "Verification",
+    "group": "Output",
+    "topic": "replay",
+    "intro": "The design includes compilable contracts, generated schemas and a test-only mathematical reference model.",
+    "rule": "The suite checks finite patch and delta laws, schema examples, selected composition rules, and C# programs that must fail to compile.",
+    "limit": "General TGG correctness, production performance, arbitrary virtual graphs and unrestricted recursion remain unverified.",
+    "refs": [
+      "GraphPatch",
+      "SignedDelta",
+      "IGraphChangeAlgebra"
+    ],
+    "frames": [
+      {
+        "title": "Choose a law",
+        "copy": "Start with a graph and a valid patch P.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Graph G",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "p",
+            "label": "Patch P",
+            "detail": "healthy \u2192 failed",
+            "color": "blue",
+            "pos": 2,
+            "role": "diff",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "g",
+            "b": "p",
+            "label": ""
+          }
+        ],
+        "formula": "apply(inverse(P), apply(P, G)) = G",
+        "active": [
+          "p"
+        ]
+      },
+      {
+        "title": "Apply the patch and inverse",
+        "copy": "The test-only model returns to the original graph.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Graph G\u2032",
+            "detail": "failed",
+            "color": "coral",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "p",
+            "label": "Inverse P",
+            "detail": "failed \u2192 healthy",
+            "color": "purple",
+            "pos": 1,
+            "role": "diff",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Graph G",
+            "detail": "healthy",
+            "color": "teal",
+            "pos": 2,
+            "role": "master",
+            "mark": ""
+          }
+        ],
+        "edges": [
+          {
+            "a": "g",
+            "b": "p",
+            "label": ""
+          },
+          {
+            "a": "p",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "Expected healthy \u00b7 Actual healthy \u2713",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Inject a wrong inverse",
+        "copy": "An intentionally broken inverse returns degraded. The assertion expects healthy and fails.",
+        "nodes": [
+          {
+            "id": "g",
+            "label": "Wrong inverse",
+            "detail": "failed \u2192 degraded",
+            "color": "coral",
+            "pos": 0,
+            "role": "master",
+            "mark": ""
+          },
+          {
+            "id": "r",
+            "label": "Assertion fails",
+            "detail": "expected healthy",
+            "color": "coral",
+            "pos": 2,
+            "role": "master",
+            "mark": "\u00d7"
+          }
+        ],
+        "edges": [
+          {
+            "a": "g",
+            "b": "r",
+            "label": ""
+          }
+        ],
+        "formula": "Expected healthy \u00b7 Actual degraded \u2715",
+        "active": [
+          "r"
+        ]
+      },
+      {
+        "title": "Inspect the test reports",
+        "copy": "The downloadable reports list the executed checks and the properties that remain unverified.",
+        "nodes": [
+          {
+            "id": "a",
+            "label": "14 model groups",
+            "detail": "1,921 assertions",
+            "color": "teal",
+            "pos": 0,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "b",
+            "label": "47 schema checks",
+            "detail": "selected semantics",
+            "color": "blue",
+            "pos": 2,
+            "role": "rule",
+            "mark": ""
+          },
+          {
+            "id": "c",
+            "label": "8 compile cases",
+            "detail": "2 valid \u00b7 6 rejected",
+            "color": "purple",
+            "pos": 3,
+            "role": "rule",
+            "mark": ""
+          }
+        ],
+        "edges": [],
+        "formula": "Production engine: contracts only",
+        "active": [
+          "a",
+          "b",
+          "c"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "master",
+        "label": "Master graph"
+      },
+      {
+        "id": "rule",
+        "label": "Rule / ontology"
+      },
+      {
+        "id": "diff",
+        "label": "Diff"
+      }
+    ]
+  }
+]

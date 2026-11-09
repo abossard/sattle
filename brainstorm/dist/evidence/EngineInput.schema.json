@@ -1,0 +1,1088 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "EngineInput",
+  "$ref": "#/$defs/EngineInput",
+  "$defs": {
+    "RequestId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TenantId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "InputId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "SourcePosition": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "partition": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "partition",
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "InputContext": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "source": {
+          "type": "string"
+        },
+        "delivery": {
+          "$ref": "#/$defs/InputId"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourcePosition"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "receivedAt": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tenant",
+        "source",
+        "delivery",
+        "position",
+        "observedAt",
+        "receivedAt"
+      ],
+      "additionalProperties": false
+    },
+    "NativeFormat": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "type": "string"
+        },
+        "messageType": {
+          "type": "string"
+        },
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "mediaType": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family",
+        "messageType",
+        "schemaVersion",
+        "mediaType"
+      ],
+      "additionalProperties": false
+    },
+    "NativeRecord": {
+      "type": "object",
+      "properties": {
+        "context": {
+          "$ref": "#/$defs/InputContext"
+        },
+        "format": {
+          "$ref": "#/$defs/NativeFormat"
+        },
+        "payload": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "context",
+        "format",
+        "payload"
+      ],
+      "additionalProperties": false
+    },
+    "IngestBatch": {
+      "type": "object",
+      "properties": {
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "records": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NativeRecord"
+          }
+        }
+      },
+      "required": [
+        "request",
+        "records"
+      ],
+      "additionalProperties": false
+    },
+    "NativeBatchInput": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "native"
+        },
+        "batch": {
+          "$ref": "#/$defs/IngestBatch"
+        }
+      },
+      "required": [
+        "kind",
+        "batch"
+      ],
+      "additionalProperties": false
+    },
+    "EntityId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TypeId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TextValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "IntegerValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(0|-?[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DecimalValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "decimal"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]\u002B)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "BooleanValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "InstantValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "instant"
+        },
+        "value": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "NullValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "null"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "EntityValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "value": {
+          "$ref": "#/$defs/EntityId"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ListValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "list"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphValue"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "GraphValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextValue"
+        },
+        {
+          "$ref": "#/$defs/IntegerValue"
+        },
+        {
+          "$ref": "#/$defs/DecimalValue"
+        },
+        {
+          "$ref": "#/$defs/BooleanValue"
+        },
+        {
+          "$ref": "#/$defs/InstantValue"
+        },
+        {
+          "$ref": "#/$defs/NullValue"
+        },
+        {
+          "$ref": "#/$defs/EntityValue"
+        },
+        {
+          "$ref": "#/$defs/ListValue"
+        }
+      ]
+    },
+    "PropertyValue": {
+      "type": "object",
+      "properties": {
+        "property": {
+          "$ref": "#/$defs/PropertyId"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": [
+        "property",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EntityState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RelationshipId"
+        },
+        "source": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "target": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "GraphExtent": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityState"
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationshipState"
+          }
+        }
+      },
+      "required": [
+        "entities",
+        "relationships"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotPage": {
+      "type": "object",
+      "properties": {
+        "snapshotToken": {
+          "type": "string"
+        },
+        "page": {
+          "type": "integer"
+        },
+        "extent": {
+          "$ref": "#/$defs/GraphExtent"
+        }
+      },
+      "required": [
+        "snapshotToken",
+        "page",
+        "extent"
+      ],
+      "additionalProperties": false
+    },
+    "GraphSnapshotInput": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "snapshotPage"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "context": {
+          "$ref": "#/$defs/InputContext"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "page": {
+          "$ref": "#/$defs/SnapshotPage"
+        }
+      },
+      "required": [
+        "kind",
+        "request",
+        "context",
+        "binding",
+        "page"
+      ],
+      "additionalProperties": false
+    },
+    "GraphId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphVersion": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "tenant",
+        "graph",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectionId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ContentHash": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotBinding": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/GraphVersion"
+        }
+      },
+      "required": [
+        "port",
+        "snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "VirtualRegion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "providerDigest": {
+          "$ref": "#/$defs/ContentHash"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SnapshotBinding"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "providerDigest",
+        "providerVersion",
+        "definition",
+        "inputs"
+      ],
+      "additionalProperties": false
+    },
+    "GraphDescriptor": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "projection": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "ontology": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "virtualRegions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VirtualRegion"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "projection",
+        "ontology",
+        "virtualRegions"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotSeal": {
+      "type": "object",
+      "properties": {
+        "snapshotToken": {
+          "type": "string"
+        },
+        "descriptor": {
+          "$ref": "#/$defs/GraphDescriptor"
+        },
+        "pageCount": {
+          "type": "integer"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "snapshotToken",
+        "descriptor",
+        "pageCount",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "InputFrontier": {
+      "type": "object",
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourcePosition"
+          }
+        },
+        "graphInputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SnapshotBinding"
+          }
+        },
+        "configurationVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "positions",
+        "graphInputs",
+        "configurationVersion"
+      ],
+      "additionalProperties": false
+    },
+    "GraphSnapshotComplete": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "snapshotComplete"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "context": {
+          "$ref": "#/$defs/InputContext"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "seal": {
+          "$ref": "#/$defs/SnapshotSeal"
+        },
+        "frontier": {
+          "$ref": "#/$defs/InputFrontier"
+        }
+      },
+      "required": [
+        "kind",
+        "request",
+        "context",
+        "binding",
+        "seal",
+        "frontier"
+      ],
+      "additionalProperties": false
+    },
+    "EntityEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "relationship"
+        },
+        "id": {
+          "$ref": "#/$defs/RelationshipId"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelationshipState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelationshipState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "VirtualRegionEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "virtualRegion"
+        },
+        "id": {
+          "type": "string"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VirtualRegion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VirtualRegion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "ontology"
+        },
+        "before": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "after": {
+          "$ref": "#/$defs/OntologyRef"
+        }
+      },
+      "required": [
+        "kind",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "GraphEdit": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EntityEdit"
+        },
+        {
+          "$ref": "#/$defs/RelationshipEdit"
+        },
+        {
+          "$ref": "#/$defs/VirtualRegionEdit"
+        },
+        {
+          "$ref": "#/$defs/OntologyEdit"
+        }
+      ]
+    },
+    "ChangeCause": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputId"
+          }
+        },
+        "configurationVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inputs",
+        "configurationVersion"
+      ],
+      "additionalProperties": false
+    },
+    "GraphPatch": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "from": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "to": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "projection": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "extensionalFinite",
+            "symbolic"
+          ]
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphEdit"
+          }
+        },
+        "cause": {
+          "$ref": "#/$defs/ChangeCause"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "from",
+        "to",
+        "projection",
+        "profile",
+        "edits",
+        "cause"
+      ],
+      "additionalProperties": false
+    },
+    "GraphChangeInput": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "graphChange"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "context": {
+          "$ref": "#/$defs/InputContext"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "patch": {
+          "$ref": "#/$defs/GraphPatch"
+        },
+        "frontier": {
+          "$ref": "#/$defs/InputFrontier"
+        }
+      },
+      "required": [
+        "kind",
+        "request",
+        "context",
+        "binding",
+        "patch",
+        "frontier"
+      ],
+      "additionalProperties": false
+    },
+    "LogicalTimeInput": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "logicalTime"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        },
+        "context": {
+          "$ref": "#/$defs/InputContext"
+        },
+        "nanoseconds": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "request",
+        "context",
+        "nanoseconds"
+      ],
+      "additionalProperties": false
+    },
+    "EngineInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/NativeBatchInput"
+        },
+        {
+          "$ref": "#/$defs/GraphSnapshotInput"
+        },
+        {
+          "$ref": "#/$defs/GraphSnapshotComplete"
+        },
+        {
+          "$ref": "#/$defs/GraphChangeInput"
+        },
+        {
+          "$ref": "#/$defs/LogicalTimeInput"
+        }
+      ]
+    }
+  }
+}

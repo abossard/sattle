@@ -1,0 +1,38 @@
+name: Publish Sattle website
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'brainstorm/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Regenerate guide and design download
+        working-directory: brainstorm
+        run: |
+          python3 tools/package-design.py
+          python3 tools/build-atlas.py
+      - name: Check guide and source references
+        working-directory: brainstorm
+        run: node --test tests/atlas.test.cjs tests/content-projection.test.cjs
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: brainstorm/dist
+      - name: Publish
+        id: deployment
+        uses: actions/deploy-pages@v4

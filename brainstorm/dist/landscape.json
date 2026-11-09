@@ -1,0 +1,550 @@
+{
+  "sources": [
+    {
+      "id": "graph-lenses",
+      "type": "RESEARCH PAPER",
+      "year": "2010",
+      "title": "Bidirectionalizing Graph Transformations",
+      "url": "https://zhenjiang888.github.io/pub/icfp10a.pdf",
+      "note": "Forward graph views, backward updates and well-behaved bidirectional transformations.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "bijective-lenses",
+      "type": "RESEARCH PAPER",
+      "year": "2018",
+      "title": "Synthesizing Bijective Lenses",
+      "url": "https://www.cs.princeton.edu/~dpw/papers/synthesizing-lenses-popl2018.pdf",
+      "note": "Foundations for bijective lenses and invertible mappings; examples concern data formats.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "actionnex",
+      "type": "RESEARCH PREPRINT",
+      "year": "2026",
+      "title": "ActionNex: A Virtual Outage Manager for Cloud Computing",
+      "url": "https://arxiv.org/abs/2604.03512",
+      "note": "Outage context, critical events and human-assisted action recommendations.",
+      "tags": [
+        "observability"
+      ]
+    },
+    {
+      "id": "stream-model",
+      "type": "RESEARCH PAPER",
+      "year": "2016 / 2018",
+      "title": "Foundations for Streaming Model Transformations by Complex Event Processing",
+      "url": "https://link.springer.com/article/10.1007/s10270-016-0533-1",
+      "note": "Incremental model transformations and complex events.",
+      "tags": [
+        "transformation",
+        "streaming"
+      ]
+    },
+    {
+      "id": "software-arch",
+      "type": "RESEARCH PAPER",
+      "year": "2002",
+      "title": "A graph transformation approach to software architecture reconfiguration",
+      "url": "https://pure.royalholloway.ac.uk/en/publications/a-graph-transformation-approach-to-software-architecture-reconfig/",
+      "note": "Graph transformation applied to software architecture.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "tgg-roadmap",
+      "type": "RESEARCH SURVEY",
+      "year": "2016",
+      "title": "20 years of triple graph grammars: a roadmap for future research",
+      "url": "https://research.chalmers.se/en/publication/501213",
+      "note": "Source, correspondence and target models; synchronization.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "tgg-version",
+      "type": "RESEARCH PAPER",
+      "year": "2024",
+      "title": "Incremental model transformations with triple graph grammars for multi-version models",
+      "url": "https://link.springer.com/article/10.1007/s10270-024-01238-1",
+      "note": "Incremental synchronization across model versions.",
+      "tags": [
+        "transformation",
+        "streaming"
+      ]
+    },
+    {
+      "id": "tgg-correct",
+      "type": "RESEARCH PAPER",
+      "year": "2013 / 2015",
+      "title": "Model synchronization based on triple graph grammars: correctness, completeness and invertibility",
+      "url": "https://orbilu.uni.lu/handle/10993/4552",
+      "note": "Formal properties of model synchronization.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "multi-view",
+      "type": "RESEARCH PAPER",
+      "year": "2016",
+      "title": "Towards the Propagation of Model Updates along different Views in Multi-View Models",
+      "url": "https://orbilu.uni.lu/handle/10993/26582",
+      "note": "Prior work on updating multiple overlapping views.",
+      "tags": [
+        "transformation",
+        "ontology"
+      ]
+    },
+    {
+      "id": "ontology-change",
+      "type": "RESEARCH PAPER",
+      "year": "2015",
+      "title": "Algebraic graph transformations for formalizing ontology changes and evolving ontologies",
+      "url": "https://www.sciencedirect.com/science/article/abs/pii/S0950705114003748",
+      "note": "Graph transformations and ontology evolution.",
+      "tags": [
+        "ontology",
+        "transformation"
+      ]
+    },
+    {
+      "id": "raphtory",
+      "type": "RESEARCH PAPER",
+      "year": "2020",
+      "title": "Raphtory: Streaming Analysis of Distributed Temporal Graphs",
+      "url": "https://richardclegg.org/steer_raphtory_streaming_2020",
+      "note": "Streaming analysis of temporal graph history.",
+      "tags": [
+        "streaming"
+      ]
+    },
+    {
+      "id": "memory",
+      "type": "RESEARCH PAPER",
+      "year": "2021",
+      "title": "Controlling Memory Footprint of Stateful Streaming Graph Processing",
+      "url": "https://www.usenix.org/conference/atc21/presentation/vaziri",
+      "note": "Memory management for stateful graph streaming.",
+      "tags": [
+        "streaming"
+      ]
+    },
+    {
+      "id": "timely",
+      "type": "RESEARCH PAPER",
+      "year": "2013",
+      "title": "Incremental, iterative data processing with timely dataflow",
+      "url": "https://research.google/pubs/incremental-iterative-data-processing-with-timely-dataflow/",
+      "note": "Incremental and iterative distributed data processing.",
+      "tags": [
+        "streaming"
+      ]
+    },
+    {
+      "id": "dataflow",
+      "type": "RESEARCH PAPER",
+      "year": "2015",
+      "title": "The Dataflow Model",
+      "url": "https://research.google/pubs/the-dataflow-model-a-practical-approach-to-balancing-correctness-latency-and-cost-in-massive-scale-unbounded-out-of-order-data-processing/",
+      "note": "Correctness, latency and cost for unbounded, out-of-order data.",
+      "tags": [
+        "streaming"
+      ]
+    },
+    {
+      "id": "prism",
+      "type": "RESEARCH PAPER",
+      "year": "2026",
+      "title": "PRISM: Cross-Layer Observability Framework for Mobile Core Networks",
+      "url": "https://repository.tudelft.nl/record/uuid:799f60ab-0b2c-42d7-8768-7c7d389ca9e0",
+      "note": "Ontology-driven, cross-layer observability.",
+      "tags": [
+        "observability",
+        "ontology"
+      ]
+    },
+    {
+      "id": "aiops",
+      "type": "RESEARCH PAPER",
+      "year": "2026",
+      "title": "Toward context-aware anomaly detection for AIOps in microservices using dynamic knowledge graphs",
+      "url": "https://biblio.ugent.be/publication/01KGFFQAQX5QV2K3CADQ4TR04F",
+      "note": "Dynamic knowledge graphs for anomaly context.",
+      "tags": [
+        "observability"
+      ]
+    },
+    {
+      "id": "logs-llm",
+      "type": "RESEARCH PAPER",
+      "year": "2025",
+      "title": "From Logs to Knowledge: LLM-Powered Dynamic Knowledge Graphs for Real-Time Cloud Observability",
+      "url": "https://thesai.org/Publications/ViewPaper?Code=IJACSA&Issue=10&SerialNo=3&Volume=16",
+      "note": "A published approach to extracting graph knowledge from logs.",
+      "tags": [
+        "observability"
+      ]
+    },
+    {
+      "id": "infer",
+      "type": "RESEARCH PREPRINT",
+      "year": "2024",
+      "title": "Automated Inference of Graph Transformation Rules",
+      "url": "https://arxiv.org/abs/2404.02692",
+      "note": "Research on inferring graph transformation rules.",
+      "tags": [
+        "transformation"
+      ]
+    },
+    {
+      "id": "quine",
+      "type": "TECHNICAL DOCUMENTATION",
+      "year": "CURRENT",
+      "title": "Quine: Streaming Graph Architecture",
+      "url": "https://quine.io/core-concepts/architecture/",
+      "note": "Architecture documentation for streaming graph processing.",
+      "tags": [
+        "streaming",
+        "observability"
+      ]
+    },
+    {
+      "id": "smartscape",
+      "type": "PRODUCT DOCUMENTATION",
+      "year": "CURRENT",
+      "title": "Dynatrace Smartscape topology",
+      "url": "https://docs.dynatrace.com/docs/analyze-explore-automate/smartscape/smartscape-in-context-views/smartscape-view-topology",
+      "note": "A product example of connected observability topology.",
+      "tags": [
+        "observability"
+      ]
+    },
+    {
+      "id": "backstage",
+      "type": "PRODUCT DOCUMENTATION",
+      "year": "CURRENT",
+      "title": "Backstage software catalog: system model",
+      "url": "https://backstage.io/docs/features/software-catalog/system-model/",
+      "note": "A software catalog model for systems and components.",
+      "tags": [
+        "observability",
+        "ontology"
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "id": "impact",
+      "label": "Understand impact",
+      "x": 25,
+      "y": 9,
+      "title": "Understand impact",
+      "copy": "Connect changes in infrastructure and services to the capabilities they support.",
+      "sources": [
+        "prism",
+        "aiops",
+        "smartscape",
+        "actionnex",
+        "backstage"
+      ],
+      "explore": [
+        [
+          "examples.html#detection",
+          "See the detection examples"
+        ],
+        [
+          "examples.html#payment-path",
+          "See the payment capability"
+        ],
+        [
+          "#topics",
+          "Explore the topic map"
+        ]
+      ]
+    },
+    {
+      "id": "response",
+      "label": "Incident assistance",
+      "x": 67,
+      "y": 9,
+      "title": "Incident assistance",
+      "copy": "ActionNex summarizes outage context and recommends actions to people. Graph snapshots and diffs could provide extra context.",
+      "sources": [
+        "actionnex",
+        "aiops",
+        "prism"
+      ],
+      "explore": [
+        [
+          "#actionnex",
+          "Read about ActionNex"
+        ],
+        [
+          "#papers",
+          "Browse all research sources"
+        ]
+      ]
+    },
+    {
+      "id": "ontology",
+      "label": "Multiple ontologies",
+      "x": 23.5,
+      "y": 29,
+      "title": "Multiple ontologies",
+      "copy": "Ontologies define the types, relationships and properties used in a domain. The engine supports multiple ontologies; health modelling is one example. Each ontology has a version.",
+      "sources": [
+        "ontology-change",
+        "prism",
+        "backstage",
+        "multi-view"
+      ],
+      "explore": [
+        [
+          "examples.html#identity",
+          "Try the identity example"
+        ],
+        [
+          "examples.html#explorer",
+          "Explore the commerce and clinical examples"
+        ],
+        [
+          "#topics",
+          "Explore the topic map"
+        ]
+      ]
+    },
+    {
+      "id": "views",
+      "label": "Multiple graph views",
+      "x": 43,
+      "y": 29,
+      "title": "Multiple graph views",
+      "copy": "Each projection creates its own graph. Several projections can use the same inputs or another projection’s output.",
+      "sources": [
+        "multi-view",
+        "tgg-roadmap",
+        "stream-model",
+        "tgg-version",
+        "graph-lenses"
+      ],
+      "explore": [
+        [
+          "examples.html#explorer",
+          "Explore the output graphs"
+        ],
+        [
+          "#priorities",
+          "Choose research priorities"
+        ],
+        [
+          "#topics",
+          "Explore the topic map"
+        ],
+        [
+          "#papers",
+          "Browse all research sources"
+        ]
+      ]
+    },
+    {
+      "id": "transforms",
+      "label": "Graph transformations",
+      "x": 44,
+      "y": 49,
+      "title": "Graph transformations",
+      "copy": "Rules select and transform graph entities, relationships and attributes.",
+      "sources": [
+        "software-arch",
+        "tgg-version",
+        "tgg-correct",
+        "infer",
+        "tgg-roadmap",
+        "multi-view",
+        "graph-lenses",
+        "bijective-lenses"
+      ],
+      "explore": [
+        [
+          "#transformation",
+          "Try the TGG example"
+        ],
+        [
+          "examples.html#propagation",
+          "Try attribute propagation"
+        ],
+        [
+          "examples.html#how-it-works",
+          "See the transformation overview"
+        ]
+      ]
+    },
+    {
+      "id": "replay",
+      "label": "Deterministic replay",
+      "x": 35.5,
+      "y": 68,
+      "title": "Deterministic replay",
+      "copy": "A fixed projection, initial state, input order and time schedule define the result of a replay.",
+      "sources": [
+        "dataflow",
+        "raphtory",
+        "tgg-version",
+        "stream-model"
+      ],
+      "explore": [
+        [
+          "examples.html#replay",
+          "Try a projection update"
+        ],
+        [
+          "examples.html#memory",
+          "See retained inputs"
+        ],
+        [
+          "evaluation.html",
+          "Open the test design"
+        ]
+      ]
+    },
+    {
+      "id": "stream",
+      "label": "Streaming graph processing",
+      "x": 61,
+      "y": 68,
+      "title": "Streaming graph processing",
+      "copy": "Process records and update graphs as inputs arrive.",
+      "sources": [
+        "stream-model",
+        "quine",
+        "timely",
+        "memory",
+        "dataflow",
+        "raphtory"
+      ],
+      "explore": [
+        [
+          "#transformation",
+          "Explore the graph example"
+        ],
+        [
+          "evaluation.html",
+          "See the test design"
+        ],
+        [
+          "#papers",
+          "Browse all research sources"
+        ]
+      ]
+    },
+    {
+      "id": "ingest",
+      "label": "Telemetry & logs",
+      "x": 76.5,
+      "y": 83,
+      "title": "Telemetry and logs",
+      "copy": "The engine can process cloud records, network flows, telemetry and logs. The available inputs determine what it can show.",
+      "sources": [
+        "logs-llm",
+        "smartscape",
+        "prism",
+        "actionnex",
+        "aiops",
+        "quine"
+      ],
+      "explore": [
+        [
+          "examples.html#how-it-works",
+          "See how data is processed"
+        ],
+        [
+          "#topics",
+          "Explore the topic map"
+        ],
+        [
+          "#papers",
+          "Browse all research sources"
+        ]
+      ]
+    },
+    {
+      "id": "runtime",
+      "label": "Cloud runtime",
+      "x": 90,
+      "y": 95,
+      "title": "Cloud runtime",
+      "copy": "Compute, networking and storage provide the infrastructure for graph processing.",
+      "sources": [
+        "memory",
+        "timely",
+        "quine"
+      ],
+      "explore": [
+        [
+          "#transformation",
+          "Try the large graph example"
+        ],
+        [
+          "evaluation.html",
+          "See the test design"
+        ],
+        [
+          "#priorities",
+          "Choose research priorities"
+        ]
+      ]
+    }
+  ],
+  "edges": [
+    [
+      "impact",
+      "ontology"
+    ],
+    [
+      "impact",
+      "views"
+    ],
+    [
+      "ontology",
+      "transforms"
+    ],
+    [
+      "views",
+      "transforms"
+    ],
+    [
+      "transforms",
+      "replay"
+    ],
+    [
+      "transforms",
+      "stream"
+    ],
+    [
+      "replay",
+      "stream"
+    ],
+    [
+      "stream",
+      "ingest"
+    ],
+    [
+      "ingest",
+      "runtime"
+    ],
+    [
+      "impact",
+      "response"
+    ],
+    [
+      "response",
+      "ingest"
+    ]
+  ]
+}

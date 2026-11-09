@@ -1,0 +1,45 @@
+{
+  "testGroups": 8,
+  "results": [
+    {
+      "name": "typed rows compose",
+      "expectation": "compiles",
+      "status": "passed"
+    },
+    {
+      "name": "property value matches",
+      "expectation": "compiles",
+      "status": "passed"
+    },
+    {
+      "name": "entity and relationship IDs differ",
+      "expectation": "type error",
+      "status": "passed"
+    },
+    {
+      "name": "property binding rejects numeric value",
+      "expectation": "type error",
+      "status": "passed"
+    },
+    {
+      "name": "predicate rejects nonboolean operand",
+      "expectation": "type error",
+      "status": "passed"
+    },
+    {
+      "name": "rows reject unrelated union",
+      "expectation": "type error",
+      "status": "passed"
+    },
+    {
+      "name": "patch expression rejects signed delta",
+      "expectation": "type error",
+      "status": "passed"
+    },
+    {
+      "name": "typed edge rejects wrong endpoint",
+      "expectation": "type error",
+      "status": "passed"
+    }
+  ]
+}

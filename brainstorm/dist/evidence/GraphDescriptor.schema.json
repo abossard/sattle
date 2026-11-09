@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GraphDescriptor",
+  "$ref": "#/$defs/GraphDescriptor",
+  "$defs": {
+    "TenantId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphVersion": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "tenant",
+        "graph",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectionId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ContentHash": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotBinding": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/GraphVersion"
+        }
+      },
+      "required": [
+        "port",
+        "snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "VirtualRegion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "providerDigest": {
+          "$ref": "#/$defs/ContentHash"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SnapshotBinding"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "providerDigest",
+        "providerVersion",
+        "definition",
+        "inputs"
+      ],
+      "additionalProperties": false
+    },
+    "GraphDescriptor": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "projection": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "ontology": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "virtualRegions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/VirtualRegion"
+          }
+        }
+      },
+      "required": [
+        "version",
+        "projection",
+        "ontology",
+        "virtualRegions"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

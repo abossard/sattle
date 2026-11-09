@@ -1,0 +1,13 @@
+{
+  "type": "DELETED",
+  "object": {
+    "apiVersion": "v1",
+    "kind": "Pod",
+    "metadata": {
+      "name": "payments-1",
+      "namespace": "shop",
+      "uid": "pod-uid-a",
+      "resourceVersion": "124"
+    }
+  }
+}

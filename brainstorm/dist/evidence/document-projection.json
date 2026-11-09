@@ -1,0 +1,111 @@
+{
+  "schemaVersion": "1.0",
+  "id": "service-health",
+  "version": "1",
+  "ontology": {
+    "id": "infra",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example"
+    }
+  },
+  "inputs": [
+    {
+      "name": "services",
+      "contract": "sattle.graph",
+      "version": "1"
+    }
+  ],
+  "operators": [
+    {
+      "kind": "match",
+      "id": {
+        "value": "match"
+      },
+      "binding": "services",
+      "pattern": {
+        "nodes": [
+          {
+            "variable": "s",
+            "type": {
+              "value": "Service"
+            }
+          }
+        ],
+        "edges": []
+      }
+    },
+    {
+      "kind": "map",
+      "id": {
+        "value": "rows"
+      },
+      "fields": [
+        {
+          "field": "id",
+          "value": {
+            "kind": "field",
+            "field": "s"
+          }
+        },
+        {
+          "field": "name",
+          "value": {
+            "kind": "field",
+            "field": "s.name"
+          }
+        },
+        {
+          "field": "health",
+          "value": {
+            "kind": "field",
+            "field": "s.health"
+          }
+        }
+      ]
+    }
+  ],
+  "wires": [
+    {
+      "from": {
+        "value": "match"
+      },
+      "output": "out",
+      "to": {
+        "value": "rows"
+      },
+      "input": "in"
+    }
+  ],
+  "templates": [
+    {
+      "ruleId": "services",
+      "kind": "table",
+      "rows": {
+        "value": "rows"
+      },
+      "orderBy": [
+        {
+          "field": "name",
+          "direction": "ascending"
+        },
+        {
+          "field": "id",
+          "direction": "ascending"
+        }
+      ],
+      "fields": [
+        "name",
+        "health"
+      ],
+      "missing": "literalUnknown",
+      "headingLevel": null,
+      "blockIdentityFields": [],
+      "rowIdentityFields": [
+        "id"
+      ]
+    }
+  ],
+  "maximumBlocks": 10000,
+  "overflow": "reject"
+}

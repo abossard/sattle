@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "1.0",
+  "from": {
+    "tenant": {
+      "value": "demo"
+    },
+    "graph": {
+      "value": "g"
+    },
+    "revision": {
+      "value": "1"
+    }
+  },
+  "to": {
+    "tenant": {
+      "value": "demo"
+    },
+    "graph": {
+      "value": "g"
+    },
+    "revision": {
+      "value": "2"
+    }
+  },
+  "projection": {
+    "value": "network"
+  },
+  "profile": "extensionalFinite",
+  "edits": [
+    {
+      "kind": "entity",
+      "id": {
+        "value": "a"
+      },
+      "before": {
+        "id": {
+          "value": "a"
+        },
+        "type": {
+          "value": "Service"
+        },
+        "properties": [
+          {
+            "property": {
+              "value": "health"
+            },
+            "value": {
+              "kind": "text",
+              "value": "healthy"
+            }
+          }
+        ]
+      },
+      "after": {
+        "id": {
+          "value": "a"
+        },
+        "type": {
+          "value": "Service"
+        },
+        "properties": [
+          {
+            "property": {
+              "value": "health"
+            },
+            "value": {
+              "kind": "text",
+              "value": "degraded"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "entity",
+      "id": {
+        "value": "b"
+      },
+      "before": null,
+      "after": {
+        "id": {
+          "value": "b"
+        },
+        "type": {
+          "value": "Service"
+        },
+        "properties": [
+          {
+            "property": {
+              "value": "health"
+            },
+            "value": {
+              "kind": "text",
+              "value": "healthy"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "cause": {
+    "inputs": [],
+    "configurationVersion": "1"
+  }
+}

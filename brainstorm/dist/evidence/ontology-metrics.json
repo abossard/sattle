@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "1.0",
+  "reference": {
+    "id": "metrics",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example-metrics"
+    }
+  },
+  "noEntityType": {
+    "value": "NoType"
+  },
+  "noRelationshipType": {
+    "value": "NoType"
+  },
+  "properties": [
+    {
+      "id": {
+        "value": "name"
+      },
+      "valueKind": "integer",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    }
+  ],
+  "entityTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "Service"
+      },
+      "properties": [
+        {
+          "value": "name"
+        }
+      ]
+    }
+  ],
+  "relationshipTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "sourceTypes": [],
+      "targetTypes": [],
+      "properties": []
+    }
+  ]
+}

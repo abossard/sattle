@@ -1,0 +1,22 @@
+{
+  "count": 1,
+  "totalRecords": 1,
+  "resultTruncated": "false",
+  "data": [
+    {
+      "id": "/subscriptions/demo/resourceGroups/shop/providers/Microsoft.Compute/virtualMachines/payments",
+      "name": "payments",
+      "type": "microsoft.compute/virtualmachines",
+      "location": "switzerlandnorth",
+      "properties": {
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "/subscriptions/demo/resourceGroups/shop/providers/Microsoft.Network/networkInterfaces/payments-nic"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

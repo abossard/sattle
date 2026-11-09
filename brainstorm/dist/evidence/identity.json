@@ -1,0 +1,30 @@
+{
+  "key": {
+    "tenant": {
+      "value": "demo"
+    },
+    "domain": {
+      "value": "kubernetes-pod"
+    },
+    "canonicalizationVersion": "1",
+    "components": [
+      {
+        "name": "cluster",
+        "value": {
+          "kind": "text",
+          "value": "cluster-a"
+        }
+      },
+      {
+        "name": "uid",
+        "value": {
+          "kind": "text",
+          "value": "pod-uid-a"
+        }
+      }
+    ]
+  },
+  "entity": {
+    "value": "pod-a"
+  }
+}

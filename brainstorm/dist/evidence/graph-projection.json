@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "1.0",
+  "id": {
+    "value": "services"
+  },
+  "version": "1",
+  "ontology": {
+    "id": "infra",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example"
+    }
+  },
+  "inputs": [
+    {
+      "name": "observations",
+      "contract": "sattle.service-observation",
+      "version": "1"
+    }
+  ],
+  "scaffold": {
+    "entities": [],
+    "relationships": []
+  },
+  "operators": [
+    {
+      "kind": "input",
+      "id": {
+        "value": "input"
+      },
+      "binding": "observations",
+      "row": {
+        "fields": [
+          {
+            "name": "uid",
+            "type": "text",
+            "optional": false
+          },
+          {
+            "name": "name",
+            "type": "text",
+            "optional": false
+          },
+          {
+            "name": "health",
+            "type": "text",
+            "optional": false
+          }
+        ]
+      }
+    },
+    {
+      "kind": "emitEntity",
+      "id": {
+        "value": "emit"
+      },
+      "identity": {
+        "domain": {
+          "value": "service-instance"
+        },
+        "canonicalizationVersion": "1",
+        "components": [
+          {
+            "field": "uid",
+            "value": {
+              "kind": "field",
+              "field": "uid"
+            }
+          }
+        ]
+      },
+      "type": {
+        "value": "Service"
+      },
+      "properties": [
+        {
+          "property": {
+            "value": "name"
+          },
+          "value": {
+            "kind": "field",
+            "field": "name"
+          }
+        },
+        {
+          "property": {
+            "value": "health"
+          },
+          "value": {
+            "kind": "field",
+            "field": "health"
+          }
+        }
+      ]
+    }
+  ],
+  "wires": [
+    {
+      "from": {
+        "value": "input"
+      },
+      "output": "out",
+      "to": {
+        "value": "emit"
+      },
+      "input": "in"
+    }
+  ],
+  "outputs": [
+    {
+      "value": "emit"
+    }
+  ],
+  "retainedInputsPerElement": 8,
+  "bidirectionalRules": []
+}

@@ -1,0 +1,1307 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectionDefinition",
+  "$ref": "#/$defs/ProjectionDefinition",
+  "$defs": {
+    "ProjectionId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ContentHash": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "InputBinding": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "contract": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "contract",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "EntityId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TypeId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TextValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "IntegerValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(0|-?[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DecimalValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "decimal"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]\u002B)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "BooleanValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "InstantValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "instant"
+        },
+        "value": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "NullValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "null"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "EntityValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "value": {
+          "$ref": "#/$defs/EntityId"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ListValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "list"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphValue"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "GraphValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextValue"
+        },
+        {
+          "$ref": "#/$defs/IntegerValue"
+        },
+        {
+          "$ref": "#/$defs/DecimalValue"
+        },
+        {
+          "$ref": "#/$defs/BooleanValue"
+        },
+        {
+          "$ref": "#/$defs/InstantValue"
+        },
+        {
+          "$ref": "#/$defs/NullValue"
+        },
+        {
+          "$ref": "#/$defs/EntityValue"
+        },
+        {
+          "$ref": "#/$defs/ListValue"
+        }
+      ]
+    },
+    "PropertyValue": {
+      "type": "object",
+      "properties": {
+        "property": {
+          "$ref": "#/$defs/PropertyId"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": [
+        "property",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EntityState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RelationshipId"
+        },
+        "source": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "target": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "GraphExtent": {
+      "type": "object",
+      "properties": {
+        "entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityState"
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationshipState"
+          }
+        }
+      },
+      "required": [
+        "entities",
+        "relationships"
+      ],
+      "additionalProperties": false
+    },
+    "Field": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "text",
+            "integer",
+            "decimal",
+            "boolean",
+            "instant",
+            "entity",
+            "relationship"
+          ]
+        },
+        "optional": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "type",
+        "optional"
+      ],
+      "additionalProperties": false
+    },
+    "RowType": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Field"
+          }
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "additionalProperties": false
+    },
+    "OperatorId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "InputOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "input"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "row": {
+          "$ref": "#/$defs/RowType"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "binding",
+        "row",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "NodePattern": {
+      "type": "object",
+      "properties": {
+        "variable": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        }
+      },
+      "required": [
+        "variable",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "EdgePattern": {
+      "type": "object",
+      "properties": {
+        "variable": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        }
+      },
+      "required": [
+        "variable",
+        "source",
+        "target",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    "GraphPattern": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NodePattern"
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EdgePattern"
+          }
+        }
+      },
+      "required": [
+        "nodes",
+        "edges"
+      ],
+      "additionalProperties": false
+    },
+    "MatchOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "match"
+        },
+        "binding": {
+          "type": "string"
+        },
+        "pattern": {
+          "$ref": "#/$defs/GraphPattern"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "binding",
+        "pattern",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Literal": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "literal"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "FieldExpression": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "field"
+        },
+        "field": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "field"
+      ],
+      "additionalProperties": false
+    },
+    "CallExpression": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "call"
+        },
+        "function": {
+          "type": "string",
+          "enum": [
+            "equal",
+            "notEqual",
+            "and",
+            "or",
+            "not",
+            "add",
+            "subtract",
+            "multiply",
+            "divide",
+            "lessThan",
+            "greaterThan",
+            "concat",
+            "coalesce",
+            "lowerInvariant"
+          ]
+        },
+        "arguments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Expression"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "function",
+        "arguments"
+      ],
+      "additionalProperties": false
+    },
+    "Expression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Literal"
+        },
+        {
+          "$ref": "#/$defs/FieldExpression"
+        },
+        {
+          "$ref": "#/$defs/CallExpression"
+        }
+      ]
+    },
+    "FilterOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "filter"
+        },
+        "predicate": {
+          "$ref": "#/$defs/Expression"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "predicate",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Assignment": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Expression"
+        }
+      },
+      "required": [
+        "field",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "MapOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "map"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "fields",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "JoinOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "join"
+        },
+        "on": {
+          "$ref": "#/$defs/Expression"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "on",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "UnionOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "union"
+        },
+        "conflict": {
+          "type": "string",
+          "enum": [
+            "requireEqual",
+            "preferFirstPort",
+            "preferLastPort",
+            "preserveEvidence"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "conflict",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DistinctOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "distinct"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "AggregateField": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "function": {
+          "type": "string",
+          "enum": [
+            "countDistinct",
+            "sum",
+            "min",
+            "max",
+            "any",
+            "all"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/Expression"
+        }
+      },
+      "required": [
+        "name",
+        "function",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GroupOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "group"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        },
+        "aggregates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AggregateField"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "keys",
+        "aggregates",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "TraverseOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "traverse"
+        },
+        "relationship": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "direction": {
+          "type": "string",
+          "enum": [
+            "outgoing",
+            "incoming",
+            "either"
+          ]
+        },
+        "minimumDepth": {
+          "type": "integer"
+        },
+        "maximumDepth": {
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "relationship",
+        "direction",
+        "minimumDepth",
+        "maximumDepth",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "IdentityDomain": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "IdentityExpression": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "$ref": "#/$defs/IdentityDomain"
+        },
+        "canonicalizationVersion": {
+          "type": "string"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        }
+      },
+      "required": [
+        "domain",
+        "canonicalizationVersion",
+        "components"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyAssignment": {
+      "type": "object",
+      "properties": {
+        "property": {
+          "$ref": "#/$defs/PropertyId"
+        },
+        "value": {
+          "$ref": "#/$defs/Expression"
+        }
+      },
+      "required": [
+        "property",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EmitEntityOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "emitEntity"
+        },
+        "identity": {
+          "$ref": "#/$defs/IdentityExpression"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyAssignment"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "identity",
+        "type",
+        "properties",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "EmitRelationshipOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "emitRelationship"
+        },
+        "identityRule": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Expression"
+        },
+        "target": {
+          "$ref": "#/$defs/Expression"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyAssignment"
+          }
+        },
+        "retypeCollision": {
+          "type": "string",
+          "enum": [
+            "requireEqual",
+            "preferFirstPort",
+            "preferLastPort",
+            "preserveEvidence"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "identityRule",
+        "source",
+        "target",
+        "type",
+        "properties",
+        "retypeCollision",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Wire": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/OperatorId"
+        },
+        "output": {
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/OperatorId"
+        },
+        "input": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "output",
+        "to",
+        "input"
+      ],
+      "additionalProperties": false
+    },
+    "FixpointOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "fixpoint"
+        },
+        "relation": {
+          "type": "string"
+        },
+        "row": {
+          "$ref": "#/$defs/RowType"
+        },
+        "body": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operator"
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Wire"
+          }
+        },
+        "result": {
+          "$ref": "#/$defs/OperatorId"
+        },
+        "finiteDomainBinding": {
+          "type": "string"
+        },
+        "maximumFacts": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumIterations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "relation",
+        "row",
+        "body",
+        "wires",
+        "result",
+        "finiteDomainBinding",
+        "maximumFacts",
+        "maximumIterations",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "WindowOperator": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "window"
+        },
+        "timestampField": {
+          "type": "string"
+        },
+        "widthNanoseconds": {
+          "type": "integer"
+        },
+        "latePolicy": {
+          "type": "string",
+          "enum": [
+            "ignore",
+            "revise",
+            "reject"
+          ]
+        },
+        "id": {
+          "$ref": "#/$defs/OperatorId"
+        }
+      },
+      "required": [
+        "kind",
+        "timestampField",
+        "widthNanoseconds",
+        "latePolicy",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Operator": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/InputOperator"
+        },
+        {
+          "$ref": "#/$defs/MatchOperator"
+        },
+        {
+          "$ref": "#/$defs/FilterOperator"
+        },
+        {
+          "$ref": "#/$defs/MapOperator"
+        },
+        {
+          "$ref": "#/$defs/JoinOperator"
+        },
+        {
+          "$ref": "#/$defs/UnionOperator"
+        },
+        {
+          "$ref": "#/$defs/DistinctOperator"
+        },
+        {
+          "$ref": "#/$defs/GroupOperator"
+        },
+        {
+          "$ref": "#/$defs/TraverseOperator"
+        },
+        {
+          "$ref": "#/$defs/EmitEntityOperator"
+        },
+        {
+          "$ref": "#/$defs/EmitRelationshipOperator"
+        },
+        {
+          "$ref": "#/$defs/FixpointOperator"
+        },
+        {
+          "$ref": "#/$defs/WindowOperator"
+        }
+      ]
+    },
+    "CorrespondenceTemplate": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "sourceVariables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "targetVariables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "complement": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          }
+        }
+      },
+      "required": [
+        "name",
+        "sourceVariables",
+        "targetVariables",
+        "complement"
+      ],
+      "additionalProperties": false
+    },
+    "RuleProgram": {
+      "type": "object",
+      "properties": {
+        "operators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operator"
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Wire"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperatorId"
+          }
+        }
+      },
+      "required": [
+        "operators",
+        "wires",
+        "outputs"
+      ],
+      "additionalProperties": false
+    },
+    "BidirectionalRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "sourcePattern": {
+          "$ref": "#/$defs/GraphPattern"
+        },
+        "targetPattern": {
+          "$ref": "#/$defs/GraphPattern"
+        },
+        "correspondences": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CorrespondenceTemplate"
+          }
+        },
+        "forward": {
+          "$ref": "#/$defs/RuleProgram"
+        },
+        "backward": {
+          "$ref": "#/$defs/RuleProgram"
+        },
+        "requiredLaws": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "getPut",
+              "putGet"
+            ]
+          }
+        }
+      },
+      "required": [
+        "id",
+        "sourcePattern",
+        "targetPattern",
+        "correspondences",
+        "forward",
+        "backward",
+        "requiredLaws"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectionDefinition": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "id": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "version": {
+          "type": "string"
+        },
+        "ontology": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputBinding"
+          }
+        },
+        "scaffold": {
+          "$ref": "#/$defs/GraphExtent"
+        },
+        "operators": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Operator"
+          }
+        },
+        "wires": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Wire"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OperatorId"
+          }
+        },
+        "retainedInputsPerElement": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "bidirectionalRules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BidirectionalRule"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "id",
+        "version",
+        "ontology",
+        "inputs",
+        "scaffold",
+        "operators",
+        "wires",
+        "outputs",
+        "retainedInputsPerElement",
+        "bidirectionalRules"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,0 +1,117 @@
+[
+  {
+    "title": "Explore your system with graph views.",
+    "url": "examples.html#section-1",
+    "page": "examples.html"
+  },
+  {
+    "title": "How the engine creates a graph.",
+    "url": "examples.html#how-it-works",
+    "page": "examples.html"
+  },
+  {
+    "title": "Connect infrastructure to a business capability.",
+    "url": "examples.html#payment-path",
+    "page": "examples.html"
+  },
+  {
+    "title": "Detect changes and problems.",
+    "url": "examples.html#detection",
+    "page": "examples.html"
+  },
+  {
+    "title": "Define identity, types and views.",
+    "url": "examples.html#model",
+    "page": "examples.html"
+  },
+  {
+    "title": "Explore the system from different angles.",
+    "url": "examples.html#section-6",
+    "page": "examples.html"
+  },
+  {
+    "title": "Explore changes over time.",
+    "url": "examples.html#explorer",
+    "page": "examples.html"
+  },
+  {
+    "title": "Change the view. Replay the inputs.",
+    "url": "examples.html#replay",
+    "page": "examples.html"
+  },
+  {
+    "title": "Test graphs and graph-change events.",
+    "url": "examples.html#section-9",
+    "page": "examples.html"
+  },
+  {
+    "title": "Input \u2192 output \u2192 check",
+    "url": "evaluation.html#plan",
+    "page": "evaluation.html"
+  },
+  {
+    "title": "Run the cases.",
+    "url": "evaluation.html#simulation",
+    "page": "evaluation.html"
+  },
+  {
+    "title": "Decision record.",
+    "url": "evaluation.html#decisions",
+    "page": "evaluation.html"
+  },
+  {
+    "title": "Explore the engine and its research.",
+    "url": "index.html#landscape",
+    "page": "index.html"
+  },
+  {
+    "title": "Explore the topics.",
+    "url": "index.html#topics",
+    "page": "index.html"
+  },
+  {
+    "title": "Choose your priorities.",
+    "url": "index.html#priorities",
+    "page": "index.html"
+  },
+  {
+    "title": "See how triple graph grammars work.",
+    "url": "index.html#transformation",
+    "page": "index.html"
+  },
+  {
+    "title": "Read the sources.",
+    "url": "index.html#papers",
+    "page": "index.html"
+  },
+  {
+    "title": "Test the engine.",
+    "url": "index.html#section-18",
+    "page": "index.html"
+  },
+  {
+    "title": "Propagate attributes",
+    "url": "examples.html#propagation",
+    "page": "examples.html"
+  },
+  {
+    "title": "Which fields define identity?",
+    "url": "examples.html#identity",
+    "page": "examples.html"
+  },
+  {
+    "title": "Which inputs changed each element?",
+    "url": "examples.html#memory",
+    "page": "examples.html"
+  },
+  {
+    "title": "ActionNex and incident response",
+    "url": "index.html#actionnex",
+    "page": "index.html"
+  },
+  {
+    "title": "Further reading",
+    "url": "examples.html#further-reading",
+    "page": "examples.html"
+  }
+]

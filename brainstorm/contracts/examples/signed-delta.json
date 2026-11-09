@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "1.0",
+  "tenant": {
+    "value": "demo"
+  },
+  "projection": {
+    "value": "network"
+  },
+  "ontology": {
+    "id": "infra",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example"
+    }
+  },
+  "terms": [
+    {
+      "fact": {
+        "kind": "entity",
+        "state": {
+          "id": {
+            "value": "a"
+          },
+          "type": {
+            "value": "Service"
+          },
+          "properties": [
+            {
+              "property": {
+                "value": "health"
+              },
+              "value": {
+                "kind": "text",
+                "value": "healthy"
+              }
+            }
+          ]
+        }
+      },
+      "weight": "-1"
+    },
+    {
+      "fact": {
+        "kind": "entity",
+        "state": {
+          "id": {
+            "value": "a"
+          },
+          "type": {
+            "value": "Service"
+          },
+          "properties": [
+            {
+              "property": {
+                "value": "health"
+              },
+              "value": {
+                "kind": "text",
+                "value": "degraded"
+              }
+            }
+          ]
+        }
+      },
+      "weight": "1"
+    }
+  ]
+}

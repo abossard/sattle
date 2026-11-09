@@ -1,0 +1,1487 @@
+{
+  "SourceFamily": {
+    "file": "Adapters.cs",
+    "line": 8,
+    "text": "public enum SourceFamily { Hubble, AzureResourceGraph, Kubernetes, AzureNetworkWatcher, OpenTelemetry }"
+  },
+  "AdapterDefinition": {
+    "file": "Adapters.cs",
+    "line": 9,
+    "text": "public sealed record AdapterDefinition(SourceFamily Family, string Version,\n    ImmutableArray<NativeFormat> Formats, ProjectionDefinition Mapping);"
+  },
+  "IGraphAdapter": {
+    "file": "Adapters.cs",
+    "line": 12,
+    "text": "public interface IGraphAdapter<TNative>\n{\n    IAsyncEnumerable<AdaptationResult> AdaptAsync(IAsyncEnumerable<NativeInput<TNative>> input,\n        AdapterDefinition definition, CancellationToken cancellationToken = default);\n}"
+  },
+  "NativeInput": {
+    "file": "Adapters.cs",
+    "line": 17,
+    "text": "public sealed record NativeInput<T>(InputContext Context, T Payload);"
+  },
+  "IdentityCandidate": {
+    "file": "Adapters.cs",
+    "line": 18,
+    "text": "public sealed record IdentityCandidate(string LocalName, IdentityKey Key);"
+  },
+  "RelationshipCandidate": {
+    "file": "Adapters.cs",
+    "line": 19,
+    "text": "public sealed record RelationshipCandidate(string LocalName, string SourceLocalName,\n    string TargetLocalName, TypeId Type, ImmutableArray<PropertyValue> Properties);"
+  },
+  "EntityCandidate": {
+    "file": "Adapters.cs",
+    "line": 21,
+    "text": "public sealed record EntityCandidate(string LocalName, IdentityKey Identity, TypeId Type,\n    ImmutableArray<PropertyValue> Properties);"
+  },
+  "GraphObservation": {
+    "file": "Adapters.cs",
+    "line": 23,
+    "text": "public sealed record GraphObservation(string ContributionKey, ImmutableArray<EntityCandidate> Entities,\n    ImmutableArray<RelationshipCandidate> Relationships, ImmutableArray<IdentityEvidence> Evidence);"
+  },
+  "AdaptationResult": {
+    "file": "Adapters.cs",
+    "line": 31,
+    "text": "public abstract record AdaptationResult(TenantId Tenant, InputId Input);"
+  },
+  "AdaptedObservation": {
+    "file": "Adapters.cs",
+    "line": 32,
+    "text": "public sealed record AdaptedObservation(TenantId Tenant, InputId Input, GraphObservation Observation) : AdaptationResult(Tenant, Input);"
+  },
+  "AdaptedScopeEnd": {
+    "file": "Adapters.cs",
+    "line": 33,
+    "text": "public sealed record AdaptedScopeEnd(TenantId Tenant, InputId Input, SnapshotScope Scope, string ScanId,\n    bool AllPagesReceived) : AdaptationResult(Tenant, Input);"
+  },
+  "AdaptedLoss": {
+    "file": "Adapters.cs",
+    "line": 35,
+    "text": "public sealed record AdaptedLoss(TenantId Tenant, InputId Input, SourcePosition? Position, string Reason) : AdaptationResult(Tenant, Input);"
+  },
+  "AdaptationRejected": {
+    "file": "Adapters.cs",
+    "line": 36,
+    "text": "public sealed record AdaptationRejected(TenantId Tenant, InputId Input, ImmutableArray<Diagnostic> Errors) : AdaptationResult(Tenant, Input);"
+  },
+  "HubbleMessage": {
+    "file": "Adapters.cs",
+    "line": 39,
+    "text": "public sealed record HubbleMessage(NativeFormat Format, ImmutableArray<byte> Bytes);"
+  },
+  "AzureResourceGraphPage": {
+    "file": "Adapters.cs",
+    "line": 40,
+    "text": "public sealed record AzureResourceGraphPage(NativeFormat Format, ImmutableArray<byte> Bytes,\n    string ScanId, SnapshotScope Scope, string? SkipToken, bool ResultTruncated);"
+  },
+  "KubernetesMessage": {
+    "file": "Adapters.cs",
+    "line": 42,
+    "text": "public sealed record KubernetesMessage(NativeFormat Format, ImmutableArray<byte> Bytes,\n    string ClusterIdentity, string? ResourceVersion);"
+  },
+  "NetworkWatcherRecord": {
+    "file": "Adapters.cs",
+    "line": 44,
+    "text": "public sealed record NetworkWatcherRecord(NativeFormat Format, ImmutableArray<byte> Bytes,\n    string FlowLogResourceId, int FlowLogVersion);"
+  },
+  "OpenTelemetryExport": {
+    "file": "Adapters.cs",
+    "line": 46,
+    "text": "public sealed record OpenTelemetryExport(NativeFormat Format, ImmutableArray<byte> Bytes,\n    string Signal, string? SchemaUrl);"
+  },
+  "IHubbleAdapter": {
+    "file": "Adapters.cs",
+    "line": 48,
+    "text": "public interface IHubbleAdapter : IGraphAdapter<HubbleMessage>;"
+  },
+  "IAzureResourceGraphAdapter": {
+    "file": "Adapters.cs",
+    "line": 49,
+    "text": "public interface IAzureResourceGraphAdapter : IGraphAdapter<AzureResourceGraphPage>;"
+  },
+  "IKubernetesAdapter": {
+    "file": "Adapters.cs",
+    "line": 50,
+    "text": "public interface IKubernetesAdapter : IGraphAdapter<KubernetesMessage>;"
+  },
+  "INetworkWatcherAdapter": {
+    "file": "Adapters.cs",
+    "line": 51,
+    "text": "public interface INetworkWatcherAdapter : IGraphAdapter<NetworkWatcherRecord>;"
+  },
+  "IOpenTelemetryAdapter": {
+    "file": "Adapters.cs",
+    "line": 52,
+    "text": "public interface IOpenTelemetryAdapter : IGraphAdapter<OpenTelemetryExport>;"
+  },
+  "AdaptedWithdrawal": {
+    "file": "Adapters.cs",
+    "line": 54,
+    "text": "public sealed record AdaptedWithdrawal(TenantId Tenant, InputId Input, string Source, string ContributionKey) : AdaptationResult(Tenant, Input);"
+  },
+  "DocumentBlock": {
+    "file": "Documents.cs",
+    "line": 15,
+    "text": "public abstract record DocumentBlock(BlockId Id);"
+  },
+  "Heading": {
+    "file": "Documents.cs",
+    "line": 16,
+    "text": "public sealed record Heading(BlockId Id, int Level, string Text) : DocumentBlock(Id);"
+  },
+  "Paragraph": {
+    "file": "Documents.cs",
+    "line": 17,
+    "text": "public sealed record Paragraph(BlockId Id, string Text) : DocumentBlock(Id);"
+  },
+  "TableRow": {
+    "file": "Documents.cs",
+    "line": 18,
+    "text": "public sealed record TableRow(string Key, ImmutableArray<string> Cells);"
+  },
+  "DocumentTable": {
+    "file": "Documents.cs",
+    "line": 19,
+    "text": "public sealed record DocumentTable(BlockId Id, ImmutableArray<string> Columns,\n    ImmutableArray<TableRow> Rows) : DocumentBlock(Id);"
+  },
+  "BulletList": {
+    "file": "Documents.cs",
+    "line": 21,
+    "text": "public sealed record BulletList(BlockId Id, ImmutableArray<string> Items) : DocumentBlock(Id);"
+  },
+  "CodeBlock": {
+    "file": "Documents.cs",
+    "line": 22,
+    "text": "public sealed record CodeBlock(BlockId Id, string Language, string Text) : DocumentBlock(Id);"
+  },
+  "DocumentVersion": {
+    "file": "Documents.cs",
+    "line": 23,
+    "text": "public sealed record DocumentVersion(TenantId Tenant, DocumentId Document, Revision Revision);"
+  },
+  "DocumentCompleteness": {
+    "file": "Documents.cs",
+    "line": 24,
+    "text": "public enum DocumentCompleteness { Complete, ExplicitlyTruncated }"
+  },
+  "DocumentSnapshot": {
+    "file": "Documents.cs",
+    "line": 25,
+    "text": "public sealed record DocumentSnapshot(string SchemaVersion, DocumentVersion Version,\n    string ProjectionVersion, ImmutableArray<GraphVersion> Sources,\n    ImmutableArray<DocumentBlock> Blocks, DocumentCompleteness Completeness);"
+  },
+  "BlockEdit": {
+    "file": "Documents.cs",
+    "line": 28,
+    "text": "public sealed record BlockEdit(BlockId Id, DocumentBlock? Before, DocumentBlock? After);"
+  },
+  "DocumentPatch": {
+    "file": "Documents.cs",
+    "line": 30,
+    "text": "public sealed record DocumentPatch(string SchemaVersion, DocumentVersion From, DocumentVersion To,\n    ImmutableArray<GraphVersion> BeforeSources, ImmutableArray<GraphVersion> AfterSources,\n    string BeforeProjectionVersion, string AfterProjectionVersion,\n    ImmutableArray<BlockEdit> Edits, ImmutableArray<BlockId> BeforeOrder,\n    ImmutableArray<BlockId> AfterOrder, DocumentCompleteness BeforeCompleteness,\n    DocumentCompleteness AfterCompleteness);"
+  },
+  "DocumentFormat": {
+    "file": "Documents.cs",
+    "line": 36,
+    "text": "public enum DocumentFormat { Markdown, Html, PlainText }"
+  },
+  "MissingValue": {
+    "file": "Documents.cs",
+    "line": 37,
+    "text": "public enum MissingValue { Empty, LiteralUnknown, Reject }"
+  },
+  "SortDirection": {
+    "file": "Documents.cs",
+    "line": 38,
+    "text": "public enum SortDirection { Ascending, Descending }"
+  },
+  "SortKey": {
+    "file": "Documents.cs",
+    "line": 39,
+    "text": "public sealed record SortKey(string Field, SortDirection Direction);"
+  },
+  "BlockTemplateKind": {
+    "file": "Documents.cs",
+    "line": 40,
+    "text": "public enum BlockTemplateKind { Heading, Paragraph, Table, List, Code }"
+  },
+  "DocumentTemplate": {
+    "file": "Documents.cs",
+    "line": 41,
+    "text": "public sealed record DocumentTemplate(string RuleId, BlockTemplateKind Kind,\n    OperatorId Rows, ImmutableArray<string> BlockIdentityFields, ImmutableArray<string> RowIdentityFields, ImmutableArray<SortKey> OrderBy,\n    ImmutableArray<string> Fields, MissingValue Missing, int? HeadingLevel);"
+  },
+  "OverflowPolicy": {
+    "file": "Documents.cs",
+    "line": 44,
+    "text": "public enum OverflowPolicy { Reject, ExplicitTruncation }"
+  },
+  "DocumentProjectionDefinition": {
+    "file": "Documents.cs",
+    "line": 45,
+    "text": "public sealed record DocumentProjectionDefinition(string SchemaVersion, string Id, string Version,\n    OntologyRef Ontology, ImmutableArray<InputBinding> Inputs, ImmutableArray<Operator> Operators,\n    ImmutableArray<Wire> Wires, ImmutableArray<DocumentTemplate> Templates,\n    long MaximumBlocks, OverflowPolicy Overflow);"
+  },
+  "ProjectDocument": {
+    "file": "Documents.cs",
+    "line": 49,
+    "text": "public sealed record ProjectDocument(RequestId Request, TenantId Tenant, DocumentId Document, DocumentProjectionDefinition Definition,\n    ImmutableArray<GraphVersion> Sources, WorkBudget Budget);"
+  },
+  "DocumentResult": {
+    "file": "Documents.cs",
+    "line": 51,
+    "text": "public sealed record DocumentResult(RequestId Request, DocumentSnapshot? Snapshot,\n    ImmutableArray<Diagnostic> Errors);"
+  },
+  "IDocumentProjection": {
+    "file": "Documents.cs",
+    "line": 53,
+    "text": "public interface IDocumentProjection\n{\n    IAsyncEnumerable<DocumentResult> ProjectAsync(IAsyncEnumerable<ProjectDocument> requests,\n        CancellationToken cancellationToken = default);\n    IAsyncEnumerable<DocumentChange> ObserveAsync(IAsyncEnumerable<FollowDocument> subscriptions,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "DocumentChange": {
+    "file": "Documents.cs",
+    "line": 64,
+    "text": "public abstract record DocumentChange(RequestId Request);"
+  },
+  "DocumentStarted": {
+    "file": "Documents.cs",
+    "line": 65,
+    "text": "public sealed record DocumentStarted(RequestId Request, DocumentSnapshot Snapshot) : DocumentChange(Request);"
+  },
+  "DocumentChanged": {
+    "file": "Documents.cs",
+    "line": 66,
+    "text": "public sealed record DocumentChanged(RequestId Request, DocumentPatch Patch) : DocumentChange(Request);"
+  },
+  "DocumentUnavailable": {
+    "file": "Documents.cs",
+    "line": 67,
+    "text": "public sealed record DocumentUnavailable(RequestId Request, ImmutableArray<Diagnostic> Errors) : DocumentChange(Request);"
+  },
+  "RenderDocument": {
+    "file": "Documents.cs",
+    "line": 68,
+    "text": "public sealed record RenderDocument(RequestId Request, DocumentSnapshot Snapshot,\n    DocumentFormat Format, string RendererVersion);"
+  },
+  "RenderedDocument": {
+    "file": "Documents.cs",
+    "line": 71,
+    "text": "public sealed record RenderedDocument(RequestId Request, DocumentVersion Version,\n    DocumentFormat Format, string MediaType, ImmutableArray<byte> Utf8, ContentHash Digest);"
+  },
+  "IDocumentRenderer": {
+    "file": "Documents.cs",
+    "line": 73,
+    "text": "public interface IDocumentRenderer\n{\n    IAsyncEnumerable<RenderedDocument> RenderAsync(IAsyncEnumerable<RenderDocument> requests,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "FollowGraph": {
+    "file": "Documents.cs",
+    "line": 79,
+    "text": "public sealed record FollowGraph(string Port, GraphId Graph, GraphScope Scope);"
+  },
+  "FollowDocument": {
+    "file": "Documents.cs",
+    "line": 80,
+    "text": "public sealed record FollowDocument(RequestId Request, TenantId Tenant, DocumentId Document,\n    DocumentProjectionDefinition Definition, ImmutableArray<FollowGraph> Sources,\n    WorkBudget Budget, string? ResumeToken);"
+  },
+  "TenantId": {
+    "file": "Model.cs",
+    "line": 9,
+    "text": "public readonly record struct TenantId(string Value);"
+  },
+  "EntityId": {
+    "file": "Model.cs",
+    "line": 10,
+    "text": "public readonly record struct EntityId(string Value);"
+  },
+  "RelationshipId": {
+    "file": "Model.cs",
+    "line": 11,
+    "text": "public readonly record struct RelationshipId(string Value);"
+  },
+  "ProjectionId": {
+    "file": "Model.cs",
+    "line": 12,
+    "text": "public readonly record struct ProjectionId(string Value);"
+  },
+  "GraphId": {
+    "file": "Model.cs",
+    "line": 13,
+    "text": "public readonly record struct GraphId(string Value);"
+  },
+  "InputId": {
+    "file": "Model.cs",
+    "line": 14,
+    "text": "public readonly record struct InputId(string Value);"
+  },
+  "TypeId": {
+    "file": "Model.cs",
+    "line": 15,
+    "text": "public readonly record struct TypeId(string Value);"
+  },
+  "PropertyId": {
+    "file": "Model.cs",
+    "line": 16,
+    "text": "public readonly record struct PropertyId(string Value);"
+  },
+  "OperatorId": {
+    "file": "Model.cs",
+    "line": 17,
+    "text": "public readonly record struct OperatorId(string Value);"
+  },
+  "DocumentId": {
+    "file": "Model.cs",
+    "line": 18,
+    "text": "public readonly record struct DocumentId(string Value);"
+  },
+  "BlockId": {
+    "file": "Model.cs",
+    "line": 19,
+    "text": "public readonly record struct BlockId(string Value);"
+  },
+  "Revision": {
+    "file": "Model.cs",
+    "line": 20,
+    "text": "public readonly record struct Revision(string Value);"
+  },
+  "RequestId": {
+    "file": "Model.cs",
+    "line": 21,
+    "text": "public readonly record struct RequestId(string Value);"
+  },
+  "ContentHash": {
+    "file": "Model.cs",
+    "line": 22,
+    "text": "public readonly record struct ContentHash(string Value);"
+  },
+  "IdentityDomain": {
+    "file": "Model.cs",
+    "line": 23,
+    "text": "public readonly record struct IdentityDomain(string Value);"
+  },
+  "OntologyRef": {
+    "file": "Model.cs",
+    "line": 24,
+    "text": "public sealed record OntologyRef(string Id, string Version, ContentHash Digest);"
+  },
+  "GraphVersion": {
+    "file": "Model.cs",
+    "line": 25,
+    "text": "public sealed record GraphVersion(TenantId Tenant, GraphId Graph, Revision Revision);"
+  },
+  "Diagnostic": {
+    "file": "Model.cs",
+    "line": 26,
+    "text": "public sealed record Diagnostic(string Code, string Path, string Message);"
+  },
+  "Correlated": {
+    "file": "Model.cs",
+    "line": 27,
+    "text": "public sealed record Correlated<T>(RequestId Request, T Value);"
+  },
+  "Rejection": {
+    "file": "Model.cs",
+    "line": 28,
+    "text": "public sealed record Rejection(RequestId Request, ImmutableArray<Diagnostic> Errors);"
+  },
+  "GraphValue": {
+    "file": "Model.cs",
+    "line": 39,
+    "text": "public abstract record GraphValue;"
+  },
+  "TextValue": {
+    "file": "Model.cs",
+    "line": 40,
+    "text": "public sealed record TextValue(string Value) : GraphValue;"
+  },
+  "IntegerValue": {
+    "file": "Model.cs",
+    "line": 42,
+    "text": "public sealed record IntegerValue(string Value) : GraphValue;"
+  },
+  "DecimalValue": {
+    "file": "Model.cs",
+    "line": 43,
+    "text": "public sealed record DecimalValue(string Value) : GraphValue;"
+  },
+  "BooleanValue": {
+    "file": "Model.cs",
+    "line": 44,
+    "text": "public sealed record BooleanValue(bool Value) : GraphValue;"
+  },
+  "InstantValue": {
+    "file": "Model.cs",
+    "line": 45,
+    "text": "public sealed record InstantValue(string Value) : GraphValue;"
+  },
+  "NullValue": {
+    "file": "Model.cs",
+    "line": 46,
+    "text": "public sealed record NullValue : GraphValue;"
+  },
+  "EntityValue": {
+    "file": "Model.cs",
+    "line": 47,
+    "text": "public sealed record EntityValue(EntityId Value) : GraphValue;"
+  },
+  "ListValue": {
+    "file": "Model.cs",
+    "line": 48,
+    "text": "public sealed record ListValue(ImmutableArray<GraphValue> Items) : GraphValue;"
+  },
+  "PropertyValue": {
+    "file": "Model.cs",
+    "line": 49,
+    "text": "public sealed record PropertyValue(PropertyId Property, GraphValue Value);"
+  },
+  "ElementRef": {
+    "file": "Model.cs",
+    "line": 54,
+    "text": "public abstract record ElementRef;"
+  },
+  "EntityRef": {
+    "file": "Model.cs",
+    "line": 55,
+    "text": "public sealed record EntityRef(EntityId Id) : ElementRef;"
+  },
+  "RelationshipRef": {
+    "file": "Model.cs",
+    "line": 56,
+    "text": "public sealed record RelationshipRef(ProjectionId Projection, RelationshipId Id) : ElementRef;"
+  },
+  "EntityState": {
+    "file": "Model.cs",
+    "line": 58,
+    "text": "public sealed record EntityState(EntityId Id, TypeId Type, ImmutableArray<PropertyValue> Properties);"
+  },
+  "RelationshipState": {
+    "file": "Model.cs",
+    "line": 60,
+    "text": "public sealed record RelationshipState(RelationshipId Id, EntityId Source, EntityId Target,\n    TypeId Type, ImmutableArray<PropertyValue> Properties);"
+  },
+  "GraphExtent": {
+    "file": "Model.cs",
+    "line": 62,
+    "text": "public sealed record GraphExtent(ImmutableArray<EntityState> Entities,\n    ImmutableArray<RelationshipState> Relationships);"
+  },
+  "SnapshotBinding": {
+    "file": "Model.cs",
+    "line": 64,
+    "text": "public sealed record SnapshotBinding(string Port, GraphVersion Snapshot);"
+  },
+  "VirtualRegion": {
+    "file": "Model.cs",
+    "line": 65,
+    "text": "public sealed record VirtualRegion(string Id, ContentHash ProviderDigest, string ProviderVersion,\n    string Definition, ImmutableArray<SnapshotBinding> Inputs);"
+  },
+  "GraphDescriptor": {
+    "file": "Model.cs",
+    "line": 67,
+    "text": "public sealed record GraphDescriptor(GraphVersion Version, ProjectionId Projection,\n    OntologyRef Ontology, ImmutableArray<VirtualRegion> VirtualRegions);"
+  },
+  "SnapshotPage": {
+    "file": "Model.cs",
+    "line": 70,
+    "text": "public sealed record SnapshotPage(string SnapshotToken, long Page, GraphExtent Extent);"
+  },
+  "SnapshotSeal": {
+    "file": "Model.cs",
+    "line": 71,
+    "text": "public sealed record SnapshotSeal(string SnapshotToken, GraphDescriptor Descriptor,\n    long PageCount, ContentHash Digest);"
+  },
+  "GraphEdit": {
+    "file": "Model.cs",
+    "line": 79,
+    "text": "public abstract record GraphEdit;"
+  },
+  "EntityEdit": {
+    "file": "Model.cs",
+    "line": 81,
+    "text": "public sealed record EntityEdit(EntityId Id, EntityState? Before, EntityState? After) : GraphEdit;"
+  },
+  "RelationshipEdit": {
+    "file": "Model.cs",
+    "line": 82,
+    "text": "public sealed record RelationshipEdit(RelationshipId Id, RelationshipState? Before,\n    RelationshipState? After) : GraphEdit;"
+  },
+  "VirtualRegionEdit": {
+    "file": "Model.cs",
+    "line": 84,
+    "text": "public sealed record VirtualRegionEdit(string Id, VirtualRegion? Before, VirtualRegion? After) : GraphEdit;"
+  },
+  "OntologyEdit": {
+    "file": "Model.cs",
+    "line": 85,
+    "text": "public sealed record OntologyEdit(OntologyRef Before, OntologyRef After) : GraphEdit;"
+  },
+  "DiffProfile": {
+    "file": "Model.cs",
+    "line": 86,
+    "text": "public enum DiffProfile { ExtensionalFinite, Symbolic }"
+  },
+  "ChangeCause": {
+    "file": "Model.cs",
+    "line": 87,
+    "text": "public sealed record ChangeCause(ImmutableArray<InputId> Inputs, string ConfigurationVersion);"
+  },
+  "GraphPatch": {
+    "file": "Model.cs",
+    "line": 88,
+    "text": "public sealed record GraphPatch(string SchemaVersion, GraphVersion From, GraphVersion To,\n    ProjectionId Projection, DiffProfile Profile, ImmutableArray<GraphEdit> Edits, ChangeCause Cause);"
+  },
+  "PatchBatch": {
+    "file": "Model.cs",
+    "line": 90,
+    "text": "public sealed record PatchBatch(ImmutableArray<GraphPatch> Patches);"
+  },
+  "SquashRequest": {
+    "file": "Model.cs",
+    "line": 92,
+    "text": "public sealed record SquashRequest(GraphVersion Base, ImmutableArray<GraphPatch> Patches);"
+  },
+  "GraphFact": {
+    "file": "Model.cs",
+    "line": 97,
+    "text": "public abstract record GraphFact;"
+  },
+  "EntityFact": {
+    "file": "Model.cs",
+    "line": 98,
+    "text": "public sealed record EntityFact(EntityState State) : GraphFact;"
+  },
+  "RelationshipFact": {
+    "file": "Model.cs",
+    "line": 99,
+    "text": "public sealed record RelationshipFact(RelationshipState State) : GraphFact;"
+  },
+  "WeightedFact": {
+    "file": "Model.cs",
+    "line": 100,
+    "text": "public sealed record WeightedFact(GraphFact Fact, string Weight);"
+  },
+  "SignedDelta": {
+    "file": "Model.cs",
+    "line": 101,
+    "text": "public sealed record SignedDelta(string SchemaVersion, TenantId Tenant, ProjectionId Projection,\n    OntologyRef Ontology, ImmutableArray<WeightedFact> Terms);"
+  },
+  "DeltaAtBase": {
+    "file": "Model.cs",
+    "line": 103,
+    "text": "public sealed record DeltaAtBase(SignedDelta Delta, GraphVersion Base, ChangeCause Cause);"
+  },
+  "LossReport": {
+    "file": "Model.cs",
+    "line": 104,
+    "text": "public sealed record LossReport(bool ChronologyLost, bool IntermediateStatesLost, bool CauseDetailLost);"
+  },
+  "DeltaConversion": {
+    "file": "Model.cs",
+    "line": 105,
+    "text": "public sealed record DeltaConversion(SignedDelta Delta, LossReport Loss);"
+  },
+  "ValueKind": {
+    "file": "Model.cs",
+    "line": 106,
+    "text": "public enum ValueKind { Text, Integer, Decimal, Boolean, Instant, Entity, List }"
+  },
+  "ElementKind": {
+    "file": "Model.cs",
+    "line": 107,
+    "text": "public enum ElementKind { Entity, Relationship }"
+  },
+  "PropertyRole": {
+    "file": "Model.cs",
+    "line": 108,
+    "text": "public enum PropertyRole { GraphData, Telemetry }"
+  },
+  "PropertyDefinition": {
+    "file": "Model.cs",
+    "line": 109,
+    "text": "public sealed record PropertyDefinition(PropertyId Id, ValueKind ValueKind, bool Nullable,\n    ValueKind? ItemKind, string? Unit, PropertyRole Role);"
+  },
+  "EntityTypeDefinition": {
+    "file": "Model.cs",
+    "line": 111,
+    "text": "public sealed record EntityTypeDefinition(TypeId Id, ImmutableArray<PropertyId> Properties);"
+  },
+  "RelationshipTypeDefinition": {
+    "file": "Model.cs",
+    "line": 112,
+    "text": "public sealed record RelationshipTypeDefinition(TypeId Id, ImmutableArray<TypeId> SourceTypes,\n    ImmutableArray<TypeId> TargetTypes, ImmutableArray<PropertyId> Properties);"
+  },
+  "OntologyDefinition": {
+    "file": "Model.cs",
+    "line": 114,
+    "text": "public sealed record OntologyDefinition(string SchemaVersion, OntologyRef Reference,\n    TypeId NoEntityType, TypeId NoRelationshipType, ImmutableArray<PropertyDefinition> Properties,\n    ImmutableArray<EntityTypeDefinition> EntityTypes,\n    ImmutableArray<RelationshipTypeDefinition> RelationshipTypes);"
+  },
+  "IdentityComponent": {
+    "file": "Model.cs",
+    "line": 119,
+    "text": "public sealed record IdentityComponent(string Name, GraphValue Value);"
+  },
+  "IdentityKey": {
+    "file": "Model.cs",
+    "line": 120,
+    "text": "public sealed record IdentityKey(TenantId Tenant, IdentityDomain Domain,\n    string CanonicalizationVersion, ImmutableArray<IdentityComponent> Components);"
+  },
+  "IdentityEntry": {
+    "file": "Model.cs",
+    "line": 122,
+    "text": "public sealed record IdentityEntry(IdentityKey Key, EntityId Entity);"
+  },
+  "IdentityEvidence": {
+    "file": "Model.cs",
+    "line": 124,
+    "text": "public sealed record IdentityEvidence(IdentityKey Left, IdentityKey Right, string Rule,\n    ImmutableArray<InputId> Inputs, decimal Confidence);"
+  },
+  "ResolveIdentity": {
+    "file": "Model.cs",
+    "line": 126,
+    "text": "public sealed record ResolveIdentity(RequestId Request, IdentityKey Key);"
+  },
+  "ResolvedIdentity": {
+    "file": "Model.cs",
+    "line": 127,
+    "text": "public sealed record ResolvedIdentity(RequestId Request, EntityId Entity);"
+  },
+  "ElementHistory": {
+    "file": "Model.cs",
+    "line": 128,
+    "text": "public sealed record ElementHistory(ProjectionId Projection, ElementRef Element,\n    ImmutableArray<InputId> InputsInIngestionOrder);"
+  },
+  "RetainedInput": {
+    "file": "Model.cs",
+    "line": 130,
+    "text": "public sealed record RetainedInput(InputId Id, long IngestionSequence, string MediaType,\n    ImmutableArray<byte> OriginalBytes);"
+  },
+  "TelemetryObservation": {
+    "file": "Model.cs",
+    "line": 132,
+    "text": "public sealed record TelemetryObservation(TenantId Tenant, ProjectionId Projection, ElementRef Element,\n    PropertyId Property, GraphValue Value, InputId Input);"
+  },
+  "GraphSpaceDefinition": {
+    "file": "GraphComposition.cs",
+    "line": 9,
+    "text": "public sealed record GraphSpaceDefinition(string SchemaVersion, string Id,\n    MasterGraphDefinition Master, ImmutableArray<GraphProjectionDefinition> Projections);"
+  },
+  "MasterGraphDefinition": {
+    "file": "GraphComposition.cs",
+    "line": 11,
+    "text": "public sealed record MasterGraphDefinition(GraphId Graph, ProjectionDefinition IngestionProjection);"
+  },
+  "GraphProjectionDefinition": {
+    "file": "GraphComposition.cs",
+    "line": 12,
+    "text": "public sealed record GraphProjectionDefinition(GraphId OutputGraph, ProjectionDefinition Projection,\n    ImmutableArray<ProjectionGraphInput> GraphInputs);"
+  },
+  "ProjectionGraphInput": {
+    "file": "GraphComposition.cs",
+    "line": 14,
+    "text": "public sealed record ProjectionGraphInput(string Port, GraphSource Source, OntologyRef ExpectedOntology);"
+  },
+  "GraphSource": {
+    "file": "GraphComposition.cs",
+    "line": 19,
+    "text": "public abstract record GraphSource;"
+  },
+  "MasterGraphSource": {
+    "file": "GraphComposition.cs",
+    "line": 20,
+    "text": "public sealed record MasterGraphSource : GraphSource;"
+  },
+  "ProjectionGraphSource": {
+    "file": "GraphComposition.cs",
+    "line": 21,
+    "text": "public sealed record ProjectionGraphSource(ProjectionId Projection) : GraphSource;"
+  },
+  "CompileGraphSpace": {
+    "file": "GraphComposition.cs",
+    "line": 23,
+    "text": "public sealed record CompileGraphSpace(RequestId Request, TenantId Tenant, GraphSpaceDefinition Definition);"
+  },
+  "CompiledGraphSpace": {
+    "file": "GraphComposition.cs",
+    "line": 24,
+    "text": "public sealed record CompiledGraphSpace(RequestId Request, TenantId Tenant, string GraphSpace,\n    ContentHash DefinitionDigest, GraphId MasterGraph, ImmutableArray<CompiledProjection> Projections);"
+  },
+  "GraphSpaceCompilation": {
+    "file": "GraphComposition.cs",
+    "line": 29,
+    "text": "public abstract record GraphSpaceCompilation;"
+  },
+  "GraphSpaceAccepted": {
+    "file": "GraphComposition.cs",
+    "line": 30,
+    "text": "public sealed record GraphSpaceAccepted(CompiledGraphSpace GraphSpace) : GraphSpaceCompilation;"
+  },
+  "GraphSpaceRejected": {
+    "file": "GraphComposition.cs",
+    "line": 31,
+    "text": "public sealed record GraphSpaceRejected(RequestId Request, ImmutableArray<Diagnostic> Errors) : GraphSpaceCompilation;"
+  },
+  "ScalarType": {
+    "file": "Projection.cs",
+    "line": 7,
+    "text": "public enum ScalarType { Text, Integer, Decimal, Boolean, Instant, Entity, Relationship }"
+  },
+  "Field": {
+    "file": "Projection.cs",
+    "line": 8,
+    "text": "public sealed record Field(string Name, ScalarType Type, bool Optional);"
+  },
+  "RowType": {
+    "file": "Projection.cs",
+    "line": 9,
+    "text": "public sealed record RowType(ImmutableArray<Field> Fields);"
+  },
+  "Port": {
+    "file": "Projection.cs",
+    "line": 10,
+    "text": "public sealed record Port(string Name, RowType Row);"
+  },
+  "Wire": {
+    "file": "Projection.cs",
+    "line": 11,
+    "text": "public sealed record Wire(OperatorId From, string Output, OperatorId To, string Input);"
+  },
+  "Expression": {
+    "file": "Projection.cs",
+    "line": 17,
+    "text": "public abstract record Expression;"
+  },
+  "Literal": {
+    "file": "Projection.cs",
+    "line": 18,
+    "text": "public sealed record Literal(GraphValue Value) : Expression;"
+  },
+  "FieldExpression": {
+    "file": "Projection.cs",
+    "line": 19,
+    "text": "public sealed record FieldExpression(string Field) : Expression;"
+  },
+  "Function": {
+    "file": "Projection.cs",
+    "line": 20,
+    "text": "public enum Function { Equal, NotEqual, And, Or, Not, Add, Subtract, Multiply, Divide,\n    LessThan, GreaterThan, Concat, Coalesce, LowerInvariant }"
+  },
+  "CallExpression": {
+    "file": "Projection.cs",
+    "line": 22,
+    "text": "public sealed record CallExpression(Function Function, ImmutableArray<Expression> Arguments) : Expression;"
+  },
+  "Assignment": {
+    "file": "Projection.cs",
+    "line": 23,
+    "text": "public sealed record Assignment(string Field, Expression Value);"
+  },
+  "PropertyAssignment": {
+    "file": "Projection.cs",
+    "line": 24,
+    "text": "public sealed record PropertyAssignment(PropertyId Property, Expression Value);"
+  },
+  "IdentityExpression": {
+    "file": "Projection.cs",
+    "line": 25,
+    "text": "public sealed record IdentityExpression(IdentityDomain Domain, string CanonicalizationVersion,\n    ImmutableArray<Assignment> Components);"
+  },
+  "ConflictPolicy": {
+    "file": "Projection.cs",
+    "line": 27,
+    "text": "public enum ConflictPolicy { RequireEqual, PreferFirstPort, PreferLastPort, PreserveEvidence }"
+  },
+  "AggregateFunction": {
+    "file": "Projection.cs",
+    "line": 28,
+    "text": "public enum AggregateFunction { CountDistinct, Sum, Min, Max, Any, All }"
+  },
+  "AggregateField": {
+    "file": "Projection.cs",
+    "line": 29,
+    "text": "public sealed record AggregateField(string Name, AggregateFunction Function, Expression Value);"
+  },
+  "Direction": {
+    "file": "Projection.cs",
+    "line": 30,
+    "text": "public enum Direction { Outgoing, Incoming, Either }"
+  },
+  "NodePattern": {
+    "file": "Projection.cs",
+    "line": 31,
+    "text": "public sealed record NodePattern(string Variable, TypeId Type);"
+  },
+  "EdgePattern": {
+    "file": "Projection.cs",
+    "line": 32,
+    "text": "public sealed record EdgePattern(string Variable, string Source, string Target, TypeId Type);"
+  },
+  "GraphPattern": {
+    "file": "Projection.cs",
+    "line": 33,
+    "text": "public sealed record GraphPattern(ImmutableArray<NodePattern> Nodes, ImmutableArray<EdgePattern> Edges);"
+  },
+  "Operator": {
+    "file": "Projection.cs",
+    "line": 49,
+    "text": "public abstract record Operator(OperatorId Id);"
+  },
+  "InputOperator": {
+    "file": "Projection.cs",
+    "line": 50,
+    "text": "public sealed record InputOperator(OperatorId Id, string Binding, RowType Row) : Operator(Id);"
+  },
+  "MatchOperator": {
+    "file": "Projection.cs",
+    "line": 51,
+    "text": "public sealed record MatchOperator(OperatorId Id, string Binding, GraphPattern Pattern) : Operator(Id);"
+  },
+  "FilterOperator": {
+    "file": "Projection.cs",
+    "line": 52,
+    "text": "public sealed record FilterOperator(OperatorId Id, Expression Predicate) : Operator(Id);"
+  },
+  "MapOperator": {
+    "file": "Projection.cs",
+    "line": 53,
+    "text": "public sealed record MapOperator(OperatorId Id, ImmutableArray<Assignment> Fields) : Operator(Id);"
+  },
+  "JoinOperator": {
+    "file": "Projection.cs",
+    "line": 54,
+    "text": "public sealed record JoinOperator(OperatorId Id, Expression On) : Operator(Id);"
+  },
+  "UnionOperator": {
+    "file": "Projection.cs",
+    "line": 55,
+    "text": "public sealed record UnionOperator(OperatorId Id, ConflictPolicy Conflict) : Operator(Id);"
+  },
+  "DistinctOperator": {
+    "file": "Projection.cs",
+    "line": 56,
+    "text": "public sealed record DistinctOperator(OperatorId Id) : Operator(Id);"
+  },
+  "GroupOperator": {
+    "file": "Projection.cs",
+    "line": 57,
+    "text": "public sealed record GroupOperator(OperatorId Id, ImmutableArray<Assignment> Keys,\n    ImmutableArray<AggregateField> Aggregates) : Operator(Id);"
+  },
+  "TraverseOperator": {
+    "file": "Projection.cs",
+    "line": 59,
+    "text": "public sealed record TraverseOperator(OperatorId Id, TypeId Relationship, Direction Direction,\n    int MinimumDepth, int MaximumDepth) : Operator(Id);"
+  },
+  "EmitEntityOperator": {
+    "file": "Projection.cs",
+    "line": 61,
+    "text": "public sealed record EmitEntityOperator(OperatorId Id, IdentityExpression Identity, TypeId Type,\n    ImmutableArray<PropertyAssignment> Properties) : Operator(Id);"
+  },
+  "EmitRelationshipOperator": {
+    "file": "Projection.cs",
+    "line": 63,
+    "text": "public sealed record EmitRelationshipOperator(OperatorId Id, string IdentityRule, Expression Source,\n    Expression Target, TypeId Type, ImmutableArray<PropertyAssignment> Properties,\n    ConflictPolicy RetypeCollision) : Operator(Id);"
+  },
+  "FixpointOperator": {
+    "file": "Projection.cs",
+    "line": 67,
+    "text": "public sealed record FixpointOperator(OperatorId Id, string Relation, RowType Row,\n    ImmutableArray<Operator> Body, ImmutableArray<Wire> Wires, OperatorId Result,\n    string FiniteDomainBinding, long MaximumFacts, long MaximumIterations) : Operator(Id);"
+  },
+  "LatePolicy": {
+    "file": "Projection.cs",
+    "line": 71,
+    "text": "public enum LatePolicy { Ignore, Revise, Reject }"
+  },
+  "WindowOperator": {
+    "file": "Projection.cs",
+    "line": 72,
+    "text": "public sealed record WindowOperator(OperatorId Id, string TimestampField,\n    long WidthNanoseconds, LatePolicy LatePolicy) : Operator(Id);"
+  },
+  "InputBinding": {
+    "file": "Projection.cs",
+    "line": 75,
+    "text": "public sealed record InputBinding(string Name, string Contract, string Version);"
+  },
+  "ProjectionDefinition": {
+    "file": "Projection.cs",
+    "line": 76,
+    "text": "public sealed record ProjectionDefinition(string SchemaVersion, ProjectionId Id, string Version,\n    OntologyRef Ontology, ImmutableArray<InputBinding> Inputs, GraphExtent Scaffold,\n    ImmutableArray<Operator> Operators, ImmutableArray<Wire> Wires,\n    ImmutableArray<OperatorId> Outputs, int RetainedInputsPerElement,\n    ImmutableArray<BidirectionalRule> BidirectionalRules);"
+  },
+  "Correspondence": {
+    "file": "Projection.cs",
+    "line": 81,
+    "text": "public sealed record Correspondence(string Rule, ImmutableArray<ElementRef> Source,\n    ImmutableArray<ElementRef> Target, ImmutableArray<PropertyValue> Complement);"
+  },
+  "LensLaw": {
+    "file": "Projection.cs",
+    "line": 83,
+    "text": "public enum LensLaw { GetPut, PutGet }"
+  },
+  "RuleProgram": {
+    "file": "Projection.cs",
+    "line": 84,
+    "text": "public sealed record RuleProgram(ImmutableArray<Operator> Operators, ImmutableArray<Wire> Wires,\n    ImmutableArray<OperatorId> Outputs);"
+  },
+  "CorrespondenceTemplate": {
+    "file": "Projection.cs",
+    "line": 86,
+    "text": "public sealed record CorrespondenceTemplate(string Name, ImmutableArray<string> SourceVariables,\n    ImmutableArray<string> TargetVariables, ImmutableArray<Assignment> Complement);"
+  },
+  "BidirectionalRule": {
+    "file": "Projection.cs",
+    "line": 88,
+    "text": "public sealed record BidirectionalRule(string Id, GraphPattern SourcePattern,\n    GraphPattern TargetPattern, ImmutableArray<CorrespondenceTemplate> Correspondences,\n    RuleProgram Forward, RuleProgram Backward, ImmutableArray<LensLaw> RequiredLaws);"
+  },
+  "BackwardEdit": {
+    "file": "Projection.cs",
+    "line": 91,
+    "text": "public sealed record BackwardEdit(RequestId Request, GraphVersion SourceBase,\n    GraphVersion ViewBase, GraphPatch ViewEdit, string Rule, string RuleVersion);"
+  },
+  "BackwardProposal": {
+    "file": "Projection.cs",
+    "line": 93,
+    "text": "public sealed record BackwardProposal(RequestId Request, GraphPatch SourceEdit,\n    ImmutableArray<Correspondence> UpdatedCorrespondence);"
+  },
+  "Expr": {
+    "file": "Projection.cs",
+    "line": 97,
+    "text": "public abstract record Expr<T>;"
+  },
+  "Constant": {
+    "file": "Projection.cs",
+    "line": 98,
+    "text": "public sealed record Constant<T>(T Value) : Expr<T>;"
+  },
+  "Column": {
+    "file": "Projection.cs",
+    "line": 99,
+    "text": "public sealed record Column<T>(string Name) : Expr<T>;"
+  },
+  "Equal": {
+    "file": "Projection.cs",
+    "line": 100,
+    "text": "public sealed record Equal<T>(Expr<T> Left, Expr<T> Right) : Expr<bool>;"
+  },
+  "And": {
+    "file": "Projection.cs",
+    "line": 101,
+    "text": "public sealed record And(Expr<bool> Left, Expr<bool> Right) : Expr<bool>;"
+  },
+  "Add": {
+    "file": "Projection.cs",
+    "line": 102,
+    "text": "public sealed record Add(Expr<decimal> Left, Expr<decimal> Right) : Expr<decimal>;"
+  },
+  "Property": {
+    "file": "Projection.cs",
+    "line": 103,
+    "text": "public sealed record Property<T>(PropertyId Id);"
+  },
+  "PropertyBinding": {
+    "file": "Projection.cs",
+    "line": 104,
+    "text": "public sealed record PropertyBinding<T>(Property<T> Property, Expr<T> Value);"
+  },
+  "EntityType": {
+    "file": "Projection.cs",
+    "line": 105,
+    "text": "public sealed record EntityType<T>(TypeId Id);"
+  },
+  "RelationshipType": {
+    "file": "Projection.cs",
+    "line": 106,
+    "text": "public sealed record RelationshipType<TSource, TTarget>(TypeId Id);"
+  },
+  "EntityVariable": {
+    "file": "Projection.cs",
+    "line": 107,
+    "text": "public sealed record EntityVariable<T>(string Name);"
+  },
+  "TypedPattern": {
+    "file": "Projection.cs",
+    "line": 108,
+    "text": "public sealed record TypedPattern<TSource, TTarget>(EntityVariable<TSource> Source,\n    RelationshipType<TSource, TTarget> Relationship, EntityVariable<TTarget> Target);"
+  },
+  "AuthoringRequest": {
+    "file": "Projection.cs",
+    "line": 110,
+    "text": "public sealed record AuthoringRequest<T>(RequestId Request, TenantId Tenant, T Definition);"
+  },
+  "CompiledProjection": {
+    "file": "Projection.cs",
+    "line": 111,
+    "text": "public sealed record CompiledProjection(TenantId Tenant, ProjectionId Id, string Version, ContentHash DefinitionDigest,\n    ImmutableArray<string> RequiredCapabilities);"
+  },
+  "IProjectionCompiler": {
+    "file": "Projection.cs",
+    "line": 113,
+    "text": "public interface IProjectionCompiler\n{\n    IAsyncEnumerable<GraphSpaceCompilation> CompileGraphSpaceAsync(IAsyncEnumerable<CompileGraphSpace> definitions,\n        CancellationToken cancellationToken = default);\n    IAsyncEnumerable<CompilationResult> CompileAsync(IAsyncEnumerable<AuthoringRequest<ProjectionDefinition>> definitions,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "CompilationResult": {
+    "file": "Projection.cs",
+    "line": 123,
+    "text": "public abstract record CompilationResult;"
+  },
+  "CompilationAccepted": {
+    "file": "Projection.cs",
+    "line": 124,
+    "text": "public sealed record CompilationAccepted(RequestId Request, CompiledProjection Projection) : CompilationResult;"
+  },
+  "CompilationRejected": {
+    "file": "Projection.cs",
+    "line": 125,
+    "text": "public sealed record CompilationRejected(RequestId Request, ImmutableArray<Diagnostic> Errors) : CompilationResult;"
+  },
+  "Rows": {
+    "file": "Projection.cs",
+    "line": 128,
+    "text": "public abstract record Rows<TRow>;"
+  },
+  "ReadRows": {
+    "file": "Projection.cs",
+    "line": 129,
+    "text": "public sealed record ReadRows<TRow>(string Binding, RowType Contract) : Rows<TRow>;"
+  },
+  "UnionRows": {
+    "file": "Projection.cs",
+    "line": 130,
+    "text": "public sealed record UnionRows<TRow>(Rows<TRow> Left, Rows<TRow> Right) : Rows<TRow>;"
+  },
+  "FilterRows": {
+    "file": "Projection.cs",
+    "line": 131,
+    "text": "public sealed record FilterRows<TRow>(Rows<TRow> Input, RowPredicate<TRow> Predicate) : Rows<TRow>;"
+  },
+  "RowPredicate": {
+    "file": "Projection.cs",
+    "line": 132,
+    "text": "public abstract record RowPredicate<TRow>;"
+  },
+  "Member": {
+    "file": "Projection.cs",
+    "line": 133,
+    "text": "public sealed record Member<TRow, TValue>(string Name);"
+  },
+  "RowEqual": {
+    "file": "Projection.cs",
+    "line": 134,
+    "text": "public sealed record RowEqual<TRow, TValue>(Member<TRow, TValue> Member, Expr<TValue> Value) : RowPredicate<TRow>;"
+  },
+  "LowerRows": {
+    "file": "Projection.cs",
+    "line": 135,
+    "text": "public sealed record LowerRows<TRow>(RequestId Request, TenantId Tenant, Rows<TRow> Rows, OntologyRef Ontology);"
+  },
+  "LoweredRows": {
+    "file": "Projection.cs",
+    "line": 136,
+    "text": "public sealed record LoweredRows(RequestId Request, ImmutableArray<Operator> Operators,\n    ImmutableArray<Wire> Wires, OperatorId Output, ImmutableArray<Diagnostic> Errors);"
+  },
+  "IProjectionAuthoring": {
+    "file": "Projection.cs",
+    "line": 138,
+    "text": "public interface IProjectionAuthoring\n{\n    IAsyncEnumerable<LoweredRows> LowerAsync<TRow>(IAsyncEnumerable<LowerRows<TRow>> expressions,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "PatchExpression": {
+    "file": "ChangeAlgebra.cs",
+    "line": 11,
+    "text": "public abstract record PatchExpression;"
+  },
+  "PatchLiteral": {
+    "file": "ChangeAlgebra.cs",
+    "line": 12,
+    "text": "public sealed record PatchLiteral(GraphPatch Patch) : PatchExpression;"
+  },
+  "PatchThen": {
+    "file": "ChangeAlgebra.cs",
+    "line": 13,
+    "text": "public sealed record PatchThen(PatchExpression First, PatchExpression Next) : PatchExpression;"
+  },
+  "PatchInverse": {
+    "file": "ChangeAlgebra.cs",
+    "line": 14,
+    "text": "public sealed record PatchInverse(PatchExpression Patch) : PatchExpression;"
+  },
+  "DeltaExpression": {
+    "file": "ChangeAlgebra.cs",
+    "line": 20,
+    "text": "public abstract record DeltaExpression;"
+  },
+  "DeltaLiteral": {
+    "file": "ChangeAlgebra.cs",
+    "line": 21,
+    "text": "public sealed record DeltaLiteral(SignedDelta Delta) : DeltaExpression;"
+  },
+  "DeltaAdd": {
+    "file": "ChangeAlgebra.cs",
+    "line": 22,
+    "text": "public sealed record DeltaAdd(DeltaExpression Left, DeltaExpression Right) : DeltaExpression;"
+  },
+  "DeltaSubtract": {
+    "file": "ChangeAlgebra.cs",
+    "line": 23,
+    "text": "public sealed record DeltaSubtract(DeltaExpression Left, DeltaExpression Right) : DeltaExpression;"
+  },
+  "DeltaNegate": {
+    "file": "ChangeAlgebra.cs",
+    "line": 24,
+    "text": "public sealed record DeltaNegate(DeltaExpression Delta) : DeltaExpression;"
+  },
+  "AlgebraRequest": {
+    "file": "ChangeAlgebra.cs",
+    "line": 32,
+    "text": "public abstract record AlgebraRequest(RequestId Request);"
+  },
+  "SquashPatches": {
+    "file": "ChangeAlgebra.cs",
+    "line": 33,
+    "text": "public sealed record SquashPatches(RequestId Request, SquashRequest Squash) : AlgebraRequest(Request);"
+  },
+  "EvaluatePatch": {
+    "file": "ChangeAlgebra.cs",
+    "line": 34,
+    "text": "public sealed record EvaluatePatch(RequestId Request, PatchExpression Expression) : AlgebraRequest(Request);"
+  },
+  "EvaluateDelta": {
+    "file": "ChangeAlgebra.cs",
+    "line": 35,
+    "text": "public sealed record EvaluateDelta(RequestId Request, DeltaExpression Expression) : AlgebraRequest(Request);"
+  },
+  "ConvertPatchToDelta": {
+    "file": "ChangeAlgebra.cs",
+    "line": 36,
+    "text": "public sealed record ConvertPatchToDelta(RequestId Request, GraphPatch Patch, OntologyRef Ontology) : AlgebraRequest(Request);"
+  },
+  "ConvertDeltaToPatch": {
+    "file": "ChangeAlgebra.cs",
+    "line": 37,
+    "text": "public sealed record ConvertDeltaToPatch(RequestId Request, DeltaAtBase Delta,\n    GraphVersion ProposedTarget) : AlgebraRequest(Request);"
+  },
+  "AlgebraResult": {
+    "file": "ChangeAlgebra.cs",
+    "line": 44,
+    "text": "public abstract record AlgebraResult(RequestId Request);"
+  },
+  "PatchResult": {
+    "file": "ChangeAlgebra.cs",
+    "line": 45,
+    "text": "public sealed record PatchResult(RequestId Request, GraphPatch Patch) : AlgebraResult(Request);"
+  },
+  "SquashedPatchResult": {
+    "file": "ChangeAlgebra.cs",
+    "line": 46,
+    "text": "public sealed record SquashedPatchResult(RequestId Request, GraphPatch Patch, LossReport Loss) : AlgebraResult(Request);"
+  },
+  "DeltaResult": {
+    "file": "ChangeAlgebra.cs",
+    "line": 47,
+    "text": "public sealed record DeltaResult(RequestId Request, DeltaConversion Conversion) : AlgebraResult(Request);"
+  },
+  "AlgebraRejected": {
+    "file": "ChangeAlgebra.cs",
+    "line": 48,
+    "text": "public sealed record AlgebraRejected(RequestId Request, ImmutableArray<Diagnostic> Errors) : AlgebraResult(Request);"
+  },
+  "IGraphChangeAlgebra": {
+    "file": "ChangeAlgebra.cs",
+    "line": 49,
+    "text": "public interface IGraphChangeAlgebra\n{\n    IAsyncEnumerable<AlgebraResult> EvaluateAsync(IAsyncEnumerable<AlgebraRequest> requests,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "SourcePosition": {
+    "file": "Ports.cs",
+    "line": 7,
+    "text": "public sealed record SourcePosition(string Source, string Partition, string Position);"
+  },
+  "InputContext": {
+    "file": "Ports.cs",
+    "line": 8,
+    "text": "public sealed record InputContext(TenantId Tenant, string Source, InputId Delivery,\n    SourcePosition? Position, string? ObservedAt, string? ReceivedAt);"
+  },
+  "Coverage": {
+    "file": "Ports.cs",
+    "line": 10,
+    "text": "public enum Coverage { ObservationOnly, CompleteScope }"
+  },
+  "SnapshotScope": {
+    "file": "Ports.cs",
+    "line": 11,
+    "text": "public sealed record SnapshotScope(string QueryDigest, ImmutableArray<string> Boundaries,\n    Coverage Coverage, bool PointInTimeConsistent);"
+  },
+  "NativeFormat": {
+    "file": "Ports.cs",
+    "line": 13,
+    "text": "public sealed record NativeFormat(string Family, string MessageType, string SchemaVersion, string MediaType);"
+  },
+  "NativeRecord": {
+    "file": "Ports.cs",
+    "line": 15,
+    "text": "public sealed record NativeRecord(InputContext Context, NativeFormat Format, ImmutableArray<byte> Payload);"
+  },
+  "IngestBatch": {
+    "file": "Ports.cs",
+    "line": 16,
+    "text": "public sealed record IngestBatch(RequestId Request, ImmutableArray<NativeRecord> Records);"
+  },
+  "IngestionReceipt": {
+    "file": "Ports.cs",
+    "line": 17,
+    "text": "public sealed record IngestionReceipt(RequestId Request, InputId Delivery, long AcceptedSequence,\n    string DurableCheckpoint);"
+  },
+  "InputFrontier": {
+    "file": "Ports.cs",
+    "line": 19,
+    "text": "public sealed record InputFrontier(ImmutableArray<SourcePosition> Positions,\n    ImmutableArray<SnapshotBinding> GraphInputs, string ConfigurationVersion);"
+  },
+  "ProjectionCommit": {
+    "file": "Ports.cs",
+    "line": 21,
+    "text": "public sealed record ProjectionCommit(GraphPatch Patch, InputFrontier Frontier);"
+  },
+  "GraphScope": {
+    "file": "Ports.cs",
+    "line": 22,
+    "text": "public sealed record GraphScope(ImmutableArray<EntityId> Roots, int MaximumDepth,\n    ImmutableArray<TypeId> RelationshipTypes);"
+  },
+  "WorkBudget": {
+    "file": "Ports.cs",
+    "line": 24,
+    "text": "public sealed record WorkBudget(long MaximumFacts, long MaximumSteps);"
+  },
+  "ReadGraph": {
+    "file": "Ports.cs",
+    "line": 25,
+    "text": "public sealed record ReadGraph(RequestId Request, GraphVersion Version, GraphScope Scope,\n    WorkBudget Budget, string? Continuation);"
+  },
+  "ReadCompletion": {
+    "file": "Ports.cs",
+    "line": 27,
+    "text": "public enum ReadCompletion { Complete, MoreAvailable, BudgetExhausted, Unavailable }"
+  },
+  "GraphReadPage": {
+    "file": "Ports.cs",
+    "line": 28,
+    "text": "public sealed record GraphReadPage(RequestId Request, GraphVersion Version, GraphExtent Extent,\n    ReadCompletion Completion, string? Continuation);"
+  },
+  "SubscribeGraph": {
+    "file": "Ports.cs",
+    "line": 30,
+    "text": "public sealed record SubscribeGraph(RequestId Request, TenantId Tenant, GraphId Graph, GraphScope Scope,\n    DiffProfile Profile, WorkBudget Budget);"
+  },
+  "GraphFeedItem": {
+    "file": "Ports.cs",
+    "line": 39,
+    "text": "public abstract record GraphFeedItem(RequestId Request);"
+  },
+  "SubscriptionPage": {
+    "file": "Ports.cs",
+    "line": 40,
+    "text": "public sealed record SubscriptionPage(RequestId Request, SnapshotPage Page) : GraphFeedItem(Request);"
+  },
+  "SubscriptionReady": {
+    "file": "Ports.cs",
+    "line": 41,
+    "text": "public sealed record SubscriptionReady(RequestId Request, SnapshotSeal Seal,\n    InputFrontier Frontier, string ResumeToken) : GraphFeedItem(Request);"
+  },
+  "SubscriptionChange": {
+    "file": "Ports.cs",
+    "line": 43,
+    "text": "public sealed record SubscriptionChange(RequestId Request, ProjectionCommit Commit,\n    string ResumeToken) : GraphFeedItem(Request);"
+  },
+  "SubscriptionProgress": {
+    "file": "Ports.cs",
+    "line": 45,
+    "text": "public sealed record SubscriptionProgress(RequestId Request, InputFrontier Frontier) : GraphFeedItem(Request);"
+  },
+  "SubscriptionGap": {
+    "file": "Ports.cs",
+    "line": 46,
+    "text": "public sealed record SubscriptionGap(RequestId Request, string Reason,\n    GraphVersion LastAvailable) : GraphFeedItem(Request);"
+  },
+  "IGraphSpace": {
+    "file": "Ports.cs",
+    "line": 48,
+    "text": "public interface IGraphSpace\n{\n    IAsyncEnumerable<GraphReadPage> ReadAsync(IAsyncEnumerable<ReadGraph> queries,\n        CancellationToken cancellationToken = default);\n    IAsyncEnumerable<GraphFeedItem> SubscribeAsync(IAsyncEnumerable<SubscribeGraph> subscriptions,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "IIdentityCatalog": {
+    "file": "Ports.cs",
+    "line": 55,
+    "text": "public interface IIdentityCatalog\n{\n    IAsyncEnumerable<IdentityResolution> ResolveAsync(IAsyncEnumerable<ResolveIdentity> requests,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "IdentityResolution": {
+    "file": "Ports.cs",
+    "line": 63,
+    "text": "public abstract record IdentityResolution;"
+  },
+  "IdentityFound": {
+    "file": "Ports.cs",
+    "line": 64,
+    "text": "public sealed record IdentityFound(ResolvedIdentity Value) : IdentityResolution;"
+  },
+  "IdentityRejected": {
+    "file": "Ports.cs",
+    "line": 65,
+    "text": "public sealed record IdentityRejected(Rejection Error) : IdentityResolution;"
+  },
+  "ConfigurationCommand": {
+    "file": "Ports.cs",
+    "line": 72,
+    "text": "public abstract record ConfigurationCommand(RequestId Request, TenantId Tenant);"
+  },
+  "InstallOntology": {
+    "file": "Ports.cs",
+    "line": 73,
+    "text": "public sealed record InstallOntology(RequestId Request, TenantId Tenant, OntologyDefinition Definition) : ConfigurationCommand(Request, Tenant);"
+  },
+  "InstallGraphSpace": {
+    "file": "Ports.cs",
+    "line": 74,
+    "text": "public sealed record InstallGraphSpace(RequestId Request, TenantId Tenant, GraphSpaceDefinition Definition) : ConfigurationCommand(Request, Tenant);"
+  },
+  "InstallProjection": {
+    "file": "Ports.cs",
+    "line": 75,
+    "text": "public sealed record InstallProjection(RequestId Request, TenantId Tenant, string GraphSpace, GraphProjectionDefinition Definition) : ConfigurationCommand(Request, Tenant);"
+  },
+  "EditProjection": {
+    "file": "Ports.cs",
+    "line": 76,
+    "text": "public sealed record EditProjection(RequestId Request, TenantId Tenant, ProjectionId Projection, string ExpectedVersion,\n    ProjectionDefinition Replacement) : ConfigurationCommand(Request, Tenant);"
+  },
+  "ConfigurationReceipt": {
+    "file": "Ports.cs",
+    "line": 78,
+    "text": "public sealed record ConfigurationReceipt(RequestId Request, bool Accepted,\n    string? InstalledVersion, ImmutableArray<Diagnostic> Errors);"
+  },
+  "IProjectionEngine": {
+    "file": "Ports.cs",
+    "line": 80,
+    "text": "public interface IProjectionEngine\n{\n    IAsyncEnumerable<IngestResult> IngestAsync(IAsyncEnumerable<EngineInput> input,\n        CancellationToken cancellationToken = default);\n    IAsyncEnumerable<ConfigurationReceipt> ConfigureAsync(IAsyncEnumerable<ConfigurationCommand> commands,\n        CancellationToken cancellationToken = default);\n    IAsyncEnumerable<TelemetryObservation> ObserveTelemetryAsync(IAsyncEnumerable<TelemetrySubscription> projections,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "IngestResult": {
+    "file": "Ports.cs",
+    "line": 92,
+    "text": "public abstract record IngestResult;"
+  },
+  "InputAccepted": {
+    "file": "Ports.cs",
+    "line": 93,
+    "text": "public sealed record InputAccepted(IngestionReceipt Receipt) : IngestResult;"
+  },
+  "InputRejected": {
+    "file": "Ports.cs",
+    "line": 94,
+    "text": "public sealed record InputRejected(RequestId Request, InputId Delivery,\n    ImmutableArray<Diagnostic> Errors) : IngestResult;"
+  },
+  "EvaluationInput": {
+    "file": "Ports.cs",
+    "line": 97,
+    "text": "public sealed record EvaluationInput(InputId Input, long Sequence, ImmutableArray<GraphVersion> Graphs,\n    ImmutableArray<GraphPatch> Patches, GraphExtent AdaptedFacts, long LogicalTimeNanoseconds);"
+  },
+  "EvaluationRequest": {
+    "file": "Ports.cs",
+    "line": 99,
+    "text": "public sealed record EvaluationRequest(RequestId Request, CompiledProjection Projection,\n    GraphVersion Previous, InputFrontier Frontier, EvaluationInput Input);"
+  },
+  "EvaluationProposal": {
+    "file": "Ports.cs",
+    "line": 101,
+    "text": "public sealed record EvaluationProposal(RequestId Request, GraphPatch? Change,\n    ImmutableArray<TelemetryObservation> Telemetry, ImmutableArray<ElementHistory> HistoryChanges);"
+  },
+  "IProjectionEvaluator": {
+    "file": "Ports.cs",
+    "line": 104,
+    "text": "public interface IProjectionEvaluator\n{\n    IAsyncEnumerable<EvaluationResult> EvaluateAsync(IAsyncEnumerable<EvaluationRequest> input,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "EvaluationResult": {
+    "file": "Ports.cs",
+    "line": 112,
+    "text": "public abstract record EvaluationResult;"
+  },
+  "EvaluationSucceeded": {
+    "file": "Ports.cs",
+    "line": 113,
+    "text": "public sealed record EvaluationSucceeded(EvaluationProposal Proposal) : EvaluationResult;"
+  },
+  "EvaluationFailed": {
+    "file": "Ports.cs",
+    "line": 114,
+    "text": "public sealed record EvaluationFailed(Rejection Error) : EvaluationResult;"
+  },
+  "LensContext": {
+    "file": "Ports.cs",
+    "line": 115,
+    "text": "public sealed record LensContext(string RuleVersion, Revision ComplementRevision,\n    ImmutableArray<Correspondence> Complement);"
+  },
+  "LensRequest": {
+    "file": "Ports.cs",
+    "line": 117,
+    "text": "public sealed record LensRequest(BackwardEdit Edit, LensContext Context);"
+  },
+  "IBidirectionalProjection": {
+    "file": "Ports.cs",
+    "line": 118,
+    "text": "public interface IBidirectionalProjection\n{\n    IAsyncEnumerable<LensResult> ProposeBackwardAsync(IAsyncEnumerable<LensRequest> edits,\n        CancellationToken cancellationToken = default);\n}"
+  },
+  "LensResult": {
+    "file": "Ports.cs",
+    "line": 126,
+    "text": "public abstract record LensResult;"
+  },
+  "LensProposed": {
+    "file": "Ports.cs",
+    "line": 127,
+    "text": "public sealed record LensProposed(BackwardProposal Proposal) : LensResult;"
+  },
+  "LensRejected": {
+    "file": "Ports.cs",
+    "line": 128,
+    "text": "public sealed record LensRejected(Rejection Error) : LensResult;"
+  },
+  "TelemetrySubscription": {
+    "file": "Ports.cs",
+    "line": 130,
+    "text": "public sealed record TelemetrySubscription(TenantId Tenant, ProjectionId Projection);"
+  },
+  "EngineInput": {
+    "file": "Ports.cs",
+    "line": 137,
+    "text": "public abstract record EngineInput;"
+  },
+  "NativeBatchInput": {
+    "file": "Ports.cs",
+    "line": 138,
+    "text": "public sealed record NativeBatchInput(IngestBatch Batch) : EngineInput;"
+  },
+  "GraphSnapshotInput": {
+    "file": "Ports.cs",
+    "line": 139,
+    "text": "public sealed record GraphSnapshotInput(RequestId Request, InputContext Context, string Binding,\n    SnapshotPage Page) : EngineInput;"
+  },
+  "GraphSnapshotComplete": {
+    "file": "Ports.cs",
+    "line": 141,
+    "text": "public sealed record GraphSnapshotComplete(RequestId Request, InputContext Context, string Binding,\n    SnapshotSeal Seal, InputFrontier Frontier) : EngineInput;"
+  },
+  "GraphChangeInput": {
+    "file": "Ports.cs",
+    "line": 143,
+    "text": "public sealed record GraphChangeInput(RequestId Request, InputContext Context, string Binding,\n    GraphPatch Patch, InputFrontier Frontier) : EngineInput;"
+  },
+  "LogicalTimeInput": {
+    "file": "Ports.cs",
+    "line": 145,
+    "text": "public sealed record LogicalTimeInput(RequestId Request, InputContext Context, long Nanoseconds) : EngineInput;"
+  },
+  "VirtualQueryKind": {
+    "file": "Ports.cs",
+    "line": 147,
+    "text": "public enum VirtualQueryKind { IdentityLookup, BoundedNeighborhood, FiniteExtent }"
+  },
+  "VirtualProviderContract": {
+    "file": "Ports.cs",
+    "line": 148,
+    "text": "public sealed record VirtualProviderContract(ContentHash Artifact, string Version,\n    ContentHash DefinitionSchemaDigest, ImmutableArray<VirtualQueryKind> Queries);"
+  },
+  "ReadVirtual": {
+    "file": "Ports.cs",
+    "line": 150,
+    "text": "public sealed record ReadVirtual(ReadGraph Query, VirtualRegion Region, VirtualProviderContract Provider);"
+  },
+  "IVirtualGraphProvider": {
+    "file": "Ports.cs",
+    "line": 151,
+    "text": "public interface IVirtualGraphProvider\n{\n    IAsyncEnumerable<GraphReadPage> ReadAsync(IAsyncEnumerable<ReadVirtual> queries,\n        CancellationToken cancellationToken = default);\n}"
+  }
+}

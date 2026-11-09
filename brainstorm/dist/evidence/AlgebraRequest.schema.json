@@ -1,0 +1,1088 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AlgebraRequest",
+  "$ref": "#/$defs/AlgebraRequest",
+  "$defs": {
+    "TenantId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphVersion": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "tenant",
+        "graph",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectionId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EntityId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TypeId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "TextValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "text"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "IntegerValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "integer"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^(0|-?[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DecimalValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "decimal"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]\u002B)?$"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "BooleanValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "boolean"
+        },
+        "value": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "InstantValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "instant"
+        },
+        "value": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "NullValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "null"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "EntityValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "value": {
+          "$ref": "#/$defs/EntityId"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ListValue": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "list"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphValue"
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "items"
+      ],
+      "additionalProperties": false
+    },
+    "GraphValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/TextValue"
+        },
+        {
+          "$ref": "#/$defs/IntegerValue"
+        },
+        {
+          "$ref": "#/$defs/DecimalValue"
+        },
+        {
+          "$ref": "#/$defs/BooleanValue"
+        },
+        {
+          "$ref": "#/$defs/InstantValue"
+        },
+        {
+          "$ref": "#/$defs/NullValue"
+        },
+        {
+          "$ref": "#/$defs/EntityValue"
+        },
+        {
+          "$ref": "#/$defs/ListValue"
+        }
+      ]
+    },
+    "PropertyValue": {
+      "type": "object",
+      "properties": {
+        "property": {
+          "$ref": "#/$defs/PropertyId"
+        },
+        "value": {
+          "$ref": "#/$defs/GraphValue"
+        }
+      },
+      "required": [
+        "property",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EntityState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "EntityEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "id": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EntityState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipState": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/RelationshipId"
+        },
+        "source": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "target": {
+          "$ref": "#/$defs/EntityId"
+        },
+        "type": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyValue"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "target",
+        "type",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "relationship"
+        },
+        "id": {
+          "$ref": "#/$defs/RelationshipId"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelationshipState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RelationshipState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "ContentHash": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "SnapshotBinding": {
+      "type": "object",
+      "properties": {
+        "port": {
+          "type": "string"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/GraphVersion"
+        }
+      },
+      "required": [
+        "port",
+        "snapshot"
+      ],
+      "additionalProperties": false
+    },
+    "VirtualRegion": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "providerDigest": {
+          "$ref": "#/$defs/ContentHash"
+        },
+        "providerVersion": {
+          "type": "string"
+        },
+        "definition": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SnapshotBinding"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "providerDigest",
+        "providerVersion",
+        "definition",
+        "inputs"
+      ],
+      "additionalProperties": false
+    },
+    "VirtualRegionEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "virtualRegion"
+        },
+        "id": {
+          "type": "string"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VirtualRegion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VirtualRegion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyEdit": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "ontology"
+        },
+        "before": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "after": {
+          "$ref": "#/$defs/OntologyRef"
+        }
+      },
+      "required": [
+        "kind",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "GraphEdit": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EntityEdit"
+        },
+        {
+          "$ref": "#/$defs/RelationshipEdit"
+        },
+        {
+          "$ref": "#/$defs/VirtualRegionEdit"
+        },
+        {
+          "$ref": "#/$defs/OntologyEdit"
+        }
+      ]
+    },
+    "InputId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "ChangeCause": {
+      "type": "object",
+      "properties": {
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InputId"
+          }
+        },
+        "configurationVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "inputs",
+        "configurationVersion"
+      ],
+      "additionalProperties": false
+    },
+    "GraphPatch": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "from": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "to": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "projection": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "profile": {
+          "type": "string",
+          "enum": [
+            "extensionalFinite",
+            "symbolic"
+          ]
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphEdit"
+          }
+        },
+        "cause": {
+          "$ref": "#/$defs/ChangeCause"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "from",
+        "to",
+        "projection",
+        "profile",
+        "edits",
+        "cause"
+      ],
+      "additionalProperties": false
+    },
+    "PatchLiteral": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "literal"
+        },
+        "patch": {
+          "$ref": "#/$defs/GraphPatch"
+        }
+      },
+      "required": [
+        "kind",
+        "patch"
+      ],
+      "additionalProperties": false
+    },
+    "PatchThen": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "then"
+        },
+        "first": {
+          "$ref": "#/$defs/PatchExpression"
+        },
+        "next": {
+          "$ref": "#/$defs/PatchExpression"
+        }
+      },
+      "required": [
+        "kind",
+        "first",
+        "next"
+      ],
+      "additionalProperties": false
+    },
+    "PatchInverse": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "inverse"
+        },
+        "patch": {
+          "$ref": "#/$defs/PatchExpression"
+        }
+      },
+      "required": [
+        "kind",
+        "patch"
+      ],
+      "additionalProperties": false
+    },
+    "PatchExpression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/PatchLiteral"
+        },
+        {
+          "$ref": "#/$defs/PatchThen"
+        },
+        {
+          "$ref": "#/$defs/PatchInverse"
+        }
+      ]
+    },
+    "RequestId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "EvaluatePatch": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "patch"
+        },
+        "expression": {
+          "$ref": "#/$defs/PatchExpression"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "kind",
+        "expression",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "EntityFact": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "entity"
+        },
+        "state": {
+          "$ref": "#/$defs/EntityState"
+        }
+      },
+      "required": [
+        "kind",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipFact": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "relationship"
+        },
+        "state": {
+          "$ref": "#/$defs/RelationshipState"
+        }
+      },
+      "required": [
+        "kind",
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    "GraphFact": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EntityFact"
+        },
+        {
+          "$ref": "#/$defs/RelationshipFact"
+        }
+      ]
+    },
+    "WeightedFact": {
+      "type": "object",
+      "properties": {
+        "fact": {
+          "$ref": "#/$defs/GraphFact"
+        },
+        "weight": {
+          "type": "string",
+          "pattern": "^(0|-?[1-9][0-9]*)$"
+        }
+      },
+      "required": [
+        "fact",
+        "weight"
+      ],
+      "additionalProperties": false
+    },
+    "SignedDelta": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "projection": {
+          "$ref": "#/$defs/ProjectionId"
+        },
+        "ontology": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "terms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WeightedFact"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "tenant",
+        "projection",
+        "ontology",
+        "terms"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaLiteral": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "literal"
+        },
+        "delta": {
+          "$ref": "#/$defs/SignedDelta"
+        }
+      },
+      "required": [
+        "kind",
+        "delta"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaAdd": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "add"
+        },
+        "left": {
+          "$ref": "#/$defs/DeltaExpression"
+        },
+        "right": {
+          "$ref": "#/$defs/DeltaExpression"
+        }
+      },
+      "required": [
+        "kind",
+        "left",
+        "right"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaSubtract": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "subtract"
+        },
+        "left": {
+          "$ref": "#/$defs/DeltaExpression"
+        },
+        "right": {
+          "$ref": "#/$defs/DeltaExpression"
+        }
+      },
+      "required": [
+        "kind",
+        "left",
+        "right"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaNegate": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "negate"
+        },
+        "delta": {
+          "$ref": "#/$defs/DeltaExpression"
+        }
+      },
+      "required": [
+        "kind",
+        "delta"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaExpression": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/DeltaLiteral"
+        },
+        {
+          "$ref": "#/$defs/DeltaAdd"
+        },
+        {
+          "$ref": "#/$defs/DeltaSubtract"
+        },
+        {
+          "$ref": "#/$defs/DeltaNegate"
+        }
+      ]
+    },
+    "EvaluateDelta": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "delta"
+        },
+        "expression": {
+          "$ref": "#/$defs/DeltaExpression"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "kind",
+        "expression",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "ConvertPatchToDelta": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "toDelta"
+        },
+        "patch": {
+          "$ref": "#/$defs/GraphPatch"
+        },
+        "ontology": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "kind",
+        "patch",
+        "ontology",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "DeltaAtBase": {
+      "type": "object",
+      "properties": {
+        "delta": {
+          "$ref": "#/$defs/SignedDelta"
+        },
+        "base": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "cause": {
+          "$ref": "#/$defs/ChangeCause"
+        }
+      },
+      "required": [
+        "delta",
+        "base",
+        "cause"
+      ],
+      "additionalProperties": false
+    },
+    "ConvertDeltaToPatch": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "toPatch"
+        },
+        "delta": {
+          "$ref": "#/$defs/DeltaAtBase"
+        },
+        "proposedTarget": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "kind",
+        "delta",
+        "proposedTarget",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "SquashRequest": {
+      "type": "object",
+      "properties": {
+        "base": {
+          "$ref": "#/$defs/GraphVersion"
+        },
+        "patches": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphPatch"
+          }
+        }
+      },
+      "required": [
+        "base",
+        "patches"
+      ],
+      "additionalProperties": false
+    },
+    "SquashPatches": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "squash"
+        },
+        "squash": {
+          "$ref": "#/$defs/SquashRequest"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestId"
+        }
+      },
+      "required": [
+        "kind",
+        "squash",
+        "request"
+      ],
+      "additionalProperties": false
+    },
+    "AlgebraRequest": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/EvaluatePatch"
+        },
+        {
+          "$ref": "#/$defs/EvaluateDelta"
+        },
+        {
+          "$ref": "#/$defs/ConvertPatchToDelta"
+        },
+        {
+          "$ref": "#/$defs/ConvertDeltaToPatch"
+        },
+        {
+          "$ref": "#/$defs/SquashPatches"
+        }
+      ]
+    }
+  }
+}

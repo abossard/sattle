@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1140" viewBox="0 0 1120 1140">
+<rect width="1120" height="1140" fill="#111923"/>
+<defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0 L9 5 L0 10" fill="none" stroke="#8ca0b6" stroke-width="1.6"/></marker></defs>
+<text x="48" y="56" font-family="DejaVu Sans, sans-serif" font-size="36" font-weight="600" fill="#f4f7fb">Sattle</text>
+<text x="48" y="91" font-family="DejaVu Sans, sans-serif" font-size="23" font-weight="400" fill="#d9e3ee">Graph and document projection contracts</text>
+<rect x="48" y="132" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="48" y="132" width="5" height="125" fill="#7bcbd4"/>
+<text x="72" y="166" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Source adapters</text>
+<text x="72" y="199" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Hubble · Azure · Kubernetes · OTel</text>
+<text x="72" y="225" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Native events, files, batches and gRPC streams</text>
+<rect x="602" y="132" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="602" y="132" width="5" height="125" fill="#7bcbd4"/>
+<text x="626" y="166" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Projection compiler</text>
+<text x="626" y="199" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Portable rules and versioned ontologies</text>
+<text x="626" y="225" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Type checking, recursion and lens capabilities</text>
+<rect x="292" y="327" width="536" height="145" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="292" y="327" width="5" height="145" fill="#7bcbd4"/>
+<text x="316" y="361" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Projection engine</text>
+<text x="316" y="394" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Recorded input order · configuration replay</text>
+<text x="316" y="420" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Atomic graph changes · bounded input history</text>
+<text x="316" y="446" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Typed patch and signed-delta arithmetic</text>
+<path d="M283 257 V289 H432 V327" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M837 257 V289 H688 V327" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="48" y="545" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="48" y="545" width="5" height="125" fill="#7bcbd4"/>
+<text x="72" y="579" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Master + derived graphs</text>
+<text x="72" y="612" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Stored and virtual graphs · pinned revisions</text>
+<text x="72" y="638" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Scoped reads · snapshot and change feeds</text>
+<rect x="602" y="545" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="602" y="545" width="5" height="125" fill="#7bcbd4"/>
+<text x="626" y="579" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Identity catalog</text>
+<text x="626" y="612" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Timeless entities · shared across projections</text>
+<text x="626" y="638" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Scoped keys, evidence and stable bindings</text>
+<path d="M432 472 V508 H283 V545" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M688 472 V508 H837 V545" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="48" y="757" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="48" y="757" width="5" height="125" fill="#7bcbd4"/>
+<text x="72" y="791" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#7bcbd4">Stacked + combined views</text>
+<text x="72" y="824" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Explicit bindings · distinct ontologies</text>
+<text x="72" y="850" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Symbolic virtual changes require confirmation</text>
+<rect x="602" y="757" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="602" y="757" width="5" height="125" fill="#d1b1f0"/>
+<text x="626" y="791" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#d1b1f0">Document projection</text>
+<text x="626" y="824" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Stable block IDs · explicit ordering</text>
+<text x="626" y="850" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Document snapshots and reversible patches</text>
+<path d="M205 670 V757" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<path d="M368 670 V713 H837 V757" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="515" y="704" font-family="DejaVu Sans, sans-serif" font-size="17" font-weight="400" fill="#aebed0">pinned graph view</text>
+<rect x="602" y="969" width="470" height="125" rx="8" fill="#1a2735" stroke="#415266" stroke-width="1.4"/>
+<rect x="602" y="969" width="5" height="125" fill="#d1b1f0"/>
+<text x="626" y="1003" font-family="DejaVu Sans, sans-serif" font-size="24" font-weight="600" fill="#d1b1f0">Document renderers</text>
+<text x="626" y="1036" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Markdown · HTML · plain text</text>
+<text x="626" y="1062" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Versioned output with format-specific escaping</text>
+<path d="M837 882 V969" fill="none" stroke="#8ca0b6" stroke-width="2" marker-end="url(#arrow)"/>
+<text x="48" y="1013" font-family="DejaVu Sans, sans-serif" font-size="22" font-weight="600" fill="#f4f7fb">Contract-only iteration</text>
+<text x="48" y="1046" font-family="DejaVu Sans, sans-serif" font-size="18" font-weight="400" fill="#d9e3ee">Test logic lives in a separate reference model.</text>
+</svg>

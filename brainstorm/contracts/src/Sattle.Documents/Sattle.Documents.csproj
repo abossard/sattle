@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><ItemGroup><ProjectReference Include="../Sattle.Model/Sattle.Model.csproj" /><ProjectReference Include="../Sattle.Projections/Sattle.Projections.csproj" /><ProjectReference Include="../Sattle.Runtime/Sattle.Runtime.csproj" /></ItemGroup></Project>

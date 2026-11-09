@@ -1,0 +1,69 @@
+{
+  "schemaVersion": "1.0",
+  "reference": {
+    "id": "business",
+    "version": "1",
+    "digest": {
+      "value": "sha256:example-business"
+    }
+  },
+  "noEntityType": {
+    "value": "NoType"
+  },
+  "noRelationshipType": {
+    "value": "NoType"
+  },
+  "properties": [
+    {
+      "id": {
+        "value": "display"
+      },
+      "valueKind": "text",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    },
+    {
+      "id": {
+        "value": "count"
+      },
+      "valueKind": "integer",
+      "nullable": false,
+      "itemKind": null,
+      "unit": null,
+      "role": "graphData"
+    }
+  ],
+  "entityTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "properties": []
+    },
+    {
+      "id": {
+        "value": "Capability"
+      },
+      "properties": [
+        {
+          "value": "display"
+        },
+        {
+          "value": "count"
+        }
+      ]
+    }
+  ],
+  "relationshipTypes": [
+    {
+      "id": {
+        "value": "NoType"
+      },
+      "sourceTypes": [],
+      "targetTypes": [],
+      "properties": []
+    }
+  ]
+}

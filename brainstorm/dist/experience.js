@@ -1,0 +1,1 @@
+document.querySelectorAll('[data-go-layer]').forEach(button=>button.addEventListener('click',()=>{document.querySelector(`.atlas-view[data-layer="${button.dataset.goLayer}"]`).click();document.getElementById('explorer').scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'})}));

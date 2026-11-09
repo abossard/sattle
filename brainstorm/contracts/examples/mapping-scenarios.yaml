@@ -1,0 +1,38 @@
+schemaVersion: '1.0'
+status: specification-only
+# Source files remain native; expected observations below are projection choices.
+scenarios:
+  - id: hubble-observed-call
+    input: hubble.json
+    expected:
+      partialGraph: true
+      relationships: [{source: checkout-1, target: payments-1, type: Calls}]
+      mustNotInfer: [ExpectedCall]
+  - id: arg-inventory
+    input: azure-resource-graph.json
+    expected:
+      partialGraph: true
+      entities: [{name: payments, type: AzureResource}]
+      absentResourceMeansDeletion: false
+  - id: k8s-warning
+    input: kubernetes-event.json
+    expected:
+      partialGraph: true
+      entities: [{identityField: regarding.uid, type: Pod, health: degraded}]
+  - id: k8s-deletion
+    input: kubernetes-delete.json
+    expected:
+      withdrawSourceContribution: pod-uid-a
+      unconditionalGlobalEntityDeletion: false
+  - id: vnet-observation
+    input: network-watcher.json
+    expected:
+      partialGraph: true
+      relationships: [{source: 10.0.0.1, target: 10.0.0.2, type: Calls}]
+      telemetrySeparate: [bytes, packets]
+  - id: otel-span
+    input: otel.json
+    expected:
+      partialGraph: true
+      entities: [{identityField: service.instance.id, type: Service}]
+      errorAffectsHealthOnlyWhenConfigured: true

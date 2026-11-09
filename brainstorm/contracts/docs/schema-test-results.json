@@ -1,0 +1,194 @@
+{
+  "testGroups": 47,
+  "results": [
+    {
+      "name": "schema accepts graph-patch.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts signed-delta.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts ontology.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts graph-projection.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts document-projection.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts document.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts identity.json",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects unknown field",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects unsupported schema version",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects unknown edit tag",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects empty scoped ID",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects fractional weight",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects noncanonical negative zero",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects heading out of bounds",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects unknown operator",
+      "status": "passed"
+    },
+    {
+      "name": "schema rejects unbounded document budget",
+      "status": "passed"
+    },
+    {
+      "name": "semantic ontology references",
+      "status": "passed"
+    },
+    {
+      "name": "semantic graph projection fields and property ownership",
+      "status": "passed"
+    },
+    {
+      "name": "semantic document projection stable identity and ordering",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects unknown property",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects incompatible property value",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects missing input field",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects wire from nonexistent node",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects missing binary/unary port",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects ontology mismatch",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects unstable document ordering",
+      "status": "passed"
+    },
+    {
+      "name": "semantic rejects ordinary operator cycle",
+      "status": "passed"
+    },
+    {
+      "name": "recursion admits finite positive portable operator body",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects missing finite domain binding",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects fresh identities",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects aggregation",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects time window",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects source-precedence union",
+      "status": "passed"
+    },
+    {
+      "name": "recursion rejects missing result relation",
+      "status": "passed"
+    },
+    {
+      "name": "schema accepts explicit master and stacked combined projections",
+      "status": "passed"
+    },
+    {
+      "name": "composition validates source-local types and target-local emission",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects duplicate graph identity",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects duplicate projection identity",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects undeclared graph port",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects stale source ontology",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects missing upstream",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects projection cycle",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects rootless projection",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects wrong source property type",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects input type used as output type",
+      "status": "passed"
+    },
+    {
+      "name": "composition rejects duplicate input ports",
+      "status": "passed"
+    },
+    {
+      "name": "composition requires downstream revalidation after source schema change",
+      "status": "passed"
+    }
+  ],
+  "scope": "wire schemas and selected finite semantic fixtures; not a production compiler"
+}

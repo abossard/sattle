@@ -1,0 +1,232 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OntologyDefinition",
+  "$ref": "#/$defs/OntologyDefinition",
+  "$defs": {
+    "ContentHash": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyRef": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/ContentHash"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false
+    },
+    "TypeId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "PropertyDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/PropertyId"
+        },
+        "valueKind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "integer",
+            "decimal",
+            "boolean",
+            "instant",
+            "entity",
+            "list"
+          ]
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "itemKind": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "text",
+                "integer",
+                "decimal",
+                "boolean",
+                "instant",
+                "entity",
+                "list"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "graphData",
+            "telemetry"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "valueKind",
+        "nullable",
+        "itemKind",
+        "unit",
+        "role"
+      ],
+      "additionalProperties": false
+    },
+    "EntityTypeDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyId"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "RelationshipTypeDefinition": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "sourceTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TypeId"
+          }
+        },
+        "targetTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TypeId"
+          }
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyId"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "sourceTypes",
+        "targetTypes",
+        "properties"
+      ],
+      "additionalProperties": false
+    },
+    "OntologyDefinition": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "reference": {
+          "$ref": "#/$defs/OntologyRef"
+        },
+        "noEntityType": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "noRelationshipType": {
+          "$ref": "#/$defs/TypeId"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PropertyDefinition"
+          }
+        },
+        "entityTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EntityTypeDefinition"
+          }
+        },
+        "relationshipTypes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RelationshipTypeDefinition"
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "reference",
+        "noEntityType",
+        "noRelationshipType",
+        "properties",
+        "entityTypes",
+        "relationshipTypes"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

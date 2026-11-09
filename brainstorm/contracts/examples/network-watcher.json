@@ -1,0 +1,29 @@
+{
+  "records": [
+    {
+      "time": "2026-11-09T20:00:00Z",
+      "flowLogVersion": 4,
+      "flowLogGUID": "00000000-0000-0000-0000-000000000001",
+      "macAddress": "001122334455",
+      "category": "FlowLogFlowEvent",
+      "flowLogResourceID": "/subscriptions/demo/resourceGroups/network/providers/Microsoft.Network/networkWatchers/watcher/flowLogs/vnet",
+      "targetResourceID": "/subscriptions/demo/resourceGroups/network/providers/Microsoft.Network/virtualNetworks/main",
+      "operationName": "FlowLogFlowEvent",
+      "flowRecords": {
+        "flows": [
+          {
+            "aclID": "acl-example",
+            "flowGroups": [
+              {
+                "rule": "AllowHttps",
+                "flowTuples": [
+                  "1794254400000,10.0.0.1,10.0.0.2,45000,443,6,O,E,NX,1,500,1,800"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

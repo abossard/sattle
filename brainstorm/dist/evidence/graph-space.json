@@ -1,0 +1,482 @@
+{
+  "schemaVersion": "1.0",
+  "id": "operations",
+  "master": {
+    "graph": {
+      "value": "master"
+    },
+    "ingestionProjection": {
+      "schemaVersion": "1.0",
+      "id": {
+        "value": "ingestion"
+      },
+      "version": "1",
+      "ontology": {
+        "id": "infra",
+        "version": "1",
+        "digest": {
+          "value": "sha256:example"
+        }
+      },
+      "inputs": [
+        {
+          "name": "observations",
+          "contract": "sattle.service-observation",
+          "version": "1"
+        }
+      ],
+      "scaffold": {
+        "entities": [],
+        "relationships": []
+      },
+      "operators": [
+        {
+          "kind": "input",
+          "id": {
+            "value": "input"
+          },
+          "binding": "observations",
+          "row": {
+            "fields": [
+              {
+                "name": "uid",
+                "type": "text",
+                "optional": false
+              },
+              {
+                "name": "name",
+                "type": "text",
+                "optional": false
+              },
+              {
+                "name": "health",
+                "type": "text",
+                "optional": false
+              }
+            ]
+          }
+        },
+        {
+          "kind": "emitEntity",
+          "id": {
+            "value": "emit"
+          },
+          "identity": {
+            "domain": {
+              "value": "service-instance"
+            },
+            "canonicalizationVersion": "1",
+            "components": [
+              {
+                "field": "uid",
+                "value": {
+                  "kind": "field",
+                  "field": "uid"
+                }
+              }
+            ]
+          },
+          "type": {
+            "value": "Service"
+          },
+          "properties": [
+            {
+              "property": {
+                "value": "name"
+              },
+              "value": {
+                "kind": "field",
+                "field": "name"
+              }
+            },
+            {
+              "property": {
+                "value": "health"
+              },
+              "value": {
+                "kind": "field",
+                "field": "health"
+              }
+            }
+          ]
+        }
+      ],
+      "wires": [
+        {
+          "from": {
+            "value": "input"
+          },
+          "output": "out",
+          "to": {
+            "value": "emit"
+          },
+          "input": "in"
+        }
+      ],
+      "outputs": [
+        {
+          "value": "emit"
+        }
+      ],
+      "retainedInputsPerElement": 8,
+      "bidirectionalRules": []
+    }
+  },
+  "projections": [
+    {
+      "outputGraph": {
+        "value": "metrics-graph"
+      },
+      "projection": {
+        "schemaVersion": "1.0",
+        "id": {
+          "value": "metrics"
+        },
+        "version": "1",
+        "ontology": {
+          "id": "metrics",
+          "version": "1",
+          "digest": {
+            "value": "sha256:example-metrics"
+          }
+        },
+        "inputs": [
+          {
+            "name": "infra",
+            "contract": "sattle.graph",
+            "version": "1"
+          }
+        ],
+        "scaffold": {
+          "entities": [],
+          "relationships": []
+        },
+        "operators": [
+          {
+            "kind": "match",
+            "id": {
+              "value": "match"
+            },
+            "binding": "infra",
+            "pattern": {
+              "nodes": [
+                {
+                  "variable": "s",
+                  "type": {
+                    "value": "Service"
+                  }
+                }
+              ],
+              "edges": []
+            }
+          },
+          {
+            "kind": "emitEntity",
+            "id": {
+              "value": "emit"
+            },
+            "identity": {
+              "domain": {
+                "value": "measurement"
+              },
+              "canonicalizationVersion": "1",
+              "components": [
+                {
+                  "field": "key",
+                  "value": {
+                    "kind": "literal",
+                    "value": {
+                      "kind": "text",
+                      "value": "emit"
+                    }
+                  }
+                }
+              ]
+            },
+            "type": {
+              "value": "Service"
+            },
+            "properties": [
+              {
+                "property": {
+                  "value": "name"
+                },
+                "value": {
+                  "kind": "literal",
+                  "value": {
+                    "kind": "integer",
+                    "value": "3"
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "wires": [
+          {
+            "from": {
+              "value": "match"
+            },
+            "output": "out",
+            "to": {
+              "value": "emit"
+            },
+            "input": "in"
+          }
+        ],
+        "outputs": [
+          {
+            "value": "emit"
+          }
+        ],
+        "retainedInputsPerElement": 8,
+        "bidirectionalRules": []
+      },
+      "graphInputs": [
+        {
+          "port": "infra",
+          "source": {
+            "kind": "master"
+          },
+          "expectedOntology": {
+            "id": "infra",
+            "version": "1",
+            "digest": {
+              "value": "sha256:example"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "outputGraph": {
+        "value": "business-graph"
+      },
+      "projection": {
+        "schemaVersion": "1.0",
+        "id": {
+          "value": "business"
+        },
+        "version": "1",
+        "ontology": {
+          "id": "business",
+          "version": "1",
+          "digest": {
+            "value": "sha256:example-business"
+          }
+        },
+        "inputs": [
+          {
+            "name": "infra",
+            "contract": "sattle.graph",
+            "version": "1"
+          },
+          {
+            "name": "measurements",
+            "contract": "sattle.graph",
+            "version": "1"
+          }
+        ],
+        "scaffold": {
+          "entities": [],
+          "relationships": []
+        },
+        "operators": [
+          {
+            "kind": "match",
+            "id": {
+              "value": "infra"
+            },
+            "binding": "infra",
+            "pattern": {
+              "nodes": [
+                {
+                  "variable": "s",
+                  "type": {
+                    "value": "Service"
+                  }
+                }
+              ],
+              "edges": []
+            }
+          },
+          {
+            "kind": "match",
+            "id": {
+              "value": "metrics"
+            },
+            "binding": "measurements",
+            "pattern": {
+              "nodes": [
+                {
+                  "variable": "m",
+                  "type": {
+                    "value": "Service"
+                  }
+                }
+              ],
+              "edges": []
+            }
+          },
+          {
+            "kind": "match",
+            "id": {
+              "value": "again"
+            },
+            "binding": "infra",
+            "pattern": {
+              "nodes": [
+                {
+                  "variable": "i",
+                  "type": {
+                    "value": "Service"
+                  }
+                }
+              ],
+              "edges": []
+            }
+          },
+          {
+            "kind": "emitEntity",
+            "id": {
+              "value": "display"
+            },
+            "identity": {
+              "domain": {
+                "value": "capability"
+              },
+              "canonicalizationVersion": "1",
+              "components": [
+                {
+                  "field": "key",
+                  "value": {
+                    "kind": "literal",
+                    "value": {
+                      "kind": "text",
+                      "value": "display"
+                    }
+                  }
+                }
+              ]
+            },
+            "type": {
+              "value": "Capability"
+            },
+            "properties": [
+              {
+                "property": {
+                  "value": "display"
+                },
+                "value": {
+                  "kind": "field",
+                  "field": "s.name"
+                }
+              }
+            ]
+          },
+          {
+            "kind": "emitEntity",
+            "id": {
+              "value": "count"
+            },
+            "identity": {
+              "domain": {
+                "value": "capability"
+              },
+              "canonicalizationVersion": "1",
+              "components": [
+                {
+                  "field": "key",
+                  "value": {
+                    "kind": "literal",
+                    "value": {
+                      "kind": "text",
+                      "value": "count"
+                    }
+                  }
+                }
+              ]
+            },
+            "type": {
+              "value": "Capability"
+            },
+            "properties": [
+              {
+                "property": {
+                  "value": "count"
+                },
+                "value": {
+                  "kind": "field",
+                  "field": "m.name"
+                }
+              }
+            ]
+          }
+        ],
+        "wires": [
+          {
+            "from": {
+              "value": "infra"
+            },
+            "output": "out",
+            "to": {
+              "value": "display"
+            },
+            "input": "in"
+          },
+          {
+            "from": {
+              "value": "metrics"
+            },
+            "output": "out",
+            "to": {
+              "value": "count"
+            },
+            "input": "in"
+          }
+        ],
+        "outputs": [
+          {
+            "value": "display"
+          },
+          {
+            "value": "count"
+          }
+        ],
+        "retainedInputsPerElement": 8,
+        "bidirectionalRules": []
+      },
+      "graphInputs": [
+        {
+          "port": "infra",
+          "source": {
+            "kind": "master"
+          },
+          "expectedOntology": {
+            "id": "infra",
+            "version": "1",
+            "digest": {
+              "value": "sha256:example"
+            }
+          }
+        },
+        {
+          "port": "measurements",
+          "source": {
+            "kind": "projection",
+            "projection": {
+              "value": "metrics"
+            }
+          },
+          "expectedOntology": {
+            "id": "metrics",
+            "version": "1",
+            "digest": {
+              "value": "sha256:example-metrics"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

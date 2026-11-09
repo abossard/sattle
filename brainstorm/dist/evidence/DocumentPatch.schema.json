@@ -1,0 +1,387 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DocumentPatch",
+  "$ref": "#/$defs/DocumentPatch",
+  "$defs": {
+    "TenantId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Revision": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentVersion": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "document": {
+          "$ref": "#/$defs/DocumentId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "tenant",
+        "document",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "GraphId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "GraphVersion": {
+      "type": "object",
+      "properties": {
+        "tenant": {
+          "$ref": "#/$defs/TenantId"
+        },
+        "graph": {
+          "$ref": "#/$defs/GraphId"
+        },
+        "revision": {
+          "$ref": "#/$defs/Revision"
+        }
+      },
+      "required": [
+        "tenant",
+        "graph",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "BlockId": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "Heading": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "heading"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        },
+        "text": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        }
+      },
+      "required": [
+        "kind",
+        "level",
+        "text",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "Paragraph": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "paragraph"
+        },
+        "text": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        }
+      },
+      "required": [
+        "kind",
+        "text",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "TableRow": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "cells": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "key",
+        "cells"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentTable": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "table"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TableRow"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        }
+      },
+      "required": [
+        "kind",
+        "columns",
+        "rows",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "BulletList": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "list"
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        }
+      },
+      "required": [
+        "kind",
+        "items",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "CodeBlock": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "const": "code"
+        },
+        "language": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        }
+      },
+      "required": [
+        "kind",
+        "language",
+        "text",
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentBlock": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Heading"
+        },
+        {
+          "$ref": "#/$defs/Paragraph"
+        },
+        {
+          "$ref": "#/$defs/DocumentTable"
+        },
+        {
+          "$ref": "#/$defs/BulletList"
+        },
+        {
+          "$ref": "#/$defs/CodeBlock"
+        }
+      ]
+    },
+    "BlockEdit": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/BlockId"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DocumentBlock"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DocumentBlock"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "before",
+        "after"
+      ],
+      "additionalProperties": false
+    },
+    "DocumentPatch": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "from": {
+          "$ref": "#/$defs/DocumentVersion"
+        },
+        "to": {
+          "$ref": "#/$defs/DocumentVersion"
+        },
+        "beforeSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphVersion"
+          }
+        },
+        "afterSources": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GraphVersion"
+          }
+        },
+        "beforeProjectionVersion": {
+          "type": "string"
+        },
+        "afterProjectionVersion": {
+          "type": "string"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockEdit"
+          }
+        },
+        "beforeOrder": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockId"
+          }
+        },
+        "afterOrder": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockId"
+          }
+        },
+        "beforeCompleteness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "explicitlyTruncated"
+          ]
+        },
+        "afterCompleteness": {
+          "type": "string",
+          "enum": [
+            "complete",
+            "explicitlyTruncated"
+          ]
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "from",
+        "to",
+        "beforeSources",
+        "afterSources",
+        "beforeProjectionVersion",
+        "afterProjectionVersion",
+        "edits",
+        "beforeOrder",
+        "afterOrder",
+        "beforeCompleteness",
+        "afterCompleteness"
+      ],
+      "additionalProperties": false
+    }
+  }
+}
