@@ -14,7 +14,7 @@
     },
     {
       "path": "OPEN-WORK.md",
-      "sha256": "9e54d5700ed253be999ab2ea2e4e3d00fe3fdf9ba0b8a655f6c388a99a0550ac"
+      "sha256": "42f13bf9cb2b93673b4ffce5d1f408afa1a6cd36931170112acfefabeebd291b"
     },
     {
       "path": "README.md",
@@ -46,7 +46,7 @@
     },
     {
       "path": "docs/SITE-REVIEW.md",
-      "sha256": "a906349c6a9bec4b290bfd36d21b10f208a85fdaadfe8ad286941e3d8d9e2c05"
+      "sha256": "73153bb0ff989ca0efb4e5cc30509270da15272092dead2e5fbe89ed0adb495b"
     },
     {
       "path": "docs/SOURCES.md",
@@ -54,7 +54,7 @@
     },
     {
       "path": "docs/VERIFICATION.md",
-      "sha256": "25e36fe289016c0527a3a7cc5fa34bcc284f4bcac9472845e0766cc5259c6842"
+      "sha256": "cc00f847ef9625551358b0eb6da02abe42816c93288baea0eec6ae0f788e94ef"
     },
     {
       "path": "docs/architecture.png",
@@ -75,6 +75,14 @@
     {
       "path": "docs/schema-test-results.json",
       "sha256": "0cac5d9bd4fa0ff52509d8e97a3f7d05d0ae97d78535c0d6377aed3b1f253fdc"
+    },
+    {
+      "path": "examples/Sattle.Examples/Sattle.Examples.csproj",
+      "sha256": "93a7e432677dee0e6f28d3074b4462c98df3987a03d042781daa6587e88e9e3d"
+    },
+    {
+      "path": "examples/Sattle.Examples/UsageExamples.cs",
+      "sha256": "d9eaa2b6d8c20385cfa1720742e6afb81dad67273159fd0418f88ce63677597f"
     },
     {
       "path": "examples/azure-resource-graph.json",
@@ -278,7 +286,7 @@
     },
     {
       "path": "tools/verify.py",
-      "sha256": "1e364b2b6de2547024ff2a1e774be107663cdca72e79c16b297c3d3e18ace7e5"
+      "sha256": "57c751bc2507f3c31c32d13108aec83d7fb5347e1cdb9f78ee99f02a5bba323d"
     }
   ]
 }

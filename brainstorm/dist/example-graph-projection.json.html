@@ -1,0 +1,117 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#11181f"><meta name="description" content="Sattle: explore the master graph, composable projections and typed contracts in 21 animated explanations."><title>Observation → service definition · Sattle</title><link rel="stylesheet" href="atlas-next.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="header"><a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">◈</span> Sattle <small>Graph projection atlas</small></a><nav aria-label="Main navigation"><a href="index.html" >Map</a><a href="index.html#guide" >21 steps</a><a href="code-examples.html" aria-current="page">Examples</a><a href="reference.html" >Contracts</a><a href="research.html" >Research</a></nav></header><main id="main" tabindex="-1"><section class="wrap source-page"><a href="code-examples.html#portable">← Code examples</a><p class="eyebrow">Schema validation fixture</p><h1>graph-projection.json</h1><p class="code-note">Independent fixture with illustrative identity and digest values. This is not output from an executed engine.</p><div class="source-tools"><a href="evidence/graph-projection.json" download>Download JSON ↓</a></div><pre class="code-block" tabindex="0"><code>{
+  &quot;schemaVersion&quot;: &quot;1.0&quot;,
+  &quot;id&quot;: {
+    &quot;value&quot;: &quot;services&quot;
+  },
+  &quot;version&quot;: &quot;1&quot;,
+  &quot;ontology&quot;: {
+    &quot;id&quot;: &quot;infra&quot;,
+    &quot;version&quot;: &quot;1&quot;,
+    &quot;digest&quot;: {
+      &quot;value&quot;: &quot;sha256:example&quot;
+    }
+  },
+  &quot;inputs&quot;: [
+    {
+      &quot;name&quot;: &quot;observations&quot;,
+      &quot;contract&quot;: &quot;sattle.service-observation&quot;,
+      &quot;version&quot;: &quot;1&quot;
+    }
+  ],
+  &quot;scaffold&quot;: {
+    &quot;entities&quot;: [],
+    &quot;relationships&quot;: []
+  },
+  &quot;operators&quot;: [
+    {
+      &quot;kind&quot;: &quot;input&quot;,
+      &quot;id&quot;: {
+        &quot;value&quot;: &quot;input&quot;
+      },
+      &quot;binding&quot;: &quot;observations&quot;,
+      &quot;row&quot;: {
+        &quot;fields&quot;: [
+          {
+            &quot;name&quot;: &quot;uid&quot;,
+            &quot;type&quot;: &quot;text&quot;,
+            &quot;optional&quot;: false
+          },
+          {
+            &quot;name&quot;: &quot;name&quot;,
+            &quot;type&quot;: &quot;text&quot;,
+            &quot;optional&quot;: false
+          },
+          {
+            &quot;name&quot;: &quot;health&quot;,
+            &quot;type&quot;: &quot;text&quot;,
+            &quot;optional&quot;: false
+          }
+        ]
+      }
+    },
+    {
+      &quot;kind&quot;: &quot;emitEntity&quot;,
+      &quot;id&quot;: {
+        &quot;value&quot;: &quot;emit&quot;
+      },
+      &quot;identity&quot;: {
+        &quot;domain&quot;: {
+          &quot;value&quot;: &quot;service-instance&quot;
+        },
+        &quot;canonicalizationVersion&quot;: &quot;1&quot;,
+        &quot;components&quot;: [
+          {
+            &quot;field&quot;: &quot;uid&quot;,
+            &quot;value&quot;: {
+              &quot;kind&quot;: &quot;field&quot;,
+              &quot;field&quot;: &quot;uid&quot;
+            }
+          }
+        ]
+      },
+      &quot;type&quot;: {
+        &quot;value&quot;: &quot;Service&quot;
+      },
+      &quot;properties&quot;: [
+        {
+          &quot;property&quot;: {
+            &quot;value&quot;: &quot;name&quot;
+          },
+          &quot;value&quot;: {
+            &quot;kind&quot;: &quot;field&quot;,
+            &quot;field&quot;: &quot;name&quot;
+          }
+        },
+        {
+          &quot;property&quot;: {
+            &quot;value&quot;: &quot;health&quot;
+          },
+          &quot;value&quot;: {
+            &quot;kind&quot;: &quot;field&quot;,
+            &quot;field&quot;: &quot;health&quot;
+          }
+        }
+      ]
+    }
+  ],
+  &quot;wires&quot;: [
+    {
+      &quot;from&quot;: {
+        &quot;value&quot;: &quot;input&quot;
+      },
+      &quot;output&quot;: &quot;out&quot;,
+      &quot;to&quot;: {
+        &quot;value&quot;: &quot;emit&quot;
+      },
+      &quot;input&quot;: &quot;in&quot;
+    }
+  ],
+  &quot;outputs&quot;: [
+    {
+      &quot;value&quot;: &quot;emit&quot;
+    }
+  ],
+  &quot;retainedInputsPerElement&quot;: 8,
+  &quot;bidirectionalRules&quot;: []
+}
+</code></pre></section></main><footer class="footer"><a href="index.html">Sattle</a><span>Graph projections and C# contracts</span><a href="#main">Back to top ↑</a></footer></body></html>

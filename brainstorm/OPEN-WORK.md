@@ -12,7 +12,7 @@
 - [x] Check keyboard slider progression and scroll phase progression in the browser.
 - [x] Inspect desktop and narrow layouts; correct the map axis and mobile heading overflow.
 - [x] Complete final package and route checks.
-- [x] Publish site version 21.
+- [x] Publish site version 22 with the usage examples.
 - [x] Upload the source to abossard/sattle under brainstorm (commit d7554a0).
 
 ## GitHub Pages
@@ -21,6 +21,9 @@
 - [ ] Verify the published GitHub Pages URL.
 
 ## Further work
+- [x] Add compile-checked usage examples to all 21 lessons and a dedicated examples page.
+- [x] Review examples against contract limitations and check the desktop/mobile pages.
+- [x] Publish the example-code update to the live site and GitHub source.
 - [ ] User review of the visual pacing and color assignments.
 - [ ] Complete operator typing, ontology constraints and identity mutations listed in contracts/OPEN-WORK.md.
 - [ ] Implement the production engine in a future iteration.

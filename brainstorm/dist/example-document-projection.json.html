@@ -1,0 +1,112 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#11181f"><meta name="description" content="Sattle: explore the master graph, composable projections and typed contracts in 21 animated explanations."><title>Service table document definition · Sattle</title><link rel="stylesheet" href="atlas-next.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="header"><a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">◈</span> Sattle <small>Graph projection atlas</small></a><nav aria-label="Main navigation"><a href="index.html" >Map</a><a href="index.html#guide" >21 steps</a><a href="code-examples.html" aria-current="page">Examples</a><a href="reference.html" >Contracts</a><a href="research.html" >Research</a></nav></header><main id="main" tabindex="-1"><section class="wrap source-page"><a href="code-examples.html#portable">← Code examples</a><p class="eyebrow">Schema validation fixture</p><h1>document-projection.json</h1><p class="code-note">Independent fixture with illustrative identity and digest values. This is not output from an executed engine.</p><div class="source-tools"><a href="evidence/document-projection.json" download>Download JSON ↓</a></div><pre class="code-block" tabindex="0"><code>{
+  &quot;schemaVersion&quot;: &quot;1.0&quot;,
+  &quot;id&quot;: &quot;service-health&quot;,
+  &quot;version&quot;: &quot;1&quot;,
+  &quot;ontology&quot;: {
+    &quot;id&quot;: &quot;infra&quot;,
+    &quot;version&quot;: &quot;1&quot;,
+    &quot;digest&quot;: {
+      &quot;value&quot;: &quot;sha256:example&quot;
+    }
+  },
+  &quot;inputs&quot;: [
+    {
+      &quot;name&quot;: &quot;services&quot;,
+      &quot;contract&quot;: &quot;sattle.graph&quot;,
+      &quot;version&quot;: &quot;1&quot;
+    }
+  ],
+  &quot;operators&quot;: [
+    {
+      &quot;kind&quot;: &quot;match&quot;,
+      &quot;id&quot;: {
+        &quot;value&quot;: &quot;match&quot;
+      },
+      &quot;binding&quot;: &quot;services&quot;,
+      &quot;pattern&quot;: {
+        &quot;nodes&quot;: [
+          {
+            &quot;variable&quot;: &quot;s&quot;,
+            &quot;type&quot;: {
+              &quot;value&quot;: &quot;Service&quot;
+            }
+          }
+        ],
+        &quot;edges&quot;: []
+      }
+    },
+    {
+      &quot;kind&quot;: &quot;map&quot;,
+      &quot;id&quot;: {
+        &quot;value&quot;: &quot;rows&quot;
+      },
+      &quot;fields&quot;: [
+        {
+          &quot;field&quot;: &quot;id&quot;,
+          &quot;value&quot;: {
+            &quot;kind&quot;: &quot;field&quot;,
+            &quot;field&quot;: &quot;s&quot;
+          }
+        },
+        {
+          &quot;field&quot;: &quot;name&quot;,
+          &quot;value&quot;: {
+            &quot;kind&quot;: &quot;field&quot;,
+            &quot;field&quot;: &quot;s.name&quot;
+          }
+        },
+        {
+          &quot;field&quot;: &quot;health&quot;,
+          &quot;value&quot;: {
+            &quot;kind&quot;: &quot;field&quot;,
+            &quot;field&quot;: &quot;s.health&quot;
+          }
+        }
+      ]
+    }
+  ],
+  &quot;wires&quot;: [
+    {
+      &quot;from&quot;: {
+        &quot;value&quot;: &quot;match&quot;
+      },
+      &quot;output&quot;: &quot;out&quot;,
+      &quot;to&quot;: {
+        &quot;value&quot;: &quot;rows&quot;
+      },
+      &quot;input&quot;: &quot;in&quot;
+    }
+  ],
+  &quot;templates&quot;: [
+    {
+      &quot;ruleId&quot;: &quot;services&quot;,
+      &quot;kind&quot;: &quot;table&quot;,
+      &quot;rows&quot;: {
+        &quot;value&quot;: &quot;rows&quot;
+      },
+      &quot;orderBy&quot;: [
+        {
+          &quot;field&quot;: &quot;name&quot;,
+          &quot;direction&quot;: &quot;ascending&quot;
+        },
+        {
+          &quot;field&quot;: &quot;id&quot;,
+          &quot;direction&quot;: &quot;ascending&quot;
+        }
+      ],
+      &quot;fields&quot;: [
+        &quot;name&quot;,
+        &quot;health&quot;
+      ],
+      &quot;missing&quot;: &quot;literalUnknown&quot;,
+      &quot;headingLevel&quot;: null,
+      &quot;blockIdentityFields&quot;: [],
+      &quot;rowIdentityFields&quot;: [
+        &quot;id&quot;
+      ]
+    }
+  ],
+  &quot;maximumBlocks&quot;: 10000,
+  &quot;overflow&quot;: &quot;reject&quot;
+}
+</code></pre></section></main><footer class="footer"><a href="index.html">Sattle</a><span>Graph projections and C# contracts</span><a href="#main">Back to top ↑</a></footer></body></html>

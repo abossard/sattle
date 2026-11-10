@@ -44,7 +44,7 @@ Iteration 0.1: contract design and a finite test-only mathematical model. Produc
 - [x] Record master-graph and 21-step-story counter-reviews.
 - [x] Complete the colorful animated 21-step site guide with real code references.
 - [x] Verify desktop/mobile layouts and navigation; inspect reduced-motion implementation (see docs/SITE-REVIEW.md).
-- [ ] Publish the revised site and refresh design deliverables.
+- [x] Publish the revised site and package the current contracts and schemas.
 
 ## Design decisions to confirm next
 - [ ] Confirm symbolic virtual-definition patches as the explicit extension to ADR-002; complete infinite enumeration is not promised.
@@ -56,6 +56,7 @@ Iteration 0.1: contract design and a finite test-only mathematical model. Produc
 - [ ] Confirm document overflow policy, block/group ordering and full rendered replacement in v1.
 
 ## Open contract design
+- [ ] Add graph subscription resume-token input and define reconnect/gap recovery; feed output tokens currently have no corresponding SubscribeGraph input field.
 - [ ] Specify identity alias, rename, merge and split mutation protocol, including historical references.
 - [ ] Specify canonical value equality for decimals, instants, units, lists and identity hashing, beyond wire-shape validation.
 - [ ] Extend ontology constraints: imports, property cardinalities, value ranges, enums, inheritance and migration rules.

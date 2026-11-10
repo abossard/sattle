@@ -1,0 +1,483 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#11181f"><meta name="description" content="Sattle: explore the master graph, composable projections and typed contracts in 21 animated explanations."><title>Cross-ontology composition validation fixture · Sattle</title><link rel="stylesheet" href="atlas-next.css"></head><body><a class="skip" href="#main">Skip to content</a><header class="header"><a class="brand" href="index.html"><span class="brand-icon" aria-hidden="true">◈</span> Sattle <small>Graph projection atlas</small></a><nav aria-label="Main navigation"><a href="index.html" >Map</a><a href="index.html#guide" >21 steps</a><a href="code-examples.html" aria-current="page">Examples</a><a href="reference.html" >Contracts</a><a href="research.html" >Research</a></nav></header><main id="main" tabindex="-1"><section class="wrap source-page"><a href="code-examples.html#portable">← Code examples</a><p class="eyebrow">Schema validation fixture</p><h1>graph-space.json</h1><p class="code-note">Independent fixture with illustrative identity and digest values. This is not output from an executed engine.</p><div class="source-tools"><a href="evidence/graph-space.json" download>Download JSON ↓</a></div><pre class="code-block" tabindex="0"><code>{
+  &quot;schemaVersion&quot;: &quot;1.0&quot;,
+  &quot;id&quot;: &quot;operations&quot;,
+  &quot;master&quot;: {
+    &quot;graph&quot;: {
+      &quot;value&quot;: &quot;master&quot;
+    },
+    &quot;ingestionProjection&quot;: {
+      &quot;schemaVersion&quot;: &quot;1.0&quot;,
+      &quot;id&quot;: {
+        &quot;value&quot;: &quot;ingestion&quot;
+      },
+      &quot;version&quot;: &quot;1&quot;,
+      &quot;ontology&quot;: {
+        &quot;id&quot;: &quot;infra&quot;,
+        &quot;version&quot;: &quot;1&quot;,
+        &quot;digest&quot;: {
+          &quot;value&quot;: &quot;sha256:example&quot;
+        }
+      },
+      &quot;inputs&quot;: [
+        {
+          &quot;name&quot;: &quot;observations&quot;,
+          &quot;contract&quot;: &quot;sattle.service-observation&quot;,
+          &quot;version&quot;: &quot;1&quot;
+        }
+      ],
+      &quot;scaffold&quot;: {
+        &quot;entities&quot;: [],
+        &quot;relationships&quot;: []
+      },
+      &quot;operators&quot;: [
+        {
+          &quot;kind&quot;: &quot;input&quot;,
+          &quot;id&quot;: {
+            &quot;value&quot;: &quot;input&quot;
+          },
+          &quot;binding&quot;: &quot;observations&quot;,
+          &quot;row&quot;: {
+            &quot;fields&quot;: [
+              {
+                &quot;name&quot;: &quot;uid&quot;,
+                &quot;type&quot;: &quot;text&quot;,
+                &quot;optional&quot;: false
+              },
+              {
+                &quot;name&quot;: &quot;name&quot;,
+                &quot;type&quot;: &quot;text&quot;,
+                &quot;optional&quot;: false
+              },
+              {
+                &quot;name&quot;: &quot;health&quot;,
+                &quot;type&quot;: &quot;text&quot;,
+                &quot;optional&quot;: false
+              }
+            ]
+          }
+        },
+        {
+          &quot;kind&quot;: &quot;emitEntity&quot;,
+          &quot;id&quot;: {
+            &quot;value&quot;: &quot;emit&quot;
+          },
+          &quot;identity&quot;: {
+            &quot;domain&quot;: {
+              &quot;value&quot;: &quot;service-instance&quot;
+            },
+            &quot;canonicalizationVersion&quot;: &quot;1&quot;,
+            &quot;components&quot;: [
+              {
+                &quot;field&quot;: &quot;uid&quot;,
+                &quot;value&quot;: {
+                  &quot;kind&quot;: &quot;field&quot;,
+                  &quot;field&quot;: &quot;uid&quot;
+                }
+              }
+            ]
+          },
+          &quot;type&quot;: {
+            &quot;value&quot;: &quot;Service&quot;
+          },
+          &quot;properties&quot;: [
+            {
+              &quot;property&quot;: {
+                &quot;value&quot;: &quot;name&quot;
+              },
+              &quot;value&quot;: {
+                &quot;kind&quot;: &quot;field&quot;,
+                &quot;field&quot;: &quot;name&quot;
+              }
+            },
+            {
+              &quot;property&quot;: {
+                &quot;value&quot;: &quot;health&quot;
+              },
+              &quot;value&quot;: {
+                &quot;kind&quot;: &quot;field&quot;,
+                &quot;field&quot;: &quot;health&quot;
+              }
+            }
+          ]
+        }
+      ],
+      &quot;wires&quot;: [
+        {
+          &quot;from&quot;: {
+            &quot;value&quot;: &quot;input&quot;
+          },
+          &quot;output&quot;: &quot;out&quot;,
+          &quot;to&quot;: {
+            &quot;value&quot;: &quot;emit&quot;
+          },
+          &quot;input&quot;: &quot;in&quot;
+        }
+      ],
+      &quot;outputs&quot;: [
+        {
+          &quot;value&quot;: &quot;emit&quot;
+        }
+      ],
+      &quot;retainedInputsPerElement&quot;: 8,
+      &quot;bidirectionalRules&quot;: []
+    }
+  },
+  &quot;projections&quot;: [
+    {
+      &quot;outputGraph&quot;: {
+        &quot;value&quot;: &quot;metrics-graph&quot;
+      },
+      &quot;projection&quot;: {
+        &quot;schemaVersion&quot;: &quot;1.0&quot;,
+        &quot;id&quot;: {
+          &quot;value&quot;: &quot;metrics&quot;
+        },
+        &quot;version&quot;: &quot;1&quot;,
+        &quot;ontology&quot;: {
+          &quot;id&quot;: &quot;metrics&quot;,
+          &quot;version&quot;: &quot;1&quot;,
+          &quot;digest&quot;: {
+            &quot;value&quot;: &quot;sha256:example-metrics&quot;
+          }
+        },
+        &quot;inputs&quot;: [
+          {
+            &quot;name&quot;: &quot;infra&quot;,
+            &quot;contract&quot;: &quot;sattle.graph&quot;,
+            &quot;version&quot;: &quot;1&quot;
+          }
+        ],
+        &quot;scaffold&quot;: {
+          &quot;entities&quot;: [],
+          &quot;relationships&quot;: []
+        },
+        &quot;operators&quot;: [
+          {
+            &quot;kind&quot;: &quot;match&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;match&quot;
+            },
+            &quot;binding&quot;: &quot;infra&quot;,
+            &quot;pattern&quot;: {
+              &quot;nodes&quot;: [
+                {
+                  &quot;variable&quot;: &quot;s&quot;,
+                  &quot;type&quot;: {
+                    &quot;value&quot;: &quot;Service&quot;
+                  }
+                }
+              ],
+              &quot;edges&quot;: []
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;emitEntity&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;emit&quot;
+            },
+            &quot;identity&quot;: {
+              &quot;domain&quot;: {
+                &quot;value&quot;: &quot;measurement&quot;
+              },
+              &quot;canonicalizationVersion&quot;: &quot;1&quot;,
+              &quot;components&quot;: [
+                {
+                  &quot;field&quot;: &quot;key&quot;,
+                  &quot;value&quot;: {
+                    &quot;kind&quot;: &quot;literal&quot;,
+                    &quot;value&quot;: {
+                      &quot;kind&quot;: &quot;text&quot;,
+                      &quot;value&quot;: &quot;emit&quot;
+                    }
+                  }
+                }
+              ]
+            },
+            &quot;type&quot;: {
+              &quot;value&quot;: &quot;Service&quot;
+            },
+            &quot;properties&quot;: [
+              {
+                &quot;property&quot;: {
+                  &quot;value&quot;: &quot;name&quot;
+                },
+                &quot;value&quot;: {
+                  &quot;kind&quot;: &quot;literal&quot;,
+                  &quot;value&quot;: {
+                    &quot;kind&quot;: &quot;integer&quot;,
+                    &quot;value&quot;: &quot;3&quot;
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        &quot;wires&quot;: [
+          {
+            &quot;from&quot;: {
+              &quot;value&quot;: &quot;match&quot;
+            },
+            &quot;output&quot;: &quot;out&quot;,
+            &quot;to&quot;: {
+              &quot;value&quot;: &quot;emit&quot;
+            },
+            &quot;input&quot;: &quot;in&quot;
+          }
+        ],
+        &quot;outputs&quot;: [
+          {
+            &quot;value&quot;: &quot;emit&quot;
+          }
+        ],
+        &quot;retainedInputsPerElement&quot;: 8,
+        &quot;bidirectionalRules&quot;: []
+      },
+      &quot;graphInputs&quot;: [
+        {
+          &quot;port&quot;: &quot;infra&quot;,
+          &quot;source&quot;: {
+            &quot;kind&quot;: &quot;master&quot;
+          },
+          &quot;expectedOntology&quot;: {
+            &quot;id&quot;: &quot;infra&quot;,
+            &quot;version&quot;: &quot;1&quot;,
+            &quot;digest&quot;: {
+              &quot;value&quot;: &quot;sha256:example&quot;
+            }
+          }
+        }
+      ]
+    },
+    {
+      &quot;outputGraph&quot;: {
+        &quot;value&quot;: &quot;business-graph&quot;
+      },
+      &quot;projection&quot;: {
+        &quot;schemaVersion&quot;: &quot;1.0&quot;,
+        &quot;id&quot;: {
+          &quot;value&quot;: &quot;business&quot;
+        },
+        &quot;version&quot;: &quot;1&quot;,
+        &quot;ontology&quot;: {
+          &quot;id&quot;: &quot;business&quot;,
+          &quot;version&quot;: &quot;1&quot;,
+          &quot;digest&quot;: {
+            &quot;value&quot;: &quot;sha256:example-business&quot;
+          }
+        },
+        &quot;inputs&quot;: [
+          {
+            &quot;name&quot;: &quot;infra&quot;,
+            &quot;contract&quot;: &quot;sattle.graph&quot;,
+            &quot;version&quot;: &quot;1&quot;
+          },
+          {
+            &quot;name&quot;: &quot;measurements&quot;,
+            &quot;contract&quot;: &quot;sattle.graph&quot;,
+            &quot;version&quot;: &quot;1&quot;
+          }
+        ],
+        &quot;scaffold&quot;: {
+          &quot;entities&quot;: [],
+          &quot;relationships&quot;: []
+        },
+        &quot;operators&quot;: [
+          {
+            &quot;kind&quot;: &quot;match&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;infra&quot;
+            },
+            &quot;binding&quot;: &quot;infra&quot;,
+            &quot;pattern&quot;: {
+              &quot;nodes&quot;: [
+                {
+                  &quot;variable&quot;: &quot;s&quot;,
+                  &quot;type&quot;: {
+                    &quot;value&quot;: &quot;Service&quot;
+                  }
+                }
+              ],
+              &quot;edges&quot;: []
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;match&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;metrics&quot;
+            },
+            &quot;binding&quot;: &quot;measurements&quot;,
+            &quot;pattern&quot;: {
+              &quot;nodes&quot;: [
+                {
+                  &quot;variable&quot;: &quot;m&quot;,
+                  &quot;type&quot;: {
+                    &quot;value&quot;: &quot;Service&quot;
+                  }
+                }
+              ],
+              &quot;edges&quot;: []
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;match&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;again&quot;
+            },
+            &quot;binding&quot;: &quot;infra&quot;,
+            &quot;pattern&quot;: {
+              &quot;nodes&quot;: [
+                {
+                  &quot;variable&quot;: &quot;i&quot;,
+                  &quot;type&quot;: {
+                    &quot;value&quot;: &quot;Service&quot;
+                  }
+                }
+              ],
+              &quot;edges&quot;: []
+            }
+          },
+          {
+            &quot;kind&quot;: &quot;emitEntity&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;display&quot;
+            },
+            &quot;identity&quot;: {
+              &quot;domain&quot;: {
+                &quot;value&quot;: &quot;capability&quot;
+              },
+              &quot;canonicalizationVersion&quot;: &quot;1&quot;,
+              &quot;components&quot;: [
+                {
+                  &quot;field&quot;: &quot;key&quot;,
+                  &quot;value&quot;: {
+                    &quot;kind&quot;: &quot;literal&quot;,
+                    &quot;value&quot;: {
+                      &quot;kind&quot;: &quot;text&quot;,
+                      &quot;value&quot;: &quot;display&quot;
+                    }
+                  }
+                }
+              ]
+            },
+            &quot;type&quot;: {
+              &quot;value&quot;: &quot;Capability&quot;
+            },
+            &quot;properties&quot;: [
+              {
+                &quot;property&quot;: {
+                  &quot;value&quot;: &quot;display&quot;
+                },
+                &quot;value&quot;: {
+                  &quot;kind&quot;: &quot;field&quot;,
+                  &quot;field&quot;: &quot;s.name&quot;
+                }
+              }
+            ]
+          },
+          {
+            &quot;kind&quot;: &quot;emitEntity&quot;,
+            &quot;id&quot;: {
+              &quot;value&quot;: &quot;count&quot;
+            },
+            &quot;identity&quot;: {
+              &quot;domain&quot;: {
+                &quot;value&quot;: &quot;capability&quot;
+              },
+              &quot;canonicalizationVersion&quot;: &quot;1&quot;,
+              &quot;components&quot;: [
+                {
+                  &quot;field&quot;: &quot;key&quot;,
+                  &quot;value&quot;: {
+                    &quot;kind&quot;: &quot;literal&quot;,
+                    &quot;value&quot;: {
+                      &quot;kind&quot;: &quot;text&quot;,
+                      &quot;value&quot;: &quot;count&quot;
+                    }
+                  }
+                }
+              ]
+            },
+            &quot;type&quot;: {
+              &quot;value&quot;: &quot;Capability&quot;
+            },
+            &quot;properties&quot;: [
+              {
+                &quot;property&quot;: {
+                  &quot;value&quot;: &quot;count&quot;
+                },
+                &quot;value&quot;: {
+                  &quot;kind&quot;: &quot;field&quot;,
+                  &quot;field&quot;: &quot;m.name&quot;
+                }
+              }
+            ]
+          }
+        ],
+        &quot;wires&quot;: [
+          {
+            &quot;from&quot;: {
+              &quot;value&quot;: &quot;infra&quot;
+            },
+            &quot;output&quot;: &quot;out&quot;,
+            &quot;to&quot;: {
+              &quot;value&quot;: &quot;display&quot;
+            },
+            &quot;input&quot;: &quot;in&quot;
+          },
+          {
+            &quot;from&quot;: {
+              &quot;value&quot;: &quot;metrics&quot;
+            },
+            &quot;output&quot;: &quot;out&quot;,
+            &quot;to&quot;: {
+              &quot;value&quot;: &quot;count&quot;
+            },
+            &quot;input&quot;: &quot;in&quot;
+          }
+        ],
+        &quot;outputs&quot;: [
+          {
+            &quot;value&quot;: &quot;display&quot;
+          },
+          {
+            &quot;value&quot;: &quot;count&quot;
+          }
+        ],
+        &quot;retainedInputsPerElement&quot;: 8,
+        &quot;bidirectionalRules&quot;: []
+      },
+      &quot;graphInputs&quot;: [
+        {
+          &quot;port&quot;: &quot;infra&quot;,
+          &quot;source&quot;: {
+            &quot;kind&quot;: &quot;master&quot;
+          },
+          &quot;expectedOntology&quot;: {
+            &quot;id&quot;: &quot;infra&quot;,
+            &quot;version&quot;: &quot;1&quot;,
+            &quot;digest&quot;: {
+              &quot;value&quot;: &quot;sha256:example&quot;
+            }
+          }
+        },
+        {
+          &quot;port&quot;: &quot;measurements&quot;,
+          &quot;source&quot;: {
+            &quot;kind&quot;: &quot;projection&quot;,
+            &quot;projection&quot;: {
+              &quot;value&quot;: &quot;metrics&quot;
+            }
+          },
+          &quot;expectedOntology&quot;: {
+            &quot;id&quot;: &quot;metrics&quot;,
+            &quot;version&quot;: &quot;1&quot;,
+            &quot;digest&quot;: {
+              &quot;value&quot;: &quot;sha256:example-metrics&quot;
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
+</code></pre></section></main><footer class="footer"><a href="index.html">Sattle</a><span>Graph projections and C# contracts</span><a href="#main">Back to top ↑</a></footer></body></html>

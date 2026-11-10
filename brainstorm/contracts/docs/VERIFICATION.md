@@ -1,10 +1,11 @@
 # Verification evidence — iteration 0.1
 
-Verified with .NET SDK 10.0.403, targeting net10.0 / C# 14. Warnings are errors. C# uses only the base class library. Reproduce with `python tools/verify.py` after installing requirements.txt.
+Latest verification: 10 November 2026 with .NET SDK 10.0.100, targeting net10.0 / C# 14. Warnings are errors. C# uses only the base class library. Reproduce with `python tools/verify.py` after installing requirements.txt.
 
 | Check | Result | What this establishes |
 |---|---|---|
 | Build | 0 errors, 0 warnings | All five contract assemblies and test runner compile together. |
+| Caller example project | 0 errors, 0 warnings | 19 source excerpts call the actual contract types. They do not execute a production engine. |
 | Finite mathematical oracle | 14 groups; 1,921 assertions passed | Selected laws and counterexamples hold for this finite model and these generated cases. |
 | Schema and selected semantic checks | 47 passed | Examples fit generated wire schemas; tested invalid shapes and selected semantic mistakes are rejected. |
 | C# compile cases | 8 passed | Two valid cases compile; six invalid ID, property, predicate, row, patch/delta and edge-type combinations fail compilation. |
