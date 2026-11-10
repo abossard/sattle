@@ -12,3 +12,13 @@
 - [x] Reduced motion handled by CSS and playback preference checks; static checks verify those paths. OS-level preference switching was not exercised in the browser.
 
 The browser diagrams are illustrations. Contract verification results are recorded separately in VERIFICATION.md.
+# Example-code review — 10 November 2026
+
+An independent counter-review checked the example design and the completed caller code.
+
+- Existing composition JSON is a type-collision validation fixture, not a realistic business pipeline; the site now labels it accordingly.
+- Patch, delta and document fixtures are independent; the site does not imply they are executed outputs or equivalent encodings.
+- Caller examples distinguish input acceptance from graph commits, expose bounded-read outcomes and keep lens proposals separate from commits.
+- The graph-feed resume-token input gap is recorded in OPEN-WORK.md.
+- The completed example source and lesson mappings received no blocking findings. Compilation verifies API use; execution still requires engine implementations.
+

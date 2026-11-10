@@ -6,3 +6,31 @@ test('Guide pages have controls, semantic legends and direct source links',()=>{
 test('Generated pages link to existing local files and code line anchors',()=>{const names=['index.html','reference.html','research.html',...story.map(s=>`step-${String(s.number).padStart(2,'0')}.html`),...Object.values(symbols).map(s=>`code-${s.file}.html`)];for(const name of new Set(names)){const html=fs.readFileSync(path.join(dist,name),'utf8');for(const m of html.matchAll(/(?:href|src)="([^"]+)"/g)){const url=m[1];if(/^(https?:|#|data:)/.test(url))continue;const [file,hash]=url.split('#');assert.ok(fs.existsSync(path.join(dist,file)),`${name}: ${url}`);if(hash&&file.startsWith('code-'))assert.ok(fs.readFileSync(path.join(dist,file),'utf8').includes(`id="${hash}"`),url)}}});
 test('Arithmetic and document counterexamples have their required context',()=>{assert.ok(story[13].frames[3].nodes.some(n=>n.detail==='base(F) = 0'));assert.ok(story[19].frames[2].formula.includes('| --- | --- |'));assert.ok(story[9].frames[1].copy.includes('row schema'))});
 test('Motion can pause and respects reduced-motion preference',()=>{const js=fs.readFileSync(path.join(dist,'atlas.js'),'utf8'),css=fs.readFileSync(path.join(dist,'atlas-next.css'),'utf8');assert.ok(js.includes('prefers-reduced-motion: reduce'));assert.ok(js.includes('clearTimeout(timer)'));assert.ok(css.includes('animation-play-state:paused'));assert.ok(css.includes('@media(prefers-reduced-motion:reduce)'))});
+
+test('All lessons include an example extracted from the compilable project',()=>{
+ const samples=JSON.parse(fs.readFileSync(path.join(dist,'usage-examples.json')));
+ const raw=fs.readFileSync(path.join(dist,'code/UsageExamples.cs'),'utf8').split('\n');
+ assert.equal(samples.filter(x=>x.language==='csharp').length,19);
+ for(const x of samples.filter(x=>x.line)){
+  const excerpt=raw.slice(x.line-1,x.line-1+x.text.split('\n').length).map(line=>line.slice(4)).join('\n');
+  assert.equal(excerpt,x.text);
+ }
+ for(let n=1;n<=21;n++){
+  const sample=samples.find(x=>x.steps.includes(n));assert.ok(sample);
+  const page=fs.readFileSync(path.join(dist,`step-${String(n).padStart(2,'0')}.html`),'utf8');
+  assert.ok(page.includes(`id="sample-${sample.id}"`));
+ }
+});
+test('Example hub, portable fixtures and source anchors resolve locally',()=>{
+ const names=fs.readdirSync(dist).filter(x=>x==='code-examples.html'||x==='code-UsageExamples.cs.html'||x.startsWith('example-'));
+ for(const name of names){
+  const page=fs.readFileSync(path.join(dist,name),'utf8');
+  for(const [,href] of page.matchAll(/(?:href|src)="([^"]+)"/g)){
+   if(/^(https?:|data:)/.test(href))continue;
+   const [file,anchor]=href.split('#'),target=path.join(dist,file||name);
+   assert.ok(fs.existsSync(target),`${name}: ${href}`);
+   if(anchor)assert.ok(fs.readFileSync(target,'utf8').includes(`id="${anchor}"`),`${name}: ${href}`);
+  }
+ }
+ assert.ok(!Object.values(symbols).some(x=>/AssemblyInfo|GlobalUsings|AssemblyAttributes/.test(x.file)));
+});

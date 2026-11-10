@@ -56,6 +56,7 @@ Iteration 0.1: contract design and a finite test-only mathematical model. Produc
 - [ ] Confirm document overflow policy, block/group ordering and full rendered replacement in v1.
 
 ## Open contract design
+- [ ] Add graph subscription resume-token input and define reconnect/gap recovery; feed output tokens currently have no corresponding SubscribeGraph input field.
 - [ ] Specify identity alias, rename, merge and split mutation protocol, including historical references.
 - [ ] Specify canonical value equality for decimals, instants, units, lists and identity hashing, beyond wire-shape validation.
 - [ ] Extend ontology constraints: imports, property cardinalities, value ranges, enums, inheritance and migration rules.

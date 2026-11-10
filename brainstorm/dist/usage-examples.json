@@ -1,0 +1,263 @@
+[
+  {
+    "id": "composition",
+    "title": "Master, stacked and combined graphs",
+    "role": "master",
+    "copy": "One definition binds the master, a service view and a business view that consumes both.",
+    "steps": [
+      1,
+      9,
+      11
+    ],
+    "file": "UsageExamples.cs",
+    "line": 16,
+    "text": "public static GraphSpaceDefinition Compose(\n    ProjectionDefinition ingestion, ProjectionDefinition services,\n    ProjectionDefinition business)\n{\n    // services declares a \"master\" input; business declares \"services\"\n    // and \"inventory\" inputs. Their operators consume those exact names.\n    return new(\"1.0\", \"operations\",\n        new MasterGraphDefinition(new GraphId(\"master\"), ingestion),\n        [\n            new(new GraphId(\"services\"), services,\n                [new(\"master\", new MasterGraphSource(), ingestion.Ontology)]),\n            new(new GraphId(\"business\"), business,\n                [new(\"services\", new ProjectionGraphSource(services.Id), services.Ontology),\n                 new(\"inventory\", new MasterGraphSource(), ingestion.Ontology)])\n        ]);\n    // Each definition pins its own output ontology. The graph-space\n    // compiler still validates the named bindings, operators and types.\n}",
+    "language": "csharp"
+  },
+  {
+    "id": "ingestion",
+    "title": "Consume an input stream",
+    "role": "input",
+    "copy": "Supply events or batches through the same async port. Handle each receipt.",
+    "steps": [
+      2
+    ],
+    "file": "UsageExamples.cs",
+    "line": 53,
+    "text": "public static async Task ConsumeInputsAsync(\n    IProjectionEngine engine, IAsyncEnumerable<EngineInput> input,\n    Func<IngestResult, CancellationToken, ValueTask> handleReceipt,\n    CancellationToken ct)\n{\n    // input may yield NativeBatchInput with one record or many records.\n    // A file reader or event transport supplies the same async contract.\n    await foreach (var receipt in engine.IngestAsync(input, ct).WithCancellation(ct))\n        await handleReceipt(receipt, ct); // Handle acceptance AND rejection.\n    // Acceptance does not mean that every downstream projection committed.\n    // Observe committed graph changes through IGraphSpace.SubscribeAsync.\n}",
+    "language": "csharp"
+  },
+  {
+    "id": "subscription",
+    "title": "Observe graph commits",
+    "role": "diff",
+    "copy": "The graph feed carries snapshots, commits, progress and gaps.",
+    "steps": [],
+    "file": "UsageExamples.cs",
+    "line": 37,
+    "text": "public static async Task WatchGraphAsync(\n    IGraphSpace graphs, SubscribeGraph request,\n    Func<GraphFeedItem, CancellationToken, ValueTask> handle,\n    CancellationToken ct)\n{\n    await foreach (var item in graphs.SubscribeAsync(One(request, ct), ct))\n    {\n        // The handler distinguishes snapshot pages, the ready seal,\n        // committed changes, progress and gaps. A gap requires recovery.\n        await handle(item, ct);\n    }\n    // Graph subscription reconnect/resume is still an open contract item.\n}",
+    "language": "csharp"
+  },
+  {
+    "id": "adapter",
+    "title": "Adapt Hubble records",
+    "role": "input",
+    "copy": "Pass native records and their versioned mapping to an injected adapter.",
+    "steps": [
+      3
+    ],
+    "file": "UsageExamples.cs",
+    "line": 68,
+    "text": "public static IAsyncEnumerable<AdaptationResult> AdaptHubble(\n    IHubbleAdapter adapter, IAsyncEnumerable<NativeInput<HubbleMessage>> flows,\n    AdapterDefinition mapping, CancellationToken ct)\n{\n    // The definition pins the supported native format and mapping version.\n    // Results can be observations, withdrawals, loss notices or rejections.\n    return adapter.AdaptAsync(flows, mapping, ct);\n}",
+    "language": "csharp"
+  },
+  {
+    "id": "graph-data",
+    "title": "Put data on an edge",
+    "role": "master",
+    "copy": "An observed call has an identity, endpoints, a type and a health property.",
+    "steps": [
+      4
+    ],
+    "file": "UsageExamples.cs",
+    "line": 79,
+    "text": "public static RelationshipState ObservedCall(\n    RelationshipId edge, EntityId api, EntityId database) =>\n    new(edge, api, database, new TypeId(\"Calls\"),\n        [new(new PropertyId(\"health\"), new TextValue(\"degraded\"))]);\n// The output ontology must declare Calls and its text-valued health property.\n// The relationship's identity belongs to its projection, not its current type.",
+    "language": "csharp"
+  },
+  {
+    "id": "identity",
+    "title": "Resolve a stable identity",
+    "role": "identity",
+    "copy": "Use the tenant, cluster and Kubernetes UID as the object key.",
+    "steps": [
+      5
+    ],
+    "file": "UsageExamples.cs",
+    "line": 88,
+    "text": "public static ResolveIdentity PodIdentity(TenantId tenant, string cluster, string uid) =>\n    new(new RequestId(\"resolve-pod\"),\n        new IdentityKey(tenant, new IdentityDomain(\"kubernetes-object\"), \"1\",\n            [new(\"cluster\", new TextValue(cluster)),\n             new(\"uid\", new TextValue(uid))]));\n// Submit this request to IIdentityCatalog.ResolveAsync. A display name is\n// deliberately absent from the key; renaming it need not change identity.",
+    "language": "csharp"
+  },
+  {
+    "id": "ontology",
+    "title": "Declare a property",
+    "role": "rule",
+    "copy": "The ontology decides which values a property accepts.",
+    "steps": [
+      6
+    ],
+    "file": "UsageExamples.cs",
+    "line": 109,
+    "text": "public static PropertyDefinition HealthProperty() =>\n    new(new PropertyId(\"health\"), ValueKind.Text,\n        Nullable: false, ItemKind: null, Unit: null,\n        Role: PropertyRole.GraphData);\n// Add the property's ID to the relevant entity or relationship type in\n// OntologyDefinition. A graph pins the ontology's version and digest.",
+    "language": "csharp"
+  },
+  {
+    "id": "pattern",
+    "title": "Match a graph pattern",
+    "role": "rule",
+    "copy": "Bind the service endpoints and their observed call.",
+    "steps": [
+      7
+    ],
+    "file": "UsageExamples.cs",
+    "line": 98,
+    "text": "public static MatchOperator FindCalls() =>\n    new(new OperatorId(\"calls\"), \"master\",\n        new GraphPattern(\n            [new(\"api\", new TypeId(\"Service\")),\n             new(\"db\", new TypeId(\"Service\"))],\n            [new(\"call\", \"api\", \"db\", new TypeId(\"Calls\"))]));\n// This operator binds rows. A later emit operator produces output facts.\n// Service and Calls are resolved against the \"master\" input's ontology.",
+    "language": "csharp"
+  },
+  {
+    "id": "compile",
+    "title": "Validate a composition",
+    "role": "rule",
+    "copy": "Compile the whole graph space before installing its definitions.",
+    "steps": [
+      8
+    ],
+    "file": "UsageExamples.cs",
+    "line": 118,
+    "text": "public static IAsyncEnumerable<GraphSpaceCompilation> ValidateComposition(\n    IProjectionCompiler compiler, TenantId tenant, GraphSpaceDefinition space,\n    CancellationToken ct) =>\n    compiler.CompileGraphSpaceAsync(\n        One(new CompileGraphSpace(new RequestId(\"compile-space\"), tenant, space), ct), ct);\n// Inspect GraphSpaceAccepted or GraphSpaceRejected and its diagnostics.\n// Compilation does not install the definition or execute the projections.",
+    "language": "csharp"
+  },
+  {
+    "id": "union",
+    "title": "Combine compatible rows",
+    "role": "projection",
+    "copy": "Both branches must supply the same typed endpoint-pair shape.",
+    "steps": [
+      10
+    ],
+    "file": "UsageExamples.cs",
+    "line": 128,
+    "text": "public sealed record EndpointPair(EntityId Source, EntityId Target);\n\npublic static Rows<EndpointPair> CombinePairs(\n    Rows<EndpointPair> observed, Rows<EndpointPair> expected) =>\n    new UnionRows<EndpointPair>(observed, expected);\n// Both inputs have already selected endpoints into the same row shape.\n// This is an authoring expression. Lowering and semantic validation are\n// still required; it does not execute a union or select a conflict policy.",
+    "language": "csharp"
+  },
+  {
+    "id": "health",
+    "title": "Aggregate dependency health",
+    "role": "projection",
+    "copy": "Group by service and ask whether any dependency has failed.",
+    "steps": [
+      12
+    ],
+    "file": "UsageExamples.cs",
+    "line": 139,
+    "text": "public static GroupOperator AnyFailedDependency() =>\n    new(new OperatorId(\"service-health\"),\n        [new(\"service\", new FieldExpression(\"service\"))],\n        [new(\"degraded\", AggregateFunction.Any,\n            new CallExpression(Function.Equal,\n                [new FieldExpression(\"dependencyHealth\"),\n                 new Literal(new TextValue(\"failed\"))]))]);\n// Upstream rows supply service and dependencyHealth. A downstream emitter\n// maps the Boolean aggregate into a property declared by its output ontology.",
+    "language": "csharp"
+  },
+  {
+    "id": "patches",
+    "title": "Batch and compose ordered patches",
+    "role": "diff",
+    "copy": "A batch keeps event boundaries. Ordered composition checks adjacent revisions.",
+    "steps": [
+      13
+    ],
+    "file": "UsageExamples.cs",
+    "line": 151,
+    "text": "public static PatchBatch PreserveEventBoundaries(GraphPatch first, GraphPatch next) =>\n    new([first, next]);\n\npublic static EvaluatePatch ComposePatches(GraphPatch first, GraphPatch next) =>\n    new(new RequestId(\"compose\"),\n        new PatchThen(new PatchLiteral(first), new PatchLiteral(next)));\n// Composition requires first.To == next.From and compatible graph scope.\n// The algebra validates before-states; construction alone does not apply edits.",
+    "language": "csharp"
+  },
+  {
+    "id": "deltas",
+    "title": "Subtract deltas, then choose a base",
+    "role": "diff",
+    "copy": "Signed arithmetic and patch conversion are separate typed requests.",
+    "steps": [
+      14
+    ],
+    "file": "UsageExamples.cs",
+    "line": 162,
+    "text": "public static EvaluateDelta Subtract(SignedDelta left, SignedDelta right) =>\n    new(new RequestId(\"subtract\"),\n        new DeltaSubtract(new DeltaLiteral(left), new DeltaLiteral(right)));\n\npublic static ConvertDeltaToPatch AtBase(\n    SignedDelta delta, GraphVersion basis, GraphVersion target, ChangeCause cause) =>\n    new(new RequestId(\"materialize\"), new DeltaAtBase(delta, basis, cause), target);\n// Matching tenant, projection and ontology are required. Applying a signed\n// result also needs a base graph: negative fact counts can be rejected.",
+    "language": "csharp"
+  },
+  {
+    "id": "bounded-read",
+    "title": "Read a finite neighborhood",
+    "role": "master",
+    "copy": "Pin a graph revision, scope and work budget for stored or virtual data.",
+    "steps": [
+      15
+    ],
+    "file": "UsageExamples.cs",
+    "line": 174,
+    "text": "public static ReadGraph Neighborhood(GraphVersion version, EntityId root) =>\n    new(new RequestId(\"neighborhood\"), version,\n        new GraphScope([root], 2, [new TypeId(\"Calls\")]),\n        new WorkBudget(MaximumFacts: 10_000, MaximumSteps: 100_000),\n        Continuation: null);\n// Submit through IGraphSpace.ReadAsync for stored or virtual graphs.\n// Inspect Complete, MoreAvailable, BudgetExhausted and Unavailable on each\n// returned page. A page by itself does not imply a complete neighborhood.",
+    "language": "csharp"
+  },
+  {
+    "id": "recursion",
+    "title": "Bound a traversal",
+    "role": "projection",
+    "copy": "Follow Calls for up to four hops. Fixed-point recursion has additional requirements.",
+    "steps": [
+      16
+    ],
+    "file": "UsageExamples.cs",
+    "line": 185,
+    "text": "public static TraverseOperator BoundedDependencies() =>\n    new(new OperatorId(\"dependencies\"), new TypeId(\"Calls\"),\n        Direction.Outgoing, MinimumDepth: 1, MaximumDepth: 4);\n// This is a bounded traversal. Unbounded fixed-point derivation instead uses\n// FixpointOperator with a finite domain, fact/iteration budgets and a checked\n// monotone body. A budget alone does not establish convergence.",
+    "language": "csharp"
+  },
+  {
+    "id": "correspondence",
+    "title": "Record a correspondence",
+    "role": "identity",
+    "copy": "Connect a source deployment to a distinct target capability.",
+    "steps": [
+      17
+    ],
+    "file": "UsageExamples.cs",
+    "line": 194,
+    "text": "public static Correspondence DeploymentCapability(EntityId deployment, EntityId capability) =>\n    new(\"deployment-to-capability\",\n        [new EntityRef(deployment)], [new EntityRef(capability)], []);\n// The source deployment and target capability keep distinct identities.\n// This correspondence is one TGG ingredient; it is not a full grammar or\n// evidence that a forward/backward rule pair satisfies the lens laws.",
+    "language": "csharp"
+  },
+  {
+    "id": "lens",
+    "title": "Propose a backward edit",
+    "role": "projection",
+    "copy": "Use an explicitly bidirectional rule and its versioned context.",
+    "steps": [
+      18
+    ],
+    "file": "UsageExamples.cs",
+    "line": 203,
+    "text": "public static IAsyncEnumerable<LensResult> ProposeBackward(\n    IBidirectionalProjection lens, BackwardEdit edit, LensContext context,\n    CancellationToken ct) =>\n    lens.ProposeBackwardAsync(One(new LensRequest(edit, context), ct), ct);\n// The edit names an explicitly bidirectional rule and source/view base\n// revisions. A proposed source patch still needs validation and atomic commit.\n// This call never writes to Kubernetes or another external source system.",
+    "language": "csharp"
+  },
+  {
+    "id": "configuration",
+    "title": "Replace a projection definition",
+    "role": "rule",
+    "copy": "An expected version guards the configuration edit.",
+    "steps": [
+      19
+    ],
+    "file": "UsageExamples.cs",
+    "line": 213,
+    "text": "public static EditProjection ReplaceDefinition(\n    TenantId tenant, ProjectionDefinition replacement, string expectedVersion) =>\n    new(new RequestId(\"edit-projection\"), tenant, replacement.Id,\n        expectedVersion, replacement);\n// Send through IProjectionEngine.ConfigureAsync and inspect its receipt.\n// The engine owns replay of retained inputs and resulting graph commits.",
+    "language": "csharp"
+  },
+  {
+    "id": "document",
+    "title": "Project and render Markdown",
+    "role": "document",
+    "copy": "Pass the returned typed snapshot to a renderer. Keep its source revisions.",
+    "steps": [
+      20
+    ],
+    "file": "UsageExamples.cs",
+    "line": 222,
+    "text": "public static async Task RenderMarkdownAsync(\n    IDocumentProjection projection, IDocumentRenderer renderer,\n    ProjectDocument request,\n    Func<RenderedDocument, CancellationToken, ValueTask> save,\n    Func<DocumentResult, CancellationToken, ValueTask> reportFailure,\n    CancellationToken ct)\n{\n    await foreach (var result in projection.ProjectAsync(One(request, ct), ct))\n    {\n        if (result.Snapshot is not { } snapshot || !result.Errors.IsEmpty)\n        {\n            await reportFailure(result, ct);\n            continue;\n        }\n        var render = new RenderDocument(result.Request, snapshot,\n            DocumentFormat.Markdown, RendererVersion: \"1\");\n        await foreach (var output in renderer.RenderAsync(One(render, ct), ct))\n            await save(output, ct);\n    }\n    // Snapshot.Sources records the graph versions used. Inspect completeness:\n    // explicitly truncated documents remain distinguishable from complete ones.\n}",
+    "language": "csharp"
+  },
+  {
+    "id": "verification",
+    "title": "Build and verify the design",
+    "role": "rule",
+    "copy": "Run from the extracted sattle-design folder with .NET 10 and Python installed.",
+    "steps": [
+      21
+    ],
+    "file": "Terminal",
+    "line": 0,
+    "language": "shell",
+    "text": "python3 -m pip install -r requirements.txt\npython3 tools/verify.py",
+    "note": "This builds the contracts and caller examples, then runs the finite model and selected schema/compiler checks. It does not execute a production engine."
+  }
+]

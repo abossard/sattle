@@ -5,6 +5,7 @@ The site presents the master graph, stacked and combined projections, graph chan
 - `dist/`: self-contained static site, including C# reference pages and design download.
 - `tools/story.py`: 21 concepts, 84 visual phases, semantic colors and change markers.
 - `tools/build-atlas.py`: generates lesson and source-reference pages from actual contracts.
+- `contracts/examples/Sattle.Examples/`: compile-checked callers of the public interfaces; excerpts appear in every lesson and on `code-examples.html`.
 - `contracts/`: five .NET contract assemblies, generated schemas, fixtures and test-only reference model.
 - `OPEN-WORK.md`: current site checklist. `contracts/OPEN-WORK.md`: open design work.
 
