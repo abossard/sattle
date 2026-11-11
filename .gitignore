@@ -1,5 +1,7 @@
 # Real Azure/Kubernetes captures contain subscription IDs, IPs and names. The repo is public.
 lab/captures/
+# Fixtures derived from real captures stay local: scrubbing cannot be proven complete. Generate them with lab/fixtures/build.sh.
+lab/fixtures/**/*.ndjson
 lab/.kube/
 lab/.env
 **/node_modules/

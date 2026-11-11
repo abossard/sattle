@@ -189,7 +189,8 @@ An `azd` project that added capture to an existing AKS cluster and removed it ag
 
 - Infrastructure: [`azure.yaml`](lab/azure.yaml), [`main.bicep`](lab/infra/main.bicep).
 - Capture format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md). Live forwarder to Event Hubs: [`eh-forward.mjs`](lab/capture/eh-forward.mjs).
-- Fixtures in the repository are scrubbed ([`scrub.mjs`](lab/fixtures/scrub.mjs)). Raw captures are not in the repository.
+- Captures and the fixtures derived from them are not in the repository. [`build.sh`](lab/fixtures/build.sh) builds scrubbed fixtures from a capture with [`scrub.mjs`](lab/fixtures/scrub.mjs).
+- What the repository does carry is the synthetic estate, written by a [generator](engine/tests/Sattle.Tests/fixtures/build-estate.py). The default canvas view and the public tests use it.
 
 ## Run it
 
