@@ -1,0 +1,31 @@
+# References written by sattle replay --out at engine commit 4841a36 (NAME.references.ndjson, one reference per line; run by the paper session). Counts by jq; the entries name real resources and are not kept.
+
+## capture 20261110T105738Z
+capabilities: 0
+deploymentHealth: 0
+deploymentReport: 0
+health: 0
+healthSignals: 0
+healthState: 0
+healthTopology: 0
+master: 451
+serviceTree: 0
+master by state and entity type:
+ 427 absent AzureResource
+  24 absent Pod
+files written: 94
+
+## capture 20261110T140542Z
+capabilities: 0
+deploymentHealth: 0
+deploymentReport: 0
+health: 0
+healthSignals: 0
+healthState: 0
+healthTopology: 0
+master: 589
+serviceTree: 0
+master by state and entity type:
+ 563 absent AzureResource
+  26 absent Pod
+files written: 94

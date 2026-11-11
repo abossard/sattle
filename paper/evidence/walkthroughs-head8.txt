@@ -1,0 +1,15 @@
+# npm run walkthroughs at canvas commit 53db46e against the engine at 64f7a6a, both from a clean export of HEAD, run by the paper session.
+# Chrome headless over CDP; app: vite with ENGINE_PORT. The preview figures are entities/relationships of the rebuilt projection on that engine. The first line is the engine the script found.
+
+## engine: sattle serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth  (no overlay; strict: a missing output fails)
+engine: space operations, protocol 3, kernel sha256:bb6c721532d1, catalog revision 16, seq 326, input replay 617 rows
+ok    deployment-health: 112 commands, preview deploymentHealth 3/2, dh2 3/2
+ok    fixpoint-closure: 32 commands, preview kLoop 0/26
+ok    health-rollup: 180 commands, preview health 40/45, health2 40/45
+ok    link-policy: 10 commands, preview kLink 0/0, identity vs live minted 5 aliased 0 merged 5 conflicts 0
+ok    retain-rows: 19 commands, preview kRetain 2/0, durations typed in the panel: age
+ok    series-threshold-aggregates: 60 commands, preview kSeries 4/0, kSeriesText 4/0, durations typed in the panel: within, width
+ok    union-distinct: 30 commands, preview kUnion 10/0
+ok    values-rows: 21 commands, preview kValues 2/0
+walkthroughs: 8 passed
+exit 0

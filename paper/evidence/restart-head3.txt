@@ -1,0 +1,16 @@
+# Restart from a store at engine commit 588a256 (clean export of HEAD, Release build, run by the paper session).
+# sattle serve FIXTURE --cluster synth --store sqlite=DB (fixture tests/Sattle.Tests/fixtures/deploy-health), stop, then sattle serve --store sqlite=DB with no fixture and no definitions.
+
+## first start (log)
+replay finished: 12 records, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+
+## second start from the store alone (log)
+restored from the journal of sqlite=DB: 24 revisions of 9 graphs reproduced and equal to the stored log, sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+
+## GET /space (jq -S), first and second start: byte-equal
+equal, seq 27
+
+## GET /graphs/deploymentReport/document, first and second start: byte-equal
+equal
+restart4-doc-a.hdr:X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314
+restart4-doc-b.hdr:X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314

@@ -1,0 +1,9 @@
+# Canvas at commit 53db46e (clean export of HEAD), run by the paper session. Engine in the same export: 64f7a6a, Release build.
+
+## canvas: npx tsc --noEmit
+tsc exit 0
+
+## canvas: npm test
+ Test Files  33 passed (33)
+      Tests  643 passed (643)
+exit 0

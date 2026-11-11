@@ -1,0 +1,22 @@
+# Output of sattle bench (b5-memory) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+== b5-memory load before: 38.01 67.51 67.23
+# B5 source to graph: capture 20261110T140542Z, store memory, 10 runs, one record per ingest call
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 38.01 67.51 67.23
+run 1: 160,300 records in 11.7 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.654 ms max 12.0 ms; committing records p50 0.166 ms p99 2.083 ms max 12.0 ms; 15 window closes p99 22 ms max 22 ms; load 33.57 65.08 66.37
+run 2: 160,300 records in 9.0 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.615 ms max 12.3 ms; committing records p50 0.090 ms p99 1.370 ms max 10.3 ms; 15 window closes p99 3 ms max 3 ms; load 31.73 63.64 65.84
+run 3: 160,300 records in 8.7 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.015 ms p99 0.608 ms max 35.7 ms; committing records p50 0.090 ms p99 1.352 ms max 35.7 ms; 15 window closes p99 2 ms max 2 ms; load 29.53 62.12 65.28
+run 4: 160,300 records in 9.3 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.614 ms max 70.7 ms; committing records p50 0.089 ms p99 1.565 ms max 11.3 ms; 15 window closes p99 2 ms max 2 ms; load 27.00 59.96 64.45
+run 5: 160,300 records in 9.1 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.611 ms max 19.2 ms; committing records p50 0.092 ms p99 1.514 ms max 19.2 ms; 15 window closes p99 2 ms max 2 ms; load 32.98 60.19 64.48
+run 6: 160,300 records in 8.6 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.015 ms p99 0.589 ms max 11.0 ms; committing records p50 0.091 ms p99 1.048 ms max 11.0 ms; 15 window closes p99 4 ms max 4 ms; load 38.98 60.55 64.56
+run 7: 160,300 records in 9.7 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.607 ms max 56.6 ms; committing records p50 0.094 ms p99 1.965 ms max 23.3 ms; 15 window closes p99 2 ms max 2 ms; load 42.53 60.60 64.53
+run 8: 160,300 records in 8.5 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.015 ms p99 0.586 ms max 18.8 ms; committing records p50 0.089 ms p99 1.132 ms max 18.8 ms; 15 window closes p99 2 ms max 2 ms; load 55.82 62.78 65.25
+run 9: 160,300 records in 10.3 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 0.637 ms max 72.6 ms; committing records p50 0.095 ms p99 2.246 ms max 56.6 ms; 15 window closes p99 28 ms max 28 ms; load 62.70 64.05 65.67
+run 10: 160,300 records in 8.9 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.015 ms p99 0.594 ms max 15.5 ms; committing records p50 0.090 ms p99 1.174 ms max 10.4 ms; 15 window closes p99 2 ms max 2 ms; load 63.84 64.22 65.71
+H5 all records, p99:           median 0.609 ms, min 0.586, max 0.654, interval of the median [0.589, 0.637]  (target p99 <= 2000 ms)
+H5 all records, p50:           median 0.016 ms, min 0.015, max 0.016, interval of the median [0.015, 0.016]
+H5 all records, max:           median 19.0 ms, min 11.0, max 72.6, interval of the median [12.0, 70.7]
+H5 committing records, p99:    median 1.442 ms, min 1.048, max 2.246, interval of the median [1.132, 2.083]
+H5 committing records, p50:    median 0.090 ms, min 0.089, max 0.166, interval of the median [0.089, 0.095]
+H5 committing records, max:    median 15.4 ms, min 10.3, max 56.6, interval of the median [10.4, 35.7]
+window close (excluded above): p99 median 2.199 ms, min 1.988, max 28.1, interval of the median [1.998, 22.3]; max median 2.199 ms, min 1.988, max 28.1, interval of the median [1.998, 22.3]
+== exit 0 load after: 63.84 64.22 65.71

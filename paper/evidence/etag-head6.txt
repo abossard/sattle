@@ -1,0 +1,33 @@
+# Content ETags and the retention of served history at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session), on the synthetic estate fixture, with curl.
+
+## first start: sattle serve estate --cluster synth --store sqlite=DB --retain-patches 5
+GET /graphs/health/ontology:
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+ETag: "41403b02400c73c58420376cf1b84782"
+If-None-Match: "onto-health-16" (a tag of the old form):
+HTTP/1.1 200 OK
+ETag: "41403b02400c73c58420376cf1b84782"
+If-None-Match: "41403b02400c73c58420376cf1b84782" (the current tag):
+HTTP/1.1 304 Not Modified
+ETag: "41403b02400c73c58420376cf1b84782"
+GET /graphs/master/snapshot?revision=3 (revision-addressed):
+HTTP/1.1 410 Gone
+GET /space heads: {"catalog":"16","master":"33","capabilities":"0","deploymentHealth":"6","deploymentReport":"6","serviceTree":"7","healthSignals":"7","healthTopology":"5","healthState":"11","health":"31"}
+GET /graphs/master/snapshot?revision=3 body (retain-patches 5):
+{"error":{"code":"Gap","message":"history of master before revision 28 is not available","graph":"master","lastAvailable":"28"}}
+head of master: 33
+GET /graphs/master/snapshot?revision=31 :
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+ETag: "23e8cfae414f8a6c24257e2e8441bae6"
+
+## after a restart from the SQLite store alone (sattle serve --store sqlite=DB)
+GET /graphs/health/ontology:
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+ETag: "41403b02400c73c58420376cf1b84782"
+If-None-Match: "41403b02400c73c58420376cf1b84782" (the tag of the first start):
+HTTP/1.1 304 Not Modified
+ETag: "41403b02400c73c58420376cf1b84782"
+ontology bodies byte-equal before and after: yes

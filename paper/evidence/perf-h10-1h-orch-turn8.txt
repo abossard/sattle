@@ -1,0 +1,19 @@
+# H10 restart without a seal, 1 h history, 10 restarts, orchestrator, engine 9d0fff1. Copy of engine/out/perf-orchestrator/turn8/b10-1h.txt, unchanged below this line.
+# B10 cold start by restart: capture 20261110T140542Z repeated to 1 h of logical time, SQLite journal and log, 10 restarts
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 25.40 35.74 36.49
+pass 1: logical span 0.28 h, 704,027 rows, journal 4,045 entries, wall 16 s
+pass 2: logical span 0.60 h, 1,406,599 rows, journal 7,897 entries, wall 23 s
+pass 3: logical span 0.92 h, 2,109,171 rows, journal 11,749 entries, wall 30 s
+pass 4: logical span 1.23 h, 2,811,743 rows, journal 15,601 entries, wall 37 s
+built: 2,705 revisions in 9 graphs, journal 15,602 entries, state digest sha256:833e7e6dd367200e4516de2a6ed922aaef29b4ea6e2cf492bd879534146ec601, store file 763 MB
+restart 1: 8.1 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 31.85 35.83 36.48
+restart 2: 8.0 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 32.78 35.90 36.49
+restart 3: 8.0 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 37.56 36.80 36.80
+restart 4: 8.3 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 39.83 37.27 36.96
+restart 5: 7.8 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 39.20 37.18 36.94
+restart 6: 7.9 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 36.79 36.73 36.78
+restart 7: 7.9 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 41.62 37.80 37.16
+restart 8: 7.8 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 41.49 37.83 37.17
+restart 9: 7.7 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 41.83 38.03 37.25
+restart 10: 8.5 s (journal replayed from the start), 2,705 revisions reproduced and equal to the stored log, sequence 3300, digest sha256:833e7e6dd367; load 38.11 37.37 37.03
+H10 restart from the store (journal replay with verification of every commit), history of 1 h: median 7.944 s, min 7.747, max 8.536, interval of the median [7.763, 8.256]  (target at most 60 s)

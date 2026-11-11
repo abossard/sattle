@@ -1,0 +1,13 @@
+# Tests at engine commit 15e0c8e and canvas commit 4953283 (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
+# The export has no lab/captures (gitignored), so the engine tests that need a capture are in the full run and were not run (default run: Category!=Capture). No Cosmos emulator was available, so the Cosmos cases of the storage contract tests did not run. Canvas fixtures were synced with scripts/sync-fixtures.mjs.
+
+## engine: dotnet test (default run)
+Passed!  - Failed:     0, Passed:   338, Skipped:     0, Total:   338, Duration: 5 m 15 s - Sattle.Tests.dll (net10.0)
+(wall time while the replays of this evaluation ran on the same machine)
+
+## engine: dotnet test --filter FullyQualifiedName~StoreConformanceTests (memory and SQLite only)
+Passed!  - Failed:     0, Passed:    23, Skipped:     0, Total:    23, Duration: 562 ms - Sattle.Tests.dll (net10.0)
+
+## canvas: npx vitest run
+ Test Files  26 passed (26)
+      Tests  489 passed (489)

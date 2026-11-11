@@ -1,0 +1,21 @@
+/// Limit L1 of research note 05.
+module research.limit1 @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:4aaa8303eb10fae2a3b2c0d8ee083ae125d87e250094badad54d7a1384c75cdd as ops;
+import acme.svc     @ 1.0.0 sha256:91ac722e4f25a0703c811849412c49d5fdea1adc1d9f075c7741ce3fb8371404 as svc;
+
+entity Mark { markKey: Text; markN?: Integer; markFlows?: Integer telemetry delta sum every 60s; markBytes?: Integer telemetry cumulative max every 60s; }
+identity mark for Mark version "1" { key: Text by exact; }
+
+/// L1 time shift: the previous window of a series (window-over-window comparison, sliding windows).
+projection shift view forward output research.limit1 {
+  in master: graph ops;
+  retain 1;
+  let w = match master (a: infra.Pod)-[c: infra.Calls]->(b: infra.Pod)
+    |> series master c.flows within 2h
+    |> rollup by { k: entityId(a) } combine { f: sum(flows) };
+  let prev = w |> select { k2: k, ws2: windowStart + 60000000000, f2: f };
+  emit entity Mark from prev identity mark(key: k2) set { markKey: k2 };
+}
+

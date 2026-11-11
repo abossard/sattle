@@ -1,0 +1,26 @@
+# Retention age against master size at engine commit 6f784c9 (Release build, clean export of HEAD, run by the paper session). Same method as retention-ages.txt: the age of the three evidence rules of acme.ops replaced in fresh copies of the definitions of this commit (--defs, 'sattle check --update-pins' on the copy first), one replay per capture and age, with a copy of the local space overlay applied. Only the master size, the state digest and the number of lines that mention an error are recorded here.
+
+## capture 20261110T105738Z, age 24h
+graph master: revision 667, 15,819 entities, 5,537 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+state digest sha256:09f9be5357bbdb0384358a6e533bc43e7550781fe471d33067e666a06b367a46
+error lines: 0
+## capture 20261110T105738Z, age 10m
+graph master: revision 355, 456 entities, 439 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+state digest sha256:ca97d218b674240c402d0f4e81acf5cb0277f3938656c43f912565810004d96d
+error lines: 0
+## capture 20261110T105738Z, age 2m
+graph master: revision 281, 456 entities, 439 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+state digest sha256:ca97d218b674240c402d0f4e81acf5cb0277f3938656c43f912565810004d96d
+error lines: 0
+## capture 20261110T140542Z, age 24h
+graph master: revision 1,897, 50,154 entities, 8,193 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+state digest sha256:a9564d769b58f69244a669fe27f48ba3dbb0db1fdea27930bb77de83f8d754df
+error lines: 0
+## capture 20261110T140542Z, age 10m
+graph master: revision 182, 503 entities, 374 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+state digest sha256:20c958fa95f56966ad9b62205522eb8121852a38178a270b899339eff8e12e18
+error lines: 0
+## capture 20261110T140542Z, age 2m
+graph master: revision 131, 491 entities, 362 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+state digest sha256:4e3949e61dcc092927253b7d207cea638b422a714418487e462e0b7f1e93361b
+error lines: 0

@@ -1,0 +1,17 @@
+# Output of sattle bench (b8) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+== b8 load before: 69.89 67.04 66.76
+# B8 element view: structure at head joined with 60 windows (1 h at 60 s) of 4 series for 10,000 elements, hot plane only, 10 runs
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 69.89 67.04 66.76
+run 1: view of 10,000 elements 82.3 ms; single element view p50 0.0211 ms p99 0.0413 ms; load 69.89 67.04 66.76
+run 2: view of 10,000 elements 82.6 ms; single element view p50 0.0210 ms p99 0.0477 ms; load 69.89 67.04 66.76
+run 3: view of 10,000 elements 64.4 ms; single element view p50 0.0059 ms p99 0.0222 ms; load 69.89 67.04 66.76
+run 4: view of 10,000 elements 53.4 ms; single element view p50 0.0055 ms p99 0.0144 ms; load 69.89 67.04 66.76
+run 5: view of 10,000 elements 72.3 ms; single element view p50 0.0060 ms p99 0.0323 ms; load 69.89 67.04 66.76
+run 6: view of 10,000 elements 62.8 ms; single element view p50 0.0061 ms p99 0.0172 ms; load 69.89 67.04 66.76
+run 7: view of 10,000 elements 71.3 ms; single element view p50 0.0057 ms p99 0.0111 ms; load 69.89 67.04 66.76
+run 8: view of 10,000 elements 271.3 ms; single element view p50 0.0060 ms p99 0.0220 ms; load 69.89 67.04 66.76
+run 9: view of 10,000 elements 73.0 ms; single element view p50 0.0057 ms p99 0.0173 ms; load 69.89 67.04 66.76
+run 10: view of 10,000 elements 134.3 ms; single element view p50 0.0058 ms p99 0.0118 ms; load 69.89 67.04 66.76
+H8 view of 10,000 elements x 4 series x 60 windows (2,400,000 points): median 72.6 ms, min 53.4, max 271.3, interval of the median [62.8, 134.3]  (target <= 100 ms; True)
+H8 single element view, p99 over 2,000 views: median 0.020 ms, min 0.011, max 0.048, interval of the median [0.012, 0.041]
+== exit 0 load after: 69.89 67.04 66.76

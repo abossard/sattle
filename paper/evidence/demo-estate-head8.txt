@@ -1,0 +1,19 @@
+# Default source of the canvas at commit 53db46e: canvas/scripts/make-demo.mjs run by the paper session with ENGINE_DLL set to the Release build of the engine at 64f7a6a (the dotnet run path of the script was not exercised).
+# The script runs: sattle replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --out <tmp>, and copies the result to canvas/public/demo/estate. Last lines of its output:
+
+state digest sha256:ad12a8980fec7f94c518d6a0ad83778a81024e4b1b75833fa44609898e8b1c06
+wrote canvas files to <tmp>
+  master: 47 nodes, 48 edges
+  deploymentHealth: 3 nodes, 2 edges
+  deploymentReport: 7 nodes, 0 edges
+  serviceTree: 4 nodes, 5 edges
+  capabilities: 4 nodes, 4 edges
+  healthSignals: 6 nodes, 0 edges
+  healthTopology: 10 nodes, 30 edges
+  healthState: 16 nodes, 36 edges
+  health: 40 nodes, 45 edges
+demo: 9 graphs written to <scratch>/eng8/canvas/public/demo/estate
+exit 0
+
+## diff -rq between the committed canvas/public/demo/estate (76 files) and the regenerated directory
+(no difference)

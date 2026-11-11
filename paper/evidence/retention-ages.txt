@@ -1,0 +1,38 @@
+# Retention age against master size at engine commit 588a256 (Release build, clean export of HEAD, run by the paper session).
+# The three evidence rules of acme.ops read rows through 'retain on time for 24h'. Each run replays a capture with that age replaced in a copy of the definitions (--defs; 'sattle check --update-pins' on the copy first, because the import pins of acme.ops change). Nothing else changes.
+
+## capture 20261110T105738Z, age 24h
+graph master: revision 667, 15,819 entities, 5,537 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+  About=3, ActivityEvent=4,873, AuditEvent=10,487, AzureResource=361, Backs=21, Calls=332, Concerns=5,095, ControlledBy=31, Deployment=22, Node=2, Pod=56, RunsOn=55, Service=15, WarningEvent=3
+state digest sha256:09f9be5357bbdb0384358a6e533bc43e7550781fe471d33067e666a06b367a46
+error lines: 0
+
+## capture 20261110T105738Z, age 10m
+graph master: revision 355, 456 entities, 439 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+  AzureResource=361, Backs=21, Calls=332, ControlledBy=31, Deployment=22, Node=2, Pod=56, RunsOn=55, Service=15
+state digest sha256:ca97d218b674240c402d0f4e81acf5cb0277f3938656c43f912565810004d96d
+error lines: 0
+
+## capture 20261110T105738Z, age 2m
+graph master: revision 281, 456 entities, 439 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+  AzureResource=361, Backs=21, Calls=332, ControlledBy=31, Deployment=22, Node=2, Pod=56, RunsOn=55, Service=15
+state digest sha256:ca97d218b674240c402d0f4e81acf5cb0277f3938656c43f912565810004d96d
+error lines: 0
+
+## capture 20261110T140542Z, age 24h
+graph master: revision 1,897, 50,154 entities, 8,193 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+  About=173, ActivityEvent=7,246, AuditEvent=42,244, AzureResource=385, Backs=21, Calls=245, Concerns=7,658, ControlledBy=30, Deployment=22, Node=3, Pod=66, RunsOn=66, Service=15, WarningEvent=173
+state digest sha256:a9564d769b58f69244a669fe27f48ba3dbb0db1fdea27930bb77de83f8d754df
+error lines: 0
+
+## capture 20261110T140542Z, age 10m
+graph master: revision 182, 503 entities, 374 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+  ActivityEvent=12, AzureResource=385, Backs=21, Calls=245, Concerns=12, ControlledBy=30, Deployment=22, Node=3, Pod=66, RunsOn=66, Service=15
+state digest sha256:20c958fa95f56966ad9b62205522eb8121852a38178a270b899339eff8e12e18
+error lines: 0
+
+## capture 20261110T140542Z, age 2m
+graph master: revision 131, 491 entities, 362 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+  AzureResource=385, Backs=21, Calls=245, ControlledBy=30, Deployment=22, Node=3, Pod=66, RunsOn=66, Service=15
+state digest sha256:4e3949e61dcc092927253b7d207cea638b422a714418487e462e0b7f1e93361b
+error lines: 0

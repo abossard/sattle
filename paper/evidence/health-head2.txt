@@ -1,0 +1,42 @@
+# Health and deployment health at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session). Counted with jq from replay --out.
+
+## capture 20261110T105738Z
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Healthy
+   1 loadbalancer	Healthy
+   1 network	Healthy
+   1 node	Healthy
+   3 service	Healthy
+   1 workload	Healthy
+deploymentHealth workloads (state):
+  21 Healthy
+   1 Unhealthy
+deploymentHealth Talks (state):
+  36 Healthy
+   2 Unhealthy
+deploymentReport blocks by kind:
+   1 header
+   1 heading
+  22 row
+   2 stat
+
+## capture 20261110T140542Z
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Healthy
+   1 loadbalancer	Healthy
+   1 network	Healthy
+   3 node	Healthy
+   3 service	Unhealthy
+   1 workload	Unhealthy
+deploymentHealth workloads (state):
+  21 Healthy
+   1 Unhealthy
+deploymentHealth Talks (state):
+  36 Healthy
+deploymentReport blocks by kind:
+   1 header
+   1 heading
+  22 row
+   2 stat

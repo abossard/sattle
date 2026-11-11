@@ -1,0 +1,72 @@
+# Health model and references at engine commit 64f7a6a (Release build, export of HEAD, run by the paper session, the local space overlay applied). Counted with jq from replay --out (NAME.final.snapshot.json).
+
+## capture 20261110T105738Z
+graph deploymentHealth: revision 54, 22 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentReport: revision 39, 26 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph serviceTree: revision 44, 19 entities, 29 relationships, telemetry samples 182 (80 element-windows, 0 partial window(s))
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthSignals: revision 15, 10 entities, 0 relationships, telemetry samples 366 (366 element-windows, 0 partial window(s))
+graph healthTopology: revision 12, 9 entities, 28 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 18, 18 entities, 37 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 36, 142 entities, 147 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Healthy
+   1 loadbalancer	Healthy
+   1 network	Healthy
+   1 node	Healthy
+   3 service	Healthy
+   1 workload	Healthy
+health entities by type:
+ 124 acme.health.Evidence
+   9 Component
+   9 Signal
+health relationships by type:
+   3 acme.health.Contains
+  11 acme.health.DependsOn
+ 124 EvidenceFor
+   9 Measures
+references (extent.references) per graph: master 451 serviceTree 0 capabilities 0 deploymentHealth 0 healthTopology 0 healthState 0 health 0 
+master references by state and entity type:
+ 427 absent AzureResource
+  24 absent Pod
+master references by use (relationship type, end): relationships / endpoints
+  Calls source: 126 / 24
+  Calls target: 134 / 24
+  Concerns target: 4307 / 427
+
+## capture 20261110T140542Z
+graph deploymentHealth: revision 33, 22 entities, 36 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentReport: revision 23, 26 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph serviceTree: revision 27, 19 entities, 29 relationships, telemetry samples 157 (67 element-windows, 0 partial window(s))
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthSignals: revision 13, 12 entities, 0 relationships, telemetry samples 427 (427 element-windows, 0 partial window(s))
+graph healthTopology: revision 12, 11 entities, 34 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 18, 23 entities, 46 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 49, 166 entities, 172 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Healthy
+   1 loadbalancer	Healthy
+   1 network	Healthy
+   3 node	Healthy
+   3 service	Unhealthy
+   1 workload	Unhealthy
+health entities by type:
+ 143 acme.health.Evidence
+  11 Component
+  12 Signal
+health relationships by type:
+   3 acme.health.Contains
+  14 acme.health.DependsOn
+ 143 EvidenceFor
+  12 Measures
+references (extent.references) per graph: master 589 serviceTree 0 capabilities 0 deploymentHealth 0 healthTopology 0 healthState 0 health 0 
+master references by state and entity type:
+ 563 absent AzureResource
+  26 absent Pod
+master references by use (relationship type, end): relationships / endpoints
+  About target: 71 / 16
+  Calls source: 68 / 14
+  Calls target: 72 / 14
+  Concerns target: 6420 / 563

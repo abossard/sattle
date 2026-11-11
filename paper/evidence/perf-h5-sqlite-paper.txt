@@ -1,0 +1,22 @@
+# Output of sattle bench (b5-sqlite) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+== b5-sqlite load before: 63.84 64.22 65.71
+# B5 source to graph: capture 20261110T140542Z, store sqlite, 10 runs, one record per ingest call
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 63.84 64.22 65.71
+run 1: 160,300 records in 23.5 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.994 ms max 55.3 ms; committing records p50 0.587 ms p99 21.655 ms max 55.3 ms; 15 window closes p99 32 ms max 32 ms; load 77.20 67.22 66.74
+run 2: 160,300 records in 21.2 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.900 ms max 54.3 ms; committing records p50 0.495 ms p99 21.309 ms max 54.3 ms; 15 window closes p99 28 ms max 28 ms; load 85.46 69.79 67.67
+run 3: 160,300 records in 22.0 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.915 ms max 107.8 ms; committing records p50 0.539 ms p99 22.268 ms max 107.8 ms; 15 window closes p99 28 ms max 28 ms; load 90.81 72.29 68.63
+run 4: 160,300 records in 20.3 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.015 ms p99 1.887 ms max 35.9 ms; committing records p50 0.462 ms p99 20.838 ms max 35.9 ms; 15 window closes p99 26 ms max 26 ms; load 74.90 69.96 67.89
+run 5: 160,300 records in 24.1 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 2.014 ms max 248.2 ms; committing records p50 0.523 ms p99 23.981 ms max 142.9 ms; 15 window closes p99 40 ms max 40 ms; load 55.74 65.87 66.47
+run 6: 160,300 records in 23.8 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 2.051 ms max 203.6 ms; committing records p50 0.486 ms p99 23.245 ms max 203.6 ms; 15 window closes p99 28 ms max 28 ms; load 45.78 62.65 65.29
+run 7: 160,300 records in 22.6 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.969 ms max 57.9 ms; committing records p50 0.521 ms p99 21.589 ms max 56.6 ms; 15 window closes p99 34 ms max 34 ms; load 58.04 64.27 65.80
+run 8: 160,300 records in 20.7 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.887 ms max 79.7 ms; committing records p50 0.462 ms p99 21.250 ms max 43.1 ms; 15 window closes p99 31 ms max 31 ms; load 67.60 66.21 66.47
+run 9: 160,300 records in 21.5 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.939 ms max 70.4 ms; committing records p50 0.483 ms p99 21.494 ms max 70.4 ms; 15 window closes p99 83 ms max 83 ms; load 70.72 66.93 66.71
+run 10: 160,300 records in 20.8 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.016 ms p99 1.895 ms max 50.1 ms; committing records p50 0.482 ms p99 21.389 ms max 50.1 ms; 15 window closes p99 27 ms max 27 ms; load 69.89 67.04 66.76
+H5 all records, p99:           median 1.927 ms, min 1.887, max 2.051, interval of the median [1.887, 2.014]  (target p99 <= 2000 ms)
+H5 all records, p50:           median 0.016 ms, min 0.015, max 0.016, interval of the median [0.016, 0.016]
+H5 all records, max:           median 64.1 ms, min 35.9, max 248.2, interval of the median [50.1, 203.6]
+H5 committing records, p99:    median 21.5 ms, min 20.8, max 24.0, interval of the median [21.2, 23.2]
+H5 committing records, p50:    median 0.491 ms, min 0.462, max 0.587, interval of the median [0.462, 0.539]
+H5 committing records, max:    median 55.9 ms, min 35.9, max 203.6, interval of the median [43.1, 142.9]
+window close (excluded above): p99 median 29.5 ms, min 25.8, max 83.1, interval of the median [26.5, 40.2]; max median 29.5 ms, min 25.8, max 83.1, interval of the median [26.5, 40.2]
+== exit 0 load after: 69.89 67.04 66.76

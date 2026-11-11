@@ -1,0 +1,17 @@
+# Restart from a state seal, the journal before it and --verify-journal, at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session).
+# Setup as in restart-seal-prefix-head4.txt: sattle serve FIXTURE --cluster synth --store sqlite=DB --seal-every 10 (fixture tests/Sattle.Tests/fixtures/deploy-health, 17 journal entries, one seal at entry 10), stop. In a copy of DB (sqlite3 .backup), journal entry 5 (an input batch before the seal) is deleted, and the copy is started with no fixture.
+
+## A: sattle serve --store sqlite=COPY (the seal is used)
+restored from sqlite=$SCRATCH/restart6t.db: loaded from the seal at journal entry 10: state digest and catalog digest checked against the seal; 15 revisions of 9 graphs came from the seal and were not recomputed; replayed the 7 entries after it and recomputed 9 revisions, each compared with the stored log; the 10 entries before the seal were not read (--verify-journal replays and checks them). Sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+(GET /space after the restart is byte-equal to GET /space of the first start: yes)
+
+## B: sattle serve --store sqlite=COPY --verify-journal (seals are ignored, the whole journal is replayed)
+Unhandled exception. System.InvalidOperationException: graph master: store did not commit: Rejected { Reason = the commit at revision 3 of master differs from the stored one }
+   at Sattle.Runtime.Engine.Execute(GraphRuntime g, Epoch ep, Int64 seq, String cause) in $SCRATCH/eng6/engine/src/Sattle.Runtime/Engine.cs:line 323
+(process exit code 134)
+
+## C: sattle serve --store sqlite=DB --verify-journal on the intact store
+restored from sqlite=$SCRATCH/restart6s.db: replayed all 17 journal entries and recomputed 24 revisions of 9 graphs, each compared with the stored log; the state at the seal (entry 10) equals the seal's digest. Sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+
+## Reading
+# The start message of A says that the 10 entries before the seal were not read; B finds the deleted entry at the first commit that no longer matches; C replays all 17 entries and also checks the state at the seal against the seal's digest.

@@ -1,0 +1,16 @@
+# Tests at engine commit 4841a36 (clean export of HEAD by git archive, run by the paper session; Release build).
+# No Cosmos emulator was used by this paper (SATTLE_COSMOS_EMULATOR unset). lab/captures held the two real captures and a copy of the local space overlay with the import pins of this commit. Wall times are on a machine under load.
+
+## engine: dotnet test -c Release (default run: Category!=Capture and Category!=Slow)
+Passed!  - Failed:     0, Passed:   463, Skipped:     0, Total:   463, Duration: 2 m 7 s - Sattle.Tests.dll (net10.0)
+
+## engine: dotnet test -c Release --settings tests/Sattle.Tests/full.runsettings --filter Category=Slow
+Passed!  - Failed:     0, Passed:    96, Skipped:     0, Total:    96, Duration: 4 m 53 s - Sattle.Tests.dll (net10.0)
+
+## engine: dotnet test -c Release --settings tests/Sattle.Tests/full.runsettings --filter Category=Capture (the two real captures)
+Passed!  - Failed:     0, Passed:    20, Skipped:     0, Total:    20, Duration: 4 m 29 s - Sattle.Tests.dll (net10.0)
+
+## engine: the three test classes this evaluation cites, each alone with full.runsettings (--filter FullyQualifiedName~CLASS)
+ProjectionEdgesTests: Passed!  - Failed:     0, Passed:    28, Skipped:     0, Total:    28, Duration: 8 s - Sattle.Tests.dll (net10.0)
+LineageTests: Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 21 s - Sattle.Tests.dll (net10.0)
+ReferencesTests: Passed!  - Failed:     0, Passed:     7, Skipped:     0, Total:     7, Duration: 39 s - Sattle.Tests.dll (net10.0)

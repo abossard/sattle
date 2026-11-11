@@ -1,0 +1,65 @@
+# sattle replay --chunk N at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session). Identity merge is built at this commit.
+
+# capture 20261110T105738Z
+
+## chunk default
+replayed 245,345 record(s) in 5.3 s, capture span 5679 s, 14 logical-time advance(s), 1636 chunk(s)
+graph master: revision 666, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+identities: 38,608 minted, 79 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:77b84aa6f04287e301ab06e2e42e9259bb4fad6ff5fbc11848522646057ba4d8
+
+## chunk 1
+replayed 245,345 record(s) in 9.7 s, capture span 5679 s, 14 logical-time advance(s), 244308 chunk(s)
+graph master: revision 7,036, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+identities: 36,853 minted, 80 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:77b84aa6f04287e301ab06e2e42e9259bb4fad6ff5fbc11848522646057ba4d8
+
+## chunk 50
+replayed 245,345 record(s) in 5.2 s, capture span 5679 s, 14 logical-time advance(s), 6836 chunk(s)
+graph master: revision 967, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+identities: 37,313 minted, 79 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:77b84aa6f04287e301ab06e2e42e9259bb4fad6ff5fbc11848522646057ba4d8
+
+## chunk 777
+replayed 245,345 record(s) in 5.2 s, capture span 5679 s, 14 logical-time advance(s), 1885 chunk(s)
+graph master: revision 671, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+identities: 38,574 minted, 79 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:77b84aa6f04287e301ab06e2e42e9259bb4fad6ff5fbc11848522646057ba4d8
+
+## chunk 100000
+replayed 245,345 record(s) in 5.2 s, capture span 5679 s, 14 logical-time advance(s), 1485 chunk(s)
+graph master: revision 664, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+identities: 38,608 minted, 79 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:77b84aa6f04287e301ab06e2e42e9259bb4fad6ff5fbc11848522646057ba4d8
+
+# capture 20261110T140542Z
+
+## chunk default
+replayed 160,300 record(s) in 7.7 s, capture span 1017 s, 16 logical-time advance(s), 4029 chunk(s)
+graph master: revision 1,897, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+identities: 132,535 minted, 81 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:213310be24161fa26c7fa38f3be8574954ddb789a7f2c66f0166b6637fb42112
+
+## chunk 1
+replayed 160,300 record(s) in 10.6 s, capture span 1017 s, 16 logical-time advance(s), 159557 chunk(s)
+graph master: revision 10,422, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+identities: 130,112 minted, 81 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:213310be24161fa26c7fa38f3be8574954ddb789a7f2c66f0166b6637fb42112
+
+## chunk 50
+replayed 160,300 record(s) in 7.6 s, capture span 1017 s, 16 logical-time advance(s), 8135 chunk(s)
+graph master: revision 2,747, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+identities: 131,367 minted, 81 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:213310be24161fa26c7fa38f3be8574954ddb789a7f2c66f0166b6637fb42112
+
+## chunk 777
+replayed 160,300 record(s) in 7.9 s, capture span 1017 s, 16 logical-time advance(s), 4295 chunk(s)
+graph master: revision 1,932, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+identities: 132,520 minted, 81 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:213310be24161fa26c7fa38f3be8574954ddb789a7f2c66f0166b6637fb42112
+
+## chunk 100000
+replayed 160,300 record(s) in 8.0 s, capture span 1017 s, 16 logical-time advance(s), 3829 chunk(s)
+graph master: revision 1,878, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+identities: 132,535 minted, 81 aliased, 0 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:213310be24161fa26c7fa38f3be8574954ddb789a7f2c66f0166b6637fb42112

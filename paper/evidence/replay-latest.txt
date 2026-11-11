@@ -1,0 +1,36 @@
+# Output of: sattle replay <capture>  (engine commit fde84db, Debug build, run 2026-11-10 by the paper session from a clean export of that commit; cluster name redacted; the capture is git-ignored; wall time is not evidence)
+capture 20261110T105738Z, space operations, cluster <redacted>, store memory, speed max
+replayed 243,979 record(s) in 5.8 s, capture span 5679 s, 14 logical-time advance(s), 782 chunk(s)
+records by source: activity-log=5,000, arg=361, arg-page=5, azure-metrics=20, hubble=235,858, kubernetes-list=1,085, kubernetes-watch=1,112, prometheus=16, vnet-flow-log=522 (5 not consumed: no adapter in this slice)
+rows by source:    activity=5,000, endpoints=56, events=868, flowLogs=175,265, flows=235,858, metrics=30,933, nodes=2, pods=310, resourceMetrics=3,900, resources=361, services=15
+rejected records: 0
+hubble: 235,858 flows, 0 lost-event record(s) (0 events lost)
+kubernetes events consumed: 868, azure resources: 361, prometheus samples: 30,933
+graph master: revision 168, 434 entities, 408 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+  AzureResource=361, Backs=21, Calls=332, Node=2, Pod=56, RunsOn=55, Service=15
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  
+graph serviceTree: revision 44, 19 entities, 29 relationships, telemetry samples 182 (80 element-windows, 0 partial window(s))
+  Contains=15, DependsOn=14, ServiceGroup=4, ServiceNode=15
+graph healthSignals: revision 15, 10 entities, 0 relationships, telemetry samples 366 (366 element-windows, 0 partial window(s))
+  Signal=10
+graph healthTopology: revision 12, 9 entities, 37 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=23, Component=9, Contains=3, DependsOn=11
+graph healthState: revision 18, 19 entities, 47 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=23, Component=9, Contains=3, DependsOn=11, Measures=10, Signal=10
+graph healthReach1: revision 18, 9 entities, 31 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=31, Component=9
+graph healthReach2: revision 18, 9 entities, 40 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=40, Component=9
+graph healthReach3: revision 18, 9 entities, 40 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=40, Component=9
+graph health: revision 18, 19 entities, 24 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+  Component=9, Contains=3, DependsOn=11, Measures=10, Signal=10
+service tree: 4 group(s), 15 service(s), 14 dependencies, 15 containment edges
+  top dependency otel-caller -> kube-dns: 980 flows, status ok
+  top dependency kube-dns -> otel-caller: 979 flows, status ok
+  top dependency metrics-server -> kube-dns: 80 flows, status ok
+  top dependency kube-dns -> metrics-server: 80 flows, status ok
+  top dependency kube-dns -> defender-admission-controller: 40 flows, status ok
+identities: 1,340 minted, 80 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 54, uniqueness rejections 0
+state digest sha256:3701cac37dc47875ea3dcd77343765b24f4d4bdb0c9fc7b8347c1a5f840ae600

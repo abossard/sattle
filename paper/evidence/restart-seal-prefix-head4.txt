@@ -1,0 +1,15 @@
+# A restart from a state seal does not recompute the journal before the seal, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# Setup: sattle serve FIXTURE --cluster synth --store sqlite=DB --seal-every 10 (fixture tests/Sattle.Tests/fixtures/deploy-health, 17 journal entries, one seal at entry 10), stop. Then, in a copy of DB, journal entry 5 (an input batch before the seal) is deleted with sqlite3, and the copy is started with 'sattle serve --store sqlite=COPY' with no fixture.
+
+## A: the seal is kept
+restored from the journal of sqlite=$SCRATCH/restart5t.db: 24 revisions of 9 graphs reproduced and equal to the stored log, sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+serving http://127.0.0.1:5461 (PROTOCOL.md)
+(GET /space after the restart is byte-equal to GET /space of the first start: yes)
+
+## B: the seals are deleted from the copy (the whole journal is replayed)
+Unhandled exception. System.InvalidOperationException: graph master: store did not commit: Rejected { Reason = the commit at revision 3 of master differs from the stored one }
+   at Sattle.Runtime.Engine.Execute(GraphRuntime g, Epoch ep, Int64 seq, String cause) in $SCRATCH/eng5/engine/src/Sattle.Runtime/Engine.cs:line 323
+(process exit code 134)
+
+## Reading
+# With the seal the start succeeds and prints '24 revisions of 9 graphs reproduced and equal to the stored log'. Host.cs:371 sets that figure to the sum of the graph heads, so it counts the revisions the seal supplied as well as the ones recomputed after it. Without the seal the same journal is refused at the first commit that no longer matches.

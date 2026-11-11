@@ -1,0 +1,22 @@
+# H5 source to graph, sqlite store, at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session): sattle bench b5 --store sqlite, ten runs. Machine under load, see the load figures below.
+== b5-sqlite load before: 37.90 37.08 51.70
+# B5 source to graph: capture 20261110T140542Z, store sqlite, 10 runs, one record per ingest call
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.15, Release=True, load average at start 37.90 37.08 51.70
+run 1: 160,300 records in 21.8 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 1.929 ms max 38.9 ms; committing records p50 0.524 ms p99 20.241 ms max 38.9 ms; 15 window closes p99 29 ms max 29 ms; load 49.20 39.90 52.30
+run 2: 160,300 records in 20.4 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 1.851 ms max 82.6 ms; committing records p50 0.465 ms p99 21.255 ms max 40.6 ms; 15 window closes p99 27 ms max 27 ms; load 58.36 42.58 52.97
+run 3: 160,300 records in 21.8 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 1.934 ms max 72.6 ms; committing records p50 0.462 ms p99 22.184 ms max 72.6 ms; 15 window closes p99 30 ms max 30 ms; load 69.41 46.58 54.12
+run 4: 160,300 records in 22.0 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 1.963 ms max 47.0 ms; committing records p50 0.492 ms p99 23.048 ms max 47.0 ms; 15 window closes p99 30 ms max 30 ms; load 71.75 48.97 54.76
+run 5: 160,300 records in 23.6 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.018 ms p99 2.034 ms max 47.5 ms; committing records p50 0.531 ms p99 25.482 ms max 38.4 ms; 15 window closes p99 35 ms max 35 ms; load 80.07 52.71 55.94
+run 6: 160,300 records in 24.0 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 2.121 ms max 55.4 ms; committing records p50 0.523 ms p99 25.868 ms max 48.2 ms; 15 window closes p99 32 ms max 32 ms; load 82.29 55.26 56.76
+run 7: 160,300 records in 22.2 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 1.964 ms max 54.8 ms; committing records p50 0.520 ms p99 23.666 ms max 54.8 ms; 15 window closes p99 33 ms max 33 ms; load 74.89 55.34 56.75
+run 8: 160,300 records in 23.0 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 2.102 ms max 42.2 ms; committing records p50 0.539 ms p99 23.703 ms max 42.2 ms; 15 window closes p99 30 ms max 30 ms; load 58.40 53.16 55.93
+run 9: 160,300 records in 23.2 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 2.131 ms max 39.1 ms; committing records p50 0.549 ms p99 24.548 ms max 39.1 ms; 15 window closes p99 31 ms max 31 ms; load 45.31 50.46 54.87
+run 10: 160,300 records in 25.3 s, master revision 10,368, 10,362 records made a master revision; all records p50 0.017 ms p99 2.170 ms max 148.5 ms; committing records p50 0.557 ms p99 23.407 ms max 148.5 ms; 15 window closes p99 52 ms max 52 ms; load 35.54 47.61 53.68
+H5 all records, p99:           median 1.999 ms, min 1.851, max 2.170, interval of the median [1.929, 2.131]  (target p99 <= 2000 ms)
+H5 all records, p50:           median 0.017 ms, min 0.017, max 0.018, interval of the median [0.017, 0.017]
+H5 all records, max:           median 51.1 ms, min 38.9, max 148.5, interval of the median [39.1, 82.6]
+H5 committing records, p99:    median 23.5 ms, min 20.2, max 25.9, interval of the median [21.3, 25.5]
+H5 committing records, p50:    median 0.523 ms, min 0.462, max 0.557, interval of the median [0.465, 0.549]
+H5 committing records, max:    median 44.6 ms, min 38.4, max 148.5, interval of the median [38.9, 72.6]
+window close (excluded above): p99 median 30.4 ms, min 26.9, max 52.0, interval of the median [28.6, 34.8]; max median 30.4 ms, min 26.9, max 52.0, interval of the median [28.6, 34.8]
+== exit 0 load after: 35.54 47.61 53.68

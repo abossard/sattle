@@ -1,0 +1,22 @@
+# Mutation check of the unit tests of the batch-invariance premises B1 and B2 at engine commit 6f784c9, run by the paper session on a scratch copy of a clean export of HEAD (Release build). Nothing in the repository was changed.
+# B1: in the copy's engine/definitions/acme.ops.sattle the five groups 'resourceId: lowerInvariant(resourceId)' are changed to 'resourceId: resourceId' (the fix reverted), tests run without a rebuild (the definitions are read at run time). B2: in the copy's Operators.cs the condition that drops a row for a window beyond the late horizon is made false, the copy is rebuilt, the B2 tests run.
+
+## baseline (unmodified copy): B1 and B2 tests
+Passed!  - Failed:     0, Passed:     9, Skipped:     0, Total:     9, Duration: 3 s - Sattle.Tests.dll (net10.0)
+## mutation B1: group by the raw resourceId instead of lowerInvariant(resourceId) in acme.ops.sattle
+lines changed: 5
+[xUnit.net 00:00:03.15]     Sattle.Tests.BatchInvarianceTests.Two_spellings_of_one_resource_id_count_into_one_window_whatever_the_batching(name: "one batch", split: False, reverse: False) [FAIL]
+   Assert.Equal() Failure: Values differ
+[xUnit.net 00:00:03.31]     Sattle.Tests.BatchInvarianceTests.Two_spellings_of_one_resource_id_count_into_one_window_whatever_the_batching(name: "two batches, the 2-row spelling first", split: True, reverse: True) [FAIL]
+[xUnit.net 00:00:03.47]     Sattle.Tests.BatchInvarianceTests.Two_spellings_of_one_resource_id_count_into_one_window_whatever_the_batching(name: "two batches, the 3-row spelling first", split: True, reverse: False) [FAIL]
+   Assert.Equal() Failure: Values differ
+   Assert.Equal() Failure: Values differ
+Failed!  - Failed:     3, Passed:     0, Skipped:     0, Total:     3, Duration: 3 s - Sattle.Tests.dll (net10.0)
+## mutation B2: a row beyond the late horizon is no longer dropped (Operators.cs, the 'beyond the allowed lateness' line disabled)
+    0 Warning(s)
+Time Elapsed 00:00:04.92
+[xUnit.net 00:00:03.07]     Sattle.Tests.BatchInvarianceTests.A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(lateRows: 1, laterMinutes: 10) [FAIL]
+[xUnit.net 00:00:03.22]     Sattle.Tests.BatchInvarianceTests.A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(lateRows: 2, laterMinutes: 5) [FAIL]
+[xUnit.net 00:00:03.38]     Sattle.Tests.BatchInvarianceTests.A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(lateRows: 4, laterMinutes: 10) [FAIL]
+[xUnit.net 00:00:03.53]     Sattle.Tests.BatchInvarianceTests.A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(lateRows: 1, laterMinutes: 30) [FAIL]
+Failed!  - Failed:     4, Passed:     2, Skipped:     0, Total:     6, Duration: 3 s - Sattle.Tests.dll (net10.0)

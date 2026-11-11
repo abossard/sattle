@@ -1,0 +1,15 @@
+# sattle check (engine commit fde84db), exit code 0
+12 file(s), 12 module(s), 10 projection(s), 1 graph space(s), catalog revision 13, 0 error(s), 0 warning(s)
+  sattle.infra @ 1.0.0 sha256:461c7cd38e46d766138db45d221dcbb5b411f4b8b7fb176c457419fa959b4423
+  sattle.source.k8s @ 1.0.0 sha256:8f2c4bf31dd52dd3c2563059f61938999b693c8e2e2a26f0f5d6268a43f64cee
+  sattle.source.hubble @ 1.0.0 sha256:dd668ede69fd7bc43b2c03925028479b402ba451cfc7307eac7131ae85f9a946
+  sattle.azure @ 1.0.0 sha256:a8eb2d7fab1b8ca86611860932bc8b69066c34b128ad59169403eac6c658d3c8
+  sattle.source.azure @ 1.0.0 sha256:ba767298d34950b1d29bee15145c587f950f67e0499ab3ca11f799c344a87bce
+  sattle.source.prometheus @ 1.0.0 sha256:af43adc2a32148340789bc10a096ae77de47e1e81d52487263888016136fab55
+  acme.ops @ 1.0.0 sha256:9381b42445e8dd4e7fe23d802478cc1ee8fee8d608ff160222caa47c1ef1c705
+  acme.biz @ 1.0.0 sha256:aaf5ed45da4bc006bfc38396c475ec06cad91bf70a74e7081d2c9e48f13f0cd7
+  acme.health @ 1.0.0 sha256:48b09a3e6e7a5cf0f6a2250090526ddfde06a0820a0bddd5dc157ce7bcafbfac
+  acme.svc @ 1.0.0 sha256:9334d7d0f17a791aefe5eff433059bedf85f4e63d78d5477281fbffb51b2af47
+  acme.healthmodel @ 1.0.0 sha256:1f48f3a1378666d4d72cee45dc549a0e0efb76f43daede52943c40c128c5d430
+  acme.space @ 1.0.0 sha256:98d218ca08856e95b80546071125d18b348d5794437ce0266ade17ba16b3cc1c
+exit 0

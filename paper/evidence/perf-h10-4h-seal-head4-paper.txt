@@ -1,0 +1,30 @@
+# H10 restart from the store with a state seal (--seal-every 2000), history of 4 h of repeated capture, SQLite, 10 restarts, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 4 --seal-every 2000 --runs 10. Machine under load, see the load figures below.
+== b10 4h seal load before: 53.22 49.67 48.34
+# B10 cold start by restart: capture 20261110T140542Z repeated to 4 h of logical time, SQLite journal and log, 10 restarts
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 53.22 49.67 48.34
+pass 1: logical span 0.28 h, 704,027 rows, journal 4,045 entries, wall 22 s
+pass 2: logical span 0.60 h, 1,406,599 rows, journal 7,897 entries, wall 30 s
+pass 3: logical span 0.92 h, 2,109,171 rows, journal 11,749 entries, wall 40 s
+pass 4: logical span 1.23 h, 2,811,743 rows, journal 15,601 entries, wall 52 s
+pass 5: logical span 1.55 h, 3,514,315 rows, journal 19,453 entries, wall 64 s
+pass 6: logical span 1.87 h, 4,216,887 rows, journal 23,305 entries, wall 76 s
+pass 7: logical span 2.18 h, 4,919,459 rows, journal 27,157 entries, wall 87 s
+pass 8: logical span 2.50 h, 5,622,031 rows, journal 31,009 entries, wall 99 s
+pass 9: logical span 2.82 h, 6,324,603 rows, journal 34,861 entries, wall 111 s
+pass 10: logical span 3.13 h, 7,027,175 rows, journal 38,713 entries, wall 123 s
+pass 11: logical span 3.45 h, 7,729,747 rows, journal 42,565 entries, wall 137 s
+pass 12: logical span 3.77 h, 8,432,319 rows, journal 46,417 entries, wall 151 s
+pass 13: logical span 4.08 h, 9,134,891 rows, journal 50,269 entries, wall 167 s
+seals: 25 taken, 2856 ms each on average, the last 48.0 MB (compressed)
+built: 4,576 revisions in 9 graphs, journal 50,270 entries, state digest sha256:7aa3ac42368dd5afd3e2070c6629e75cac58e4ffc5f7a7025bd98ca4ec3dcbc6, store file 2333 MB
+restart 1: 6.1 s (seal at entry 50000, 270 entries replayed after it, state loaded in 4070 ms, tail replayed in 680 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 27.39 44.36 46.76
+restart 2: 6.3 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3807 ms, tail replayed in 1036 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 26.44 43.59 46.46
+restart 3: 5.9 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3799 ms, tail replayed in 690 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 29.53 43.95 46.57
+restart 4: 6.1 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3868 ms, tail replayed in 786 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 30.37 43.88 46.53
+restart 5: 6.1 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3799 ms, tail replayed in 844 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 31.62 43.71 46.44
+restart 6: 5.9 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3772 ms, tail replayed in 750 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 31.41 43.46 46.33
+restart 7: 6.0 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3782 ms, tail replayed in 703 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 32.50 43.49 46.33
+restart 8: 5.8 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3794 ms, tail replayed in 664 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 33.90 43.59 46.35
+restart 9: 6.1 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3726 ms, tail replayed in 705 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 36.75 43.90 46.42
+restart 10: 6.0 s (seal at entry 50000, 270 entries replayed after it, state loaded in 3851 ms, tail replayed in 737 ms), 4,576 revisions reproduced and equal to the stored log, sequence 6638, digest sha256:7aa3ac42368d; load 37.41 43.92 46.42
+H10 restart from the store (journal replay with verification of every commit), history of 4 h: median 6.027 s, min 5.832, max 6.304, interval of the median [5.898, 6.136]  (target at most 60 s)

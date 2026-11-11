@@ -1,0 +1,25 @@
+# The benchmarks of engine commit 6f784c9 load the tracked definitions without the local space overlay (Bench.cs:20, Bench.Latency.cs:62 and 275 call Catalog.ReadDirectory(FindDefs()); replay and serve call ReadDefinitions, which applies lab/captures/space-overlay.sattle). The tracked acme.space binds the health model to invented names, so on a real capture the health topology and state are empty in a benchmark. Shown here with sattle replay of the newest capture (Release build, clean export of HEAD, run by the paper session).
+
+## without the overlay (the capture reached through a path that is not under lab/captures): what bench b5 and b10 run
+graph master: revision 1,897, 50,154 entities, 8,193 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentHealth: revision 33, 22 entities, 36 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentReport: revision 23, 26 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph serviceTree: revision 27, 19 entities, 29 relationships, telemetry samples 157 (67 element-windows, 0 partial window(s))
+graph healthSignals: revision 1, 3 entities, 0 relationships, telemetry samples 180 (180 element-windows, 0 partial window(s))
+graph healthTopology: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 48, 323 entities, 323 relationships, telemetry samples 27 (27 element-windows, 0 partial window(s))
+state digest sha256:651f2ba542874a4b7c8b689dfb3762cc908268bdc29dba74d5380ac182f40a82
+
+## with the overlay (sattle replay lab/captures/20261110T140542Z): what the replays, tests and served runs of this paper use
+graph master: revision 1,897, 50,154 entities, 8,193 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentHealth: revision 33, 22 entities, 36 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentReport: revision 23, 26 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph serviceTree: revision 27, 19 entities, 29 relationships, telemetry samples 157 (67 element-windows, 0 partial window(s))
+graph healthSignals: revision 13, 12 entities, 0 relationships, telemetry samples 427 (427 element-windows, 0 partial window(s))
+graph healthTopology: revision 12, 11 entities, 34 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 18, 23 entities, 46 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 68, 353 entities, 359 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+state digest sha256:a9564d769b58f69244a669fe27f48ba3dbb0db1fdea27930bb77de83f8d754df

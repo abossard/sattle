@@ -1,0 +1,67 @@
+# sattle replay --chunk N at engine commit c201e27 (Release build of a clean git export of HEAD, run by the paper session).
+# Capture 20261110T105738Z (lab/captures, gitignored): the capture of replay-latest.txt. Digests per chunk size; the first lines of the replay report are kept.
+
+## chunk default
+replayed 245,345 record(s) in 8.0 s, capture span 5679 s, 14 logical-time advance(s), 1636 chunk(s)
+graph master: revision 666, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+graph health: revision 37, 300 entities, 305 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+identities: 38,582 minted, 79 aliased, 6 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983
+
+## chunk 1
+replayed 245,345 record(s) in 14.9 s, capture span 5679 s, 14 logical-time advance(s), 244308 chunk(s)
+graph master: revision 7,036, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+graph health: revision 312, 300 entities, 305 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+identities: 36,827 minted, 80 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:5e81c78f19d2c0d74e436f7ddbd8d7a348b0d024aec8f0ec0e551f858bf63c21
+
+## chunk 50
+replayed 245,345 record(s) in 8.4 s, capture span 5679 s, 14 logical-time advance(s), 6836 chunk(s)
+graph master: revision 967, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+graph health: revision 66, 300 entities, 305 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+identities: 37,287 minted, 79 aliased, 6 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983
+
+## chunk 777
+replayed 245,345 record(s) in 8.0 s, capture span 5679 s, 14 logical-time advance(s), 1885 chunk(s)
+graph master: revision 671, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+graph health: revision 40, 300 entities, 305 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+identities: 38,548 minted, 79 aliased, 6 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983
+
+## chunk 100000
+replayed 245,345 record(s) in 7.3 s, capture span 5679 s, 14 logical-time advance(s), 1485 chunk(s)
+graph master: revision 664, 16,777 entities, 6,495 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))
+graph health: revision 35, 300 entities, 305 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+identities: 38,582 minted, 79 aliased, 6 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+state digest sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983
+
+# Capture 20261110T140542Z (the newest capture, records from every source, 160,300 records at the time of this run).
+
+## chunk 1
+replayed 160,300 record(s) in 18.6 s, capture span 1017 s, 16 logical-time advance(s), 159557 chunk(s)
+graph master: revision 10,422, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph health: revision 390, 353 entities, 359 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+identities: 130,086 minted, 81 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:5a8c1cab047d74ce16220c3b2f7fa025d7396c714e78d813976f3adfb7e8eb0d
+
+## chunk 50
+replayed 160,300 record(s) in 14.3 s, capture span 1017 s, 16 logical-time advance(s), 8135 chunk(s)
+graph master: revision 2,747, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph health: revision 102, 353 entities, 359 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+identities: 131,341 minted, 81 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:5a8c1cab047d74ce16220c3b2f7fa025d7396c714e78d813976f3adfb7e8eb0d
+
+## chunk 777
+replayed 160,300 record(s) in 13.7 s, capture span 1017 s, 16 logical-time advance(s), 4295 chunk(s)
+graph master: revision 1,932, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph health: revision 72, 353 entities, 359 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+identities: 132,494 minted, 81 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:5a8c1cab047d74ce16220c3b2f7fa025d7396c714e78d813976f3adfb7e8eb0d
+
+## chunk 100000
+replayed 160,300 record(s) in 11.9 s, capture span 1017 s, 16 logical-time advance(s), 3829 chunk(s)
+graph master: revision 1,878, 50,208 entities, 8,247 relationships, telemetry samples 4,461 (3,313 element-windows, 0 partial window(s))
+graph health: revision 66, 353 entities, 359 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+identities: 132,509 minted, 81 aliased, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 125, uniqueness rejections 0
+state digest sha256:5a8c1cab047d74ce16220c3b2f7fa025d7396c714e78d813976f3adfb7e8eb0d

@@ -1,0 +1,153 @@
+/// Capability suite of research note 05: one projection per task. Not bound in the space.
+module research.suite @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:4aaa8303eb10fae2a3b2c0d8ee083ae125d87e250094badad54d7a1384c75cdd as ops;
+import acme.svc     @ 1.0.0 sha256:91ac722e4f25a0703c811849412c49d5fdea1adc1d9f075c7741ce3fb8371404 as svc;
+
+entity Item { itemKey: Text; itemFlag?: Text; itemN?: Integer; itemFlows?: Integer telemetry delta sum every 60s; itemRatio?: Decimal telemetry gauge max every 60s; }
+relationship Reaches (Item) -> (Item) { hops?: Integer; }
+identity item for Item version "1" { key: Text by exact; }
+
+/// S1 impact: for every service, the services that depend on it transitively (callers), up to 16 hops.
+projection impact view forward output research.suite {
+  in tree: graph svc;
+  retain 1;
+  let reach = match tree (x: svc.ServiceNode)
+    |> traverse tree via svc.DependsOn in depth 1 .. 16 from x as d;
+  emit entity Item from reach identity x set { itemKey: x.name };
+  emit entity Item from reach identity d set { itemKey: d.name };
+  emit relationship Reaches from reach key impact: x -> d set { hops: d_depth };
+}
+
+/// S2 blast radius: a node, the services its pods back, and every service that depends on those, across two graphs joined by identity.
+projection blastRadius view forward output research.suite {
+  in master: graph ops;
+  in tree: graph svc;
+  retain 1;
+  let hosted = match master (p: infra.Pod)-[:infra.RunsOn]->(n: infra.Node), (p)-[:infra.Backs]->(s: infra.Service)
+    |> select { n: n, sid: entityId(s) };
+  let callers = match tree (x: svc.ServiceNode)
+    |> traverse tree via svc.DependsOn in depth 0 .. 16 from x as d
+    |> select { xid: entityId(x), d: d, dname: d.name, hops: d_depth };
+  let radius = join hosted, callers on sid == xid;
+  emit entity Item from radius identity n set { itemKey: n.name };
+  emit entity Item from radius identity d set { itemKey: dname };
+  emit relationship Reaches from radius key blast: n -> d set { hops: hops };
+}
+
+/// S3 drift between declared and observed: services that realize a capability (authored) but have no pod (observed), and services with pods that realize none.
+projection drift view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let declared = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> select { sid: entityId(s), dec: 1, obs: 0 };
+  let observed = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service) |> select { sid: entityId(s), dec: 0, obs: 1 };
+  let both = union declared, observed |> group by { sid: sid } aggregate { dec: max(dec), obs: max(obs) };
+  let declaredOnly = both |> where dec == 1 and obs == 0;
+  let observedOnly = both |> where dec == 0 and obs == 1;
+  emit entity Item from declaredOnly identity item(key: sid) set { itemKey: sid, itemFlag: "declared-not-observed" };
+  emit entity Item from observedOnly identity item(key: sid) set { itemKey: sid, itemFlag: "observed-not-declared" };
+}
+
+/// S4 negation (anti-join): pods that back no service.
+projection orphans view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let all = match master (p: infra.Pod) |> select { pid: entityId(p), backed: 0 };
+  let backing = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service) |> select { pid: entityId(p), backed: 1 };
+  let flagged = union all, backing |> group by { pid: pid } aggregate { backed: max(backed) } |> where backed == 0;
+  emit entity Item from flagged identity item(key: pid) set { itemKey: pid, itemFlag: "orphan" };
+}
+
+/// S11 top-k on data: the three services with the most pods (rank = number of services with strictly more pods), quadratic self-join with a residual predicate.
+projection topServices view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let counts = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service) |> group by { s: entityId(s) } aggregate { n: count() };
+  let a = counts |> select { sa: s, na: n, ka: 1 };
+  let b = counts |> select { sb: s, nb: n, kb: 1 };
+  let above = join a, b on ka == kb and nb > na |> group by { sa: sa } aggregate { r: count() };
+  let zero = counts |> select { sa: s, r: 0 };
+  let ranked = union zero, above |> group by { sa: sa } aggregate { r: sum(r) } |> where r < 3;
+  emit entity Item from ranked identity item(key: sa) set { itemKey: sa, itemN: r };
+}
+
+/// S14 cycle detection (bounded): services on a dependency cycle of at most 16 edges.
+projection cycles view forward output research.suite {
+  in tree: graph svc;
+  retain 1;
+  let onCycle = match tree (x: svc.ServiceNode)
+    |> traverse tree via svc.DependsOn out depth 1 .. 16 from x as d
+    |> where d == x;
+  emit entity Item from onCycle identity x set { itemKey: x.name, itemFlag: "on-cycle" };
+}
+
+/// S15 shortest hop distance (bounded) between services.
+projection distance view forward output research.suite {
+  in tree: graph svc;
+  retain 1;
+  let reach = match tree (x: svc.ServiceNode)
+    |> traverse tree via svc.DependsOn out depth 1 .. 16 from x as d
+    |> group by { x: x, d: d } aggregate { h: min(d_depth) };
+  emit entity Item from reach identity x set { itemKey: entityId(x) };
+  emit entity Item from reach identity d set { itemKey: entityId(d) };
+  emit relationship Reaches from reach key distance: x -> d set { hops: h };
+}
+
+/// S19 correlation of two signals of one element in one window: a node's drop rate over its forward rate.
+projection correlate view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let w = match master (n: infra.Node)
+    |> series master n.forwardRate, n.dropRate within 1h
+    |> rollup by { n: n, nm: n.name } combine { f: max(forwardRate), d: max(dropRate) }
+    |> select { n: n, nm: nm, windowStart: windowStart, ratio: if(f > 0.0, d / f, 0.0) };
+  emit entity Item from w identity n set { itemKey: nm };
+  emit update entity Item from w identity n set { itemRatio: ratio };
+}
+
+/// S16 transitive closure written with Fixpoint (bounded unrolling, max 8): capability ancestors.
+projection ancestors view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let edges = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability) |> select { a: entityId(c), b: entityId(p) };
+  let step = edges |> select { a2: a, b2: b };
+  let closure = fixpoint edges via join closure, step on b == a2 |> select { a: a, b: b2 } max 8;
+  emit entity Item from closure identity item(key: a) set { itemKey: a };
+  emit entity Item from closure identity item(key: b) set { itemKey: b };
+  emit relationship Reaches from closure key ancestor: item(key: a) -> item(key: b);
+}
+
+/// S20 constant rows and a parameter: a fixed list of required capability ids, reported as missing when not authored.
+projection required view forward output research.suite {
+  in master: graph ops;
+  in prefix: param Text = "cap-";
+  retain 1;
+  let wanted = values { id: "payments", need: 1, have: 0 }, { id: "checkout", need: 1, have: 0 };
+  let present = match master (c: ops.Capability) |> select { have: 1, id: c.capId, need: 0 };
+  let missing = union wanted, present |> group by { id: id } aggregate { need: max(need), have: max(have) } |> where need == 1 and have == 0;
+  emit entity Item from missing identity item(key: concat(prefix, id)) set { itemKey: id, itemFlag: "missing" };
+}
+
+/// S17 nested bounded fixpoints: the second extends paths of the first by whole paths of the first, so two levels of max 64 cover paths of up to 65 * 65 edges.
+projection nested view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let edges = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability) |> select { a: entityId(c), b: entityId(p) };
+  let step1 = edges |> select { a2: a, b2: b };
+  let level1 = fixpoint edges via join level1, step1 on b == a2 |> select { a: a, b: b2 } max 64;
+  let step2 = level1 |> select { a2: a, b2: b };
+  let level2 = fixpoint level1 via join level2, step2 on b == a2 |> select { a: a, b: b2 } max 64;
+  emit entity Item from level2 identity item(key: a) set { itemKey: a };
+  emit entity Item from level2 identity item(key: b) set { itemKey: b };
+  emit relationship Reaches from level2 key nested: item(key: a) -> item(key: b);
+}
+
+/// S18 a non-monotone step: an aggregate inside the unrolled body (each round keeps the pairs of sources with at most two successors).
+projection nonMonotone view forward output research.suite {
+  in master: graph ops;
+  retain 1;
+  let edges = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability) |> select { a: entityId(c), b: entityId(p) };
+  let rel = fixpoint edges via rel |> group by { a: a } aggregate { b: count() } |> where b <= 2 |> select { a: a, b: concat(a, "") } max 4;
+  emit entity Item from rel identity item(key: a) set { itemKey: a };
+}

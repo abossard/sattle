@@ -1,0 +1,12 @@
+  graph sImpact = suite.impact(tree: serviceTree);
+  graph sBlast = suite.blastRadius(master: master, tree: serviceTree);
+  graph sDrift = suite.drift(master: master);
+  graph sOrphans = suite.orphans(master: master);
+  graph sTop = suite.topServices(master: master);
+  graph sCycles = suite.cycles(tree: serviceTree);
+  graph sDistance = suite.distance(tree: serviceTree);
+  graph sCorrelate = suite.correlate(master: master);
+  graph sAncestors = suite.ancestors(master: master);
+  graph sRequired = suite.required(master: master);
+  graph sNested = suite.nested(master: master);
+  graph sNonMonotone = suite.nonMonotone(master: master);

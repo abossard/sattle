@@ -1,0 +1,4 @@
+# npm run document-live at canvas commit 53db46e against the engine at 64f7a6a (sattle serve lab/fixtures --speed 2), both from a clean export of HEAD, run by the paper session. Chrome headless over CDP; the page is opened once and never reloaded.
+
+document-live: deploymentReport followed the stream without a reload through revisions 2, 3 and ends at revision 3, digest sha256:0072cf469e6e as the engine answers
+exit 0

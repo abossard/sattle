@@ -1,0 +1,18 @@
+# Tests at engine commit 6f784c9, canvas commit 478e2f3 and lab commit 085cf33 (clean git export of HEAD b85785c in a scratch directory, run by the paper session; Release build for the engine). HEAD adds only .claude/launch.json to those commits.
+# No Cosmos emulator was used by this paper: none was running on this machine, so the Cosmos cases of the storage contract tests, RestartTests, SealTests and LiveResumeTests did not run (SATTLE_COSMOS_EMULATOR unset). lab/captures was linked to the two real captures for every engine run, with the gitignored space-overlay.sattle that the engine applies to them. Canvas fixtures were synced with scripts/sync-fixtures.mjs. Wall times are at load average 45 to 90 (other sessions running) and are not a measurement.
+
+## engine: dotnet test -c Release (default run: Category!=Capture and Category!=Slow, captures linked)
+Passed!  - Failed:     0, Passed:   403, Skipped:     0, Total:   403, Duration: 2 m 6 s - Sattle.Tests.dll (net10.0)
+
+## engine: dotnet test -c Release --settings tests/Sattle.Tests/full.runsettings --filter Category=Slow
+Passed!  - Failed:     0, Passed:    96, Skipped:     0, Total:    96, Duration: 5 m 4 s - Sattle.Tests.dll (net10.0)
+
+## engine: dotnet test -c Release --settings tests/Sattle.Tests/full.runsettings --filter Category=Capture (the two real captures)
+Passed!  - Failed:     0, Passed:    18, Skipped:     0, Total:    18, Duration: 3 m 52 s - Sattle.Tests.dll (net10.0)
+
+## engine: dotnet test --filter FullyQualifiedName~StoreConformanceTests (memory and SQLite only)
+Passed!  - Failed:     0, Passed:    29, Skipped:     0, Total:    29, Duration: 618 ms - Sattle.Tests.dll (net10.0)
+
+## canvas: npx tsc --noEmit (tsc exit 0) and npx vitest run
+ Test Files  30 passed (30)
+      Tests  599 passed (599)

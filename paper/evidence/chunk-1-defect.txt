@@ -1,0 +1,10 @@
+# Chunk size 1 against 100000 on capture 20261110T105738Z at engine commit c201e27 (paper session, clean export of HEAD, nothing in the repository changed).
+# Method: sattle replay CAPTURE --chunk N --out DIR, then final snapshots and telemetry compared as sets with jq.
+state digest chunk 1:      sha256:5e81c78f19d2c0d74e436f7ddbd8d7a348b0d024aec8f0ec0e551f858bf63c21
+state digest chunk 100000: sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983 (equal to 50, 777 and the default)
+graph final states, 8 graphs: entities equal in all; relationships equal in 7; master differs
+master relationships: 6,495 in both runs, 8 differ (4 per run), all of type Calls, each with one different endpoint id
+differing endpoints are not entities of the master in either run (the master has 527 dangling endpoints in both runs)
+telemetry (graph, window, property, element, value flattened): serviceTree and healthSignals equal; master differs in 16 values, the flows and drops of the same 8 relationships
+identity counters: chunk 1: 36,827 minted, 80 aliased, 0 conflict(s). chunk 100000: 38,582 minted, 79 aliased, 6 conflict(s)
+cause: not isolated at row level. The counters point at identity binding order (merge not built, first binding wins).

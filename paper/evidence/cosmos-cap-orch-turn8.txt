@@ -1,0 +1,10 @@
+# Cosmos emulator replay of the newest capture after the batched writes, orchestrator, engine 9d0fff1, one run. Copy of engine/out/perf-orchestrator/turn8/cap-cosmos.txt, unchanged below this line. The emulator reports a charge of 1 per request, so the figures are request counts, not RU.
+load 39.97 37.66 36.76
+cosmos commit: 2,099 request(s), charge 2,099.0
+cosmos follow: 26 request(s), charge 26.0
+cosmos identity: 2,159 request(s), charge 2,159.0
+cosmos materialize: 62,745 request(s), charge 62,745.0
+cosmos meta: 91 request(s), charge 91.0
+cosmos read: 61 request(s), charge 61.0
+state digest sha256:a9564d769b58f69244a669fe27f48ba3dbb0db1fdea27930bb77de83f8d754df
+real 230.34

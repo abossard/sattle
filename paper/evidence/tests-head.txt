@@ -1,0 +1,16 @@
+# Tests at engine commit c201e27 and canvas commit cae860f (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
+# The export has no lab/captures (gitignored), so the engine tests that need a capture returned early. The canvas fixtures were synced with scripts/sync-fixtures.mjs.
+
+## engine: dotnet test
+Passed!  - Failed:     0, Passed:   323, Skipped:     0, Total:   323, Duration: 8 m 39 s - Sattle.Tests.dll (net10.0)
+(8 m 39 s while the canvas tests and other sessions' tests ran on the same machine)
+
+## canvas: npx vitest run (first run, beside the engine tests)
+ Test Files  1 failed | 24 passed (25)
+      Tests  1 failed | 455 passed (456)
+ FAIL  tests/ui/keyboard.test.tsx > keyboard only > ? opens the shortcut list and Escape closes it
+cause: a 2000 ms timeout of one jsdom test under load
+
+## canvas: npx vitest run tests/ui/keyboard.test.tsx (re-run of the failing file alone)
+Test Files  1 passed (1)
+Tests  3 passed (3)

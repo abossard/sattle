@@ -1,0 +1,12 @@
+# Sensitivity run of the health model (engine commit fde84db, Debug build, same capture as replay-latest.txt, run by the paper session).
+# A scratch copy of engine/definitions was changed in one line and re-pinned with `sattle check --update-pins`; nothing in the repository was changed.
+change: acme.healthmodel, signal "cpu percent", degraded threshold "above 70 for 3 ... below 60 for 3" replaced by "above 10 for 1 ... below 5 for 3" (the highest cluster CPU in the capture is 16 percent)
+result, component states after replay (graph health, 9 components):
+   1 cluster Degraded
+   1 node Degraded
+   3 service Degraded
+   1 workload Degraded
+   1 eventhub Healthy
+   1 loadbalancer Healthy
+   1 network Healthy
+unchanged run (replay-latest.txt): all 9 components Healthy, all 10 signals off

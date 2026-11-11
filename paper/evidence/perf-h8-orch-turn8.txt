@@ -1,0 +1,15 @@
+# H8 after the non-allocating window scan, 10 runs, orchestrator, engine 9d0fff1. Copy of engine/out/perf-orchestrator/turn8/b8.txt, unchanged below this line.
+# B8 element view: structure at head joined with 60 windows (1 h at 60 s) of 4 series for 10,000 elements, hot plane only, 10 runs
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 39.57 37.44 36.67
+run 1: view of 10,000 elements 35.7 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0173 ms p99 0.0217 ms; load 39.57 37.44 36.67
+run 2: view of 10,000 elements 34.6 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0175 ms p99 0.0252 ms; load 39.57 37.44 36.67
+run 3: view of 10,000 elements 34.7 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0173 ms p99 0.0207 ms; load 39.57 37.44 36.67
+run 4: view of 10,000 elements 34.8 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0201 ms p99 0.0296 ms; load 40.89 37.75 36.78
+run 5: view of 10,000 elements 43.7 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0206 ms p99 0.0260 ms; load 40.89 37.75 36.78
+run 6: view of 10,000 elements 44.3 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0167 ms p99 0.0274 ms; load 40.89 37.75 36.78
+run 7: view of 10,000 elements 16.5 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0022 ms p99 0.0057 ms; load 40.89 37.75 36.78
+run 8: view of 10,000 elements 16.0 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0022 ms p99 0.0065 ms; load 40.89 37.75 36.78
+run 9: view of 10,000 elements 15.6 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0021 ms p99 0.0055 ms; load 40.89 37.75 36.78
+run 10: view of 10,000 elements 16.4 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0022 ms p99 0.0042 ms; load 40.89 37.75 36.78
+H8 view of 10,000 elements x 4 series x 60 windows (2,400,000 points): median 34.6 ms, min 15.6, max 44.3, interval of the median [16.0, 43.7]  (target <= 100 ms; True)
+H8 single element view, p99 over 2,000 views: median 0.021 ms, min 0.004, max 0.030, interval of the median [0.006, 0.027]

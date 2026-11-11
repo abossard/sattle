@@ -1,0 +1,16 @@
+# Restart from a store at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# sattle serve FIXTURE --cluster synth --store sqlite=DB (fixture tests/Sattle.Tests/fixtures/deploy-health), stop, then sattle serve --store sqlite=DB with no fixture and no definitions. Two runs: with the default seal interval (5000 entries, never reached by 17 entries, so no seal exists) and with --seal-every 10 (one seal, at entry 10).
+
+## without a seal: first start (log)
+replay finished: 12 records, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+## without a seal: second start from the store alone (log)
+restored from the journal of sqlite=$SCRATCH/restart5.db: 24 revisions of 9 graphs reproduced and equal to the stored log, sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+result: SPACE-EQUAL DOC-EQUAL finished 
+document digest before and after: X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314 / X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314
+
+## with a seal at entry 10 (seals in the store: 10 , journal entries: 17): first start (log)
+replay finished: 12 records, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+## with a seal: second start from the store alone (log)
+restored from the journal of sqlite=$SCRATCH/restart5s.db: 24 revisions of 9 graphs reproduced and equal to the stored log, sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+result: SPACE-EQUAL DOC-EQUAL finished 
+document digest before and after: X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314 / X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314

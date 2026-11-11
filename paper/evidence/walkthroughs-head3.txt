@@ -1,0 +1,12 @@
+# npm run walkthroughs at canvas commit 707baaa against the engine at 588a256, both from a clean export of HEAD, run by the paper session.
+# Engine: sattle serve lab/fixtures (Release build); app: vite with ENGINE_PORT; Chrome headless over CDP. The preview figures are entities/relationships of the rebuilt projection on that engine.
+ok    deployment-health: 112 commands, preview deploymentHealth 2/0, dh2 2/0
+ok    fixpoint-closure: 32 commands, preview kLoop 0/0
+ok    health-rollup: 168 commands, preview health 0/0, health2 0/0
+ok    link-policy: 10 commands, preview kLink 0/0
+ok    retain-rows: 19 commands, preview kRetain 11/0
+ok    series-threshold-aggregates: 60 commands, preview kSeries 1/0, kSeriesText 1/0
+ok    union-distinct: 30 commands, preview kUnion 0/0
+ok    values-rows: 21 commands, preview kValues 2/0
+walkthroughs: 8 passed
+exit 0

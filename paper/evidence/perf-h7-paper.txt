@@ -1,0 +1,35 @@
+# Output of sattle bench (b7) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+== b7 load before: 69.89 67.04 66.76
+# B7 durable reads: 2,000 entities, 20 hubs with 100 outgoing relationships, per run 1,000 point reads and 200 one-hop scans of 100 neighbours, 10 runs
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 69.89 67.04 66.76
+memory: loaded in 0.0 s, 80 commits, revision 80
+  run 1: point read p50 0.001 ms p99 0.002 ms max 0.14 ms; scan of 100 p50 0.010 ms p99 0.018 ms max 1.04 ms; load 69.89 67.04 66.76
+  run 2: point read p50 0.001 ms p99 0.005 ms max 0.05 ms; scan of 100 p50 0.011 ms p99 0.055 ms max 0.08 ms; load 69.89 67.04 66.76
+  run 3: point read p50 0.001 ms p99 0.006 ms max 0.04 ms; scan of 100 p50 0.012 ms p99 0.061 ms max 0.08 ms; load 69.89 67.04 66.76
+  run 4: point read p50 0.001 ms p99 0.003 ms max 0.03 ms; scan of 100 p50 0.010 ms p99 0.017 ms max 0.04 ms; load 69.89 67.04 66.76
+  run 5: point read p50 0.001 ms p99 0.004 ms max 0.04 ms; scan of 100 p50 0.011 ms p99 0.145 ms max 0.45 ms; load 69.89 67.04 66.76
+  run 6: point read p50 0.001 ms p99 0.003 ms max 0.03 ms; scan of 100 p50 0.011 ms p99 0.029 ms max 0.05 ms; load 69.89 67.04 66.76
+  run 7: point read p50 0.001 ms p99 0.003 ms max 0.04 ms; scan of 100 p50 0.011 ms p99 0.027 ms max 0.04 ms; load 69.89 67.04 66.76
+  run 8: point read p50 0.001 ms p99 0.003 ms max 0.04 ms; scan of 100 p50 0.010 ms p99 0.028 ms max 0.06 ms; load 69.89 67.04 66.76
+  run 9: point read p50 0.001 ms p99 0.010 ms max 0.03 ms; scan of 100 p50 0.011 ms p99 0.030 ms max 0.10 ms; load 69.89 67.04 66.76
+  run 10: point read p50 0.001 ms p99 0.003 ms max 0.05 ms; scan of 100 p50 0.011 ms p99 0.025 ms max 0.05 ms; load 69.89 67.04 66.76
+H7 memory point read p99: median 0.003 ms, min 0.002, max 0.010, interval of the median [0.003, 0.006]  (target p99 <= 10 ms)
+H7 memory point read p50: median 0.001 ms, min 0.001, max 0.001, interval of the median [0.001, 0.001]
+H7 memory one-hop scan of 100, p99: median 0.028 ms, min 0.017, max 0.145, interval of the median [0.018, 0.061]  (target <= 20 ms)
+H7 memory one-hop scan of 100, p50: median 0.011 ms, min 0.010, max 0.012, interval of the median [0.010, 0.011]
+sqlite: loaded in 0.2 s, 80 commits, revision 80
+  run 1: point read p50 0.026 ms p99 0.066 ms max 0.21 ms; scan of 100 p50 0.115 ms p99 0.186 ms max 0.94 ms; load 69.89 67.04 66.76
+  run 2: point read p50 0.025 ms p99 0.082 ms max 0.28 ms; scan of 100 p50 0.116 ms p99 0.220 ms max 7.61 ms; load 69.89 67.04 66.76
+  run 3: point read p50 0.025 ms p99 0.052 ms max 0.34 ms; scan of 100 p50 0.115 ms p99 0.223 ms max 0.49 ms; load 69.89 67.04 66.76
+  run 4: point read p50 0.025 ms p99 0.040 ms max 0.25 ms; scan of 100 p50 0.115 ms p99 0.213 ms max 0.35 ms; load 69.89 67.04 66.76
+  run 5: point read p50 0.025 ms p99 0.072 ms max 0.23 ms; scan of 100 p50 0.112 ms p99 0.169 ms max 0.20 ms; load 69.89 67.04 66.76
+  run 6: point read p50 0.026 ms p99 0.073 ms max 0.24 ms; scan of 100 p50 0.131 ms p99 0.199 ms max 0.22 ms; load 69.89 67.04 66.76
+  run 7: point read p50 0.026 ms p99 0.061 ms max 0.22 ms; scan of 100 p50 0.123 ms p99 0.216 ms max 0.23 ms; load 69.89 67.04 66.76
+  run 8: point read p50 0.027 ms p99 0.076 ms max 0.23 ms; scan of 100 p50 0.146 ms p99 0.210 ms max 0.22 ms; load 69.89 67.04 66.76
+  run 9: point read p50 0.026 ms p99 0.058 ms max 0.43 ms; scan of 100 p50 0.143 ms p99 0.229 ms max 1.04 ms; load 69.89 67.04 66.76
+  run 10: point read p50 0.027 ms p99 0.075 ms max 0.30 ms; scan of 100 p50 0.140 ms p99 0.197 ms max 0.29 ms; load 69.89 67.04 66.76
+H7 sqlite point read p99: median 0.069 ms, min 0.040, max 0.082, interval of the median [0.052, 0.076]  (target p99 <= 10 ms)
+H7 sqlite point read p50: median 0.026 ms, min 0.025, max 0.027, interval of the median [0.025, 0.027]
+H7 sqlite one-hop scan of 100, p99: median 0.211 ms, min 0.169, max 0.229, interval of the median [0.186, 0.223]  (target <= 20 ms)
+H7 sqlite one-hop scan of 100, p50: median 0.120 ms, min 0.112, max 0.146, interval of the median [0.115, 0.143]
+== exit 0 load after: 69.89 67.04 66.76

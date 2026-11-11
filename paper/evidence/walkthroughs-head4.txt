@@ -1,0 +1,30 @@
+# npm run walkthroughs at canvas commit 97deabf against the engine at 9d0fff1, both from a clean export of HEAD, run by the paper session.
+# Chrome headless over CDP; app: vite with ENGINE_PORT. The preview figures are entities/relationships of the rebuilt projection on that engine. The asserted minimum of each walkthrough is in canvas/tests/walkthroughs/*.json (nonEmpty, atLeast).
+
+## engine: sattle serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --overlay engine/tests/Sattle.Tests/fixtures/estate/space/acme.space.sattle  (strict: a missing output fails)
+ok    deployment-health: 112 commands, preview deploymentHealth 3/2, dh2 3/2
+ok    fixpoint-closure: 32 commands, preview kLoop 0/26
+ok    health-rollup: 168 commands, preview health 42/47, health2 42/47
+ok    link-policy: 10 commands, preview kLink 0/0
+        note: no output to count: Link asserts that two identities are one; the equivalence is not an element of the graph it sits in, so the preview has nothing to count
+ok    retain-rows: 19 commands, preview kRetain 2/0
+ok    series-threshold-aggregates: 60 commands, preview kSeries 4/0, kSeriesText 4/0
+ok    union-distinct: 30 commands, preview kUnion 10/0
+ok    values-rows: 21 commands, preview kValues 2/0
+walkthroughs: 8 passed
+exit 0
+
+## engine: sattle serve lab/captures/20261110T140542Z --cluster <redacted> (the newest real capture; --allow-empty: text and digest checks stay, missing data is only noted)
+ok    deployment-health: 112 commands, preview deploymentHealth 22/36, dh2 22/36
+ok    fixpoint-closure: 32 commands, preview kLoop 0/33
+ok    health-rollup: 168 commands, preview health 347/353, health2 347/353
+ok    link-policy: 10 commands, preview kLink 0/0
+        note: no output to count: Link asserts that two identities are one; the equivalence is not an element of the graph it sits in, so the preview has nothing to count
+ok    retain-rows: 19 commands, preview kRetain 91/0
+ok    series-threshold-aggregates: 60 commands, preview kSeries 3/0, kSeriesText 3/0
+        note: kSeries has 3 entities, expected at least 4
+        note: kSeriesText has 3 entities, expected at least 4
+ok    union-distinct: 30 commands, preview kUnion 11/0
+ok    values-rows: 21 commands, preview kValues 2/0
+walkthroughs: 8 passed
+exit 0

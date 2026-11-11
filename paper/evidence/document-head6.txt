@@ -1,0 +1,16 @@
+# Report document on the first real capture at engine commit 6f784c9 (Release build, clean export of HEAD, run by the paper session).
+# sattle serve CAPTURE --chunk N, then GET /graphs/deploymentReport/document. The Markdown bodies are byte-equal: yes. The ETag is the content tag of protocol 3.9.
+
+## chunk 1
+Cache-Control: no-cache
+Content-Location: /graphs/deploymentReport/document?revision=60
+ETag: "5570664ab3b66676b23d47d9bef04541"
+X-Revision: 60
+X-Document-Digest: sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690
+
+## chunk 100000
+Cache-Control: no-cache
+Content-Location: /graphs/deploymentReport/document?revision=39
+ETag: "5570664ab3b66676b23d47d9bef04541"
+X-Revision: 39
+X-Document-Digest: sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690

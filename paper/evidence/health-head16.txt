@@ -1,0 +1,33 @@
+# Health model, deployment health and references at engine commit ad83e63 (sattle replay --out into a scratch directory, one command per capture, run by the paper session; counted with jq). The reference entries name real resources and are not kept.
+
+## capture 20261110T105738Z
+graph deploymentHealth: revision 54, 22 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthSignals: revision 15, 10 entities, 0 relationships, telemetry samples 366 (366 element-windows, 0 partial window(s))
+graph healthTopology: revision 12, 9 entities, 28 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 18, 18 entities, 37 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 36, 137 entities, 142 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+conflicts: 0 property, 0 element, 0 telemetry window, 0 uniqueness
+state digest sha256:cad8907e42fc7324178d76373ea7a081ec1455eb16c08b6977b82a832c7489d4
+health components by state:    9 Healthy;
+health components not Healthy, by kind: 
+health entity and relationship types:    9 Component;   3 Contains;  11 DependsOn; 119 Evidence; 119 EvidenceFor;   9 Measures;   9 Signal;
+deployment health workloads by state:   21 Healthy;   1 Unhealthy;
+deployment health Talks by state:   36 Healthy;   2 Unhealthy;
+master references: 452 ( 427 absent AzureResource;   1 absent Node;  24 absent Pod;)
+references in every other graph: 0
+
+## capture 20261110T140542Z
+graph deploymentHealth: revision 33, 22 entities, 36 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthSignals: revision 13, 12 entities, 0 relationships, telemetry samples 427 (427 element-windows, 0 partial window(s))
+graph healthTopology: revision 12, 11 entities, 34 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 18, 23 entities, 46 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 48, 147 entities, 153 relationships, telemetry samples 29 (29 element-windows, 0 partial window(s))
+conflicts: 0 property, 0 element, 0 telemetry window, 0 uniqueness
+state digest sha256:6de23264f24f00f8742ae1d237c354efb1b46dd1e09f550dc3cced2a2cb92370
+health components by state:    7 Healthy;   4 Unhealthy;
+health components not Healthy, by kind:    3 service;   1 workload;
+health entity and relationship types:   11 Component;   3 Contains;  14 DependsOn; 124 Evidence; 124 EvidenceFor;  12 Measures;  12 Signal;
+deployment health workloads by state:   21 Healthy;   1 Unhealthy;
+deployment health Talks by state:   36 Healthy;
+master references: 590 ( 563 absent AzureResource;   1 absent Node;  26 absent Pod;)
+references in every other graph: 0

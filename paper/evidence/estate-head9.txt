@@ -1,0 +1,83 @@
+# The synthetic estate fixture at engine commit 4841a36 (Release build, clean export of HEAD, run by the paper session).
+# sattle replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --out DIR; counts by jq from the exported final snapshots.
+
+replayed 555 record(s) in 0.1 s, capture span 602 s, 12 logical-time advance(s), 96 chunk(s)
+identities: 96 minted, 4 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 2, uniqueness rejections 0
+state digest sha256:ad12a8980fec7f94c518d6a0ad83778a81024e4b1b75833fa44609898e8b1c06
+
+graph capabilities: 4 entities, 4 relationships
+   E    4 BizCapability
+   R    2 acme.biz.DependsOn
+   R    2 Under
+graph deploymentHealth: 3 entities, 2 relationships
+   E    3 Workload
+   R    2 Talks
+graph deploymentReport: 7 entities, 0 relationships
+   E    7 Block
+graph health: 40 entities, 45 relationships
+   E   24 acme.health.Evidence
+   E   10 Component
+   E    6 Signal
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   24 EvidenceFor
+   R    6 Measures
+graph healthSignals: 6 entities, 0 relationships
+   E    6 Signal
+graph healthState: 16 entities, 36 relationships
+   E   10 Component
+   E    6 Signal
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   15 Affects
+   R    6 Measures
+graph healthTopology: 10 entities, 30 relationships
+   E   10 Component
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   15 Affects
+graph master: 47 entities, 48 relationships
+   E   18 ActivityEvent
+   E    6 AzureResource
+   E    4 Capability
+   E    3 Deployment
+   E    2 Node
+   E    5 Pod
+   E    3 Service
+   E    6 WarningEvent
+   R    6 About
+   R    5 Backs
+   R    4 Calls
+   R   18 Concerns
+   R    5 ControlledBy
+   R    2 PartOf
+   R    3 Realizes
+   R    5 RunsOn
+graph serviceTree: 4 entities, 5 relationships
+   E    1 ServiceGroup
+   E    3 ServiceNode
+   R    3 acme.svc.Contains
+   R    2 acme.svc.DependsOn
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Unknown
+   1 loadbalancer	Unknown
+   1 network	Unknown
+   2 node	Healthy
+   3 service	Degraded
+   1 workload	Degraded
+
+## files written by --out: 94
+## per graph: lines of NAME.references.ndjson, and meters and thresholds in NAME.meters.json
+capabilities: references 0, meters 3, thresholds 1
+deploymentHealth: references 0, meters 0, thresholds 0
+deploymentReport: references 0, meters 0, thresholds 0
+health: references 0, meters 3, thresholds 0
+healthSignals: references 0, meters 3, thresholds 16
+healthState: references 0, meters 3, thresholds 0
+healthTopology: references 0, meters 3, thresholds 0
+master: references 0, meters 10, thresholds 0
+serviceTree: references 0, meters 5, thresholds 1
+
+## manifest entry of one graph
+{"ontology":"serviceTree.ontology.json","snapshot":"serviceTree.snapshot.json","patches":"serviceTree.patches.json","meters":"serviceTree.meters.json","references":"serviceTree.references.ndjson","lineage":"serviceTree.lineage.ndjson","lineageReverse":"serviceTree.lineage.reverse.ndjson"}

@@ -1,0 +1,8 @@
+# H10 restart of the same journal without using its seals (--no-seal), history of 4 h, SQLite, 3 restarts, at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 4 --no-seal --runs 3 on the file the seal run wrote. Machine under load, see the load figures below.
+== b10 4h noseal
+# B10 cold start by restart: capture 20261110T140542Z repeated to 4 h of logical time, SQLite journal and log, 3 restarts
+environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.15, Release=True, load average at start 35.61 37.44 46.73
+restart 1: 19.9 s (journal replayed from the start), 4,295 revisions recomputed and compared with the stored log (0 came from the seal), sequence 6268, digest sha256:033bef537b1a; load 34.81 37.16 46.42
+restart 2: 17.4 s (journal replayed from the start), 4,295 revisions recomputed and compared with the stored log (0 came from the seal), sequence 6268, digest sha256:033bef537b1a; load 27.59 35.37 45.56
+restart 3: 16.0 s (journal replayed from the start), 4,295 revisions recomputed and compared with the stored log (0 came from the seal), sequence 6268, digest sha256:033bef537b1a; load 23.64 34.11 44.93
+H10 restart from the store (journal replay with verification of every commit), history of 4 h: median 17.4 s, min 16.0, max 19.9  (target at most 60 s)

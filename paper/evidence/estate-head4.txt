@@ -1,0 +1,74 @@
+# The synthetic estate fixture at engine commit 9d0fff1 (Release build, clean export of HEAD, run by the paper session).
+# sattle replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --overlay engine/tests/Sattle.Tests/fixtures/estate/space/acme.space.sattle --out DIR; counts by jq from the exported final snapshots (entity and relationship types per graph, health components by kind and state).
+
+replayed 548 record(s) in 0.1 s, capture span 602 s, 12 logical-time advance(s), 86 chunk(s)
+records by source: activity-log=10, arg=6, azure-metrics=10, eventhub:sattle-activity=8, hubble=472, kubernetes-watch=22, prometheus=20
+rejected records: 0
+graph master: revision 33, 43 entities, 43 relationships, telemetry samples 145 (76 element-windows, 0 partial window(s))
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentHealth: revision 6, 3 entities, 2 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph deploymentReport: revision 6, 7 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph serviceTree: revision 7, 4 entities, 5 relationships, telemetry samples 110 (50 element-windows, 0 partial window(s))
+graph healthSignals: revision 7, 8 entities, 0 relationships, telemetry samples 50 (50 element-windows, 0 partial window(s))
+graph healthTopology: revision 5, 10 entities, 30 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph healthState: revision 11, 18 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+graph health: revision 31, 42 entities, 47 relationships, telemetry samples 15 (15 element-windows, 0 partial window(s))
+identities: 94 minted, 4 aliased, 1 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 0, uniqueness rejections 0
+state digest sha256:1306c8387f3c08def863dec575417ba323dd5b0b64569563d49662af4c967815
+
+## counts by type
+graph capabilities: 0 entities, 0 relationships
+graph deploymentHealth: 3 entities, 2 relationships
+   E    3 Workload
+   R    2 Talks
+graph deploymentReport: 7 entities, 0 relationships
+   E    7 Block
+graph health: 42 entities, 47 relationships
+   E   24 acme.health.Evidence
+   E   10 Component
+   E    8 Signal
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   24 EvidenceFor
+   R    8 Measures
+graph healthSignals: 8 entities, 0 relationships
+   E    8 Signal
+graph healthState: 18 entities, 38 relationships
+   E   10 Component
+   E    8 Signal
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   15 Affects
+   R    8 Measures
+graph healthTopology: 10 entities, 30 relationships
+   E   10 Component
+   R    3 acme.health.Contains
+   R   12 acme.health.DependsOn
+   R   15 Affects
+graph master: 43 entities, 43 relationships
+   E   18 ActivityEvent
+   E    6 AzureResource
+   E    3 Deployment
+   E    2 Node
+   E    5 Pod
+   E    3 Service
+   E    6 WarningEvent
+   R    6 About
+   R    5 Backs
+   R    4 Calls
+   R   18 Concerns
+   R    5 ControlledBy
+   R    5 RunsOn
+graph serviceTree: 4 entities, 5 relationships
+   E    1 ServiceGroup
+   E    3 ServiceNode
+   R    3 acme.svc.Contains
+   R    2 acme.svc.DependsOn
+health components (kind, state):
+   1 cluster	Healthy
+   1 eventhub	Unknown
+   1 loadbalancer	Unknown
+   1 network	Unknown
+   2 node	Healthy
+   3 service	Degraded
+   1 workload	Degraded

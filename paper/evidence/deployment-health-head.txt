@@ -1,0 +1,6 @@
+# Graph deploymentHealth (acme.deployhealth) at engine commit c201e27, final state after replay (Release build, clean export of HEAD, run by the paper session, minReady default 0).
+# Counted with jq from replay --out. The name of the one unhealthy Deployment is omitted.
+capture 20261110T105738Z: Workload 22 (21 Healthy, 1 Unhealthy); Talks 38 (36 Healthy, 2 Unhealthy); revision 54
+capture 20261110T140542Z: Workload 22 (21 Healthy, 1 Unhealthy); Talks 36 (36 Healthy); revision 33
+the Unhealthy Workload is the same Deployment on both captures: replicas 1, readyPods 0
+note: engine/README.md (Example 5) says no Deployment with 0 ready pods occurred on 20261110T105738Z and that all stayed Healthy. The final state above disagrees.

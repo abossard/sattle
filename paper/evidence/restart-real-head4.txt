@@ -1,0 +1,50 @@
+# Restart from a store on the journals of the two real captures at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# sattle serve CAPTURE --cluster <redacted> --store sqlite=DB [--seal-every N], wait until the replay is idle, stop, then sattle serve --store sqlite=DB (no capture, no definitions) 5 times with its seals and, after deleting the seals with sqlite3, 3 times without. The time is from the start of the process to the first answer of GET /space, polled once a second, so it has a resolution of one second (and includes the process start). Each /space answer is compared with the one of the first start.
+# Part 1 used the default seal interval (5000 entries), which neither journal reached, so no seal existed and all 16 restarts replayed the whole journal. Part 2 used --seal-every 500 and has seals.
+
+## part 1, no seal existed
+capture 20261110T105738Z: store file bytes 134385664, journal entries 1652 
+restart (no seal existed): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (no seal existed): 6.1 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (no seal existed): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (no seal existed): 6.1 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (no seal existed): 6.1 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seals deleted, none existed): 6.1 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seals deleted, none existed): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seals deleted, none existed): 6.1 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+capture 20261110T140542Z: store file bytes 272162816, journal entries 4047 
+restart (no seal existed): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (no seal existed): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (no seal existed): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (no seal existed): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (no seal existed): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seals deleted, none existed): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seals deleted, none existed): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seals deleted, none existed): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+
+## part 2, --seal-every 500
+capture 20261110T105738Z
+store file bytes 150970368
+journal entries: 1652; seals at: 1000 1500 
+restart (seal): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seal): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seal): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seal): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (seal): 6.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (noseal): 7.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (noseal): 7.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+restart (noseal): 7.2 s; restored: 885 revisions of 9 graphs reproduced and equal to the stored log, sequence 1031, catalog revision 16, state digest sha256:9094a76fa1bb3336d2d3c15a8055ebf24
+capture 20261110T140542Z
+store file bytes 329363456
+journal entries: 4047; seals at: 3500 4000 
+restart (seal): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seal): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seal): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seal): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (seal): 7.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (noseal): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (noseal): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+restart (noseal): 8.2 s; restored: 2,081 revisions of 9 graphs reproduced and equal to the stored log, sequence 2187, catalog revision 16, state digest sha256:1cfeb2717f26c3003c5816c3687c2ae
+
+## result
+32 restarts (16 in part 1, 16 in part 2): the /space answer was byte-equal to the first start's in every one (no restart printed "DIFFERS" in the scripts' output).

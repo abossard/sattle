@@ -1,0 +1,10 @@
+# HISTORICAL: this defect (D17) was found at fde84db and is resolved at c201e27 (two causes, see Ch. 6, 6.7 and replay-chunks-head.txt).
+# Chunk-size-50 digest difference (engine commit fde84db, Debug build, same capture as replay-latest.txt, run by the paper session).
+# A scratch copy of the engine printed one digest per graph state and one over the telemetry windows of each graph. Nothing in the repository was changed.
+# Result for chunk sizes 100000 and 50 (the default and 777 equal 100000):
+graph state digests (all 10 graphs): identical in both runs
+telemetry digest of nine graphs: identical in both runs
+telemetry digest of the master graph: differs. 4,595 windows in both runs, one value differs
+differing window (element id omitted): property changes (Activity Log operations per resource, delta), window start 2026-11-10T10:07:00Z, value 3 (chunk 100000) and 2 (chunk 50)
+identity counter "minted": 1,340 (default) and 1,180 (chunk 50). The identity table is not part of the state digest
+cause: not established. The Activity Log backfill (5,000 events, event times before the capture clock) arrives late for every window; interaction with the late-window horizon of 3 widths (engine README, deviation "Late data") is a candidate, not verified

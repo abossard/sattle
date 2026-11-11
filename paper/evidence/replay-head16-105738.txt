@@ -1,0 +1,45 @@
+# sattle replay at engine commit ad83e63 (the Release build of the working tree, which has no uncommitted engine change; default options; the local space overlay applied; one command run by the paper session, nothing built), capture 20261110T105738Z
+capture 20261110T105738Z, space operations, cluster <redacted>, store memory, speed max
+replayed 245,345 record(s) in 5.4 s, capture span 5679 s, 14 logical-time advance(s), 1636 chunk(s)
+records by source: activity-log=5,000, arg=361, arg-page=5, azure-metrics=20, eventhub:sattle-activity=617, eventhub:sattle-aks=749, hubble=235,858, kubernetes-list=1,085, kubernetes-watch=1,112, prometheus=16, vnet-flow-log=522 (5 not consumed: no adapter in this slice)
+rows by source:    activity=5,000, audit=29,710, deployments=28, diagActivity=1,119, endpoints=56, events=868, flowLogs=175,265, flows=235,858, metrics=30,933, nodes=2, pods=326, resourceMetrics=3,900, resources=361, services=15
+rejected records: 0
+hubble: 235,858 flows, 0 lost-event record(s) (0 events lost)
+kubernetes events consumed: 868, azure resources: 361, prometheus samples: 30,933
+graph master: revision 674, 15,154 entities, 4,650 relationships, telemetry samples 9,047 (7,834 element-windows, 0 partial window(s))
+  About=3, ActivityEvent=4,132, AuditEvent=10,487, AzureResource=361, Backs=21, Calls=332, Concerns=4,132, ControlledBy=31, Deployment=22, Meter=76, MeterOf=76, Node=2, Pod=56, RunsOn=55, Service=15, WarningEvent=3
+graph deploymentHealth: revision 54, 22 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Talks=38, Workload=22
+graph deploymentReport: revision 39, 26 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Block=26
+graph serviceTree: revision 44, 19 entities, 29 relationships, telemetry samples 182 (80 element-windows, 0 partial window(s))
+  Contains=15, DependsOn=14, ServiceGroup=4, ServiceNode=15
+graph capabilities: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  
+graph healthSignals: revision 15, 10 entities, 0 relationships, telemetry samples 366 (366 element-windows, 0 partial window(s))
+  Signal=10
+graph healthTopology: revision 12, 9 entities, 28 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=14, Component=9, Contains=3, DependsOn=11
+graph healthState: revision 18, 18 entities, 37 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Affects=14, Component=9, Contains=3, DependsOn=11, Measures=9, Signal=9
+graph health: revision 36, 137 entities, 142 relationships, telemetry samples 22 (22 element-windows, 0 partial window(s))
+  Component=9, Contains=3, DependsOn=11, Evidence=119, EvidenceFor=119, Measures=9, Signal=9
+graph treeSignals: revision 0, 0 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  
+graph treeStructure: revision 54, 469 entities, 468 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Contains=468, Element=469
+graph treeRollup: revision 54, 469 entities, 468 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Element=469, Rolls=468
+graph healthTree: revision 101, 1,119 entities, 1,118 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Contains=468, Element=469, Evidence=650, EvidenceFor=650
+graph healthReport: revision 55, 6 entities, 0 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))
+  Block=6
+service tree: 4 group(s), 15 service(s), 14 dependencies, 15 containment edges
+  top dependency otel-caller -> kube-dns: 980 flows, status ok
+  top dependency kube-dns -> otel-caller: 979 flows, status ok
+  top dependency metrics-server -> kube-dns: 80 flows, status ok
+  top dependency kube-dns -> metrics-server: 80 flows, status ok
+  top dependency kube-dns -> defender-admission-controller: 40 flows, status ok
+identities: 17,109 minted, 80 aliased, 35 merged, 0 conflict(s); runtime faults: 0 division by zero, 0 overflow or canonicalization failure; late rows dropped 0, rejected 0; skipped emits 169, uniqueness rejections 0
+conflicts: 0 property, 0 element, 0 telemetry window, 0 uniqueness
+state digest sha256:cad8907e42fc7324178d76373ea7a081ec1455eb16c08b6977b82a832c7489d4

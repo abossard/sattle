@@ -1,0 +1,12 @@
+# Report document on the first real capture at engine commit 9d0fff1 (Release build, clean export of HEAD, run by the paper session).
+# sattle serve CAPTURE --chunk N, then GET /graphs/deploymentReport/document. The Markdown bodies are byte-equal: yes.
+
+## chunk 1
+Content-Location: /graphs/deploymentReport/document?revision=60
+X-Revision: 60
+X-Document-Digest: sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690
+
+## chunk 100000
+Content-Location: /graphs/deploymentReport/document?revision=39
+X-Revision: 39
+X-Document-Digest: sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690

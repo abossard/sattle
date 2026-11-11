@@ -1,0 +1,18 @@
+# Restart from a store at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session).
+# sattle serve FIXTURE --cluster synth --store sqlite=DB (fixture tests/Sattle.Tests/fixtures/deploy-health), stop, then sattle serve --store sqlite=DB with no fixture and no definitions. Two runs: with the default seal interval (5000 entries, never reached by 17 entries, so no seal exists) and with --seal-every 10 (one seal, at entry 10).
+
+## without a seal: first start (log)
+replay finished: 12 records, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+## without a seal: second start from the store alone (log)
+restored from sqlite=$SCRATCH/restart6.db: replayed all 17 journal entries and recomputed 24 revisions of 9 graphs, each compared with the stored log. Sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+result: SPACE-EQUAL DOC-EQUAL finished 
+document digest before and after: X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314 / X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314
+document ETag before and after: ETag: "c569cc5d8638c3ec0a9c2288449444a2" / ETag: "c569cc5d8638c3ec0a9c2288449444a2"
+
+## with a seal at entry 10: first start (log)
+replay finished: 12 records, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+## with a seal: second start from the store alone (log)
+restored from sqlite=$SCRATCH/restart6s.db: loaded from the seal at journal entry 10: state digest and catalog digest checked against the seal; 15 revisions of 9 graphs came from the seal and were not recomputed; replayed the 7 entries after it and recomputed 9 revisions, each compared with the stored log; the 10 entries before the seal were not read (--verify-journal replays and checks them). Sequence 27, catalog revision 16, state digest sha256:2139a071815d2a2e56bb7abd14794422b0a97a1fe6896523280e5d06c025a6e1
+result: SPACE-EQUAL DOC-EQUAL finished 
+document digest before and after: X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314 / X-Document-Digest: sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314
+document ETag before and after: ETag: "c569cc5d8638c3ec0a9c2288449444a2" / ETag: "c569cc5d8638c3ec0a9c2288449444a2"

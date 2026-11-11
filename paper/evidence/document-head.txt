@@ -1,0 +1,48 @@
+# Document projection at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session).
+# 1. Fixture tests/Sattle.Tests/fixtures/deploy-health (a synthetic shop), sattle serve, GET /graphs/deploymentReport/document.
+#    The graph entry of deploymentReport in GET /space has document true, the others false. GET /graphs/master/document answers 404.
+#    Head: revision 8, X-Document-Digest sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314, Cache-Control no-cache.
+
+## head (revision 8)
+# Deployment health
+
+- Deployments: 2
+- Unhealthy deployments: 0
+
+| Namespace | Deployment | State | Ready pods |
+| --- | --- | --- | --- |
+| shop | db | Healthy | 1 |
+| shop | web | Healthy | 1 |
+
+## revision 1, X-Document-Digest sha256:b829d0640fe46089448b415b59bb5c410c26a6b1f37b67732481ffcf61667248
+# Deployment health
+
+| Namespace | Deployment | State | Ready pods |
+| --- | --- | --- | --- |
+
+## revision 3, X-Document-Digest sha256:312b2059162b91912e5f381127fc17cbdfe99ca363b0b0e8e3ebb63d9088d020
+# Deployment health
+
+- Deployments: 2
+- Unhealthy deployments: 0
+
+| Namespace | Deployment | State | Ready pods |
+| --- | --- | --- | --- |
+| shop | db | Healthy | 1 |
+| shop | web | Healthy | 2 |
+
+## revision 5, X-Document-Digest sha256:db1e79223b82dc7217e5d394b63b3a5c0d14aa797ed9abf2a746401b247f9ead
+# Deployment health
+
+- Deployments: 2
+- Unhealthy deployments: 1
+
+| Namespace | Deployment | State | Ready pods |
+| --- | --- | --- | --- |
+| shop | db | Unhealthy | 0 |
+| shop | web | Healthy | 1 |
+
+# 2. Real capture 20261110T105738Z, sattle serve --chunk N, GET /graphs/deploymentReport/document at the end of the replay (the text is not kept: it names workloads of the lab cluster):
+chunk 1:      X-Revision 60, 29 lines, X-Document-Digest sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690
+chunk 100000: X-Revision 39, 29 lines, X-Document-Digest sha256:7d2b8be6c248624cb113b1e769725503defd145613e8918d425987330b0f2690
+# the graph deploymentReport has 26 Block entities (1 heading, 2 stat, 1 header, 22 row) on both captures (health-head2.txt)
