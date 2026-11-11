@@ -1,0 +1,116 @@
+{
+ "module": "acme.healthmodel",
+ "name": "kLink",
+ "graphs": [
+  "kLink"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "kLink",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "kLink",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match pods",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "pods"
+   }
+  },
+  {
+   "label": "pods node a",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kLink/op:pods",
+    "variable": "a",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "wire $master to pods",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLink/port:master",
+    "to": "d:acme.healthmodel/projection:kLink/op:pods/port:graph"
+   }
+  },
+  {
+   "label": "add Link same",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Link",
+    "name": "same"
+   }
+  },
+  {
+   "label": "wire pods to same",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLink/op:pods/port:out",
+    "to": "d:acme.healthmodel/projection:kLink/op:same/port:in"
+   }
+  },
+  {
+   "label": "same.left",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLink/op:same",
+    "slot": "left",
+    "src": "infra.podUid(cluster: a.cluster, uid: a.name)"
+   }
+  },
+  {
+   "label": "same.right",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLink/op:same",
+    "slot": "right",
+    "src": "infra.podName(cluster: a.cluster, namespace: a.namespace, name: a.name)"
+   }
+  },
+  {
+   "label": "same.confidence",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLink/op:same",
+    "slot": "confidence",
+    "src": "1.0"
+   }
+  },
+  {
+   "label": "same policy",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kLink/op:same",
+    "rel": "policy",
+    "target": "d:sattle.infra/equivalence:podUidIsPodName"
+   }
+  }
+ ],
+ "identity": {
+  "merged": 1
+ }
+}

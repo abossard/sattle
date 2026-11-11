@@ -1,0 +1,269 @@
+{
+ "module": "acme.healthmodel",
+ "name": "kValues",
+ "graphs": [
+  "kValues"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "kValues",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "kValues",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Values vals",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Values",
+    "name": "vals"
+   }
+  },
+  {
+   "label": "row a",
+   "cmd": {
+    "t": "valuesRow",
+    "id": "d:acme.healthmodel/projection:kValues/op:vals",
+    "cells": [
+     {
+      "name": "k",
+      "src": "\"a\""
+     },
+     {
+      "name": "n",
+      "src": "1"
+     }
+    ]
+   }
+  },
+  {
+   "label": "row b",
+   "cmd": {
+    "t": "valuesRow",
+    "id": "d:acme.healthmodel/projection:kValues/op:vals",
+    "cells": [
+     {
+      "name": "k",
+      "src": "\"b\""
+     },
+     {
+      "name": "n",
+      "src": "2"
+     }
+    ]
+   }
+  },
+  {
+   "label": "add Group tally",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "tally"
+   }
+  },
+  {
+   "label": "wire vals to tally",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kValues/op:vals/port:out",
+    "to": "d:acme.healthmodel/projection:kValues/op:tally/port:in"
+   }
+  },
+  {
+   "label": "tally.key:k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "k"
+   }
+  },
+  {
+   "label": "tally.agg:a",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "a",
+    "src": "n > 1",
+    "extra": {
+     "fn": "any",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "tally.agg:b",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "b",
+    "src": "n > 0",
+    "extra": {
+     "fn": "all",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "tally.agg:l",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "l",
+    "src": "k",
+    "extra": {
+     "fn": "last",
+     "second": "n"
+    }
+   }
+  },
+  {
+   "label": "tally.agg:w",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "n",
+    "extra": {
+     "fn": "weightedMean",
+     "second": "n"
+    }
+   }
+  },
+  {
+   "label": "tally.agg:s",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "s",
+    "src": "n",
+    "extra": {
+     "fn": "sum",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "tally.agg:d",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "d",
+    "src": "k",
+    "extra": {
+     "fn": "countDistinct",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire vals to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kValues/op:vals/port:out",
+    "to": "d:acme.healthmodel/projection:kValues/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "slot": "id",
+    "src": "health.component(id: k)"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "property": "d:acme.health/prop:key",
+    "src": "k"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "property": "d:acme.health/prop:kind",
+    "src": "\"demo\""
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "property": "d:acme.health/prop:name",
+    "src": "k"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "property": "d:acme.health/prop:own",
+    "src": "n"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 2
+ }
+}

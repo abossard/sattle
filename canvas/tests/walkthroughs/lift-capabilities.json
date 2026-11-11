@@ -1,0 +1,657 @@
+{
+ "module": "acme.biz",
+ "name": "capabilityView2",
+ "original": "capabilityView",
+ "graphs": [
+  "capabilities",
+  "capabilities2"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.biz",
+     "name": "capabilityView2",
+     "description": "",
+     "outputModule": "d:acme.biz",
+     "graphName": "capabilities2",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "tree",
+       "graph": "serviceTree",
+       "ontology": "d:acme.svc"
+      }
+     ],
+     "params": [],
+     "retain": "8"
+    }
+   }
+  },
+  {
+   "label": "add Match active#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "active#0"
+   }
+  },
+  {
+   "label": "active#0 node c",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.biz/projection:capabilityView2/op:active#0",
+    "variable": "c",
+    "type": "d:acme.ops/entity:Capability"
+   }
+  },
+  {
+   "label": "wire $master to active#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/port:master",
+    "to": "d:acme.biz/projection:capabilityView2/op:active#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter active",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "active"
+   }
+  },
+  {
+   "label": "wire active#0 to active",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:active#0/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:active/port:in"
+   }
+  },
+  {
+   "label": "active.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:active",
+    "slot": "predicate",
+    "src": "c.status != \"retired\""
+   }
+  },
+  {
+   "label": "add Match links#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "links#0"
+   }
+  },
+  {
+   "label": "links#0 node c",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.biz/projection:capabilityView2/op:links#0",
+    "variable": "c",
+    "type": "d:acme.ops/entity:Capability"
+   }
+  },
+  {
+   "label": "links#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.biz/projection:capabilityView2/op:links#0",
+    "variable": "p",
+    "type": "d:acme.ops/entity:Capability"
+   }
+  },
+  {
+   "label": "links#0 edge c->p",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.biz/projection:capabilityView2/op:links#0",
+    "variable": "",
+    "from": "c",
+    "to": "p",
+    "type": "d:acme.ops/rel:PartOf"
+   }
+  },
+  {
+   "label": "wire $master to links#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/port:master",
+    "to": "d:acme.biz/projection:capabilityView2/op:links#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter links",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "links"
+   }
+  },
+  {
+   "label": "wire links#0 to links",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:links#0/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:links/port:in"
+   }
+  },
+  {
+   "label": "links.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:links",
+    "slot": "predicate",
+    "src": "c.status != \"retired\" and p.status != \"retired\""
+   }
+  },
+  {
+   "label": "add Match realized#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "realized#0"
+   }
+  },
+  {
+   "label": "realized#0 node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.biz/projection:capabilityView2/op:realized#0",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "realized#0 node c",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.biz/projection:capabilityView2/op:realized#0",
+    "variable": "c",
+    "type": "d:acme.ops/entity:Capability"
+   }
+  },
+  {
+   "label": "realized#0 edge s->c",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.biz/projection:capabilityView2/op:realized#0",
+    "variable": "",
+    "from": "s",
+    "to": "c",
+    "type": "d:acme.ops/rel:Realizes"
+   }
+  },
+  {
+   "label": "wire $master to realized#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/port:master",
+    "to": "d:acme.biz/projection:capabilityView2/op:realized#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter realized",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "realized"
+   }
+  },
+  {
+   "label": "wire realized#0 to realized",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:realized#0/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:realized/port:in"
+   }
+  },
+  {
+   "label": "realized.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:realized",
+    "slot": "predicate",
+    "src": "c.status != \"retired\""
+   }
+  },
+  {
+   "label": "add Group perCap",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "perCap"
+   }
+  },
+  {
+   "label": "wire realized to perCap",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:realized/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:perCap/port:in"
+   }
+  },
+  {
+   "label": "perCap.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.biz/projection:capabilityView2/op:perCap",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "perCap.agg:services",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.biz/projection:capabilityView2/op:perCap",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "services",
+    "src": "s",
+    "extra": {
+     "fn": "countDistinct"
+    }
+   }
+  },
+  {
+   "label": "add EmitEntity capabilities.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "capabilities.1"
+   }
+  },
+  {
+   "label": "wire active to capabilities.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:active/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:capabilities.1/port:in"
+   }
+  },
+  {
+   "label": "capabilities.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:capabilities.1",
+    "rel": "ofType",
+    "target": "d:acme.biz/entity:BizCapability"
+   }
+  },
+  {
+   "label": "capabilities.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:capabilities.1",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "capabilities.1 set d:acme.biz/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.biz/projection:capabilityView2/op:capabilities.1",
+    "property": "d:acme.biz/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "rule capabilities",
+   "cmd": {
+    "t": "rule",
+    "name": "capabilities",
+    "cls": "lens",
+    "reason": "",
+    "governs": [
+     "d:acme.biz/projection:capabilityView2/op:capabilities.1"
+    ]
+   }
+  },
+  {
+   "label": "capabilities accept",
+   "cmd": {
+    "t": "ruleProp",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "name": "accept",
+    "value": "create, delete, update(name)"
+   }
+  },
+  {
+   "label": "capabilities onDelete",
+   "cmd": {
+    "t": "ruleProp",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "name": "onDelete",
+    "value": "set"
+   }
+  },
+  {
+   "label": "capabilities createKey",
+   "cmd": {
+    "t": "createKey",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "domain": "d:acme.ops/identity:capability"
+   }
+  },
+  {
+   "label": "capabilities createDefault capId",
+   "cmd": {
+    "t": "ruleSet",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "slot": "createDefault",
+    "property": "d:acme.ops/prop:capId",
+    "src": "key.id"
+   }
+  },
+  {
+   "label": "capabilities createDefault owner",
+   "cmd": {
+    "t": "ruleSet",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "slot": "createDefault",
+    "property": "d:acme.ops/prop:owner",
+    "src": "\"unassigned\""
+   }
+  },
+  {
+   "label": "capabilities createDefault status",
+   "cmd": {
+    "t": "ruleSet",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "slot": "createDefault",
+    "property": "d:acme.ops/prop:status",
+    "src": "\"active\""
+   }
+  },
+  {
+   "label": "capabilities deleteSet status",
+   "cmd": {
+    "t": "ruleSet",
+    "id": "d:acme.biz/projection:capabilityView2/rule:capabilities",
+    "slot": "deleteSet",
+    "property": "d:acme.ops/prop:status",
+    "src": "\"retired\""
+   }
+  },
+  {
+   "label": "add EmitEntity counts.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "counts.1"
+   }
+  },
+  {
+   "label": "wire perCap to counts.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:perCap/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:counts.1/port:in"
+   }
+  },
+  {
+   "label": "counts.1.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.biz/projection:capabilityView2/op:counts.1",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "counts.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:counts.1",
+    "rel": "ofType",
+    "target": "d:acme.biz/entity:BizCapability"
+   }
+  },
+  {
+   "label": "counts.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:counts.1",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "counts.1 set d:acme.biz/prop:serviceCount",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.biz/projection:capabilityView2/op:counts.1",
+    "property": "d:acme.biz/prop:serviceCount",
+    "src": "services"
+   }
+  },
+  {
+   "label": "rule counts",
+   "cmd": {
+    "t": "rule",
+    "name": "counts",
+    "cls": "readonly",
+    "reason": "number of services realizing the capability",
+    "governs": [
+     "d:acme.biz/projection:capabilityView2/op:counts.1"
+    ]
+   }
+  },
+  {
+   "label": "add Lift dependsOn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Lift",
+    "name": "dependsOn"
+   }
+  },
+  {
+   "label": "dependsOn ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "rel": "ofType",
+    "target": "d:acme.biz/rel:DependsOn"
+   }
+  },
+  {
+   "label": "dependsOn liftEdge",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "rel": "liftEdge",
+    "target": "d:acme.svc/rel:DependsOn"
+   }
+  },
+  {
+   "label": "dependsOn liftVia",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "rel": "liftVia",
+    "target": "d:acme.ops/rel:Realizes"
+   }
+  },
+  {
+   "label": "wire $tree to dependsOn.edges",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/port:tree",
+    "to": "d:acme.biz/projection:capabilityView2/op:dependsOn/port:edges"
+   }
+  },
+  {
+   "label": "wire $master to dependsOn.map",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/port:master",
+    "to": "d:acme.biz/projection:capabilityView2/op:dependsOn/port:map"
+   }
+  },
+  {
+   "label": "dependsOn.when",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "slot": "when",
+    "src": "image.status != \"retired\""
+   }
+  },
+  {
+   "label": "dependsOn.carry:callFlows",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "slot": "carry",
+    "childType": "Assign",
+    "name": "callFlows",
+    "src": "flows"
+   }
+  },
+  {
+   "label": "dependsOn.carry:callDrops",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "slot": "carry",
+    "childType": "Assign",
+    "name": "callDrops",
+    "src": "drops"
+   }
+  },
+  {
+   "label": "dependsOn.derive:callDropRatio",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "slot": "derive",
+    "childType": "Assign",
+    "name": "callDropRatio",
+    "src": "if(callFlows > 0, callDrops / callFlows, 0.0)"
+   }
+  },
+  {
+   "label": "dependsOn state callStatus",
+   "cmd": {
+    "t": "child",
+    "id": "d:acme.biz/projection:capabilityView2/op:dependsOn",
+    "slot": "state",
+    "childType": "LiftState",
+    "key": "callStatus",
+    "params": {
+     "of": "callDropRatio",
+     "above": "0.05",
+     "enterAfter": "3",
+     "high": "degraded",
+     "below": "0.02",
+     "exitAfter": "3",
+     "low": "ok",
+     "initial": "ok"
+    }
+   }
+  },
+  {
+   "label": "rule lifted",
+   "cmd": {
+    "t": "rule",
+    "name": "lifted",
+    "cls": "readonly",
+    "reason": "service dependencies lifted to the capabilities that realize their ends",
+    "governs": [
+     "d:acme.biz/projection:capabilityView2/op:dependsOn"
+    ]
+   }
+  },
+  {
+   "label": "add EmitRelationship tree.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "tree.1"
+   }
+  },
+  {
+   "label": "wire links to tree.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.biz/projection:capabilityView2/op:links/port:out",
+    "to": "d:acme.biz/projection:capabilityView2/op:tree.1/port:in"
+   }
+  },
+  {
+   "label": "tree.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.biz/projection:capabilityView2/op:tree.1",
+    "rel": "ofType",
+    "target": "d:acme.biz/rel:Under"
+   }
+  },
+  {
+   "label": "tree.1.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.biz/projection:capabilityView2/op:tree.1",
+    "name": "key",
+    "value": "under"
+   }
+  },
+  {
+   "label": "tree.1.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:tree.1",
+    "slot": "source",
+    "src": "c"
+   }
+  },
+  {
+   "label": "tree.1.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.biz/projection:capabilityView2/op:tree.1",
+    "slot": "target",
+    "src": "p"
+   }
+  },
+  {
+   "label": "rule tree",
+   "cmd": {
+    "t": "rule",
+    "name": "tree",
+    "cls": "lens",
+    "reason": "",
+    "governs": [
+     "d:acme.biz/projection:capabilityView2/op:tree.1"
+    ]
+   }
+  },
+  {
+   "label": "tree accept",
+   "cmd": {
+    "t": "ruleProp",
+    "id": "d:acme.biz/projection:capabilityView2/rule:tree",
+    "name": "accept",
+    "value": "create, delete"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 4,
+  "relationships": 4
+ }
+}

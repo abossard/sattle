@@ -1,0 +1,39 @@
+{
+  "name": "sattle-canvas",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "perf": "node scripts/perf-cdp.mjs",
+    "a11y": "node scripts/a11y-cdp.mjs",
+    "walkthroughs": "node scripts/walkthroughs-cdp.mjs",
+    "document-live": "node scripts/document-live-cdp.mjs",
+    "sync-palette": "node scripts/sync-palette.mjs",
+    "demo": "node scripts/make-demo.mjs"
+  },
+  "dependencies": {
+    "@fluentui/react-components": "^9.75.1",
+    "@fluentui/react-icons": "^2.0.345",
+    "ajv": "^8.20.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.16"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "axe-core": "^4.14.0",
+    "jsdom": "^30.1.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0"
+  }
+}

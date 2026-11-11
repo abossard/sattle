@@ -1,0 +1,321 @@
+{
+ "module": "acme.healthmodel",
+ "name": "kLoop",
+ "allowDiagnostics": [
+  "EndpointDeferred"
+ ],
+ "graphs": [
+  "kLoop"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "kLoop",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "kLoop",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match base",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "base"
+   }
+  },
+  {
+   "label": "base node a",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kLoop/op:base",
+    "variable": "a",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "base node b",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kLoop/op:base",
+    "variable": "b",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "base edge a->b",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:kLoop/op:base",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.health/rel:DependsOn"
+   }
+  },
+  {
+   "label": "wire $st to base",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/port:st",
+    "to": "d:acme.healthmodel/projection:kLoop/op:base/port:graph"
+   }
+  },
+  {
+   "label": "add Map pairs",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "pairs"
+   }
+  },
+  {
+   "label": "wire base to pairs",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:base/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:pairs/port:in"
+   }
+  },
+  {
+   "label": "pairs.assign:x",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:pairs",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "x",
+    "src": "a.key"
+   }
+  },
+  {
+   "label": "pairs.assign:y",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:pairs",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "y",
+    "src": "b.key"
+   }
+  },
+  {
+   "label": "add Fixpoint closure#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Fixpoint",
+    "name": "closure#0"
+   }
+  },
+  {
+   "label": "wire pairs to closure#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:pairs/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:closure#0/port:seed"
+   }
+  },
+  {
+   "label": "closure#0.maxIterations",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kLoop/op:closure#0",
+    "name": "maxIterations",
+    "value": "8"
+   }
+  },
+  {
+   "label": "add Map step#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "step#0"
+   }
+  },
+  {
+   "label": "step#0.assign:p",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:step#0",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "p",
+    "src": "x"
+   }
+  },
+  {
+   "label": "step#0.assign:q",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:step#0",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "q",
+    "src": "y"
+   }
+  },
+  {
+   "label": "wire pairs to step#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:pairs/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:step#0/port:in"
+   }
+  },
+  {
+   "label": "add Join closure#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "closure#1"
+   }
+  },
+  {
+   "label": "wire closure#0 to closure#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:closure#0/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:closure#1/port:left"
+   }
+  },
+  {
+   "label": "wire step#0 to closure#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:step#0/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:closure#1/port:right"
+   }
+  },
+  {
+   "label": "closure#1.on",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLoop/op:closure#1",
+    "slot": "on",
+    "src": "y == p"
+   }
+  },
+  {
+   "label": "add Map closure",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "closure"
+   }
+  },
+  {
+   "label": "wire closure#1 to closure",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:closure#1/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:closure/port:in"
+   }
+  },
+  {
+   "label": "closure.assign:x",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:closure",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "x",
+    "src": "x"
+   }
+  },
+  {
+   "label": "closure.assign:y",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kLoop/op:closure",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "y",
+    "src": "q"
+   }
+  },
+  {
+   "label": "closure#0 over",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kLoop/op:closure#0",
+    "rel": "over",
+    "target": "d:acme.healthmodel/projection:kLoop/op:closure/port:out"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire closure to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kLoop/op:closure/port:out",
+    "to": "d:acme.healthmodel/projection:kLoop/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kLoop/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:DependsOn"
+   }
+  },
+  {
+   "label": "emit.1.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kLoop/op:emit.1",
+    "name": "key",
+    "value": "reach"
+   }
+  },
+  {
+   "label": "emit.1.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLoop/op:emit.1",
+    "slot": "source",
+    "src": "health.component(id: x)"
+   }
+  },
+  {
+   "label": "emit.1.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kLoop/op:emit.1",
+    "slot": "target",
+    "src": "health.component(id: y)"
+   }
+  }
+ ],
+ "atLeast": {
+  "relationships": 13
+ },
+ "nonEmpty": true
+}

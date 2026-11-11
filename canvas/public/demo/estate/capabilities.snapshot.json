@@ -1,0 +1,1 @@
+{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"capabilities"},"revision":{"value":"0"}},"projection":{"value":"capabilityView"},"ontology":{"id":"acme.biz","version":"1.0.0","digest":{"value":"sha256:aca3b0f21a55eabfb63000deb0f75edde252db579b886bf149121e016a5a10d2"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

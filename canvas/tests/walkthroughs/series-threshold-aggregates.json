@@ -1,0 +1,629 @@
+{
+ "module": "acme.healthmodel",
+ "name": "kSeries",
+ "nonEmpty": true,
+ "graphs": [
+  "kSeries"
+ ],
+ "text": [
+  "projection NAME view forward output health {",
+  "  in master: graph ops;",
+  "  in st: graph health;",
+  "  retain 4;",
+  "  let ser = match master (nd: infra.Node)",
+  "    |> series master nd.dropRate within 24h;",
+  "  let warn = ser",
+  "    |> rollup by { c: nd.name } combine { m: mean(dropRate), n: count(), s: sum(dropRate), v: max(dropRate) };",
+  "  let warnOn = warn",
+  "    |> threshold v by { c: c } above 0.01 for 2 then \"on\" below 0.005 for 2 then \"off\" initial \"off\" as degraded;",
+  "  let acts = match master (ev: azure.ActivityEvent)",
+  "    |> select { t: ev.time, c: ev.operation }",
+  "    |> window on t width 1m late ignore",
+  "    |> group by { c: c, windowStart: windowStart } aggregate { n: count() };",
+  "  emit entity health.Signal from warnOn",
+  "    identity health.signal(component: c, name: \"drop rate\")",
+  "    set { component: c, degraded: degraded, name: \"drop rate\" };",
+  "  emit entity health.Component from acts",
+  "    identity health.component(id: concat(\"evt/\", c))",
+  "    set { key: concat(\"evt/\", c), kind: \"activity\", name: c, own: n };",
+  "}"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "kSeries",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "kSeries",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match ser#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "ser#0"
+   }
+  },
+  {
+   "label": "ser#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kSeries/op:ser#0",
+    "variable": "nd",
+    "type": "d:sattle.infra/entity:Node"
+   }
+  },
+  {
+   "label": "wire $master to ser#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/port:master",
+    "to": "d:acme.healthmodel/projection:kSeries/op:ser#0/port:graph"
+   }
+  },
+  {
+   "label": "add Series ser",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "ser"
+   }
+  },
+  {
+   "label": "wire ser#0 to ser",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:ser#0/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:ser/port:in"
+   }
+  },
+  {
+   "label": "wire $master to ser",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/port:master",
+    "to": "d:acme.healthmodel/projection:kSeries/op:ser/port:graph"
+   }
+  },
+  {
+   "label": "ser read nd.dropRate",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.healthmodel/projection:kSeries/op:ser",
+    "slot": "read",
+    "path": "nd.dropRate"
+   }
+  },
+  {
+   "label": "ser.within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:ser",
+    "name": "within",
+    "value": "24h"
+   }
+  },
+  {
+   "label": "add Rollup warn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "warn"
+   }
+  },
+  {
+   "label": "wire ser to warn",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:ser/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:warn/port:in"
+   }
+  },
+  {
+   "label": "warn.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warn",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "nd.name"
+   }
+  },
+  {
+   "label": "warn.agg:v",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warn",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "v",
+    "src": "dropRate",
+    "extra": {
+     "fn": "max",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "warn.agg:m",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warn",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "m",
+    "src": "dropRate",
+    "extra": {
+     "fn": "mean",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "warn.agg:s",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warn",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "s",
+    "src": "dropRate",
+    "extra": {
+     "fn": "sum",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "warn.agg:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warn",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "n",
+    "src": "",
+    "extra": {
+     "fn": "count",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "add Threshold warnOn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Threshold",
+    "name": "warnOn"
+   }
+  },
+  {
+   "label": "wire warn to warnOn",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:warn/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:warnOn/port:in"
+   }
+  },
+  {
+   "label": "warnOn.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "warnOn.value",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "slot": "value",
+    "src": "v"
+   }
+  },
+  {
+   "label": "warnOn.above",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "above",
+    "value": "0.01"
+   }
+  },
+  {
+   "label": "warnOn.enterAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "enterAfter",
+    "value": "2"
+   }
+  },
+  {
+   "label": "warnOn.high",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "high",
+    "value": "on"
+   }
+  },
+  {
+   "label": "warnOn.below",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "below",
+    "value": "0.005"
+   }
+  },
+  {
+   "label": "warnOn.exitAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "exitAfter",
+    "value": "2"
+   }
+  },
+  {
+   "label": "warnOn.low",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "low",
+    "value": "off"
+   }
+  },
+  {
+   "label": "warnOn.initial",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "initial",
+    "value": "off"
+   }
+  },
+  {
+   "label": "warnOn.target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:warnOn",
+    "name": "target",
+    "value": "degraded"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire warnOn to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:warnOn/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Signal"
+   }
+  },
+  {
+   "label": "emit.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.1",
+    "slot": "id",
+    "src": "health.signal(component: c, name: \"drop rate\")"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:component",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.1",
+    "property": "d:acme.health/prop:component",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:degraded",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.1",
+    "property": "d:acme.health/prop:degraded",
+    "src": "degraded"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.1",
+    "property": "d:acme.health/prop:name",
+    "src": "\"drop rate\""
+   }
+  },
+  {
+   "label": "add Match acts#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "acts#0"
+   }
+  },
+  {
+   "label": "acts#0 node ev",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#0",
+    "variable": "ev",
+    "type": "d:sattle.azure/entity:ActivityEvent"
+   }
+  },
+  {
+   "label": "wire $master to acts#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/port:master",
+    "to": "d:acme.healthmodel/projection:kSeries/op:acts#0/port:graph"
+   }
+  },
+  {
+   "label": "add Map acts#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "acts#1"
+   }
+  },
+  {
+   "label": "wire acts#0 to acts#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:acts#0/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:acts#1/port:in"
+   }
+  },
+  {
+   "label": "acts#1.assign:t",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#1",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "t",
+    "src": "ev.time"
+   }
+  },
+  {
+   "label": "acts#1.assign:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#1",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "ev.operation"
+   }
+  },
+  {
+   "label": "add Window acts#2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Window",
+    "name": "acts#2"
+   }
+  },
+  {
+   "label": "wire acts#1 to acts#2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:acts#1/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:acts#2/port:in"
+   }
+  },
+  {
+   "label": "acts#2.timestampField",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#2",
+    "name": "timestampField",
+    "value": "t"
+   }
+  },
+  {
+   "label": "acts#2.width",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#2",
+    "name": "width",
+    "value": "1m"
+   }
+  },
+  {
+   "label": "acts#2.late",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts#2",
+    "name": "late",
+    "value": "ignore"
+   }
+  },
+  {
+   "label": "add Group acts",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "acts"
+   }
+  },
+  {
+   "label": "wire acts#2 to acts",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:acts#2/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:acts/port:in"
+   }
+  },
+  {
+   "label": "acts.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "acts.key:windowStart",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "windowStart",
+    "src": "windowStart"
+   }
+  },
+  {
+   "label": "acts.agg:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kSeries/op:acts",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "n",
+    "src": "",
+    "extra": {
+     "fn": "count",
+     "second": ""
+    }
+   }
+  },
+  {
+   "label": "add EmitEntity emit.3",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.3"
+   }
+  },
+  {
+   "label": "wire acts to emit.3",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kSeries/op:acts/port:out",
+    "to": "d:acme.healthmodel/projection:kSeries/op:emit.3/port:in"
+   }
+  },
+  {
+   "label": "emit.3 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.3.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "slot": "id",
+    "src": "health.component(id: concat(\"evt/\", c))"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.health/prop:key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "property": "d:acme.health/prop:key",
+    "src": "concat(\"evt/\", c)"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.health/prop:kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "property": "d:acme.health/prop:kind",
+    "src": "\"activity\""
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.health/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "property": "d:acme.health/prop:name",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.health/prop:own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kSeries/op:emit.3",
+    "property": "d:acme.health/prop:own",
+    "src": "n"
+   }
+  }
+ ],
+ "atLeast": {
+  "entities": 4
+ },
+ "durations": [
+  {
+   "id": "d:acme.healthmodel/projection:kSeries/op:ser",
+   "param": "within",
+   "enter": "36h",
+   "wire": "129600000000000"
+  },
+  {
+   "id": "d:acme.healthmodel/projection:kSeries/op:acts#2",
+   "param": "width",
+   "enter": "90s",
+   "wire": "90000000000"
+  }
+ ]
+}

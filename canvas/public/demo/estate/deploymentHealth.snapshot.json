@@ -1,0 +1,1 @@
+{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"deploymentHealth"},"revision":{"value":"0"}},"projection":{"value":"deploymentHealth"},"ontology":{"id":"acme.deployhealth","version":"1.0.0","digest":{"value":"sha256:cabb87e109b6f2a4ff48e662595478de9d981d2dc0a3af83ec95a67ac3651d93"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

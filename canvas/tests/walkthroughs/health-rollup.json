@@ -1,0 +1,1816 @@
+{
+ "module": "acme.healthmodel",
+ "original": "health",
+ "name": "health2",
+ "graphs": [
+  "health",
+  "health2"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "health2",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "health2",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [
+      {
+       "port": "workloadNamespace",
+       "kind": "Text",
+       "value": "$original"
+      }
+     ],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match changed#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "changed#0"
+   }
+  },
+  {
+   "label": "changed#0 node r",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:changed#0",
+    "variable": "r",
+    "type": "d:sattle.azure/entity:AzureResource"
+   }
+  },
+  {
+   "label": "wire $master to changed#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:changed#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter changed#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "changed#1"
+   }
+  },
+  {
+   "label": "wire changed#0 to changed#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:changed#0/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:changed#1/port:in"
+   }
+  },
+  {
+   "label": "changed#1.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:changed#1",
+    "slot": "predicate",
+    "src": "r.type == \"microsoft.containerservice/managedclusters\" or r.type == \"microsoft.compute/virtualmachines\""
+   }
+  },
+  {
+   "label": "add Series changed#2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "changed#2"
+   }
+  },
+  {
+   "label": "wire changed#1 to changed#2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:changed#1/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:changed#2/port:in"
+   }
+  },
+  {
+   "label": "wire $master to changed#2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:changed#2/port:graph"
+   }
+  },
+  {
+   "label": "changed#2 read r.changes",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.healthmodel/projection:health2/op:changed#2",
+    "slot": "read",
+    "path": "r.changes"
+   }
+  },
+  {
+   "label": "changed#2.within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:changed#2",
+    "name": "within",
+    "value": "24h"
+   }
+  },
+  {
+   "label": "add Rollup changed",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "changed"
+   }
+  },
+  {
+   "label": "wire changed#2 to changed",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:changed#2/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:changed/port:in"
+   }
+  },
+  {
+   "label": "changed.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:changed",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "r.resourceId"
+   }
+  },
+  {
+   "label": "changed.agg:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:changed",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "n",
+    "src": "changes",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Match comps",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "comps"
+   }
+  },
+  {
+   "label": "comps node c",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:comps",
+    "variable": "c",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "wire $st to comps",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:st",
+    "to": "d:acme.healthmodel/projection:health2/op:comps/port:graph"
+   }
+  },
+  {
+   "label": "add Match contained",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "contained"
+   }
+  },
+  {
+   "label": "contained node a",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:contained",
+    "variable": "a",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "contained node b",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:contained",
+    "variable": "b",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "contained edge a->b",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:contained",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.health/rel:Contains"
+   }
+  },
+  {
+   "label": "wire $st to contained",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:st",
+    "to": "d:acme.healthmodel/projection:health2/op:contained/port:graph"
+   }
+  },
+  {
+   "label": "add Match depended",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "depended"
+   }
+  },
+  {
+   "label": "depended node a",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:depended",
+    "variable": "a",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "depended node b",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:depended",
+    "variable": "b",
+    "type": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "depended edge a->b",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:depended",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.health/rel:DependsOn"
+   }
+  },
+  {
+   "label": "wire $st to depended",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:st",
+    "to": "d:acme.healthmodel/projection:health2/op:depended/port:graph"
+   }
+  },
+  {
+   "label": "add Match cloudOperations#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "cloudOperations#0"
+   }
+  },
+  {
+   "label": "cloudOperations#0 node ev",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations#0",
+    "variable": "ev",
+    "type": "d:sattle.azure/entity:ActivityEvent"
+   }
+  },
+  {
+   "label": "cloudOperations#0 node r",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations#0",
+    "variable": "r",
+    "type": "d:sattle.azure/entity:AzureResource"
+   }
+  },
+  {
+   "label": "cloudOperations#0 edge ev->r",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations#0",
+    "variable": "",
+    "from": "ev",
+    "to": "r",
+    "type": "d:sattle.azure/rel:Concerns"
+   }
+  },
+  {
+   "label": "wire $master to cloudOperations#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:cloudOperations#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter cloudOperations#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "cloudOperations#1"
+   }
+  },
+  {
+   "label": "wire cloudOperations#0 to cloudOperations#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:cloudOperations#0/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:cloudOperations#1/port:in"
+   }
+  },
+  {
+   "label": "cloudOperations#1.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations#1",
+    "slot": "predicate",
+    "src": "r.type == \"microsoft.containerservice/managedclusters\" or r.type == \"microsoft.compute/virtualmachines\""
+   }
+  },
+  {
+   "label": "add Map cloudOperations",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "cloudOperations"
+   }
+  },
+  {
+   "label": "wire cloudOperations#1 to cloudOperations",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:cloudOperations#1/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:cloudOperations/port:in"
+   }
+  },
+  {
+   "label": "cloudOperations.assign:ev",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ev",
+    "src": "ev"
+   }
+  },
+  {
+   "label": "cloudOperations.assign:r",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "r",
+    "src": "r"
+   }
+  },
+  {
+   "label": "cloudOperations.assign:rk",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:cloudOperations",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rk",
+    "src": "lowerInvariant(r.resourceId)"
+   }
+  },
+  {
+   "label": "add Map componentKeys",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "componentKeys"
+   }
+  },
+  {
+   "label": "wire comps to componentKeys",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:comps/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:componentKeys/port:in"
+   }
+  },
+  {
+   "label": "componentKeys.assign:ck",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:componentKeys",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Join operations",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "operations"
+   }
+  },
+  {
+   "label": "wire cloudOperations to operations",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:cloudOperations/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:operations/port:left"
+   }
+  },
+  {
+   "label": "wire componentKeys to operations",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:componentKeys/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:operations/port:right"
+   }
+  },
+  {
+   "label": "operations.on",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:operations",
+    "slot": "on",
+    "src": "rk == ck"
+   }
+  },
+  {
+   "label": "add Traverse reach#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Traverse",
+    "name": "reach#0"
+   }
+  },
+  {
+   "label": "wire comps to reach#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:comps/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:reach#0/port:in"
+   }
+  },
+  {
+   "label": "wire $st to reach#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:st",
+    "to": "d:acme.healthmodel/projection:health2/op:reach#0/port:graph"
+   }
+  },
+  {
+   "label": "reach#0.direction",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "name": "direction",
+    "value": "out"
+   }
+  },
+  {
+   "label": "reach#0.minDepth",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "name": "minDepth",
+    "value": "0"
+   }
+  },
+  {
+   "label": "reach#0.maxDepth",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "name": "maxDepth",
+    "value": "16"
+   }
+  },
+  {
+   "label": "reach#0.start",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "name": "start",
+    "value": "c"
+   }
+  },
+  {
+   "label": "reach#0.target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "name": "target",
+    "value": "d"
+   }
+  },
+  {
+   "label": "reach#0 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:reach#0",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:Affects"
+   }
+  },
+  {
+   "label": "add Filter reach",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "reach"
+   }
+  },
+  {
+   "label": "wire reach#0 to reach",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:reach#0/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:reach/port:in"
+   }
+  },
+  {
+   "label": "reach.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:reach",
+    "slot": "predicate",
+    "src": "isPresent(d.own)"
+   }
+  },
+  {
+   "label": "add Match signals",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "signals"
+   }
+  },
+  {
+   "label": "signals node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:signals",
+    "variable": "s",
+    "type": "d:acme.health/entity:Signal"
+   }
+  },
+  {
+   "label": "wire $st to signals",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:st",
+    "to": "d:acme.healthmodel/projection:health2/op:signals/port:graph"
+   }
+  },
+  {
+   "label": "add Match warned#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "warned#0"
+   }
+  },
+  {
+   "label": "warned#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#0",
+    "variable": "p",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "warned#0 node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#0",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "warned#0 edge p->s",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#0",
+    "variable": "",
+    "from": "p",
+    "to": "s",
+    "type": "d:sattle.infra/rel:Backs"
+   }
+  },
+  {
+   "label": "wire $master to warned#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:warned#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter warned#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "warned#1"
+   }
+  },
+  {
+   "label": "wire warned#0 to warned#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warned#0/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:warned#1/port:in"
+   }
+  },
+  {
+   "label": "warned#1.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#1",
+    "slot": "predicate",
+    "src": "s.namespace == workloadNamespace"
+   }
+  },
+  {
+   "label": "add Series warned#2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "warned#2"
+   }
+  },
+  {
+   "label": "wire warned#1 to warned#2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warned#1/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:warned#2/port:in"
+   }
+  },
+  {
+   "label": "wire $master to warned#2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:warned#2/port:graph"
+   }
+  },
+  {
+   "label": "warned#2 read p.warnings",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#2",
+    "slot": "read",
+    "path": "p.warnings"
+   }
+  },
+  {
+   "label": "warned#2.within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:warned#2",
+    "name": "within",
+    "value": "24h"
+   }
+  },
+  {
+   "label": "add Rollup warned",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "warned"
+   }
+  },
+  {
+   "label": "wire warned#2 to warned",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warned#2/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:warned/port:in"
+   }
+  },
+  {
+   "label": "warned.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:warned",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "concat(\"svc/\", s.cluster, \"/\", s.namespace, \"/\", s.name)"
+   }
+  },
+  {
+   "label": "warned.agg:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:warned",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "n",
+    "src": "warnings",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Match warnings#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "warnings#0"
+   }
+  },
+  {
+   "label": "warnings#0 node w",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings#0",
+    "variable": "w",
+    "type": "d:sattle.infra/entity:WarningEvent"
+   }
+  },
+  {
+   "label": "warnings#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings#0",
+    "variable": "p",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "warnings#0 node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings#0",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "warnings#0 edge w->p",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings#0",
+    "variable": "",
+    "from": "w",
+    "to": "p",
+    "type": "d:sattle.infra/rel:About"
+   }
+  },
+  {
+   "label": "warnings#0 edge p->s",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings#0",
+    "variable": "",
+    "from": "p",
+    "to": "s",
+    "type": "d:sattle.infra/rel:Backs"
+   }
+  },
+  {
+   "label": "wire $master to warnings#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/port:master",
+    "to": "d:acme.healthmodel/projection:health2/op:warnings#0/port:graph"
+   }
+  },
+  {
+   "label": "add Filter warnings",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "warnings"
+   }
+  },
+  {
+   "label": "wire warnings#0 to warnings",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warnings#0/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:warnings/port:in"
+   }
+  },
+  {
+   "label": "warnings.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:warnings",
+    "slot": "predicate",
+    "src": "s.namespace == workloadNamespace"
+   }
+  },
+  {
+   "label": "add Group worst",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "worst"
+   }
+  },
+  {
+   "label": "wire reach to worst",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:reach/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:worst/port:in"
+   }
+  },
+  {
+   "label": "worst.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:worst",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "worst.agg:w",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:worst",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "d.own",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Map unrated",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "unrated"
+   }
+  },
+  {
+   "label": "wire comps to unrated",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:comps/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:unrated/port:in"
+   }
+  },
+  {
+   "label": "unrated.assign:k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:unrated",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "k",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "unrated.assign:w",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:unrated",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "w",
+    "src": "0 - 1"
+   }
+  },
+  {
+   "label": "add Group worstByKey",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "worstByKey"
+   }
+  },
+  {
+   "label": "wire reach to worstByKey",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:reach/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:worstByKey/port:in"
+   }
+  },
+  {
+   "label": "worstByKey.key:k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:worstByKey",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "worstByKey.agg:w",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:worstByKey",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "d.own",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Union rated",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "rated"
+   }
+  },
+  {
+   "label": "rated.conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:rated",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "wire unrated to rated",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:unrated/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:rated/port:in0"
+   }
+  },
+  {
+   "label": "wire worstByKey to rated",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:worstByKey/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:rated/port:in1"
+   }
+  },
+  {
+   "label": "add Group level",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "level"
+   }
+  },
+  {
+   "label": "wire rated to level",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:rated/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:level/port:in"
+   }
+  },
+  {
+   "label": "level.key:k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:level",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "k"
+   }
+  },
+  {
+   "label": "level.agg:w",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:health2/op:level",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "w",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire comps to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:comps/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:azureType",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "property": "d:acme.health/prop:azureType",
+    "src": "c.azureType"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "property": "d:acme.health/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "property": "d:acme.health/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "property": "d:acme.health/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.health/prop:own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.1",
+    "property": "d:acme.health/prop:own",
+    "src": "c.own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.2"
+   }
+  },
+  {
+   "label": "wire signals to emit.2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:signals/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.2/port:in"
+   }
+  },
+  {
+   "label": "emit.2 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Signal"
+   }
+  },
+  {
+   "label": "emit.2.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "slot": "id",
+    "src": "s"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.health/prop:component",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "property": "d:acme.health/prop:component",
+    "src": "s.component"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.health/prop:degraded",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "property": "d:acme.health/prop:degraded",
+    "src": "s.degraded"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.health/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "property": "d:acme.health/prop:name",
+    "src": "s.name"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.health/prop:unhealthy",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.2",
+    "property": "d:acme.health/prop:unhealthy",
+    "src": "s.unhealthy"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.3",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.3"
+   }
+  },
+  {
+   "label": "wire signals to emit.3",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:signals/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.3/port:in"
+   }
+  },
+  {
+   "label": "emit.3 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.3",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:Measures"
+   }
+  },
+  {
+   "label": "emit.3.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.3",
+    "name": "key",
+    "value": "measures"
+   }
+  },
+  {
+   "label": "emit.3.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.3",
+    "slot": "source",
+    "src": "health.signal(component: s.component, name: s.name)"
+   }
+  },
+  {
+   "label": "emit.3.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.3",
+    "slot": "target",
+    "src": "health.component(id: s.component)"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.4",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.4"
+   }
+  },
+  {
+   "label": "wire contained to emit.4",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:contained/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.4/port:in"
+   }
+  },
+  {
+   "label": "emit.4 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.4",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:Contains"
+   }
+  },
+  {
+   "label": "emit.4.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.4",
+    "name": "key",
+    "value": "contains"
+   }
+  },
+  {
+   "label": "emit.4.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.4",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.4.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.4",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.5",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.5"
+   }
+  },
+  {
+   "label": "wire depended to emit.5",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:depended/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.5/port:in"
+   }
+  },
+  {
+   "label": "emit.5 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.5",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:DependsOn"
+   }
+  },
+  {
+   "label": "emit.5.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.5",
+    "name": "key",
+    "value": "dependsOn"
+   }
+  },
+  {
+   "label": "emit.5.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.5",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.5.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.5",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.6",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.6"
+   }
+  },
+  {
+   "label": "wire worst to emit.6",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:worst/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.6/port:in"
+   }
+  },
+  {
+   "label": "emit.6.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.6",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.6 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.6",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.6.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.6",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.6 set d:acme.health/prop:severity",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.6",
+    "property": "d:acme.health/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.7",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.7"
+   }
+  },
+  {
+   "label": "wire level to emit.7",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:level/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.7/port:in"
+   }
+  },
+  {
+   "label": "emit.7.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.7",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.7 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.7",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.7.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.7",
+    "slot": "id",
+    "src": "health.component(id: k)"
+   }
+  },
+  {
+   "label": "emit.7 set d:acme.health/prop:state",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.7",
+    "property": "d:acme.health/prop:state",
+    "src": "if(w >= 2, \"Unhealthy\", if(w == 1, \"Degraded\", if(w == 0, \"Healthy\", \"Unknown\")))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.8",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.8"
+   }
+  },
+  {
+   "label": "wire operations to emit.8",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:operations/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.8/port:in"
+   }
+  },
+  {
+   "label": "emit.8 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Evidence"
+   }
+  },
+  {
+   "label": "emit.8.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "slot": "id",
+    "src": "health.evidence(id: ev.eventId)"
+   }
+  },
+  {
+   "label": "emit.8 set d:acme.health/prop:detail",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "property": "d:acme.health/prop:detail",
+    "src": "ev.status"
+   }
+  },
+  {
+   "label": "emit.8 set d:acme.health/prop:eventId",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "property": "d:acme.health/prop:eventId",
+    "src": "ev.eventId"
+   }
+  },
+  {
+   "label": "emit.8 set d:acme.health/prop:kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "property": "d:acme.health/prop:kind",
+    "src": "\"activity\""
+   }
+  },
+  {
+   "label": "emit.8 set d:acme.health/prop:summary",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "property": "d:acme.health/prop:summary",
+    "src": "ev.operation"
+   }
+  },
+  {
+   "label": "emit.8 set d:acme.health/prop:time",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.8",
+    "property": "d:acme.health/prop:time",
+    "src": "ev.time"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.9",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.9"
+   }
+  },
+  {
+   "label": "wire operations to emit.9",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:operations/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.9/port:in"
+   }
+  },
+  {
+   "label": "emit.9 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.9",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:EvidenceFor"
+   }
+  },
+  {
+   "label": "emit.9.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.9",
+    "name": "key",
+    "value": "evidenceActivity"
+   }
+  },
+  {
+   "label": "emit.9.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.9",
+    "slot": "source",
+    "src": "health.evidence(id: ev.eventId)"
+   }
+  },
+  {
+   "label": "emit.9.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.9",
+    "slot": "target",
+    "src": "health.component(id: r.resourceId)"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.10",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.10"
+   }
+  },
+  {
+   "label": "wire warnings to emit.10",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warnings/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.10/port:in"
+   }
+  },
+  {
+   "label": "emit.10 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Evidence"
+   }
+  },
+  {
+   "label": "emit.10.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "slot": "id",
+    "src": "health.evidence(id: w.eventId)"
+   }
+  },
+  {
+   "label": "emit.10 set d:acme.health/prop:detail",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "property": "d:acme.health/prop:detail",
+    "src": "w.message"
+   }
+  },
+  {
+   "label": "emit.10 set d:acme.health/prop:eventId",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "property": "d:acme.health/prop:eventId",
+    "src": "w.eventId"
+   }
+  },
+  {
+   "label": "emit.10 set d:acme.health/prop:kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "property": "d:acme.health/prop:kind",
+    "src": "\"warning\""
+   }
+  },
+  {
+   "label": "emit.10 set d:acme.health/prop:summary",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "property": "d:acme.health/prop:summary",
+    "src": "w.reason"
+   }
+  },
+  {
+   "label": "emit.10 set d:acme.health/prop:time",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.10",
+    "property": "d:acme.health/prop:time",
+    "src": "w.time"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.11",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.11"
+   }
+  },
+  {
+   "label": "wire warnings to emit.11",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warnings/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.11/port:in"
+   }
+  },
+  {
+   "label": "emit.11 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.11",
+    "rel": "ofType",
+    "target": "d:acme.health/rel:EvidenceFor"
+   }
+  },
+  {
+   "label": "emit.11.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.11",
+    "name": "key",
+    "value": "evidenceWarning"
+   }
+  },
+  {
+   "label": "emit.11.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.11",
+    "slot": "source",
+    "src": "health.evidence(id: w.eventId)"
+   }
+  },
+  {
+   "label": "emit.11.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.11",
+    "slot": "target",
+    "src": "health.component(id: concat(\"svc/\", s.cluster, \"/\", s.namespace, \"/\", s.name))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.12",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.12"
+   }
+  },
+  {
+   "label": "wire warned to emit.12",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:warned/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.12/port:in"
+   }
+  },
+  {
+   "label": "emit.12.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.12",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.12 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.12",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.12.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.12",
+    "slot": "id",
+    "src": "health.component(id: c)"
+   }
+  },
+  {
+   "label": "emit.12 set d:acme.health/prop:warnings",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.12",
+    "property": "d:acme.health/prop:warnings",
+    "src": "n"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.13",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.13"
+   }
+  },
+  {
+   "label": "wire changed to emit.13",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:health2/op:changed/port:out",
+    "to": "d:acme.healthmodel/projection:health2/op:emit.13/port:in"
+   }
+  },
+  {
+   "label": "emit.13.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.13",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.13 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.13",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "emit.13.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.13",
+    "slot": "id",
+    "src": "health.component(id: c)"
+   }
+  },
+  {
+   "label": "emit.13 set d:acme.health/prop:changes",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:health2/op:emit.13",
+    "property": "d:acme.health/prop:changes",
+    "src": "n"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 40,
+  "relationships": 40
+ }
+}

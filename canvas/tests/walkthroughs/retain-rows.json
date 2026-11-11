@@ -1,0 +1,206 @@
+{
+ "module": "acme.healthmodel",
+ "name": "kRetain",
+ "graphs": [
+  "kRetain"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.healthmodel",
+     "name": "kRetain",
+     "description": "",
+     "outputModule": "d:acme.health",
+     "graphName": "kRetain",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "st",
+       "graph": "healthState",
+       "ontology": "d:acme.health"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match ev#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "ev#0"
+   }
+  },
+  {
+   "label": "node",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.healthmodel/projection:kRetain/op:ev#0",
+    "variable": "ev",
+    "type": "d:sattle.azure/entity:ActivityEvent"
+   }
+  },
+  {
+   "label": "wire master",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kRetain/port:master",
+    "to": "d:acme.healthmodel/projection:kRetain/op:ev#0/port:graph"
+   }
+  },
+  {
+   "label": "add Map ev#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "ev#1"
+   }
+  },
+  {
+   "label": "wire",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kRetain/op:ev#0/port:out",
+    "to": "d:acme.healthmodel/projection:kRetain/op:ev#1/port:in"
+   }
+  },
+  {
+   "label": "t",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kRetain/op:ev#1",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "t",
+    "src": "ev.time"
+   }
+  },
+  {
+   "label": "c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.healthmodel/projection:kRetain/op:ev#1",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "ev.operation"
+   }
+  },
+  {
+   "label": "add Retain ev",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Retain",
+    "name": "ev"
+   }
+  },
+  {
+   "label": "wire",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kRetain/op:ev#1/port:out",
+    "to": "d:acme.healthmodel/projection:kRetain/op:ev/port:in"
+   }
+  },
+  {
+   "label": "field",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kRetain/op:ev",
+    "name": "timestampField",
+    "value": "t"
+   }
+  },
+  {
+   "label": "age",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.healthmodel/projection:kRetain/op:ev",
+    "name": "age",
+    "value": "24h"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.healthmodel/projection:kRetain/op:ev/port:out",
+    "to": "d:acme.healthmodel/projection:kRetain/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "type",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.healthmodel/projection:kRetain/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.health/entity:Component"
+   }
+  },
+  {
+   "label": "id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.healthmodel/projection:kRetain/op:emit.1",
+    "slot": "id",
+    "src": "health.component(id: concat(\"evt/\", c))"
+   }
+  },
+  {
+   "label": "set key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kRetain/op:emit.1",
+    "property": "d:acme.health/prop:key",
+    "src": "concat(\"evt/\", c)"
+   }
+  },
+  {
+   "label": "set kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kRetain/op:emit.1",
+    "property": "d:acme.health/prop:kind",
+    "src": "\"activity\""
+   }
+  },
+  {
+   "label": "set name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.healthmodel/projection:kRetain/op:emit.1",
+    "property": "d:acme.health/prop:name",
+    "src": "c"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 2
+ },
+ "durations": [
+  {
+   "id": "d:acme.healthmodel/projection:kRetain/op:ev",
+   "param": "age",
+   "enter": "36h",
+   "wire": "129600000000000"
+  }
+ ]
+}

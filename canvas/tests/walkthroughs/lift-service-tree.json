@@ -1,0 +1,799 @@
+{
+ "module": "acme.svc",
+ "name": "serviceDeps2",
+ "original": "serviceDeps",
+ "graphs": [
+  "serviceTree",
+  "serviceTree2"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.svc",
+     "name": "serviceDeps2",
+     "description": "",
+     "outputModule": "d:acme.svc",
+     "graphName": "serviceTree2",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      }
+     ],
+     "params": [],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match backed#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "backed#0"
+   }
+  },
+  {
+   "label": "backed#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.svc/projection:serviceDeps2/op:backed#0",
+    "variable": "p",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "backed#0 node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.svc/projection:serviceDeps2/op:backed#0",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "backed#0 edge p->s",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.svc/projection:serviceDeps2/op:backed#0",
+    "variable": "",
+    "from": "p",
+    "to": "s",
+    "type": "d:sattle.infra/rel:Backs"
+   }
+  },
+  {
+   "label": "wire $master to backed#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/port:master",
+    "to": "d:acme.svc/projection:serviceDeps2/op:backed#0/port:graph"
+   }
+  },
+  {
+   "label": "add Group backed",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "backed"
+   }
+  },
+  {
+   "label": "wire backed#0 to backed",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:backed#0/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:backed/port:in"
+   }
+  },
+  {
+   "label": "backed.key:s",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:backed",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "s",
+    "src": "s"
+   }
+  },
+  {
+   "label": "backed.agg:pods",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:backed",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "pods",
+    "src": "p",
+    "extra": {
+     "fn": "countDistinct"
+    }
+   }
+  },
+  {
+   "label": "add Lift dependsOn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Lift",
+    "name": "dependsOn"
+   }
+  },
+  {
+   "label": "dependsOn ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "rel": "ofType",
+    "target": "d:acme.svc/rel:DependsOn"
+   }
+  },
+  {
+   "label": "dependsOn liftEdge",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "rel": "liftEdge",
+    "target": "d:sattle.infra/rel:Calls"
+   }
+  },
+  {
+   "label": "dependsOn liftVia",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "rel": "liftVia",
+    "target": "d:sattle.infra/rel:Backs"
+   }
+  },
+  {
+   "label": "wire $master to dependsOn.edges",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/port:master",
+    "to": "d:acme.svc/projection:serviceDeps2/op:dependsOn/port:edges"
+   }
+  },
+  {
+   "label": "wire $master to dependsOn.map",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/port:master",
+    "to": "d:acme.svc/projection:serviceDeps2/op:dependsOn/port:map"
+   }
+  },
+  {
+   "label": "dependsOn.keep:cluster",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "slot": "keep",
+    "childType": "Assign",
+    "name": "cluster",
+    "src": "src.cluster"
+   }
+  },
+  {
+   "label": "dependsOn.keep:namespace",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "slot": "keep",
+    "childType": "Assign",
+    "name": "namespace",
+    "src": "src.namespace"
+   }
+  },
+  {
+   "label": "dependsOn.derive:dropRatio",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "slot": "derive",
+    "childType": "Assign",
+    "name": "dropRatio",
+    "src": "if(flows > 0, drops / flows, 0.0)"
+   }
+  },
+  {
+   "label": "dependsOn.derive:flowRate",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "slot": "derive",
+    "childType": "Assign",
+    "name": "flowRate",
+    "src": "rate(flows)"
+   }
+  },
+  {
+   "label": "dependsOn state status",
+   "cmd": {
+    "t": "child",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "slot": "state",
+    "childType": "LiftState",
+    "key": "status",
+    "params": {
+     "of": "dropRatio",
+     "above": "0.05",
+     "enterAfter": "3",
+     "high": "degraded",
+     "below": "0.02",
+     "exitAfter": "3",
+     "low": "ok",
+     "initial": "ok"
+    }
+   }
+  },
+  {
+   "label": "dependsOn.images",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+    "name": "images",
+    "value": "each"
+   }
+  },
+  {
+   "label": "add Rollup groupOut",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "groupOut"
+   }
+  },
+  {
+   "label": "wire dependsOn to groupOut",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:dependsOn/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:groupOut/port:in"
+   }
+  },
+  {
+   "label": "groupOut.key:cluster",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groupOut",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "cluster",
+    "src": "cluster"
+   }
+  },
+  {
+   "label": "groupOut.key:namespace",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groupOut",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "namespace",
+    "src": "namespace"
+   }
+  },
+  {
+   "label": "groupOut.agg:flowsOut",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groupOut",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "flowsOut",
+    "src": "flows",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Match services",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "services"
+   }
+  },
+  {
+   "label": "services node s",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.svc/projection:serviceDeps2/op:services",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "wire $master to services",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/port:master",
+    "to": "d:acme.svc/projection:serviceDeps2/op:services/port:graph"
+   }
+  },
+  {
+   "label": "add Group groups",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "groups"
+   }
+  },
+  {
+   "label": "wire services to groups",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:services/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:groups/port:in"
+   }
+  },
+  {
+   "label": "groups.key:cluster",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groups",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "cluster",
+    "src": "s.cluster"
+   }
+  },
+  {
+   "label": "groups.key:namespace",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groups",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "namespace",
+    "src": "s.namespace"
+   }
+  },
+  {
+   "label": "groups.agg:services",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:groups",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "services",
+    "src": "s",
+    "extra": {
+     "fn": "countDistinct"
+    }
+   }
+  },
+  {
+   "label": "add Rollup serviceOut",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "serviceOut"
+   }
+  },
+  {
+   "label": "wire dependsOn to serviceOut",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:dependsOn/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:serviceOut/port:in"
+   }
+  },
+  {
+   "label": "serviceOut.key:s",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:serviceOut",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "s",
+    "src": "src"
+   }
+  },
+  {
+   "label": "serviceOut.agg:flowsOut",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.svc/projection:serviceDeps2/op:serviceOut",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "flowsOut",
+    "src": "flows",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire services to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:services/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceNode"
+   }
+  },
+  {
+   "label": "emit.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.1",
+    "slot": "id",
+    "src": "s"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.svc/prop:cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.1",
+    "property": "d:acme.svc/prop:cluster",
+    "src": "s.cluster"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.svc/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.1",
+    "property": "d:acme.svc/prop:name",
+    "src": "s.name"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.svc/prop:namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.1",
+    "property": "d:acme.svc/prop:namespace",
+    "src": "s.namespace"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.2"
+   }
+  },
+  {
+   "label": "wire backed to emit.2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:backed/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.2/port:in"
+   }
+  },
+  {
+   "label": "emit.2.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.2",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.2 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.2",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceNode"
+   }
+  },
+  {
+   "label": "emit.2.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.2",
+    "slot": "id",
+    "src": "s"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.svc/prop:pods",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.2",
+    "property": "d:acme.svc/prop:pods",
+    "src": "pods"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.3",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.3"
+   }
+  },
+  {
+   "label": "wire services to emit.3",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:services/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.3/port:in"
+   }
+  },
+  {
+   "label": "emit.3 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.3",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceGroup"
+   }
+  },
+  {
+   "label": "emit.3.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.3",
+    "slot": "id",
+    "src": "serviceGroup(cluster: s.cluster, namespace: s.namespace)"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.svc/prop:cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.3",
+    "property": "d:acme.svc/prop:cluster",
+    "src": "s.cluster"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.svc/prop:namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.3",
+    "property": "d:acme.svc/prop:namespace",
+    "src": "s.namespace"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.4",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.4"
+   }
+  },
+  {
+   "label": "wire groups to emit.4",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:groups/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.4/port:in"
+   }
+  },
+  {
+   "label": "emit.4.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.4",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.4 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.4",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceGroup"
+   }
+  },
+  {
+   "label": "emit.4.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.4",
+    "slot": "id",
+    "src": "serviceGroup(cluster: cluster, namespace: namespace)"
+   }
+  },
+  {
+   "label": "emit.4 set d:acme.svc/prop:services",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.4",
+    "property": "d:acme.svc/prop:services",
+    "src": "services"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.5",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.5"
+   }
+  },
+  {
+   "label": "wire services to emit.5",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:services/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.5/port:in"
+   }
+  },
+  {
+   "label": "emit.5 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.5",
+    "rel": "ofType",
+    "target": "d:acme.svc/rel:Contains"
+   }
+  },
+  {
+   "label": "emit.5.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.5",
+    "name": "key",
+    "value": "contains"
+   }
+  },
+  {
+   "label": "emit.5.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.5",
+    "slot": "source",
+    "src": "serviceGroup(cluster: s.cluster, namespace: s.namespace)"
+   }
+  },
+  {
+   "label": "emit.5.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.5",
+    "slot": "target",
+    "src": "s"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.6",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.6"
+   }
+  },
+  {
+   "label": "wire serviceOut to emit.6",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:serviceOut/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.6/port:in"
+   }
+  },
+  {
+   "label": "emit.6.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.6",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.6 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.6",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceNode"
+   }
+  },
+  {
+   "label": "emit.6.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.6",
+    "slot": "id",
+    "src": "s"
+   }
+  },
+  {
+   "label": "emit.6 set d:acme.svc/prop:flowsOut",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.6",
+    "property": "d:acme.svc/prop:flowsOut",
+    "src": "flowsOut"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.7",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.7"
+   }
+  },
+  {
+   "label": "wire groupOut to emit.7",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.svc/projection:serviceDeps2/op:groupOut/port:out",
+    "to": "d:acme.svc/projection:serviceDeps2/op:emit.7/port:in"
+   }
+  },
+  {
+   "label": "emit.7.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.7",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.7 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.7",
+    "rel": "ofType",
+    "target": "d:acme.svc/entity:ServiceGroup"
+   }
+  },
+  {
+   "label": "emit.7.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.7",
+    "slot": "id",
+    "src": "serviceGroup(cluster: cluster, namespace: namespace)"
+   }
+  },
+  {
+   "label": "emit.7 set d:acme.svc/prop:flowsOut",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.svc/projection:serviceDeps2/op:emit.7",
+    "property": "d:acme.svc/prop:flowsOut",
+    "src": "flowsOut"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 4,
+  "relationships": 5
+ },
+ "durations": [
+  {
+   "id": "d:acme.svc/projection:serviceDeps2/op:dependsOn",
+   "param": "within",
+   "enter": "36h",
+   "wire": "129600000000000"
+  }
+ ]
+}

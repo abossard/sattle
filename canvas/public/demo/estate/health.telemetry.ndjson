@@ -1,0 +1,11 @@
+{"graph":"health","tick":1,"t":0,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":2,"t":60,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":3,"t":120,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[1]}
+{"graph":"health","tick":4,"t":180,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":5,"t":240,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":6,"t":300,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":6,"t":300,"target":"node","property":"acme.health.warnings","ids":["e:h6do7qcw72fltqcdolfu2bq3o7"],"values":[3]}
+{"graph":"health","tick":7,"t":360,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[3]}
+{"graph":"health","tick":7,"t":360,"target":"node","property":"acme.health.warnings","ids":["e:h6do7qcw72fltqcdolfu2bq3o7"],"values":[3]}
+{"graph":"health","tick":8,"t":420,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}
+{"graph":"health","tick":9,"t":480,"target":"node","property":"acme.health.changes","ids":["e:apeyeoalchv6n3bw6ncfz5xqwq"],"values":[2]}

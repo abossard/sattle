@@ -1,0 +1,1 @@
+{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"serviceTree"},"revision":{"value":"0"}},"projection":{"value":"serviceDeps"},"ontology":{"id":"acme.svc","version":"1.0.0","digest":{"value":"sha256:c05497fbe3445b639e468e6e3196b8b2f48cefc44e0447b266195049d38d9300"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

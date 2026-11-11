@@ -1,0 +1,1090 @@
+{
+ "module": "acme.deployhealth",
+ "original": "deploymentHealth",
+ "name": "dh2",
+ "graphs": [
+  "deploymentHealth",
+  "dh2"
+ ],
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.deployhealth",
+     "name": "dh2",
+     "description": "",
+     "outputModule": "d:acme.deployhealth",
+     "graphName": "dh2",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      }
+     ],
+     "params": [
+      {
+       "port": "minReady",
+       "kind": "Integer",
+       "value": "",
+       "default": "0"
+      }
+     ],
+     "retain": "4"
+    }
+   }
+  },
+  {
+   "label": "add Match calls#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "calls#0"
+   }
+  },
+  {
+   "label": "add Filter calls#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "calls#1"
+   }
+  },
+  {
+   "label": "add Map calls",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "calls"
+   }
+  },
+  {
+   "label": "calls#0 node a",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "a",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "calls#0 node b",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "b",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "calls#0 node x",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "x",
+    "type": "d:sattle.infra/entity:Deployment"
+   }
+  },
+  {
+   "label": "calls#0 node y",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "y",
+    "type": "d:sattle.infra/entity:Deployment"
+   }
+  },
+  {
+   "label": "calls#0 edge a->b",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:sattle.infra/rel:Calls"
+   }
+  },
+  {
+   "label": "calls#0 edge a->x",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "",
+    "from": "a",
+    "to": "x",
+    "type": "d:sattle.infra/rel:ControlledBy"
+   }
+  },
+  {
+   "label": "calls#0 edge b->y",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#0",
+    "variable": "",
+    "from": "b",
+    "to": "y",
+    "type": "d:sattle.infra/rel:ControlledBy"
+   }
+  },
+  {
+   "label": "wire $master to calls#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/port:master",
+    "to": "d:acme.deployhealth/projection:dh2/op:calls#0/port:graph"
+   }
+  },
+  {
+   "label": "wire calls#0 to calls#1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:calls#0/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:calls#1/port:in"
+   }
+  },
+  {
+   "label": "wire calls#1 to calls",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:calls#1/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:calls/port:in"
+   }
+  },
+  {
+   "label": "calls#1.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls#1",
+    "slot": "predicate",
+    "src": "x != y"
+   }
+  },
+  {
+   "label": "calls.assign:xc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xc",
+    "src": "x.cluster"
+   }
+  },
+  {
+   "label": "calls.assign:xn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xn",
+    "src": "x.namespace"
+   }
+  },
+  {
+   "label": "calls.assign:xm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xm",
+    "src": "x.name"
+   }
+  },
+  {
+   "label": "calls.assign:yc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "yc",
+    "src": "y.cluster"
+   }
+  },
+  {
+   "label": "calls.assign:yn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "yn",
+    "src": "y.namespace"
+   }
+  },
+  {
+   "label": "calls.assign:ym",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:calls",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ym",
+    "src": "y.name"
+   }
+  },
+  {
+   "label": "add Match deployments",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "deployments"
+   }
+  },
+  {
+   "label": "deployments node d",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:deployments",
+    "variable": "d",
+    "type": "d:sattle.infra/entity:Deployment"
+   }
+  },
+  {
+   "label": "wire $master to deployments",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/port:master",
+    "to": "d:acme.deployhealth/projection:dh2/op:deployments/port:graph"
+   }
+  },
+  {
+   "label": "add Map zeros",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "zeros"
+   }
+  },
+  {
+   "label": "wire deployments to zeros",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:deployments/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:zeros/port:in"
+   }
+  },
+  {
+   "label": "zeros.assign:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:zeros",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "d.cluster"
+   }
+  },
+  {
+   "label": "zeros.assign:ns",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:zeros",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ns",
+    "src": "d.namespace"
+   }
+  },
+  {
+   "label": "zeros.assign:nm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:zeros",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "nm",
+    "src": "d.name"
+   }
+  },
+  {
+   "label": "zeros.assign:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:zeros",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "n",
+    "src": "0"
+   }
+  },
+  {
+   "label": "add Match readyPods#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "readyPods#0"
+   }
+  },
+  {
+   "label": "add Filter readyPods",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "readyPods"
+   }
+  },
+  {
+   "label": "readyPods#0 node p",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:readyPods#0",
+    "variable": "p",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "readyPods#0 node d",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.deployhealth/projection:dh2/op:readyPods#0",
+    "variable": "d",
+    "type": "d:sattle.infra/entity:Deployment"
+   }
+  },
+  {
+   "label": "readyPods#0 edge p->d",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.deployhealth/projection:dh2/op:readyPods#0",
+    "variable": "",
+    "from": "p",
+    "to": "d",
+    "type": "d:sattle.infra/rel:ControlledBy"
+   }
+  },
+  {
+   "label": "wire $master to readyPods#0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/port:master",
+    "to": "d:acme.deployhealth/projection:dh2/op:readyPods#0/port:graph"
+   }
+  },
+  {
+   "label": "wire readyPods#0 to readyPods",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:readyPods#0/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:readyPods/port:in"
+   }
+  },
+  {
+   "label": "readyPods.predicate",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:readyPods",
+    "slot": "predicate",
+    "src": "coalesce(p.ready, false)"
+   }
+  },
+  {
+   "label": "add Map ones",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "ones"
+   }
+  },
+  {
+   "label": "wire readyPods to ones",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:readyPods/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:ones/port:in"
+   }
+  },
+  {
+   "label": "ones.assign:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ones",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "d.cluster"
+   }
+  },
+  {
+   "label": "ones.assign:ns",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ones",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ns",
+    "src": "d.namespace"
+   }
+  },
+  {
+   "label": "ones.assign:nm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ones",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "nm",
+    "src": "d.name"
+   }
+  },
+  {
+   "label": "ones.assign:n",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ones",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "n",
+    "src": "1"
+   }
+  },
+  {
+   "label": "add Union counts",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "counts"
+   }
+  },
+  {
+   "label": "counts.conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.deployhealth/projection:dh2/op:counts",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "wire zeros to counts",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:zeros/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:counts/port:in0"
+   }
+  },
+  {
+   "label": "wire ones to counts",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:ones/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:counts/port:in1"
+   }
+  },
+  {
+   "label": "add Group ready",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "ready"
+   }
+  },
+  {
+   "label": "wire counts to ready",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:counts/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:ready/port:in"
+   }
+  },
+  {
+   "label": "ready.key:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ready",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "ready.key:nm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ready",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "nm",
+    "src": "nm"
+   }
+  },
+  {
+   "label": "ready.key:ns",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ready",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ns",
+    "src": "ns"
+   }
+  },
+  {
+   "label": "ready.agg:ready",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:ready",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "ready",
+    "src": "n",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Map status",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "status"
+   }
+  },
+  {
+   "label": "wire ready to status",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:ready/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:status/port:in"
+   }
+  },
+  {
+   "label": "status.assign:c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:status",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "status.assign:ns",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:status",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ns",
+    "src": "ns"
+   }
+  },
+  {
+   "label": "status.assign:nm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:status",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "nm",
+    "src": "nm"
+   }
+  },
+  {
+   "label": "status.assign:ready",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:status",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ready",
+    "src": "ready"
+   }
+  },
+  {
+   "label": "status.assign:state",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:status",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "state",
+    "src": "if(ready > minReady, \"Healthy\", \"Unhealthy\")"
+   }
+  },
+  {
+   "label": "add Map fromState",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "fromState"
+   }
+  },
+  {
+   "label": "wire status to fromState",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:status/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:fromState/port:in"
+   }
+  },
+  {
+   "label": "fromState.assign:fc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:fromState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "fc",
+    "src": "c"
+   }
+  },
+  {
+   "label": "fromState.assign:fn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:fromState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "fn",
+    "src": "ns"
+   }
+  },
+  {
+   "label": "fromState.assign:fm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:fromState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "fm",
+    "src": "nm"
+   }
+  },
+  {
+   "label": "fromState.assign:fstate",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:fromState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "fstate",
+    "src": "state"
+   }
+  },
+  {
+   "label": "add Join withFrom",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "withFrom"
+   }
+  },
+  {
+   "label": "wire calls to withFrom",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:calls/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:withFrom/port:left"
+   }
+  },
+  {
+   "label": "wire fromState to withFrom",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:fromState/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:withFrom/port:right"
+   }
+  },
+  {
+   "label": "withFrom.on",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:withFrom",
+    "slot": "on",
+    "src": "xc == fc and xn == fn and xm == fm"
+   }
+  },
+  {
+   "label": "add Map toState",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "toState"
+   }
+  },
+  {
+   "label": "wire status to toState",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:status/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:toState/port:in"
+   }
+  },
+  {
+   "label": "toState.assign:tc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:toState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "tc",
+    "src": "c"
+   }
+  },
+  {
+   "label": "toState.assign:tn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:toState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "tn",
+    "src": "ns"
+   }
+  },
+  {
+   "label": "toState.assign:tm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:toState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "tm",
+    "src": "nm"
+   }
+  },
+  {
+   "label": "toState.assign:tstate",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:toState",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "tstate",
+    "src": "state"
+   }
+  },
+  {
+   "label": "add Join ends",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "ends"
+   }
+  },
+  {
+   "label": "wire withFrom to ends",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:withFrom/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:ends/port:left"
+   }
+  },
+  {
+   "label": "wire toState to ends",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:toState/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:ends/port:right"
+   }
+  },
+  {
+   "label": "ends.on",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:ends",
+    "slot": "on",
+    "src": "yc == tc and yn == tn and ym == tm"
+   }
+  },
+  {
+   "label": "add Map edges",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "edges"
+   }
+  },
+  {
+   "label": "wire ends to edges",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:ends/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:edges/port:in"
+   }
+  },
+  {
+   "label": "edges.assign:xc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xc",
+    "src": "xc"
+   }
+  },
+  {
+   "label": "edges.assign:xn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xn",
+    "src": "xn"
+   }
+  },
+  {
+   "label": "edges.assign:xm",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "xm",
+    "src": "xm"
+   }
+  },
+  {
+   "label": "edges.assign:yc",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "yc",
+    "src": "yc"
+   }
+  },
+  {
+   "label": "edges.assign:yn",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "yn",
+    "src": "yn"
+   }
+  },
+  {
+   "label": "edges.assign:ym",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ym",
+    "src": "ym"
+   }
+  },
+  {
+   "label": "edges.assign:state",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.deployhealth/projection:dh2/op:edges",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "state",
+    "src": "if(fstate == \"Unhealthy\" or tstate == \"Unhealthy\", \"Unhealthy\", \"Healthy\")"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire deployments to emit.1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:deployments/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.deployhealth/entity:Workload"
+   }
+  },
+  {
+   "label": "emit.1.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "slot": "id",
+    "src": "d"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.deployhealth/prop:cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "property": "d:acme.deployhealth/prop:cluster",
+    "src": "d.cluster"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.deployhealth/prop:name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "property": "d:acme.deployhealth/prop:name",
+    "src": "d.name"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.deployhealth/prop:namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "property": "d:acme.deployhealth/prop:namespace",
+    "src": "d.namespace"
+   }
+  },
+  {
+   "label": "emit.1 set d:acme.deployhealth/prop:replicas",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.1",
+    "property": "d:acme.deployhealth/prop:replicas",
+    "src": "d.replicas"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.2"
+   }
+  },
+  {
+   "label": "emit.2.mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.2",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "wire status to emit.2",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:status/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:emit.2/port:in"
+   }
+  },
+  {
+   "label": "emit.2 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.2",
+    "rel": "ofType",
+    "target": "d:acme.deployhealth/entity:Workload"
+   }
+  },
+  {
+   "label": "emit.2.id",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.2",
+    "slot": "id",
+    "src": "infra.deploymentName(cluster: c, namespace: ns, name: nm)"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.deployhealth/prop:readyPods",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.2",
+    "property": "d:acme.deployhealth/prop:readyPods",
+    "src": "ready"
+   }
+  },
+  {
+   "label": "emit.2 set d:acme.deployhealth/prop:state",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.2",
+    "property": "d:acme.deployhealth/prop:state",
+    "src": "state"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.3",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.3"
+   }
+  },
+  {
+   "label": "wire edges to emit.3",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.deployhealth/projection:dh2/op:edges/port:out",
+    "to": "d:acme.deployhealth/projection:dh2/op:emit.3/port:in"
+   }
+  },
+  {
+   "label": "emit.3 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.3",
+    "rel": "ofType",
+    "target": "d:acme.deployhealth/rel:Talks"
+   }
+  },
+  {
+   "label": "emit.3.key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.3",
+    "name": "key",
+    "value": "talks"
+   }
+  },
+  {
+   "label": "emit.3.source",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.3",
+    "slot": "source",
+    "src": "infra.deploymentName(cluster: xc, namespace: xn, name: xm)"
+   }
+  },
+  {
+   "label": "emit.3.target",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.3",
+    "slot": "target",
+    "src": "infra.deploymentName(cluster: yc, namespace: yn, name: ym)"
+   }
+  },
+  {
+   "label": "emit.3 set d:acme.deployhealth/prop:state",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.deployhealth/projection:dh2/op:emit.3",
+    "property": "d:acme.deployhealth/prop:state",
+    "src": "state"
+   }
+  }
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 3,
+  "relationships": 2
+ }
+}
