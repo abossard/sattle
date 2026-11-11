@@ -5,6 +5,7 @@ import { SHORTCUTS } from "./shortcuts";
 export function Dialogs() {
   const dialog = useStore((s) => s.dialog);
   const rejections = useStore((s) => s.rejections);
+  const total = useStore((s) => s.rejectedTotal);
   const onOpenChange = (_: unknown, d: { open: boolean }) => { if (!d.open) dispatch({ type: "ui/dialog", dialog: null }); };
   return (
     <>
@@ -20,7 +21,7 @@ export function Dialogs() {
       </Dialog>
       <Dialog open={dialog === "rejections"} onOpenChange={onOpenChange}>
         <DialogSurface><DialogBody>
-          <DialogTitle>Rejected records ({rejections.length})</DialogTitle>
+          <DialogTitle>Rejected records ({total}{total > 50 ? `, the last 50 shown` : ""})</DialogTitle>
           <DialogContent>
             {rejections.length === 0 ? <Text>Every record passed schema validation and applied cleanly.</Text> : (
               <ul>{rejections.slice(-50).map((r, i) => <li key={i}><Text weight="semibold">{r.source}: {r.where}</Text><div>{r.errors.join(" · ")}</div></li>)}</ul>

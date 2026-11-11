@@ -4,7 +4,7 @@ import { emptyEditor, emptyFilter } from "./types";
 
 export const initialState = (): State => ({
   sourceId: "", generation: 0, load: { status: "idle", message: "", ms: 0 }, graphs: [], catalog: "", activeGraph: "", view: "data", theme: "light", dialog: null,
-  selection: null, hover: null, time: { now: 0, following: true, first: 0, last: 0 }, connection: null, freshness: "static", rejections: [], filters: {}, telemetry: {},
+  selection: null, hover: null, time: { now: 0, following: true, first: 0, last: 0 }, connection: null, freshness: "static", rejections: [], rejectedTotal: 0, filters: {}, telemetry: {},
   announcement: "", editor: emptyEditor(),
 });
 
@@ -24,7 +24,7 @@ export function reduce(s: State, a: Action): State {
     case "data/touched": return s;
     case "feed/telemetryReset": return { ...s, graphs: patchGraph(s.graphs, a.graph, (g) => ({ ...g, version: g.version + 1 })) };
     case "feed/resync": return { ...s, freshness: "resyncing", announcement: `Resynchronizing: ${a.reason}` };
-    case "feed/rejected": return { ...s, rejections: [...s.rejections.slice(-199), { ...a.rejection, at: a.at }] };
+    case "feed/rejected": return { ...s, rejections: [...s.rejections.slice(-199), { ...a.rejection, at: a.at }], rejectedTotal: s.rejectedTotal + 1 };
     case "feed/connection": return { ...s, connection: a.status, freshness: a.status.state === "live" ? "live" : a.status.state === "ended" ? "static" : a.status.state === "closed" ? "static" : "stale" };
     case "ui/view": return { ...s, view: a.view };
     case "ui/theme": return { ...s, theme: a.theme };

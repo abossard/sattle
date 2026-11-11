@@ -22,6 +22,8 @@ export interface Manifest {
     ontology: string; snapshot: string; patches?: string; correspondences?: string;
     /** engine 3.11 `replay --out`: forward and reverse lineage (NDJSON, one record per element), and for a document graph its Markdown and the JSON with revision and digest */
     lineage?: string; lineageReverse?: string; document?: string; documentJson?: string;
+    /** one line on what the graph is (the projection's purpose), when the engine wrote it */
+    description?: string;
     /** engine 3.12 `replay --out`: the references (NDJSON), and the telemetry declarations (the body of `GET /graphs/{g}/meters`); the telemetry file is `NAME.telemetry.ndjson` next to them */
     references?: string; meters?: string; telemetry?: string;
   }>;
@@ -71,7 +73,7 @@ export class StaticSource implements GraphSource {
       const snap = await this.loadSnapshot(files.snapshot);
       if (!ontology || !snap) continue;
       this.snapshots.set(e.id, snap.snapshot);
-      graphs.push({ id: e.id, role: e.role, descriptor: snap.descriptor, ontology, presentation: loaded!.hints.length ? loaded!.hints : undefined, tree: loaded!.tree ?? undefined, definition: e.definition, inputs: e.inputs, inputPorts: e.ports, document: files.document && files.documentJson ? true : undefined });
+      graphs.push({ id: e.id, role: e.role, descriptor: snap.descriptor, ontology, presentation: loaded!.hints.length ? loaded!.hints : undefined, tree: loaded!.tree ?? undefined, definition: e.definition, inputs: e.inputs, inputPorts: e.ports, description: files.description || undefined, document: files.document && files.documentJson ? true : undefined });
       if (files.patches) this.patches.set(e.id, await this.loadPatches(files.patches));
     }
     if (manifest.telemetry) {

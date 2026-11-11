@@ -119,7 +119,9 @@ export interface State {
   connection: ConnectionStatus | null;
   /** "live", "stale" (the feed is not connected), or "resyncing" */
   freshness: "live" | "stale" | "resyncing" | "static";
+  /** the last 200 rejections, and how many there have been in all */
   rejections: (Rejection & { at: number })[];
+  rejectedTotal: number;
   filters: Record<string, FilterState>;
   telemetry: Record<string, TelemetryState>;
   announcement: string;

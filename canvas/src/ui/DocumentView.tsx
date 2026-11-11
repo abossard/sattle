@@ -2,7 +2,7 @@
 // A revision is immutable, so each is fetched once; the head moves with the event stream (the graph version changes, the view asks again).
 import { Badge, MessageBar, MessageBarBody, Spinner, Subtitle1, Subtitle2, Body1Strong, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Title1, Title2, Title3, makeStyles, tokens } from "@fluentui/react-components";
 import { useEffect, useState } from "react";
-import { parseDocument, type DocBlock } from "../core/markdown";
+import { parseDocument, previewBlocks, type DocBlock } from "../core/markdown";
 import type { DocumentText } from "../source/types";
 import { useWorkspace } from "./common";
 
@@ -14,18 +14,19 @@ const useStyles = makeStyles({
 });
 
 const HEADINGS = [Title1, Title2, Title3, Subtitle1, Subtitle2, Body1Strong] as const;
+const COMPACT_HEADINGS = [Subtitle1, Subtitle2, Body1Strong, Body1Strong, Body1Strong, Body1Strong] as const;
 
-function Block({ b }: { b: DocBlock }) {
+function Block({ b, compact }: { b: DocBlock; compact: boolean }) {
   const s = useStyles();
   switch (b.kind) {
-    case "heading": { const H = HEADINGS[Math.min(b.level, 6) - 1]; return <H as={`h${Math.min(b.level, 6)}` as "h1"}>{b.text}</H>; }
+    case "heading": { const H = (compact ? COMPACT_HEADINGS : HEADINGS)[Math.min(b.level, 6) - 1]; return <H as={`h${Math.min(b.level, 6)}` as "h1"}>{b.text}</H>; }
     case "paragraph": return <Text as="p">{b.text}</Text>;
     case "list": return <ul className={s.list}>{b.items.map((t, i) => <li key={i}><Text>{t}</Text></li>)}</ul>;
     case "table": {
       // the engine always writes four columns; a column that is empty in the header and every row is not shown
       const used = b.header.map((h, c) => !!h || b.rows.some((r) => !!r[c]));
       return (
-        <Table aria-label={b.header.filter(Boolean).join(", ")} size="small">
+        <Table aria-label={b.header.filter(Boolean).join(", ")} size={compact ? "extra-small" : "small"}>
           <TableHeader><TableRow>{b.header.map((h, c) => used[c] && <TableHeaderCell key={c}>{h}</TableHeaderCell>)}</TableRow></TableHeader>
           <TableBody>{b.rows.map((r, i) => <TableRow key={i}>{r.map((v, c) => used[c] && <TableCell key={c}>{v}</TableCell>)}</TableRow>)}</TableBody>
         </Table>
@@ -34,35 +35,40 @@ function Block({ b }: { b: DocBlock }) {
   }
 }
 
-export function DocumentView({ graph }: { graph: string }) {
+/** `compact`: the head of the document in smaller type, for a tile of the graph space. */
+export function DocumentView({ graph, compact = false }: { graph: string; compact?: boolean }) {
   const s = useStyles();
   const ws = useWorkspace(graph);
   const hist = ws?.histories.get(graph);
   const revision = hist ? hist.revisionAt(hist.cursor) : undefined;
-  const [doc, setDoc] = useState<DocumentText | null>(null);
+  // the document with the graph it belongs to: another graph at the same revision number is another document
+  const [held, setHeld] = useState<{ graph: string; doc: DocumentText | null } | null>(null);
   const [error, setError] = useState("");
   const source = ws?.source;
   useEffect(() => {
     if (!source?.document || revision === undefined) return;
     let current = true;
     source.document(graph, revision).then(
-      (d) => { if (current) { setDoc(d); setError(d ? "" : `${graph} is not a document`); } },
-      (e: Error) => { if (current) setError(e.message); },
+      (d) => { if (current) { setHeld({ graph, doc: d }); setError(d ? "" : `${graph} is not a document`); } },
+      (e: Error) => { if (current) { setHeld(null); setError(e.message); } },
     );
     return () => { current = false; };
   }, [source, graph, revision]);
   if (!source?.document) return <div className={s.root}><MessageBar intent="info"><MessageBarBody>This source does not render documents.</MessageBarBody></MessageBar></div>;
-  const blocks = doc ? parseDocument(doc.markdown) : [];
+  const doc = held?.graph === graph ? held.doc : null;
+  const all = doc ? parseDocument(doc.markdown) : [];
+  const { blocks, cut } = compact ? previewBlocks(all) : { blocks: all, cut: false };
   const shown = doc?.revision === revision;
   return (
     <section className={s.root} aria-label={`Document ${graph}`} aria-busy={!shown && !error}>
-      <div className={s.meta}>
+      {!compact && <div className={s.meta}>
         <Badge appearance="outline">revision {revision}</Badge>
         {doc && <Badge appearance="outline" title={doc.digest}>{doc.digest.slice(0, 19)}…</Badge>}
         {!shown && !error && <Spinner size="tiny" label="Rendering" />}
-      </div>
+      </div>}
+      {compact && !shown && !error && <Spinner size="tiny" label="Rendering" />}
       {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-      {doc && !error && (blocks.length ? <article className={s.page}>{blocks.map((b, i) => <Block key={i} b={b} />)}</article> : <Text>The document is empty at revision {revision}.</Text>)}
+      {doc && !error && (blocks.length ? <article className={s.page}>{blocks.map((b, i) => <Block key={i} b={b} compact={compact} />)}{cut && <Text size={200}>…</Text>}</article> : <Text>The document is empty at revision {revision}.</Text>)}
     </section>
   );
 }

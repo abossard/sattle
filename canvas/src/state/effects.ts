@@ -75,6 +75,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
     case "source/opening": runtime.session = null; void openSource(a.id, s, dispatch); break;
     case "feed/patch":
       ws?.applyPatch(a.graph, a.patch, a.time);
+      if (ws) applyHighlight(ws, a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step
       throttle("data", 100, () => { if (runtime.ws === ws && ws) { reportData(ws, dispatch); reportTime(ws, dispatch); } });
       break;
     case "feed/telemetry":
@@ -94,7 +95,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
     case "pane/command": {
       const pane = ws?.panes.get(a.graph);
       if (!pane) break;
-      if (a.command === "fit") pane.view.fit();
+      if (a.command === "fit") pane.fit();
       else if (a.command === "relayout") pane.runLayout(pane.layoutKind, pane.layoutKind === "layered");
       else if (a.command === "focus") pane.focusSelection();
       else if (a.command === "collapse") pane.collapseAllAtDepth();

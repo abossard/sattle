@@ -20,8 +20,10 @@ export function mergeTimes(lists: readonly (readonly number[])[]): number[] {
  * This aligns by order only; callers should mark such a graph as ordinal.
  */
 export function ordinalTimes(patchCount: number, windowTimes: readonly number[]): number[] {
-  // fewer windows than revisions (one window, say): placing revisions on them would stack them on one instant, so they go by order alone
-  return Array.from({ length: patchCount }, (_, i) => (windowTimes.length >= patchCount ? windowTimes[Math.min(i + 1, windowTimes.length - 1)] : i + 1));
+  // fewer windows than revisions (one window, say): placing revisions on them would stack them on one instant, so they go by order alone,
+  // one second apart from the first window (seconds 1..n would lie before every window when the windows are instants)
+  const origin = windowTimes.length ? windowTimes[0] : 0;
+  return Array.from({ length: patchCount }, (_, i) => (windowTimes.length >= patchCount ? windowTimes[Math.min(i + 1, windowTimes.length - 1)] : origin + i + 1));
 }
 
 /**

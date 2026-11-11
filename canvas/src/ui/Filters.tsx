@@ -52,6 +52,13 @@ export function ColorControl({ graph, target, setting }: { graph: string; target
   );
 }
 
+/** A number typed by a person: a decimal comma is a decimal point. Empty or not a number is no number (the threshold is cleared), never NaN. */
+export function parseDecimal(typed: string | undefined): number | undefined {
+  const t = (typed ?? "").trim().replace(/^(-?\d+),(\d+)$/, "$1.$2");
+  const n = t === "" ? NaN : Number(t);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 export function FiltersPanel({ graph }: { graph: string }) {
   const s = useStyles();
   const ws = useWorkspace(graph);
@@ -154,7 +161,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
               const m = id ? tel.meters.find((x) => x.id === id && x.target === target) : undefined;
               return m ? (
                 <Field key={target} label={`${m.label} warning threshold`}>
-                  <SpinButton value={m.warn ?? null} min={m.min} max={m.max} step={m.max <= 1 ? 0.01 : 1} onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { warn: { id: m.id, target, value: d.value ?? (d.displayValue ? Number(d.displayValue) : undefined) } } })} />
+                  <SpinButton value={m.warn ?? null} min={m.min} max={m.max} step={m.max <= 1 ? 0.01 : 1} onChange={(_, d) => dispatch({ type: "telemetry/set", graph, change: { warn: { id: m.id, target, value: d.value ?? parseDecimal(d.displayValue) } } })} />
                 </Field>
               ) : null;
             })}

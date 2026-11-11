@@ -1,7 +1,7 @@
 // Inspector of the selected element: change in this revision, properties, connections, shared identity and lineage, telemetry series.
 import { Badge, Link, MessageBar, MessageBarBody, Subtitle2, Table, TableBody, TableCell, TableRow, Text, Tree, TreeItem, TreeItemLayout, makeStyles, tokens } from "@fluentui/react-components";
 import { propDiff } from "../core/diff";
-import { labelOf, valueText, type Entity, type Rel } from "../core/model";
+import { valueText, type Entity, type Rel } from "../core/model";
 import { sparkPoints } from "../core/telemetry";
 import { countAtOrBefore, formatTime } from "../core/time-axis";
 import { formatValue } from "../app/telemetry-hub";
@@ -24,7 +24,7 @@ const ElementLink = ({ ws, graph, id, edge = false }: { ws: Workspace; graph: st
   const g = ws.histories.get(graph)?.graph;
   const stub = g?.stubSlot.get(id);
   const el = edge ? g?.rel(id) : g?.entity(id) ?? (stub !== undefined ? g?.nodes[stub] : undefined);
-  const text = el ? labelOf(el) : id;
+  const text = el && g ? g.label(el) : id;
   return <Link as="button" title={id} onClick={() => go(graph, id, edge ? "relationship" : "entity")}>{text.length > 28 ? `${text.slice(0, 27)}…` : text}</Link>;
 };
 
@@ -60,7 +60,7 @@ export function Inspector() {
   }
   return (
     <div className={s.col}>
-      <Subtitle2 as="h2">{subject ? <><TypeGlyph {...styleOf(ws, sel.graph, subject.type)} /> {labelOf(subject)}</> : sel.id}</Subtitle2>
+      <Subtitle2 as="h2">{subject ? <><TypeGlyph {...styleOf(ws, sel.graph, subject.type)} /> {g.label(subject)}</> : sel.id}</Subtitle2>
       <div><Badge color={roleColor(role)} appearance="outline">{sel.graph}</Badge> <code className={s.mono}>{sel.id}</code></div>
       {!el && change?.kind === "removed" && <Text>Removed in this revision. Showing the state before the change.</Text>}
       {el && isRel(el) && <Text><ElementLink ws={ws} graph={sel.graph} id={el.source} /> → <ElementLink ws={ws} graph={sel.graph} id={el.target} /></Text>}
@@ -87,7 +87,7 @@ export function Inspector() {
             {[...groups].sort().map(([type, list]) => (
               <TreeItem key={type} itemType="branch" value={type}>
                 <TreeItemLayout>{type} ({list.length})</TreeItemLayout>
-                <Tree>{list.slice(0, 50).map((x, i) => <TreeItem key={i} itemType="leaf" value={`${type}${i}`} onClick={() => go(sel.graph, x.other, "entity")}><TreeItemLayout>{x.dir} {labelOf(g.entity(x.other) ?? { id: x.other, props: {} })}</TreeItemLayout></TreeItem>)}</Tree>
+                <Tree>{list.slice(0, 50).map((x, i) => <TreeItem key={i} itemType="leaf" value={`${type}${i}`} onClick={() => go(sel.graph, x.other, "entity")}><TreeItemLayout>{x.dir} {g.label(g.entity(x.other) ?? { id: x.other, props: {} })}</TreeItemLayout></TreeItem>)}</Tree>
               </TreeItem>
             ))}
           </Tree>

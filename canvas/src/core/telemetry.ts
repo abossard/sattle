@@ -13,9 +13,18 @@ export function dequantize(m: Meter, b: number): number {
   const n = b / 255;
   return m.min + (m.scale === "sqrt" ? n * n : n) * (m.max - m.min);
 }
-export const warnByte = (m: Meter): number => (m.warn === undefined ? 256 : quantize(m, m.warn));
+/**
+ * The smallest byte whose value is at or above the threshold (256 when none is, or there is no threshold): `byte >= warnByte(m)` on the GPU
+ * and `dequantize(m, byte) >= m.warn` in the Inspector then decide the same way for every value.
+ */
+export function warnByte(m: Meter): number {
+  if (m.warn === undefined || !Number.isFinite(m.warn)) return 256;
+  for (let b = 0; b < 256; b++) if (dequantize(m, b) >= m.warn) return b;
+  return 256;
+}
 
-export interface Frame { tick: number; t: number; data: Uint8Array }
+/** `has[slot]` is 1 where the window holds a value for the slot: no value is not the minimum of the scale */
+export interface Frame { tick: number; t: number; data: Uint8Array; has: Uint8Array }
 
 export interface IngestStats { ticks: number; lastMs: number; avgMs: number }
 
@@ -57,7 +66,7 @@ export class TelemetryStore {
     // engine 3.15: a window of an element that was retracted has no value any more; a window that is not held is nothing to drop
     if (b.removed?.length) {
       const held = this.frames.get(key)?.find((x) => x.t === b.t);
-      if (held) for (const id of b.removed) { const s = slotOf(b.target, id); if (s !== undefined && s < held.data.length) held.data[s] = 0; }
+      if (held) for (const id of b.removed) { const s = slotOf(b.target, id); if (s !== undefined && s < held.data.length) { held.data[s] = 0; held.has[s] = 0; } }
       if (!b.values.length) return;
     }
     if (m.auto) { let mx = 0; for (let i = 0; i < b.values.length; i++) if (b.values[i] > mx) mx = b.values[i]; if (mx > m.max) this.rescale(m, mx * 1.25); }
@@ -68,22 +77,23 @@ export class TelemetryStore {
     while (at > 0 && list[at - 1].t > b.t) at--;
     let f = at > 0 && list[at - 1].t === b.t ? list[at - 1] : undefined;
     if (!f) {
-      const prev = at > 0 ? list[at - 1].data : undefined;
-      f = { tick: b.tick, t: b.t, data: new Uint8Array(cap) };
-      if (prev) f.data.set(prev.subarray(0, Math.min(prev.length, cap))); // sparse batches update on top of the previous window
+      const prev = at > 0 ? list[at - 1] : undefined;
+      f = { tick: b.tick, t: b.t, data: new Uint8Array(cap), has: new Uint8Array(cap) };
+      if (prev) { f.data.set(prev.data.subarray(0, Math.min(prev.data.length, cap))); f.has.set(prev.has.subarray(0, Math.min(prev.has.length, cap))); } // sparse batches update on top of the previous window
       list.splice(at, 0, f);
       while (list.length > this.window) list.shift();
-    } else if (f.data.length < cap) { const d = new Uint8Array(cap); d.set(f.data); f.data = d; }
+    } else if (f.data.length < cap) { const d = new Uint8Array(cap); d.set(f.data); f.data = d; const h = new Uint8Array(cap); h.set(f.has); f.has = h; }
     const d = f.data;
     const v = b.values;
     if (b.ids) {
-      for (let i = 0; i < b.ids.length; i++) { const s = slotOf(b.target, b.ids[i]); if (s !== undefined && s < d.length) d[s] = quantize(m, v[i]); }
+      for (let i = 0; i < b.ids.length; i++) { const s = slotOf(b.target, b.ids[i]); if (s !== undefined && s < d.length) { d[s] = quantize(m, v[i]); f.has[s] = Number.isFinite(v[i]) ? 1 : 0; } }
     } else {
       const valid = b.target === "node" ? this.validNode : this.validEdge;
       const n = Math.min(v.length, d.length);
       const lo = m.min, span = m.max - m.min || 1, sq = m.scale === "sqrt";
       for (let i = 0; i < n; i++) {
-        if (valid.length && !valid[i]) { d[i] = 0; continue; }
+        if (valid.length && !valid[i]) { d[i] = 0; f.has[i] = 0; continue; }
+        f.has[i] = Number.isFinite(v[i]) ? 1 : 0;
         let x = (v[i] - lo) / span;
         x = x < 0 ? 0 : x > 1 ? 1 : x;
         d[i] = (sq ? Math.sqrt(x) : x) * 255 + 0.5;
@@ -140,6 +150,11 @@ export class TelemetryStore {
   }
 
   get tickCount(): number { return this.lastTick + 1; }
+
+  /** The slot holds another element now: no window holds a value for it until one arrives. */
+  forgetSlot(target: "node" | "edge", slot: number): void {
+    for (const [key, list] of this.frames) if (key.startsWith(`${target}:`)) for (const f of list) if (slot < f.data.length) { f.data[slot] = 0; f.has[slot] = 0; }
+  }
 
   /** Forget every stored frame (the engine re-activated the space and its windows may differ). Meters stay. */
   clear(): void { this.frames.clear(); this.firstTick = 0; this.lastTick = -1; }

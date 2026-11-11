@@ -80,8 +80,9 @@ export class TelemetryHub {
   revalidate(nodeSlots: Iterable<number>, edgeSlots: Iterable<number>): void {
     const g = this.graph;
     const vn = this.store.validNode as Uint8Array, ve = this.store.validEdge as Uint8Array;
-    for (const s of nodeSlots) if (s < vn.length) vn[s] = g.nodes[s] && !g.isStub(s) && g.nodes[s]!.id === this.snapNodeIds[s] ? 1 : 0;
-    for (const s of edgeSlots) if (s < ve.length) ve[s] = g.edges[s] && g.edges[s]!.id === this.snapEdgeIds[s] ? 1 : 0;
+    // a slot that holds another element than the one the snapshot had (a slot reused after a deletion, say) starts without a value
+    for (const s of nodeSlots) if (s < vn.length) { vn[s] = g.nodes[s] && !g.isStub(s) && g.nodes[s]!.id === this.snapNodeIds[s] ? 1 : 0; if (!vn[s]) this.store.forgetSlot("node", s); }
+    for (const s of edgeSlots) if (s < ve.length) { ve[s] = g.edges[s] && g.edges[s]!.id === this.snapEdgeIds[s] ? 1 : 0; if (!ve[s]) this.store.forgetSlot("edge", s); }
   }
   revalidateAll(): void {
     this.revalidate(this.snapNodeIds.keys(), this.snapEdgeIds.keys());
@@ -113,7 +114,7 @@ export class TelemetryHub {
     const out: Reading[] = [];
     for (const m of this.store.metersOf(target)) {
       const f = this.store.frameAtTime(target, m.id, this.time);
-      if (!f || slot >= f.data.length) continue;
+      if (!f || slot >= f.data.length || !f.has[slot]) continue;
       const v = dequantize(m, f.data[slot]);
       out.push({ meter: m, value: v, warn: m.warn !== undefined && v >= m.warn });
     }

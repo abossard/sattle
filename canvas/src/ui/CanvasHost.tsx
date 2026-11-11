@@ -39,7 +39,7 @@ export function CanvasHost({ graph, focus = false }: { graph: string; focus?: bo
     const changed = f ? Object.fromEntries(Object.entries(f).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(empty[k as keyof FilterState]))) : {};
     // the coloring and the grouping always apply: their defaults come from the ontology, which a default filter state does not mention
     if (f) applyFilter(pane, f, { ...changed, colorNodes: f.colorNodes, colorEdges: f.colorEdges, grouping: f.grouping });
-    pane.view.fit(false);
+    pane.fit(false);
     if (focus) host.focus({ preventScroll: true });
     return () => host.remove();
   }, [graph, gen, ready, gl, focus]);

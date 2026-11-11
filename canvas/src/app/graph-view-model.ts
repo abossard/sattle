@@ -5,6 +5,11 @@ import type { OntologyDefinition } from "../core/wire-types";
 
 export interface PropertyFilter { key: string; op: "equals" | "contains" | "not equals"; value: string }
 export interface Filter { hiddenTypes: Set<string>; prop: PropertyFilter | null; search: string }
+/** Room in pixels at the left and right of a fitted graph, so the label of a node at its edge is not cut off. Labels are drawn centred under their node. */
+export function labelPadding(labels: string[]): number {
+  const longest = labels.reduce((m, l) => Math.max(m, l.length), 0);
+  return Math.min(120, Math.max(40, 8 + 3.4 * Math.min(longest, 32)));
+}
 export const emptyFilter = (): Filter => ({ hiddenTypes: new Set(), prop: null, search: "" });
 
 export function entityMatchesProp(e: Entity, f: PropertyFilter): boolean {

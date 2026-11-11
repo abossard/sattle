@@ -14,7 +14,8 @@
     "walkthroughs": "node scripts/walkthroughs-cdp.mjs",
     "document-live": "node scripts/document-live-cdp.mjs",
     "sync-palette": "node scripts/sync-palette.mjs",
-    "demo": "node scripts/make-demo.mjs"
+    "demo": "node scripts/make-demo.mjs",
+    "test:review": "SATTLE_REVIEW=1 vitest run tests/review"
   },
   "dependencies": {
     "@fluentui/react-components": "^9.75.1",

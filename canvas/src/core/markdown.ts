@@ -52,3 +52,14 @@ export function parseDocument(markdown: string): DocBlock[] {
   }
   return blocks;
 }
+
+/** The head of a document for a small view: the first blocks, each table cut to its first rows. `cut` says whether anything was left out. */
+export function previewBlocks(blocks: DocBlock[], limits: { blocks: number; tableRows: number } = { blocks: 8, tableRows: 4 }): { blocks: DocBlock[]; cut: boolean } {
+  let cut = blocks.length > limits.blocks;
+  const shown = blocks.slice(0, limits.blocks).map((b): DocBlock => {
+    if (b.kind === "table" && b.rows.length > limits.tableRows) { cut = true; return { ...b, rows: b.rows.slice(0, limits.tableRows) }; }
+    if (b.kind === "list" && b.items.length > 6) { cut = true; return { ...b, items: b.items.slice(0, 6) }; }
+    return b;
+  });
+  return { blocks: shown, cut };
+}

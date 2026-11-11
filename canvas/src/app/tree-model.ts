@@ -3,7 +3,7 @@
 // hold its own state and its rolled-up state; value roles (engine 3.2) say what each value means. Everything below reads those and the graph.
 import type { Graph } from "../core/graph";
 import type { Entity } from "../core/model";
-import { labelOf, valueText } from "../core/model";
+import { valueText } from "../core/model";
 import type { PresentationHint, Role, TreeSpec } from "../source/presentation";
 
 export type { TreeSpec };
@@ -26,16 +26,11 @@ export interface TreeModel { nodes: Map<string, TreeNode>; roots: string[]; spec
 /** Roles from the worst to the mildest: what a severity falls back to, and the order the counts are shown in. */
 const WORST_FIRST: Role[] = ["danger", "warning", "unknown", "ok", "neutral"];
 export const roleSeverity = (r: Role): number => WORST_FIRST.length - WORST_FIRST.indexOf(r);
+/** The same fallback on the engine's own scale (-1 unknown, 0 healthy, 1 degraded, 2 unhealthy), for a graph whose severity property is declared: one scale per tree. */
+const ENGINE_SEVERITY: Record<Role, number> = { danger: 2, warning: 1, ok: 0, neutral: 0, unknown: -1 };
 /** A node where something is wrong: its rolled-up state (which includes its own) is a warning or a danger. */
 export const isWrong = (n: TreeNode): boolean => (n.rolled ?? n.own)?.role === "warning" || (n.rolled ?? n.own)?.role === "danger";
 
-/** The label of a row: the usual name of an element, or else a property whose name ends in "name" (`nodeName`), else the id. */
-const treeLabel = (e: Entity): string => {
-  const usual = labelOf(e);
-  if (usual !== e.id) return usual;
-  const key = Object.keys(e.props).find((k) => /name$/i.test(k.slice(k.lastIndexOf(".") + 1)) && valueText(e.props[k]) !== "");
-  return key ? valueText(e.props[key]) : usual;
-};
 
 const cellOf = (e: Entity, property: string | undefined, hints: ReadonlyMap<string, Record<string, Role>>): StateCell | null => {
   const v = property ? e.props[property] : undefined;
@@ -48,6 +43,8 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
   const roles = new Map(hints.map((h) => [h.property, h.roles]));
   const nodes = new Map<string, TreeNode>();
   const inTree = (e: Entity) => (spec.types ? spec.types.includes(e.type) : true);
+  // a node without the severity property is ranked on the scale the others use: the engine's when any type declares one, else the role scale
+  const declared = Object.values(spec.state).some((s) => s.severity);
   for (const e of g.entities()) {
     if (!inTree(e)) continue;
     const st = spec.state[e.type] ?? {};
@@ -55,8 +52,8 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     const kind = st.kind && e.props[st.kind] ? valueText(e.props[st.kind]) : e.type;
     const sev = st.severity ? e.props[st.severity] : undefined;
     nodes.set(e.id, {
-      id: e.id, type: kind, label: treeLabel(e), parent: null, children: [], own, rolled,
-      severity: sev && /^-?\d+$/.test(valueText(sev)) ? Number(valueText(sev)) : roleSeverity((rolled ?? own)?.role ?? "neutral"),
+      id: e.id, type: kind, label: g.label(e), parent: null, children: [], own, rolled,
+      severity: sev && /^-?\d+$/.test(valueText(sev)) ? Number(valueText(sev)) : declared ? ENGINE_SEVERITY[(rolled ?? own)?.role ?? "neutral"] : roleSeverity((rolled ?? own)?.role ?? "neutral"),
       supporting: 0, cross: 0, counts: [],
       curatedBy: st.curatedBy && e.props[st.curatedBy] ? valueText(e.props[st.curatedBy]) || null : null,
       critical: !!st.critical && valueText(e.props[st.critical] ?? { kind: "boolean", value: false }) === "true",
@@ -198,8 +195,8 @@ export function explainNode(g: Graph, m: TreeModel, id: string): Explanation | n
       if (!role) continue;
       const otherId = r.source === id ? r.target : r.source;
       const other = g.entity(otherId);
-      if (role === "support" && other) support.push({ id: otherId, type: other.type, label: labelOf(other), relationship: r.type, props: Object.entries(other.props).map(([k, v]) => [k, valueText(v)] as [string, string]) });
-      else if (role === "cross") cross.push({ id: otherId, label: other ? labelOf(other) : otherId, relationship: r.type, direction: r.source === id ? "out" : "in" });
+      if (role === "support" && other) support.push({ id: otherId, type: other.type, label: g.label(other), relationship: r.type, props: Object.entries(other.props).map(([k, v]) => [k, valueText(v)] as [string, string]) });
+      else if (role === "cross") cross.push({ id: otherId, label: other ? g.label(other) : otherId, relationship: r.type, direction: r.source === id ? "out" : "in" });
     }
   }
   return { drivers, support, cross };

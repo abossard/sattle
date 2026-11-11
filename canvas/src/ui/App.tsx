@@ -72,7 +72,7 @@ export function App() {
   const view = useStore((x) => x.view);
   const source = useStore((x) => x.sourceId);
   const status = useStore((x) => x.load.status);
-  const rejected = useStore((x) => x.rejections.length);
+  const rejected = useStore((x) => x.rejectedTotal);
   const announcement = useStore((x) => x.announcement);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

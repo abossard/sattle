@@ -1,7 +1,8 @@
 // DataPane: one data graph on the canvas engine. Binds Graph (data) to Scene (render arrays), layout, selection and highlights.
 import type { ApplyResult } from "../core/graph";
 import { Graph } from "../core/graph";
-import { type ChangeSet, type ElementKey, type Entity, type Rel, labelOf } from "../core/model";
+import { type ChangeSet, type ElementKey, type Entity, type Rel } from "../core/model";
+import { nameGraph } from "../core/naming";
 import type { GraphValue } from "../core/wire-types";
 import { placeIncremental } from "../layout/force";
 import { LayoutClient } from "../layout/client";
@@ -9,9 +10,10 @@ import { Ex, EdgeStyle, Scene, St, parseColor } from "../render/scene";
 import { type Theme, edgeColorForType, styleForType, type TypeStyle } from "../render/theme";
 import { GraphView, type Ghost, type Pick } from "../render/view";
 import {
-  FlagLayer, type Filter, type Grouping, computeAnchors, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, neighbourhood,
+  FlagLayer, type Filter, type Grouping, computeAnchors, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood,
 } from "./graph-view-model";
 import type { History, StepResult } from "./history";
+import { hasTreeRows } from "./tree-model";
 import type { GraphInfo } from "../source/types";
 import { EDGE_CHANNELS, NODE_CHANNELS, type TelemetryHub } from "./telemetry-hub";
 import { ROLE_GLYPH, colorValueOf, entryOf, legendOf, tally, type Coloring, type LegendEntry, type Target } from "./color-by";
@@ -73,6 +75,7 @@ export class DataPane {
 
   constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: TelemetryHub | null = null) {
     this.graph = history.graph;
+    nameGraph(this.graph, info.ontology);
     // derived trees and forests read best as layers; general graphs use the force layout
     const g0 = history.graph;
     if (g0.nodeCount > 2 && g0.edgeCount >= g0.nodeCount * 0.5 && g0.edgeCount <= g0.nodeCount) {
@@ -81,11 +84,13 @@ export class DataPane {
       for (let i = 0; i < g0.nodes.length; i++) if (g0.nodes[i] && g0.out[i].length + g0.inn[i].length > 0) connected++;
       if (connected >= g0.nodeCount * 0.8) this.layoutKind = "layered";
     }
+    // a graph whose ontology declares a hierarchy is a tree: the root on top, whatever its size
+    if (info.tree && hasTreeRows(g0, info.tree)) this.layoutKind = "layered";
     this.view = new GraphView(host);
     this.view.setTheme(theme);
     this.view.setScene(this.scene);
     this.view.hooks = {
-      nodeLabel: (slot) => { const n = this.graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = labelOf(n) + this.valueMark("node", n.props); return g ? `${l} (+${g})` : l; },
+      nodeLabel: (slot) => { const n = this.graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = this.graph.label(n) + this.valueMark("node", n.props); return g ? `${l} (+${g})` : l; },
       nodeGlyph: (slot) => { const st = this.scene.nodeState(slot); return st & St.Added ? "+" : st & St.Changed ? "Δ" : null; },
       edgeLabel: (slot) => { const r = this.graph.edges[slot]; return r ? r.type + this.valueMark("edge", r.props) : null; },
       ghosts: () => this.ghostList,
@@ -167,6 +172,17 @@ export class DataPane {
       if (a < 0 || b < 0 || dense[a] < 0 || dense[b] < 0) continue;
       src[e] = dense[a]; dst[e] = dense[b];
     }
+    // a declared hierarchy ranks the layers: parent above child, what explains a row below it; dependencies between rows do not rank
+    const tree = kind === "layered" ? this.info.tree : undefined;
+    if (tree) {
+      for (let e = 0; e < g.edges.length; e++) {
+        const r = g.edges[e];
+        if (src[e] < 0 || !r) continue;
+        if (r.type === tree.hierarchy.relationship) { if (tree.hierarchy.childIsSource) [src[e], dst[e]] = [dst[e], src[e]]; }
+        else if (tree.edgeRoles[r.type] === "support") { if (!tree.types || !tree.types.includes(g.nodes[g.edgeSrc[e]]?.type ?? "")) [src[e], dst[e]] = [dst[e], src[e]]; }
+        else { src[e] = -1; dst[e] = -1; }
+      }
+    }
     this.layoutRunning = true; this.layoutProgress = 0;
     const scatter = (p: Float32Array) => {
       const pos = this.scene.positions;
@@ -181,18 +197,33 @@ export class DataPane {
       const w = new Float32Array(n), h = new Float32Array(n);
       for (let i = 0; i < n; i++) { const r = this.styleOf(g.nodes[slots[i]]!.type).radius; w[i] = r * 2; h[i] = r * 2; }
       const job = this.layoutClient.run({ kind: "layered", n, src, dst, width: w, height: h, options: { direction: this.layoutDirection, layerGap: 70, nodeGap: 14 } });
-      job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.lastLayoutMs = this.layoutClient.lastMs; this.view.fit(!first); this.ev.changed(); });
+      job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.lastLayoutMs = this.layoutClient.lastMs; this.fit(!first); this.ev.changed(); });
     } else {
       // keep existing positions as the starting point so a re-run refines instead of scrambling
       const start = new Float32Array(n * 2).fill(NaN);
       if (!first) for (let i = 0; i < n; i++) { const s = slots[i]; if (Number.isFinite(this.scene.positions[2 * s])) { start[2 * i] = this.scene.positions[2 * s]; start[2 * i + 1] = this.scene.positions[2 * s + 1]; } }
       const job = this.layoutClient.run({ kind: "force", n, src, dst, positions: first ? undefined : start, options: { length: 30 } }, (p, it, total) => {
         this.layoutProgress = it / total; scatter(p);
-        if (first && it === 0) this.view.fit(false);
+        if (first && it === 0) this.fit(false);
         this.ev.changed();
       });
-      job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.layoutProgress = 1; this.lastLayoutMs = this.layoutClient.lastMs; if (first || n < 100) this.view.fit(!first); this.ev.changed(); });
+      job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.layoutProgress = 1; this.lastLayoutMs = this.layoutClient.lastMs; if (first || n < 100) this.fit(!first); this.ev.changed(); });
     }
+  }
+
+  /** What the canvas can write next to the nodes of the scene: the labels of the visible ones. */
+  labelsShown(): string[] {
+    const out: string[] = [];
+    for (let i = 0; i < this.graph.nodes.length; i++) if (this.scene.nodeVisible(i)) { const l = this.view.hooks.nodeLabel?.(i); if (l) out.push(l); }
+    return out;
+  }
+
+  /** Fit the whole graph in view with room at the sides for the labels of the nodes at its edges. */
+  fit(animate = true): void {
+    const n = this.graph.nodeCount;
+    const labels: string[] = [];
+    if (n <= 200) for (let i = 0; i < this.graph.nodes.length && labels.length < 200; i++) { const l = this.view.hooks.nodeLabel?.(i); if (l) labels.push(l); }
+    this.view.fit(animate, 40, labelPadding(labels));
   }
 
   // ---- scene construction ----
@@ -352,7 +383,7 @@ export class DataPane {
         else if (c.kind === "changed" && slot !== undefined) nC.push(slot);
         else if (c.kind === "removed" && c.before) {
           const p = this.lastPos.get(id) ?? this.guessPosition(c.before, changes);
-          if (p) this.ghostList.push({ x: p[0], y: p[1], r: this.styleOf(c.before.type).radius, color: this.cssColor("removed"), label: labelOf(c.before), shape: 1 });
+          if (p) this.ghostList.push({ x: p[0], y: p[1], r: this.styleOf(c.before.type).radius, color: this.cssColor("removed"), label: this.graph.label(c.before), shape: 1 });
         }
       }
       for (const [id, c] of changes.relationships) {
@@ -490,7 +521,7 @@ export class DataPane {
     if (this.collapsed.has(slot)) this.collapsed.delete(slot); else this.collapsed.add(slot);
     this.refreshAll();
     this.relayoutIfLayered();
-    this.ev.announce(`${this.collapsed.has(slot) ? "Collapsed" : "Expanded"} ${labelOf(this.graph.nodes[slot]!)}`);
+    this.ev.announce(`${this.collapsed.has(slot) ? "Collapsed" : "Expanded"} ${this.graph.label(this.graph.nodes[slot]!)}`);
   }
 
   collapseAllAtDepth(): void {
@@ -612,7 +643,7 @@ export class DataPane {
         const [sx, sy] = this.view.worldToScreen(P[2 * target], P[2 * target + 1]);
         const vp = this.view.viewport;
         if (sx < 40 || sy < 40 || sx > vp.w - 40 || sy > vp.h - 40) this.view.flyToSlot(target, this.view.camera.zoom);
-        this.ev.announce(`${n.type} ${labelOf(n)}, ${g.out[target].length + g.inn[target].length} connections`);
+        this.ev.announce(`${n.type} ${this.graph.label(n)}, ${g.out[target].length + g.inn[target].length} connections`);
       }
       return true;
     }

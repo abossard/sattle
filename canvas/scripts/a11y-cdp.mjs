@@ -84,6 +84,20 @@ for (const theme of ["light", "dark", "contrast"]) {
     await runAxe(`${view}/${theme}`);
   }
 }
+// no visible label is an internal id (the engine's element ids are hashes): the text of every view of the default source and the labels its canvases draw.
+// The Inspector shows an id on purpose, and nothing is selected here.
+const ID_PATTERN = "\\b[a-z]{1,3}:[a-z0-9]{20,}\\b";
+const idsShown = () => evaluate(`(() => { const re = new RegExp(${JSON.stringify(ID_PATTERN)}); const bad = []; const text = document.body.innerText; const m = re.exec(text); if (m) bad.push("text: " + m[0]); for (const [g, p] of window.__sattle.ws.panes) for (const l of p.labelsShown()) if (re.test(l)) bad.push(g + ": " + l); return bad.slice(0, 5); })()`);
+for (const view of ["space", "data", "ontology"]) {
+  await open("demo", view, "light");
+  const graphs = view === "data" ? await evaluate(`window.__sattle.ws.info.graphs.filter((g) => g.role !== "catalog").map((g) => g.id)`) : [""];
+  for (const g of graphs) {
+    if (g) { await dispatch({ type: "ui/activeGraph", graph: g }); await sleep(700); }
+    const bad = await idsShown();
+    results.axe.push({ name: `no internal id as a label: ${view}${g ? `/${g}` : ""}`, found: bad, ok: bad.length === 0 });
+    if (bad.length) fail.push(`internal id shown as a label on ${view}${g ? `/${g}` : ""}: ${bad.join("; ")}`);
+  }
+}
 // a document graph in the data view (engine 3.4): needs an engine that serves one, for example the deploy-health fixture
 for (const theme of ["light", "dark", "contrast"]) {
   await open(ENGINE, "data", theme);

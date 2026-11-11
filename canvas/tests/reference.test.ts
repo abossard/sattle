@@ -14,7 +14,7 @@ describe("the stub of a reference", () => {
   it.each([
     ["the last segment of a path-like key names it", ref({}), "◌ aks-prod"],
     ["a long key part is shortened", ref({ identity: { domain: "d", key: { k: "x".repeat(60) } } }), `◌ ${"x".repeat(27)}…`],
-    ["without an identity the id is the name", ref({ identity: null }), "◌ e:1"],
+    ["without an identity it says which kind of entity is missing", ref({ identity: null }), "◌ unresolved AzureResource"],
     ["several key components are joined", ref({ identity: { domain: "d", key: { cluster: "c1", name: "web" } } }), "◌ c1 / web"],
   ])("%s", (_, r, name) => expect(prop(stubEntity("e:1", r), "name")).toBe(name));
 
@@ -30,6 +30,6 @@ describe("the stub of a reference", () => {
 
   it("without information from the engine it still says what is known", () => {
     const s = stubEntity("e:abcdefghijklmnopqrstuvwxyz");
-    expect([s.type, prop(s, "name"), isReferenceType(s.type)]).toEqual(["reference", "◌ e:abcdefghijklmnop", true]);
+    expect([s.type, prop(s, "name"), isReferenceType(s.type)]).toEqual(["reference", "◌ unresolved reference", true]);
   });
 });

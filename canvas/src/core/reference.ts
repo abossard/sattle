@@ -12,12 +12,12 @@ const short = (v: string): string => { const last = v.slice(v.lastIndexOf("/") +
 
 /** What the stub of `id` shows; without information from the engine only the id is known. */
 export function stubEntity(id: string, ref?: Reference): Entity {
-  if (!ref) return { id, type: "reference", props: { name: text(`◌ ${id.slice(0, 18)}`), reason: text("The graph's relationships name this entity, but it is not in the graph.") } };
+  if (!ref) return { id, type: "reference", props: { name: text("◌ unresolved reference"), reason: text("The graph's relationships name this entity, but it is not in the graph.") } };
   const key = ref.identity ? Object.values(ref.identity.key).map(short).join(" / ") : "";
   const type = `${ref.entityType || "entity"} (reference)`;
   const where = ref.state === "inOtherGraph" && ref.graph ? `in graph ${ref.graph}` : "in no graph";
   const props: Record<string, GraphValue> = {
-    name: text(`◌ ${key || id.slice(0, 18)}`),
+    name: text(`◌ ${key || `unresolved ${ref.entityType || "entity"}`}`),
     reason: text(ref.state === "inOtherGraph" && ref.graph ? `This entity is ${where}, not in this one.` : "No graph holds this entity: relationships name it, nothing created it."),
     state: text(ref.state),
   };

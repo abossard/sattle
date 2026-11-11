@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { entityMatchesSearch } from "../app/graph-view-model";
 import { ROLE_GLYPH, ROLE_WORD, colorValueOf, coloringLabel, resolveColoring } from "../app/color-by";
 import { emptyFilter } from "../state/types";
-import { labelOf, type Entity, type Rel } from "../core/model";
+import type { Entity, Rel } from "../core/model";
 import { dispatch, useStore } from "../state/store";
 import { styleOf } from "../state/ws-ops";
 import { TypeGlyph, useWorkspace } from "./common";
@@ -31,13 +31,13 @@ export function ElementsPanel({ graph }: { graph: string }) {
     if (!g) return { rows: [] as Row[], total: 0 };
     const out: Row[] = [];
     let n = 0;
-    const lab = (id: string) => { const e = g.entity(id); return e ? labelOf(e) : id; };
+    const lab = (id: string) => { const e = g.entity(id); return e ? g.label(e) : id; };
     const want = q.toLowerCase();
     if (kind === "entity") {
       for (const e of g.entities() as Iterable<Entity>) {
         if (want && !entityMatchesSearch(e, q)) continue;
         n++;
-        if (out.length < LIMIT) out.push({ id: e.id, type: e.type, name: labelOf(e), detail: e.id, value: valueOf(e.props) });
+        if (out.length < LIMIT) out.push({ id: e.id, type: e.type, name: g.label(e), detail: e.id, value: valueOf(e.props) });
       }
     } else {
       for (const r of g.relationships() as Iterable<Rel>) {
@@ -49,7 +49,7 @@ export function ElementsPanel({ graph }: { graph: string }) {
     // the selected row is always shown, so the list follows the canvas
     if (sel && sel.graph === graph && sel.kind === kind && !out.some((r) => r.id === sel.id)) {
       const e = kind === "entity" ? g.entity(sel.id) : g.rel(sel.id);
-      if (e) out.unshift({ id: e.id, type: e.type, name: kind === "entity" ? labelOf(e) : `${lab((e as Rel).source)} → ${lab((e as Rel).target)}`, detail: e.id, value: valueOf(e.props) });
+      if (e) out.unshift({ id: e.id, type: e.type, name: kind === "entity" ? g.label(e) : `${lab((e as Rel).source)} → ${lab((e as Rel).target)}`, detail: e.id, value: valueOf(e.props) });
     }
     return { rows: out, total: n };
   }, [g, q, kind, sel, version, prop]); // eslint-disable-line react-hooks/exhaustive-deps

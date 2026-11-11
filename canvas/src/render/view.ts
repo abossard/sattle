@@ -124,13 +124,14 @@ export class GraphView {
     return [(sx - this.width / 2) / this.camera.zoom + this.camera.x, (sy - this.height / 2) / this.camera.zoom + this.camera.y];
   }
 
-  fit(animate = true, padding = 40): void {
+  fit(animate = true, padding = 40, padX = padding): void {
     this.resize();
     const b = this.scene.bounds();
     if (!b) return;
     if (this.host.clientWidth < 20 || this.host.clientHeight < 20) { this.pendingFit = true; return; }
     const w = Math.max(b.maxX - b.minX, 1), h = Math.max(b.maxY - b.minY, 1);
-    const zoom = Math.max(Math.min((this.width - padding * 2) / w, (this.height - padding * 2) / h, 4), 1e-4);
+    const sides = Math.min(padX, this.width * 0.18);
+    const zoom = Math.max(Math.min((this.width - sides * 2) / w, (this.height - padding * 2) / h, 4), 1e-4);
     this.fitZoom = zoom;
     this.goTo({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, zoom }, animate);
     this.computeEdgeLength();

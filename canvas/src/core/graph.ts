@@ -4,6 +4,7 @@ import {
   type ChangeSet, type Edit, type Entity, type Patch, type Rel, type Snapshot, type Version,
   emptyChangeSet, entityEquals, relEquals,
 } from "./model";
+import { usualName } from "./naming";
 import type { OntologyRef } from "./wire-types";
 
 export interface Conflict { editIndex: number; key: string; message: string }
@@ -35,7 +36,10 @@ export class Graph {
   /** stub slots created, changed or freed since the last `apply` took them: their nodes are dirty */
   private touchedStubs = new Set<number>();
   /** how a stub is named and typed; the workspace sets it from the engine's `references` */
-  stubFor: (id: string) => Entity = (id) => ({ id, type: "reference", props: { name: { kind: "text", value: `? ${id.slice(0, 18)}` } } });
+  stubFor: (id: string) => Entity = (id) => ({ id, type: "reference", props: { name: { kind: "text", value: "◌ unresolved reference" } } });
+  /** what an element is called on screen; the workspace sets it from the ontology (`core/naming.ts`), without it the usual name or the id */
+  namer: ((e: Entity) => string) | null = null;
+  label(e: { id: string; props: Entity["props"] } & Partial<Entity>): string { return this.namer ? this.namer(e as Entity) : usualName(e as Entity) || e.id; }
   static readonly MAX_STUBS = 5000;
   isStub(slot: number): boolean { return this.stubSlots.has(slot); }
   get stubCount(): number { return this.stubSlots.size; }
@@ -84,7 +88,7 @@ export class Graph {
       this.stubSlot.delete(e.id); this.stubSlots.delete(stub); this.touchedStubs.add(stub);
       this.nodes[stub] = e;
       this.nodeSlot.set(e.id, stub);
-      this.pending.delete(e.id);
+      this.resolveParked(e.id, stub);
       return stub;
     }
     const slot = this.freeNodes.pop() ?? this.nodes.length;
@@ -92,17 +96,21 @@ export class Graph {
     this.out[slot] = [];
     this.inn[slot] = [];
     this.nodeSlot.set(e.id, slot);
-    const waiting = this.pending.get(e.id);
-    if (waiting) {
-      this.pending.delete(e.id);
-      for (const es of waiting) {
-        const r = this.edges[es];
-        if (!r) continue;
-        if (r.source === e.id && this.edgeSrc[es] < 0) { this.edgeSrc[es] = slot; this.out[slot].push(es); }
-        if (r.target === e.id && this.edgeDst[es] < 0) { this.edgeDst[es] = slot; this.inn[slot].push(es); }
-      }
-    }
+    this.resolveParked(e.id, slot);
     return slot;
+  }
+
+  /** The edges parked while this entity was missing (and no stub could be made, or the cap was reached) now point at its slot. */
+  private resolveParked(id: string, slot: number): void {
+    const waiting = this.pending.get(id);
+    if (!waiting) return;
+    this.pending.delete(id);
+    for (const es of waiting) {
+      const r = this.edges[es];
+      if (!r) continue;
+      if (r.source === id && this.edgeSrc[es] < 0) { this.edgeSrc[es] = slot; this.out[slot].push(es); }
+      if (r.target === id && this.edgeDst[es] < 0) { this.edgeDst[es] = slot; this.inn[slot].push(es); }
+    }
   }
 
   /** Remove an entity; incident edges stay and become unresolved. Returns incident edge slots. */

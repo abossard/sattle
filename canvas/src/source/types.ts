@@ -26,6 +26,8 @@ export interface GraphInfo {
   editable?: boolean;
   /** engine: name of the projection that produces this graph */
   projectionName?: string;
+  /** one line on what the graph is, when the source knows (the projection's purpose) */
+  description?: string;
   /** engine 3.4: the graph is a document (output ontology sattle.doc); the engine renders it to Markdown */
   document?: boolean;
 }

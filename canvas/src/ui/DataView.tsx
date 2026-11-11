@@ -6,6 +6,8 @@ import { CanvasHost } from "./CanvasHost";
 import { DocumentView } from "./DocumentView";
 import { TreeView } from "./TreeView";
 import { hasTreeRows } from "../app/tree-model";
+import { edgelessNotice } from "../app/graph-view-model";
+import { describeGraph, purposesOf, tileKind, typesHeld } from "../app/tile";
 import { DirectionBadge, roleColor, useGraphSummary, useWorkspace } from "./common";
 import { ElementsPanel } from "./Elements";
 import { FiltersPanel } from "./Filters";
@@ -22,6 +24,13 @@ const useStyles = makeStyles({
   grid: { display: "grid", gap: "6px", minHeight: 0, overflow: "auto", padding: "6px", alignContent: "start" },
   pane: { display: "grid", gridTemplateRows: "auto minmax(260px, 1fr) auto", minHeight: "340px", border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
   activePane: { border: `2px solid ${tokens.colorBrandStroke1}` },
+  head: { display: "grid", rowGap: "2px", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` },
+  headRow: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap" },
+  tileBody: { minHeight: 0, overflow: "hidden", position: "relative", backgroundColor: tokens.colorNeutralBackground1 },
+  fade: { position: "absolute", left: 0, right: 0, bottom: 0, height: "28px", pointerEvents: "none", backgroundImage: `linear-gradient(transparent, ${tokens.colorNeutralBackground1})` },
+  note: { margin: 0, padding: tokens.spacingHorizontalM, borderRadius: tokens.borderRadiusMedium, backgroundColor: tokens.colorNeutralBackground3, border: `1px solid ${tokens.colorNeutralStroke2}` },
+  list: { margin: 0, paddingLeft: tokens.spacingHorizontalXL, display: "grid", rowGap: "2px" },
+  notice: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", alignContent: "start", rowGap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM, overflow: "auto", height: "100%", boxSizing: "border-box" },
 });
 
 const Legend = () => (
@@ -78,6 +87,26 @@ export function DataView() {
   );
 }
 
+/** A graph with nodes and no edges: what the engine says about it and what it holds, instead of a ring of unconnected dots. */
+function NoticeTile({ graph }: { graph: string }) {
+  const s = useStyles();
+  const ws = useWorkspace(graph);
+  const sum = useGraphSummary(graph);
+  const info = ws?.graphInfo(graph);
+  const g = ws?.histories.get(graph)?.graph;
+  if (!ws || !info || !sum || !g) return null;
+  const notice = edgelessNotice(info.role, sum.nodes, sum.edges, info.ontology.relationshipTypes.map((t) => t.id.value));
+  const held = [...g.entities()].slice(0, 12).map((e) => g.label(e));
+  return (
+    <div className={s.notice}>
+      {notice && <Text as="p" role="note" className={s.note}>{notice}</Text>}
+      <Text size={200}>It holds:</Text>
+      <ul className={s.list}>{held.map((l, i) => <li key={i}><Text size={200}>{l}</Text></li>)}</ul>
+      {sum.nodes > held.length && <Text size={200}>and {sum.nodes - held.length} more</Text>}
+    </div>
+  );
+}
+
 export function SpaceView() {
   const s = useStyles();
   const ws = useWorkspace();
@@ -85,6 +114,10 @@ export function SpaceView() {
   const active = useStore((x) => x.activeGraph);
   const [rows, setRows] = useState(false);
   if (!ws) return null;
+  const catalog = ws.info.graphs.find((x) => x.role === "catalog");
+  const purpose = purposesOf(catalog ? ws.histories.get(catalog.id)?.graph : undefined);
+  const subtitle = (id: string): string => { const info = ws.graphInfo(id), g = ws.histories.get(id)?.graph; return info && g ? describeGraph(info, typesHeld(g), purpose) : ""; };
+  const kindOf = (g: { id: string; nodes: number; edges: number }) => { const info = ws.graphInfo(g.id); return info ? tileKind(info, g, !!ws.source.document) : "graph"; };
   return (
     <div className={s.root}>
       <aside className={s.side} aria-label="Search, filters and element list of the active graph"><SidePanel graph={active} /></aside>
@@ -97,12 +130,18 @@ export function SpaceView() {
         <div className={s.grid} style={{ gridTemplateColumns: rows ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))" }}>
           {graphs.map((g) => (
             <div key={g.id} role="group" aria-label={`Graph ${g.id}`} className={`${s.pane} ${g.id === active ? s.activePane : ""}`} onPointerDownCapture={() => g.id !== active && dispatch({ type: "ui/activeGraph", graph: g.id })}>
-              <div className={s.bar}>
-                <Text weight="semibold">{g.id}</Text><Badge color={roleColor(g.role)} appearance="outline">{g.role}</Badge>{g.direction && <DirectionBadge direction={g.direction} />}
-                <Text size={200}>{g.nodes.toLocaleString()} nodes · {g.edges.toLocaleString()} edges</Text><span className={s.grow} />
-                <Button size="small" aria-pressed={g.id === active} onClick={() => dispatch({ type: "ui/activeGraph", graph: g.id })}>Use for filters</Button>
+              <div className={s.head}>
+                <div className={s.headRow}>
+                  <Text weight="semibold">{g.id}</Text><Badge color={roleColor(g.role)} appearance="outline">{g.role}</Badge>{g.direction && <DirectionBadge direction={g.direction} />}
+                  <Text size={200}>{g.nodes.toLocaleString()} nodes · {g.edges.toLocaleString()} edges</Text><span className={s.grow} />
+                  <Button size="small" aria-pressed={g.id === active} onClick={() => dispatch({ type: "ui/activeGraph", graph: g.id })}>Use for filters</Button>
+                  <Button size="small" onClick={() => { dispatch({ type: "ui/activeGraph", graph: g.id }); dispatch({ type: "ui/view", view: "data" }); }}>Open</Button>
+                </div>
+                <Text size={200}>{subtitle(g.id)}</Text>
               </div>
-              <CanvasHost graph={g.id} />
+              <div className={s.tileBody}>
+                {kindOf(g) === "document" ? <><DocumentView graph={g.id} compact /><div className={s.fade} /></> : kindOf(g) === "notice" ? <NoticeTile graph={g.id} /> : <CanvasHost graph={g.id} />}
+              </div>
             </div>
           ))}
         </div>
