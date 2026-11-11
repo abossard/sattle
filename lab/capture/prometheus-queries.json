@@ -1,0 +1,18 @@
+[
+  {"name": "cilium_endpoint_state", "query": "cilium_endpoint_state"},
+  {"name": "cilium_forward_rate", "query": "sum by (direction, instance) (rate(cilium_forward_count_total[2m]))"},
+  {"name": "cilium_drop_rate", "query": "sum by (reason, direction, instance) (rate(cilium_drop_count_total[2m]))"},
+  {"name": "hubble_flows_rate", "query": "sum by (verdict, type, subtype, instance) (rate(hubble_flows_processed_total[2m]))"},
+  {"name": "hubble_drop_rate", "query": "sum by (reason, protocol, source, destination) (rate(hubble_drop_total[2m]))"},
+  {"name": "hubble_tcp_flags_rate", "query": "sum by (flag, source, destination) (rate(hubble_tcp_flags_total[2m]))"},
+  {"name": "hubble_dns_queries_rate", "query": "sum by (query, source) (rate(hubble_dns_queries_total[2m]))"},
+  {"name": "kube_pod_info", "query": "kube_pod_info"},
+  {"name": "kube_pod_status_phase", "query": "kube_pod_status_phase == 1"},
+  {"name": "kube_pod_container_status_restarts", "query": "kube_pod_container_status_restarts_total"},
+  {"name": "kube_deployment_replicas_available", "query": "kube_deployment_status_replicas_available"},
+  {"name": "kube_node_status_condition", "query": "kube_node_status_condition{status=\"true\"}"},
+  {"name": "container_cpu_rate", "query": "sum by (namespace, pod) (rate(container_cpu_usage_seconds_total{container!=\"\"}[2m]))"},
+  {"name": "container_memory_working_set", "query": "sum by (namespace, pod) (container_memory_working_set_bytes{container!=\"\"})"},
+  {"name": "container_network_receive_rate", "query": "sum by (namespace, pod) (rate(container_network_receive_bytes_total[2m]))"},
+  {"name": "container_network_transmit_rate", "query": "sum by (namespace, pod) (rate(container_network_transmit_bytes_total[2m]))"}
+]

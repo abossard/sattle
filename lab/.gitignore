@@ -1,0 +1,2 @@
+# azd environments hold subscription ids and resource names
+.azure/

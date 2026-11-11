@@ -1,0 +1,18 @@
+# azd project root is lab/: everything the lab owns lives here, and the repo root stays free of Azure state.
+name: sattle-lab
+infra:
+  provider: bicep
+  path: infra
+  module: main
+hooks:
+  # Bicep owns only rg-sattle-lab. Additions to existing resources live in hooks, so `azd down`
+  # (which deletes resource groups found in the deployment) can never reach a resource group the lab does not own.
+  preprovision:
+    shell: sh
+    run: hooks/preprovision.sh
+  postprovision:
+    shell: sh
+    run: hooks/postprovision.sh
+  postdown:
+    shell: sh
+    run: hooks/postdown.sh

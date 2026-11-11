@@ -1,0 +1,18 @@
+# Short-lived pod that reads flow log blobs over the private endpoint. Created and deleted by sources/flowlogs.sh.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: flowlog-reader
+  namespace: sattle-demo
+  labels: { project: sattle, app: flowlog-reader }
+spec:
+  restartPolicy: Never
+  automountServiceAccountToken: false
+  containers:
+    - name: curl
+      image: curlimages/curl:8.10.1
+      command: [sleep, "900"]
+      securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false }
+      resources: { requests: { cpu: 5m, memory: 16Mi }, limits: { cpu: 100m, memory: 64Mi } }
+      volumeMounts: [{ name: tmp, mountPath: /tmp }]
+  volumes: [{ name: tmp, emptyDir: {} }]

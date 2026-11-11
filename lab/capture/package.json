@@ -1,0 +1,10 @@
+{
+  "name": "sattle-lab-capture",
+  "private": true,
+  "type": "module",
+  "description": "Envelope writer and Event Hubs consumer/forwarder for the Sattle Azure lab",
+  "dependencies": {
+    "@azure/event-hubs": "^6.0.0",
+    "@azure/identity": "^4.5.0"
+  }
+}

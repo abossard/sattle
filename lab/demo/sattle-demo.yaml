@@ -1,0 +1,168 @@
+# Small call graph for Hubble to observe: loadgen -> frontend -> api -> db, plus an intruder that policy denies.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: sattle-demo
+  labels: { project: sattle }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-conf
+  namespace: sattle-demo
+  labels: { project: sattle }
+data:
+  default.conf: |
+    server { listen 8080; location / { return 200 "frontend\n"; } location /api/ { proxy_pass http://api.sattle-demo.svc.cluster.local:8080/; } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-conf
+  namespace: sattle-demo
+  labels: { project: sattle }
+data:
+  default.conf: |
+    server { listen 8080; location / { proxy_pass http://db.sattle-demo.svc.cluster.local:8080/; } }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-conf
+  namespace: sattle-demo
+  labels: { project: sattle }
+data:
+  default.conf: |
+    server { listen 8080; location / { return 200 "db\n"; } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: sattle-demo
+  labels: { project: sattle, app: frontend }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: frontend } }
+  template:
+    metadata: { labels: { project: sattle, app: frontend, tier: web } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports: [{ containerPort: 8080 }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          volumeMounts: [{ name: conf, mountPath: /etc/nginx/conf.d }]
+      volumes: [{ name: conf, configMap: { name: frontend-conf } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: sattle-demo
+  labels: { project: sattle, app: api }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: api } }
+  template:
+    metadata: { labels: { project: sattle, app: api, tier: app } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports: [{ containerPort: 8080 }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          volumeMounts: [{ name: conf, mountPath: /etc/nginx/conf.d }]
+      volumes: [{ name: conf, configMap: { name: api-conf } }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: db
+  namespace: sattle-demo
+  labels: { project: sattle, app: db }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: db } }
+  template:
+    metadata: { labels: { project: sattle, app: db, tier: data } }
+    spec:
+      containers:
+        - name: nginx
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports: [{ containerPort: 8080 }]
+          resources: { requests: { cpu: 10m, memory: 16Mi }, limits: { memory: 64Mi } }
+          volumeMounts: [{ name: conf, mountPath: /etc/nginx/conf.d }]
+      volumes: [{ name: conf, configMap: { name: db-conf } }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: frontend, namespace: sattle-demo, labels: { project: sattle } }
+spec: { selector: { app: frontend }, ports: [{ port: 8080, targetPort: 8080 }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api, namespace: sattle-demo, labels: { project: sattle } }
+spec: { selector: { app: api }, ports: [{ port: 8080, targetPort: 8080 }] }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: db, namespace: sattle-demo, labels: { project: sattle } }
+spec: { selector: { app: db }, ports: [{ port: 8080, targetPort: 8080 }] }
+---
+# Allowed callers only: db accepts api, api accepts frontend. Everything else is dropped and shows up as DROPPED flows.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: db-from-api, namespace: sattle-demo, labels: { project: sattle } }
+spec:
+  podSelector: { matchLabels: { app: db } }
+  policyTypes: [Ingress]
+  ingress: [{ from: [{ podSelector: { matchLabels: { app: api } } }] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: api-from-frontend, namespace: sattle-demo, labels: { project: sattle } }
+spec:
+  podSelector: { matchLabels: { app: api } }
+  policyTypes: [Ingress]
+  ingress: [{ from: [{ podSelector: { matchLabels: { app: frontend } } }] }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: loadgen
+  namespace: sattle-demo
+  labels: { project: sattle, app: loadgen }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: loadgen } }
+  template:
+    metadata: { labels: { project: sattle, app: loadgen, tier: client } }
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.10.1
+          command: [sh, -c]
+          args:
+            - while true; do curl -s -m 2 http://frontend:8080/ >/dev/null; curl -s -m 2 http://frontend:8080/api/ >/dev/null; sleep 1; done
+          resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: intruder
+  namespace: sattle-demo
+  labels: { project: sattle, app: intruder }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: intruder } }
+  template:
+    metadata: { labels: { project: sattle, app: intruder, tier: client } }
+    spec:
+      containers:
+        - name: curl
+          image: curlimages/curl:8.10.1
+          command: [sh, -c]
+          args:
+            - while true; do curl -s -m 2 http://db:8080/ >/dev/null; curl -s -m 2 http://api:8080/ >/dev/null; sleep 3; done
+          resources: { requests: { cpu: 5m, memory: 8Mi }, limits: { memory: 32Mi } }
