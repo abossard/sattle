@@ -1,0 +1,9 @@
+# Real Azure/Kubernetes captures contain subscription IDs, IPs and names. The repo is public.
+lab/captures/
+lab/.kube/
+lab/.env
+**/node_modules/
+**/bin/
+**/obj/
+.DS_Store
+engine/out/
