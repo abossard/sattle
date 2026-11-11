@@ -486,6 +486,17 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             sg.History.Add(p); Trim(sg);
             Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.Graph, ["patch"] = export.Patch(p) }, e.Graph, telemetry: false);
         }
+        // Def. 6.4: a conflict is reported with the commit it appeared, changed or ended in
+        if (e.Conflicts.Count > 0)
+            Publish(new JsonObject
+            {
+                ["type"] = "conflicts", ["graph"] = e.Graph,
+                ["conflicts"] = new JsonArray([.. e.Conflicts.Select(c => (JsonNode)new JsonObject
+                {
+                    ["kind"] = c.Kind, ["element"] = c.Element, ["property"] = c.Property is null ? null : export.PropNameOf(c.Property), ["windowStart"] = c.WindowStart is { } ws ? Norm.Instant(ws) : null,
+                    ["values"] = new JsonArray([.. c.Values.Select(v => (JsonNode)v)]),
+                })]),
+            }, e.Graph);
         if (e.Telemetry.Count > 0)
             foreach (var grp in e.Telemetry.GroupBy(c => (c.Key.WindowStart, c.Key.Prop)))
                 Publish(new JsonObject { ["type"] = "telemetry", ["graph"] = e.Graph, ["batch"] = TelemetryBatch(e.Graph, grp.Key.WindowStart, grp.Key.Prop, grp.Where(c => c.New is not null).Select(c => (c.Key.Element, c.New!.Value)), grp.Where(c => c.New is null).Select(c => c.Key.Element)) }, e.Graph, telemetry: true);
@@ -729,6 +740,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             return new JsonObject
             {
                 ["graph"] = g, ["from"] = from is null ? null : Norm.Instant(from.Value), ["to"] = to is null ? null : Norm.Instant(to.Value), ["series"] = new JsonArray([.. series]),
+                // Def. 7.13: windows that ended at or before `retainedFrom` are no longer kept; a range that lies wholly before it is not an empty series but one that is not retained
+                ["retainedFrom"] = mem.RetainedFrom(rt.Key) is { } kept ? Norm.Instant(kept) : null, ["notRetained"] = mem.RetainedFrom(rt.Key) is { } edge && to is { } end && end <= edge,
                 ["partialWindows"] = new JsonArray([.. partial.Where(kv => (from is null || kv.Key >= from) && (to is null || kv.Key < to)).OrderBy(kv => kv.Key).Select(kv => (JsonNode)new JsonObject { ["windowStart"] = Norm.Instant(kv.Key), ["reason"] = kv.Value.Reason, ["count"] = Rev(kv.Value.Count) })]),
             };
         }

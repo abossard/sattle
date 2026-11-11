@@ -260,7 +260,13 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
         if (e.Payload.P("lost_events") is { } lost)
         {
             LostEventRecords++;
-            var n = lost.P("num_events_lost") is { ValueKind: JsonValueKind.Number } c ? c.GetInt64() : 0;
+            // Hubble writes the count as a JSON string (a uint64 in protobuf JSON); a number is accepted too
+            var n = lost.P("num_events_lost") switch
+            {
+                { ValueKind: JsonValueKind.Number } c => c.GetInt64(),
+                { ValueKind: JsonValueKind.String } c when long.TryParse(c.GetString(), NumberStyles.None, CultureInfo.InvariantCulture, out var parsed) => parsed,
+                _ => 0,
+            };
             LostEvents += n;
             var t = e.Payload.S("time");
             sink.SourceLoss(t is not null && Norm.TryParseInstant(t, out var ns) ? ns : e.CapturedNs, n, "sourceLoss");

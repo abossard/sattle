@@ -32,6 +32,10 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public OutputBuilder Out { get; } = output;
     public long LateDropped, LateRejected, SkippedEmits;
     public long LateHorizonFactor = 3;
+    /// <summary>The retention of telemetry (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
+    public long RetentionNs = long.MaxValue;
+    /// <summary>How long after its end a window of this width stays revisable.</summary>
+    public long RevisableFor(long width) => Math.Min(width * LateHorizonFactor, RetentionNs);
 }
 
 public abstract class PhysOp
@@ -228,6 +232,58 @@ sealed class KeyTable
             while (table[h] != 0) h = (h + 1) & mask;
             table[h] = s + 1;
         }
+    }
+
+    /// <summary>Whether a slot holds nothing: no rows, nothing emitted, every accumulator and multiset empty.</summary>
+    bool Dead(int s)
+    {
+        if (Cnt[s] != 0 || Emitted[s]) return false;
+        for (var i = 0; i < nL; i++) if (AccL[s * nL + i] != 0) return false;
+        for (var i = 0; i < nD; i++) if (AccD[s * nD + i] != 0) return false;
+        return (Dist?[s]?.All(m => m is null || m.Count == 0) ?? true) && (ExtL?[s]?.All(m => m is null || m.Count == 0) ?? true)
+            && (ExtD?[s]?.All(m => m is null || m.Count == 0) ?? true) && (LastM?[s]?.All(m => m is null || m.Count == 0) ?? true);
+    }
+
+    /// <summary>Releases the slots that hold nothing (a group whose rows all went, a roll-up window that left the look-back): the other slots move down and the hash table is rebuilt. Slot numbers change, so no slot may be touched when this is called. Returns the number of slots released.</summary>
+    public int Compact()
+    {
+        if (TouchedList.Count > 0) throw new InvalidOperationException("compaction while slots are touched");
+        var kk = Math.Max(k, 1); var n = 0;
+        for (var s = 0; s < Count; s++)
+        {
+            if (Dead(s)) continue;
+            if (n != s)
+            {
+                Array.Copy(keys, s * kk, keys, n * kk, kk);
+                Cnt[n] = Cnt[s]; LastCnt[n] = LastCnt[s]; Emitted[n] = Emitted[s];
+                Array.Copy(AccL, s * Math.Max(nL, 1), AccL, n * Math.Max(nL, 1), Math.Max(nL, 1)); Array.Copy(LastL, s * Math.Max(nL, 1), LastL, n * Math.Max(nL, 1), Math.Max(nL, 1));
+                Array.Copy(AccD, s * Math.Max(nD, 1), AccD, n * Math.Max(nD, 1), Math.Max(nD, 1)); Array.Copy(LastD, s * Math.Max(nD, 1), LastD, n * Math.Max(nD, 1), Math.Max(nD, 1));
+                Array.Copy(LastAbs, s * Math.Max(nAgg, 1), LastAbs, n * Math.Max(nAgg, 1), Math.Max(nAgg, 1));
+                if (Dist is not null) Dist[n] = Dist[s];
+                if (ExtL is not null) ExtL[n] = ExtL[s];
+                if (ExtD is not null) ExtD[n] = ExtD[s];
+                if (LastM is not null) LastM[n] = LastM[s];
+            }
+            n++;
+        }
+        var released = Count - n;
+        Array.Clear(Cnt, n, released); Array.Clear(LastCnt, n, released); Array.Clear(Emitted, n, released);
+        Array.Clear(AccL, n * Math.Max(nL, 1), released * Math.Max(nL, 1)); Array.Clear(LastL, n * Math.Max(nL, 1), released * Math.Max(nL, 1));
+        Array.Clear(AccD, n * Math.Max(nD, 1), released * Math.Max(nD, 1)); Array.Clear(LastD, n * Math.Max(nD, 1), released * Math.Max(nD, 1));
+        Array.Clear(LastAbs, n * Math.Max(nAgg, 1), released * Math.Max(nAgg, 1));
+        if (Dist is not null) Array.Clear(Dist, n, released);
+        if (ExtL is not null) Array.Clear(ExtL, n, released);
+        if (ExtD is not null) Array.Clear(ExtD, n, released);
+        if (LastM is not null) Array.Clear(LastM, n, released);
+        Count = n;
+        Array.Clear(table);
+        for (var s = 0; s < Count; s++)
+        {
+            var h = (int)(Hash(keys.AsSpan(s * k, k)) & (ulong)mask);
+            while (table[h] != 0) h = (h + 1) & mask;
+            table[h] = s + 1;
+        }
+        return released;
     }
 
     public void Touch(int slot) { if (!touched[slot]) { touched[slot] = true; TouchedList.Add(slot); } }
@@ -462,7 +518,7 @@ abstract class AggregatingOp : PhysOp
 /// <summary>Group by keys (no window): retract and insert per touched key at the end of each batch.</summary>
 sealed class GroupOp : AggregatingOp
 {
-    readonly KeyTable table; readonly (string Role, int Col, bool IsRel, string Port)[] members;
+    readonly KeyTable table; readonly (string Role, int Col, bool IsRel, string Port)[] members; int emptied;
     public GroupOp(TGroup t, Layout inLayout, OpContext cx, (string, int, bool, string)[]? members = null) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], false)
     {
         this.members = members ?? [];
@@ -490,9 +546,10 @@ sealed class GroupOp : AggregatingOp
         {
             if (table.Emitted[slot]) WriteRow(bb, table, slot, -1, true, null, null, -1, -1);
             if (table.Cnt[slot] > 0) { WriteRow(bb, table, slot, 1, false, null, null, -1, -1); Remember(table, slot); table.Emitted[slot] = true; }
-            else table.Emitted[slot] = false;
+            else { table.Emitted[slot] = false; emptied++; }
         }
         table.ClearTouched();
+        if (emptied > 1024 && emptied * 4 > table.Count) { table.Compact(); emptied = 0; }      // groups whose rows all went give their slots back
         return bb.Build();
     }
 }
@@ -542,7 +599,7 @@ sealed class WindowedGroupOp : AggregatingOp
                     if (!windows.TryGetValue(ws, out cur))
                     {
                         // beyond the allowed lateness the window's state is gone: a row for it is dropped, never a new window that would replace what was emitted
-                        if (ws + width + width * cx.LateHorizonFactor <= frontier) { if (late == "reject") cx.LateRejected++; else cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
+                        if (ws + width + cx.RevisableFor(width) <= frontier) { if (late == "reject") cx.LateRejected++; else cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
                         cur = new W(NewTable(), ws + width); windows[ws] = cur; if (cur.End <= frontier) cur.Closed = true;
                     }
                     curWs = ws;
@@ -584,7 +641,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 for (var slot = 0; slot < t.Count; slot++)
                     if (t.Cnt[slot] > 0) { WriteRow(bb, t, slot, 1, false, ws, ws + width, outWs, -1); Remember(t, slot); t.Emitted[slot] = true; }
             }
-            var horizon = width * cx.LateHorizonFactor;
+            var horizon = cx.RevisableFor(width);
             foreach (var ws in windows.Where(w => w.Value.End + horizon <= frontier).Select(w => w.Key).ToList())
             {
                 var t = windows[ws].Table;
@@ -599,7 +656,7 @@ sealed class WindowedGroupOp : AggregatingOp
 /// <summary>Rollup: sums of telemetry rows per key and window. Inputs are already closed windows, so every change is a retraction plus an insertion.</summary>
 sealed class RollupOp : AggregatingOp
 {
-    readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period;
+    readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period; int emptied;
     readonly List<long> slotWindow = [];
     public RollupOp(TRollup t, Layout inLayout, OpContext cx) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
     {
@@ -630,9 +687,10 @@ sealed class RollupOp : AggregatingOp
             var ws = table.KeyAt(slot)[n];
             if (table.Emitted[slot]) WriteRow(bb, table, slot, -1, true, ws, ws + period, outWs, outWe);
             if (table.Cnt[slot] > 0) { WriteRow(bb, table, slot, 1, false, ws, ws + period, outWs, outWe); Remember(table, slot); table.Emitted[slot] = true; }
-            else table.Emitted[slot] = false;
+            else { table.Emitted[slot] = false; emptied++; }
         }
         table.ClearTouched();
+        if (emptied > 1024 && emptied * 4 > table.Count) { table.Compact(); emptied = 0; }      // windows that left the look-back give their slots back
         return bb.Build();
     }
 }

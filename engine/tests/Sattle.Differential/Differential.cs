@@ -21,15 +21,17 @@ public static class Differential
 
     public static Mismatch? FirstMismatch(World world, IReadOnlyList<Input> log, int seed, bool reordered)
     {
-        var reference = ReferenceEvaluator.Prefixes(world.Catalog, world.Catalog.Spaces.Keys.Single(), log).ToArray();
+        var reference = ReferenceEvaluator.Prefixes(world.Catalog, world.Catalog.Spaces.Keys.Single(), log, new Settings(TelemetryRetentionNs: world.RetentionNs)).ToArray();
         foreach (var chunking in Chunkings(log.Count, seed, reordered))
         {
             try
             {
-                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking))
+                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking, world.RetentionNs))
                     foreach (var (graph, expected) in reference[consumed].Graphs)
                     {
-                        var (want, got) = (expected.Lines(), engine.Graphs[graph].Lines());
+                        // the elements and windows, and the conflicts that hold (Def. 6.4): both are part of what a graph is after an input
+                        static ImmutableArray<string> All(GraphFacts g) => [.. g.Lines(), .. g.Conflicts.Select(c => "conflict " + c)];
+                        var (want, got) = (All(expected), All(engine.Graphs[graph]));
                         if (!want.SequenceEqual(got)) return new Mismatch(chunking.Name, consumed, graph, [.. want.Except(got)], [.. got.Except(want)]);
                     }
             }

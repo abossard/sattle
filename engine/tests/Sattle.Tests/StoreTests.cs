@@ -298,6 +298,41 @@ public class TelemetryStoreTests
         Assert.Equal("Complete", read[0].Completeness);
     }
 
+    /// <summary>Law 7.5: when two ids merge, a window both have combines as if every row had been written under the survivor: by the property's rule for sum, min and max; otherwise equal values are one value and different values leave the window without one.</summary>
+    [Theory]
+    [InlineData("sum", 3, 4, 7)]
+    [InlineData("min", 3, 4, 3)]
+    [InlineData("max", 3, 4, 4)]
+    [InlineData("mean", 4, 4, 4)]
+    [InlineData("mean", 3, 4, null)]
+    [InlineData(null, 3, 4, null)]
+    public void Windows_of_two_merged_ids_combine_by_the_rule_of_their_property(string? rule, int loser, int survivor, int? expected)
+    {
+        var s = new InMemoryTelemetryStore();
+        s.Append(G, [new Sample(1, 1, 0, W, loser, 1), new Sample(2, 1, 0, W, survivor, 2), new Sample(1, 1, W, W, 9, 3)]);
+        s.ClosedWindows(G, 0, out var position);
+        s.MoveElement(G, 1, 2, _ => rule);
+        Assert.Empty(s.ReadWindow(G, [1], [1], 0, 2 * W)[0].Points);
+        var points = s.ReadWindow(G, [2], [1], 0, 2 * W)[0].Points;
+        Assert.Equal(expected is { } v ? [v, 9m] : [9m], points.Select(p => p.Value));        // the window only the loser had moves as it is
+        Assert.Contains(s.ClosedWindows(G, position, out _), c => c.Key.Element == 2 && c.Key.WindowStart == 0 && c.New == expected);
+    }
+
+    /// <summary>Law 7.5: "no value" is absorbing. Three ids with different values under a rule that cannot combine them give no value whatever the order of the merges, and the window is counted once.</summary>
+    [Theory]
+    [InlineData(1, 2, 3)]
+    [InlineData(3, 1, 2)]
+    [InlineData(2, 3, 1)]
+    public void A_window_without_a_value_stays_so_when_a_third_id_merges_in(int first, int second, int survivor)
+    {
+        var s = new InMemoryTelemetryStore();
+        s.Append(G, [new Sample(1, 1, 0, W, 5, 1), new Sample(2, 1, 0, W, 6, 2), new Sample(3, 1, 0, W, 5, 3)]);
+        s.MoveElement(G, first, second, _ => "mean");
+        s.MoveElement(G, second, survivor, _ => "mean");
+        Assert.Empty(s.ReadWindow(G, [1, 2, 3], [1], 0, W).SelectMany(r => r.Points));
+        Assert.Equal(1, s.MergeConflicts(G));
+    }
+
     [Fact]
     public void Telemetry_never_touches_graph_revisions()
     {
@@ -337,11 +372,22 @@ public class TelemetryStoreTests
         Assert.Equal(expected.Count, n);
     }
 
-    [Fact]
-    public void Retention_evicts_old_windows()
+    /// <summary>Def. 7.13: a window [a, b) is kept while b is after the logical frontier minus the declared age. The frontier decides, not the newest window the store has seen; a dropped window is not a change for readers.</summary>
+    [Theory]
+    [InlineData(2, new[] { 1, 2, 3 })]            // frontier 2 W, age 2 W: the first window ended at W, which is after 0
+    [InlineData(3, new[] { 2, 3 })]               // it ended at W, which is not after 3 W - 2 W
+    [InlineData(5, new[] { 2, 3 })]               // the second ended at 4 W, after 3 W
+    [InlineData(6, new[] { 3 })]                  // and is not after 4 W
+    [InlineData(20, new int[0])]
+    public void Retention_keeps_the_windows_that_end_after_the_frontier_minus_the_age(int frontierWindows, int[] kept)
     {
-        var s = new InMemoryTelemetryStore(retentionNs: 2 * W);
-        s.Append(G, [new Sample(1, 1, 0, W, 1, 1), new Sample(1, 1, 10 * W, W, 2, 2)]);
-        Assert.Equal([2m], s.ReadWindow(G, [1], [1], 0, 20 * W)[0].Points.Select(p => p.Value));
+        var s = new InMemoryTelemetryStore();
+        s.Append(G, [new Sample(1, 1, 0, W, 1, 1), new Sample(1, 1, 3 * W, W, 2, 2), new Sample(1, 1, 10 * W, W, 3, 3)]);
+        Assert.Equal([1m, 2m, 3m], s.ReadWindow(G, [1], [1], 0, 20 * W)[0].Points.Select(p => p.Value));       // a newer window alone drops nothing
+        s.ClosedWindows(G, 0, out var position);
+        s.Retain(G, frontierWindows * W, 2 * W);
+        Assert.Equal(kept.Select(v => (decimal)v), s.ReadWindow(G, [1], [1], 0, 20 * W).SelectMany(r => r.Points).Select(p => p.Value));
+        Assert.Empty(s.ClosedWindows(G, position, out _));
+        Assert.Equal(frontierWindows * W - 2 * W, s.RetainedFrom(G));
     }
 }

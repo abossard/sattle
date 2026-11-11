@@ -171,7 +171,15 @@ public sealed class Replay : IRowSink
         lock (gate)
         {
             curAdapter = adapter.Id;
-            adapter.Consume(e, this); // the rows of one record are never split across chunks, so a retraction and its insertion stay together
+            var (writer, written) = current is not null && writers.TryGetValue(current, out var before) ? (current, before.Rows) : (null, 0);
+            try { adapter.Consume(e, this); } // the rows of one record are never split across chunks, so a retraction and its insertion stay together
+            catch (Exception x) when (x is InvalidOperationException or FormatException or KeyNotFoundException or ArgumentException or IndexOutOfRangeException or System.Text.Json.JsonException or OverflowException)
+            {
+                // A record whose values have another JSON type than its adapter reads (a number written as text) is that record's fault: it is rejected and counted, and the records around it go on.
+                // An exception here would stop a replay, and a live space could never start again, because the record is in its journal. The rows the record wrote into the current chunk are taken back.
+                Rejected(e.Source, $"malformed record ({x.GetType().Name}: {x.Message})");
+                if (current is not null && writers.TryGetValue(current, out var now)) now.Truncate(current == writer ? written : 0);
+            }
             if (current is not null && writers[current].Rows >= opt.ChunkRows) FlushCurrent();
         }
         return true;

@@ -516,18 +516,26 @@ public interface ITelemetryStore
     IReadOnlyList<WindowChange> ClosedWindows(GraphKey g, long afterPosition, out long newPosition);
     /// <summary>A source reported lost events (a Hubble LostEvent): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
-    /// <summary>An element changed its id (two identities merged): its windows move to the new id, added to the windows the new id already has. Each moved window is a window change (removed under the old id, set under the new one) so derived graphs follow.</summary>
-    void MoveElement(GraphKey g, int from, int to);
+    /// <summary>An element changed its id (two identities merged): its windows move to the new id. Where the new id already has the window, the two values combine as if every row had been written under the survivor from the start (Law 7.5): by the property's combine rule for `sum`, `min` and `max` (`combineOf` gives the rule of a property); under any other rule equal values are one value and different values are a conflict, so the window has no value. Each moved window is a window change (removed under the old id, set or removed under the new one) so derived graphs follow.</summary>
+    void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null);
+    /// <summary>Retention (Def. 7.13): a closed window [a, b) is kept while b is after the logical frontier minus the declared age. A window that is dropped here is not a retraction: no change is recorded, and what was derived from it stays.</summary>
+    void Retain(GraphKey g, long frontierNs, long ageNs);
+    /// <summary>The instant before which the windows of the graph are no longer kept; null before the first advance.</summary>
+    long? RetainedFrom(GraphKey g);
 }
 
-public sealed class InMemoryTelemetryStore(long retentionNs = 48L * 3_600_000_000_000, int logCapacity = 4_000_000) : ITelemetryStore
+public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelemetryStore
 {
     sealed class Plane
     {
         public readonly Dictionary<(int, int), SortedList<long, (decimal Value, long Input)>> Series = [];
         public readonly List<WindowChange> Log = [];
         public long Base; // position of Log[0]
-        public long Max = long.MinValue;
+        public readonly Dictionary<(int, int), long> Width = [];     // the window width of each series, to know where its windows end
+        public long? RetainedFrom;
+        /// <summary>Windows that a merge left without a value because their two values could not be combined (Law 7.5). "No value" is absorbing over merges: the window of a third id does not bring a value back. A later write of the window (the rows as they are aggregated now) ends it.</summary>
+        public readonly HashSet<WindowKey> NoValue = [];
+        public long MergeConflicts;
         public readonly Dictionary<long, (string Reason, long Count)> Partials = [];
     }
     readonly Dictionary<GraphKey, Plane> planes = [];
@@ -542,7 +550,7 @@ public sealed class InMemoryTelemetryStore(long retentionNs = 48L * 3_600_000_00
             foreach (var s in samples)
             {
                 var key = (s.Element, s.Prop);
-                if (!p.Series.TryGetValue(key, out var ser)) p.Series[key] = ser = [];
+                if (!p.Series.TryGetValue(key, out var ser)) { p.Series[key] = ser = []; p.Width[key] = s.WidthNs; }
                 var had = ser.TryGetValue(s.WindowStart, out var old);
                 if (s.Deleted)
                 {
@@ -551,15 +559,12 @@ public sealed class InMemoryTelemetryStore(long retentionNs = 48L * 3_600_000_00
                     p.Log.Add(new WindowChange(new WindowKey(s.Element, s.Prop, s.WindowStart), old.Value, null));
                     continue;
                 }
+                p.NoValue.Remove(new WindowKey(s.Element, s.Prop, s.WindowStart));
                 if (had && old.Input == s.InputId && old.Value == s.Value) continue; // duplicate delivery
                 if (had && old.Value == s.Value) { ser[s.WindowStart] = (s.Value, s.InputId); continue; }
                 ser[s.WindowStart] = (s.Value, s.InputId);
                 p.Log.Add(new WindowChange(new WindowKey(s.Element, s.Prop, s.WindowStart), had ? old.Value : null, s.Value));
-                if (s.WindowStart > p.Max) p.Max = s.WindowStart;
             }
-            if (p.Max != long.MinValue)
-                foreach (var ser in p.Series.Values)
-                    while (ser.Count > 0 && ser.Keys[0] < p.Max - retentionNs) ser.RemoveAt(0);
             if (p.Log.Count > logCapacity) { var drop = p.Log.Count - logCapacity / 2; p.Log.RemoveRange(0, drop); p.Base += drop; }
             return p.Base + p.Log.Count;
         }
@@ -616,11 +621,14 @@ public sealed class InMemoryTelemetryStore(long retentionNs = 48L * 3_600_000_00
             var p = Get(g);
             if (afterPosition < p.Base) throw new GapException(p.Base);
             newPosition = p.Base + p.Log.Count;
-            return [.. p.Log.Skip((int)(afterPosition - p.Base))];
+            // A position says what its reader has consumed. Nothing before it is read again, so it is released: the log holds the changes not yet read, not the history of the plane.
+            var consumed = (int)(afterPosition - p.Base);
+            if (consumed > 0) { p.Log.RemoveRange(0, consumed); p.Base = afterPosition; }
+            return [.. p.Log];
         }
     }
 
-    public void MoveElement(GraphKey g, int from, int to)
+    public void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null)
     {
         lock (gate)
         {
@@ -628,19 +636,54 @@ public sealed class InMemoryTelemetryStore(long retentionNs = 48L * 3_600_000_00
             foreach (var key in p.Series.Keys.Where(k => k.Item1 == from).ToList())
             {
                 var src = p.Series[key]; var dst = (to, key.Item2);
-                if (!p.Series.TryGetValue(dst, out var target)) p.Series[dst] = target = [];
+                if (!p.Series.TryGetValue(dst, out var target)) { p.Series[dst] = target = []; p.Width[dst] = p.Width.GetValueOrDefault(key); }
                 foreach (var (ws, (value, input)) in src.ToList())
                 {
                     p.Log.Add(new WindowChange(new WindowKey(from, key.Item2, ws), value, null));
                     var had = target.TryGetValue(ws, out var old);
-                    var sum = had ? old.Value + value : value;
-                    target[ws] = (sum, input);
-                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old.Value : null, sum));
+                    var at = new WindowKey(to, key.Item2, ws);
+                    decimal? combined = p.NoValue.Contains(at) ? null : !had ? value : combineOf?.Invoke(key.Item2) switch
+                    {
+                        "sum" => old.Value + value,
+                        "min" => Math.Min(old.Value, value),
+                        "max" => Math.Max(old.Value, value),
+                        _ => old.Value == value ? value : null,          // two values and no rule that makes one of them: a conflict, the window has no value
+                    };
+                    if (combined is { } v) target[ws] = (v, input);
+                    else { target.Remove(ws); if (p.NoValue.Add(at)) p.MergeConflicts++; }
+                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old.Value : null, combined));
                 }
-                p.Series.Remove(key);
+                p.Series.Remove(key); p.Width.Remove(key);
+            }
+            // a window of the loser that was already without a value stays so under the survivor, and takes the survivor's value with it
+            foreach (var mark in p.NoValue.Where(k => k.Element == from).ToList())
+            {
+                p.NoValue.Remove(mark);
+                var at = mark with { Element = to };
+                p.NoValue.Add(at);
+                if (p.Series.TryGetValue((to, mark.Prop), out var target) && target.TryGetValue(mark.WindowStart, out var gone)) { target.Remove(mark.WindowStart); p.Log.Add(new WindowChange(at, gone.Value, null)); }
             }
         }
     }
+
+    public void Retain(GraphKey g, long frontierNs, long ageNs)
+    {
+        lock (gate)
+        {
+            var p = Get(g); var from = frontierNs - ageNs;
+            p.RetainedFrom = from;
+            foreach (var (key, ser) in p.Series)
+            {
+                var width = p.Width.GetValueOrDefault(key);
+                while (ser.Count > 0 && ser.Keys[0] + width <= from) ser.RemoveAt(0);
+            }
+            foreach (var key in p.Series.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) { p.Series.Remove(key); p.Width.Remove(key); }
+        }
+    }
+
+    public long? RetainedFrom(GraphKey g) { lock (gate) return Get(g).RetainedFrom; }
+    /// <summary>Windows that a merge left without a value (counted once each).</summary>
+    public long MergeConflicts(GraphKey g) { lock (gate) return Get(g).MergeConflicts; }
 
     public void MarkPartial(GraphKey g, long windowStart, string reason, long count)
     {

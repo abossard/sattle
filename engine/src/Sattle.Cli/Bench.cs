@@ -46,7 +46,9 @@ static partial class Bench
             files = [.. files.Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text.Replace("24h", lookBack), @"(?ms)^(\s*lift\b(?:(?!\bwithin\b)[^;])*);", "$1 within " + lookBack + ";") })];
         var res = cat.Load(files, updatePins: lookBack is not null);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
-        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new InMemoryGraphStore() });
+        // the shipped ratio: telemetry is retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention
+        var retention = lookBack is null ? new EngineOptions().TelemetryRetentionNs : 2 * Lexer.DurationNs(lookBack);
+        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new InMemoryGraphStore(), TelemetryRetentionNs = retention });
     }
 
     static string FindDefs()
@@ -69,9 +71,9 @@ static partial class Bench
         var perWindow = int.TryParse(o.Get("per-window"), out var pw) ? pw : 1_000_000;
         var windows = int.TryParse(o.Get("windows"), out var wn) ? wn : 4;
         var lookBack = o.Get("look-back");
-        // the window from which the look-back is full: nothing a window adds stays longer than the look-back, so from here on the run is in steady state
-        var full = lookBack is null ? int.MaxValue : (int)(Lexer.DurationNs(lookBack) / Min);
-        Console.WriteLine($"# estate: {pods:N0} pods, {services:N0} services, {resources:N0} Azure resources, {pairs:N0} active pod pairs, {perWindow:N0} flow rows per 60 s window, {windows} windows{(lookBack is null ? "" : $", look-back and retention {lookBack} (full after {full} windows)")}");
+        // the window from which nothing grows any more: telemetry is retained for twice the look-back, and nothing a window adds stays longer than that
+        var full = lookBack is null ? int.MaxValue : (int)(2 * Lexer.DurationNs(lookBack) / Min);
+        Console.WriteLine($"# estate: {pods:N0} pods, {services:N0} services, {resources:N0} Azure resources, {pairs:N0} active pod pairs, {perWindow:N0} flow rows per 60 s window, {windows} windows{(lookBack is null ? "" : $", look-back and evidence retention {lookBack}, telemetry retention twice that (steady after {full} windows)")}");
         var proc = Process.GetCurrentProcess(); var wall = Stopwatch.StartNew();
         using var e = NewEngine(lookBack: lookBack);
         var world = new SyntheticWorld(e, pods, services);
@@ -152,7 +154,12 @@ static partial class Bench
             close.Add(Ms(Stopwatch.GetTimestamp() - tc));
             if (e.TrackAllocations && w < 2) { Console.WriteLine($"window {w} (ingest of the flows, the readings and the close):"); KindTable(e, Console.Out); e.KindStats.Clear(); }
             Console.WriteLine($"window {w}: close {close[^1]:F0} ms; master {e.Master.State.RelCount:N0} relationships, serviceTree {e.Graph("serviceTree").State.RelCount:N0} relationships (revision {e.Graph("serviceTree").Head})");
-            if (w + 1 == full) { liveAtFull = Census.LiveBytes(); Console.WriteLine($"  look-back full after window {w}: live bytes {liveAtFull / 1e6:F0} MB"); }
+            if (w + 1 == full)
+            {
+                liveAtFull = Census.LiveBytes(); Console.WriteLine($"  retention full after window {w}: live bytes {liveAtFull / 1e6:F0} MB");
+                // a second census point: what differs from the census at the end is what a window adds once nothing should grow any more
+                if (o.Flags.Contains("census")) Census.Run($"estate when the retention is full (window {w})", Census.EngineRoots(e), e.Master.State.EntityCount, e.Master.State.RelCount, Console.Out);
+            }
             if (tree) Console.WriteLine($"  tree: treeStructure {e.Graph("treeStructure").State.EntityCount:N0} elements, {e.Graph("treeStructure").State.RelCount:N0} Contains; treeSignals {e.Graph("treeSignals").State.EntityCount:N0} signals; healthTree {e.Graph("healthTree").State.EntityCount:N0} entities, {e.Graph("healthTree").State.RelCount:N0} relationships; heap {GC.GetTotalMemory(false) / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB");
         }
         GC.Collect(); heap = GC.GetTotalMemory(true);
@@ -162,7 +169,7 @@ static partial class Bench
         var liveAtEnd = Census.LiveBytes();
         Console.WriteLine($"live bytes at the end (promoted): {liveAtEnd / 1e6:F0} MB");
         if (windows > full)
-            Console.WriteLine($"steady state (windows {full} to {windows - 1}, the look-back full): window close p50 {Pct([.. close.Skip(full)], .5):F0} ms, max {close.Skip(full).Max():F0} ms; live bytes {liveAtFull / 1e6:F0} MB when the look-back filled, {liveAtEnd / 1e6:F0} MB at the end ({(liveAtEnd - liveAtFull) * 100.0 / liveAtFull:+0.0;-0.0} %)");
+            Console.WriteLine($"steady state (windows {full} to {windows - 1}, look-back and retention full): window close p50 {Pct([.. close.Skip(full)], .5):F0} ms, max {close.Skip(full).Max():F0} ms; live bytes {liveAtFull / 1e6:F0} MB when the retention filled, {liveAtEnd / 1e6:F0} MB at the end ({(liveAtEnd - liveAtFull) * 100.0 / liveAtFull:+0.0;-0.0} %)");
         Console.WriteLine($"end state: managed heap {heap / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB, telemetry windows {tel:N0}");
         if (e.TrackAllocations) { Console.WriteLine("flow windows (ingest and closes):"); KindTable(e, Console.Out); }
         GcStats(proc, wall, rows + resources * (tree ? windows : 0), Console.Out);

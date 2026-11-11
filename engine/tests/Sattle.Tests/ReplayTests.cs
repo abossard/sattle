@@ -152,10 +152,13 @@ public class ReplayTests
         Assert.Equal(1, r.Engine.Master.Head);
     }
 
-    [Fact]
-    public void Lost_event_records_mark_the_window_partial_and_are_counted()
+    /// <summary>Hubble writes the count of lost events as a JSON string (a uint64); a number is read the same way.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Lost_event_records_mark_the_window_partial_and_are_counted(bool asText)
     {
-        var lost = Line("hubble", "2026-11-10T10:00:30.000Z", 2, new { lost_events = new { source = "HUBBLE_RING_BUFFER", num_events_lost = 7, cpu = 1 }, node_name = "n1", time = "2026-11-10T10:00:30.000Z" });
+        var lost = Line("hubble", "2026-11-10T10:00:30.000Z", 2, new { lost_events = new { source = "HUBBLE_RING_BUFFER", num_events_lost = asText ? (object)"7" : 7, cpu = 1 }, node_name = "n1", time = "2026-11-10T10:00:30.000Z" });
         var r = Replay(Capture(Flow("2026-11-10T10:00:10.000Z", "a-1", "b-1"), lost, Flow("2026-11-10T10:00:50.000Z", "a-1", "b-1")));
         var hub = r.Adapters.OfType<HubbleAdapter>().Single();
         Assert.Equal(1, hub.LostEventRecords); Assert.Equal(7, hub.LostEvents); Assert.Equal(7, r.Stats.LostEvents);

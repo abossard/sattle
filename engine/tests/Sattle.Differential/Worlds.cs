@@ -10,6 +10,8 @@ public sealed record World(string Name, string Kind, IReadOnlyList<SourceFile> F
 {
     /// <summary>Text that some reference result of the default seeds must contain, so a world that never exercises its operator fails.</summary>
     public IReadOnlyList<string> Witnesses { get; init; } = [];
+    /// <summary>The telemetry retention of the space (Def. 7.13), for the engine and the reference alike; the default is 48 hours.</summary>
+    public long RetentionNs { get; init; } = 48 * 60 * Minute;
     static readonly ConcurrentDictionary<string, Catalog> catalogs = new();
     public Catalog Catalog => catalogs.GetOrAdd(Name, _ => EngineRun.Load(Files));
     public override string ToString() => Name;
@@ -263,7 +265,17 @@ public static class Worlds
         Aggregate("countDistinct over a decimal", "v: countDistinct(d)", "v: Integer;", "v: v"),
         Rows("group by a decimal key", "Group", "    let p = a |> select { k: g, g: g, n: n, d: coalesce(d, 0.0) };\n    let q = p |> group by { k: k, g: g, d: d } aggregate { n: sum(n) };\n    let x = q |> select { k: k, g: g, n: n };"),
         Aggregate("count with countDistinct", "c: count(), v: countDistinct(k)", "c: Integer; v: Integer;", "c: c, v: v"),
-        Windowed("revise") with { Witnesses = ["window "] }, Windowed("ignore") with { Witnesses = ["window "] }, Windowed("reject") with { Witnesses = ["window "] },
+        Windowed("revise") with { Witnesses = ["window "] },
+        Rows("two windows of one width, two late policies", "Window, Group over windows", """
+                let w1 = a |> window on t width 60s late revise;
+                let p1 = w1 |> group by { k: k, windowStart: windowStart } aggregate { hits: count() };
+                let w2 = b |> window on t width 60s late ignore;
+                let p2 = w2 |> group by { k: k, windowStart: windowStart } aggregate { total: count() };
+            """, """
+            entity Meter { k: Text; hits?: Integer telemetry delta sum every 60s; total?: Integer telemetry delta sum every 60s; }
+            identity meter for Meter version "1" { k: Text by exact; }
+            """, 0.25, tail: "    emit entity Meter from p1 identity meter(k: k) set { k: k, hits: hits };\n    emit entity Meter from p2 identity meter(k: k) set { k: k, total: total };") with { Witnesses = ["prop:hits", "prop:total"] },
+        Windowed("revise") with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] }, Windowed("ignore") with { Witnesses = ["window "] }, Windowed("reject") with { Witnesses = ["window "] },
         new("fixpoint max 2", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(2))], [BagEdges]),
         new World("fixpoint max 8", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(8))], [BagEdges]) with { Witnesses = ["Pair"] },
         new World("link", "Link, EmitRelationship", [new SourceFile("w.sattle", Linked)], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },

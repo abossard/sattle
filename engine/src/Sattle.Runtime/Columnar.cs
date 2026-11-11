@@ -152,5 +152,7 @@ public sealed class RowWriter(Layout layout, Interner it)
     public void Text(string col, string? v) => Text(Col(col), v);
     public void Instant(string col, long ns) => Instant(Col(col), ns);
     public Batch? Build() { Close(); var b = bb.Build(); bb = new BatchBuilder(Layout); row = -1; return b; }
+    /// <summary>Takes back the rows written after the first `rows` (a record that turned out to be malformed after it had written some).</summary>
+    public void Truncate(int rows) { if (rows >= bb.Batch.N) return; bb.Batch.N = rows; row = -1; }
     void Close() { if (row < 0) return; for (var c = 0; c < written.Length; c++) if (!written[c]) bb.Absent(row, c); }
 }

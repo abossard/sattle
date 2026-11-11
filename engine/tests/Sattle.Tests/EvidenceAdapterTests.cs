@@ -65,6 +65,21 @@ public class EvidenceAdapterTests
         Assert.Equal(changes, (long)windows.Sum(w => w.Value));
     }
 
+    /// <summary>A record whose value has another JSON type than its adapter reads is rejected and counted; the replay goes on with the records after it (a live space journals a record before it applies it, so an exception here would stop every restart).</summary>
+    [Fact]
+    public void A_record_with_a_value_of_the_wrong_json_type_is_rejected_and_the_records_after_it_are_applied()
+    {
+        var run = ReplayTests.Replay(Capture(
+        [
+            Line("authoring", "2026-01-01T10:00:00.000Z", 1, new { kind = "signalRule", id = "r1", type = "pod", meter = "warnings", above = "80", enterAfter = 1, below = 1, exitAfter = 1, severity = 1, invert = false }),
+            Line("authoring", "2026-01-01T10:00:01.000Z", 2, new { kind = "capability", capId = "c1", name = "Checkout", owner = "team-a", status = "active" }),
+        ]), chunk: 1);
+        Assert.Equal(1, run.Stats.Rejected);
+        Assert.Contains(run.Stats.RejectionSamples, x => x.Contains("malformed record", StringComparison.Ordinal));
+        Assert.Empty(Of(run.Engine, "SignalRule"));
+        Assert.Single(Of(run.Engine, "Capability"));
+    }
+
     [Fact]
     public void Aks_audit_records_become_audit_events_and_lease_renewals_and_partial_stages_are_left_out()
     {

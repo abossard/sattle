@@ -124,6 +124,11 @@ sealed class SeriesOp : PhysOp
 
 /// <summary>Collects emitted contributions with their weights, resolves them to element states per flush (support counting: an element exists while some create row supports it), and holds the telemetry samples of the step.</summary>
 public sealed record LineageSource(string Role, int Handle, bool IsRel, string GraphPort);
+/// <summary>A conflict of Def. 6.4 (D34) that holds in a graph: fragments that disagree. `Kind` is `property` (the property is absent), `element` (creates that disagree on type or endpoints: the element is absent), `uniqueness` (several relationships on one source, target and type: `Element` is the one that is present) or `window` (several values for one telemetry window: it has no value). `Values` are the disagreeing values as canonical text, sorted.</summary>
+public sealed record Conflict(string Kind, string Element, string? Property, long? WindowStart, IReadOnlyList<string> Values)
+{
+    public string Text => $"{Kind} {Element} {Property} {WindowStart}: {string.Join(" | ", Values)}";
+}
 public sealed record LineageInfo(string Sink, string? Rule, IReadOnlyList<LineageSource> Sources, long Total);
 
 public sealed class OutputBuilder(Interner it)
@@ -223,6 +228,28 @@ public sealed class OutputBuilder(Interner it)
     public long Rejections { get; private set; }
     /// <summary>Properties that fragments with different values assign (counted each time such an element is resolved): they are absent from the element.</summary>
     public long PropertyConflicts { get; private set; }
+    /// <summary>The conflicts that hold now, by what they are about (Def. 6.4): the state that goes with the graph. `TakeChanged` gives the ones a commit reports.</summary>
+    readonly Dictionary<string, Conflict> conflicts = new(StringComparer.Ordinal);
+    readonly HashSet<string> changedConflicts = new(StringComparer.Ordinal);
+    public IReadOnlyCollection<Conflict> Conflicts => [.. conflicts.OrderBy(c => c.Key, StringComparer.Ordinal).Select(c => c.Value)];
+
+    /// <summary>Sets or clears the conflict about one subject (an element, one of its properties, a tuple, a window).</summary>
+    void Note(string subject, Conflict? conflict)
+    {
+        var had = conflicts.TryGetValue(subject, out var old);
+        if (conflict is null ? !had : had && old!.Text == conflict.Text) return;
+        if (conflict is null) conflicts.Remove(subject); else conflicts[subject] = conflict;
+        changedConflicts.Add(subject);
+    }
+
+    /// <summary>The conflicts that appeared, changed or ended since the last call: what a commit reports (an ended conflict comes with no values).</summary>
+    public List<Conflict> TakeChanged()
+    {
+        var res = changedConflicts.Order(StringComparer.Ordinal).Select(s => conflicts.TryGetValue(s, out var c) ? c : new Conflict("resolved", s, null, null, [])).ToList();
+        changedConflicts.Clear();
+        return res;
+    }
+    static string Canonical(Value v) => v switch { DecimalValue d => Norm.Decimal(d.Q), IntegerValue i => i.N.ToString(System.Globalization.CultureInfo.InvariantCulture), TextValue t => t.S, BooleanValue b => b.B ? "true" : "false", InstantValue n => Norm.Instant(n.Ns), EntityValue e => e.Id, _ => v.ToString() ?? "" };
     /// <summary>Elements whose create fragments disagree on type or endpoints (counted each time such an element is resolved): they are absent.</summary>
     public long ElementConflicts { get; private set; }
 
@@ -248,21 +275,39 @@ public sealed class OutputBuilder(Interner it)
     Element? Resolve(int elem, ElemState st)
     {
         var creates = st.Contribs.Where(c => !c.Update && c.Weight > 0).OrderBy(c => c.Sink).ToList();
+        var id = it.Get(elem);
+        if (conflicts.Count > 0)
+        {
+            foreach (var subject in conflicts.Keys.Where(k => k.StartsWith("property " + id + " ", StringComparison.Ordinal)).ToList()) Note(subject, null);
+            Note("element " + id, null);
+        }
         if (creates.Count == 0) return null;
         var first = creates[0];
-        if (creates.Any(c => c.Type != first.Type || c.Source != first.Source || c.Target != first.Target)) { ElementConflicts++; return null; }     // creates that disagree on type or endpoints: the element is absent
+        if (creates.Any(c => c.Type != first.Type || c.Source != first.Source || c.Target != first.Target))        // creates that disagree on type or endpoints: the element is absent
+        {
+            ElementConflicts++;
+            Note("element " + id, new Conflict("element", id, null, null, [.. creates.Select(c => $"{c.Type} {c.Source} -> {c.Target}").Distinct().Order(StringComparer.Ordinal)]));
+            return null;
+        }
         // Def. 6.4 (D34): the state is a function of the positive fragments, whatever their sink or order. A property with more than one value is absent and counted.
         var values = new Dictionary<string, Value>(StringComparer.Ordinal); HashSet<string>? conflicting = null;
         foreach (var c in st.Contribs) if (c.Weight > 0) foreach (var (k, v) in c.Props.Items)
             if (!values.TryAdd(k, v) && !values[k].Equals(v)) (conflicting ??= []).Add(k);
-        if (conflicting is not null) { PropertyConflicts += conflicting.Count; foreach (var k in conflicting) values.Remove(k); }
+        if (conflicting is not null)
+        {
+            PropertyConflicts += conflicting.Count;
+            foreach (var k in conflicting)
+            {
+                values.Remove(k);
+                Note($"property {id} {k}", new Conflict("property", id, k, null, [.. st.Contribs.Where(c => c.Weight > 0).SelectMany(c => c.Props.Items).Where(x => x.Key == k).Select(x => Canonical(x.Value)).Distinct().Order(StringComparer.Ordinal)]));
+            }
+        }
         var props = Props.Of(values);
-        var id = it.Get(elem);
         return st.IsRel ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
     }
 
     /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
-    readonly Dictionary<(string Source, string Target, string Type), SortedSet<string>> contested = [];
+    readonly Dictionary<(string Source, string Target, string Type), HashSet<string>> contested = [];
     readonly Dictionary<string, (string Source, string Target, string Type)> contestedBy = new(StringComparer.Ordinal);
 
     /// <summary>Edits that bring the graph to the resolved states of the touched elements. Where several relationships claim one (source, target, type), the one with the smallest id is present, whatever arrived first; each such tuple is counted.</summary>
@@ -287,7 +332,7 @@ public sealed class OutputBuilder(Interner it)
                 : claims.TryGetValue(tuple, out var first) && first != id ? first : null;
             claims.TryAdd(tuple, id);
             if (holder is null && !contested.ContainsKey(tuple)) continue;
-            if (!contested.TryGetValue(tuple, out var set)) contested[tuple] = set = new SortedSet<string>(StringComparer.Ordinal);
+            if (!contested.TryGetValue(tuple, out var set)) contested[tuple] = set = new HashSet<string>(StringComparer.Ordinal);
             foreach (var claimant in holder is null ? [id] : new[] { id, holder }) { set.Add(claimant); contestedBy[claimant] = tuple; }
             affected.Add(tuple);
         }
@@ -296,7 +341,8 @@ public sealed class OutputBuilder(Interner it)
         {
             var set = contested[tuple];
             if (set.Count > 1) Rejections++;
-            var winner = set.Min;
+            var winner = set.Order(StringComparer.Ordinal).FirstOrDefault();
+            Note($"uniqueness {tuple.Item1} {tuple.Item2} {tuple.Item3}", set.Count > 1 ? new Conflict("uniqueness", winner!, null, null, [.. set.Order(StringComparer.Ordinal)]) : null);
             foreach (var claimant in set)
                 want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && elems.TryGetValue(h, out var st) ? Resolve(h, st) : null;
             if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }
@@ -342,6 +388,7 @@ public sealed class OutputBuilder(Interner it)
             foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; }
             var values = support.Where(x => x.Value > 0).Select(x => x.Key).ToList();
             if (values.Count > 1) WindowConflicts++;
+            Note($"window {key.Element} {key.Prop} {key.WindowStart}", values.Count > 1 ? new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.Order().Select(Norm.Decimal)]) : null);
             if (values.Count != 1) { if (stored is { } gone) Delete(gone); }
             else if (values[0] != stored) Set(values[0]);
             // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)

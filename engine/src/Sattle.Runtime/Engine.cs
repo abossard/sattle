@@ -13,6 +13,8 @@ public sealed record EngineOptions
     public Func<ITelemetryStore> TelemetryFactory { get; init; } = () => new InMemoryTelemetryStore();
     /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6).</summary>
     public int LateHorizonWindows { get; init; } = 3;
+    /// <summary>The declared retention of every telemetry series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A window is revisable for the smaller of this and the late horizon.</summary>
+    public long TelemetryRetentionNs { get; init; } = 48L * 3_600_000_000_000;
     /// <summary>When set, only these graphs and the graphs they derive from are activated (a staged evaluation of one view needs no other graph).</summary>
     public IReadOnlySet<string>? Only { get; init; }
 }
@@ -56,6 +58,17 @@ public static class PlanCompiler
             else if (tp.Ops.FirstOrDefault(o => o.Name == op) is TTraverse tv) res.Add((c.Name, i, false, tv.GraphPort));
         }
         return [.. res];
+    }
+
+    /// <summary>The Window whose windows a Group closes: the nearest one upstream of it (two windows of one width may have different late policies).</summary>
+    static TWindow WindowOf(TypedProjection tp, TOp op)
+    {
+        for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
+        {
+            cur = tp.Ops.First(o => o.Name == src.Name);
+            if (cur is TWindow w) return w;
+        }
+        return tp.Ops.OfType<TWindow>().First(x => x.Out.Window == op.Out.Window);
     }
 
     /// <summary>The nearest Series upstream of an operator along its `in` inputs (its `within` and its period); null when it reads no Series.</summary>
@@ -121,7 +134,7 @@ public static class PlanCompiler
                 case TWindow w: op = new WindowOp(w, inL, cx); strategies.Add($"{w.Name}: Window, linear, window assignment"); break;
                 case TGroup g when g.ClosesWindows:
                     {
-                        var win = tp.Ops.OfType<TWindow>().First(x => x.Out.Window == g.Out.Window);
+                        var win = WindowOf(tp, g);
                         op = new WindowedGroupOp(g, win.WidthNs, win.Late, inL, cx);
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, late policy {win.Late}");
                         break;
@@ -161,7 +174,11 @@ public static class PlanCompiler
 }
 
 public sealed record GraphResult(Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Revision);
-public sealed record CommitEvent(string Graph, Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Lambda, long Seq, Interner Interner);
+/// <summary>`Conflicts`: the conflicts of Def. 6.4 that appeared, changed or ended with this commit (an ended one has kind `resolved`).</summary>
+public sealed record CommitEvent(string Graph, Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Lambda, long Seq, Interner Interner)
+{
+    public IReadOnlyList<Conflict> Conflicts { get; init; } = [];
+}
 
 /// <summary>One graph of the space with its compiled projection, hot graph, and storage.</summary>
 public sealed class GraphRuntime
@@ -238,7 +255,9 @@ public sealed class Engine : IDisposable, IEngineInput
             var tp = next.Instance ?? catalog.Projections[next.ProjectionId];
             var key = new GraphKey(this.options.Tenant, next.Name);
             var outb = new OutputBuilder(Interner);
-            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows };
+            var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
+            foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
+                throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
             var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx), IsMaster = next.Master, Cx = cx, Out = outb };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
@@ -248,7 +267,9 @@ public sealed class Engine : IDisposable, IEngineInput
         Identities.OnMerge = (loser, survivor) =>
         {
             if (graphs.FirstOrDefault(g => g.IsMaster) is not { } master) return;
-            foreach (var (from, to) in master.Out.Remap(loser, survivor)) Telemetry.MoveElement(master.Key, from, to);
+            var properties = catalog.OntologyOf(master.Typed.OutputModule).Props;
+            foreach (var (from, to) in master.Out.Remap(loser, survivor))
+                Telemetry.MoveElement(master.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null);
         };
     }
 
@@ -364,8 +385,10 @@ public sealed class Engine : IDisposable, IEngineInput
             g.TelemetryPosition = np;
         }
         else if (g.TelemetryPosition == 0) { _ = Telemetry.ClosedWindows(g.Key, 0, out var np); g.TelemetryPosition = np; }
+        if (ep.HasAdvance) Telemetry.Retain(g.Key, ep.Lambda, options.TelemetryRetentionNs);
         var result = new GraphResult(patch, changes, g.Head);
-        if (patch is not null || changes.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner));
+        var conflicts = g.Out.TakeChanged();
+        if (patch is not null || changes.Count > 0 || conflicts.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner) { Conflicts = conflicts });
         return result;
     }
 

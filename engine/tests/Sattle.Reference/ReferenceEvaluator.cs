@@ -9,7 +9,8 @@ public abstract record Input;
 public sealed record RowInput(string Source, ImmutableSortedDictionary<string, Value> Fields, long Weight) : Input;
 public sealed record AdvanceInput(long Frontier) : Input;
 
-public sealed record Settings(string Tenant = "lab", int LateHorizonWindows = 3);
+/// <summary>`TelemetryRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
+public sealed record Settings(string Tenant = "lab", int LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000);
 
 /// <summary>Every graph of a space after a prefix of the input log.</summary>
 public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Graphs, long? Frontier);
@@ -142,7 +143,7 @@ public static class ReferenceEvaluator
 
         var ids = new Identities(settings.Tenant, p.Links.Values);
         Relation SinkInput(TOp sink) => sink.Inputs["in"] is { IsPort: true } s ? rowPorts[s.Name] : outs[sink.Inputs["in"].Name];
-        var facts = Materialization.Of(plan.Ops.SelectMany(op => Materialization.Fragments(op, SinkInput, ids, settings.Tenant, plan.OutputModule)));
+        var facts = Materialization.Of(plan.Ops.SelectMany(op => Materialization.Fragments(op, SinkInput, ids, settings.Tenant, plan.OutputModule)), frontier, settings.TelemetryRetentionNs);
         return p with { Facts = p.Facts with { Graphs = p.Facts.Graphs.SetItem(graph.Name, facts) } };
     }
 
@@ -163,7 +164,7 @@ public static class ReferenceEvaluator
         if (frontierAtPosition is not { } frontier) return true;
         var end = windowStart + w.WidthNs;
         var closed = end <= frontier;
-        var beyondHorizon = end + w.WidthNs * s.LateHorizonWindows <= frontier;
+        var beyondHorizon = end + Math.Min(w.WidthNs * s.LateHorizonWindows, s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the late horizon and the retention (Def. 7.13)
         return !beyondHorizon && (!closed || w.Late == "revise");
     }
 }

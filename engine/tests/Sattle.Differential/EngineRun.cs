@@ -34,9 +34,9 @@ public static class EngineRun
     public static SpaceFacts Final(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking) => States(catalog, log, chunking).Last().Facts;
 
     /// <summary>The facts after each batch, with the number of inputs consumed so far.</summary>
-    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking)
+    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, long? retentionNs = null)
     {
-        using var engine = new Engine(catalog, catalog.Spaces.Keys.Single());
+        using var engine = new Engine(catalog, catalog.Spaces.Keys.Single(), retentionNs is { } age ? new EngineOptions { TelemetryRetentionNs = age } : null);
         yield return (0, FactsOf(engine));
         long seq = 0;
         foreach (var batch in Batches(log, chunking))
@@ -90,7 +90,7 @@ public static class EngineRun
             g.State.Entities.ToImmutableSortedDictionary(e => e.Id, e => new EntityFact(e.Id, e.Type, Props(e.Props)), StringComparer.Ordinal),
             g.State.Rels.ToImmutableSortedDictionary(r => r.Id, r => new RelFact(r.Id, r.Type, r.Source, r.Target, Props(r.Props)), StringComparer.Ordinal),
             store.Dump(g.Key).ToImmutableSortedDictionary(w => new WindowId(engine.Interner.Get(w.Element), engine.Interner.Get(w.Prop), w.Ws), w => w.Value),
-            GraphFacts.Empty.Conflicts), StringComparer.Ordinal);
+            [.. g.Out.Conflicts.Select(c => c.Text)]), StringComparer.Ordinal);
         return new SpaceFacts(graphs, engine.LogicalTime == long.MinValue ? null : engine.LogicalTime);
     }
 }
