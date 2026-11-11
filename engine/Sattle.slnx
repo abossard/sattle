@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Sattle.Cli/Sattle.Cli.csproj" />
+    <Project Path="src/Sattle.Core/Sattle.Core.csproj" />
+    <Project Path="src/Sattle.Language/Sattle.Language.csproj" />
+    <Project Path="src/Sattle.Runtime/Sattle.Runtime.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Sattle.Differential/Sattle.Differential.csproj" />
+    <Project Path="tests/Sattle.Reference/Sattle.Reference.csproj" />
+    <Project Path="tests/Sattle.Tests/Sattle.Tests.csproj" />
+  </Folder>
+</Solution>

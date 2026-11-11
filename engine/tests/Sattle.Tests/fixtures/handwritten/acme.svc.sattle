@@ -1,0 +1,84 @@
+/// Service roll-up: pods to services, services to namespace groups,
+/// pod-to-pod flow telemetry to service dependencies, services and groups.
+module acme.svc @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:9dc85b4131f82a10830690a8cb3588cb609e0991680ad8658b3a3f8e9906c91a as ops;
+
+entity ServiceNode {
+  cluster: Text; namespace: Text; name: Text; pods?: Integer;
+  flowsOut?: Integer telemetry delta sum every 60s;
+}
+entity ServiceGroup {
+  cluster: Text; namespace: Text; services?: Integer;
+  flowsOut?: Integer telemetry delta sum every 60s;
+}
+relationship Contains (ServiceGroup) -> (ServiceNode);
+relationship DependsOn (ServiceNode) -> (ServiceNode) {
+  status?: Text;
+  flows?: Integer telemetry delta sum every 60s;
+  drops?: Integer telemetry delta sum every 60s;
+  dropRatio?: Decimal telemetry gauge max every 60s;
+  flowRate?: Decimal unit "1/s" telemetry gauge sum every 60s;
+}
+constraint cardinality Contains per target 1 .. 1;
+constraint enum DependsOn.status in ["ok", "degraded"];
+
+identity serviceGroup for ServiceGroup version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; }
+
+projection serviceDeps view forward output acme.svc {
+  in master: graph ops;
+  retain 4;
+
+  // structure: services, pod counts, namespace groups
+  let services = match master (s: infra.Service);
+  emit entity ServiceNode from services identity s
+    set { cluster: s.cluster, namespace: s.namespace, name: s.name };
+
+  let backed = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service)
+    |> group by { s: s } aggregate { pods: countDistinct(p) };
+  emit update entity ServiceNode from backed identity s set { pods: pods };
+
+  // a group exists while some service of its namespace does: one row per service supports it, so its lineage names every service it is made of; the count is an aggregate on top
+  emit entity ServiceGroup from services
+    identity serviceGroup(cluster: s.cluster, namespace: s.namespace)
+    set { cluster: s.cluster, namespace: s.namespace };
+  let groups = services
+    |> group by { cluster: s.cluster, namespace: s.namespace } aggregate { services: countDistinct(s) };
+  emit update entity ServiceGroup from groups
+    identity serviceGroup(cluster: cluster, namespace: namespace)
+    set { services: services };
+  emit relationship Contains from services key contains:
+    serviceGroup(cluster: s.cluster, namespace: s.namespace) -> s;
+
+  // structure: a service dependency exists while some pod-to-pod call connects two services
+  let deps = match master (a: infra.Pod)-[c:infra.Calls]->(b: infra.Pod),
+                          (a)-[:infra.Backs]->(s: infra.Service),
+                          (b)-[:infra.Backs]->(t: infra.Service)
+    |> where s != t;
+  emit relationship DependsOn from deps key dependsOn: s -> t;
+
+  // telemetry: closed 60 s windows of the pod-level Calls series, rolled up to service pairs
+  let depWindows = deps
+    |> series master c.flows, c.drops within 24h
+    |> rollup by { s: s, t: t, cluster: s.cluster, namespace: s.namespace }
+       combine { flows: sum(flows), drops: sum(drops) };
+  let depTelemetry = depWindows
+    |> select { s: s, t: t, windowStart: windowStart, flows: flows, drops: drops,
+                dropRatio: if(flows > 0, drops / flows, 0.0), flowRate: rate(flows) };
+  emit update relationship DependsOn from depTelemetry key dependsOn: s -> t
+    set { flows: flows, drops: drops, dropRatio: dropRatio, flowRate: flowRate };
+
+  // telemetry: roll-up along the tree, service pair -> source service -> namespace group
+  let serviceOut = depWindows |> rollup by { s: s } combine { flowsOut: sum(flows) };
+  emit update entity ServiceNode from serviceOut identity s set { flowsOut: flowsOut };
+  let groupOut = depWindows |> rollup by { cluster: cluster, namespace: namespace } combine { flowsOut: sum(flows) };
+  emit update entity ServiceGroup from groupOut
+    identity serviceGroup(cluster: cluster, namespace: namespace) set { flowsOut: flowsOut };
+
+  // structural fact from telemetry, with hysteresis over closed windows
+  let health = depTelemetry
+    |> threshold dropRatio by { s: s, t: t }
+       above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok" as status;
+  emit update relationship DependsOn from health key dependsOn: s -> t set { status: status };
+}

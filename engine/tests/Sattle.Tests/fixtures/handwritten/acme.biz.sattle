@@ -1,0 +1,76 @@
+/// Business capability view. Rename, re-parent, create and retire capabilities here.
+module acme.biz @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:9dc85b4131f82a10830690a8cb3588cb609e0991680ad8658b3a3f8e9906c91a as ops;
+import acme.svc     @ 1.0.0 sha256:c05497fbe3445b639e468e6e3196b8b2f48cefc44e0447b266195049d38d9300 as svc;
+
+entity BizCapability { name: Text; serviceCount?: Integer; }
+relationship Under (BizCapability) -> (BizCapability);
+/// The service dependencies lifted to the capabilities that realize their ends. The properties carry the lifted calls: their names differ from those of the service-level DependsOn (acme.svc), because a property name that two modules declare is served qualified, and the service tree's names must not change.
+relationship DependsOn (BizCapability) -> (BizCapability) {
+  callStatus?: Text;
+  callFlows?: Integer telemetry delta sum every 60s;
+  callDrops?: Integer telemetry delta sum every 60s;
+  callDropRatio?: Decimal telemetry gauge max every 60s;
+}
+constraint cardinality Under per source 0 .. 1;
+constraint enum DependsOn.callStatus in ["ok", "degraded"];
+constraint acyclic Under;
+
+projection capabilityView view output acme.biz {
+  in master: graph ops;
+  in tree: graph svc;
+  retain 8;
+
+  rule capabilities lens {
+    let active = match master (c: ops.Capability) |> where c.status != "retired";
+    emit entity BizCapability from active identity c set { name: c.name };
+    accept create, delete, update(name);
+    on create key ops.capability default { capId: key.id, owner: "unassigned", status: "active" };
+    on delete set { status: "retired" };
+  }
+
+  rule tree lens {
+    let links = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
+      |> where c.status != "retired" and p.status != "retired";
+    emit relationship Under from links key under: c -> p;
+    accept create, delete;
+  }
+
+  rule counts readonly "number of services realizing the capability" {
+    let realized = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
+      |> where c.status != "retired";
+    let perCap = realized |> group by { c: c } aggregate { services: countDistinct(s) };
+    emit update entity BizCapability from perCap identity c set { serviceCount: services };
+  }
+
+  // The service dependencies lifted one level: the image of a service is the capability that realizes it, an edge between two
+  // services becomes an edge between their images. Calls inside one capability (same image at both ends) and calls of a service
+  // that realizes no capability are not lifted; parallel edges collapse onto one, flows and drops are summed, the ratio is
+  // recomputed from the sums and the state is derived again from it.
+  rule lifted readonly "service dependencies lifted to the capabilities that realize their ends" {
+    let imageRows = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
+    // policy for a service with several images (Realizes is declared 0 .. 1, data can still have two): it is not lifted, so that no call is counted for two capabilities
+    let imageCount = imageRows |> group by { s: s } aggregate { n: count() } |> select { sk: s, n: n };
+    let pairs = imageRows |> select { s: s, c: c };
+    let withCount = join pairs, imageCount on s == sk;
+    let image = withCount |> where n == 1;
+    let fromImage = image |> select { sa: s, ca: c };
+    let toImage = image |> select { sb: s, cb: c };
+    let calls = match tree (a: svc.ServiceNode)-[d:svc.DependsOn]->(b: svc.ServiceNode);
+    let withFrom = join calls, fromImage on a.cluster == sa.cluster and a.namespace == sa.namespace and a.name == sa.name;
+    let ends = join withFrom, toImage on b.cluster == sb.cluster and b.namespace == sb.namespace and b.name == sb.name;
+    let edges = ends |> where ca != cb;
+    emit relationship DependsOn from edges key dependsOn: ca -> cb;
+
+    let windows = edges
+      |> series tree d.flows, d.drops within 24h
+      |> rollup by { ca: ca, cb: cb } combine { flows: sum(flows), drops: sum(drops) };
+    let telemetry = windows |> select { ca: ca, cb: cb, windowStart: windowStart, flows: flows, drops: drops, dropRatio: if(flows > 0, drops / flows, 0.0) };
+    emit update relationship DependsOn from telemetry key dependsOn: ca -> cb set { callFlows: flows, callDrops: drops, callDropRatio: dropRatio };
+    let state = telemetry
+      |> threshold dropRatio by { ca: ca, cb: cb } above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok" as status;
+    emit update relationship DependsOn from state key dependsOn: ca -> cb set { callStatus: status };
+  }
+}

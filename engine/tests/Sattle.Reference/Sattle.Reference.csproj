@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../../src/Sattle.Core/Sattle.Core.csproj" />
+    <ProjectReference Include="../../src/Sattle.Language/Sattle.Language.csproj" />
+  </ItemGroup>
+</Project>

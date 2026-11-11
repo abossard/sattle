@@ -1,0 +1,4 @@
+/// Row contract produced by the compiled Prometheus range-query adapter.
+module sattle.source.prometheus @ 1.0.0;
+
+rows MetricRow { time: Instant; cluster: Text; metric: Text; instance: Text; value: Decimal; }

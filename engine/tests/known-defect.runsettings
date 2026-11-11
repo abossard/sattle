@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the tests of Category=KnownDefect: one per defect of the code review, each written before its fix. Run from engine/ with: dotnet test, then the settings option naming this file. It replaces the default filter of each project (Category!=Capture and Category!=Slow). -->
+<RunSettings>
+  <RunConfiguration><TestCaseFilter>Category=KnownDefect</TestCaseFilter></RunConfiguration>
+</RunSettings>

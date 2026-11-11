@@ -1,0 +1,7 @@
+/// Documents as graphs. A projection that emits Block entities is a document projection; the engine renders any such graph to Markdown (PROTOCOL.md, Version 3.4).
+module sattle.doc @ 1.0.0;
+
+/// kind: heading (level, text), paragraph (text), item (text), stat (text label, n value), header and row (cells a, b, c and d or n). order is the sort key, ties break by id.
+entity Block { kind: Text; order: Text; text?: Text; level?: Integer; a?: Text; b?: Text; c?: Text; d?: Text; n?: Integer; }
+
+identity block for Block version "1" { rule: Text by exact; key: Text by exact; }

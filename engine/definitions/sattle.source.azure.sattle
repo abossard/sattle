@@ -1,0 +1,12 @@
+/// Row contract produced by the compiled Azure Resource Graph adapter.
+module sattle.source.azure @ 1.0.0;
+
+rows ResourceRow { id: Text; name: Text; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text; }
+/// Activity Log events (management API EventData). One row per event.
+rows ActivityRow { eventId: Text; time: Instant; resourceId: Text; operation: Text; status: Text; caller?: Text; }
+/// One AKS audit record (category kube-audit-admin of the cluster diagnostic setting), one row per completed request.
+rows AuditRow { eventId: Text; time: Instant; verb: Text; resource: Text; namespace?: Text; name?: Text; user?: Text; code?: Integer; }
+/// One tuple of a VNet flow log (Network Watcher, format version 2). time is the tuple's event time. state is B (begin), C (continue), E (end) or D (denied); packets and bytes count source to destination, the Back columns the reverse direction.
+rows FlowLogRow { time: Instant; vnetId: Text; rule: Text; direction: Text; state: Text; protocol: Integer; srcIp: Text; dstIp: Text; srcPort: Integer; dstPort: Integer; packets: Integer; bytes: Integer; packetsBack: Integer; bytesBack: Integer; }
+/// One datapoint of an Azure Monitor platform metric. value is the average over the metric's interval.
+rows ResourceMetricRow { time: Instant; resourceId: Text; metric: Text; value: Decimal; }

@@ -1,0 +1,67 @@
+/// Service roll-up: pods to services, services to namespace groups,
+/// pod-to-pod flow telemetry to service dependencies, services and groups.
+module acme.svc @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+
+entity ServiceNode {
+  cluster: Text; namespace: Text; name: Text; pods?: Integer;
+  flowsOut?: Integer telemetry delta sum every 60s;
+}
+entity ServiceGroup {
+  cluster: Text; namespace: Text; services?: Integer;
+  flowsOut?: Integer telemetry delta sum every 60s;
+}
+relationship Contains (ServiceGroup) -> (ServiceNode);
+relationship DependsOn (ServiceNode) -> (ServiceNode) {
+  status?: Text;
+  flows?: Integer telemetry delta sum every 60s;
+  drops?: Integer telemetry delta sum every 60s;
+  dropRatio?: Decimal telemetry gauge max every 60s;
+  flowRate?: Decimal unit "1/s" telemetry gauge sum every 60s;
+}
+constraint cardinality Contains per target 1 .. 1;
+constraint enum DependsOn.status in ["ok", "degraded"];
+
+identity serviceGroup for ServiceGroup version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; }
+
+projection serviceDeps view forward output acme.svc {
+  in master: graph ops;
+  retain 4;
+
+  // structure: services, pod counts, namespace groups
+  let services = match master (s: infra.Service);
+  emit entity ServiceNode from services identity s
+    set { cluster: s.cluster, namespace: s.namespace, name: s.name };
+
+  let backed = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service)
+    |> group by { s: s } aggregate { pods: countDistinct(p) };
+  emit update entity ServiceNode from backed identity s set { pods: pods };
+
+  // a group exists while some service of its namespace does: one row per service supports it, so its lineage names every service it is made of; the count is an aggregate on top
+  emit entity ServiceGroup from services
+    identity serviceGroup(cluster: s.cluster, namespace: s.namespace)
+    set { cluster: s.cluster, namespace: s.namespace };
+  let groups = services
+    |> group by { cluster: s.cluster, namespace: s.namespace } aggregate { services: countDistinct(s) };
+  emit update entity ServiceGroup from groups
+    identity serviceGroup(cluster: cluster, namespace: namespace)
+    set { services: services };
+  emit relationship Contains from services key contains:
+    serviceGroup(cluster: s.cluster, namespace: s.namespace) -> s;
+
+  // a service dependency exists while some pod-to-pod call connects two services; its telemetry is the pod-level Calls telemetry summed per pair of services, a pod that backs two services counts for both
+  lift dependsOn as DependsOn from master infra.Calls via master infra.Backs
+    keep cluster = src.cluster, namespace = src.namespace
+    derive dropRatio = if(flows > 0, drops / flows, 0.0), flowRate = rate(flows)
+    state status of dropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok"
+    images each;
+
+  // telemetry: roll-up along the tree, service pair -> source service -> namespace group
+  let serviceOut = dependsOn |> rollup by { s: src } combine { flowsOut: sum(flows) };
+  emit update entity ServiceNode from serviceOut identity s set { flowsOut: flowsOut };
+  let groupOut = dependsOn |> rollup by { cluster: cluster, namespace: namespace } combine { flowsOut: sum(flows) };
+  emit update entity ServiceGroup from groupOut
+    identity serviceGroup(cluster: cluster, namespace: namespace) set { flowsOut: flowsOut };
+}

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The default run: everything except Category=Capture (replays of the real captures) and Category=Slow (tests that replay a fixture through several hosts or loop over generated edits: restart, seal, live resume, history retention, snapshots, refactoring, lenses, drafts, forwarder markers). The full run includes both. -->
+<RunSettings>
+  <RunConfiguration><TestCaseFilter>(Category!=Capture)&amp;(Category!=Slow)</TestCaseFilter></RunConfiguration>
+</RunSettings>

@@ -1,0 +1,167 @@
+/// The health tree of the whole estate, derived from the master with no names in the definitions: every element that can have health has exactly one parent, Azure side subscription, resource group, resource, Kubernetes side cluster, namespace, workload, pod, node. Curation, signal rules and roll-up policies are authored data in the master.
+module acme.tree @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import sattle.azure @ 1.0.0 sha256:ab18e12c31be70f641e8f97700b2d2ebf9cc8c5fe9c315fa748cbc7821966195 as azure;
+import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+
+/// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
+entity Element {
+  nodeKey: Text; nodeKind: Text treerole kind; nodeName?: Text;
+  /// The worst severity of the element's own signals: 0 healthy, 1 degraded, 2 unhealthy, -1 none (unknown).
+  ownSeverity?: Integer;
+  ownState?: Text treerole own roles { "Healthy": ok, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
+  /// The severity after the element's roll-up policy over its own signals and everything below it.
+  rolledSeverity?: Integer treerole severity;
+  rolledState?: Text treerole rolledUp roles { "Healthy": ok, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
+  /// How many of the elements at or below it that carry signals are in each state.
+  healthyCount?: Integer treerole healthy; degradedCount?: Integer treerole degraded; unhealthyCount?: Integer treerole unhealthy; monitored?: Integer;
+  /// Authored curation: a critical element, an element hidden from the roll-up (it and everything below it).
+  critical?: Boolean treerole critical; hidden?: Boolean treerole hidden;
+  /// The authored record that curates the element (the last one when several name it).
+  curatedBy?: Text treerole curatedBy;
+  /// The roll-up policy of the element (authored record of its key or its kind, else worst) and the share it uses: worst, share or ignore.
+  rollupMode?: Text treerole mode; rollupShare?: Decimal treerole share;
+}
+/// The hierarchy: the parent contains the child. Every element has exactly one parent, the roots none.
+relationship Contains (Element) -> (Element) hierarchy;
+/// The edges the roll-up follows: Contains, except below an element whose policy ignores what is below it.
+relationship Rolls (Element) -> (Element);
+constraint cardinality Contains per target 0 .. 1;
+constraint acyclic Contains;
+identity element for Element version "1" { key: Text by exact; }
+
+/// A single operation or event that supports the state of one element: a warning event on a pod, an Activity Log operation on a resource. It hangs on the element it concerns and is not a child of it.
+entity Evidence { evidenceId: Text; evidenceKind: Text; evidenceTime: Instant; evidenceSummary: Text; evidenceDetail?: Text; }
+relationship EvidenceFor (Evidence) -> (Element);
+identity evidence for Evidence version "1" { id: Text by exact; }
+
+/// The tree structure: elements and their parents, from the Azure resource ids and the Kubernetes objects of the master. A cluster that is an Azure resource is one element with the Kubernetes subtree below it.
+projection treeStructure view forward output acme.tree {
+  in master: graph ops;
+  retain 4;
+
+  // ---- Azure side
+  let resources = match master (r: azure.AzureResource)
+    |> where isPresent(r.subscriptionId) and isPresent(r.resourceGroup)
+    |> select { key: lowerInvariant(r.resourceId), label: r.name, kind: if(r.type == "microsoft.containerservice/managedclusters", "cluster", "resource"),
+                sub: lowerInvariant(r.subscriptionId), rg: lowerInvariant(r.resourceGroup) };
+  let subscriptions = resources |> group by { sub: sub } aggregate { n: count() }
+    |> select { key: concat("sub/", sub), label: sub, kind: "subscription", parent: "", rank: 0 };
+  let groups = resources |> group by { sub: sub, rg: rg } aggregate { n: count() }
+    |> select { key: concat("rg/", sub, "/", rg), label: rg, kind: "resourceGroup", parent: concat("sub/", sub), rank: 1 };
+  let azureResources = resources |> select { key: key, label: label, kind: kind, parent: concat("rg/", sub, "/", rg), rank: 1 };
+
+  // ---- Kubernetes side: the cluster is the Azure resource that is the parent of the machines its nodes run on, else an element of its own
+  let labelPods = match master (p: infra.Pod) |> select { label: p.cluster };
+  let labelNodes = match master (n: infra.Node) |> select { label: n.cluster };
+  let labelDeployments = match master (d: infra.Deployment) |> select { label: d.cluster };
+  let labels = union labelPods, labelNodes;
+  let allLabels = union labels, labelDeployments |> distinct;
+  let fallbackClusters = allLabels |> select { label: label, ckey: concat("cluster/", label), rank: 1 };
+  let nodeMachines = match master (n: infra.Node) |> where isPresent(n.resourceId) |> select { nlabel: n.cluster, vm: lowerInvariant(n.resourceId) };
+  let machineParents = match master (r: azure.AzureResource) |> where isPresent(r.parentId) |> select { vm2: lowerInvariant(r.resourceId), aks: lowerInvariant(r.parentId) };
+  let machines = join nodeMachines, machineParents on vm == vm2;
+  let mappedClusters = machines |> select { label: nlabel, ckey: aks, rank: 2 };
+  let candidates = union fallbackClusters, mappedClusters;
+  let clusterKeys = candidates |> group by { label: label } aggregate { ckey: last(ckey, rank) };
+  let clusters = clusterKeys |> select { key: ckey, label: label, kind: "cluster", parent: "", rank: 0 };
+
+  let nsPods = match master (p: infra.Pod) |> select { nlabel: p.cluster, ns: p.namespace };
+  let nsDeployments = match master (d: infra.Deployment) |> select { nlabel: d.cluster, ns: d.namespace };
+  let nsRows = union nsPods, nsDeployments |> distinct;
+  let nsWithCluster = join nsRows, clusterKeys on nlabel == label;
+  let namespaces = nsWithCluster |> select { key: concat("ns/", nlabel, "/", ns), label: ns, kind: "namespace", parent: ckey, rank: 1 };
+
+  let workloads = match master (d: infra.Deployment)
+    |> select { key: concat("wl/", d.cluster, "/", d.namespace, "/", d.name), label: d.name, kind: "workload", parent: concat("ns/", d.cluster, "/", d.namespace), rank: 1 };
+
+  let podsInNamespace = match master (p: infra.Pod)
+    |> select { key: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), label: p.name, kind: "pod", parent: concat("ns/", p.cluster, "/", p.namespace), rank: 1 };
+  let podsInWorkload = match master (p: infra.Pod)-[:infra.ControlledBy]->(d: infra.Deployment)
+    |> select { key: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), label: p.name, kind: "pod", parent: concat("wl/", d.cluster, "/", d.namespace, "/", d.name), rank: 2 };
+
+  let machinesOfCluster = match master (n: infra.Node)
+    |> select { nlabel2: n.cluster, nkey: concat("node/", n.cluster, "/", n.name), nname: n.name };
+  let nodeParents = join machinesOfCluster, clusterKeys on nlabel2 == label;
+  let nodes = nodeParents |> select { key: nkey, label: nname, kind: "node", parent: ckey, rank: 1 };
+
+  // ---- one row per (element, parent candidate); the parent with the highest rank wins, so a pod in a workload is below the workload, not below the namespace
+  let a = union subscriptions, groups;
+  let b = union a, azureResources;
+  let c = union b, clusters;
+  let d1 = union c, namespaces;
+  let e1 = union d1, workloads;
+  let f1 = union e1, podsInNamespace;
+  let g1 = union f1, podsInWorkload;
+  let h1 = union g1, nodes;
+
+  // ---- curation (authored records in the master): a group is a named workload at the root that takes the elements named by its records as children, a move gives an element another parent
+  let groupNodes = match master (u: ops.Curation) |> where u.curAction == "group"
+    |> group by { gname: coalesce(u.curValue, "") } aggregate { n: count() }
+    |> select { key: concat("grp/", gname), label: gname, kind: "workload", parent: "", rank: 0 };
+  let curated = match master (u: ops.Curation) |> where u.curAction == "group" or u.curAction == "move"
+    |> select { key: u.curTarget, label: "", kind: "", parent: if(u.curAction == "group", concat("grp/", coalesce(u.curValue, "")), coalesce(u.curValue, "")), rank: 9 };
+  let h2 = union h1, groupNodes;
+  let rows = union h2, curated;
+
+  let elements = rows |> where kind != "" |> group by { key: key, kind: kind } aggregate { n: count() };
+  emit entity Element from elements identity element(key: key) set { nodeKey: key, nodeKind: kind };
+  let names = rows |> where label != "" |> group by { key: key } aggregate { name: last(label, rank) };
+  emit update entity Element from names identity element(key: key) set { nodeName: name };
+  let parents = rows |> where parent != "" |> group by { key: key } aggregate { parent: last(parent, rank) };
+  emit relationship Contains from parents key contains: element(key: parent) -> element(key: key);
+}
+
+/// A signal of an element: a meter of the master read against a rule of the master (authored data). Hysteresis, thresholds and severity come from the rule row, so a new meter or a changed threshold is a record, not a statement.
+entity Signal { signalElement: Text; signalRule: Text; signalSeverity: Integer; signalState: Text roles { "on": warning, "off": ok }; signalAbove?: Decimal; signalBelow?: Decimal; signalMeter?: Text; signalEnterAfter?: Integer; signalExitAfter?: Integer; signalInverted?: Boolean;
+  /// The current reading of the meter (not negated for an inverted rule), per 60 s window.
+  signalValue?: Decimal telemetry gauge max every 60s; }
+relationship Measures (Signal) -> (Element);
+identity signal for Signal version "1" { element: Text by exact; rule: Text by exact; }
+
+projection treeSignals view forward output acme.tree {
+  in master: graph ops;
+  retain 4;
+
+  let rules = match master (u: ops.SignalRule)
+    |> select { rid: u.ruleId, rtype: u.ruleType, rmeter: u.ruleMeter, above: u.ruleAbove, enterAfter: u.ruleEnter, below: u.ruleBelow, exitAfter: u.ruleExit, severity: u.ruleSeverity, sign: if(u.ruleInvert, -1.0, 1.0) };
+
+  let azureMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(r: azure.AzureResource)
+    |> select { m: m, ekey: lowerInvariant(r.resourceId), etype: lowerInvariant(r.type), meter: m.meter };
+  let azureRuled = join azureMeters, rules on meter == rmeter |> where etype == rtype or rtype == "*";
+  let azureWindows = azureRuled
+    |> series master m.reading within 24h
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, invert: sign < 0.0, windowStart: windowStart, raw: reading, v: reading * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter };
+  let azureSignals = azureWindows
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" as state;
+  let azureReadings = azureWindows |> select { ekey: ekey, rid: rid, windowStart: windowStart, raw: raw, meter: meter, invert: invert, above: above, below: below, enterAfter: enterAfter, exitAfter: exitAfter };
+
+  let nodeMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(n: infra.Node)
+    |> select { m: m, ekey: concat("node/", n.cluster, "/", n.name), etype: "node", meter: m.meter };
+  let nodeRuled = join nodeMeters, rules on meter == rmeter |> where etype == rtype or rtype == "*";
+  let nodeWindows = nodeRuled
+    |> series master m.reading within 24h
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, invert: sign < 0.0, windowStart: windowStart, raw: reading, v: reading * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter };
+  let nodeSignals = nodeWindows
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" as state;
+  let nodeReadings = nodeWindows |> select { ekey: ekey, rid: rid, windowStart: windowStart, raw: raw, meter: meter, invert: invert, above: above, below: below, enterAfter: enterAfter, exitAfter: exitAfter };
+
+  let podMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(p: infra.Pod)
+    |> select { m: m, ekey: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), etype: "pod", meter: m.meter };
+  let podRuled = join podMeters, rules on meter == rmeter |> where etype == rtype or rtype == "*";
+  let podWindows = podRuled
+    |> series master m.reading within 24h
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, invert: sign < 0.0, windowStart: windowStart, raw: reading, v: reading * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter };
+  let podSignals = podWindows
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" as state;
+  let podReadings = podWindows |> select { ekey: ekey, rid: rid, windowStart: windowStart, raw: raw, meter: meter, invert: invert, above: above, below: below, enterAfter: enterAfter, exitAfter: exitAfter };
+
+  let both = union azureSignals, nodeSignals;
+  let signals = union both, podSignals;
+  emit entity Signal from signals identity signal(element: ekey, rule: rid) set { signalElement: ekey, signalRule: rid, signalSeverity: severity, signalState: state };
+  let readingsAB = union azureReadings, nodeReadings;
+  let readings = union readingsAB, podReadings;
+  emit update entity Signal from readings identity signal(element: ekey, rule: rid)
+    set { signalValue: raw, signalAbove: above, signalBelow: below, signalMeter: meter, signalEnterAfter: enterAfter, signalExitAfter: exitAfter, signalInverted: invert };
+}

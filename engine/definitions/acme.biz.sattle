@@ -1,0 +1,58 @@
+/// Business capability view. Rename, re-parent, create and retire capabilities here.
+module acme.biz @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+import acme.svc     @ 1.0.0 sha256:6bd5c43dc46b6b6108570b4a873c731d4104355b3ddf5893d9094c76b92e6001 as svc;
+
+entity BizCapability { name: Text; serviceCount?: Integer; }
+relationship Under (BizCapability) -> (BizCapability);
+/// The service dependencies lifted to the capabilities that realize their ends. The properties carry the lifted calls: their names differ from those of the service-level DependsOn (acme.svc), because a property name that two modules declare is served qualified, and the service tree's names must not change.
+relationship DependsOn (BizCapability) -> (BizCapability) {
+  callStatus?: Text;
+  callFlows?: Integer telemetry delta sum every 60s;
+  callDrops?: Integer telemetry delta sum every 60s;
+  callDropRatio?: Decimal telemetry gauge max every 60s;
+}
+constraint cardinality Under per source 0 .. 1;
+constraint enum DependsOn.callStatus in ["ok", "degraded"];
+constraint acyclic Under;
+
+projection capabilityView view output acme.biz {
+  in master: graph ops;
+  in tree: graph svc;
+  retain 8;
+
+  rule capabilities lens {
+    let active = match master (c: ops.Capability) |> where c.status != "retired";
+    emit entity BizCapability from active identity c set { name: c.name };
+    accept create, delete, update(name);
+    on create key ops.capability default { capId: key.id, owner: "unassigned", status: "active" };
+    on delete set { status: "retired" };
+  }
+
+  rule tree lens {
+    let links = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
+      |> where c.status != "retired" and p.status != "retired";
+    emit relationship Under from links key under: c -> p;
+    accept create, delete;
+  }
+
+  rule counts readonly "number of services realizing the capability" {
+    let realized = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
+      |> where c.status != "retired";
+    let perCap = realized |> group by { c: c } aggregate { services: countDistinct(s) };
+    emit update entity BizCapability from perCap identity c set { serviceCount: services };
+  }
+
+  // The service dependencies lifted one level: each service is mapped to the capability that realizes it (Realizes is a function), an edge between two services becomes an edge between their capabilities.
+  // Calls inside one capability and calls of a service that realizes no capability are not lifted; parallel edges collapse onto one, flows and drops are summed, the ratio is recomputed from the sums
+  // and the state is derived again from it. The properties carry their own names (a name two modules declare is served qualified, and the service tree's names must not change).
+  rule lifted readonly "service dependencies lifted to the capabilities that realize their ends" {
+    lift dependsOn as DependsOn from tree svc.DependsOn via master ops.Realizes
+      when image.status != "retired"
+      carry callFlows = flows, callDrops = drops
+      derive callDropRatio = if(callFlows > 0, callDrops / callFlows, 0.0)
+      state callStatus of callDropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok";
+  }
+}

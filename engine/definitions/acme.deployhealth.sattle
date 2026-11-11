@@ -1,0 +1,50 @@
+/// Deployment health as an ontology, computed by a projection: nothing about health lives in the engine. A Deployment is Healthy while its ready pods exceed minReady. Further requirements are further rules of the projection that set or update the same properties.
+module acme.deployhealth @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+
+/// One node per Deployment. state is computed from readyPods and the minReady binding argument.
+entity Workload {
+  cluster: Text; namespace: Text; name: Text;
+  replicas?: Integer; readyPods?: Integer;
+  state?: Text roles { "Healthy": ok, "Unhealthy": danger };
+}
+/// Traffic between the pods of two Deployments. state is Unhealthy when either end is.
+relationship Talks (Workload) -> (Workload) {
+  state?: Text roles { "Healthy": ok, "Unhealthy": danger };
+}
+
+projection deploymentHealth view forward output acme.deployhealth {
+  in master: graph ops;
+  // ready pods must exceed this to be Healthy
+  in minReady: param Integer = 0;
+  retain 4;
+
+  let deployments = match master (d: infra.Deployment);
+  let readyPods = match master (p: infra.Pod)-[:infra.ControlledBy]->(d: infra.Deployment) |> where coalesce(p.ready, false);
+  // every Deployment counts zero, every ready pod one: a Deployment without ready pods still has a row
+  let zeros = deployments |> select { c: d.cluster, ns: d.namespace, nm: d.name, n: 0 };
+  let ones = readyPods |> select { c: d.cluster, ns: d.namespace, nm: d.name, n: 1 };
+  let counts = union zeros, ones;
+  let ready = counts |> group by { c: c, ns: ns, nm: nm } aggregate { ready: sum(n) };
+  let status = ready |> select { c: c, ns: ns, nm: nm, ready: ready, state: if(ready > minReady, "Healthy", "Unhealthy") };
+
+  // traffic between pods of different Deployments, with the state of both ends
+  let calls = match master (a: infra.Pod)-[:infra.Calls]->(b: infra.Pod), (a)-[:infra.ControlledBy]->(x: infra.Deployment), (b)-[:infra.ControlledBy]->(y: infra.Deployment)
+    |> where x != y
+    |> select { xc: x.cluster, xn: x.namespace, xm: x.name, yc: y.cluster, yn: y.namespace, ym: y.name };
+  let fromState = status |> select { fc: c, fn: ns, fm: nm, fstate: state };
+  let toState = status |> select { tc: c, tn: ns, tm: nm, tstate: state };
+  let withFrom = join calls, fromState on xc == fc and xn == fn and xm == fm;
+  let ends = join withFrom, toState on yc == tc and yn == tn and ym == tm;
+  let edges = ends |> select { xc: xc, xn: xn, xm: xm, yc: yc, yn: yn, ym: ym, state: if(fstate == "Unhealthy" or tstate == "Unhealthy", "Unhealthy", "Healthy") };
+
+  emit entity Workload from deployments identity d set { cluster: d.cluster, namespace: d.namespace, name: d.name, replicas: d.replicas };
+  emit update entity Workload from status
+    identity infra.deploymentName(cluster: c, namespace: ns, name: nm)
+    set { readyPods: ready, state: state };
+  emit relationship Talks from edges key talks:
+    infra.deploymentName(cluster: xc, namespace: xn, name: xm) -> infra.deploymentName(cluster: yc, namespace: yn, name: ym)
+    set { state: state };
+}

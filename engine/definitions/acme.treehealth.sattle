@@ -1,0 +1,103 @@
+/// The health of the estate: the tree of acme.tree with the own state of each element (from its signals), its rolled-up state (by the element's policy: worst by default, share of the monitored elements below it, or ignore) and the counts of the monitored elements below it per state.
+module acme.treehealth @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
+import sattle.azure @ 1.0.0 sha256:ab18e12c31be70f641e8f97700b2d2ebf9cc8c5fe9c315fa748cbc7821966195 as azure;
+import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+import acme.tree    @ 1.0.0 sha256:ada1c6be4ccce9e6b243aa4ee4bbc9bdf6c8687c163d0a4826c9710aae7820c5 as tree;
+
+/// The roll-up policy of every element, and the edges the roll-up follows: an element whose policy is ignore does not roll up what is below it.
+projection treeRollup view forward output tree {
+  in structure: graph tree;
+  in master: graph ops;
+  retain 4;
+
+  let els = match structure (e: tree.Element);
+  let policyRows = match master (u: ops.RollupPolicy) |> select { ptarget: u.policyTarget, pmode: u.policyMode, pshare: coalesce(u.policyShare, 0.5) };
+  let kinds = els |> select { pk: e.nodeKey, pkind: e.nodeKind };
+  let defaultPolicy = kinds |> select { pk: pk, pm: "worst", ps: 0.5, rank: 0 };
+  let kindMatches = join kinds, policyRows on pkind == ptarget;
+  let kindPolicy = kindMatches |> select { pk: pk, pm: pmode, ps: pshare, rank: 1 };
+  let keyMatches = join kinds, policyRows on pk == ptarget;
+  let keyPolicy = keyMatches |> select { pk: pk, pm: pmode, ps: pshare, rank: 2 };
+  let policyBoth = union defaultPolicy, kindPolicy;
+  let policies = union policyBoth, keyPolicy |> group by { pk: pk } aggregate { mode: last(pm, rank), share: last(ps, rank) };
+
+  emit entity tree.Element from els identity e set { nodeKey: e.nodeKey, nodeKind: e.nodeKind };
+  emit update entity tree.Element from policies identity tree.element(key: pk) set { rollupMode: mode, rollupShare: share };
+  let edges = match structure (p: tree.Element)-[:tree.Contains]->(c: tree.Element) |> select { p: p, c: c, parentKey: p.nodeKey };
+  let followed = join edges, policies on parentKey == pk |> where mode != "ignore";
+  emit relationship tree.Rolls from followed key rolls: p -> c;
+}
+
+projection healthTree view forward output tree {
+  in structure: graph tree;
+  in rollup: graph tree;
+  in signals: graph tree;
+  in master: graph ops;
+  retain 4;
+
+  let els = match structure (e: tree.Element);
+  emit entity tree.Element from els identity e set { nodeKey: e.nodeKey, nodeKind: e.nodeKind, nodeName: e.nodeName };
+  let edges = match structure (p: tree.Element)-[:tree.Contains]->(c: tree.Element);
+  emit relationship tree.Contains from edges key contains: p -> c;
+
+  // own state: the worst "on" signal of the element, 0 when it has signals and none is on; an element hidden by curation, and everything below it, has none
+  let signalRows = match signals (s: tree.Signal) |> group by { ekey: s.signalElement } aggregate { own: max(if(s.signalState == "on", s.signalSeverity, 0)) } |> select { ekey: ekey, own: own, orank: 1 };
+  let hiddenRoots = match master (u: ops.Curation) |> where u.curAction == "hide" |> select { hroot: u.curTarget };
+  let hiddenSubtree = join els, hiddenRoots on e.nodeKey == hroot
+    |> traverse structure via tree.Contains out depth 0 .. 12 from e as hd
+    |> select { hkey: hd.nodeKey };
+  let hiddenRows = hiddenSubtree |> group by { ekey: hkey } aggregate { n: count() } |> select { ekey: ekey, own: -1, orank: 2 };
+  let signalOrHidden = union signalRows, hiddenRows;
+  let ownRows = signalOrHidden |> group by { ekey: ekey } aggregate { own: last(own, orank) };
+  emit update entity tree.Element from hiddenRows identity tree.element(key: ekey) set { hidden: true };
+  let criticalRows = match master (u: ops.Curation) |> where u.curAction == "critical" |> select { ckey2: u.curTarget };
+  emit update entity tree.Element from criticalRows identity tree.element(key: ckey2) set { critical: true };
+  let ownDefault = els |> select { ekey: e.nodeKey, own: -1, rank: 0 };
+  let ownKnown = ownRows |> select { ekey: ekey, own: own, rank: 1 };
+  let ownAll = union ownDefault, ownKnown |> group by { ekey: ekey } aggregate { own: last(own, rank) };
+  emit update entity tree.Element from ownAll identity tree.element(key: ekey)
+    set { ownSeverity: own, ownState: if(own == 2, "Unhealthy", if(own == 1, "Degraded", if(own == 0, "Healthy", "Unknown"))) };
+
+  // roll-up: every element against everything at or below it that carries signals
+  let reach = els |> traverse rollup via tree.Rolls out depth 0 .. 12 from e as d |> select { rkey: e.nodeKey, rkind: e.nodeKind, dkey: d.nodeKey };
+  let reachOwn = join reach, ownRows on dkey == ekey;
+  let counts = reachOwn |> group by { ckey: rkey }
+    aggregate { worst: max(own), selfOwn: max(if(dkey == rkey, own, -1)), healthy: sum(if(own == 0, 1, 0)), degraded: sum(if(own == 1, 1, 0)), unhealthy: sum(if(own == 2, 1, 0)), monitored: sum(if(own >= 0, 1, 0)) };
+
+  // the policy of an element comes from treeRollup (its own record, else the record of its kind, else worst)
+  let policies = match rollup (e: tree.Element) |> select { pk: e.nodeKey, mode: coalesce(e.rollupMode, "worst"), share: coalesce(e.rollupShare, 0.5) };
+  let rolled = join counts, policies on ckey == pk
+    |> select { key: ckey, healthy: healthy, degraded: degraded, unhealthy: unhealthy, monitored: monitored,
+                severity: if(mode == "ignore", selfOwn,
+                          if(mode == "share", if(unhealthy > 0 and toDecimal(unhealthy) > share * toDecimal(monitored), 2, if(degraded + unhealthy > 0, 1, 0)), worst)) };
+  let rolledDefault = els |> select { key: e.nodeKey, healthy: 0, degraded: 0, unhealthy: 0, monitored: 0, severity: -1, rank: 0 };
+  let rolledKnown = rolled |> select { key: key, healthy: healthy, degraded: degraded, unhealthy: unhealthy, monitored: monitored, severity: severity, rank: 1 };
+  let rolledAll = union rolledDefault, rolledKnown
+    |> group by { key: key } aggregate { healthy: last(healthy, rank), degraded: last(degraded, rank), unhealthy: last(unhealthy, rank), monitored: last(monitored, rank), severity: last(severity, rank) };
+  emit update entity tree.Element from policies identity tree.element(key: pk) set { rollupMode: mode, rollupShare: share };
+  let curatedRows = match master (u: ops.Curation) |> select { ctarget: u.curTarget, cid: u.curId };
+  emit update entity tree.Element from curatedRows identity tree.element(key: ctarget) set { curatedBy: cid };
+  emit update entity tree.Element from rolledAll identity tree.element(key: key)
+    set { healthyCount: healthy, degradedCount: degraded, unhealthyCount: unhealthy, monitored: monitored, rolledSeverity: severity,
+          rolledState: if(severity == 2, "Unhealthy", if(severity == 1, "Degraded", if(severity == 0, "Healthy", "Unknown"))) };
+
+  // the signals of the elements, in this graph, so that a viewer finds them by the Measures relationship of the tree graph
+  let signalEntities = match signals (s: tree.Signal);
+  emit entity tree.Signal from signalEntities identity s
+    set { signalElement: s.signalElement, signalRule: s.signalRule, signalSeverity: s.signalSeverity, signalState: s.signalState, signalAbove: s.signalAbove, signalBelow: s.signalBelow, signalMeter: s.signalMeter, signalEnterAfter: s.signalEnterAfter, signalExitAfter: s.signalExitAfter, signalInverted: s.signalInverted };
+  let signalValues = signalEntities |> series signals s.signalValue within 24h;
+  emit update entity tree.Signal from signalValues identity s set { signalValue: signalValue };
+  emit relationship tree.Measures from signalEntities key measures: s -> tree.element(key: s.signalElement);
+
+  // evidence: the single events that support an element's state, kept as long as the master keeps them
+  let warnings = match master (w: infra.WarningEvent)-[:infra.About]->(p: infra.Pod)
+    |> select { w: w, p: p, eid: w.eventId, etime: w.time, esummary: w.reason, edetail: w.message, ekey: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), ekind: "warning" };
+  emit entity tree.Evidence from warnings identity tree.evidence(id: eid) set { evidenceId: eid, evidenceKind: ekind, evidenceTime: etime, evidenceSummary: esummary, evidenceDetail: edetail };
+  emit relationship tree.EvidenceFor from warnings key evidenceWarning: tree.evidence(id: eid) -> tree.element(key: ekey);
+  let operations = match master (a: azure.ActivityEvent)-[:azure.Concerns]->(r: azure.AzureResource)
+    |> select { a: a, r: r, eid: a.eventId, etime: a.time, esummary: a.operation, edetail: a.status, ekey: lowerInvariant(r.resourceId), ekind: "activity" };
+  emit entity tree.Evidence from operations identity tree.evidence(id: eid) set { evidenceId: eid, evidenceKind: ekind, evidenceTime: etime, evidenceSummary: esummary, evidenceDetail: edetail };
+  emit relationship tree.EvidenceFor from operations key evidenceActivity: tree.evidence(id: eid) -> tree.element(key: ekey);
+}

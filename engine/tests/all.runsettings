@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Every test of every test project. Run from engine/ with: dotnet test, then the settings option naming this file. It replaces the default filter of each project (Category!=Capture and Category!=Slow). -->
+<RunSettings>
+  <RunConfiguration><TestCaseFilter></TestCaseFilter></RunConfiguration>
+</RunSettings>

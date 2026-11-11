@@ -1,0 +1,37 @@
+/// Shared Kubernetes infrastructure ontology. Shipped as data with Sattle.
+module sattle.infra @ 1.0.0;
+
+/// ready is the Ready condition of the pod.
+entity Pod     {
+  cluster: Text; namespace: Text; name: Text; phase?: Text; ready?: Boolean;
+  warnings?: Integer telemetry delta sum every 60s;
+}
+entity Node    { cluster: Text; name: Text; resourceId?: Text; forwardRate?: Decimal telemetry gauge max every 60s; dropRate?: Decimal telemetry gauge max every 60s; }
+entity Service { cluster: Text; namespace: Text; name: Text; }
+entity Deployment { cluster: Text; namespace: Text; name: Text; replicas?: Integer; }
+relationship Backs (Pod) -> (Service);
+relationship RunsOn (Pod) -> (Node);
+/// The Deployment that owns the pod through its ReplicaSet.
+relationship ControlledBy (Pod) -> (Deployment);
+
+/// One Kubernetes warning event occurrence on a pod, kept as evidence. eventId is the event uid and its occurrence count.
+entity WarningEvent { eventId: Text; time: Instant; reason: Text; message?: Text; count: Integer; }
+relationship About (WarningEvent) -> (Pod);
+identity warningEvent for WarningEvent version "1" { id: Text by exact; }
+/// One completed request of the Kubernetes API server (AKS audit, admin categories), kept as evidence.
+entity AuditEvent { eventId: Text; time: Instant; verb: Text; resource: Text; namespace?: Text; name?: Text; user?: Text; code?: Integer; }
+identity auditEvent for AuditEvent version "1" { id: Text by exact; }
+relationship Calls (Pod) -> (Pod) {
+  flows?: Integer telemetry delta sum every 60s;
+  drops?: Integer telemetry delta sum every 60s;
+}
+
+constraint enum Pod.phase in ["Pending", "Running", "Succeeded", "Failed", "Unknown"];
+
+identity podUid      for Pod     version "1" { cluster: Text by lowerInvariant; uid: Text by exact; }
+identity podName     for Pod     version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
+identity nodeName    for Node    version "1" { cluster: Text by lowerInvariant; name: Text by exact; }
+identity deploymentName for Deployment version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
+identity serviceName for Service version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
+
+equivalence podUidIsPodName between podUid, podName assert threshold 1.0;

@@ -1,0 +1,477 @@
+using Sattle.Core;
+using Sattle.Language;
+
+namespace Sattle.Runtime;
+
+/// <summary>Series: closed telemetry windows of the matched elements, joined to the structural rows by element handle. Bilinear: new rows against the windows seen so far, then new windows against all rows (section 11.1, section 11.2).</summary>
+sealed class SeriesOp : PhysOp
+{
+    readonly TSeries t; readonly Layout inLayout; readonly int elemCol; readonly int[] propHandles; readonly bool[] readIsDec;
+    readonly int outWs, outWe; readonly int[] outReadCol; readonly long within, period;
+    sealed record Arr(long[] L, decimal[] D, bool[] P, long Weight);
+    readonly Dictionary<int, List<Arr>> arrangement = [];
+    readonly Dictionary<int, SortedDictionary<long, decimal?[]>> windows = [];
+    long frontier = long.MinValue;
+
+    public SeriesOp(TSeries t, Layout inLayout, Interner it) : base(t)
+    {
+        this.t = t; this.inLayout = inLayout;
+        elemCol = inLayout.Index(t.TargetVar);
+        propHandles = [.. t.Reads.Select(r => it.Intern(r.PropId))];
+        readIsDec = [.. t.Reads.Select(r => r.ValueKind == "Decimal")];
+        outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd");
+        outReadCol = [.. t.Reads.Select(r => OutLayout.Index(r.OutName))];
+        within = t.WithinNs; period = t.PeriodNs;
+    }
+
+    static bool SameRow(Arr a, long[] l, decimal[] d, bool[] p)
+    {
+        for (var i = 0; i < l.Length; i++) { if (a.P[i] != p[i]) return false; if (a.L[i] != l[i] || a.D[i] != d[i]) return false; }
+        return true;
+    }
+
+    void WriteRow(BatchBuilder bb, Arr r, long ws, decimal?[] vals, long w)
+    {
+        var row = bb.Add(w);
+        var b = bb.Batch;
+        for (var c = 0; c < inLayout.Count; c++)
+        {
+            if (!r.P[c]) { b.Cols[c].SetAbsent(row, b.N); continue; }
+            if (inLayout.IsDec[c]) b.Cols[c].D[row] = r.D[c]; else b.Cols[c].L[row] = r.L[c];
+        }
+        b.Cols[outWs].L[row] = ws; b.Cols[outWe].L[row] = ws + period;
+        for (var k = 0; k < outReadCol.Length; k++)
+        {
+            if (readIsDec[k]) b.Cols[outReadCol[k]].D[row] = vals[k]!.Value; else b.Cols[outReadCol[k]].L[row] = (long)vals[k]!.Value;
+        }
+    }
+
+    static bool Complete(decimal?[] v) => v.All(x => x.HasValue);
+
+    public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var bb = new BatchBuilder(OutLayout);
+        var rows = In(inputs, "in");
+        // step A: changed structural rows against the windows seen before this step
+        if (rows is not null)
+            for (var k = 0; k < rows.Rows; k++)
+            {
+                var i = rows.RowAt(k);
+                var c = (int)rows.Cols[elemCol].L[i];
+                var l = new long[inLayout.Count]; var d = new decimal[inLayout.Count]; var p = new bool[inLayout.Count];
+                for (var col = 0; col < inLayout.Count; col++)
+                {
+                    p[col] = rows.Cols[col].Present(i);
+                    if (inLayout.IsDec[col]) d[col] = rows.Cols[col].D[i]; else l[col] = rows.Cols[col].L[i];
+                }
+                var w = rows.Weight(i);
+                if (!arrangement.TryGetValue(c, out var list)) arrangement[c] = list = [];
+                var ex = list.FindIndex(a => SameRow(a, l, d, p));
+                if (ex >= 0) { var nw = list[ex].Weight + w; if (nw == 0) list.RemoveAt(ex); else list[ex] = list[ex] with { Weight = nw }; }
+                else if (w != 0) list.Add(new Arr(l, d, p, w));
+                if (windows.TryGetValue(c, out var ws))
+                    foreach (var (wstart, vals) in ws)
+                        if (Complete(vals) && (frontier == long.MinValue || wstart >= frontier - within)) WriteRow(bb, new Arr(l, d, p, w), wstart, vals, w);
+            }
+        // step B: changed telemetry windows against every row (after step A)
+        var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
+        if (gd is not null && gd.Telemetry.Count > 0)
+        {
+            var byWindow = new Dictionary<(int, long), List<WindowChange>>();
+            foreach (var ch in gd.Telemetry)
+            {
+                var pi = Array.IndexOf(propHandles, ch.Key.Prop);
+                if (pi < 0) continue;
+                if (!byWindow.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var l)) byWindow[(ch.Key.Element, ch.Key.WindowStart)] = l = [];
+                l.Add(ch);
+            }
+            foreach (var ((elem, wstart), changes) in byWindow)
+            {
+                if (frontier != long.MinValue && wstart < frontier - within) continue;      // outside the look-back: neither kept nor joined (Def. 6.7)
+                if (!windows.TryGetValue(elem, out var ws)) windows[elem] = ws = [];
+                var before = ws.TryGetValue(wstart, out var cur) ? (decimal?[])cur.Clone() : new decimal?[propHandles.Length];
+                var after = (decimal?[])before.Clone();
+                foreach (var ch in changes) after[Array.IndexOf(propHandles, ch.Key.Prop)] = ch.New;
+                if (after.All(x => !x.HasValue)) ws.Remove(wstart); else ws[wstart] = after;
+                if (!arrangement.TryGetValue(elem, out var list)) continue;
+                foreach (var r in list)
+                {
+                    if (Complete(before)) WriteRow(bb, r, wstart, before, -r.Weight);
+                    if (Complete(after)) WriteRow(bb, r, wstart, after, r.Weight);
+                }
+            }
+        }
+        // advance: windows that leave the look-back are retracted
+        if (ep.HasAdvance && ep.Lambda > frontier)
+        {
+            frontier = ep.Lambda;
+            foreach (var (elem, ws) in windows.ToList())
+            {
+                foreach (var wstart in ws.Keys.Where(x => x < frontier - within).ToList())
+                {
+                    var vals = ws[wstart];
+                    if (Complete(vals) && arrangement.TryGetValue(elem, out var list)) foreach (var r in list) WriteRow(bb, r, wstart, vals, -r.Weight);
+                    ws.Remove(wstart);
+                }
+                if (ws.Count == 0) windows.Remove(elem);
+            }
+        }
+        return bb.Build();
+    }
+}
+
+// ---- output: element layers and telemetry puts ----------------------------------------------------------------
+
+/// <summary>Collects emitted contributions with their weights, resolves them to element states per flush (support counting: an element exists while some create row supports it), and holds the telemetry samples of the step.</summary>
+public sealed record LineageSource(string Role, int Handle, bool IsRel, string GraphPort);
+public sealed record LineageInfo(string Sink, string? Rule, IReadOnlyList<LineageSource> Sources, long Total);
+
+public sealed class OutputBuilder(Interner it)
+{
+    /// <summary>Per emitted element, the sink and the input elements bound by the last contributing row.</summary>
+    public Dictionary<int, LineageInfo> Lineage { get; } = [];
+    /// <summary>Per emitted element, every input row that supports it: a create emit of a sink whose input rows bind elements of a Match (or Traverse) adds the row with its weight and a retraction subtracts it, so what is left is exactly the rows that hold the element up. This is the complete lineage of a lifted element: an edge that stands for many lower edges, a node that stands for many lower nodes. A row is the elements it binds, as text (role, kind, graph port, handle). Elements emitted from an aggregate keep only the group-key lineage in `Lineage`.</summary>
+    public Dictionary<int, Dictionary<string, long>> Supports { get; } = [];
+
+    /// <summary>The elements a row binds, as text (role, kind, graph port, handle); empty when it binds none.</summary>
+    public static string RowKey((string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var (role, col, isRel, port) in cols)
+            if (b.Cols[col].Present(row)) sb.Append(role).Append('\u001f').Append(isRel ? 'r' : 'e').Append('\u001f').Append(port).Append('\u001f').Append((int)b.Cols[col].L[row]).Append('\u001e');
+        return sb.ToString();
+    }
+
+    /// <summary>Per `Group` operator and group key, the input rows that make up the group (the rows it aggregates, as `RowKey` text with signed weights). An element emitted from the group's output names them all: `GroupRefs` says which group and key an element was emitted from.</summary>
+    public Dictionary<string, Dictionary<string, Dictionary<string, long>>> GroupMembers { get; } = [];
+    public Dictionary<int, (string Group, string Key)> GroupRefs { get; } = [];
+
+    public void AddMember(string group, string key, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, long w)
+    {
+        if (w == 0) return;
+        var rk = RowKey(cols, b, row); if (rk.Length == 0) return;
+        if (!GroupMembers.TryGetValue(group, out var byKey)) GroupMembers[group] = byKey = [];
+        if (!byKey.TryGetValue(key, out var rows)) byKey[key] = rows = [];
+        var n = rows.GetValueOrDefault(rk) + w;
+        if (n == 0) { rows.Remove(rk); if (rows.Count == 0) byKey.Remove(key); } else rows[rk] = n;
+    }
+
+    public void AddSupport(int elem, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, long w)
+    {
+        if (cols.Length == 0 || w == 0) return;
+        var key = RowKey(cols, b, row);
+        if (key.Length == 0) return;
+        if (!Supports.TryGetValue(elem, out var rows)) Supports[elem] = rows = [];
+        var n = rows.GetValueOrDefault(key) + w;
+        if (n == 0) { rows.Remove(key); if (rows.Count == 0) Supports.Remove(elem); } else rows[key] = n;
+    }
+
+    void MoveSupport(int from, int to)
+    {
+        if (from != to && GroupRefs.Remove(from, out var gref)) GroupRefs[to] = gref;
+        if (from == to || !Supports.Remove(from, out var rows)) return;
+        if (!Supports.TryGetValue(to, out var into)) Supports[to] = into = [];
+        foreach (var (k, n) in rows) { var m = into.GetValueOrDefault(k) + n; if (m == 0) into.Remove(k); else into[k] = m; }
+    }
+    readonly Dictionary<int, Func<string, string, string>> relSinks = [];
+    /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
+    public void RegisterRelSink(int sink, Func<string, string, string> idOf) => relSinks[sink] = idOf;
+
+    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (entity layers merge, relationships with the loser as an endpoint get the id of the survivor's endpoints). The old elements resolve to nothing and are removed by the next flush.</summary>
+    public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor)
+    {
+        var moved = new List<(int From, int To)>();
+        var lid = it.Get(loser); var sid = it.Get(survivor);
+        if (elems.TryGetValue(loser, out var ls) && !ls.IsRel)
+        {
+            foreach (var c in ls.Contribs.ToList()) Contribute(survivor, false, c.Sink, c.Update, c.Type, null, null, c.Props, c.Weight);
+            ls.Contribs.Clear();
+            MoveSupport(loser, survivor);
+            if (touchedSet.Add(loser)) touched.Add(loser);
+        }
+        var atLoser = relsAt.TryGetValue(lid, out var at) ? at.ToList() : [];
+        foreach (var (elem, st) in atLoser.Where(elems.ContainsKey).Select(e => (e, elems[e])).Where(x => x.Item2.IsRel && x.Item2.Contribs.Any(c => c.Source == lid || c.Target == lid)).ToList())
+        {
+            foreach (var c in st.Contribs.Where(c => c.Source == lid || c.Target == lid).ToList())
+            {
+                st.Contribs.Remove(c);
+                var ns = c.Source == lid ? sid : c.Source; var nt = c.Target == lid ? sid : c.Target;
+                var idOf = relSinks[c.Sink];
+                var ne = it.Intern(idOf(ns!, nt!));
+                Contribute(ne, true, c.Sink, c.Update, c.Type, ns, nt, c.Props, c.Weight);
+                if (Lineage.TryGetValue(elem, out var li)) Lineage[ne] = li;
+                if (ne != elem && !moved.Contains((elem, ne))) { moved.Add((elem, ne)); MoveSupport(elem, ne); }
+            }
+            if (touchedSet.Add(elem)) touched.Add(elem);
+        }
+        // telemetry of a re-keyed relationship that has not reached the store yet follows it
+        foreach (var (from, to) in moved)
+            for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from) tele[i] = (tele[i].Key with { Element = to }, tele[i].Value, tele[i].Weight, tele[i].Period);
+        Merged++;
+        return moved;
+    }
+    public long Merged { get; private set; }
+
+    sealed record Contribution(int Sink, bool Update, string Type, string? Source, string? Target, Props Props, long Weight);
+    sealed class ElemState { public bool IsRel; public readonly List<Contribution> Contribs = []; }
+    readonly Dictionary<int, ElemState> elems = [];
+    /// <summary>The relationship elements that ever had an identity as an endpoint, so a merge visits those and not every element (entries go stale, Remap checks the contributions).</summary>
+    readonly Dictionary<string, HashSet<int>> relsAt = [];
+    readonly List<int> touched = [];
+    readonly HashSet<int> touchedSet = [];
+    readonly List<(WindowKey Key, decimal Value, long Weight, long Period)> tele = [];
+    public long Rejections { get; private set; }
+    /// <summary>Properties that fragments with different values assign (counted each time such an element is resolved): they are absent from the element.</summary>
+    public long PropertyConflicts { get; private set; }
+    /// <summary>Elements whose create fragments disagree on type or endpoints (counted each time such an element is resolved): they are absent.</summary>
+    public long ElementConflicts { get; private set; }
+
+    public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight)
+    {
+        if (!elems.TryGetValue(elem, out var st)) elems[elem] = st = new ElemState { IsRel = isRel };
+        var i = st.Contribs.FindIndex(c => c.Sink == sink && c.Update == update && c.Type == type && c.Source == source && c.Target == target && c.Props.Equals(props));
+        if (i >= 0)
+        {
+            var nw = st.Contribs[i].Weight + weight;
+            if (nw == 0) st.Contribs.RemoveAt(i); else st.Contribs[i] = st.Contribs[i] with { Weight = nw };
+        }
+        else if (weight != 0)                // a retraction may arrive before the insertion it cancels: the weights add up in any order
+        {
+            st.Contribs.Add(new Contribution(sink, update, type, source, target, props, weight));
+            if (isRel) foreach (var end in new[] { source, target }) if (end is not null) { if (!relsAt.TryGetValue(end, out var set)) relsAt[end] = set = []; set.Add(elem); }
+        }
+        if (touchedSet.Add(elem)) touched.Add(elem);
+    }
+
+    public void Telemetry(WindowKey key, decimal value, long weight, long period) => tele.Add((key, value, weight, period));
+
+    Element? Resolve(int elem, ElemState st)
+    {
+        var creates = st.Contribs.Where(c => !c.Update && c.Weight > 0).OrderBy(c => c.Sink).ToList();
+        if (creates.Count == 0) return null;
+        var first = creates[0];
+        if (creates.Any(c => c.Type != first.Type || c.Source != first.Source || c.Target != first.Target)) { ElementConflicts++; return null; }     // creates that disagree on type or endpoints: the element is absent
+        // Def. 6.4 (D34): the state is a function of the positive fragments, whatever their sink or order. A property with more than one value is absent and counted.
+        var values = new Dictionary<string, Value>(StringComparer.Ordinal); HashSet<string>? conflicting = null;
+        foreach (var c in st.Contribs) if (c.Weight > 0) foreach (var (k, v) in c.Props.Items)
+            if (!values.TryAdd(k, v) && !values[k].Equals(v)) (conflicting ??= []).Add(k);
+        if (conflicting is not null) { PropertyConflicts += conflicting.Count; foreach (var k in conflicting) values.Remove(k); }
+        var props = Props.Of(values);
+        var id = it.Get(elem);
+        return st.IsRel ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
+    }
+
+    /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
+    readonly Dictionary<(string Source, string Target, string Type), SortedSet<string>> contested = [];
+    readonly Dictionary<string, (string Source, string Target, string Type)> contestedBy = new(StringComparer.Ordinal);
+
+    /// <summary>Edits that bring the graph to the resolved states of the touched elements. Where several relationships claim one (source, target, type), the one with the smallest id is present, whatever arrived first; each such tuple is counted.</summary>
+    public List<Edit> Flush(Graph g)
+    {
+        var want = new Dictionary<ElementKey, Element?>();
+        var claims = new Dictionary<(string, string, string), string>();          // tuples claimed in this flush, by the first claimant seen
+        var affected = new HashSet<(string, string, string)>();
+        foreach (var elem in touched)
+        {
+            var st = elems[elem];
+            var after = Resolve(elem, st);
+            var id = it.Get(elem);
+            want[st.IsRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;
+            if (after is null && st.Contribs.Count == 0 && !contestedBy.ContainsKey(id)) elems.Remove(elem);
+            if (!st.IsRel) continue;
+            if (contestedBy.Remove(id, out var old)) { contested[old].Remove(id); affected.Add(old); }
+            if (after is not Rel r) continue;
+            var tuple = (r.Source, r.Target, r.Type);
+            // who else holds the tuple: a relationship of the graph that this flush does not move away, or one resolved earlier in this flush
+            var holder = g.FindRel(r.Source, r.Target, r.Type) is { } inGraph && inGraph.Id != id && (!want.TryGetValue(ElementKey.Rel(inGraph.Id), out var moved) || moved is Rel m && (m.Source, m.Target, m.Type) == tuple) ? inGraph.Id
+                : claims.TryGetValue(tuple, out var first) && first != id ? first : null;
+            claims.TryAdd(tuple, id);
+            if (holder is null && !contested.ContainsKey(tuple)) continue;
+            if (!contested.TryGetValue(tuple, out var set)) contested[tuple] = set = new SortedSet<string>(StringComparer.Ordinal);
+            foreach (var claimant in holder is null ? [id] : new[] { id, holder }) { set.Add(claimant); contestedBy[claimant] = tuple; }
+            affected.Add(tuple);
+        }
+        touched.Clear(); touchedSet.Clear();
+        foreach (var tuple in affected)
+        {
+            var set = contested[tuple];
+            if (set.Count > 1) Rejections++;
+            var winner = set.Min;
+            foreach (var claimant in set)
+                want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && elems.TryGetValue(h, out var st) ? Resolve(h, st) : null;
+            if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }
+        }
+        var edits = new List<Edit>();
+        foreach (var (key, after) in want)
+        {
+            var before = g.Get(key);
+            if (!Equals(before, after)) edits.Add(new Edit(key, before, after));
+        }
+        return edits;
+    }
+
+    /// <summary>Windows that more than one row writes, or one row with a weight other than one: the rows that support them, value to weight. A window written by exactly one row (premise B1, the normal case) is not here: the store holds its value and that is its whole support.</summary>
+    readonly Dictionary<WindowKey, Dictionary<decimal, long>> sharedWindows = [];
+    /// <summary>Windows that rows with different values write at the same time (premise B1 broken): such a window has no value (D34).</summary>
+    public long WindowConflicts { get; private set; }
+
+    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left.</summary>
+    public List<Sample> FlushTelemetry(ITelemetryStore store, GraphKey g, long inputId, long widthNs)
+    {
+        var res = new List<Sample>();
+        var step = new Dictionary<WindowKey, (Dictionary<decimal, long> Net, long Period)>();
+        var order = new List<WindowKey>();
+        foreach (var (key, value, weight, period) in tele)
+        {
+            if (!step.TryGetValue(key, out var cur)) { step[key] = cur = ([], period); order.Add(key); }
+            var n = cur.Net.GetValueOrDefault(value) + weight;
+            if (n == 0) cur.Net.Remove(value); else cur.Net[value] = n;
+        }
+        foreach (var key in order)
+        {
+            var (net, per) = step[key];
+            if (net.Count == 0) continue;
+            decimal? Stored() => store.ReadWindow(g, [key.Element], [key.Prop], key.WindowStart, key.WindowStart + 1)[0].Points is { Count: 1 } p ? p[0].Value : null;
+            void Set(decimal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v, inputId));
+            void Delete(decimal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v, inputId, Deleted: true));
+            var shared = sharedWindows.TryGetValue(key, out var support);
+            // one row out and one row in: the revision of a window that one row writes
+            if (!shared && net.Count == 2 && net.Values.Sum() == 0 && net.Values.Max() == 1) { Set(net.First(x => x.Value == 1).Key); continue; }
+            var stored = Stored();
+            support ??= stored is { } one ? new() { [one] = 1 } : [];
+            foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; }
+            var values = support.Where(x => x.Value > 0).Select(x => x.Key).ToList();
+            if (values.Count > 1) WindowConflicts++;
+            if (values.Count != 1) { if (stored is { } gone) Delete(gone); }
+            else if (values[0] != stored) Set(values[0]);
+            // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)
+            if (support.Count == 0 || support.Count == 1 && support.Values.First() == 1) sharedWindows.Remove(key); else sharedWindows[key] = support;
+        }
+        tele.Clear();
+        return res;
+    }
+}
+
+abstract class SinkOp : PhysOp
+{
+    protected SinkOp(TOp t) : base(t) { }
+}
+
+/// <summary>Emit entity: contributions per row; graph-data properties into the element state, telemetry properties into the telemetry plane at the row's window.</summary>
+sealed class EmitEntityOp : SinkOp
+{
+    readonly TEmitEntity t; readonly int sink; readonly VExpr id; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
+    readonly (string Role, int Col, bool IsRel, string Port)[] lineage; readonly (string Group, int[] KeyCols)? groupRef;
+    public EmitEntityOp(TEmitEntity t, int sink, Layout inLayout, OpContext cx, Func<TExpr, VExpr> compile, (string, int, bool, string)[] lineage, (string, int[])? groupRef = null) : base(t)
+    {
+        this.t = t; this.sink = sink; it = cx.It; id = compile(t.EntityId); this.lineage = lineage; this.groupRef = groupRef;
+        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
+        ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
+    }
+    public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
+        var idc = id.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        for (var k = 0; k < b.Rows; k++)
+        {
+            var row = b.RowAt(k);
+            if (idc.P is not null && !idc.P[row]) { cx.SkippedEmits++; continue; }
+            var elem = (int)idc.L[row]; var w = b.Weight(row);
+            var props = new List<KeyValuePair<string, Value>>();
+            for (var s = 0; s < sets.Length; s++)
+            {
+                var set = sets[s].Set; var col = cols[s];
+                if (!col.Present(row)) continue;
+                if (set.Telemetry)
+                {
+                    var v = col.IsDec ? col.D[row] : col.L[row];
+                    cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), v, w, set.Period);
+                }
+                else props.Add(KeyValuePair.Create(set.PropId, ToValue(col, row, set.Value.Type.Ty)));
+            }
+            if (t.Update && props.Count == 0) continue;
+            cx.Out.Contribute(elem, false, sink, t.Update, t.TypeId, null, null, Props.Of(props), w);
+            if (!t.Update) { cx.Out.AddSupport(elem, lineage, b, row, w); if (w > 0 && groupRef is { } gr) cx.Out.GroupRefs[elem] = (gr.Group, string.Join(',', gr.KeyCols.Select(c => b.Cols[c].L[row]))); }
+            if (w > 0) cx.Out.Lineage[elem] = Lineage.Of(t.Name, t.Rule, lineage, b, row, t.Update ? cx.Out.Lineage.GetValueOrDefault(elem) : null);
+        }
+        return null;
+    }
+    Value ToValue(Column c, int row, Ty ty) => Codec.ToValue(c, row, ty, it);
+}
+
+sealed class EmitRelOp : SinkOp
+{
+    readonly TEmitRel t; readonly int sink; readonly VExpr src, tgt; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
+    readonly Dictionary<(int, int), int> relIds = [];
+    readonly (string Role, int Col, bool IsRel, string Port)[] lineage; readonly (string Group, int[] KeyCols)? groupRef;
+    public EmitRelOp(TEmitRel t, int sink, Layout inLayout, OpContext cx, Func<TExpr, VExpr> compile, (string, int, bool, string)[] lineage, (string, int[])? groupRef = null) : base(t)
+    {
+        this.t = t; this.sink = sink; it = cx.It; src = compile(t.Source); tgt = compile(t.Target); this.lineage = lineage; this.groupRef = groupRef;
+        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
+        ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
+        cx.Out.RegisterRelSink(sink, (s, d) => IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, s, d));
+    }
+    public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
+        var sc = src.Eval(b); var tc = tgt.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        for (var k = 0; k < b.Rows; k++)
+        {
+            var row = b.RowAt(k);
+            if ((sc.P is not null && !sc.P[row]) || (tc.P is not null && !tc.P[row])) { cx.SkippedEmits++; continue; }
+            var s = (int)sc.L[row]; var d = (int)tc.L[row]; var w = b.Weight(row);
+            if (!relIds.TryGetValue((s, d), out var rel))
+                relIds[(s, d)] = rel = it.Intern(IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, it.Get(s), it.Get(d)));
+            var props = new List<KeyValuePair<string, Value>>();
+            for (var i = 0; i < sets.Length; i++)
+            {
+                var set = sets[i].Set; var col = cols[i];
+                if (!col.Present(row)) continue;
+                if (set.Telemetry) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), col.IsDec ? col.D[row] : col.L[row], w, set.Period);
+                else props.Add(KeyValuePair.Create(set.PropId, Codec.ToValue(col, row, set.Value.Type.Ty, it)));
+            }
+            if (t.Update && props.Count == 0) continue;
+            cx.Out.Contribute(rel, true, sink, t.Update, t.TypeId, it.Get(s), it.Get(d), Props.Of(props), w);
+            if (!t.Update) { cx.Out.AddSupport(rel, lineage, b, row, w); if (w > 0 && groupRef is { } gr) cx.Out.GroupRefs[rel] = (gr.Group, string.Join(',', gr.KeyCols.Select(c => b.Cols[c].L[row]))); }
+            if (w > 0) cx.Out.Lineage[rel] = Lineage.Of(t.Name, t.Rule, lineage, b, row, t.Update ? cx.Out.Lineage.GetValueOrDefault(rel) : null);
+        }
+        return null;
+    }
+}
+
+/// <summary>Link: an equivalence between two identity keys. An asserted policy with confidence at or above its threshold binds the right key to the left identity (rule B2).</summary>
+sealed class LinkOp : SinkOp
+{
+    readonly TLink t; readonly VId left, right; readonly IdentityCatalog cat;
+    public LinkOp(TLink t, VId left, VId right, IdentityCatalog cat) : base(t) { this.t = t; this.left = left; this.right = right; this.cat = cat; }
+    public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
+        if (t.Mode != "assert" || t.Confidence < t.Threshold) return null;
+        var lc = left.Eval(b);
+        var rcols = right.EvalComponents(b, [], out _);
+        var buf = new long[rcols.Length];
+        for (var k = 0; k < b.Rows; k++)
+        {
+            var row = b.RowAt(k);
+            if (b.Weight(row) <= 0 || (lc.P is not null && !lc.P[row])) continue;
+            if (!right.CanonicalComponents(rcols, row, buf)) continue;
+            cat.Bind(right.Domain, buf, (int)lc.L[row], left.Domain);
+        }
+        return null;
+    }
+}
+
+static class Lineage
+{
+    /// <summary>The sources of a row: its element-valued columns that come from a Match. An update emit keeps the sources of the create emit it refines.</summary>
+    public static LineageInfo Of(string sink, string? rule, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, LineageInfo? previous)
+    {
+        if (previous is not null) return previous;
+        var list = new List<LineageSource>();
+        foreach (var (role, col, isRel, port) in cols)
+            if (b.Cols[col].Present(row) && list.Count < 16) list.Add(new LineageSource(role, (int)b.Cols[col].L[row], isRel, port));
+        if (previous is not null && list.Count == 0) return previous;
+        return new LineageInfo(previous?.Sink ?? sink, previous?.Rule ?? rule, list, cols.Length);
+    }
+}

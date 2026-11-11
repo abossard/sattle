@@ -1,0 +1,5 @@
+/// Row contract produced by the compiled Hubble adapter.
+module sattle.source.hubble @ 1.0.0;
+
+rows FlowRow { time: Instant; cluster: Text; verdict: Text;
+               srcNamespace?: Text; srcPod?: Text; dstNamespace?: Text; dstPod?: Text; }
