@@ -1,7 +1,9 @@
 /// Azure resource ontology, observed through Azure Resource Graph.
 module sattle.azure @ 1.0.0;
 
+/// address, linkedId, clientId, principalId and scope come from the resource's properties for the types that have them (sattle.source.azure, ResourceRow).
 entity AzureResource { resourceId: Text; name: Text label; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text;
+  address?: Text; linkedId?: Text; clientId?: Text; principalId?: Text; scope?: Text;
   changes?: Integer telemetry delta sum every 60s;
   cpuPercent?: Decimal telemetry gauge max every 60s;
   memoryPercent?: Decimal telemetry gauge max every 60s;

@@ -30,7 +30,7 @@ public class RetentionOfHistoryTests
     }
 
     [Theory]
-    [InlineData("master", 5)] [InlineData("health", 8)]
+    [InlineData("master", 5)] [InlineData("workload", 8)]
     public void Revisions_inside_the_retention_read_exactly_as_without_a_cap_and_older_ones_answer_Gap(string graph, int keep)
     {
         using var h = Fed(keep, 100_000);

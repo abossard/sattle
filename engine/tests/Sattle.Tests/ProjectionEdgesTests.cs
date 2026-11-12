@@ -14,7 +14,6 @@ public class ProjectionEdgesTests
     /// <summary>Graphs of the space that declare relationship types in their output ontology and are exempt from "has relationships on the estate", with the reason. Everything else must have them.</summary>
     static readonly Dictionary<string, string> Exempt = new()
     {
-        ["healthSignals"] = "a list of signals: a signal names its component in a property, the Measures edge to the component is added by healthState",
         ["deploymentReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
         ["healthReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
         ["treeSignals"] = "a list of signals: a signal names its element in a property, the hierarchy and the evidence edges are in the other graphs of the tree",
@@ -71,9 +70,8 @@ public class ProjectionEdgesTests
         Assert.Equal(["Ordering -> Commerce", "Storefront -> Commerce"], under);
         var lifted = Summed(e, "capabilities", "callFlows", id => CapName(e, id));
         var service = Summed(e, "serviceTree", "flows", id => ServiceName(e, id));
-        Assert.Equal(2, lifted.Count);
+        Assert.Single(lifted);                                                                           // database has no pods, so nothing calls into data-platform
         Assert.Equal(service["web -> api"], lifted["Storefront -> Ordering"]);
-        Assert.Equal(service["api -> db"], lifted["Ordering -> Data platform"]);
         Assert.True(lifted.Values.All(v => v > 0));
     }
 
@@ -97,16 +95,44 @@ public class ProjectionEdgesTests
             foreach (var cap in (realizesWebApiDb[i] ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries))
                 lines.Add($"{{\"v\":1,\"source\":\"authoring\",\"capturedAt\":\"2026-01-01T10:00:00.600Z\",\"seq\":{100 + i * 10 + Array.IndexOf((realizesWebApiDb[i] ?? "").Split('|'), cap)},\"key\":\"authoring/realizes/{cap}/{services[i]}\",\"meta\":null,\"payload\":{{\"kind\":\"realizes\",\"capId\":\"{cap}\",\"cluster\":\"synth\",\"namespace\":\"shop\",\"service\":\"{services[i]}\"}}}}");
         File.WriteAllLines(Path.Combine(dir, "authoring", "capabilities.ndjson"), lines);
-        if (extraWebToDb)
-        {
-            var flows = Path.Combine(dir, "hubble", "flows.ndjson");
-            var all = File.ReadAllLines(flows).ToList();
-            var extra = all.Where(l => l.Contains("\"pod_name\":\"api-5c9-1\"},\"destination\"") && l.Contains("db-6b8-1")).Select(l => l.Replace("\"pod_name\":\"api-5c9-1\"", "\"pod_name\":\"web-7d4-1\"")
-                .Replace("\"seq\":", "\"seq\":9").Replace("hubble/flow-", "hubble/flow-x").Replace("\"uuid\":\"flow-", "\"uuid\":\"flow-x")).ToList();
-            all.AddRange(extra);
-            File.WriteAllLines(flows, all.OrderBy(l => JsonDocument.Parse(l).RootElement.GetProperty("capturedAt").GetString(), StringComparer.Ordinal));
-        }
+        AddDb(dir, extraWebToDb);
         return dir;
+    }
+
+    /// <summary>A third service behind api for the lift tests: Deployment, Service and pod `db` and its endpoint slice, flows from both api pods to the db pod every 5 s for ten minutes (every other one dropped in minutes 4 to 7), and with `extraWebToDb` the same flows from web-7d4-1 too. The shipped estate's database is an ExternalName Service without pods.</summary>
+    static void AddDb(string dir, bool extraWebToDb)
+    {
+        static string At(double sec) => new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero).AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+        static string Line(string source, double sec, string key, object payload) =>
+            JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = source, ["capturedAt"] = At(sec), ["seq"] = 0, ["key"] = key, ["meta"] = null, ["payload"] = payload });
+        object Obj(string kind, string uid, string name, Dictionary<string, object> extra) =>
+            new Dictionary<string, object>(extra) { ["kind"] = kind, ["metadata"] = new Dictionary<string, object>((Dictionary<string, object>?)extra.GetValueOrDefault("metadata") ?? []) { ["name"] = name, ["uid"] = uid, ["namespace"] = "shop", ["resourceVersion"] = "900" } };
+        var k8s = new List<string>
+        {
+            Line("kubernetes-watch", 0.2, "kubernetes-watch/ADDED/Deployment/dep-db/900", new { type = "ADDED", @object = Obj("Deployment", "dep-db", "db", new() { ["spec"] = new { replicas = 1 } }) }),
+            Line("kubernetes-watch", 0.4, "kubernetes-watch/ADDED/Service/svc-db/900", new { type = "ADDED", @object = Obj("Service", "svc-db", "db", new()) }),
+            Line("kubernetes-watch", 1, "kubernetes-watch/ADDED/Pod/uid-db-6b8-1/900", new { type = "ADDED", @object = Obj("Pod", "uid-db-6b8-1", "db-6b8-1", new()
+            {
+                ["metadata"] = new Dictionary<string, object> { ["ownerReferences"] = new[] { new { kind = "ReplicaSet", name = "db-6b8" } } },
+                ["spec"] = new { nodeName = "node-b" }, ["status"] = new { phase = "Running" },
+            }) }),
+            Line("kubernetes-watch", 2, "kubernetes-watch/ADDED/EndpointSlice/slice-db/900", new { type = "ADDED", @object = Obj("EndpointSlice", "slice-db", "db-slice", new()
+            {
+                ["metadata"] = new Dictionary<string, object> { ["labels"] = new Dictionary<string, string> { ["kubernetes.io/service-name"] = "db" } },
+                ["endpoints"] = new[] { new { addresses = new[] { "10.0.2.1" }, targetRef = new { kind = "Pod", uid = "uid-db-6b8-1" } } },
+            }) }),
+        };
+        var flows = new List<string>(); var n = 0;
+        for (var sec = 10; sec < 600; sec += 5)
+            foreach (var src in extraWebToDb ? new[] { "api-5c9-1", "api-5c9-2", "web-7d4-1" } : ["api-5c9-1", "api-5c9-2"])
+            {
+                var verdict = sec is >= 240 and < 420 && sec / 5 % 2 == 0 ? "DROPPED" : "FORWARDED";
+                var t = At(sec + 0.0005);
+                flows.Add(Line("hubble", sec + 0.0005, $"hubble/flow-db-{n}", new { flow = new { time = t, uuid = $"flow-db-{n}", verdict, source = new { @namespace = "shop", cluster_name = "synth", pod_name = src }, destination = new { @namespace = "shop", cluster_name = "synth", pod_name = "db-6b8-1" } }, node_name = "node-a", time = t }));
+                n++;
+            }
+        File.WriteAllLines(Path.Combine(dir, "kubernetes", "db.ndjson"), k8s);
+        File.WriteAllLines(Path.Combine(dir, "hubble", "db.ndjson"), flows);
     }
 
     /// <summary>Realizes of web, api, db; the extra flow web to db; the retired capability; and the lifted edges expected, with the sum of flows read from the service level.</summary>
@@ -173,18 +199,17 @@ public class ProjectionEdgesTests
         try
         {
             Assert.Null(Sattle.Cli.Program.ArgumentsOf(dir));                                          // no file: the tracked arguments, as on a fresh clone
-            File.WriteAllText(Path.Combine(dir, Sattle.Cli.Program.SpaceArguments), """{ "workloadNamespace": "other", "clusterLabel": "a \"quoted\" label", "notAnArgument": "ignored" }""");
+            File.WriteAllText(Path.Combine(dir, Sattle.Cli.Program.SpaceArguments), """{ "workloadNamespace": "other", "aksName": "a \"quoted\" name", "notAnArgument": "ignored" }""");
             var tracked = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"));
             var files = Repo.DefinitionFilesFor(dir);
             var space = files.Single(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)).Text;
             Assert.Equal(WithoutBinding(tracked), WithoutBinding(space));                               // nothing but argument values differs
             Assert.Equal(Regex.Matches(tracked, @"workloadNamespace: ").Count, Regex.Matches(space, @"workloadNamespace: ""other""").Count);       // every use of the name
-            Assert.Contains(@"clusterLabel: ""a \u0022quoted\u0022 label""", space);                                                             // a value is written as a text literal of the language
-            Assert.Equal(Regex.Match(tracked, @"aksName: ""[^""]*""").Value, Regex.Match(space, @"aksName: ""[^""]*""").Value);                    // not given: kept
+            Assert.Contains(@"aksName: ""a \u0022quoted\u0022 name""", space);                                                                  // a value is written as a text literal of the language
             Assert.DoesNotContain("notAnArgument", space);
             var cat = Repo.CatalogFor(dir, out var res);
             Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-            Assert.Contains(cat.Spaces.Values.Single().Graphs, g => g.Name == "health");
+            Assert.Contains(cat.Spaces.Values.Single().Graphs, g => g.Name == "workload");
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -222,7 +247,7 @@ public class ProjectionEdgesTests
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         var space = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
-        if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");", "  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");\n  " + graphLine);
+        if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
         files[i] = files[i] with { Text = space };
         if (module is not null) files.Add(new SourceFile(module + ".sattle", moduleText!));
         var cat = new Catalog(); var res = cat.Load(files, updatePins: true);

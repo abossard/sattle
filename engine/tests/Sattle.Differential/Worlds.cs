@@ -246,6 +246,52 @@ public static class Worlds
           emit entity Signal from s identity signal(k: c) set { k: lowerInvariant(c), v: v };
         """);
 
+    /// <summary>The shapes of the workload model: item edges lifted to the groups the items belong to (communication), and a dependency between groups derived from the same edges by joins with a table of the groups that count and with the groups themselves (Match, Values, Join, Distinct, EmitRelationship).</summary>
+    public static readonly World LiftedDependency = new("lifted and derived dependency", "Lift, Match, Values, Join, Distinct, EmitRelationship", [new SourceFile("w.sattle", """
+        module w @ 1.0.0;
+        entity Item { k: Text label; g: Text; }
+        entity Group { name: Text label; }
+        relationship Edge (Item) -> (Item) kind communication;
+        relationship Belongs (Item) -> (Group) kind composition;
+        relationship Talks (Group) -> (Group) kind communication;
+        relationship Needs (Group) -> (Group) kind dependency;
+        identity item for Item version "1" { k: Text by exact; }
+        identity group for Group version "1" { name: Text by exact; }
+        rows ItemRow { k: Text; g: Text; }
+        rows EdgeRow { src: Text; dst: Text; }
+        projection ingest ingestion output w {
+          in items: rows ItemRow;
+          in edges: rows EdgeRow;
+          rule observed readonly "differential" {
+            emit entity Item from items identity item(k: k) set { k: k, g: g };
+            emit entity Group from items identity group(name: g) set { name: g };
+            emit relationship Belongs from items key belongs: item(k: k) -> group(name: g);
+            emit relationship Edge from edges key edge: item(k: src) -> item(k: dst);
+          }
+        }
+        projection groups view forward output w {
+          in master: graph w;
+          let all = match master (g: Group);
+          emit entity Group from all identity g set { name: g.name };
+          lift talks as Talks from master Edge via master Belongs images each;
+          let reached = match master (a: Item)-[:Edge]->(b: Item), (a)-[:Belongs]->(ga: Group), (b)-[:Belongs]->(gb: Group) |> select { from: ga.name, to: gb.name };
+          let counting = values { counted: "g0" }, { counted: "g1" };
+          let needed = join reached, counting on to == counted;
+          let pairs = needed |> where from != to |> select { from: from, to: to } |> distinct;
+          let sources = all |> select { s: g, sn: g.name };
+          let targets = all |> select { t: g, tn: g.name };
+          let fromSource = join pairs, sources on from == sn;
+          let both = join fromSource, targets on to == tn;
+          emit relationship Needs from both key needs: s -> t;
+        }
+        space s {
+          source items adapter "sattle.authoring" rows ItemRow;
+          source edges adapter "sattle.authoring" rows EdgeRow;
+          master graph master = ingest(items: items, edges: edges);
+          graph view = groups(master: master);
+        }
+        """)], [new("items", (r, _) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3))), f => ((TextValue)f["k"]).S), BagEdges]) { Witnesses = ["Talks", "Needs"] };
+
     public static readonly World TwoKeyRules = new("two key rules", "EmitRelationship, Def. 6.4", [new SourceFile("w.sattle", """
         module w @ 1.0.0;
         entity Item { k?: Text; }
@@ -353,7 +399,7 @@ public static class Worlds
               let s = m |> series master i.hits within 3m |> rollup by { c: i.g } combine { v: sum(hits) };
               emit entity Signal from s identity signal(k: c) set { k: c, v: v };
             """, 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, Fill, FillAroundLoss, TimeToLive, RollupAll, RollupAny, TwoKeyRules,
+        Hysteresis, RowParameters, Fill, FillAroundLoss, TimeToLive, RollupAll, RollupAny, TwoKeyRules, LiftedDependency,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

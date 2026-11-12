@@ -366,13 +366,15 @@ public class HealthTreeTests
         finally { foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(store) + "*")) File.Delete(f); }
     }
 
+    /// <summary>The workload model and the tree read the same rules and meters, so they agree where both measure the same way: the nodes (the tree's cluster contains the namespace, so it shows what follows). They differ where the workload model reads silence: the tree has no fill and no time to live, so after scenario C its crash-looping pod keeps its last state, and after E it does not see that the storage account stopped reporting.</summary>
     [Theory]
-    [InlineData("shop", "ns/synth/shop")]
-    [InlineData("db", "wl/synth/shop/db")]
-    public void The_workload_model_and_the_tree_agree_on_the_state_of_what_both_cover(string component, string element)
+    [InlineData("node", "node-a", "node/synth/node-a")]
+    [InlineData("node", "node-b", "node/synth/node-b")]
+    public void The_workload_model_and_the_tree_agree_on_the_state_of_what_both_measure_the_same_way(string kind, string component, string element)
     {
         var e = Run(Path.Combine(Fixtures, "estate"));
-        var model = e.Graph("health").State.Entities.Where(x => Ids.Name(x.Type) == "Component").First(x => x.Props.Text("d:acme.health/prop:name") == component).Props.Text("d:acme.health/prop:state");
+        var model = e.Graph("workload").State.Entities.First(x => x.Props.Text("d:acme.workload/prop:kind") == kind && x.Props.Text("d:acme.workload/prop:name") == component).Props.Text("d:acme.workload/prop:state");
+        Assert.Equal("Healthy", model);
         Assert.Equal(model, State(e, element));
     }
 }

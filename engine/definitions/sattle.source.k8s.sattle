@@ -1,11 +1,17 @@
 /// Row contracts produced by the compiled Kubernetes adapter.
 module sattle.source.k8s @ 1.0.0;
 
-rows PodRow      { cluster: Text; uid: Text; namespace: Text; name: Text; phase?: Text; teamLabel?: Text; nodeName?: Text; restarts?: Integer; ready?: Boolean; deployment?: Text; }
+rows PodRow      { cluster: Text; uid: Text; namespace: Text; name: Text; phase?: Text; teamLabel?: Text; nodeName?: Text; restarts?: Integer; ready?: Boolean; serviceAccount?: Text; deployment?: Text; }
 /// One Deployment: its desired replica count.
 rows DeploymentRow { cluster: Text; namespace: Text; name: Text; replicas?: Integer; }
-rows ServiceRow  { cluster: Text; namespace: Text; name: Text; }
+/// One Service. externalName is the host an ExternalName Service stands for; address is its load balancer ingress, else its cluster IP.
+rows ServiceRow  { cluster: Text; namespace: Text; name: Text; externalName?: Text; address?: Text; }
+/// One ServiceAccount. clientId is the workload identity it uses (annotation azure.workload.identity/client-id).
+rows ServiceAccountRow { cluster: Text; namespace: Text; name: Text; clientId?: Text; }
+/// One environment variable of a Deployment's containers that names a host (by its name: *HOST, *HOSTNAME, *SERVER, *ENDPOINT, *URL, *URI), with the host it names. Other variables are not read.
+rows HostReferenceRow { cluster: Text; namespace: Text; deployment: Text; variable: Text; host: Text; }
 rows EndpointRow { cluster: Text; namespace: Text; service: Text; address: Text; podUid?: Text; }
-rows NodeRow     { cluster: Text; uid: Text; name: Text; resourceId?: Text; }
+/// One Node. pool is its AKS agent pool (label kubernetes.azure.com/agentpool).
+rows NodeRow     { cluster: Text; uid: Text; name: Text; resourceId?: Text; pool?: Text; }
 /// One row per newly observed event occurrence. count is the increment since the last row of the same event.
 rows EventRow    { eventId: Text; time: Instant; cluster: Text; namespace: Text; kind: Text; name: Text; reason: Text; type: Text; count: Integer; message?: Text; }

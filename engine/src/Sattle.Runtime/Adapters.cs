@@ -82,17 +82,21 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     public string Id => "kubernetes.list-watch";
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
-        new("PodRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("phase", "Text", true), RowDef.F("teamLabel", "Text", true), RowDef.F("nodeName", "Text", true), RowDef.F("restarts", "Integer", true), RowDef.F("ready", "Boolean", true), RowDef.F("deployment", "Text", true)]),
+        new("PodRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("phase", "Text", true), RowDef.F("teamLabel", "Text", true), RowDef.F("nodeName", "Text", true), RowDef.F("restarts", "Integer", true), RowDef.F("ready", "Boolean", true), RowDef.F("serviceAccount", "Text", true), RowDef.F("deployment", "Text", true)]),
         new("DeploymentRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("replicas", "Integer", true)]),
-        new("ServiceRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text")]),
+        new("ServiceRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("externalName", "Text", true), RowDef.F("address", "Text", true)]),
+        new("ServiceAccountRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("clientId", "Text", true)]),
+        new("HostReferenceRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("deployment", "Text"), RowDef.F("variable", "Text"), RowDef.F("host", "Text")]),
         new("EndpointRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("service", "Text"), RowDef.F("address", "Text"), RowDef.F("podUid", "Text", true)]),
-        new("NodeRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("name", "Text"), RowDef.F("resourceId", "Text", true)]),
+        new("NodeRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("name", "Text"), RowDef.F("resourceId", "Text", true), RowDef.F("pool", "Text", true)]),
         new("EventRow", [RowDef.F("eventId", "Text"), RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("kind", "Text"), RowDef.F("name", "Text"), RowDef.F("reason", "Text"), RowDef.F("type", "Text"), RowDef.F("count", "Integer"), RowDef.F("message", "Text", true)]),
     ];
     public bool Handles(string s) => s is "kubernetes-list" or "kubernetes-watch" or "sattle-forwarder";
 
     /// <summary>The rows the adapter has emitted, per object. An object is known by its cluster and uid (`Key`); a row ends with the cluster it was written with, so a retraction repeats it whatever record causes it.</summary>
-    readonly Dictionary<string, string?[]> pods = [], services = [], nodes = [], deployments = [];
+    readonly Dictionary<string, string?[]> pods = [], services = [], nodes = [], deployments = [], accounts = [];
+    /// <summary>The host references of each Deployment (`HostReferenceRow`), by the Deployment's key: written again when the Deployment changes.</summary>
+    readonly Dictionary<string, List<string?[]>> hostRefs = [];
     readonly Dictionary<string, List<string?[]>> slices = [];
     readonly Dictionary<string, long> eventCounts = [];
     public long Events { get; private set; }
@@ -124,6 +128,7 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                     case "nodes": foreach (var k in Gone(nodes.Keys)) Upsert(nodes, k, null, sink, "NodeRow", WriteNode); break;
                     case "deployments": foreach (var k in Gone(deployments.Keys)) Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); break;
                     case "endpointslices": foreach (var k in Gone(slices.Keys)) RemoveSlice(k, sink); break;
+                    case "serviceaccounts": foreach (var k in Gone(accounts.Keys)) Upsert(accounts, k, null, sink, "ServiceAccountRow", WriteAccount); break;
                 }
                 break;
             case "dropped": sink.SourceLoss(at, p.P("count") is { ValueKind: JsonValueKind.Number } c ? c.GetInt64() : 0, "forwarderDropped"); break;
@@ -163,28 +168,70 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
         switch (kind)
         {
             case "Pod":
-                Upsert(pods, key, deleted ? null : [uid, ns, name, obj.PathS("status", "phase"), obj.PathS("metadata", "labels", "team"), obj.PathS("spec", "nodeName"), Restarts(obj), ReadyOf(obj), DeploymentOf(obj), cluster], sink, "PodRow",
+                Upsert(pods, key, deleted ? null : [uid, ns, name, obj.PathS("status", "phase"), obj.PathS("metadata", "labels", "team"), obj.PathS("spec", "nodeName"), Restarts(obj), ReadyOf(obj), DeploymentOf(obj), obj.PathS("spec", "serviceAccountName"), cluster], sink, "PodRow",
                     WritePod);
                 break;
             case "Deployment":
                 Upsert(deployments, key, deleted ? null : [uid, ns, name, obj.Path("spec", "replicas") is { ValueKind: JsonValueKind.Number } rp ? rp.GetInt64().ToString(CultureInfo.InvariantCulture) : null, cluster], sink, "DeploymentRow",
                     WriteDeployment);
+                HostReferences(key, ns, name, deleted ? null : obj, sink);
                 break;
             case "Service":
-                Upsert(services, key, deleted ? null : [uid, ns, name, cluster], sink, "ServiceRow", WriteService);
+                Upsert(services, key, deleted ? null : [uid, ns, name, obj.PathS("spec", "externalName"), AddressOf(obj), cluster], sink, "ServiceRow", WriteService);
                 break;
             case "Node":
-                Upsert(nodes, key, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID")), cluster], sink, "NodeRow", WriteNode);
+                Upsert(nodes, key, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID")), obj.PathS("metadata", "labels", "kubernetes.azure.com/agentpool") ?? obj.PathS("metadata", "labels", "agentpool"), cluster], sink, "NodeRow", WriteNode);
+                break;
+            case "ServiceAccount":
+                Upsert(accounts, key, deleted ? null : [uid, ns, name, obj.PathS("metadata", "annotations", "azure.workload.identity/client-id"), cluster], sink, "ServiceAccountRow", WriteAccount);
                 break;
             case "EndpointSlice": Slice(key, ns, obj, deleted, sink); break;
             case "Event": Event(uid, ns, obj, sink); break;
         }
     }
 
-    static void WritePod(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("phase", r[3]); w.Text("teamLabel", r[4]); w.Text("nodeName", r[5]); if (r[6] is { } n) w.Int(w.Col("restarts"), long.Parse(n, CultureInfo.InvariantCulture)); else w.Absent(w.Col("restarts")); if (r[7] is { } rd) w.Code(w.Col("ready"), rd == "True" ? 1 : 0); else w.Absent(w.Col("ready")); w.Text("deployment", r[8]); }
+    static void WritePod(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("phase", r[3]); w.Text("teamLabel", r[4]); w.Text("nodeName", r[5]); if (r[6] is { } n) w.Int(w.Col("restarts"), long.Parse(n, CultureInfo.InvariantCulture)); else w.Absent(w.Col("restarts")); if (r[7] is { } rd) w.Code(w.Col("ready"), rd == "True" ? 1 : 0); else w.Absent(w.Col("ready")); w.Text("deployment", r[8]); w.Text("serviceAccount", r[9]); }
     static void WriteDeployment(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); if (r[3] is { } rn) w.Int(w.Col("replicas"), long.Parse(rn, CultureInfo.InvariantCulture)); else w.Absent(w.Col("replicas")); }
-    static void WriteService(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); }
-    static void WriteNode(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("name", r[1]); w.Text("resourceId", r[2]); }
+    static void WriteService(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("externalName", r[3]); w.Text("address", r[4]); }
+    static void WriteNode(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("name", r[1]); w.Text("resourceId", r[2]); w.Text("pool", r[3]); }
+    static void WriteAccount(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("clientId", r[3]); }
+    static void WriteHostReference(RowWriter w, string?[] r) { w.Text("cluster", r[0]); w.Text("namespace", r[1]); w.Text("deployment", r[2]); w.Text("variable", r[3]); w.Text("host", r[4]); }
+
+    /// <summary>The address a Service is reached at: its load balancer ingress, else its cluster IP. A headless Service has none.</summary>
+    static string? AddressOf(JsonElement svc)
+    {
+        if (svc.Path("status", "loadBalancer", "ingress") is { ValueKind: JsonValueKind.Array } ing)
+            foreach (var i in ing.EnumerateArray()) if (J.NullIfEmpty(i.S("ip") ?? i.S("hostname")) is { } a) return a;
+        return svc.PathS("spec", "clusterIP") is { } ip && ip != "None" ? J.NullIfEmpty(ip) : null;
+    }
+
+    /// <summary>The host a value names: without a scheme, user, port or path (`postgres://u@db.example:5432/x` names `db.example`). Null for a value that is no host name or address.</summary>
+    public static string? HostOf(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        var v = value.Trim();
+        if (v.IndexOf("://", StringComparison.Ordinal) is var s and >= 0) v = v[(s + 3)..];
+        if (v.IndexOf('@') is var at and >= 0) v = v[(at + 1)..];
+        var end = v.IndexOfAny(['/', '?', '#', ':', ';', ',']); if (end >= 0) v = v[..end];
+        v = v.ToLowerInvariant();
+        return v.Length > 0 && v.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-') ? v : null;
+    }
+
+    /// <summary>The environment variables of a Deployment's containers that name a host (by their name: `*HOST`, `*HOSTNAME`, `*SERVER`, `*ENDPOINT`, `*URL`, `*URI`), as one row per variable with the host it names. Other variables are not read: their values may be secrets.</summary>
+    void HostReferences(string key, string ns, string deployment, JsonElement? obj, IRowSink sink)
+    {
+        var rows = new List<string?[]>();
+        if (obj is { } o && o.Path("spec", "template", "spec", "containers") is { ValueKind: JsonValueKind.Array } containers)
+            foreach (var c in containers.EnumerateArray())
+                if (c.P("env") is { ValueKind: JsonValueKind.Array } env)
+                    foreach (var v in env.EnumerateArray())
+                        if (v.S("name") is { } n && new[] { "HOST", "HOSTNAME", "SERVER", "ENDPOINT", "URL", "URI" }.Any(x => n.EndsWith(x, StringComparison.OrdinalIgnoreCase)) && HostOf(v.S("value")) is { } host)
+                            rows.Add([cluster, ns, deployment, n, host]);
+        hostRefs.TryGetValue(key, out var prev); prev ??= [];
+        foreach (var r in prev.Where(p => !rows.Any(x => x.SequenceEqual(p)))) { var w = sink.Begin("HostReferenceRow"); w.Begin(-1); WriteHostReference(w, r); }
+        foreach (var r in rows.Where(x => !prev.Any(p => p.SequenceEqual(x)))) { var w = sink.Begin("HostReferenceRow"); w.Begin(1); WriteHostReference(w, r); }
+        if (rows.Count == 0) hostRefs.Remove(key); else hostRefs[key] = rows;
+    }
 
     /// <summary>The Azure resource id behind a node: the providerID without its azure:// scheme (the identity domain lowercases it).</summary>
     static string? ResourceIdOf(string? providerId) => providerId is not null && providerId.StartsWith("azure://", StringComparison.OrdinalIgnoreCase) ? providerId["azure://".Length..] : null;
@@ -264,13 +311,13 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
     public string Id => "hubble.observe";
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
-        new("FlowRow", [RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("verdict", "Text"), RowDef.F("srcNamespace", "Text", true), RowDef.F("srcPod", "Text", true), RowDef.F("dstNamespace", "Text", true), RowDef.F("dstPod", "Text", true)]),
+        new("FlowRow", [RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("verdict", "Text"), RowDef.F("srcNamespace", "Text", true), RowDef.F("srcPod", "Text", true), RowDef.F("dstNamespace", "Text", true), RowDef.F("dstPod", "Text", true), RowDef.F("dstAddress", "Text", true), RowDef.F("dstName", "Text", true)]),
     ];
     public bool Handles(string s) => s == "hubble";
     public long Flows { get; private set; }
     public long LostEventRecords { get; private set; }
     public long LostEvents { get; private set; }
-    int cTime = -1, cCluster, cVerdict, cSn, cSp, cDn, cDp;
+    int cTime = -1, cCluster, cVerdict, cSn, cSp, cDn, cDp, cDa, cDnm;
 
     public void Consume(Envelope e, IRowSink sink)
     {
@@ -296,13 +343,16 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
         if (verdict is null) { sink.Rejected("hubble", "flow without verdict"); return; }
         var src = flow.P("source"); var dst = flow.P("destination");
         var w = sink.Begin("FlowRow");
-        if (cTime < 0) { cTime = w.Col("time"); cCluster = w.Col("cluster"); cVerdict = w.Col("verdict"); cSn = w.Col("srcNamespace"); cSp = w.Col("srcPod"); cDn = w.Col("dstNamespace"); cDp = w.Col("dstPod"); }
+        if (cTime < 0) { cTime = w.Col("time"); cCluster = w.Col("cluster"); cVerdict = w.Col("verdict"); cSn = w.Col("srcNamespace"); cSp = w.Col("srcPod"); cDn = w.Col("dstNamespace"); cDp = w.Col("dstPod"); cDa = w.Col("dstAddress"); cDnm = w.Col("dstName"); }
         w.Begin();
         w.Instant(cTime, tns);
         w.Text(cCluster, J.NullIfEmpty(src?.S("cluster_name") ?? dst?.S("cluster_name")) ?? cluster);
         w.Text(cVerdict, verdict);
         w.Text(cSn, J.NullIfEmpty(src?.S("namespace"))); w.Text(cSp, J.NullIfEmpty(src?.S("pod_name")));
         w.Text(cDn, J.NullIfEmpty(dst?.S("namespace"))); w.Text(cDp, J.NullIfEmpty(dst?.S("pod_name")));
+        // the address a flow went to, and the first name Hubble resolved for it: what a flow to a destination outside the cluster says about it
+        w.Text(cDa, J.NullIfEmpty(flow.PathS("IP", "destination")));
+        w.Text(cDnm, flow.P("destination_names") is { ValueKind: JsonValueKind.Array } names && names.GetArrayLength() > 0 ? KubernetesAdapter.HostOf(names[0].GetString()) : null);
         Flows++;
     }
 }
@@ -313,7 +363,8 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter
     public string Id => "azure.resource-graph";
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
-        new("ResourceRow", [RowDef.F("id", "Text"), RowDef.F("name", "Text"), RowDef.F("type", "Text"), RowDef.F("location", "Text", true), RowDef.F("resourceGroup", "Text", true), RowDef.F("subscriptionId", "Text", true), RowDef.F("parentId", "Text", true)]),
+        new("ResourceRow", [RowDef.F("id", "Text"), RowDef.F("name", "Text"), RowDef.F("type", "Text"), RowDef.F("location", "Text", true), RowDef.F("resourceGroup", "Text", true), RowDef.F("subscriptionId", "Text", true), RowDef.F("parentId", "Text", true),
+            RowDef.F("address", "Text", true), RowDef.F("linkedId", "Text", true), RowDef.F("clientId", "Text", true), RowDef.F("principalId", "Text", true), RowDef.F("scope", "Text", true)]),
     ];
     public bool Handles(string s) => s == "arg";
     public long Resources { get; private set; }
@@ -333,7 +384,30 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter
         if (id is null || name is null || type is null) { sink.Rejected("arg", "row without id, name or type"); return; }
         var w = sink.Begin("ResourceRow"); w.Begin();
         w.Text("id", id); w.Text("name", name); w.Text("type", type);
-        w.Text("location", J.NullIfEmpty(e.Payload.S("location"))); w.Text("resourceGroup", J.NullIfEmpty(e.Payload.S("resourceGroup"))); w.Text("subscriptionId", J.NullIfEmpty(e.Payload.S("subscriptionId"))); w.Text("parentId", ClusterOf(e.Payload));
+        w.Text("location", J.NullIfEmpty(e.Payload.S("location"))); w.Text("resourceGroup", J.NullIfEmpty(e.Payload.S("resourceGroup"))); w.Text("subscriptionId", J.NullIfEmpty(e.Payload.S("subscriptionId")));
+        var p = e.Payload.P("properties") is { ValueKind: JsonValueKind.Object } props ? props : (JsonElement?)null;
+        string? Prop(params string[] path) => p is { } x ? J.NullIfEmpty(x.PathS(path)) : null;
+        string? address = null, linked = null, client = null, principal = null, scope = null, parent = ClusterOf(e.Payload);
+        switch (type.ToLowerInvariant())
+        {
+            case "microsoft.network/privateendpoints":
+                // the address the endpoint is reached at, the resource it leads to, and the virtual network it sits in
+                address = p?.P("customDnsConfigs") is { ValueKind: JsonValueKind.Array } dns && dns.GetArrayLength() > 0 && dns[0].P("ipAddresses") is { ValueKind: JsonValueKind.Array } ips && ips.GetArrayLength() > 0 ? ips[0].GetString() : null;
+                linked = p?.P("privateLinkServiceConnections") is { ValueKind: JsonValueKind.Array } links && links.GetArrayLength() > 0 ? J.NullIfEmpty(links[0].PathS("properties", "privateLinkServiceId")) : null;
+                if (Prop("subnet", "id") is { } subnet && subnet.IndexOf("/subnets/", StringComparison.OrdinalIgnoreCase) is var cut and > 0) parent = subnet[..cut];
+                break;
+            case "microsoft.apimanagement/service/backends":
+                address = KubernetesAdapter.HostOf(Prop("url"));
+                if (id.IndexOf("/backends/", StringComparison.OrdinalIgnoreCase) is var b and > 0) parent = id[..b];
+                break;
+            case "microsoft.managedidentity/userassignedidentities":
+                client = Prop("clientId"); principal = Prop("principalId");
+                break;
+            case "microsoft.authorization/roleassignments":
+                principal = Prop("principalId"); scope = Prop("scope");
+                break;
+        }
+        w.Text("parentId", parent); w.Text("address", address); w.Text("linkedId", linked); w.Text("clientId", client); w.Text("principalId", principal); w.Text("scope", scope);
         Resources++;
     }
 }

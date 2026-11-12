@@ -55,8 +55,8 @@ public class LiftTests
     {
         var lifted = Run(Files(Estate), Estate); var hand = Run(Files(Estate, handWritten: true), Estate);
         AssertSame(lifted, hand);
-        Assert.Equal(2, lifted.Graph("capabilities").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"));
-        Assert.Equal(2, lifted.Graph("serviceTree").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"));
+        Assert.Equal(1, lifted.Graph("capabilities").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"));       // storefront to ordering: web calls api; database has no pods to call
+        Assert.Equal(1, lifted.Graph("serviceTree").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"));
     }
 
     [Trait("Category", "Fixtures")]

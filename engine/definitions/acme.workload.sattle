@@ -1,0 +1,454 @@
+/// The workload model: what one workload is made of, what it talks to and what it depends on, across Kubernetes and Azure, and its health.
+/// Three kinds of edges are kept apart by their declared kind: what the flows show (communication), what a part belongs to or runs on (composition), and what a part needs to work (dependency, each derived with its evidence).
+/// Health rolls up along dependency and from part to whole along composition; an observed call alone carries no failure.
+module acme.workload @ 1.0.0;
+
+import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
+import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
+import acme.ops     @ 1.0.0 sha256:8247458215d96d0c55fda5bd14140e0d0a25db4236aea2f2749a873ceda9393d as ops;
+
+/// A part of the workload or of what carries it. key names it across graphs; own is the worst severity of its own signals (0 healthy, 1 no data, 2 degraded, 3 unhealthy); severity and state are rolled up.
+abstract entity Component {
+  key: Text; kind: Text treerole kind; name: Text label;
+  own?: Integer treerole own; severity?: Integer treerole severity;
+  state?: Text treerole rolledUp roles { "Healthy": ok, "No data": unknown, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
+}
+/// A namespace of a cluster.
+entity Workload : Component { cluster: Text; namespace: Text; }
+/// A Kubernetes Service. An ExternalName Service stands for something outside the cluster.
+entity WorkloadService : Component { cluster: Text; namespace: Text; externalName?: Text; }
+entity WorkloadDeployment : Component { cluster: Text; namespace: Text; replicas?: Integer; pods?: Integer; unhealthyPods?: Integer; }
+entity WorkloadPod : Component { cluster: Text; namespace: Text; }
+entity WorkloadNode : Component { cluster: Text; pool?: Text; }
+entity NodePool : Component { cluster: Text; }
+entity Cluster : Component { resourceId: Text; }
+/// An Azure resource the workload uses or runs on: a cache, a storage account, a database server, API Management, a private endpoint, a virtual network.
+entity PlatformResource : Component { resourceId: Text; resourceType: Text; }
+
+/// One way a dependency was found: how (privateEndpoint, dnsName, identity, configuration, calls, backend) and what was seen.
+entity DependencyEvidence { sourceKey: Text; targetKey: Text; how: Text; detail: Text label; }
+/// One signal of a component: a meter read against an authored rule. state is on, off, or nodata when the meter has not reported for its time to live.
+entity ComponentSignal { componentKey: Text; rule: Text label; meter: Text; signalSeverity: Integer;
+  signalState: Text roles { "on": warning, "off": ok, "nodata": unknown };
+  /// The meter's reading per window, and for warning events their number.
+  reading?: Decimal telemetry gauge max every 60s;
+  events?: Decimal telemetry delta sum every 60s; }
+
+/// The whole contains the part: a workload its services, a service its deployments, a deployment its pods.
+relationship Contains (Workload | WorkloadService | WorkloadDeployment) -> (WorkloadService | WorkloadDeployment | WorkloadPod) hierarchy kind composition;
+relationship HostedOn (WorkloadPod) -> (WorkloadNode) kind composition;
+relationship MemberOf (WorkloadNode | NodePool) -> (NodePool | Cluster) kind composition;
+/// The Service stands for the resource (an ExternalName Service and the server it names).
+relationship BackedBy (WorkloadService) -> (PlatformResource) kind composition;
+/// A resource is reached through another: a data store through its private endpoint, a private endpoint through its virtual network.
+relationship ConnectedThrough (PlatformResource) -> (PlatformResource) kind composition;
+/// Observed flows from the pods of the source to the target, per 60 s window.
+relationship TalksTo (WorkloadService) -> (WorkloadService | PlatformResource) kind communication {
+  flows?: Integer telemetry delta sum every 60s;
+  drops?: Integer telemetry delta sum every 60s;
+}
+/// The source needs the target to work. Each one has DependencyEvidence that says how it was found.
+relationship DependsOn (WorkloadService) -> (WorkloadService | PlatformResource) kind dependency;
+/// A gateway that sends requests to a service needs it (API Management and its backend).
+relationship Exposes (PlatformResource) -> (WorkloadService) kind dependency;
+/// The roll-up edge: the source is affected by the target. Dependency and composition produce it, communication does not.
+relationship Affects (Component) -> (Component) kind dependency;
+relationship EvidenceFor (DependencyEvidence) -> (WorkloadService) kind support;
+relationship Measures (ComponentSignal) -> (Component) kind support;
+
+identity workload for Workload version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; }
+identity nodePool for NodePool version "1" { cluster: Text by lowerInvariant; pool: Text by exact; }
+identity dependencyEvidence for DependencyEvidence version "1" { source: Text by exact; target: Text by exact; how: Text by exact; }
+identity signal for ComponentSignal version "1" { component: Text by exact; rule: Text by exact; }
+
+/// What is my workload made of, what does it talk to, and what does each part depend on? The services of one namespace with their deployments and pods, the nodes, pools and cluster they run on, and the Azure resources they use, with each dependency's evidence.
+projection workloadStructure view forward output acme.workload {
+  in master: graph ops;
+  in workloadNamespace: param Text;
+  in aksName: param Text;
+  retain 4;
+
+  // ---- composition: what the workload is made of and what carries it ----
+  let services = match master (s: infra.Service) |> where s.namespace == workloadNamespace;
+  emit entity Workload from services identity workload(cluster: s.cluster, namespace: s.namespace)
+    set { key: concat("ns/", s.cluster, "/", s.namespace), kind: "workload", name: s.namespace, cluster: s.cluster, namespace: s.namespace };
+  emit entity WorkloadService from services identity s
+    set { key: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), kind: "service", name: s.name, cluster: s.cluster, namespace: s.namespace, externalName: s.externalName };
+  emit relationship Contains from services key workloadService: workload(cluster: s.cluster, namespace: s.namespace) -> s;
+
+  let placed = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service), (p)-[:infra.ControlledBy]->(d: infra.Deployment) |> where s.namespace == workloadNamespace;
+  emit entity WorkloadPod from placed identity p
+    set { key: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), kind: "pod", name: p.name, cluster: p.cluster, namespace: p.namespace };
+  emit entity WorkloadDeployment from placed identity d
+    set { key: concat("deploy/", d.cluster, "/", d.namespace, "/", d.name), kind: "deployment", name: d.name, cluster: d.cluster, namespace: d.namespace, replicas: d.replicas };
+  emit relationship Contains from placed key serviceDeployment: s -> d;
+  emit relationship Contains from placed key deploymentPod: d -> p;
+  let hosted = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service), (p)-[:infra.RunsOn]->(n: infra.Node) |> where s.namespace == workloadNamespace;
+  emit entity WorkloadNode from hosted identity n
+    set { key: concat("node/", n.cluster, "/", n.name), kind: "node", name: n.name, cluster: n.cluster, pool: n.pool };
+  emit relationship HostedOn from hosted key runsOn: p -> n;
+  let pooled = hosted |> where isPresent(n.pool) |> select { n: n, cluster: n.cluster, pool: coalesce(n.pool, ""), one: 1 };
+  emit entity NodePool from pooled identity nodePool(cluster: cluster, pool: pool)
+    set { key: concat("pool/", cluster, "/", pool), kind: "pool", name: pool, cluster: cluster };
+  emit relationship MemberOf from pooled key nodeInPool: n -> nodePool(cluster: cluster, pool: pool);
+  let clusters = match master (r: azure.AzureResource) |> where r.type == "microsoft.containerservice/managedclusters" and r.name == aksName
+    |> select { r: r, one2: 1 };
+  emit entity Cluster from clusters identity r
+    set { key: lowerInvariant(r.resourceId), kind: "cluster", name: r.name, resourceId: r.resourceId };
+  let poolsOfCluster = join pooled, clusters on one == one2;
+  emit relationship MemberOf from poolsOfCluster key poolInCluster: nodePool(cluster: cluster, pool: pool) -> r;
+
+  // ---- the resources of the subscription by the name they are reached by, and the private endpoints by their address ----
+  let suffixes = values { stype: "microsoft.cache/redis", suffix: ".redis.cache.windows.net" }, { stype: "microsoft.storage/storageaccounts", suffix: ".blob.core.windows.net" },
+    { stype: "microsoft.dbforpostgresql/flexibleservers", suffix: ".postgres.database.azure.com" }, { stype: "microsoft.sql/servers", suffix: ".database.windows.net" },
+    { stype: "microsoft.keyvault/vaults", suffix: ".vault.azure.net" }, { stype: "microsoft.servicebus/namespaces", suffix: ".servicebus.windows.net" },
+    { stype: "microsoft.documentdb/databaseaccounts", suffix: ".documents.azure.com" };
+  let resources = match master (r: azure.AzureResource) |> select { r: r, rkey: lowerInvariant(r.resourceId), rtype: lowerInvariant(r.type) };
+  let typed = join resources, suffixes on rtype == stype;
+  let named = typed |> select { r: r, rkey: rkey, host: concat(lowerInvariant(r.name), suffix) };
+  let endpoints = match master (pe: azure.AzureResource) |> where pe.type == "microsoft.network/privateendpoints" and isPresent(pe.linkedId) and isPresent(pe.address)
+    |> select { pe: pe, peAddress: coalesce(pe.address, ""), linked: lowerInvariant(coalesce(pe.linkedId, "")), vnet: lowerInvariant(coalesce(pe.parentId, "")) };
+
+  // a Service that stands for a resource: an ExternalName Service and the resource its name is
+  let externals = services |> where isPresent(s.externalName) |> select { s: s, ext: lowerInvariant(coalesce(s.externalName, "")) };
+  let backed = join externals, named on ext == host;
+  emit relationship BackedBy from backed key backedBy: s -> r;
+
+  // which component a resource is to the workload: the Service that stands for it, else the resource itself
+  let asResource = resources |> select { ptkey: rkey, kind: "resource", rank: 0, skey: "" };
+  let asService = backed |> select { ptkey: rkey, kind: "service", rank: 1, skey: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
+  let candidates = union asResource, asService;
+  let preferred = candidates |> group by { ptkey: ptkey } aggregate { pkind: last(kind, rank), pskey: last(skey, rank) };
+
+  // ---- dependencies, each with the way it was found ----
+  // 1. flows of a pod to the address of a private endpoint: the endpoint leads to the resource
+  let sent = match master (p: infra.Pod)-[:infra.Sends]->(dst: infra.Destination), (p)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace
+    |> select { p: p, dst: dst, src: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), address: dst.address, dhost: lowerInvariant(coalesce(dst.hostName, "")) };
+  let sentToEndpoint = join sent, endpoints on address == peAddress;
+  let viaEndpoint = sentToEndpoint
+    |> select { p: p, dst: dst, pe: pe, src: src, tkey: linked, how: "privateEndpoint", detail: concat("pod ", p.name, " sends flows to ", address, ", the address of private endpoint ", pe.name) };
+  // 2. the name Hubble resolved for the address of a flow: the resource of that name and type
+  let sentToName = join sent, named on dhost == host;
+  let viaName = sentToName |> select { p: p, dst: dst, r: r, src: src, tkey: rkey, how: "dnsName", detail: concat("pod ", p.name, " sends flows to ", host) };
+  // 3. the workload identity of the pod's service account has a role on the resource
+  let accounts = match master (p: infra.Pod)-[:infra.RunsAs]->(sa: infra.ServiceAccount), (p)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace and isPresent(sa.clientId)
+    |> select { sa: sa, src: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), account: sa.name, client: lowerInvariant(coalesce(sa.clientId, "")) };
+  let identities = match master (i: azure.AzureResource) |> where i.type == "microsoft.managedidentity/userassignedidentities" and isPresent(i.clientId)
+    |> select { i: i, identityName: i.name, iclient: lowerInvariant(coalesce(i.clientId, "")), iprincipal: lowerInvariant(coalesce(i.principalId, "")) };
+  let assignments = match master (a: azure.AzureResource) |> where a.type == "microsoft.authorization/roleassignments" and isPresent(a.scope)
+    |> select { a: a, aprincipal: lowerInvariant(coalesce(a.principalId, "")), scope: lowerInvariant(coalesce(a.scope, "")) };
+  let asIdentity = join accounts, identities on client == iclient;
+  let withRole = join asIdentity, assignments on iprincipal == aprincipal;
+  let viaIdentity = withRole |> select { sa: sa, i: i, a: a, src: src, tkey: scope, how: "identity", detail: concat("service account ", account, " runs as identity ", identityName, ", which has a role on the resource") };
+  // 4. an environment variable of a Deployment names the host of a resource or of a Service
+  let configured = match master (h: infra.HostReference)-[:infra.Configures]->(d: infra.Deployment), (p: infra.Pod)-[:infra.ControlledBy]->(d), (p)-[:infra.Backs]->(s: infra.Service)
+    |> where s.namespace == workloadNamespace
+    |> select { h: h, src: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), variable: h.variable, chost: h.host };
+  let configuredResource = join configured, named on chost == host;
+  let viaConfigResource = configuredResource |> select { h: h, r: r, src: src, tkey: rkey, how: "configuration", detail: concat("environment variable ", variable, " names ", chost) };
+  let serviceHosts = services |> select { ts: s, tsvc: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), shost: concat(s.name, ".", s.namespace, ".svc.cluster.local") };
+  let configuredService = join configured, serviceHosts on chost == shost;
+  let viaConfigService = configuredService |> select { h: h, ts: ts, src: src, target: tsvc, how: "configuration", detail: concat("environment variable ", variable, " names ", chost), one: 1 };
+  // 5. pods of the source called pods of the target
+  let called = match master (a: infra.Pod)-[k:infra.Calls]->(b: infra.Pod), (a)-[:infra.Backs]->(sa: infra.Service), (b)-[:infra.Backs]->(sb: infra.Service)
+    |> where sa.namespace == workloadNamespace and sb.namespace == workloadNamespace
+    |> select { k: k, src: concat("svc/", sa.cluster, "/", sa.namespace, "/", sa.name), target: concat("svc/", sb.cluster, "/", sb.namespace, "/", sb.name), how: "calls", detail: concat("pod ", a.name, " calls pod ", b.name), one: 1 };
+
+  // a dependency on a resource that a Service stands for is a dependency on that Service
+  let endpointResolved = join viaEndpoint, preferred on tkey == ptkey;
+  let byEndpoint = endpointResolved |> select { p: p, dst: dst, pe: pe, src: src, target: if(pkind == "service", pskey, tkey), how: how, detail: detail, one: 1 };
+  let nameResolved = join viaName, preferred on tkey == ptkey;
+  let byName = nameResolved |> select { p: p, dst: dst, r: r, src: src, target: if(pkind == "service", pskey, tkey), how: how, detail: detail, one: 1 };
+  let identityResolved = join viaIdentity, preferred on tkey == ptkey;
+  let byIdentity = identityResolved |> select { sa: sa, i: i, a: a, src: src, target: if(pkind == "service", pskey, tkey), how: how, detail: detail, one: 1 };
+  let configResolved = join viaConfigResource, preferred on tkey == ptkey;
+  let byConfig = configResolved |> select { h: h, r: r, src: src, target: if(pkind == "service", pskey, tkey), how: how, detail: detail, one: 1 };
+
+  // the evidence: one element per dependency and way it was found, from the rows it was found in (so its lineage names the master facts)
+  let evidenceEndpoint = byEndpoint |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceEndpoint identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let evidenceName = byName |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceName identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let evidenceIdentity = byIdentity |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceIdentity identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let evidenceConfig = byConfig |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceConfig identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let evidenceConfigService = viaConfigService |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceConfigService identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let evidenceCalls = called |> where src != target |> group by { src: src, target: target, how: how } aggregate { detail: last(detail, one) };
+  emit entity DependencyEvidence from evidenceCalls identity dependencyEvidence(source: src, target: target, how: how)
+    set { sourceKey: src, targetKey: target, how: how, detail: detail };
+  let serviceKeys = services |> select { s: s, skey2: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
+  let evidencedEndpoint = join evidenceEndpoint, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedEndpoint key evidenceForEndpoint: dependencyEvidence(source: src, target: target, how: how) -> s;
+  let evidencedName = join evidenceName, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedName key evidenceForName: dependencyEvidence(source: src, target: target, how: how) -> s;
+  let evidencedIdentity = join evidenceIdentity, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedIdentity key evidenceForIdentity: dependencyEvidence(source: src, target: target, how: how) -> s;
+  let evidencedConfig = join evidenceConfig, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedConfig key evidenceForConfig: dependencyEvidence(source: src, target: target, how: how) -> s;
+  let evidencedConfigService = join evidenceConfigService, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedConfigService key evidenceForConfigService: dependencyEvidence(source: src, target: target, how: how) -> s;
+  let evidencedCalls = join evidenceCalls, serviceKeys on src == skey2;
+  emit relationship EvidenceFor from evidencedCalls key evidenceForCalls: dependencyEvidence(source: src, target: target, how: how) -> s;
+
+  // the dependencies: one edge per pair, whatever the ways it was found
+  let pairsEndpoint = byEndpoint |> select { src: src, target: target };
+  let pairsName = byName |> select { src: src, target: target };
+  let pairsIdentity = byIdentity |> select { src: src, target: target };
+  let pairsConfig = byConfig |> select { src: src, target: target };
+  let pairsConfigService = viaConfigService |> select { src: src, target: target };
+  let pairsCalls = called |> select { src: src, target: target };
+  let pairsFlows = union pairsEndpoint, pairsName;
+  let pairsAccess = union pairsIdentity, pairsConfig;
+  let pairsServices = union pairsConfigService, pairsCalls;
+  let pairsResources = union pairsFlows, pairsAccess;
+  let allPairs = union pairsResources, pairsServices;
+  let pairs = allPairs |> where src != target |> distinct;
+  let targetServices = services |> select { t: s, tkey3: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
+  let fromServiceRows = join pairs, serviceKeys on src == skey2;
+  let fromService = fromServiceRows |> select { from: s, target: target };
+  let toService = join fromService, targetServices on target == tkey3;
+  emit relationship DependsOn from toService key dependsOnService: from -> t;
+  let toResource = join fromService, resources on target == rkey;
+  emit relationship DependsOn from toResource key dependsOnResource: from -> r;
+
+  // the resources the workload depends on or stands for, and what they are reached through
+  emit entity PlatformResource from toResource identity r
+    set { key: rkey, kind: "resource", name: r.name, resourceId: r.resourceId, resourceType: rtype };
+  emit entity PlatformResource from backed identity r
+    set { key: rkey, kind: "resource", name: r.name, resourceId: r.resourceId, resourceType: lowerInvariant(r.type) };
+  let usedKeyRows = toResource |> select { ukey: rkey };
+  let standInKeys = backed |> select { ukey: rkey };
+  let usedKeyAll = union usedKeyRows, standInKeys;
+  let usedKeys = usedKeyAll |> distinct;
+  let reachedThrough = join endpoints, usedKeys on linked == ukey;
+  emit entity PlatformResource from reachedThrough identity pe
+    set { key: lowerInvariant(pe.resourceId), kind: "privateEndpoint", name: pe.name, resourceId: pe.resourceId, resourceType: "microsoft.network/privateendpoints" };
+  let reachedResources = join reachedThrough, resources on linked == rkey;
+  emit relationship ConnectedThrough from reachedResources key throughEndpoint: r -> pe;
+  let networkKeys = resources |> select { net: r, nkey: rkey };
+  let networks = join reachedThrough, networkKeys on vnet == nkey;
+  emit entity PlatformResource from networks identity net
+    set { key: nkey, kind: "network", name: net.name, resourceId: net.resourceId, resourceType: lowerInvariant(net.type) };
+  emit relationship ConnectedThrough from networks key throughNetwork: pe -> net;
+
+  // 6. a gateway whose backend is the address of a Service sends it requests: the gateway needs the Service
+  let backends = match master (b: azure.AzureResource) |> where b.type == "microsoft.apimanagement/service/backends" and isPresent(b.address) and isPresent(b.parentId)
+    |> select { baddress: coalesce(b.address, ""), gateway: lowerInvariant(coalesce(b.parentId, "")), backend: b.name };
+  let addressed = services |> where isPresent(s.address) |> select { s: s, saddress: coalesce(s.address, ""), skey4: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
+  let backendServices = join backends, addressed on baddress == saddress;
+  let gateways = join backendServices, resources on gateway == rkey;
+  emit entity PlatformResource from gateways identity r
+    set { key: rkey, kind: "gateway", name: r.name, resourceId: r.resourceId, resourceType: rtype };
+  emit relationship Exposes from gateways key exposes: r -> s;
+  emit entity DependencyEvidence from gateways identity dependencyEvidence(source: rkey, target: skey4, how: "backend")
+    set { sourceKey: rkey, targetKey: skey4, how: "backend", detail: concat("backend ", backend, " of ", r.name, " sends requests to ", baddress, ", the address of Service ", s.name) };
+  emit relationship EvidenceFor from gateways key evidenceBackend: dependencyEvidence(source: rkey, target: skey4, how: "backend") -> s;
+
+  // ---- communication: who talks to whom, with its flows per window ----
+  lift talks as TalksTo from master infra.Calls via master infra.Backs
+    when image.namespace == workloadNamespace
+    images each;
+  // a destination is the resource behind the private endpoint at its address, or the resource of the name Hubble resolved for it
+  let destinations = match master (dst: infra.Destination) |> select { daddr: dst.address, dname: lowerInvariant(coalesce(dst.hostName, "")) };
+  let destinationEndpoints = join destinations, endpoints on daddr == peAddress;
+  let toEndpoint = destinationEndpoints |> select { daddr: daddr, tkey: linked };
+  let destinationNames = join destinations, named on dname == host;
+  let toNamed = destinationNames |> select { daddr: daddr, tkey: rkey };
+  let destinationTargets = union toEndpoint, toNamed;
+  let destinationResolved = join destinationTargets, preferred on tkey == ptkey;
+  let destinationOf = destinationResolved |> select { daddr2: daddr, target: if(pkind == "service", pskey, tkey) } |> distinct;
+  let sentFlows = match master (p: infra.Pod)-[f:infra.Sends]->(dst: infra.Destination), (p)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace
+    |> select { s: s, f: f, address: dst.address };
+  let talkRows = join sentFlows, destinationOf on address == daddr2;
+  let talkResourceRows = join talkRows, resources on target == rkey;
+  let talkToResource = talkResourceRows
+    |> series master f.flows, f.drops within 30m
+    |> rollup by { s: s, r: r } combine { flows: sum(flows), drops: sum(drops) };
+  emit relationship TalksTo from talkToResource key talksToResource: s -> r set { flows: flows, drops: drops };
+  let talkServiceRows = join talkRows, targetServices on target == tkey3;
+  let talkToService = talkServiceRows
+    |> series master f.flows, f.drops within 30m
+    |> rollup by { s: s, t: t } combine { flows: sum(flows), drops: sum(drops) };
+  emit relationship TalksTo from talkToService key talksToService: s -> t set { flows: flows, drops: drops };
+
+  // ---- the roll-up edges: a component is affected by what it contains and by what it depends on ----
+  emit relationship Affects from services key affectsWorkload: workload(cluster: s.cluster, namespace: s.namespace) -> s;
+  emit relationship Affects from placed key affectsService: s -> d;
+  emit relationship Affects from toService key affectsDependent: from -> t;
+  emit relationship Affects from toResource key affectsUser: from -> r;
+  emit relationship Affects from backed key affectsStandIn: s -> r;
+  emit relationship Affects from gateways key affectsGateway: r -> s;
+  emit relationship Affects from pooled key affectsPool: nodePool(cluster: cluster, pool: pool) -> n;
+  emit relationship Affects from poolsOfCluster key affectsCluster: r -> nodePool(cluster: cluster, pool: pool);
+}
+
+/// Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.
+/// Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.
+/// A pod also counts the node it runs on; a deployment is unhealthy only when at least half of its pods are (degraded when at least half are degraded or worse). No data counts above healthy and below degraded; a component that nothing measured is Unknown. An observed call carries no failure.
+projection workloadHealth view forward output acme.workload {
+  in master: graph ops;
+  in structure: graph acme.workload;
+  in workloadNamespace: param Text;
+  retain 4;
+
+  let rules = match master (u: ops.SignalRule)
+    |> select { rid: u.ruleId, rtype: u.ruleType, rmeter: u.ruleMeter, above: u.ruleAbove, enterAfter: u.ruleEnter, below: u.ruleBelow, exitAfter: u.ruleExit, severity: u.ruleSeverity, sign: if(u.ruleInvert, -1.0, 1.0) };
+  // meters of Azure resources and of nodes: Azure Monitor and Prometheus readings, in no data after five minutes without one
+  let resourceMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(r: azure.AzureResource)
+    |> select { m: m, ekey: lowerInvariant(r.resourceId), etype: lowerInvariant(r.type), meter: m.meter };
+  let resourceRuledMeters = join resourceMeters, rules on meter == rmeter;
+  let resourceRuled = resourceRuledMeters |> where etype == rtype or rtype == "*";
+  let resourceReadings = resourceRuled
+    |> series master m.reading within 30m ttl 5m
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, windowStart: windowStart, raw: reading, v: reading * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter, noData: noData };
+  let resourceSignals = resourceReadings
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity, meter: meter } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" nodata then "nodata" as state;
+  let resourceValues = resourceReadings |> rollup by { ekey: ekey, rid: rid } combine { value: max(raw) };
+  emit update entity ComponentSignal from resourceValues identity signal(component: ekey, rule: rid) set { reading: value };
+
+  let nodeMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(n: infra.Node)
+    |> select { m: m, ekey: concat("node/", n.cluster, "/", n.name), etype: "node", meter: m.meter };
+  let nodeRuledMeters = join nodeMeters, rules on meter == rmeter;
+  let nodeRuled = nodeRuledMeters |> where etype == rtype or rtype == "*";
+  let nodeReadings = nodeRuled
+    |> series master m.reading within 30m ttl 5m
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, windowStart: windowStart, raw: reading, v: reading * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter, noData: noData };
+  let nodeSignals = nodeReadings
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity, meter: meter } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" nodata then "nodata" as state;
+  let nodeValues = nodeReadings |> rollup by { ekey: ekey, rid: rid } combine { value: max(raw) };
+  emit update entity ComponentSignal from nodeValues identity signal(component: ekey, rule: rid) set { reading: value };
+
+  // warning events of the pods of the workload: a minute in which the Kubernetes source reported and the pod had none is a minute of 0
+  let workloadPods = match master (p: infra.Pod)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace
+    |> select { p: p, ekey: concat("pod/", p.cluster, "/", p.namespace, "/", p.name), meter: "warnings" } |> distinct;
+  let podRules = join workloadPods, rules on meter == rmeter;
+  let podRuled = podRules |> where rtype == "pod";
+  let warnings = podRuled
+    |> series master p.warnings fill 0 within 30m ttl 5m
+    |> select { ekey: ekey, rid: rid, severity: severity, meter: meter, windowStart: windowStart, raw: toDecimal(warnings), v: toDecimal(warnings) * sign, above: above, enterAfter: enterAfter, below: below, exitAfter: exitAfter, noData: noData };
+  let podSignals = warnings
+    |> threshold v by { ekey: ekey, rid: rid, severity: severity, meter: meter } above above for enterAfter then "on" below below for exitAfter then "off" initial "off" nodata then "nodata" as state;
+  let warningValues = warnings |> rollup by { ekey: ekey, rid: rid } combine { value: sum(raw) };
+  emit update entity ComponentSignal from warningValues identity signal(component: ekey, rule: rid) set { events: value };
+  // the signals of the components of the structure, and their severity: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on
+  let comps = match structure (c: Component);
+  let componentKeys = comps |> select { c: c, ck: c.key };
+  let meterStates = union resourceSignals, nodeSignals;
+  let allStates = union meterStates, podSignals;
+  let signalRows = allStates |> select { sk: ekey, rid: rid, meter: meter, signalSeverity: severity, signalState: state, sev: if(state == "on", severity + 1, if(state == "nodata", 1, 0)) };
+  let measured = join signalRows, componentKeys on sk == ck;
+  emit entity ComponentSignal from measured identity signal(component: sk, rule: rid)
+    set { componentKey: sk, rule: rid, meter: meter, signalSeverity: signalSeverity, signalState: signalState };
+  emit relationship Measures from measured key measures: signal(component: sk, rule: rid) -> c;
+  let signalOwn = measured |> group by { k: ck } aggregate { own: max(sev) };
+
+  // a pod is as bad as the worst of its own signals and those of its node; a deployment by the share of its pods
+  let podNode = match structure (p: WorkloadPod)-[:HostedOn]->(n: WorkloadNode) |> select { pk: p.key, nk: n.key };
+  let nodeOfPod = join podNode, signalOwn on nk == k;
+  let fromNode = nodeOfPod |> select { k: pk, own: own };
+  let podCandidates = union signalOwn, fromNode;
+  let ownByKey = podCandidates |> group by { k: k } aggregate { own: max(own) };
+  let deployed = match structure (d: WorkloadDeployment)-[:Contains]->(p: WorkloadPod) |> select { dk: d.key, pk2: p.key };
+  let podsOfDeployment = join deployed, ownByKey on pk2 == k;
+  let shares = podsOfDeployment |> group by { dk: dk } aggregate { n: count(), bad: sum(if(own >= 3, 1, 0)), weak: sum(if(own >= 2, 1, 0)) };
+  let byShare = shares |> select { k: dk, own: if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0)) };
+  let allOwn = union ownByKey, byShare;
+  let owns = allOwn |> group by { k: k } aggregate { own: max(own) };
+
+  // the roll-up: the worst own severity over the component and everything that affects it (Affects of the structure, depth 0 is the component itself)
+  let reach = comps |> traverse structure via Affects out depth 0 .. 16 from c as d |> select { rk: c.key, dk2: d.key };
+  let reachedOwn = join reach, owns on dk2 == k;
+  let worst = reachedOwn |> group by { k: rk } aggregate { w: max(own) };
+  let unrated = comps |> select { k: c.key, w: 0 - 1 };
+  let rated = union unrated, worst;
+  let levels = rated |> group by { k: k } aggregate { w: max(w) };
+
+  let workloads = match structure (c: Workload) |> select { c: c, ck: c.key };
+  emit entity Workload from workloads identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster, namespace: c.namespace };
+  let workloadOwn = join workloads, owns on ck == k;
+  emit update entity Workload from workloadOwn identity c set { own: own };
+  let workloadLevel = join workloads, levels on ck == k;
+  emit update entity Workload from workloadLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let services = match structure (c: WorkloadService) |> select { c: c, ck: c.key };
+  emit entity WorkloadService from services identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster, namespace: c.namespace, externalName: c.externalName };
+  let serviceOwn = join services, owns on ck == k;
+  emit update entity WorkloadService from serviceOwn identity c set { own: own };
+  let serviceLevel = join services, levels on ck == k;
+  emit update entity WorkloadService from serviceLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let deployments = match structure (c: WorkloadDeployment) |> select { c: c, ck: c.key };
+  emit entity WorkloadDeployment from deployments identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster, namespace: c.namespace, replicas: c.replicas };
+  let deploymentOwn = join deployments, owns on ck == k;
+  emit update entity WorkloadDeployment from deploymentOwn identity c set { own: own };
+  let deploymentLevel = join deployments, levels on ck == k;
+  emit update entity WorkloadDeployment from deploymentLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let pods = match structure (c: WorkloadPod) |> select { c: c, ck: c.key };
+  emit entity WorkloadPod from pods identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster, namespace: c.namespace };
+  let podOwn = join pods, owns on ck == k;
+  emit update entity WorkloadPod from podOwn identity c set { own: own };
+  let podLevel = join pods, levels on ck == k;
+  emit update entity WorkloadPod from podLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let nodes = match structure (c: WorkloadNode) |> select { c: c, ck: c.key };
+  emit entity WorkloadNode from nodes identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster, pool: c.pool };
+  let nodeOwn = join nodes, owns on ck == k;
+  emit update entity WorkloadNode from nodeOwn identity c set { own: own };
+  let nodeLevel = join nodes, levels on ck == k;
+  emit update entity WorkloadNode from nodeLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let nodePools = match structure (c: NodePool) |> select { c: c, ck: c.key };
+  emit entity NodePool from nodePools identity c set { key: c.key, kind: c.kind, name: c.name, cluster: c.cluster };
+  let nodePoolOwn = join nodePools, owns on ck == k;
+  emit update entity NodePool from nodePoolOwn identity c set { own: own };
+  let nodePoolLevel = join nodePools, levels on ck == k;
+  emit update entity NodePool from nodePoolLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let clusters = match structure (c: Cluster) |> select { c: c, ck: c.key };
+  emit entity Cluster from clusters identity c set { key: c.key, kind: c.kind, name: c.name, resourceId: c.resourceId };
+  let clusterOwn = join clusters, owns on ck == k;
+  emit update entity Cluster from clusterOwn identity c set { own: own };
+  let clusterLevel = join clusters, levels on ck == k;
+  emit update entity Cluster from clusterLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let platformResources = match structure (c: PlatformResource) |> select { c: c, ck: c.key };
+  emit entity PlatformResource from platformResources identity c set { key: c.key, kind: c.kind, name: c.name, resourceId: c.resourceId, resourceType: c.resourceType };
+  let platformResourceOwn = join platformResources, owns on ck == k;
+  emit update entity PlatformResource from platformResourceOwn identity c set { own: own };
+  let platformResourceLevel = join platformResources, levels on ck == k;
+  emit update entity PlatformResource from platformResourceLevel identity c
+    set { severity: w, state: if(w >= 3, "Unhealthy", if(w == 2, "Degraded", if(w == 1, "No data", if(w == 0, "Healthy", "Unknown")))) };
+  let deploymentShares = join deployments, shares on ck == dk;
+  emit update entity WorkloadDeployment from deploymentShares identity c set { pods: n, unhealthyPods: bad };
+
+  // the edges a viewer shows: composition, dependency and communication of the structure, and the evidence of each dependency
+  let contained = match structure (a: Component)-[:Contains]->(b: Component);
+  emit relationship Contains from contained key contains: a -> b;
+  let carried = match structure (a: WorkloadPod)-[:HostedOn]->(b: WorkloadNode);
+  emit relationship HostedOn from carried key runsOn: a -> b;
+  let members = match structure (a: Component)-[:MemberOf]->(b: Component);
+  emit relationship MemberOf from members key memberOf: a -> b;
+  let standIns = match structure (a: WorkloadService)-[:BackedBy]->(b: PlatformResource);
+  emit relationship BackedBy from standIns key backedBy: a -> b;
+  let connections = match structure (a: PlatformResource)-[:ConnectedThrough]->(b: PlatformResource);
+  emit relationship ConnectedThrough from connections key connectedThrough: a -> b;
+  let needs = match structure (a: WorkloadService)-[:DependsOn]->(b: Component);
+  emit relationship DependsOn from needs key dependsOn: a -> b;
+  let exposed = match structure (a: PlatformResource)-[:Exposes]->(b: WorkloadService);
+  emit relationship Exposes from exposed key exposes: a -> b;
+  let talks = match structure (a: WorkloadService)-[t:TalksTo]->(b: Component);
+  emit relationship TalksTo from talks key talksTo: a -> b;
+  let talkFlows = talks |> series structure t.flows, t.drops within 30m |> rollup by { a: a, b: b } combine { flows: sum(flows), drops: sum(drops) };
+  emit update relationship TalksTo from talkFlows key talksTo: a -> b set { flows: flows, drops: drops };
+  let evidence = match structure (e: DependencyEvidence)-[:EvidenceFor]->(s: WorkloadService);
+  emit entity DependencyEvidence from evidence identity e set { sourceKey: e.sourceKey, targetKey: e.targetKey, how: e.how, detail: e.detail };
+  emit relationship EvidenceFor from evidence key evidenceFor: e -> s;
+}

@@ -29,7 +29,7 @@ public class ReferencesTests
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")).Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
-            .Replace("  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");", "  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
+            .Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
         files.Add(new SourceFile("acme.callsview.sattle", CallsView));
         return files;
     }
@@ -75,7 +75,7 @@ public class ReferencesTests
             using (h)
             {
                 var refs = h.Snapshot("master", null)["extent"]!["references"]!.AsArray();
-                Assert.Equal(5, refs.Count);                                                                   // web-7d4-1 and -2, api-5c9-1 and -2, db-6b8-1
+                Assert.Equal(5, refs.Count);                                                                   // web-7d4-1, -2 and -3, api-5c9-1 and -2
                 Assert.All(refs, r =>
                 {
                     Assert.Equal("absent", r!["state"]!.GetValue<string>());
@@ -83,10 +83,10 @@ public class ReferencesTests
                     Assert.Equal("Pod", r["entityType"]!.GetValue<string>());
                     var key = r["identity"]!["key"]!.AsObject();
                     Assert.Equal("shop", key["namespace"]!.GetValue<string>());
-                    Assert.Contains(key["name"]!.GetValue<string>(), new[] { "web-7d4-1", "web-7d4-2", "api-5c9-1", "api-5c9-2", "db-6b8-1" });
+                    Assert.Contains(key["name"]!.GetValue<string>(), new[] { "web-7d4-1", "web-7d4-2", "web-7d4-3", "api-5c9-1", "api-5c9-2" });
                 });
                 var by = Entry(space, "master")["danglingBy"]!.AsArray();
-                Assert.All(by, x => { Assert.Equal("Calls", x!["relationshipType"]!.GetValue<string>()); Assert.Equal("absent", x["state"]!.GetValue<string>()); });
+                Assert.All(by, x => { Assert.Contains(x!["relationshipType"]!.GetValue<string>(), new[] { "Calls", "Sends" }); Assert.Equal("absent", x["state"]!.GetValue<string>()); });       // the calls between pods and the flows of a pod to an address outside
                 Assert.Equal(["source", "target"], by.Select(x => x!["end"]!.GetValue<string>()).Order().Distinct().ToArray());
                 var dangling = long.Parse(Entry(space, "master")["dangling"]!.GetValue<string>());
                 Assert.True(dangling > 0 && by.Sum(x => long.Parse(x!["relationships"]!.GetValue<string>())) >= dangling);   // a relationship with both ends missing counts once in `dangling` and once per end in `danglingBy`
@@ -109,16 +109,16 @@ public class ReferencesTests
     }
 
     [Fact]
-    public void The_estate_health_graphs_have_no_evidence_for_a_component_outside_the_model()
+    public void The_estate_workload_graphs_have_no_edge_to_a_component_outside_the_model()
     {
         var e = ReplayTests.Replay(Estate, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }).Engine;
-        var g = e.Graph("health").State;
-        Assert.DoesNotContain(g.Rels, r => g.Entity(r.Source) is null || g.Entity(r.Target) is null);
+        foreach (var g in new[] { e.Graph("workloadStructure").State, e.Graph("workload").State })
+            Assert.DoesNotContain(g.Rels, r => g.Entity(r.Source) is null || g.Entity(r.Target) is null);
     }
 
     [Trait("Category", "Capture")]
     [CaptureFact]
-    public void On_the_newest_real_capture_the_health_graphs_have_no_dangling_edge_and_every_master_reference_is_explained()
+    public void On_the_newest_real_capture_the_derived_graphs_have_no_dangling_edge_and_every_master_reference_is_explained()
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);

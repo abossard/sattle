@@ -1,11 +1,11 @@
 /// Project ontology extension, authored business entities and master ingestion.
 module acme.ops @ 1.0.0;
 
-import sattle.infra         @ 1.0.0 sha256:b3d8b3b7310f29325a480b4531efb9b4f8d04bd47bccdfdfaa8e18ff213a15a3 as infra;
-import sattle.source.k8s    @ 1.0.0 sha256:5fc3f38bf41ae5c4a8c19d97c4b3466511848691e9206d4588c6f621646024f6 as k8s;
-import sattle.source.hubble @ 1.0.0 sha256:dd668ede69fd7bc43b2c03925028479b402ba451cfc7307eac7131ae85f9a946 as hubble;
-import sattle.azure          @ 1.0.0 sha256:dbcb3ed609c6539bafb84d01a084cd335c5f303073c8e92bd369b1cd3c4a3ddb as azure;
-import sattle.source.azure   @ 1.0.0 sha256:24e6bf16e7736afd31149cbfb868e295523ff70d90745ca607cd598093515ba5 as azsrc;
+import sattle.infra         @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
+import sattle.source.k8s    @ 1.0.0 sha256:0b1c5d7a5474154d69611d57dfffbf1014ac7e809a34fa7fc61a95fb1b934c2a as k8s;
+import sattle.source.hubble @ 1.0.0 sha256:95433584c514e135464e77fc445141fec30b87e7cd1545544e709026682cb857 as hubble;
+import sattle.azure          @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
+import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a41f5d8d0498615a519734bc159d64 as azsrc;
 import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
 
 extend infra.Pod { team?: Text; }
@@ -48,6 +48,8 @@ rows CurationRow   { curId: Text; action: Text; target: Text; value?: Text; }
 projection ingest ingestion output acme.ops {
   in pods: rows k8s.PodRow;
   in services: rows k8s.ServiceRow;
+  in accounts: rows k8s.ServiceAccountRow;
+  in hostRefs: rows k8s.HostReferenceRow;
   in deployments: rows k8s.DeploymentRow;
   in endpoints: rows k8s.EndpointRow;
   in flows: rows hubble.FlowRow;
@@ -70,7 +72,10 @@ projection ingest ingestion output acme.ops {
   rule observedPods readonly "observed by the Kubernetes adapter" {
     emit entity infra.Pod from pods
       identity infra.podUid(cluster: cluster, uid: uid)
-      set { cluster: cluster, namespace: namespace, name: name, phase: phase, team: teamLabel, ready: ready };
+      set { cluster: cluster, namespace: namespace, name: name, phase: phase, team: teamLabel, ready: ready, serviceAccount: serviceAccount };
+    emit relationship infra.RunsAs from pods key runsAs:
+      infra.podUid(cluster: cluster, uid: uid)
+      -> infra.serviceAccountName(cluster: cluster, namespace: namespace, name: serviceAccount);
     emit relationship infra.ControlledBy from pods key controlledBy:
       infra.podUid(cluster: cluster, uid: uid)
       -> infra.deploymentName(cluster: cluster, namespace: namespace, name: deployment);
@@ -87,12 +92,24 @@ projection ingest ingestion output acme.ops {
     emit entity infra.Deployment from deployments
       identity infra.deploymentName(cluster: cluster, namespace: namespace, name: name)
       set { cluster: cluster, namespace: namespace, name: name, replicas: replicas };
+    emit entity infra.HostReference from hostRefs
+      identity infra.hostReference(cluster: cluster, namespace: namespace, deployment: deployment, variable: variable)
+      set { cluster: cluster, namespace: namespace, deployment: deployment, variable: variable, host: host };
+    emit relationship infra.Configures from hostRefs key configures:
+      infra.hostReference(cluster: cluster, namespace: namespace, deployment: deployment, variable: variable)
+      -> infra.deploymentName(cluster: cluster, namespace: namespace, name: deployment);
+  }
+
+  rule observedServiceAccounts readonly "observed by the Kubernetes adapter" {
+    emit entity infra.ServiceAccount from accounts
+      identity infra.serviceAccountName(cluster: cluster, namespace: namespace, name: name)
+      set { cluster: cluster, namespace: namespace, name: name, clientId: clientId };
   }
 
   rule observedServices readonly "observed by the Kubernetes adapter" {
     emit entity infra.Service from services
       identity infra.serviceName(cluster: cluster, namespace: namespace, name: name)
-      set { cluster: cluster, namespace: namespace, name: name };
+      set { cluster: cluster, namespace: namespace, name: name, externalName: externalName, address: address };
     // absent podUid makes the source identity absent, so no edge is emitted
     emit relationship infra.Backs from endpoints key backs:
       infra.podUid(cluster: cluster, uid: podUid)
@@ -113,10 +130,26 @@ projection ingest ingestion output acme.ops {
       set { flows: flows, drops: drops };
   }
 
+  rule observedDestinations readonly "observed by Hubble: flows of a pod to an address that is no pod, telemetry per 60 s window" {
+    let outside = flows
+      |> where isPresent(srcNamespace) and isPresent(srcPod) and not isPresent(dstPod) and isPresent(dstAddress);
+    let outsideWindows = outside |> window on time width 60s late revise;
+    let sent = outsideWindows
+      |> group by { cluster: cluster, srcNamespace: srcNamespace, srcPod: srcPod, address: coalesce(dstAddress, ""), windowStart: windowStart }
+         aggregate { flows: count(), drops: sum(if(verdict == "DROPPED", 1, 0)), hostName: last(dstName, time) };
+    emit entity infra.Destination from sent
+      identity infra.destination(cluster: cluster, address: address)
+      set { cluster: cluster, address: address, hostName: hostName };
+    emit relationship infra.Sends from sent key sends:
+      infra.podName(cluster: cluster, namespace: srcNamespace, name: srcPod)
+      -> infra.destination(cluster: cluster, address: address)
+      set { flows: flows, drops: drops };
+  }
+
   rule observedNodes readonly "observed by the Kubernetes adapter" {
     emit entity infra.Node from nodes
       identity infra.nodeName(cluster: cluster, name: name)
-      set { cluster: cluster, name: name, resourceId: resourceId };
+      set { cluster: cluster, name: name, resourceId: resourceId, pool: pool };
   }
 
   rule observedEvents readonly "Kubernetes warning events on pods, telemetry per 60 s window" {
@@ -133,7 +166,8 @@ projection ingest ingestion output acme.ops {
   rule observedResources readonly "observed by Azure Resource Graph" {
     emit entity azure.AzureResource from resources
       identity azure.azureResource(id: id)
-      set { resourceId: id, name: name, type: type, location: location, resourceGroup: resourceGroup, subscriptionId: subscriptionId, parentId: parentId };
+      set { resourceId: id, name: name, type: type, location: location, resourceGroup: resourceGroup, subscriptionId: subscriptionId, parentId: parentId,
+            address: address, linkedId: linkedId, clientId: clientId, principalId: principalId, scope: scope };
   }
 
   rule observedActivity readonly "Activity Log: successful operations per resource, telemetry per 60 s window" {

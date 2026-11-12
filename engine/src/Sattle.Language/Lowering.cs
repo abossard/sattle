@@ -334,7 +334,7 @@ public sealed class Lowering
             else
             {
                 // `in master: graph ops;` names an import alias (or this module)
-                var mname = alias.GetValueOrDefault(port.Target.Name) ?? (port.Target.Name == ast.Name ? ast.Name : null);
+                var mname = alias.GetValueOrDefault(port.Target.ToString()) ?? (port.Target.ToString() == ast.Name ? ast.Name : null);       // a dotted module name is a qualified reference: compare the whole of it
                 if (mname is null) Err("UnknownAlias", $"graph port expects '{port.Target}', which is neither this module nor an import alias", port.Target.Pos);
                 else b.Edge(id, "expects", Ids.Module(mname));
                 cx.GraphPorts[port.Name] = id; cx.Out[port.Name] = id;

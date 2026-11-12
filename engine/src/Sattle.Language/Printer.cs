@@ -45,7 +45,7 @@ public sealed class Printer(Graph g, string module)
         sb.Append('\n');
         var blocks = new List<string>();
         foreach (var slot in new[] { "entity", "rel", "extend", "constraint", "identity", "equivalence", "rows", "projection", "space" })
-            foreach (var id in d.Children(mid, slot).OrderBy(x => x, StringComparer.Ordinal))
+            foreach (var id in InDeclarationOrder(d.Children(mid, slot).OrderBy(x => x, StringComparer.Ordinal)))
             {
                 try
                 {
@@ -119,6 +119,20 @@ public sealed class Printer(Graph g, string module)
             sb.Append(";\n");
         }
         sb.Append(indent).Append("}\n");
+    }
+
+    /// <summary>Types by name, except that a type comes after the types of this module it extends: a module is read in one pass, so a supertype is declared before its subtypes.</summary>
+    IEnumerable<string> InDeclarationOrder(IEnumerable<string> byName)
+    {
+        var all = byName.ToList(); var set = all.ToHashSet(StringComparer.Ordinal); var done = new HashSet<string>(StringComparer.Ordinal); var order = new List<string>();
+        void Visit(string id)
+        {
+            if (!done.Add(id)) return;
+            foreach (var sup in d.Targets(id, "extends").Where(set.Contains).OrderBy(x => x, StringComparer.Ordinal)) Visit(sup);
+            order.Add(id);
+        }
+        foreach (var id in all) Visit(id);
+        return order;
     }
 
     void Entity(string id)

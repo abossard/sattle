@@ -1,22 +1,24 @@
-/// Operations graph space: master from Kubernetes, Hubble and authored rows; two derived views.
+/// Operations graph space: the master from Kubernetes, Hubble, Azure and authored rows, and the views on it: the service tree, the workload model, the estate tree, capabilities, deployment health and reports.
 module acme.space @ 1.0.0;
 
-import sattle.source.k8s    @ 1.0.0 sha256:5fc3f38bf41ae5c4a8c19d97c4b3466511848691e9206d4588c6f621646024f6 as k8s;
-import sattle.source.hubble @ 1.0.0 sha256:dd668ede69fd7bc43b2c03925028479b402ba451cfc7307eac7131ae85f9a946 as hubble;
-import sattle.source.azure   @ 1.0.0 sha256:24e6bf16e7736afd31149cbfb868e295523ff70d90745ca607cd598093515ba5 as azsrc;
+import sattle.source.k8s    @ 1.0.0 sha256:0b1c5d7a5474154d69611d57dfffbf1014ac7e809a34fa7fc61a95fb1b934c2a as k8s;
+import sattle.source.hubble @ 1.0.0 sha256:95433584c514e135464e77fc445141fec30b87e7cd1545544e709026682cb857 as hubble;
+import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a41f5d8d0498615a519734bc159d64 as azsrc;
 import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
-import acme.ops             @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
-import acme.svc             @ 1.0.0 sha256:0b06522cfa6a7198b70cd4fc99f764027dff0cc9def650f5e52de86ae1b65781 as svc;
-import acme.healthmodel @ 1.0.0 sha256:3b52044206c704e20534cfe1e47b752e6261cdbfa95754da1cd1914fed395594 as hm;
-import acme.deployhealth @ 1.0.0 sha256:16882518a66111d8f97275aee93688cb7f27c015d9b323f841dd2ab1fd8f1aae as dh;
-import acme.report @ 1.0.0 sha256:37d2a7d13ecc7c783ecaed4fa88b870ff0be59996a625c24a069544918189bb2 as rpt;
-import acme.treereport @ 1.0.0 sha256:c86aa8d580c96a490d24f895a3a238a7bd3346f709ea909276fc17027b38d725 as trep;
-import acme.treehealth @ 1.0.0 sha256:78f188aa804280cd67910a3b79ecc472613f4d994542f3428ad2e7b3fe65a83c as th;
-import acme.tree @ 1.0.0 sha256:426b59db5f24be52b044337136b2362b4a3deb06023ceae245c5588dc8afbc8e as tr;
-import acme.biz             @ 1.0.0 sha256:dfbc994182654fbc3d3b24d571338268b04c09cf3e81f8a0e9dc301e0fd7df71 as biz;
+import acme.ops             @ 1.0.0 sha256:8247458215d96d0c55fda5bd14140e0d0a25db4236aea2f2749a873ceda9393d as ops;
+import acme.svc             @ 1.0.0 sha256:3d66da72ac7da1d1e7b1497cb29711e35deb7a168b53001caaa4f1bfc3bf2308 as svc;
+import acme.workload @ 1.0.0 sha256:c9e0d3afb3c2de5bdabe9d9efa19b938ff2eae56043087c0814d372b3fa786be as wl;
+import acme.deployhealth @ 1.0.0 sha256:c8f8b296e0c2856c2416fe7134b6ee8fc114a6706e8f6a9d8d03f044bdecb3c6 as dh;
+import acme.report @ 1.0.0 sha256:896d7d7f075d4af8b45fa2ef27567d225fd00fa56fc7f8bafef8d5f820aa4916 as rpt;
+import acme.treereport @ 1.0.0 sha256:40101af1c8f11931c8c86ffcd2499b933cf3e57fdb45c1fbe90c87b7417f5071 as trep;
+import acme.treehealth @ 1.0.0 sha256:58018faaf457bf51b78ef5703378a239407937ba4c38e8994e1d22514fe65b9c as th;
+import acme.tree @ 1.0.0 sha256:7c000bb14826c4d771e54b43e9e4d824389a83c00c25660cb1bf1215c6e27773 as tr;
+import acme.biz             @ 1.0.0 sha256:cdbbe7a855ebfbf240f2809c3689e9e10ce3dd417cede525ca4a23ccb07d2cd6 as biz;
 
 space operations {
   source pods      adapter "kubernetes.list-watch" rows k8s.PodRow;
+  source accounts  adapter "kubernetes.list-watch" rows k8s.ServiceAccountRow;
+  source hostRefs  adapter "kubernetes.list-watch" rows k8s.HostReferenceRow;
   source services  adapter "kubernetes.list-watch" rows k8s.ServiceRow;
   source deployments adapter "kubernetes.list-watch" rows k8s.DeploymentRow;
   source endpoints adapter "kubernetes.list-watch" rows k8s.EndpointRow;
@@ -36,7 +38,7 @@ space operations {
   source policies  adapter "sattle.authoring"      rows ops.PolicyRow;
   source curations adapter "sattle.authoring"      rows ops.CurationRow;
 
-  master graph master = ops.ingest(pods: pods, services: services, deployments: deployments, endpoints: endpoints,
+  master graph master = ops.ingest(pods: pods, services: services, accounts: accounts, hostRefs: hostRefs, deployments: deployments, endpoints: endpoints,
                                    flows: flows, caps: caps, realizes: realizes, signalRules: signalRules, policies: policies, curations: curations,
                                    nodes: nodes, events: events, resources: resources, metrics: metrics,
                                    activity: activity, diagActivity: diagActivity, audit: audit, resourceMetrics: resourceMetrics, flowLogs: flowLogs);
@@ -49,8 +51,6 @@ space operations {
   graph capabilities = biz.capabilityView(master: master, tree: serviceTree);
   graph deploymentHealth = dh.deploymentHealth(master: master);
   graph deploymentReport = rpt.deploymentReport(health: deploymentHealth);
-  graph healthTopology = hm.topology(master: master, tree: serviceTree, workloadNamespace: "shop", clusterLabel: "synth", aksName: "aks-synth", nodeResourceGroup: "mc_rg-synth_aks-synth_north", hubResourceGroup: "rg-hub");
-  graph healthSignals = hm.signals(master: master, tree: serviceTree, workloadNamespace: "shop", aksName: "aks-synth", nodeResourceGroup: "mc_rg-synth_aks-synth_north", hubResourceGroup: "rg-hub");
-  graph healthState = hm.state(topo: healthTopology, sigs: healthSignals);
-  graph health = hm.health(master: master, st: healthState, workloadNamespace: "shop");
+  graph workloadStructure = wl.workloadStructure(master: master, workloadNamespace: "shop", aksName: "aks-synth");
+  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: "shop");
 }

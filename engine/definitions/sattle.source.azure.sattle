@@ -1,7 +1,9 @@
 /// Row contract produced by the compiled Azure Resource Graph adapter.
 module sattle.source.azure @ 1.0.0;
 
-rows ResourceRow { id: Text; name: Text; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text; }
+/// One Azure resource. From its properties, by type: a private endpoint's address, the resource it links to and its virtual network (as parentId); an API Management backend's host (address) and its service (parentId); a managed identity's client and principal id; a role assignment's principal and scope. parentId of a resource in an AKS node resource group is its cluster.
+rows ResourceRow { id: Text; name: Text; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text;
+                   address?: Text; linkedId?: Text; clientId?: Text; principalId?: Text; scope?: Text; }
 /// Activity Log events (management API EventData). One row per event.
 rows ActivityRow { eventId: Text; time: Instant; resourceId: Text; operation: Text; status: Text; caller?: Text; }
 /// One AKS audit record (category kube-audit-admin of the cluster diagnostic setting), one row per completed request.

@@ -28,8 +28,8 @@ public class LanguageTests
     {
         var (cat, res) = Load(Sources());
         Assert.Empty(res.Diagnostics);
-        Assert.Equal(19, cat.Modules.Count);
-        Assert.Equal(14, cat.Projections.Count);
+        Assert.Equal(18, cat.Modules.Count);                               // the kernel and the seventeen modules of the definitions
+        Assert.Equal(12, cat.Projections.Count);
         Assert.Single(cat.Spaces);
         Assert.All(cat.Modules.Values, m => Assert.StartsWith("sha256:", m.Digest));
     }
@@ -48,7 +48,7 @@ public class LanguageTests
         var (a, _) = Load(Sources());
         var (b, _) = Load(Sources());
         Assert.All(a.Modules.Keys, k => Assert.Equal(a.Modules[k].Digest, b.Modules[k].Digest));
-        var (c, _) = Mutated("sattle.infra.sattle", "phase?: Text; ready?: Boolean;\n", "phase?: Text; ready?: Boolean; zone?: Text;\n");
+        var (c, _) = Mutated("sattle.infra.sattle", "phase?: Text; ready?: Boolean; serviceAccount?: Text;\n", "phase?: Text; ready?: Boolean; serviceAccount?: Text; zone?: Text;\n");
         Assert.NotEqual(a.Modules["sattle.infra"].Digest, c.Modules["sattle.infra"].Digest);
     }
 
@@ -87,7 +87,7 @@ public class LanguageTests
         ["unknown alias", "acme.ops.sattle", "emit entity infra.Pod", "emit entity nope.Pod", "UnknownAlias"],
         ["unknown identity component", "acme.ops.sattle", "uid: uid)\n      set", "ui: uid)\n      set", "UnknownComponent"],
         ["wrong value kind for a property", "acme.ops.sattle", "set { flows: flows, drops: drops }", "set { flows: srcPod, drops: drops }", "Set"],
-        ["required property missing on create", "acme.ops.sattle", "set { cluster: cluster, namespace: namespace, name: name };\n    // absent", "set { cluster: cluster, namespace: namespace };\n    // absent", "P5"],
+        ["required property missing on create", "acme.ops.sattle", "set { cluster: cluster, namespace: namespace, name: name, externalName: externalName, address: address };\n    // absent", "set { cluster: cluster, namespace: namespace, externalName: externalName, address: address };\n    // absent", "P5"],
         ["bijective rule over a lossy sink", "acme.ops.sattle", "rule observedPods readonly", "rule observedPods bijective", "DirectionOverclaim"],
         ["combine provenance mismatch", "acme.svc.sattle", "flowsOut?: Integer telemetry delta sum every 60s;", "flowsOut?: Integer telemetry delta max every 60s;", "Set"],
         ["telemetry into graph data", "acme.svc.sattle", "set { flowsOut: flowsOut };\n  let groupOut", "set { pods: flowsOut };\n  let groupOut", "RoleInterference"],

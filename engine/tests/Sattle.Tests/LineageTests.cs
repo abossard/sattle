@@ -165,7 +165,7 @@ public class LineageTests
     {
         var files = EstateFiles();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");", "  graph health = hm.health(master: master, st: healthState, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
+        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
         files.Add(new SourceFile("acme.bygroup.sattle", ByGroup));
         var h = new SpaceHost(files, new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
         using (h)
@@ -174,14 +174,14 @@ public class LineageTests
             h.Finish();
             var grouped = h.Snapshot("byGroup", null)["extent"]!["relationships"]!.AsArray();
             var rowLevel = h.Snapshot("serviceTree", null)["extent"]!["relationships"]!.AsArray().Where(r => r!["type"]!["value"]!.GetValue<string>().EndsWith("DependsOn", StringComparison.Ordinal)).ToList();
-            Assert.Equal(2, grouped.Count); Assert.Equal(2, rowLevel.Count);
+            Assert.Single(grouped); Assert.Single(rowLevel);                                                       // web to api
             foreach (var edge in grouped)
             {
                 var id = edge!["id"]!["value"]!.GetValue<string>();
                 var l = h.Lineage("byGroup", id);
                 Assert.True(l["complete"]!.GetValue<bool>());
-                Assert.Equal("2", l["contributions"]!.GetValue<string>());                                         // two pod calls make up each service dependency
-                Assert.Equal(2, l["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "c"));      // both Calls relationships of the master
+                Assert.Equal("3", l["contributions"]!.GetValue<string>());                                         // three pod calls make up the service dependency
+                Assert.Equal(3, l["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "c"));      // the three Calls relationships of the master
                 var peer = rowLevel.Single(r => r!["source"]!["value"]!.GetValue<string>() == edge["source"]!["value"]!.GetValue<string>() && r["target"]!["value"]!.GetValue<string>() == edge["target"]!["value"]!.GetValue<string>());
                 var rl = h.Lineage("serviceTree", peer!["id"]!["value"]!.GetValue<string>());
                 Assert.Equal(rl["sources"]!.AsArray().Select(s => s!["element"]!.GetValue<string>()).Distinct().Order().ToList(),

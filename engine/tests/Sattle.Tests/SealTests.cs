@@ -138,7 +138,20 @@ public class SealTests
     public void The_commits_after_the_seal_are_verified_against_the_store()
     {
         using var d = new RestartTests.Durable("sqlite");
-        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(25))) Feed(h);
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(25)))
+        {
+            Feed(h);
+            // a last input after the last seal that commits: calls between two pods that never called each other make a new relationship of the master
+            var w = new RowWriter(h.RowLayout("flows"), h.Interner);
+            var t = new DateTimeOffset(2026, 1, 1, 10, 30, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() * 1_000_000L;
+            for (var i = 0; i < 3; i++)
+            {
+                w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("cluster", "synth"); w.Text("verdict", "FORWARDED");
+                w.Text("srcNamespace", "shop"); w.Text("srcPod", "web-7d4-3"); w.Text("dstNamespace", "shop"); w.Text("dstPod", "api-5c9-2");
+            }
+            h.Ingest("flows", w.Build()!, 9_000_000);
+            h.Advance(t + 5 * Min, 9_000_001);
+        }
         d.Close();
         using (var c = new SqliteConnection($"Data Source={d.Path_};Pooling=False"))
         {
@@ -146,6 +159,7 @@ public class SealTests
             using var cmd = c.CreateCommand(); cmd.CommandText = "DELETE FROM journal WHERE n = (SELECT MAX(n) FROM journal WHERE body LIKE '{\"k\":\"r\"%')"; cmd.ExecuteNonQuery();
         }
         var e = Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(25)));
-        Assert.Contains("journal reproduces", e.Message);
+        // either a replayed commit differs from the stored one and the store refuses it, or the store has more revisions than the journal reproduces
+        Assert.True(e.Message.Contains("journal reproduces", StringComparison.Ordinal) || e.Message.Contains("store did not commit", StringComparison.Ordinal), e.Message);
     }
 }

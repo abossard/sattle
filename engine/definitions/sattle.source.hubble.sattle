@@ -1,5 +1,6 @@
 /// Row contract produced by the compiled Hubble adapter.
 module sattle.source.hubble @ 1.0.0;
 
+/// One flow. dstAddress is the address the flow went to and dstName the first name Hubble resolved for it: a flow to a destination outside the cluster has no destination pod.
 rows FlowRow { time: Instant; cluster: Text; verdict: Text;
-               srcNamespace?: Text; srcPod?: Text; dstNamespace?: Text; dstPod?: Text; }
+               srcNamespace?: Text; srcPod?: Text; dstNamespace?: Text; dstPod?: Text; dstAddress?: Text; dstName?: Text; }

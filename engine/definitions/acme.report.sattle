@@ -2,7 +2,7 @@
 module acme.report @ 1.0.0;
 
 import sattle.doc        @ 1.0.0 sha256:d08f49763c2dd278261b4cadfd33f9c3209421773074c005dbd00fe95466ee4f as doc;
-import acme.deployhealth @ 1.0.0 sha256:16882518a66111d8f97275aee93688cb7f27c015d9b323f841dd2ab1fd8f1aae as dh;
+import acme.deployhealth @ 1.0.0 sha256:c8f8b296e0c2856c2416fe7134b6ee8fc114a6706e8f6a9d8d03f044bdecb3c6 as dh;
 
 /// A report on the health of the Deployments as a document: counts and one line per Deployment.
 projection deploymentReport view forward output doc {

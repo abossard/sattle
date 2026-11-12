@@ -3,12 +3,26 @@ module sattle.infra @ 1.0.0;
 
 /// ready is the Ready condition of the pod.
 entity Pod     {
-  cluster: Text; namespace: Text; name: Text label; phase?: Text; ready?: Boolean;
+  cluster: Text; namespace: Text; name: Text label; phase?: Text; ready?: Boolean; serviceAccount?: Text;
   warnings?: Integer telemetry delta sum every 60s;
 }
-entity Node    { cluster: Text; name: Text label; resourceId?: Text; forwardRate?: Decimal telemetry gauge max every 60s; dropRate?: Decimal telemetry gauge max every 60s; }
-entity Service { cluster: Text; namespace: Text; name: Text label; }
+entity Node    { cluster: Text; name: Text label; resourceId?: Text; pool?: Text; forwardRate?: Decimal telemetry gauge max every 60s; dropRate?: Decimal telemetry gauge max every 60s; }
 entity Deployment { cluster: Text; namespace: Text; name: Text label; replicas?: Integer; }
+/// externalName: the host an ExternalName Service stands for. address: its load balancer ingress, else its cluster IP.
+entity Service { cluster: Text; namespace: Text; name: Text label; externalName?: Text; address?: Text; }
+/// A ServiceAccount and the workload identity it uses.
+entity ServiceAccount { cluster: Text; namespace: Text; name: Text label; clientId?: Text; }
+/// An environment variable of a Deployment that names a host.
+entity HostReference { cluster: Text; namespace: Text; deployment: Text; variable: Text; host: Text label; }
+relationship Configures (HostReference) -> (Deployment) kind composition;
+/// A destination outside the pods of the cluster that a pod sent flows to: an address, with the name Hubble resolved for it.
+entity Destination { cluster: Text; address: Text label; hostName?: Text; }
+relationship Sends (Pod) -> (Destination) kind communication {
+  flows?: Integer telemetry delta sum every 60s;
+  drops?: Integer telemetry delta sum every 60s;
+}
+relationship RunsAs (Pod) -> (ServiceAccount) kind dependency;
+
 relationship Backs (Pod) -> (Service) kind composition;
 relationship RunsOn (Pod) -> (Node) kind composition;
 /// The Deployment that owns the pod through its ReplicaSet.
@@ -33,5 +47,8 @@ identity podName     for Pod     version "1" { cluster: Text by lowerInvariant; 
 identity nodeName    for Node    version "1" { cluster: Text by lowerInvariant; name: Text by exact; }
 identity deploymentName for Deployment version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
 identity serviceName for Service version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
+identity serviceAccountName for ServiceAccount version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; name: Text by exact; }
+identity hostReference for HostReference version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; deployment: Text by exact; variable: Text by exact; }
+identity destination for Destination version "1" { cluster: Text by lowerInvariant; address: Text by exact; }
 
 equivalence podUidIsPodName between podUid, podName assert threshold 1.0;

@@ -12,7 +12,7 @@ public class EtagTests
     static Payload Nd(IEnumerable<JsonNode> n) => new(string.Join("\n", n.Select(x => x.ToJsonString())), "application/x-ndjson");
 
     static IReadOnlyList<Sattle.Language.SourceFile> WithRole(string from, string to) =>
-        [.. Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.health.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace(from, to) } : f)];
+        [.. Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.workload.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace(from, to) } : f)];
 
     [Fact]
     public void Two_hosts_whose_definitions_differ_in_one_value_role_answer_different_ETags_for_the_ontology_at_the_same_catalog_revision()
@@ -20,8 +20,8 @@ public class EtagTests
         using var a = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": warning"), new HostOptions { Cluster = "synth" });
         using var b = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": danger"), new HostOptions { Cluster = "synth" });
         Assert.Equal(a.CatalogRevision, b.CatalogRevision);                                     // the old tag, "onto-health-<catalog revision>", was the same for both
-        Assert.NotEqual(Etags.Of(Json(a.Ontology("health"))), Etags.Of(Json(b.Ontology("health"))));
-        Assert.Equal(Etags.Of(Json(a.Ontology("health"))), Etags.Of(Json(a.Ontology("health"))));
+        Assert.NotEqual(Etags.Of(Json(a.Ontology("workload"))), Etags.Of(Json(b.Ontology("workload"))));
+        Assert.Equal(Etags.Of(Json(a.Ontology("workload"))), Etags.Of(Json(a.Ontology("workload"))));
         Assert.NotEqual(a.Instance, b.Instance);
     }
 
@@ -32,7 +32,7 @@ public class EtagTests
         var files = Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
         var store = new InMemoryGraphStore();
         string[] before;
-        string[] Tags(SpaceHost h) => [Etags.Of(Json(h.Ontology("health"))), Etags.Of(Json(h.Snapshot("deploymentHealth", null))), Etags.Of(Nd(h.Patches("deploymentHealth", 0))), Etags.Of(Json(h.Snapshot("master", 1))), Etags.Of(Json(h.Definitions()))];
+        string[] Tags(SpaceHost h) => [Etags.Of(Json(h.Ontology("workload"))), Etags.Of(Json(h.Snapshot("deploymentHealth", null))), Etags.Of(Nd(h.Patches("deploymentHealth", 0))), Etags.Of(Json(h.Snapshot("master", 1))), Etags.Of(Json(h.Definitions()))];
         string instance;
         using (var h = SpaceHost.OpenDurable(store, files, new HostOptions { Cluster = "synth" }))
         {

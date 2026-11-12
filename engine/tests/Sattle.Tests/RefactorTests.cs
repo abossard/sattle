@@ -124,19 +124,43 @@ public class RefactorTests
         Assert.Equal("NotAProjection", Assert.Throws<HostError>(() => h.Refactor(d, Body("extract", ("module", "acme.biz"), ("projection", "nope"), ("select", new[] { "tree" }), ("name", "x")))).Code);
     }
 
+    /// <summary>A projection with two parameters and two independent parts, bound in the space.</summary>
+    const string TwoParts = """
+        module acme.twoparts @ 1.0.0;
+        import sattle.infra @ 1.0.0 sha256:… as infra;
+        import acme.ops     @ 1.0.0 sha256:… as ops;
+        entity Seen { k: Text label; }
+        identity seen for Seen version "1" { k: Text by exact; }
+        /// The pods of one namespace and the nodes of one cluster.
+        projection both view forward output acme.twoparts {
+          in master: graph ops;
+          in workloadNamespace: param Text;
+          in clusterLabel: param Text;
+          let pods = match master (p: infra.Pod) |> where p.namespace == workloadNamespace;
+          emit entity Seen from pods identity seen(k: p.name) set { k: p.name };
+          let nodes = match master (n: infra.Node) |> where n.cluster == clusterLabel;
+          emit entity Seen from nodes identity seen(k: n.name) set { k: n.name };
+        }
+        """;
+
     [Fact]
     public void Extract_copies_the_parameters_the_moved_statements_use_and_binds_them_in_the_space()
     {
-        using var h = HostTests.NewHost();
+        var files = Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).ToList();
+        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
+        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.twoparts @ 1.0.0 sha256:… as tp;\nimport acme.biz ")
+            .Replace("  graph capabilities = ", "  graph both = tp.both(master: master, workloadNamespace: \"shop\", clusterLabel: \"synth\");\n  graph capabilities = ") };
+        files.Add(new Sattle.Language.SourceFile("acme.twoparts.sattle", TwoParts));
+        using var h = new SpaceHost(files, new HostOptions { Cluster = "synth" });
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var r = h.Refactor(d, Body("extract", ("module", "acme.healthmodel"), ("projection", "signals"), ("select", new[] { "errors", "errorsDegraded", "errorsUnhealthy", "emit.15", "emit.16", "emit.17" }), ("name", "errorSignals")));
-        var text = r["modules"]!["acme.healthmodel"]!["text"]!.GetValue<string>();
-        var part = text[text.IndexOf("projection errorSignals", StringComparison.Ordinal)..];
+        var r = h.Refactor(d, Body("extract", ("module", "acme.twoparts"), ("projection", "both"), ("select", new[] { "nodes", "emit.2" }), ("name", "nodesSeen")));
+        var text = r["modules"]!["acme.twoparts"]!["text"]!.GetValue<string>();
+        var part = text[text.IndexOf("projection nodesSeen", StringComparison.Ordinal)..];
         part = part[..part.IndexOf("\n}\n", StringComparison.Ordinal)];
-        Assert.Contains("in hubResourceGroup: param Text;", part);
-        Assert.DoesNotContain("in aksName", part);                         // not used by the moved statements
+        Assert.Contains("in clusterLabel: param Text;", part);
+        Assert.DoesNotContain("in workloadNamespace", part);                // not used by the moved statements
         var space = r["modules"]!["acme.space"]!["text"]!.GetValue<string>();
-        Assert.Matches("graph healthSignals_errorSignals = hm.errorSignals\\(.*hubResourceGroup: \"rg-hub\".*\\);", space);
-        Assert.Contains("master: master", space[space.IndexOf("healthSignals_errorSignals", StringComparison.Ordinal)..]);
+        Assert.Matches("graph both_nodesSeen = tp.nodesSeen\\(.*clusterLabel: \"synth\".*\\);", space);
+        Assert.Contains("master: master", space[space.IndexOf("both_nodesSeen", StringComparison.Ordinal)..]);
     }
 }
