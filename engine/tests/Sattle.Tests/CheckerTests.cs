@@ -76,7 +76,8 @@ public class CheckerTests
         { "a fill on a gauge", View(Quiet("i.level fill 0 within 3m ttl 2m", Said)), "Series", "takes no fill" },
         { "a fill of an Integer property that is no integer", View(Quiet("i.hits fill 0.5 within 3m ttl 2m", Said)), "Series", "must be an integer" },
         { "a time to live below one window", View(Quiet("i.hits within 3m ttl 30s", Said)), "Series", "at least one window" },
-        { "a time to live above the look-back", View(Quiet("i.hits within 3m ttl 4m", Said)), "Series", "at most `within`" },
+        { "a time to live above the look-back", View(Quiet("i.hits within 3m ttl 4m", Said)), "Series", "at most `within` less one window" },
+        { "a time to live as long as the look-back", View(Quiet("i.hits within 3m ttl 3m", Said)), "Series", "at most `within` less one window" },
         { "a threshold over a series with a time to live that does not say what no data gives", View(Quiet("i.hits within 3m ttl 2m", "")), "Threshold", "what no data gives" },
         { "a no-data clause without a time to live upstream", View(Signals + " |> select { c: i.k, windowStart: windowStart, v: hits }\n    |> threshold v by { c: c } above 3 for 2 then \"on\" below 1 for 2 then \"off\" initial \"off\" nodata ignore as state;\n  emit entity Out from s identity out(k: c) set { k: c, flag: state };"), "Threshold", "needs a series with a time to live" },
         { "a roll-up that names no data without a time to live upstream", View(Signals + " |> rollup by { c: i.g } combine { v: sum(hits) } nodata any\n    |> threshold v by { c: c } above 3 for 2 then \"on\" below 1 for 2 then \"off\" initial \"off\" as state;\n  emit entity Out from s identity out(k: c) set { k: c, flag: state };"), "Rollup", "needs a series with a time to live" },
@@ -140,6 +141,20 @@ public class CheckerTests
         Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
         var refused = Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single()));
         Assert.Contains("no source feeds", refused.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Def. 7.15: authored rows come when someone writes them, so their source does not report and nothing it feeds is ever covered. A fill of such a property is refused when the space is activated; the same definitions over a source that reports are accepted.</summary>
+    [Theory]
+    [InlineData("sattle.authoring", "authored data records no progress")]
+    [InlineData("test.reporting", null)]
+    public void A_fill_of_a_property_that_an_authored_source_feeds_is_refused_at_activation(string adapter, string? refusal)
+    {
+        var files = View(Quiet("i.hits fill 0 within 3m ttl 2m", Said));
+        files = [files[0], files[1] with { Text = files[1].Text.Replace("source a adapter \"sattle.authoring\"", $"source a adapter \"{adapter}\"") }];
+        var (catalog, errors) = Load(files);
+        Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
+        if (refusal is null) { using var engine = new Engine(catalog, catalog.Spaces.Keys.Single()); Assert.True(engine.WantsProgress); }
+        else Assert.Contains(refusal, Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single())).Message, StringComparison.Ordinal);
     }
 
     [Fact]

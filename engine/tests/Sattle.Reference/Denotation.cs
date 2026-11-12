@@ -29,7 +29,7 @@ public static class Denotation
         TGroup g => Group(g, g.Keys, g.Aggs, input("in"), null),
         TRollup r => r.NoData ? RollupWithNoData(r, input("in")) : Group(r, WithWindow(r.Keys), r.Aggs, input("in"), r.PeriodNs),
         TRetain r => Retain(r, input("in"), p.Frontier),
-        TSeries s => Series(s, input("in"), p.Graphs[s.GraphPort], p.Frontier, ImmutableSortedDictionary<string, long>.Empty, [.. s.Reads.Select(_ => (long?)null)]),
+        TSeries s => Series(s, input("in"), p.Graphs[s.GraphPort], p.Frontier, ImmutableSortedDictionary<string, long>.Empty, [.. s.Reads.Select(_ => (long?)null)], ImmutableSortedSet<long>.Empty),
         _ => throw new Undefined($"operator kind {op.Kind}"),
     };
 
@@ -265,10 +265,10 @@ public static class Denotation
 
     /// <summary>
     /// Def. 6.7: each row with the closed windows of its element in [frontier − within, frontier) that hold every property read.
-    /// Def. 7.15: a read with a fill also holds its fill value in every window of the look-back that is covered for the element (it starts at or after `since` of the element and ends at or before `covered` of the read) and has no stored value.
-    /// Def. 7.16: with a time to live, an element whose newest record (or, without one, its `since`) lies more than the time to live before the frontier has one more record, at the newest closed grid window, marked no data and without values.
+    /// Def. 7.15: a read with a fill also holds its fill value in every window of the look-back that is covered for the element (it starts at or after `since` of the element, ends at or before `covered` of the read and contains no time of `lost`) and has no stored value.
+    /// Def. 7.16: with a time to live, an element for which the later of its `since` and the end of its newest record lies more than the time to live before the frontier has one more record, at the newest closed grid window, marked no data and without values.
     /// </summary>
-    public static Relation Series(TSeries s, Relation rows, GraphFacts g, long? frontier, IReadOnlyDictionary<string, long> since, IReadOnlyList<long?> covered)
+    public static Relation Series(TSeries s, Relation rows, GraphFacts g, long? frontier, IReadOnlyDictionary<string, long> since, IReadOnlyList<long?> covered, IReadOnlySet<long> lost)
     {
         long Floor(long t) => t - ((t % s.PeriodNs) + s.PeriodNs) % s.PeriodNs;
         var result = new List<(ImmutableArray<Value>, long)>();
@@ -279,7 +279,8 @@ public static class Denotation
             long? started = since.TryGetValue(id, out var from) ? from : null;
             decimal? At(int i, long start) =>
                 g.Telemetry.TryGetValue(new WindowId(id, s.Reads[i].PropId, start), out var stored) ? stored
-                : s.Reads[i].Fill is { } fill && started is { } k && start >= k && frontier is { } f && start + s.PeriodNs <= f && covered[i] is { } c && start + s.PeriodNs <= c ? fill
+                : s.Reads[i].Fill is { } fill && started is { } k && start >= k && frontier is { } f && start + s.PeriodNs <= f && covered[i] is { } c && start + s.PeriodNs <= c
+                    && !lost.Any(t => t >= start && t < start + s.PeriodNs) ? fill       // a window in which the source lost events is not covered
                 : null;
             IEnumerable<long> Grid(long lo, long hi) { for (var a = Floor(lo + s.PeriodNs - 1); a + s.PeriodNs <= hi; a += s.PeriodNs) yield return a; }
             var fillable = frontier is { } now && started is { } first && s.Reads.Any(x => x.Fill is not null) ? Grid(Math.Max(now - s.WithinNs, first), now) : [];
@@ -290,7 +291,8 @@ public static class Denotation
             foreach (var rec in records)
                 result.Add((Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(rec.Start)), ("windowEnd", Value.Instant(rec.Start + s.PeriodNs)),
                     .. s.Reads.Select((x, i) => (x.OutName, x.ValueKind == "Decimal" ? Value.Decimal(rec.Values[i]!.Value) : Value.Integer((BigInteger)rec.Values[i]!.Value))), .. Marker(false)])), r.Weight));
-            long? newest = records.Count > 0 ? records[^1].Start + s.PeriodNs : started;
+            // e(k): the later of `since` and the end of the newest record (Def. 7.16): an element that returns has existed again only since it returned, whatever old record of it is still in the look-back
+            long? newest = records.Count > 0 ? Math.Max(records[^1].Start + s.PeriodNs, started ?? long.MinValue) : started;
             if (s.TtlNs is { } ttl && frontier is { } at && newest is { } e && at - e > ttl)
             {
                 var start = Floor(at) - s.PeriodNs;

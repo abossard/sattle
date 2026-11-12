@@ -18,6 +18,10 @@ public sealed class ProjectionChecker(Graph defs)
 
     void Err(string code, string focus, string msg, string sev = "error") => diags.Add(new Diagnostic(code, sev, focus, msg));
 
+    /// <summary>The ontology a module sees (itself and what it imports), built once per checker: the definition graph does not change while a checker lives, and every Match, Series and Traverse of every pass asks for one.</summary>
+    readonly Dictionary<string, OntologyView> views = new(StringComparer.Ordinal);
+    OntologyView ViewOf(string module) => views.TryGetValue(module, out var v) ? v : views[module] = OntologyView.Build(defs, Closure(defs, module));
+
     public static HashSet<string> Closure(Graph g, string module)
     {
         var d = new DefView(g);
@@ -97,7 +101,7 @@ public sealed class ProjectionChecker(Graph defs)
         var outMod = Ids.ModuleOf(outTarget);
         var closure = Closure(defs, module);
         if (!closure.Contains(outMod)) Err("P1", pid, $"output ontology {outMod} is neither this module nor imported");
-        outView = OntologyView.Build(defs, Closure(defs, outMod));
+        outView = ViewOf(outMod);
 
         // ports
         var ports = new List<TPort>();
@@ -472,7 +476,7 @@ public sealed class ProjectionChecker(Graph defs)
         var gp = ports.FirstOrDefault(p => p.Name == gsrc.Name && p.Kind == "graph");
         if (gp is null) { Err("W2", op, "Traverse graph input must come from a graph port"); return null; }
         if (R.Window != 0 || R.Cols.Any(c => !c.T.Role.IsData)) { Err("Traverse", op, "traverse takes data rows"); return null; }
-        var view = OntologyView.Build(defs, Closure(defs, gp.ExpectsModule!));
+        var view = ViewOf(gp.ExpectsModule!);
         matchOntology[name] = view;
         var rel = d.Target(op, "ofType");
         if (rel is null || !view.Types.TryGetValue(rel, out var ti) || !ti.IsRel) { Err("Traverse", op, "traverse needs a relationship type of the graph's ontology"); return null; }
@@ -619,7 +623,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (!inputs.TryGetValue("graph", out var gsrc) || !gsrc.IsPort) { Err("W2", op, "Match graph input must come from a graph port"); return null; }
         var gp = ports.FirstOrDefault(p => p.Name == gsrc.Name && p.Kind == "graph");
         if (gp is null) { Err("W2", op, "Match graph input must come from a graph port"); return null; }
-        var view = OntologyView.Build(defs, Closure(defs, gp.ExpectsModule!));
+        var view = ViewOf(gp.ExpectsModule!);
         matchOntology[name] = view;
         var nodes = new List<TNode>(); var cols = new List<Col>(); var edges = new List<TEdge>();
         var nodeTypes = new Dictionary<string, string>();
@@ -679,7 +683,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (R is null) return null;
         if (!inputs.TryGetValue("graph", out var gsrc) || !gsrc.IsPort) { Err("W2", op, "Series graph input must come from a graph port"); return null; }
         var gp = ports.First(p => p.Name == gsrc.Name);
-        var view = OntologyView.Build(defs, Closure(defs, gp.ExpectsModule!));
+        var view = ViewOf(gp.ExpectsModule!);
         var reads = new List<TSeriesRead>(); long period = 0; string? target = null;
         foreach (var rd in d.Children(op, "read"))
         {
@@ -707,7 +711,8 @@ public sealed class ProjectionChecker(Graph defs)
         if (period > 0 && within < period) Err("Series", op, "within must be at least the series period");
         var ttl = d.Prop(op, "ttl") is IntegerValue tv ? (long)tv.N : (long?)null;
         if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live (`ttl`) on the same series: silence must have a declared outcome");
-        if (ttl is { } life && period > 0 && (life < period || life > within)) Err("Series", op, "the time to live must be at least one window and at most `within`");
+        // at most `within` less one window: a record that ends within the time to live is then a window of the look-back
+        if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the time to live must be at least one window and at most `within` less one window");
         if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
         if (reads.Count == 0 || target is null) return null;
         var inst = new FType(Ty.Instant, true, Role.Data);
@@ -850,7 +855,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (accept.Contains("delete") && p?.DeleteMode is null && emits.Count > 0) Err("P5", pid, $"rule {r.Name} accepts delete but has no 'on delete' action");
         if (p?.SourceTypeId is { } src)
         {
-            var view = OntologyView.Build(defs, Closure(defs, Ids.ModuleOf(src)));
+            var view = ViewOf(Ids.ModuleOf(src));
             var covered = new HashSet<string>(p.Defaults.Select(x => x.PropId));
             foreach (var e in emits)
                 foreach (var s in e.Sets) if (s.Value is TField f && f.Name.Contains('.'))

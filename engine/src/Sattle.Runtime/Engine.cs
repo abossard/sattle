@@ -141,7 +141,7 @@ public static class PlanCompiler
                     }
                 case TGroup g: op = new GroupOp(g, inL, cx, LineageCols(tp, t)); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
                 case TSeries s: op = new SeriesOp(s, inL, cx.It); strategies.Add($"{s.Name}: Series, bilinear: new rows against seen windows, new windows against all rows, retraction at the look-back"); break;
-                case TRollup r: op = new RollupOp(r, inL, cx, SeriesOf(tp, r)); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
+                case TRollup r: op = new RollupOp(r, inL, cx); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
                 case TThreshold th: op = new ThresholdOp(th, inL, cx, SeriesOf(tp, th)); strategies.Add($"{th.Name}: Threshold, per-key state machine over ordered closed windows"); break;
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
@@ -273,6 +273,10 @@ public sealed class Engine : IDisposable, IEngineInput
                 series.Feeding = [.. st.Reads.Select(r => Feeding(g.PortSources[st.GraphPort], r.PropId).ToArray())];
                 if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Length == 0) is { r: not null } unfed)
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{unfed.r.OutName}', and no source feeds that property: a window cannot be known to be covered (Def. 7.15)");
+                // authored rows come when someone writes them: their source does not report, so nothing it feeds is ever covered
+                var authored = catalog.Spaces[spaceId].Sources.Where(s => s.Adapter == "sattle.authoring").Select(s => s.Name).ToHashSet(StringComparer.Ordinal);
+                if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Any(authored.Contains)) is { r: not null } written)
+                    throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{written.r.OutName}', which an authored source feeds ({string.Join(", ", series.Feeding[st.Reads.ToList().IndexOf(written.r)].Where(authored.Contains))}): authored data records no progress (Def. 7.15)");
             }
         Identities.OnMerge = (loser, survivor) =>
         {
@@ -342,6 +346,8 @@ public sealed class Engine : IDisposable, IEngineInput
         var period = periods.Count == 0 ? 60_000_000_000 : periods.Min();
         var ws = timeNs - ((timeNs % period) + period) % period;
         Telemetry.MarkPartial(Master.Key, ws, reason, count);
+        // a window with a loss mark is not covered (Def. 7.14): the graphs that fill take their fills of it back
+        if (WantsProgress) Run(new Epoch { Id = ++epochId, Progress = true, Loss = ws }, 0, "loss");
     }
 
     /// <summary>Explicit logical-time control: closes windows whose end is at or before the frontier (ADR-048).</summary>
@@ -363,12 +369,12 @@ public sealed class Engine : IDisposable, IEngineInput
             if (master.Progress && g.IsMaster && !filling) continue;       // the progress of a source concerns the graphs that fill
             if (g.IsMaster)
             {
-                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered };
+                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered, Loss = master.Loss };
                 foreach (var (port, b) in master.Rows) ep.Rows[port] = b;
             }
             else
             {
-                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered };
+                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered, Loss = master.Loss };
                 var any = master.HasAdvance || filling;
                 foreach (var (port, from) in g.PortSources)
                     if (results.TryGetValue(from, out var r))

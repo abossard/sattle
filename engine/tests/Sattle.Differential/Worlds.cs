@@ -15,7 +15,9 @@ public sealed record World(string Name, string Kind, IReadOnlyList<SourceFile> F
     /// <summary>The sources that report progress in the logs of this world (Def. 10.9), and the share of the inputs that are such reports.</summary>
     public IReadOnlyList<string> Reporting { get; init; } = [];
     public double ProgressShare { get; init; }
-    public System.Collections.Immutable.ImmutableArray<Sattle.Reference.Input> Log(int seed, int length) => Logs.Generate(Sources, AdvanceShare, seed, length, (Reporting, ProgressShare));
+    /// <summary>The share of the inputs that are loss marks of a source (Def. 10.4), at a time up to four minutes before the frontier.</summary>
+    public double LossShare { get; init; }
+    public System.Collections.Immutable.ImmutableArray<Sattle.Reference.Input> Log(int seed, int length) => Logs.Generate(Sources, AdvanceShare, seed, length, (Reporting, ProgressShare), LossShare);
     static readonly ConcurrentDictionary<string, Catalog> catalogs = new();
     public Catalog Catalog => catalogs.GetOrAdd(Name, _ => EngineRun.Load(Files));
     public override string ToString() => Name;
@@ -210,13 +212,17 @@ public static class Worlds
           let s = m |> {{series}};
           let st = s |> threshold v by { c: c } above 3 for 1 then "on" below 1 for 2 then "off" initial "off" nodata then "silent" as state;
           emit entity Signal from st identity signal(k: c) set { k: c, state: state };
-        """, 0.3, Dense) with { Reporting = ["b"], ProgressShare = 0.15, Witnesses = ["state=t:on", "state=t:off", "state=t:silent"] };
+        """, 0.3, Dense) with { Reporting = ["b"], ProgressShare = 0.15, Witnesses = ["state=t:on", "state=t:off", "state=t:silent"] } is var w
+        ? w with { Files = [.. w.Files.Select(f => f with { Text = f.Text.Replace("source b adapter \"sattle.authoring\"", "source b adapter \"harness.reporting\"", StringComparison.Ordinal) })] } : null!;       // the source of the hits reports: an authored source would not, and its fill is refused
     public static readonly World Fill = Silence("fill and no data", "Series with fill and ttl, Map, Threshold",
         "series master i.hits fill 0 within 5m ttl 3m |> select { c: i.k, windowStart: windowStart, v: hits, noData: noData }");
     public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Threshold",
         "series master i.hits within 5m ttl 2m |> select { c: i.k, windowStart: windowStart, v: hits, noData: noData }");
     public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Threshold",
         "series master i.hits fill 0 within 5m ttl 2m |> rollup by { c: i.g } combine { v: sum(hits) }");
+    /// <summary>Def. 7.14: a window in which the source lost events is not covered, so it holds no fill; a loss mark that arrives after the window was filled takes the fill back.</summary>
+    public static readonly World FillAroundLoss = Silence("fill around a loss", "Series with fill and ttl, loss marks, Map, Threshold",
+        "series master i.hits fill 0 within 5m ttl 3m |> select { c: i.k, windowStart: windowStart, v: hits, noData: noData }") with { LossShare = 0.12 };
     public static readonly World RollupAny = Silence("roll-up in no data when one member is", "Series with ttl, Rollup, Threshold",
         "series master i.hits within 5m ttl 2m |> rollup by { c: i.g } combine { v: sum(hits) } nodata any");
 
@@ -347,7 +353,7 @@ public static class Worlds
               let s = m |> series master i.hits within 3m |> rollup by { c: i.g } combine { v: sum(hits) };
               emit entity Signal from s identity signal(k: c) set { k: c, v: v };
             """, 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, Fill, TimeToLive, RollupAll, RollupAny, TwoKeyRules,
+        Hysteresis, RowParameters, Fill, FillAroundLoss, TimeToLive, RollupAll, RollupAny, TwoKeyRules,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

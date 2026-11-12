@@ -10,6 +10,8 @@ public sealed record RowInput(string Source, ImmutableSortedDictionary<string, V
 public sealed record AdvanceInput(long Frontier) : Input;
 /// <summary>The progress of a source (Def. 10.9): it has reported up to `Until`, the capture time of an envelope less the allowed lateness.</summary>
 public sealed record ProgressInput(string Source, long Until) : Input;
+/// <summary>A source lost events at a time (Def. 10.4): the window that contains the time carries a loss mark and is not covered (Def. 7.14).</summary>
+public sealed record LossInput(long Time) : Input;
 
 /// <summary>`TelemetryRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
 public sealed record Settings(string Tenant = "lab", int LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000);
@@ -51,12 +53,14 @@ public static class ReferenceEvaluator
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, Denotation.Carried>> Carried,
         ImmutableSortedDictionary<string, long> Covered,
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, long>> Since,
+        ImmutableSortedSet<long> Lost,
         SpaceFacts Facts)
     {
         static readonly ImmutableSortedDictionary<string, ZSet> None = ImmutableSortedDictionary.Create<string, ZSet>(StringComparer.Ordinal);
         public static readonly Position Start = new(None, None, None, ImmutableSortedDictionary.Create<string, LinkFact>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, Denotation.Carried>>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal), ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, long>>(StringComparer.Ordinal),
+            ImmutableSortedSet<long>.Empty,
             new SpaceFacts(ImmutableSortedDictionary.Create<string, GraphFacts>(StringComparer.Ordinal), null));
     }
 
@@ -65,7 +69,7 @@ public static class ReferenceEvaluator
         var sources = input is RowInput row ? before.Sources.SetItem(row.Source, before.Sources.GetValueOrDefault(row.Source, ZSet.Empty).Add(RowOf(catalog, space, row), row.Weight)) : before.Sources;
         var frontier = input is AdvanceInput a && (before.Facts.Frontier is null || a.Frontier > before.Facts.Frontier) ? a.Frontier : before.Facts.Frontier;
         var covered = input is ProgressInput progress && progress.Until > before.Covered.GetValueOrDefault(progress.Source, long.MinValue) ? before.Covered.SetItem(progress.Source, progress.Until) : before.Covered;
-        var at = before with { Sources = sources, Covered = covered, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
+        var at = before with { Sources = sources, Covered = covered, Lost = input is LossInput loss ? before.Lost.Add(loss.Time) : before.Lost, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
         return InDependencyOrder(space).Aggregate(at, (p, g) => Graph(catalog, space, settings, g, before.Facts.Frontier, p));
     }
 
@@ -174,7 +178,7 @@ public static class ReferenceEvaluator
                         p = p with { Since = p.Since.SetItem(slot, since) };
                         long? Covered(TSeriesRead read) =>
                             Feeding(catalog, space, graph.Bindings[series.GraphPort], read.PropId) is { Count: > 0 } feeding && feeding.All(p.Covered.ContainsKey) ? feeding.Min(s => p.Covered[s]) : null;
-                        outs = outs.SetItem(op.Name, Denotation.Series(series, rows, inputs.Graphs[series.GraphPort], frontier, since, [.. series.Reads.Select(Covered)]));
+                        outs = outs.SetItem(op.Name, Denotation.Series(series, rows, inputs.Graphs[series.GraphPort], frontier, since, [.. series.Reads.Select(Covered)], p.Lost));
                         break;
                     }
                 default: outs = outs.SetItem(op.Name, Denotation.Of(op, In, inputs)); break;

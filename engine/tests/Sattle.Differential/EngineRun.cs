@@ -43,6 +43,7 @@ public static class EngineRun
         {
             if (batch[0].Input is AdvanceInput a) engine.Advance(a.Frontier, ++seq);
             else if (batch[0].Input is ProgressInput p) engine.Progress(p.Source, p.Until, ++seq);
+            else if (batch[0].Input is LossInput l) engine.RecordLoss(l.Time, 1);
             else Ingest(engine, [.. (chunking.Reverse ? batch.Reverse() : batch).Select(x => (RowInput)x.Input)], ++seq);
             yield return (batch[^1].Index + 1, FactsOf(engine));
         }

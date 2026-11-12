@@ -96,7 +96,12 @@ public static class Program
     {
         var files = Catalog.ReadDirectory(FindDefinitions(o)).ToList();
         var overlay = o.Get("overlay") ?? LocalCaptureOverlay(o);
-        if (overlay is null) return files;
+        if (overlay is null)
+        {
+            // a capture that says which workload it holds: the tracked space with those values
+            string? dir = null; if (o.Positional.Count > 0) try { dir = FindCapture(o.Positional[0]); } catch (ArgumentException) { }
+            return dir is not null && ArgumentsOf(dir) is { } arguments ? WithArguments(files, arguments) : files;
+        }
         foreach (var path in overlay.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             var text = File.ReadAllText(path);
@@ -107,6 +112,27 @@ public static class Program
         }
         return files;
     }
+
+    /// <summary>The file a capture directory may hold beside its data: the values of the arguments of the space for that capture, by name (`{ "workloadNamespace": "...", ... }`). `lab/fixtures/build.sh` writes it for the fixtures.</summary>
+    public const string SpaceArguments = "space-arguments.json";
+
+    /// <summary>The arguments file of a capture directory, or null when it has none.</summary>
+    public static IReadOnlyDictionary<string, string>? ArgumentsOf(string captureDir)
+    {
+        var path = Path.Combine(captureDir, SpaceArguments);
+        if (!File.Exists(path)) return null;
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        return doc.RootElement.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal);
+    }
+
+    /// <summary>The text of a space with other values for its arguments: every `name: "value"` whose name is given takes the given value. A name the text does not have changes nothing, an argument that is not given keeps its value.</summary>
+    public static string WithArguments(string spaceText, IReadOnlyDictionary<string, string> arguments) =>
+        arguments.OrderBy(a => a.Key, StringComparer.Ordinal).Aggregate(spaceText, (text, a) =>
+            System.Text.RegularExpressions.Regex.Replace(text, $@"\b{System.Text.RegularExpressions.Regex.Escape(a.Key)}: ""(?:[^""\\]|\\.)*""", _ => $"{a.Key}: {JsonSerializer.Serialize(a.Value)}"));
+
+    /// <summary>The definitions with the arguments applied to the modules that declare a space.</summary>
+    public static List<SourceFile> WithArguments(IReadOnlyList<SourceFile> files, IReadOnlyDictionary<string, string> arguments) =>
+        [.. files.Select(f => System.Text.RegularExpressions.Regex.IsMatch(f.Text, @"^space\s", System.Text.RegularExpressions.RegexOptions.Multiline) ? f with { Text = WithArguments(f.Text, arguments) } : f)];
 
     /// <summary>The space binding for a capture that the tracked `acme.space` does not fit, applied when no `--overlay` was given. For a capture under `lab/captures` it is the gitignored `lab/captures/space-overlay.sattle` (the real workload arguments, never committed). For any other capture directory NAME it is the tracked `engine/overlays/NAME.space.sattle` when it exists (`lab/fixtures` has `fixtures.space.sattle`): the tracked space file binds the invented estate, so a capture of another cluster needs its own arguments.</summary>
     static string? LocalCaptureOverlay(Options o)
@@ -120,8 +146,7 @@ public static class Program
             var local = Path.Combine(parent!, "space-overlay.sattle");
             return File.Exists(local) ? local : null;
         }
-        var committed = Path.GetFullPath(Path.Combine(FindDefinitions(o), "..", "overlays", Path.GetFileName(full) + ".space.sattle"));
-        return File.Exists(committed) ? committed : null;
+        return null;
     }
 
     /// <summary>The captures in a captures folder, oldest first: the directories named by their capture time (`20261110T105738Z`). Any other directory there is work in progress of the lab and no capture.</summary>

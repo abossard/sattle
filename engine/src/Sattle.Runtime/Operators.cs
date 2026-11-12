@@ -15,6 +15,8 @@ public sealed class Epoch
     public bool Progress;
     /// <summary>How far each source has reported (Def. 7.14), at this step.</summary>
     public IReadOnlyDictionary<string, long> Covered = new Dictionary<string, long>();
+    /// <summary>The start of a window that was marked with a loss in this step (Def. 7.7, Def. 10.4), or null. A window with a loss mark is not covered.</summary>
+    public long? Loss;
 }
 
 /// <summary>A committed change of an input graph, as seen by a projection: the patch, the graph after it, and the telemetry windows that changed in the same step.</summary>
@@ -664,17 +666,19 @@ sealed class RollupOp : AggregatingOp
     readonly List<long> slotWindow = [];
 
     // ---- no data (Def. 7.16) ----
-    /// <summary>Per key (without the window) of a roll-up over a Series with a time to live: the marker records of its members by window, its normal rows by window, and the window of the marker record the key has in the output.</summary>
-    sealed class Silence { public long[] Key = []; public readonly SortedDictionary<long, long> Markers = []; public readonly SortedDictionary<long, long> Normal = []; public long? Emitted; }
-    readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly long ttl; readonly bool any; long frontier = long.MinValue;
+    /// <summary>Per key (without the window) of a roll-up over a Series with a time to live: the marker records of its members by window, per member the weight of its normal rows and of its marker records, and the window of the marker record the key has in the output. A member is a row of the input without its window and values (`TRollup.Members`).</summary>
+    sealed class Silence { public long[] Key = []; public readonly SortedDictionary<long, long> Markers = []; public readonly Dictionary<string, (long Normal, long Marked)> Members = []; public long? Emitted; }
+    readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly bool any; readonly int[] memberCols = [];
 
-    /// <summary>`series`: the Series upstream when it has a time to live. A member that is not in no data has a record that ends within the time to live, so the key is in no data iff it has a marker record and no normal row that ends within it (`nodata any`: iff it has a marker record).</summary>
-    public RollupOp(TRollup t, Layout inLayout, OpContext cx, TSeries? series = null) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
+    /// <summary>The key of a roll-up over a Series with a time to live is in no data iff every member that has a row has a marker record (`nodata any`: iff one has).</summary>
+    public RollupOp(TRollup t, Layout inLayout, OpContext cx) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
     {
         table = new KeyTable(keyExprs.Length + 1, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
         inWs = inLayout.Index("windowStart"); outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd"); period = t.PeriodNs;
-        if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); ttl = series?.TtlNs ?? 0; any = t.NoDataAny; }
+        if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); any = t.NoDataAny; memberCols = [.. t.Members!.Select(inLayout.Index)]; }
     }
+
+    string Member(Batch b, int row) => string.Join(',', memberCols.Select(c => !b.Cols[c].Present(row) ? "" : b.Cols[c].IsDec ? "d" + decimals.Code(b.Cols[c].D[row]) : b.Cols[c].L[row].ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
     static void Count(SortedDictionary<long, long> counts, long window, long weight)
     {
@@ -695,7 +699,6 @@ sealed class RollupOp : AggregatingOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        if (ep.HasAdvance && ep.Lambda > frontier) frontier = ep.Lambda;
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var quiet = silence is null ? null : new List<Silence>();
         var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
@@ -715,8 +718,11 @@ sealed class RollupOp : AggregatingOp
                 var id = string.Join(',', keyBuf[..n]);
                 if (!silence.TryGetValue(id, out s)) silence[id] = s = new Silence { Key = keyBuf[..n] };
                 quiet!.Add(s);
-                if (b.Cols[inNoData].L[row] != 0) { Count(s.Markers, wsCol[row], b.Weight(row)); continue; }       // the record of a member in no data is not aggregated
-                Count(s.Normal, wsCol[row], b.Weight(row));
+                var member = Member(b, row); var marked = b.Cols[inNoData].L[row] != 0;
+                var had = s.Members.GetValueOrDefault(member);
+                var has = marked ? (had.Normal, had.Marked + b.Weight(row)) : (had.Normal + b.Weight(row), had.Marked);
+                if (has == (0, 0)) s.Members.Remove(member); else s.Members[member] = has;
+                if (marked) { Count(s.Markers, wsCol[row], b.Weight(row)); continue; }       // the record of a member in no data is not aggregated
             }
             var slot = table.FindOrAdd(keyBuf.AsSpan(0, n + 1));
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
@@ -727,7 +733,7 @@ sealed class RollupOp : AggregatingOp
             foreach (var s in quiet.Distinct())
             {
                 var marked = s.Markers.Where(m => m.Value > 0).Select(m => (long?)m.Key).LastOrDefault();
-                var reporting = !any && s.Normal.Where(x => x.Value > 0).Select(x => (long?)x.Key).LastOrDefault() is { } newest && newest + period >= frontier - ttl;
+                var reporting = !any && s.Members.Values.Any(m => m.Normal > 0 && m.Marked <= 0);       // a member with rows that is not in no data
                 var want = marked is not null && !reporting ? marked : null;
                 if (want != s.Emitted)
                 {
@@ -737,7 +743,7 @@ sealed class RollupOp : AggregatingOp
                     if (want is { } now) WriteMarker(bb, s, now, 1);
                     s.Emitted = want;
                 }
-                if (s.Markers.Count == 0 && s.Normal.Count == 0 && s.Emitted is null) silence!.Remove(string.Join(',', s.Key));
+                if (s.Markers.Count == 0 && s.Members.Count == 0 && s.Emitted is null) silence!.Remove(string.Join(',', s.Key));
             }
         foreach (var slot in table.TouchedList)
         {

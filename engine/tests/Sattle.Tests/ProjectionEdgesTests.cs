@@ -161,17 +161,32 @@ public class ProjectionEdgesTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
-    // ---- the overlay for lab/fixtures differs from the tracked space only in its binding arguments -------------------------------------
+    // ---- a capture names its workload in an arguments file; the tracked space takes those values ---------------------------------------
 
     static string WithoutBinding(string text) => Regex.Replace(Regex.Replace(text, @"(workloadNamespace|clusterLabel|aksName|nodeResourceGroup|hubResourceGroup): ""[^""]*""", "$1: \"_\""), @"sha256:[0-9a-f]{64}", "sha256:_");
 
     [Fact]
-    public void The_overlay_for_lab_fixtures_is_the_tracked_space_with_other_workload_arguments()
+    public void The_arguments_file_of_a_capture_gives_the_tracked_space_its_values_by_name()
     {
-        var tracked = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"));
-        var overlay = File.ReadAllText(Repo.FixturesOverlay);
-        Assert.Equal(WithoutBinding(tracked), WithoutBinding(string.Join('\n', overlay.Split('\n').Where(l => !l.StartsWith("// ", StringComparison.Ordinal)))));
-        Assert.NotEqual(Regex.Match(tracked, @"workloadNamespace: ""[^""]*""").Value, Regex.Match(overlay, @"workloadNamespace: ""[^""]*""").Value);
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-args-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            Assert.Null(Sattle.Cli.Program.ArgumentsOf(dir));                                          // no file: the tracked arguments, as on a fresh clone
+            File.WriteAllText(Path.Combine(dir, Sattle.Cli.Program.SpaceArguments), """{ "workloadNamespace": "other", "clusterLabel": "a \"quoted\" label", "notAnArgument": "ignored" }""");
+            var tracked = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"));
+            var files = Repo.DefinitionFilesFor(dir);
+            var space = files.Single(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)).Text;
+            Assert.Equal(WithoutBinding(tracked), WithoutBinding(space));                               // nothing but argument values differs
+            Assert.Equal(Regex.Matches(tracked, @"workloadNamespace: ").Count, Regex.Matches(space, @"workloadNamespace: ""other""").Count);       // every use of the name
+            Assert.Contains(@"clusterLabel: ""a \u0022quoted\u0022 label""", space);                                                             // a value is written as a text literal of the language
+            Assert.Equal(Regex.Match(tracked, @"aksName: ""[^""]*""").Value, Regex.Match(space, @"aksName: ""[^""]*""").Value);                    // not given: kept
+            Assert.DoesNotContain("notAnArgument", space);
+            var cat = Repo.CatalogFor(dir, out var res);
+            Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
+            Assert.Contains(cat.Spaces.Values.Single().Graphs, g => g.Name == "health");
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Fact]

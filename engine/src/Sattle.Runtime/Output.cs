@@ -17,6 +17,9 @@ sealed class SeriesOp : PhysOp
     /// <summary>Per read, the sources that feed the property it reads (a function of the definitions, set at activation).</summary>
     public string[][] Feeding = [];
     readonly decimal?[] fills; readonly long? ttl; readonly int outNoData = -1;
+    /// <summary>The windows with a loss mark, by their start, while they are in the look-back: such a window is not covered and holds no fill (Def. 7.14).</summary>
+    readonly SortedSet<long> lost = [];
+    bool Lost(long start) => lost.Count > 0 && lost.GetViewBetween(start, start + period - 1).Count > 0;
     /// <summary>Since which advance an element has had a row here (presence is sampled at advances), and the window of the no-data record an element has.</summary>
     readonly Dictionary<int, long> since = []; readonly Dictionary<int, long> marker = [];
     /// <summary>Per read, the time up to which its windows are covered and closed, as applied to the output so far: min(frontier, coveredUntil).</summary>
@@ -77,7 +80,7 @@ sealed class SeriesOp : PhysOp
         for (var i = 0; i < fills.Length; i++)
         {
             var x = stored?[i];
-            if (x is null && fills[i] is { } fill && h[i] != long.MinValue && start + period <= h[i] && since.TryGetValue(elem, out var from) && start >= from) x = fill;
+            if (x is null && fills[i] is { } fill && h[i] != long.MinValue && start + period <= h[i] && since.TryGetValue(elem, out var from) && start >= from && !Lost(start)) x = fill;
             if (x is null) return null;
             res[i] = x;
         }
@@ -95,13 +98,15 @@ sealed class SeriesOp : PhysOp
         return set;
     }
 
-    /// <summary>Def. 7.16: no record that ends within the time to live, and an older record or a `since` that is older than it.</summary>
+    /// <summary>Def. 7.16: the later of `since` and the end of the newest record lies more than the time to live before the frontier. So: no record that ends within the time to live, the element has not appeared within it, and it has an older record or a `since`.</summary>
     bool InNoData(int elem)
     {
         var life = ttl!.Value;
         for (var a = Floor(frontier - life - 1); a + period <= frontier; a += period) if (Record(elem, a, hi, frontier) is not null) return false;
+        var known = since.TryGetValue(elem, out var from);
+        if (known) return from < frontier - life;
         if (windows.TryGetValue(elem, out var ws)) foreach (var a in ws.Keys) if (Record(elem, a, hi, frontier) is not null) return true;
-        return since.TryGetValue(elem, out var from) && from < frontier - life;
+        return false;
     }
 
     void UpdateMarker(BatchBuilder bb, int elem)
@@ -122,6 +127,24 @@ sealed class SeriesOp : PhysOp
         var bb = new BatchBuilder(OutLayout);
         var touched = new HashSet<int>();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
+        if (ep.Loss is { } mark && (frontier == long.MinValue || mark + period > edge) && !lost.Contains(mark))
+        {
+            // a loss mark on a window: the fills of the window that contains it go
+            var start = Floor(mark);
+            var held = arrangement.Where(x => x.Value.Count > 0).Select(x => (Elem: x.Key, Rows: x.Value, Before: Record(x.Key, start, hi, frontier))).ToList();
+            lost.Add(mark);
+            foreach (var (elem, list, before) in held)
+            {
+                var after = Record(elem, start, hi, frontier);
+                touched.Add(elem);
+                if (Same(before, after)) continue;
+                foreach (var r in list)
+                {
+                    if (before is not null) WriteRow(bb, r, start, before, -r.Weight);
+                    if (after is not null) WriteRow(bb, r, start, after, r.Weight);
+                }
+            }
+        }
         var rows = In(inputs, "in");
         if (rows is not null)
             for (var k = 0; k < rows.Rows; k++)
@@ -189,6 +212,7 @@ sealed class SeriesOp : PhysOp
             foreach (var elem in since.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) since.Remove(elem);
             foreach (var (elem, list) in arrangement) if (list.Count > 0) since.TryAdd(elem, ep.Lambda);
             frontier = ep.Lambda;
+            lost.RemoveWhere(m => m + period <= edgeAfter);
         }
         var reach = HiAt(frontier, ep.Covered);
         var moved = reach.Zip(hi).Any(x => x.First != x.Second);
@@ -218,7 +242,7 @@ sealed class SeriesOp : PhysOp
         }
         if (ttl is not null)
         {
-            foreach (var elem in advanced || moved ? [.. arrangement.Keys] : touched.ToList()) UpdateMarker(bb, elem);
+            foreach (var elem in advanced || moved || ep.Loss is not null ? [.. arrangement.Keys] : touched.ToList()) UpdateMarker(bb, elem);
             foreach (var elem in marker.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) marker.Remove(elem);
         }
         return bb.Build();
