@@ -21,16 +21,16 @@
 
 ## Counts
 
-| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated | After the reading of Ch. 7 | With 7.4 and 7.7 restated | With Corollary 7.9 | With Proposition 13.2 proved |
-|---|---|---|---|---|---|---|---|---|---|
-| proved | 81 | 86 | 94 | 90 | 92 | 90 | 92 | 93 | 94 |
-| proved, cited | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
-| proved under premises | 0 | 2 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
-| restatement pending | 0 | 0 | 0 | 4 | 2 | 4 | 2 | 2 | 2 |
-| sketch | 19 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| tested | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 7 |
-| open | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| all | 113 | 113 | 113 | 113 | 113 | 113 | 113 | 114 | 114 |
+| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated | After the reading of Ch. 7 | With 7.4 and 7.7 restated | With Corollary 7.9 | With Proposition 13.2 proved | With 5.3 and 7.1 restated |
+|---|---|---|---|---|---|---|---|---|---|---|
+| proved | 81 | 86 | 94 | 90 | 92 | 90 | 92 | 93 | 94 | 96 |
+| proved, cited | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
+| proved under premises | 0 | 2 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
+| restatement pending | 0 | 0 | 0 | 4 | 2 | 4 | 2 | 2 | 2 | 0 |
+| sketch | 19 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| tested | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 7 | 7 |
+| open | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| all | 113 | 113 | 113 | 113 | 113 | 113 | 113 | 114 | 114 | 114 |
 
 The four statements with a pending restatement (5.3, 5.5, 7.1, 10.3) were counted as proved and read only, except 7.1, which has example tests. Theorems 5.5 and 10.3 are restated in their chapters as part D of the third pass proposes, and count as proved again. Theorems 5.3 and 7.1 stay pending until the project chooses between restating them and adding the typing rule for windowed rows. The sentence below still gives the figures after the second pass.
 
@@ -75,7 +75,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Proposition 4.11 | two views | proved under premises (RT), restated | from Theorems 4.3, 4.8 and the premise RT of Theorem 5.6, on canonical drafts | example test on the example modules; `Unprintable` example |
 | Theorem 5.1 | checking is decidable | proved | structural recursion over a finite definition graph | example tests (`LanguageTests.cs`) |
 | Theorem 5.2 | type soundness | proved under premises (KS), restated | induction over expressions, operators and sinks; rows sound up to counted faults; (a) kinds and ownership always, (b) required properties up to counted faults and reported conflicts, (c) C6 and C7 not implied; three counterexamples to the first form | example tests of typed errors; no conformance assertion on generated projections (T-SOUND) |
-| Theorem 5.3 | role non-interference | restatement pending | the second sentence (runs that differ only in telemetry values) is proved by induction over the typing derivation. The first sentence is false as stated: graph data can depend on which closed windows exist, without a `Threshold` (third pass, counterexample and two proposed forms) | nothing: reading only |
+| Theorem 5.3 | role non-interference | proved, restated (2026-11-12: graph data a function of data fields, Threshold outputs and supports of windowed relations; P6 an optional profile) | the second sentence (runs that differ only in telemetry values) is proved by induction over the typing derivation. The first sentence is false as stated: graph data can depend on which closed windows exist, without a `Threshold` (third pass, counterexample and two proposed forms) | nothing: reading only |
 | Proposition 5.4 | closed language | proved | inspection of the kernel table | nothing: reading only |
 | Theorem 5.5 | relationship identity is retype-stable | proved | restated in the third pass by Def. 6.4: the id does not depend on the type, and of two relationships on one tuple the smaller id is present | nothing: reading only |
 | Theorem 5.6 | lossless syntax | proved under premises (RT), restated | on the canonical graphs (the image of `parse`): bijection, idempotent `fmt`, equal canonical form iff equal graph | example test on the example modules (T-ROUNDTRIP wanted) |
@@ -93,7 +93,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 6.6 | retraction under recursion, T10 | proved | from Theorem 6.1; counterexample | example tests on acyclic input only |
 | Proposition 6.7 | cross-graph telemetry reads are deterministic | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 6.8 | stateful telemetry operators under revision | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 7.1 | the planes are separate | restatement pending | the first sentence (a sample creates no revision) holds by definition. The second ("only if a crossing operator changes graph data") is false for a projection that derives data from the existence of windows: the same counterexample as for Theorem 5.3 (third pass) | example tests; revision counts on the captures |
+| Theorem 7.1 | the planes are separate | proved, restated (2026-11-12: graph data a function of data fields, Threshold outputs and supports of windowed relations; P6 an optional profile) | the first sentence (a sample creates no revision) holds by definition. The second ("only if a crossing operator changes graph data") is false for a projection that derives data from the existence of windows: the same counterexample as for Theorem 5.3 (third pass) | example tests; revision counts on the captures |
 | Theorem 7.2 | sums add up | proved | additivity of exact sums | nothing: reading only |
 | Theorem 7.3 | structure derived from measurements can be replayed | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 7.4 | bounded change of structure | proved, restated (F6, item 1, applied 2026-11-12) | toggles counted as runs of a state machine, plus the appearance and end of a key's row, bounded by the gap between windows | one example test |
@@ -325,6 +325,8 @@ Two passes. In the first, Proposition 1.8 was derived before its proof was read;
 | Proposition 10.8 (F10, applied) | premises LR1 to LR4 | and LR5 (premise LV2), which the proof used |
 | Proposition 11.9 (F11, applied) | after a kill, the state of a run never killed | the same on a store that writes a group of commits all or nothing; on the Cosmos store a kill between the batches of one group refuses the start |
 | Theorem 12.1, Proposition 12.9 (F12, applied) | for every version; never skips a version | up to the first rejected patch; except across a reported gap |
+| Theorems 5.3 and 7.1 (restated 2026-11-12) | graph data a function of the data fields and the `Threshold` outputs only; a closed-window record creates a revision only through a crossing operator | and of the supports of the windowed relations (Def. 5.20, new); a revision also when a support changes, bounded for key supports; rule P6 not adopted, an optional stricter profile under which the first form holds |
+| Proposition 7.7 (c) (restated 2026-11-12) | hypothesis: graph data derive from measurements only through `Threshold` outputs | no hypothesis; each change of a data input or a support causes at most one revision per graph |
 | Theorems 5.3 and 7.1 (third pass, pending) | "graph data are a function of the data fields and of the outputs of `Threshold` only"; "a closed-window record creates a revision only if a crossing operator changes graph data" | not yet restated: false for a projection that derives data from the existence of windows; two forms proposed |
 
 

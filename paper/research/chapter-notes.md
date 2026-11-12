@@ -1950,3 +1950,14 @@ Ch. 13: H12, z⁻¹ in Theorem 13.1, "guaranteed only", the decision rule for ra
 Ch. 14: 14.0, 14.3, 14.4 and 14.10 follow the workload model.
 Ch. 15: row 1a names the six shipped rules a windowed-row typing rule would refuse.
 Not applied: the engineering glosses of F13; the overloaded d, λ and ρ in Ch. 13; 2.25 against 2.5 million; "workload" in the name of the deployment-health graph.
+
+## For content-review: Theorems 5.3 and 7.1 restated (2026-11-12)
+
+The project decided to restate the theorems rather than adopt P6. Please derive the restatement independently and compare.
+- New Def. 5.20 (windowed relation, data part, support, key support), placed before Theorem 5.3.
+- Theorem 5.3: graph data are a function of (i) the data fields of the inputs, (ii) the outputs of `Threshold` operators, and (iii) the supports. Values reach graph data only through (ii), and supports do not depend on values. The second sentence is unchanged. P6 is recorded as an optional profile under which the shorter form holds.
+- Theorem 7.1: a closed-window record makes a revision only through a crossing operator or a change of support. For key supports the bound is at most two changes per run of windows whose starts are at most `within − w − L` apart. A projection that writes window times can make one revision per window.
+- Proposition 7.7 (c) has no hypothesis now. Each change of a data input or a support adds at most one revision per graph. Corollary 7.9 (c) adds the no-data term.
+- Def. 7.12: severities are 0, 2 and 3, with 1 (no data) used by the model, and `(c, d) ∈ A` reads "c is affected by d".
+- Inventory: 96 proved, 0 pending, 114 in all. README and Ch. 0 follow.
+Open: the share rule for a deployment whose pods are all in no data. The text states the rule as committed (no data counts as healthy). The authors could not ask engine-core which rule it is building, because messages from the paper session are paused.

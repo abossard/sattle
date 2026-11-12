@@ -34,7 +34,7 @@ flowchart LR
 - **A graph with versions.** The model is a graph of entities and relationships. Every change of its structure makes a new version, and every version can be reconstructed.
 - **Evidence, not facts.** What a source reports is evidence. Rules decide what the graph holds, and the graph remembers what supports each element.
 - **Levels of abstraction.** A *projection* computes a graph from the graph below it. It maps several nodes to one and lifts the edges with them: a dependency between two services is the lifted form of the calls between their running copies. A health model is such a level.
-- **Two planes.** Structure is versioned. Measurements are series over time and create no versions. The value of a measurement can change structure only through a threshold with memory, which bounds how often the graph changes. One gap is known: a definition can also make structure depend on whether a measurement exists at all, without the threshold. The two theorems that state this separation are being corrected (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
+- **Two planes.** Structure is versioned. Measurements are series over time and create no versions. The value of a measurement can change structure only through a threshold with memory, which bounds how often the graph changes. A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
 - **Definitions are data.** Types, naming rules and projections are themselves graphs over a small fixed core. A new kind of entity or a new view needs no new program.
 - **Determinism.** The result is a function of the recorded inputs and the definitions. Computing step by step gives the same result as computing from scratch, however the input is cut into batches.
 
@@ -46,7 +46,7 @@ flowchart LR
 - **Step by step equals from scratch** (Ch. 6). Proved for every operator of the language, relative to two theorems from the literature, and with it replay determinism and independence of batching under four stated premises.
 - **Bounded change from measurements** (Ch. 7), **laws for editable views** (Ch. 8), **change of definitions and traceable support** (Ch. 9), **loss is never read as deletion** (Ch. 10), **storage laws from five properties of a store** (Ch. 11).
 
-Of the 114 numbered statements, 94 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 7 are properties of the prototype that are tested and not proved. Two were found false as first stated and are being restated (Theorems 5.3 and 7.1). No proof was checked by a machine. The list is in [inventory.md](inventory.md).
+Of the 114 numbered statements, 96 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 7 are properties of the prototype that are tested and not proved. Two were found false as first stated and are restated (Theorems 5.3 and 7.1). No proof was checked by a machine. The list is in [inventory.md](inventory.md).
 
 ## What was measured
 
