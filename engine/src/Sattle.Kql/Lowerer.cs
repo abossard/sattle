@@ -24,12 +24,14 @@ sealed class Rel
     public Dictionary<string, IdX> Idents = new(StringComparer.Ordinal);
     /// <summary>Columns the last projection set to a constant.</summary>
     public Dictionary<string, Value> Lits = new(StringComparer.Ordinal);
+    /// <summary>The value kind of a telemetry column, from its property in the ontology.</summary>
+    public Dictionary<string, string> Kinds = new(StringComparer.Ordinal);
     /// <summary>One row per telemetry window (after a series or a roll-up).</summary>
     public bool Windowed;
     /// <summary>The rows of a telemetry join: one column per property in place of KQL's `property` and `value` columns.</summary>
     public (string Property, string Value, string[] Props)? Long;
 
-    public Rel Next(string port) => new() { Port = port, Cols = [.. Cols], Types = new(Types), Idents = new(Idents), Windowed = Windowed, Long = Long };
+    public Rel Next(string port) => new() { Port = port, Cols = [.. Cols], Types = new(Types), Idents = new(Idents), Kinds = new(Kinds), Windowed = Windowed, Long = Long };
     public static bool Hidden(string c) => c.Contains("__", StringComparison.Ordinal);
     public IEnumerable<string> Visible => Cols.Where(c => !Hidden(c)).Concat(Idents.Keys);
 }
@@ -44,6 +46,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     string pid = "";
     readonly Dictionary<string, LetStatement> letSyntax = new(StringComparer.Ordinal);
     readonly Dictionary<string, FunctionDeclaration> functions = new(StringComparer.Ordinal);
+    /// <summary>Inside a function with a table parameter: the table it was called with, and the constants of its other parameters.</summary>
+    Dictionary<string, Rel> tables = new(StringComparer.Ordinal);
+    Dictionary<string, object?> bound = new(StringComparer.Ordinal);
     readonly Dictionary<string, Rel> lets = new(StringComparer.Ordinal);
     readonly Dictionary<string, string> ports = new(StringComparer.Ordinal);
     readonly HashSet<string> parms = new(StringComparer.Ordinal);
@@ -187,7 +192,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     Rel Tab(Expression e) => e switch
     {
         ParenthesizedExpression p => Tab(p.Expression),
+        NameReference n when tables.TryGetValue(n.SimpleName, out var t) => t,
         NameReference n when letSyntax.TryGetValue(n.SimpleName, out var l) => Let(n.SimpleName, l),
+        FunctionCallExpression f when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, Tab(f.ArgumentList.Expressions[0].Element), [.. f.ArgumentList.Expressions.Skip(1).Select(x => x.Element)], f),
         PipeExpression p => Pipe(p),
         DataTableExpression d => DataTable(d),
         UnionOperator u => Union(null, u),
@@ -215,10 +222,46 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             SummarizeOperator s => Summarize(input, s),
             JoinOperator j => Join(input, j),
             UnionOperator u => Union(input, u),
+            InvokeOperator { Function: FunctionCallExpression f } when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, input, [.. f.ArgumentList.Expressions.Select(x => x.Element)], f),
             InvokeOperator i => Hysteresis(input, i),
             var op => throw new Refused(Refusal(op), op),
         };
     }
+
+    /// <summary>A user function whose first parameter is a table: `let f = (T:(a:string, ...), p:string) { T | ... }`.</summary>
+    FunctionDeclaration? TableFunction(string name) =>
+        functions.TryGetValue(name, out var fd) && fd.Parameters.Parameters.Count > 0 && fd.Parameters.Parameters[0].Element.NameAndType.Type is SchemaTypeExpression ? fd : null;
+
+    /// <summary>A table function is written out where it is called: its table parameter is the table it is called with, its other parameters are constants.</summary>
+    Rel Apply(FunctionDeclaration fd, Rel input, IReadOnlyList<Expression> args, SyntaxNode at)
+    {
+        var ps = fd.Parameters.Parameters.Select(p => p.Element.NameAndType.Name.SimpleName).ToList();
+        if (fd.Body.Statements.Count > 0 || fd.Body.Expression is null) throw new Refused("a function of a projection is one expression", at);
+        if (args.Count != ps.Count - 1) throw new Refused($"the function takes a table and {ps.Count - 1} value(s)", at);
+        var (savedTables, savedBound) = (tables, bound);
+        tables = new(tables, StringComparer.Ordinal) { [ps[0]] = input };
+        bound = new(bound, StringComparer.Ordinal);
+        for (var k = 0; k < args.Count; k++)
+        {
+            if (!(args[k].IsConstant || args[k].IsLiteral || args[k] is NameReference n && bound.ContainsKey(n.SimpleName))) throw new Refused("the values a table function takes are constants", args[k]);
+            bound[ps[k + 1]] = Const(args[k]);
+        }
+        try { return Tab(fd.Body.Expression); }
+        finally { (tables, bound) = (savedTables, savedBound); }
+    }
+
+    /// <summary>The value of a constant: a literal, or a parameter of the table function being written out.</summary>
+    object? Const(Expression e) => e is NameReference n && bound.TryGetValue(n.SimpleName, out var v) ? v : e.IsConstant ? e.ConstantValue : e.LiteralValue;
+
+    static Value FromObject(object? o, SyntaxNode at) => o switch
+    {
+        null => Value.Null,
+        string s => Value.Text(s),
+        bool v => Value.Boolean(v),
+        long or int => Value.Integer(Convert.ToInt64(o, CultureInfo.InvariantCulture)),
+        double or decimal or float => Value.Decimal(Convert.ToDecimal(o, CultureInfo.InvariantCulture)),
+        _ => throw new Refused($"a constant of type {o.GetType().Name} is not in the profile", at),
+    };
 
     /// <summary>Why an operator is not in the profile, and what to write instead.</summary>
     static string Refusal(QueryOperator op) => op switch
@@ -355,7 +398,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 for (var k = 0; k < id.Parts.Length; k++) Put($"{to}__{k + 1}", id.Parts[k].Value, null);
                 next.Idents[to] = new IdX(id.Domain, [.. id.Parts.Select((p, k) => (p.Component, (X)F($"{to}__{k + 1}")))]);
             }
-            else Put(to, F(from), r.Types.GetValueOrDefault(from));
+            else { Put(to, F(from), r.Types.GetValueOrDefault(from)); if (r.Kinds.TryGetValue(from, out var kind)) next.Kinds[to] = kind; }
         }
         if (keepAll) { foreach (var c in r.Cols.Where(c => !Rel.Hidden(c))) Carry(c, c); foreach (var c in r.Idents.Keys) Carry(c, c); }
         foreach (var it in items)
@@ -376,6 +419,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             }
             var x = Scalar(e, r);
             Put(name, x, x is FieldX f && !f.Path.Contains('.') ? r.Types.GetValueOrDefault(f.Path) : null);
+            if (x is FieldX fk && r.Kinds.TryGetValue(fk.Path, out var kind)) next.Kinds[name] = kind;
         }
         var op = Op("Map");
         for (var k = 0; k < assigns.Count; k++)
@@ -575,7 +619,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     sealed record TeleSource(string Graph, long WithinNs, long? TtlNs, decimal? Fill, string Id, string Property, string Value, string? NoData, string[] Props, SyntaxNode At);
 
     /// <summary>`telemetry("g", lookback) [| where property in (...)] | project k = id, windowStart, property, value`, or null.</summary>
-    static TeleSource? Telemetry(Expression e)
+    TeleSource? Telemetry(Expression e)
     {
         while (e is ParenthesizedExpression p) e = p.Expression;
         var ops = new List<QueryOperator>();
@@ -586,19 +630,19 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (f.Name.SimpleName == "telemetry_filled")
         {
             // telemetry_filled(g, lookback, ttl, fill): a window without a value takes the fill; an element silent for ttl is in no data
-            if (args is not [{ LiteralValue: string }, { LiteralValue: TimeSpan }, { LiteralValue: TimeSpan life }, var fv]) throw new Refused("telemetry_filled(\"graph\", lookback, ttl, fill)", f);
+            if (args.Select(Const).ToList() is not [string, TimeSpan, TimeSpan life, var fv]) throw new Refused("telemetry_filled(\"graph\", lookback, ttl, fill)", f);
             ttl = life.Ticks * 100;
-            fill = fv.LiteralValue is null ? null : Convert.ToDecimal(fv.LiteralValue, CultureInfo.InvariantCulture);
+            fill = fv is null ? null : Convert.ToDecimal(fv, CultureInfo.InvariantCulture);
         }
         else if (args.Count != 2) throw new Refused("telemetry(\"graph\", lookback)", f);
-        if (args is not [{ LiteralValue: string g }, { LiteralValue: TimeSpan look }, ..]) throw new Refused("telemetry(\"graph\", lookback)", f);
+        if (args.Select(Const).ToList() is not [string g, TimeSpan look, ..]) throw new Refused("telemetry(\"graph\", lookback)", f);
         var props = new List<string>(); string id = "id", prop = "property", val = "value";
         foreach (var op in ops)
             switch (op)
             {
                 case FilterOperator { Condition: InExpression { Operator.Text: "in", Left: NameReference { SimpleName: "property" } } ie }:
-                    props.AddRange(ie.Right.Expressions.Select(x => x.Element.LiteralValue as string ?? throw new Refused("name telemetry properties as text", x.Element))); break;
-                case FilterOperator { Condition: BinaryExpression { Operator.Text: "==", Left: NameReference { SimpleName: "property" }, Right.LiteralValue: string one } }:
+                    props.AddRange(ie.Right.Expressions.Select(x => Const(x.Element) as string ?? throw new Refused("name telemetry properties as text", x.Element))); break;
+                case FilterOperator { Condition: BinaryExpression { Operator.Text: "==", Left: NameReference { SimpleName: "property" }, Right: var pr } } when Const(pr) is string one:
                     props.Add(one); break;
                 case ProjectOperator po:
                     foreach (var it in po.Expressions.Select(x => x.Element))
@@ -626,6 +670,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             else b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T($"{l}.{t.Props[k]}")));
         var next = left.Next(P(op, "out"));
         next.Cols.AddRange(["windowStart", "windowEnd", .. t.Props]);
+        var tv = View(inputs[t.Graph]);
+        foreach (var prop in t.Props)
+            if (tv.PropsOf(left.Types[l]).Keys.Select(k => tv.Props[k]).FirstOrDefault(pi => pi.Name == prop) is { } pi) next.Kinds[prop] = pi.ValueKind;
         if (t.NoData is not null) next.Cols.Add("noData");
         next.Windowed = true;
         next.Long = (t.Property, t.Value, t.Props);
@@ -638,7 +685,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     Rel Hysteresis(Rel r, InvokeOperator i)
     {
         if (i.Function is not FunctionCallExpression { Name.SimpleName: "hysteresis" } f) throw new Refused("the one function a projection invokes is hysteresis(...)", i);
-        var args = f.ArgumentList.Expressions.Select(a => a.Element.LiteralValue as string ?? throw new Refused("hysteresis takes the states as text", a.Element)).ToList();
+        var args = f.ArgumentList.Expressions.Select(a => Const(a.Element) as string ?? throw new Refused("hysteresis takes the states as text", a.Element)).ToList();
         if (args.Count is < 3 or > 4) throw new Refused("hysteresis(high, low, initial[, nodata])", f);
         if (!r.Windowed) throw new Refused("hysteresis reads telemetry windows", i);
         foreach (var c in ThresholdCols[2..7]) if (!r.Cols.Contains(c)) throw new Refused($"hysteresis reads the column '{c}'", i);
@@ -712,6 +759,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 throw new Refused("the edges of a path are not kept: every path would be listed, which is not kept up to date; project the two ends", e);
             case NameReference n:
                 if (args is not null && args.TryGetValue(n.SimpleName, out var a)) return a;
+                if (bound.TryGetValue(n.SimpleName, out var c)) return new LitX(FromObject(c, e));
                 if (r.Idents.ContainsKey(n.SimpleName)) throw new Refused($"'{n.SimpleName}' is an identity: it names a node or an end of an edge, it is not a value", e);
                 if (r.Long is { Props: [var only] } lg && n.SimpleName == lg.Value) return F(only);
                 if (r.Long is { Props: [var one] } lp && n.SimpleName == lp.Property) return new LitX(T(one));
@@ -757,7 +805,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             case "not": return One("Not");
             case "isnotnull": return One("IsPresent");
             case "isnull": return new CallX("Not", One("IsPresent"));
-            case "toreal" or "todouble" or "todecimal": return One("ToDecimal");
+            case "toreal" or "todouble" or "todecimal":
+                // the engine converts an Integer; a value that is already Decimal is itself (in KQL every telemetry value is real)
+                return a is [FieldX { Path: var path }] && r.Kinds.GetValueOrDefault(path) == "Decimal" ? a[0] : One("ToDecimal");
             case "rate": return One("Rate");
             case "identity": throw new Refused("identity(...) names a node: assign it to a column and use the column as the node or an end of an edge", f);
             case var name when functions.TryGetValue(name, out var fd):

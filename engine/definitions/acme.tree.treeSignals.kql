@@ -1,0 +1,36 @@
+// The signals of the estate: each meter of an Azure resource, a node or a pod, read against the authored rules of its kind.
+// Hysteresis, thresholds and severity come from the rule, so a new meter or a changed threshold is a record, not a change of this text.
+graph treeSignals : acme.tree;
+
+let rules = graph("master")
+    | graph-match (u) where labels(u) has "SignalRule"
+      project rid = u.ruleId, rtype = u.ruleType, rmeter = u.ruleMeter, above = u.ruleAbove, enterAfter = u.ruleEnter,
+              below = u.ruleBelow, exitAfter = u.ruleExit, severity = u.ruleSeverity, sign = iff(u.ruleInvert, -1.0, 1.0);
+// the meters of one kind of element with the rules that read them, and their windows: raw is the reading, v the reading in the rule's direction
+let ruled = (M:(m:string, ekey:string, etype:string, meter:string)) { M | join kind=inner (rules) on $left.meter == $right.rmeter | where etype == rtype or rtype == "*" };
+let windowsOf = (R:(m:string, ekey:string, meter:string, rid:string, severity:long, sign:real, above:real, enterAfter:long, below:real, exitAfter:long)) {
+    R | join kind=inner (telemetry("master", 24h) | where property == "reading" | project m = id, windowStart, property, value) on m
+      | project ekey, rid, severity, meter, invert = sign < 0.0, windowStart, raw = value, v = value * sign, above, enterAfter, below, exitAfter
+};
+// a rule is on after enterAfter windows at or above its threshold and off after exitAfter windows at or below it
+let signalsOf = (W:(ekey:string, rid:string, severity:long, windowStart:datetime, v:real, above:real, enterAfter:long, below:real, exitAfter:long)) {
+    W | project ekey, rid, severity, windowStart, value = v, above, enterAfter, below, exitAfter | invoke hysteresis("on", "off", "off")
+};
+let azureWindows = graph("master")
+    | graph-match (m)-[o]->(r) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(r) has "AzureResource"
+      project m = m.id, ekey = tolower(r.resourceId), etype = tolower(r.type), meter = m.meter
+    | invoke ruled() | invoke windowsOf();
+let nodeWindows = graph("master")
+    | graph-match (m)-[o]->(n) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(n) has "Node"
+      project m = m.id, ekey = strcat("node/", n.cluster, "/", n.name), etype = "node", meter = m.meter
+    | invoke ruled() | invoke windowsOf();
+let podWindows = graph("master")
+    | graph-match (m)-[o]->(p) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(p) has "Pod"
+      project m = m.id, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), etype = "pod", meter = m.meter
+    | invoke ruled() | invoke windowsOf();
+
+nodes Signal on sig = union (azureWindows | invoke signalsOf()), (nodeWindows | invoke signalsOf()), (podWindows | invoke signalsOf())
+    | project sig = identity("signal", ekey, rid), signalElement = ekey, signalRule = rid, signalSeverity = severity, signalState = state;
+extend nodes Signal on sig = union azureWindows, nodeWindows, podWindows
+    | project sig = identity("signal", ekey, rid), windowStart, signalValue = raw, signalAbove = above, signalBelow = below, signalMeter = meter,
+              signalEnterAfter = enterAfter, signalExitAfter = exitAfter, signalInverted = invert;

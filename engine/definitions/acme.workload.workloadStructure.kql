@@ -117,26 +117,24 @@ let byIdentity = viaIdentity | join kind=inner (preferred) on $left.tkey == $rig
 let byConfig = viaConfigResource | join kind=inner (preferred) on $left.tkey == $right.ptkey
     | project h, r, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
 
-// the evidence: one element per dependency and way it was found
-let evidenceEndpoint = byEndpoint | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-let evidenceName = byName | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-let evidenceIdentity = byIdentity | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-let evidenceConfig = byConfig | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-let evidenceConfigService = viaConfigService | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-let evidenceCalls = called | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail;
-nodes DependencyEvidence on e = evidenceEndpoint | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceName | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceIdentity | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceConfig | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceConfigService | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceCalls | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+// the evidence: one element per dependency and way it was found, and an edge to the service it is for
 let serviceKeys = services | project s, skey2 = svcKey(cluster, namespace, name);
-edges EvidenceFor from e to s with (key = "evidenceForEndpoint") = evidenceEndpoint | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
-edges EvidenceFor from e to s with (key = "evidenceForName") = evidenceName | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
-edges EvidenceFor from e to s with (key = "evidenceForIdentity") = evidenceIdentity | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
-edges EvidenceFor from e to s with (key = "evidenceForConfig") = evidenceConfig | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
-edges EvidenceFor from e to s with (key = "evidenceForConfigService") = evidenceConfigService | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
-edges EvidenceFor from e to s with (key = "evidenceForCalls") = evidenceCalls | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s;
+let evidenceOf = (F:(src:string, target:string, how:string, detail:string, one:long)) { F | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail };
+let asEvidence = (E:(src:string, target:string, how:string, detail:string)) { E | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail };
+let evidenceFor = (E:(src:string, target:string, how:string)) { E | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s };
+let evidenceEndpoint = byEndpoint | invoke evidenceOf();
+let evidenceName = byName | invoke evidenceOf();
+let evidenceIdentity = byIdentity | invoke evidenceOf();
+let evidenceConfig = byConfig | invoke evidenceOf();
+let evidenceConfigService = viaConfigService | invoke evidenceOf();
+let evidenceCalls = called | invoke evidenceOf();
+nodes DependencyEvidence on e = union evidenceEndpoint, evidenceName, evidenceIdentity, evidenceConfig, evidenceConfigService, evidenceCalls | invoke asEvidence();
+edges EvidenceFor from e to s with (key = "evidenceForEndpoint") = evidenceEndpoint | invoke evidenceFor();
+edges EvidenceFor from e to s with (key = "evidenceForName") = evidenceName | invoke evidenceFor();
+edges EvidenceFor from e to s with (key = "evidenceForIdentity") = evidenceIdentity | invoke evidenceFor();
+edges EvidenceFor from e to s with (key = "evidenceForConfig") = evidenceConfig | invoke evidenceFor();
+edges EvidenceFor from e to s with (key = "evidenceForConfigService") = evidenceConfigService | invoke evidenceFor();
+edges EvidenceFor from e to s with (key = "evidenceForCalls") = evidenceCalls | invoke evidenceFor();
 
 // the dependencies: one edge per pair, whatever the ways it was found
 let pairs = union (byEndpoint | project src, target), (byName | project src, target), (byIdentity | project src, target),

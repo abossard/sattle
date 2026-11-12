@@ -3,7 +3,7 @@
     <!-- Microsoft.Azure.Kusto.Language 12.4.1 from nuget.org, published by Microsoft (verified owner, author and repository signatures).
          License: Microsoft Software License Terms, Azure Data Explorer SDK (EULA-agreement.txt in the package); the source on GitHub (microsoft/Kusto-Query-Language) is Apache-2.0. -->
     <PackageReference Include="Microsoft.Azure.Kusto.Language" Version="[12.4.1]" />
-    <ProjectReference Include="../Sattle.Core/Sattle.Core.csproj" />
+    <ProjectReference Include="../Sattle.Language/Sattle.Language.csproj" />
     <EmbeddedResource Include="library.kql" LogicalName="library.kql" />
   </ItemGroup>
 </Project>

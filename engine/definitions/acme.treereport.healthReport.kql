@@ -1,0 +1,21 @@
+// A report on the health of the estate as a document: counts, then one line per element that is not healthy.
+graph healthReport : sattle.doc;
+
+let elements = graph("health")
+    | graph-match (e) where labels(e) has "Element"
+      project key = e.nodeKey, ['kind'] = e.nodeKind, name = e.nodeName, state = e.rolledState, sev = coalesce(e.rolledSeverity, -1),
+              critical = coalesce(e.critical, false), below = coalesce(e.unhealthyCount, 0) + coalesce(e.degradedCount, 0);
+let totals = elements | summarize total = count(), degraded = countif(sev == 1), unhealthy = countif(sev == 2), critical = countif(critical and sev >= 1) by k = "all";
+let affected = elements | where sev >= 1 | project k = key, ['kind'], nm = coalesce(name, key), st = coalesce(state, "Unknown"), sev, below;
+// a count as a block of the document
+let stat = (T:(k:string, n:long), rule:string, label:string) { T | project block = identity("block", rule, k), ['kind'] = "stat", ['order'] = strcat("1/", rule), text = label, n };
+
+nodes Block on block = datatable(k:string) ["title"] | project block = identity("block", "title", k), ['kind'] = "heading", ['order'] = "0", level = 1, text = "Estate health";
+nodes Block on block = totals | project k, n = total | invoke stat("total", "Elements");
+nodes Block on block = totals | project k, n = unhealthy | invoke stat("unhealthy", "Unhealthy elements");
+nodes Block on block = totals | project k, n = degraded | invoke stat("degraded", "Degraded elements");
+nodes Block on block = totals | project k, n = critical | invoke stat("critical", "Critical elements that are not healthy");
+nodes Block on block = datatable(k:string) ["header"]
+    | project block = identity("block", "header", k), ['kind'] = "header", ['order'] = "2", a = "Kind", b = "Element", c = "State", d = "Monitored below that are not healthy";
+nodes Block on block = affected
+    | project block = identity("block", "row", k), ['kind'] = "row", ['order'] = strcat("3/", iff(sev == 2, "0", "1"), "/", k), a = ['kind'], b = nm, c = st, n = below;

@@ -1,0 +1,58 @@
+// The estate as one tree: subscriptions, resource groups and resources, clusters, namespaces, workloads, pods and nodes,
+// and the groups and moves people curate. Each row names an element: its key, a name, its kind, its parent and a rank;
+// where rows disagree on a name or a parent, the higher rank decides.
+graph treeStructure : acme.tree;
+
+let resources = graph("master")
+    | graph-match (r) where labels(r) has "AzureResource" and isnotnull(r.subscriptionId) and isnotnull(r.resourceGroup)
+      project key = tolower(r.resourceId), label = r.name, ['kind'] = iff(r.type == "microsoft.containerservice/managedclusters", "cluster", "resource"),
+              sub = tolower(r.subscriptionId), rg = tolower(r.resourceGroup);
+let subscriptions = resources | summarize n = count() by sub | project key = strcat("sub/", sub), label = sub, ['kind'] = "subscription", parent = "", rank = 0;
+let groups = resources | summarize n = count() by sub, rg | project key = strcat("rg/", sub, "/", rg), label = rg, ['kind'] = "resourceGroup", parent = strcat("sub/", sub), rank = 1;
+let azureResources = resources | project key, label, ['kind'], parent = strcat("rg/", sub, "/", rg), rank = 1;
+
+// a cluster is its AKS resource when a node of it names its machine, else a key of its own
+let allLabels = union (graph("master") | graph-match (p) where labels(p) has "Pod" project label = p.cluster),
+                      (graph("master") | graph-match (n) where labels(n) has "Node" project label = n.cluster),
+                      (graph("master") | graph-match (d) where labels(d) has "Deployment" project label = d.cluster)
+    | distinct *;
+let machines = graph("master")
+    | graph-match (n) where labels(n) has "Node" and isnotnull(n.resourceId) project nlabel = n.cluster, vm = tolower(n.resourceId)
+    | join kind=inner (graph("master") | graph-match (r) where labels(r) has "AzureResource" and isnotnull(r.parentId) project vm2 = tolower(r.resourceId), aks = tolower(r.parentId)) on $left.vm == $right.vm2;
+let clusterKeys = union (allLabels | project label, ckey = strcat("cluster/", label), rank = 1), (machines | project label = nlabel, ckey = aks, rank = 2)
+    | summarize arg_max(rank, ckey) by label
+    | project label, ckey;
+let clusters = clusterKeys | project key = ckey, label, ['kind'] = "cluster", parent = "", rank = 0;
+
+let namespaces = union (graph("master") | graph-match (p) where labels(p) has "Pod" project nlabel = p.cluster, ns = p.namespace),
+                       (graph("master") | graph-match (d) where labels(d) has "Deployment" project nlabel = d.cluster, ns = d.namespace)
+    | distinct *
+    | join kind=inner (clusterKeys) on $left.nlabel == $right.label
+    | project key = strcat("ns/", nlabel, "/", ns), label = ns, ['kind'] = "namespace", parent = ckey, rank = 1;
+let workloads = graph("master")
+    | graph-match (d) where labels(d) has "Deployment"
+      project key = strcat("wl/", d.cluster, "/", d.namespace, "/", d.name), label = d.name, ['kind'] = "workload", parent = strcat("ns/", d.cluster, "/", d.namespace), rank = 1;
+let podsInNamespace = graph("master")
+    | graph-match (p) where labels(p) has "Pod"
+      project key = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), label = p.name, ['kind'] = "pod", parent = strcat("ns/", p.cluster, "/", p.namespace), rank = 1;
+let podsInWorkload = graph("master")
+    | graph-match (p)-[c]->(d) where labels(p) has "Pod" and labels(c) has "ControlledBy" and labels(d) has "Deployment"
+      project key = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), label = p.name, ['kind'] = "pod", parent = strcat("wl/", d.cluster, "/", d.namespace, "/", d.name), rank = 2;
+let nodes = graph("master")
+    | graph-match (n) where labels(n) has "Node" project nlabel2 = n.cluster, nkey = strcat("node/", n.cluster, "/", n.name), nname = n.name
+    | join kind=inner (clusterKeys) on $left.nlabel2 == $right.label
+    | project key = nkey, label = nname, ['kind'] = "node", parent = ckey, rank = 1;
+
+// curated: a group is a new workload; a move gives an element another parent
+let groupNodes = graph("master")
+    | graph-match (u) where labels(u) has "Curation" and u.curAction == "group" project gname = coalesce(u.curValue, "")
+    | summarize n = count() by gname
+    | project key = strcat("grp/", gname), label = gname, ['kind'] = "workload", parent = "", rank = 0;
+let curated = graph("master")
+    | graph-match (u) where labels(u) has "Curation" and (u.curAction == "group" or u.curAction == "move")
+      project key = u.curTarget, label = "", ['kind'] = "", parent = iff(u.curAction == "group", strcat("grp/", coalesce(u.curValue, "")), coalesce(u.curValue, "")), rank = 9;
+let rows = union subscriptions, groups, azureResources, clusters, namespaces, workloads, podsInNamespace, podsInWorkload, nodes, groupNodes, curated;
+
+nodes Element on el = rows | where ['kind'] != "" | summarize n = count() by key, ['kind'] | project el = identity("element", key), nodeKey = key, nodeKind = ['kind'];
+extend nodes Element on el = rows | where label != "" | summarize arg_max(rank, label) by key | project el = identity("element", key), nodeName = label;
+edges Contains from up to el = rows | where parent != "" | summarize arg_max(rank, parent) by key | project up = identity("element", parent), el = identity("element", key);

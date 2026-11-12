@@ -12,46 +12,41 @@ let rules = graph("master")
               below = u.ruleBelow, exitAfter = u.ruleExit, severity = u.ruleSeverity, sign = iff(u.ruleInvert, -1.0, 1.0);
 
 // ---- signals: the meters of Azure resources and nodes, and the warning events of the pods ----
+// the windows of one property of the meters, read against their rules: raw is the reading, v the reading in the rule's direction
+let windowsOf = (R:(m:string, ekey:string, meter:string, rid:string, severity:long, sign:real, above:real, enterAfter:long, below:real, exitAfter:long), p:string, fill:real) {
+    R | join kind=inner (telemetry_filled("master", 30m, 5m, fill) | where property == p | project m = id, windowStart, property, value, noData) on m
+      | project ekey, rid, severity, meter, windowStart, raw = toreal(value), v = toreal(value) * sign, above, enterAfter, below, exitAfter, noData
+};
+// a rule is on after enterAfter windows at or above its threshold, off after exitAfter windows at or below it, in no data while the meter is silent
+let signalsOf = (W:(ekey:string, rid:string, severity:long, meter:string, windowStart:datetime, v:real, above:real, enterAfter:long, below:real, exitAfter:long, noData:bool)) {
+    W | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter, noData | invoke hysteresis("on", "off", "off", "nodata")
+};
 let resourceReadings = graph("master")
     | graph-match (m)-[o]->(r) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(r) has "AzureResource"
       project m = m.id, ekey = tolower(r.resourceId), etype = tolower(r.type), meter = m.meter
     | join kind=inner (rules) on $left.meter == $right.rmeter
     | where etype == rtype or rtype == "*"
-    | join kind=inner (telemetry_filled("master", 30m, 5m, real(null)) | where property == "reading" | project m = id, windowStart, property, value, noData) on m
-    | project ekey, rid, severity, meter, windowStart, raw = value, v = value * sign, above, enterAfter, below, exitAfter, noData;
-let resourceSignals = resourceReadings
-    | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter, noData
-    | invoke hysteresis("on", "off", "off", "nodata");
+    | invoke windowsOf("reading", real(null));
 extend nodes ComponentSignal on sig = resourceReadings | summarize reading = max(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, reading;
-
 let nodeReadings = graph("master")
     | graph-match (m)-[o]->(n) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(n) has "Node"
       project m = m.id, ekey = strcat("node/", n.cluster, "/", n.name), etype = "node", meter = m.meter
     | join kind=inner (rules) on $left.meter == $right.rmeter
     | where etype == rtype or rtype == "*"
-    | join kind=inner (telemetry_filled("master", 30m, 5m, real(null)) | where property == "reading" | project m = id, windowStart, property, value, noData) on m
-    | project ekey, rid, severity, meter, windowStart, raw = value, v = value * sign, above, enterAfter, below, exitAfter, noData;
-let nodeSignals = nodeReadings
-    | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter, noData
-    | invoke hysteresis("on", "off", "off", "nodata");
+    | invoke windowsOf("reading", real(null));
 extend nodes ComponentSignal on sig = nodeReadings | summarize reading = max(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, reading;
-
 let warnings = graph("master")
     | graph-match (p)-[b]->(s) where labels(p) has "Pod" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace
-      project p = p.id, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), meter = "warnings"
+      project m = p.id, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), meter = "warnings"
     | distinct *
     | join kind=inner (rules) on $left.meter == $right.rmeter
     | where rtype == "pod"
-    | join kind=inner (telemetry_filled("master", 30m, 5m, 0.0) | where property == "warnings" | project p = id, windowStart, property, value, noData) on p
-    | project ekey, rid, severity, meter, windowStart, raw = toreal(value), v = toreal(value) * sign, above, enterAfter, below, exitAfter, noData;
-let podSignals = warnings
-    | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter, noData
-    | invoke hysteresis("on", "off", "off", "nodata");
+    | invoke windowsOf("warnings", 0.0);
 extend nodes ComponentSignal on sig = warnings | summarize events = sum(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, events;
 
 // ---- the signals of the components and their severity: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on ----
 let comps = graph("structure") | graph-match (c) where labels(c) has "Component" project c = c.id, ck = c.key;
-let measured = union resourceSignals, nodeSignals, podSignals
+let measured = union (resourceReadings | invoke signalsOf()), (nodeReadings | invoke signalsOf()), (warnings | invoke signalsOf())
     | project sk = ekey, rid, meter, signalSeverity = severity, signalState = state, sev = iff(state == "on", severity + 1, iff(state == "nodata", 1, 0))
     | join kind=inner (comps) on $left.sk == $right.ck;
 nodes ComponentSignal on sig = measured

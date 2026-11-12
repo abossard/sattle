@@ -377,6 +377,111 @@ An optional check in stage 1: run the batch form of each KQL projection on a sma
 - The list of aggregations allowed in materialized views, and the identity rule for new nodes in G-CORE's `CONSTRUCT`.
 - Whether ScriptDom parses T-SQL graph `MATCH`.
 
+## 8. What stage 1 showed
+
+Stage 1 built the KQL front end and tested it on the six projections. A front end is the part of the engine that reads a definition text and turns it into the engine's operators. Kusto.Language reads and type-checks the text; our code translates Kusto's reading of it into the same operators today's text gives. Nothing in the engine changed.
+
+### The result
+
+- **The same graphs.** Each of the six projections, written in KQL, gives the same graph as today's text when the synthetic estate is replayed: every node, every edge, every property and every telemetry window. The same holds on both recorded captures from the lab.
+- **The same operators.** A test takes today's version of a projection out of the engine's definitions, puts in what the KQL front end wrote, prints it back to today's text with the engine's own printer, loads it, and finds exactly the operators the front end wrote. So the engine really runs the KQL version.
+- **Fast enough to run with every change.** The tests on the estate take about 25 seconds.
+
+### The size
+
+- The front end is about 880 lines of our code: 100 that read the text and build the description of the graphs Kusto checks against, and 780 that translate into operators. The library adds 28 lines written in KQL. Parsing and type checking are Kusto.Language's.
+- The six projections take 394 lines of KQL against 450 lines today.
+
+| Projection | Lines today | Lines in KQL |
+|---|---|---|
+| service tree | 30 | 34 |
+| capabilities (without its edit rules) | 31 | 27 |
+| deployment health | 27 | 21 |
+| deployment report | 20 | 14 |
+| workload structure | 195 | 192 |
+| workload health | 147 | 106 |
+
+### What the front end accepts
+
+Sixty-two constructs, every one plain KQL except the ten additions below.
+- **Statements (10):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), and the `key` setting.
+- **Table operators (14):** `graph-match` (patterns of nodes and edges, `labels(x) has "T"`, `where`, `project`), paths of several edges `-[p*0..16]->` with `all(p, labels(p) has "T")`, `where`, `project`, `extend`, `distinct`, `summarize`, `join kind=inner`, `union`, `datatable`, `invoke` of a table function, `invoke hysteresis`, a join with `telemetry` and a join with `telemetry_filled`.
+- **Aggregations (10):** `count`, `countif`, `sum`, `min`, `max`, `avg`, `arg_max`, and over telemetry `sumif`, `minif`, `maxif`.
+- **Functions (14):** `iff`, `case`, `coalesce`, `strcat`, `tolower`, `not`, `isnotnull`, `isnull`, `toreal`, `rate`, `identity`, `labels`, `all`, and value functions of one's own.
+- **Operators (14):** `==`, `!=`, `<`, `<=`, `>`, `>=`, `and`, `or`, `+`, `-`, `*`, `/`, the minus sign and `in`.
+
+### What it refuses, and what it says
+
+The engine keeps every result up to date as data changes, and gives the same result for the same recorded input. What cannot be kept up to date, or would not give the same result twice, is refused with a message that says what to write instead. The messages call the accepted part of KQL "the profile".
+
+| Written | The message |
+|---|---|
+| `take`, `sample` | take and sample pick arbitrary rows, so the result would depend on the order rows arrive in: filter or summarize instead |
+| `sort`, `order by`, `top` | rows of a graph have no order: summarize with min, max or arg_max instead |
+| `scan` | a general scan is not kept up to date: write a threshold with invoke hysteresis(...) |
+| `evaluate` | plugins are not in the profile |
+| `join` without a kind | state the kind of every join: join kind=inner (KQL's default, innerunique, drops duplicate rows of the left side) |
+| `join kind=leftouter` and the other kinds | join kind=leftouter is not in the profile: write union and summarize, or kind=inner |
+| `dcount` | dcount is an estimate that may vary between runs: write distinct ... \| summarize n = count() |
+| `count_distinct` | count_distinct is a preview function: write distinct ... \| summarize n = count() |
+| `take_any` | take_any picks an arbitrary value: write min, max or arg_max |
+| `now()`, `ago()` | the wall clock is not in a projection: time is the windows of the telemetry |
+| the edges of a path in `project` | the edges of a path are not kept: every path would be listed, which is not kept up to date; project the two ends |
+| `nodes on id labels col` | a step names its type ...: the engine writes one type per step, so a type taken from a column needs one step per type |
+| `with (edit = ...)` | editable views come in a later stage of the KQL front end: this stage refuses with (edit = ...) |
+| another setting in `with` | 'x' is not a setting of a step: the one setting is key = "name" |
+| `union` of tables with different columns | the tables of a union have the same columns: project each to ... |
+| a step that makes a type but leaves out a required property | a step that makes T sets every required property, and p is not set: set it, or write extend nodes to add properties to nodes another step makes |
+| `extend nodes` when no step makes the type | no step makes T: extend nodes adds properties to nodes another step of this projection makes |
+| two steps that make edges of one type with one key | two steps make T edges with the key 'k': give one its own key with (key = "..."), or write extend edges |
+| a column the type has no property for | T has no property 'c': project it away |
+| several telemetry properties used before summarizing | summarize the telemetry rows of several properties by their window before projecting them: summarize v = sumif(value, property == "p") by ..., windowStart |
+| any other operator or function | x is not in the KQL profile, or f() is not a function of the profile |
+
+### The ten additions, each with an example
+
+1. **The graph line** names the projection and the ontology of its result: `graph serviceDeps : acme.svc;`
+2. **`nodes`** makes nodes from the rows of a query: `nodes ServiceNode on service = services;`
+3. **`edges`** makes edges: `edges DependsOn from src to dst = calls | distinct src, dst;`
+4. **`extend nodes` and `extend edges`** add properties to what another step makes, in KQL's own word for adding columns: `extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;`
+5. **`with (key = "...")`** names the key of an edge, which is part of its identity: `edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;`
+6. **`identity(domain, ...)`** gives the identity of a node that is in no input graph: `project group = identity("serviceGroup", cluster, namespace)`
+7. **`telemetry(graph, lookback)`** is the telemetry of a graph, one row per element, property and window: `join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call`
+8. **`telemetry_filled(graph, lookback, timeToLive, fill)`** fills an empty window and marks a silent element as "no data": `telemetry_filled("master", 30m, 5m, 0.0)`
+9. **`invoke hysteresis(high, low, initial[, noData])`** is a threshold that must hold for a number of windows: `invoke hysteresis("degraded", "ok", "ok")`
+10. **`rate(x)`** is a value per second over the period of its property: `flowRate = rate(flows)`. KQL has no units, so no KQL expression can give a value the unit "per second" that the property declares.
+
+Of the nine additions in section 5, the step whose type comes from a column (`nodes on id labels col`) is not in stage 1; `extend` took its place in the count.
+
+### Where our meaning differs from Kusto's documented one
+
+1. One edge per type, key and pair of ends. Kusto keeps duplicate edges. Two keys on the same ends and type compete; one edge wins and takes the other's telemetry.
+2. When two steps set one property differently, the engine reports a conflict and sets no value. Kusto takes the last step.
+3. Dividing two integers is exact. KQL divides integers to an integer.
+4. `labels(x) has "T"` also holds for every subtype of T.
+5. `telemetry(g, 24h)` looks back from the newest window of the recorded input, not from the wall clock.
+6. When `arg_max` has ties, the engine decides which row wins. Kusto returns any of the tied rows.
+7. A `union` needs the same columns. Kusto fills missing columns with nulls.
+
+### Rules the engine adds
+
+These are checks with a message, not different results: a step that makes a type sets all its required properties; two steps that make edges of one type need different keys; every column of a step is a property of its type. One rule removes a difference that is only in typing: `toreal` of a value the engine already holds as a decimal is that value (in KQL every telemetry value is real).
+
+### Repetition without new words
+
+KQL's own functions with a table parameter, `let f = (T:(a:string, ...), p:string) { T | ... };`, are written out where they are called. In the workload health, the three blocks that read meters and warning events against the rules became two functions, and the three thresholds one call each: 111 lines and 12,603 characters became 106 lines and 12,146 characters. In the workload structure, the six blocks of evidence became three functions, and six steps that made evidence nodes became one step over a `union`: 194 lines and 19,898 characters became 192 lines and 18,531 characters. This is what research 08 wanted generators for, with nothing invented. The many key names of the evidence edges stay, because each key is part of an edge's identity; whether a key can be derived from the step instead of written by hand is open for the last stage.
+
+### What today's text hid
+
+`lift` carries every telemetry property the lifted and the lower relationship share, without naming it. In the workload structure, `lift talks` gives the edges `flows` and `drops` over 24 hours, though the text names neither. The KQL text says it as a step of its own.
+
+### What could not be checked
+
+- Whether each KQL text gives the same tables in Kusto itself. Nothing was run on a Kusto cluster; the seven differences above are where results would differ.
+- That the source of Kusto.Language on GitHub is the 12.4.1 package. The repository has no tags, and its version comes from the build.
+- Whether the package's license lets a release of ours include it. Its redistribution section names no files. A release is not in scope; building from the source would be under the source's license.
+- Editable views. They come in a later stage.
+
 ## Sources
 
 Opened on 12 November 2026.

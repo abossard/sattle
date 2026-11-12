@@ -1,0 +1,73 @@
+// The health of every element of the tree: its own severity from its signals, and the severity rolled up over everything
+// it rolls up, by its policy; with the signals and the evidence (warning events, Azure operations) of each element.
+graph healthTree : acme.tree;
+
+let els = graph("structure") | graph-match (e) where labels(e) has "Element" project e = e.id, ekey = e.nodeKey, ekind = e.nodeKind, ename = e.nodeName;
+let stateOf = (sev:long) { case(sev == 2, "Unhealthy", sev == 1, "Degraded", sev == 0, "Healthy", "Unknown") };
+nodes Element on e = els | project e, nodeKey = ekey, nodeKind = ekind, nodeName = ename;
+edges Contains from p to c = graph("structure")
+    | graph-match (p)-[k]->(c) where labels(p) has "Element" and labels(k) has "Contains" and labels(c) has "Element" project p = p.id, c = c.id;
+
+// own severity: the worst signal that is on; -1 (unknown) for a hidden element and one without signals
+let signalRows = graph("signals")
+    | graph-match (s) where labels(s) has "Signal" project ekey = s.signalElement, sev = iff(s.signalState == "on", s.signalSeverity, 0)
+    | summarize own = max(sev) by ekey
+    | project ekey, own, orank = 1;
+let hiddenRows = graph("structure")
+    | graph-match (e)-[c*0..12]->(hd) where labels(e) has "Element" and all(c, labels(c) has "Contains") project root = e.nodeKey, hkey = hd.nodeKey
+    | join kind=inner (graph("master") | graph-match (u) where labels(u) has "Curation" and u.curAction == "hide" project hroot = u.curTarget) on $left.root == $right.hroot
+    | summarize n = count() by ekey = hkey
+    | project ekey, own = -1, orank = 2;
+let ownRows = union signalRows, hiddenRows | summarize arg_max(orank, own) by ekey | project ekey, own;
+extend nodes Element on el = hiddenRows | project el = identity("element", ekey), hidden = true;
+extend nodes Element on el = graph("master")
+    | graph-match (u) where labels(u) has "Curation" and u.curAction == "critical" project el = identity("element", u.curTarget), critical = true;
+let ownAll = union (els | project ekey, own = -1, rank = 0), (ownRows | project ekey, own, rank = 1) | summarize arg_max(rank, own) by ekey | project ekey, own;
+extend nodes Element on el = ownAll | project el = identity("element", ekey), ownSeverity = own, ownState = stateOf(own);
+
+// rolled-up severity: over the element and everything it rolls up, by the element's policy
+let reach = graph("rollup")
+    | graph-match (e)-[r*0..12]->(d) where labels(e) has "Element" and all(r, labels(r) has "Rolls") project rkey = e.nodeKey, dkey = d.nodeKey;
+let counts = reach
+    | join kind=inner (ownRows) on $left.dkey == $right.ekey
+    | summarize worst = max(own), selfOwn = max(iff(dkey == rkey, own, -1)), healthy = countif(own == 0), degraded = countif(own == 1),
+                unhealthy = countif(own == 2), monitored = countif(own >= 0) by ckey = rkey;
+let policies = graph("rollup")
+    | graph-match (e) where labels(e) has "Element" project pk = e.nodeKey, mode = coalesce(e.rollupMode, "worst"), share = coalesce(e.rollupShare, 0.5);
+let rolled = counts
+    | join kind=inner (policies) on $left.ckey == $right.pk
+    | project key = ckey, healthy, degraded, unhealthy, monitored,
+              severity = iff(mode == "ignore", selfOwn,
+                         iff(mode == "share", iff(unhealthy > 0 and toreal(unhealthy) > share * toreal(monitored), 2, iff(degraded + unhealthy > 0, 1, 0)), worst));
+let rolledAll = union (els | project key = ekey, healthy = 0, degraded = 0, unhealthy = 0, monitored = 0, severity = -1, rank = 0),
+                      (rolled | project key, healthy, degraded, unhealthy, monitored, severity, rank = 1)
+    | summarize arg_max(rank, healthy, degraded, unhealthy, monitored, severity) by key;
+extend nodes Element on el = policies | project el = identity("element", pk), rollupMode = mode, rollupShare = share;
+extend nodes Element on el = graph("master") | graph-match (u) where labels(u) has "Curation" project el = identity("element", u.curTarget), curatedBy = u.curId;
+extend nodes Element on el = rolledAll
+    | project el = identity("element", key), healthyCount = healthy, degradedCount = degraded, unhealthyCount = unhealthy, monitored,
+              rolledSeverity = severity, rolledState = stateOf(severity);
+
+// the signals, with their values per window
+let signalEntities = graph("signals")
+    | graph-match (s) where labels(s) has "Signal"
+      project s = s.id, signalElement = s.signalElement, signalRule = s.signalRule, signalSeverity = s.signalSeverity, signalState = s.signalState,
+              signalAbove = s.signalAbove, signalBelow = s.signalBelow, signalMeter = s.signalMeter, signalEnterAfter = s.signalEnterAfter,
+              signalExitAfter = s.signalExitAfter, signalInverted = s.signalInverted;
+nodes Signal on s = signalEntities;
+extend nodes Signal on s = signalEntities
+    | join kind=inner (telemetry("signals", 24h) | where property == "signalValue" | project s = id, windowStart, property, value) on s
+    | project s, windowStart, signalValue = value;
+edges Measures from s to el = signalEntities | project s, el = identity("element", signalElement);
+
+// the evidence: warning events of pods and operations on Azure resources
+let warnings = graph("master")
+    | graph-match (w)-[a]->(p) where labels(w) has "WarningEvent" and labels(a) has "About" and labels(p) has "Pod"
+      project eid = w.eventId, etime = w.['time'], esummary = w.reason, edetail = w.message, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), ekind = "warning";
+let operations = graph("master")
+    | graph-match (a)-[c]->(r) where labels(a) has "ActivityEvent" and labels(c) has "Concerns" and labels(r) has "AzureResource"
+      project eid = a.eventId, etime = a.['time'], esummary = a.operation, edetail = a.status, ekey = tolower(r.resourceId), ekind = "activity";
+nodes Evidence on ev = union warnings, operations
+    | project ev = identity("evidence", eid), evidenceId = eid, evidenceKind = ekind, evidenceTime = etime, evidenceSummary = esummary, evidenceDetail = edetail;
+edges EvidenceFor from ev to el with (key = "evidenceWarning") = warnings | project ev = identity("evidence", eid), el = identity("element", ekey);
+edges EvidenceFor from ev to el with (key = "evidenceActivity") = operations | project ev = identity("evidence", eid), el = identity("element", ekey);
