@@ -1961,3 +1961,22 @@ The project decided to restate the theorems rather than adopt P6. Please derive 
 - Def. 7.12: severities are 0, 2 and 3, with 1 (no data) used by the model, and `(c, d) ∈ A` reads "c is affected by d".
 - Inventory: 96 proved, 0 pending, 114 in all. README and Ch. 0 follow.
 Open: the share rule for a deployment whose pods are all in no data. The text states the rule as committed (no data counts as healthy). The authors could not ask engine-core which rule it is building, because messages from the paper session are paused.
+
+## For content-review: F14 applied (2026-11-12)
+
+- Item 1: Def. 7.16 now says a record exists also when the window has no value by a conflict of a merge (Law 7.5 (ii)); such a record has no value, like a no-data record. The proof of Theorem 5.3 now says why filled records, no-data records, merge conflicts and faulted rows leave the supports independent of values. Def. 5.20 lists `Delta`.
+- Item 2: Theorems 7.1 and 7.4 use your wording: twice, plus twice more for each record accepted while no other record of the key is in the look-back, with the gap `within − w − L − H` under late records. The proofs follow, and "record" replaces "window" in 7.1.
+- Inventory: 5.3, 7.1 and 7.4 are "proved, restated", and the counts column "With F14 applied" reads 96 proved and 0 pending, as README and Ch. 0 already say.
+
+## Waiting for a commit: Law 7.5 item 3 in the engine (protocol 3.22)
+
+Engine-core reports this as built in the working tree on fc88d37, not yet committed. Ch. 7 (7.6) and Ch. 6 (6.6) change only once it is committed. Changes to make then:
+- Rows after the link combine by the property's rule. They no longer meet under B1, so drop that point from 7.6 and the matching paragraph of 6.6 ("A Group is not re-keyed").
+- Law 7.5 (i) holds for sum, min and max in the engine, tested on all 24 orders, each cut three ways. It does not yet hold for mean and last, which are stored as one number; that point of 7.6 stays.
+- Law 7.5 (ii) holds: a conflict leaves no value, is counted and listed, and absorbs a third id. Drop "not carried to a third id" and "not reported" from 7.6. The independent implementation now implements item 3 too, so drop "behaves the same way".
+- The windows of a merge loser move to the survivor.
+- New limit, rule IdOf-in-sinks: an identity expression stands only in the identity or the endpoints of an emit and in a link; elsewhere it is refused (`IdentityOutsideSink`). To group by an element, read it through a match on a view, which re-keys on a merge. This is a typing rule for Ch. 5 and a limit for Ch. 15.
+- On real data: merges in 11 of 1,669 epochs and 10 of 4,061 on the two recordings, and 2 of 210 on the synthetic estate. No window is written under two ids, and no state digest changes.
+- Follow-up (same working tree, not yet committed): Law 7.5 (i) now holds for `mean` (sum and count added) and for `last` (greater order wins, a tie goes to the greater value), when a group or roll-up whose rows go only to emits wrote the window. Without such a pair, (ii) applies. Tested in all orders and batchings; a count-weighted case gives (1 + 2 + 4) / 3. The reference does the same. Every 7.6 point on merges is then closed.
+- The seal format is 2 (the pairs are state). An old seal is refused with both versions named, and the journal is replayed (Ch. 11).
+- Workload model (Ch. 7, 7.4 and Corollary 7.9; Ch. 14): a deployment takes the rank that at least half of its measured pods reach, with no data ranked between healthy and degraded. A deployment none of whose pods has a severity is Unknown. This replaces the sentence that a deployment whose pods are all in no data is Healthy.
