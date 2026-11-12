@@ -68,7 +68,10 @@ export async function denyList(captureDir, { literals = (process.env.SCRUB_LITER
       for (const m of line.match(IP4_RE) ?? []) if (!PLATFORM_IP.test(m)) ids.add(m);
       for (const m of line.match(IP6_RE) ?? []) if (m.length > 4 && (m.match(/:/g) ?? []).length >= 3) ids.add(lc(m));
       for (const m of line.match(MAC_RE) ?? []) ids.add(lc(m));
-      if (raw.startsWith('hubble/')) continue; // flows hold no names that the other sources do not hold; the address scan above covered them
+      if (raw.startsWith('hubble/')) { // flows: the address scan above, and the cluster name in Cilium's own spelling
+        for (const m of line.matchAll(/"cluster_name"\s*:\s*"([^"]+)"/g)) if (!skip(m[1])) names.add(lc(m[1]));
+        continue;
+      }
       const r = JSON.parse(line);
       leaves(r, '', (s, path) => {
         for (const n of armNames(s)) addName(n, 'slot');
@@ -93,7 +96,8 @@ export async function denyList(captureDir, { literals = (process.env.SCRUB_LITER
 // ---------- the check ----------
 function occurs(text, t) {
   for (let i = text.indexOf(t); i !== -1; i = text.indexOf(t, i + 1)) {
-    if (!wordChar.test(text[i - 1] ?? '') && !wordChar.test(text[i + t.length] ?? '')) return true;
+    const startsWord = !wordChar.test(text[i - 1] ?? '') || /:[0-9a-f]{2}$/.test(text.slice(Math.max(0, i - 3), i)); // after an escape such as :2f
+    if (startsWord && !wordChar.test(text[i + t.length] ?? '')) return true;
   }
   return false;
 }

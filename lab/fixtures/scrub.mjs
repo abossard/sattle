@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Deterministic scrubber and verifier for capture fixtures.
-//   scrub.mjs build  <captureDir> <fixturesDir>   sample every source, scrub, write
+//   scrub.mjs build  <captureDir> <fixturesDir>   sample every source, scrub, write; also space-arguments.json
 //   scrub.mjs verify <captureDir> <fixturesDir>   fail if any identifying value of the capture survives in the fixtures
 // Optional extra values to scrub (for example the signed-in user) come in SCRUB_LITERALS, one per line; the capture
 // itself already names its tenant, subscription, resources and people.
@@ -15,6 +15,7 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { makeScrubber } from './scrub/core.mjs';
 import { harvestCapture } from './scrub/harvest.mjs';
+import { spaceArguments } from './scrub/space-arguments.mjs';
 import { checkFixtures, denyList } from './scrub/verify.mjs';
 
 // What to sample per file: group function, records per group, cap.
@@ -62,8 +63,8 @@ function saltFor(captureDir) {
 const captureFiles = (captureDir) => walkFiles(captureDir).map((f) => ({ file: f, rel: relative(captureDir, f) }));
 
 async function build(captureDir, fixturesDir) {
-  const { names, persons } = await harvestCapture(captureDir);
-  const scrub = makeScrubber({ salt: saltFor(captureDir), names, persons });
+  const { names, persons, clusters } = await harvestCapture(captureDir);
+  const scrub = makeScrubber({ salt: saltFor(captureDir), names, persons, clusters });
   const merged = new Map();
   for (const { file, rel } of captureFiles(captureDir)) {
     const spec = Object.entries(SAMPLE).find(([g]) => globRe(g).test(rel))?.[1];
@@ -79,12 +80,16 @@ async function build(captureDir, fixturesDir) {
     const target = spec.merge ?? rel;
     merged.set(target, [...(merged.get(target) ?? []), ...picked.map(capSeries)]);
   }
-  for (const [rel, records] of merged) {
+  const scrubbed = new Map([...merged].map(([rel, records]) => [rel, records.map(scrub)]));
+  for (const [rel, records] of scrubbed) {
     const out = join(fixturesDir, rel);
     mkdirSync(dirname(out), { recursive: true });
-    writeFileSync(out, records.map((r) => JSON.stringify(scrub(r))).join('\n') + '\n');
+    writeFileSync(out, records.map((r) => JSON.stringify(r)).join('\n') + '\n');
     console.log(`${records.length}\t${rel}`);
   }
+  // the binding of the engine's space to this data, from the scrubbed records only
+  mkdirSync(fixturesDir, { recursive: true });
+  writeFileSync(join(fixturesDir, 'space-arguments.json'), JSON.stringify(spaceArguments(scrubbed), null, 2) + '\n');
 }
 
 async function verify(captureDir, fixturesDir) {

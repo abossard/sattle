@@ -19,6 +19,9 @@ const REAL = {
   rg: 'zq-fakerg',
   nodeRg: 'MC_zq-fakerg_aks-fakecluster_swedencentral',
   cluster: 'aks-fakecluster',
+  ciliumCluster: 'aksfakecluster', // Cilium reports the cluster name without dashes
+  hubRg: 'zq-hubrg',
+  hubNs: 'evhns-zqfake-a1b2c3',
   node: 'aks-pool1-12345678-vmss000000',
   vmss: 'aks-pool1-12345678-vmss',
   internalId: '0123456789abcdef0123456789abcdef',
@@ -38,6 +41,7 @@ const REAL = {
 const armId = (rg, tail, sub = REAL.sub) => `/subscriptions/${sub}/resourceGroups/${rg}/providers/${tail}`;
 const CLUSTER_ID = armId(REAL.rg, `Microsoft.ContainerService/managedClusters/${REAL.cluster}`);
 const VMSS_VM_ID = armId(REAL.nodeRg, `Microsoft.Compute/virtualMachineScaleSets/${REAL.vmss}/virtualMachines/0`);
+const HUB_ID = armId(REAL.hubRg, `Microsoft.EventHub/namespaces/${REAL.hubNs}`);
 const MEMORY_ID = armId(REAL.rg, `Microsoft.Compute/virtualMachines/${REAL.vmName}`);
 
 const env = (source, key, payload, meta) => ({ v: 1, source, capturedAt: '2026-01-01T00:00:00.000Z', seq: 0, key, ...(meta ? { meta } : {}), payload });
@@ -59,6 +63,16 @@ const CAPTURE = {
       value: ['node_memory_working_set_percentage', 'node_cpu_usage_percentage', 'node_disk_usage_percentage'].map((m) => ({ id: `${CLUSTER_ID}/providers/Microsoft.Insights/metrics/${m}`, name: { value: m, localizedValue: m }, resourceGroup: REAL.rg, type: 'Microsoft.Insights/metrics', timeseries: [{ data: [{ average: 1, timeStamp: '2026-01-01T00:00:00Z' }] }] })),
     }, { resource: 'aks', resourceId: CLUSTER_ID, metrics: ['node_memory_working_set_percentage'] }),
   ],
+  'azure-metrics/eventhubs.ndjson': [
+    env('azure-metrics', 'azure-metrics/sha256:1a1b2c3d4e5f60718293a4b5c6d7e8f9', { namespace: 'Microsoft.EventHub/namespaces', value: [{ id: `${HUB_ID}/providers/Microsoft.Insights/metrics/IncomingMessages`, name: { value: 'IncomingMessages', localizedValue: 'Incoming Messages' }, type: 'Microsoft.Insights/metrics', timeseries: [] }] }, { resource: 'eventhubs', resourceId: HUB_ID, metrics: ['IncomingMessages'] }),
+  ],
+  'hubble/flows.ndjson': [
+    env('hubble', 'hubble/11111111-2222-4333-8444-555555555555', { flow: {
+      uuid: '11111111-2222-4333-8444-555555555555', verdict: 'FORWARDED', traffic_direction: 'EGRESS', l4: { TCP: { destination_port: 80 } }, IP: { source: REAL.ip, destination: '10.99.88.78' },
+      source: { cluster_name: REAL.ciliumCluster, namespace: 'shopns', pod_name: 'web-1', labels: [`k8s:io.cilium.k8s.policy.cluster=${REAL.ciliumCluster}`] },
+      destination: { cluster_name: REAL.ciliumCluster, namespace: 'shopns', pod_name: 'api-1' }, node_name: `${REAL.ciliumCluster}/${REAL.node}`,
+    } }),
+  ],
   'prometheus/range.ndjson': ['cilium_forward_rate', 'container_memory_working_set_bytes'].map((name) => env('prometheus', `prometheus/sha256:${name.length}0a1b2c3d4e5f60718293a4b5c6d7e8`, {
     status: 'success', data: { resultType: 'matrix', result: [{ metric: { __name__: name, cluster: REAL.cluster, instance: REAL.node }, values: [[1, '2']] }] },
   }, { name, query: name })),
@@ -68,6 +82,7 @@ const CAPTURE = {
       spec: { providerID: `azure://${VMSS_VM_ID}` },
       status: { addresses: [{ type: 'InternalIP', address: REAL.ip }], nodeInfo: { machineID: REAL.machineId, systemUUID: 'eeeeeeee-1111-4222-8333-888888888888' } },
     }, { list: { kind: 'NodeList' } }),
+    env('kubernetes-list', 'kubernetes-list/ServiceList/uid/3', { metadata: { name: 'web', namespace: 'shopns', uid: 'abababab-1111-4222-8333-999999999999' }, spec: { clusterIP: '10.0.0.9' } }, { list: { kind: 'ServiceList' } }),
     env('kubernetes-list', 'kubernetes-list/DeploymentList/uid/2', {
       metadata: { name: 'web', uid: 'ffffffff-1111-4222-8333-999999999999' },
       spec: { template: { spec: { containers: [{ name: 'web', image: 'nginx:1', livenessProbe: { tcpSocket: { host: REAL.ip } } }] } } },
@@ -86,6 +101,8 @@ const CAPTURE = {
       records: [{
         time: '2026-01-01T00:00:00Z', resourceId: CLUSTER_ID.toUpperCase().replace('/SUBSCRIPTIONS/', '/SUBSCRIPTIONS/'), operationName: 'MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/WRITE', category: 'Administrative', callerIpAddress: REAL.callerIp,
         identity: { authorization: { scope: CLUSTER_ID, evidence: { role: `Contributor (${REAL.rg})`, roleAssignmentScope: `/subscriptions/${REAL.sub}/resourcegroups/${REAL.rg}`, roleAssignmentId: REAL.roleAssignmentId, roleDefinitionId: '68828df1bfbe559d872979f2a1a92cbf', principalId: REAL.principalHex } }, claims: { rh: REAL.claimRh, xms_ftd: REAL.claimFtd, xms_tcdt: REAL.claimTcdt, appid: 'aaaaaaaa-0000-4000-8000-000000000002' } },
+        // Activity Log writes ids into job ids with `:2D` for a dash, `:2E` for a dot and `:2F` for a slash
+        jobId: `ResourceLongOperationJob-GRL-${REAL.rg.toUpperCase().replaceAll('-', ':2D')}-MICROSOFT:2ECONTAINERSERVICE:2FMANAGEDCLUSTERS:2F${REAL.cluster.toUpperCase().replaceAll('-', ':2D')}-SWEDENCENTRAL-00639`,
         properties: { entity: CLUSTER_ID, message: 'Microsoft.ContainerService/managedClusters/write' },
       }],
     }, { partitionId: '1', sequenceNumber: 0 }),
@@ -154,7 +171,7 @@ for (const [file, path, expected] of [
   ['activity-log/backfill.ndjson', '0.payload.authorization.action', 'Microsoft.ContainerService/managedClusters/write'],
   ['eventhub/sattle-activity.ndjson', '0.payload.records.0.operationName', 'MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/WRITE'],
   ['eventhub/sattle-activity.ndjson', '0.payload.records.0.properties.message', 'Microsoft.ContainerService/managedClusters/write'],
-  ['kubernetes/list.ndjson', '1.payload.spec.template.spec.containers.0.image', 'nginx:1'],
+  ['kubernetes/list.ndjson', '2.payload.spec.template.spec.containers.0.image', 'nginx:1'],
 ])
   test(`vocabulary is never touched: ${file} ${path}`, () => {
     assert.equal(get(built.records[file], path), expected);
@@ -237,6 +254,14 @@ for (const [what, value] of Object.entries({ ...REAL, userLocal: 'jane.doe', dis
   }
 }
 
+for (const part of ['fakecluster', 'fakerg'])
+  test(`no part of a real name in the output, also inside an escaped job id: ${part}`, () => {
+    assert.ok(!allValues.some((x) => x.toLowerCase().includes(part)), `${part} still present`);
+  });
+test('the vocabulary inside an escaped job id is kept', () => {
+  assert.match(built.records['eventhub/sattle-activity.ndjson'][0].payload.records[0].jobId, /MICROSOFT:2ECONTAINERSERVICE:2FMANAGEDCLUSTERS:2F/);
+});
+
 // ---------- joins keep working ----------
 test('a node has one name in Kubernetes and in Prometheus', () => {
   const k = built.records['kubernetes/list.ndjson'][0].payload.metadata.name;
@@ -310,6 +335,8 @@ for (const [name, plant] of [
   ['a resource group name', (l) => l.replace('"seq":0', `"seq":0,"leak":"${REAL.rg}"`)],
   ['a resource group name inside a longer text', (l) => l.replace('"seq":0', `"seq":0,"leak":"Contributor on (${REAL.rg.toUpperCase()}) for all"`)],
   ['a node name', (l) => l.replace('"seq":0', `"seq":0,"leak":"${REAL.node}"`)],
+  ['the cluster name as Cilium writes it, without dashes', (l) => l.replace('"seq":0', `"seq":0,"leak":"${REAL.ciliumCluster}/node"`)],
+  ['a cluster name inside an escaped job id', (l) => l.replace('"seq":0', `"seq":0,"leak":"JOB-MICROSOFT:2ECONTAINERSERVICE:2FMANAGEDCLUSTERS:2F${REAL.cluster.toUpperCase().replaceAll('-', ':2D')}-X"`)],
   ['a token claim', (l) => l.replace('"seq":0', `"seq":0,"leak":"${REAL.claimFtd}"`)],
   ['a user name part', (l) => l.replace('"seq":0', `"seq":0,"leak":"jane.doe"`)],
   ['a subscription id without dashes', (l) => l.replace('"seq":0', `"seq":0,"leak":"${REAL.sub.replaceAll('-', '')}"`)],
@@ -324,3 +351,38 @@ test('verify never prints a real value', () => {
   const said = (r.stdout + r.stderr).toLowerCase();
   for (const v of [REAL.rg, REAL.sub, REAL.user, 'fakecluster']) assert.ok(!said.includes(v.toLowerCase()), 'a real value was printed');
 });
+
+// ---------- the arguments of the engine's space, written next to the fixtures ----------
+// One JSON object, argument name to the value as it appears in the scrubbed files (the alias, never the real value).
+const spaceArgs = (b) => JSON.parse(readFileSync(join(b.out, 'space-arguments.json'), 'utf8'));
+for (const [arg, expected] of [
+  ['workloadNamespace', () => 'shopns'], // the namespace of the Service in the Kubernetes list
+  ['clusterLabel', () => built.records['hubble/flows.ndjson'][0].payload.flow.source.cluster_name], // what the engine detects for the directory
+  ['aksName', () => built.records['arg/resources.ndjson'][0].payload.name],
+  ['nodeResourceGroup', () => built.records['arg/resources.ndjson'][0].payload.properties.nodeResourceGroup],
+  ['hubResourceGroup', () => built.records['azure-metrics/eventhubs.ndjson'][0].meta.resourceId.split('/')[4]],
+])
+  test(`space-arguments.json: ${arg} is the value the fixtures carry`, () => {
+    const v = spaceArgs(built)[arg];
+    assert.equal(typeof v, 'string');
+    assert.equal(v.toLowerCase(), expected().toLowerCase());
+  });
+test('space-arguments.json holds the five arguments, text values only, and no real value', () => {
+  const a = spaceArgs(built);
+  assert.deepEqual(Object.keys(a).sort(), ['aksName', 'clusterLabel', 'hubResourceGroup', 'nodeResourceGroup', 'workloadNamespace']);
+  const text = JSON.stringify(a).toLowerCase();
+  for (const real of [REAL.cluster, REAL.ciliumCluster, REAL.rg, REAL.hubRg, REAL.nodeRg, 'fakecluster', 'zq-']) assert.ok(!text.includes(real.toLowerCase()), 'a real value is in space-arguments.json');
+});
+for (const [missing, absent] of [
+  ['hubble/flows.ndjson', ['clusterLabel']],
+  ['azure-metrics/eventhubs.ndjson', ['hubResourceGroup']],
+  ['kubernetes/list.ndjson', ['workloadNamespace']],
+])
+  test(`space-arguments.json leaves out what the capture does not show: no ${missing}`, () => {
+    const capture = Object.fromEntries(Object.entries(CAPTURE).filter(([f]) => f !== missing));
+    const b = buildOnce('args', { capture });
+    assert.equal(b.r.status, 0, b.r.stderr);
+    const a = spaceArgs(b);
+    for (const k of absent) assert.ok(!(k in a), `${k} was invented`);
+    assert.ok('aksName' in a);
+  });

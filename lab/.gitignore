@@ -1,2 +1,4 @@
 # azd environments hold subscription ids and resource names
 .azure/
+# written by fixtures/build.sh next to the generated fixtures
+fixtures/space-arguments.json

@@ -35,11 +35,17 @@ export function addPerson(s, acc) {
 const walkFiles = (d) => readdirSync(d, { withFileTypes: true }).flatMap((x) => (x.isDirectory() ? walkFiles(join(d, x.name)) : x.name.endsWith('.ndjson') ? [join(d, x.name)] : []));
 
 // Hubble flows are the bulk of a capture and carry no resource ids; their node and pod names also come from the lists.
-export async function harvestCapture(captureDir, { skip = (rel) => rel.startsWith('hubble/') } = {}) {
-  const acc = { names: new Set(), persons: new Set() };
+// Only the cluster name is taken from them, by text (no parse): Cilium writes it in its own spelling, without dashes.
+const CLUSTER_NAME = /"cluster_name":"([^"]+)"/g;
+export async function harvestCapture(captureDir, { isFlows = (rel) => rel.startsWith('hubble/') } = {}) {
+  const acc = { names: new Set(), persons: new Set(), clusters: new Set() };
   for (const file of walkFiles(captureDir)) {
-    if (skip(relative(captureDir, file))) continue;
-    for await (const l of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) if (l) harvestRecord(JSON.parse(l), acc);
+    const flows = isFlows(relative(captureDir, file));
+    for await (const l of createInterface({ input: createReadStream(file), crlfDelay: Infinity })) {
+      if (!l) continue;
+      if (flows) for (const m of l.matchAll(CLUSTER_NAME)) acc.clusters.add(m[1]);
+      else harvestRecord(JSON.parse(l), acc);
+    }
   }
   for (const lit of (process.env.SCRUB_LITERALS ?? '').split('\n').map((x) => x.trim()).filter(Boolean)) addPerson(lit, acc);
   return acc;

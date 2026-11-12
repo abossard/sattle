@@ -35,11 +35,12 @@ const isIdShape = (s) => new RegExp(`^(?:${GUID.source}|${HEX32.source})$`, 'i')
 // Plain words (a VM called `memory`) are only replaced where they stand as a name in a resource id.
 export const distinctive = (n) => n.length >= 6 && /[-_.0-9 ]/.test(n);
 
-// What else a name looks like in the capture: no dashes (Cilium), `:2D` for dashes (Activity Log operation ids),
-// and without a short type prefix (`rg-`, `aks-`) as labels and annotations use it.
+// What else a name looks like in the capture: `:2D` for dashes (Activity Log operation ids), and without a short
+// type prefix (`rg-`, `aks-`) as labels and annotations use it. (The cluster name without dashes, as Cilium writes
+// it, is not derived: it is read from the flows, see harvest.)
 export const variantsOf = (name) => {
   const out = new Set([name]);
-  if (name.includes('-')) { out.add(name.replaceAll('-', '')); out.add(name.replaceAll('-', ':2D')); }
+  if (name.includes('-')) out.add(name.replaceAll('-', ':2D'));
   const bare = name.replace(/^[a-z]{2,5}[-_]/i, '');
   if (bare !== name && distinctive(bare) && bare.length >= 8) out.add(bare);
   return [...out];
@@ -90,17 +91,22 @@ const trimEnd = (s) => { const m = s.match(/[).,;\]}]+$/); return m ? [s.slice(0
 export const namesInArmId = (region) => { const [id] = trimEnd(region); const p = id.split('/'); return nameSlots(p).map((i) => p[i]); };
 
 // ---------- the scrubber ----------
-// identity: { names: Iterable<string>, persons: Iterable<string> } harvested from the capture; salt: secret string
-export function makeScrubber({ salt, names = [], persons = [], literals = [] }) {
+// names, persons and clusters are harvested from the capture; salt: secret string.
+// clusters are the cluster names on Hubble flows: always looked for in free text, also when they look like a word.
+export function makeScrubber({ salt, names = [], persons = [], clusters = [], literals = [] }) {
   const a = aliases(salt);
   const generic = (n) => GENERIC_NAMES.has(lc(n)) || isRegion(lc(n));
-  const nameSet = new Set([...names].filter((n) => n && !generic(n) && !isIdShape(n)).flatMap(variantsOf).map(lc));
+  // a distinctive name is looked for in free text in every spelling; a name that is a plain word is not
+  const nameSet = new Set([...names].filter((n) => n && !generic(n) && !isIdShape(n) && distinctive(n)).flatMap(variantsOf).map(lc));
+  for (const c of clusters) if (c && !generic(c)) nameSet.add(lc(c));
   const personSet = new Set([...persons, ...literals].filter((p) => p && p.length >= 4).map(lc));
-  // free-text patterns: distinctive names and persons only, as whole words, longest first
-  const free = [...[...nameSet].filter(distinctive).map((t) => [t, 'name']), ...[...personSet].map((t) => [t, 'person'])]
+  // free-text patterns as whole words, longest first
+  const free = [...[...nameSet].map((t) => [t, 'name']), ...[...personSet].map((t) => [t, 'person'])]
     .sort((x, y) => y[0].length - x[0].length);
   const kind = new Map(free.map(([t, k]) => [t, k]));
-  const freeRe = free.length ? new RegExp(`(?<![A-Za-z0-9_])(?:${free.map(([t]) => escapeRe(t)).join('|')})(?![A-Za-z0-9_])`, 'gi') : null;
+  // a whole word: no letter, digit or underscore before it, unless that is the end of an escape such as `:2F`
+  // (Activity Log writes `/` as `:2F` in job ids)
+  const freeRe = free.length ? new RegExp(`(?:(?<![A-Za-z0-9_])|(?<=:[0-9A-Fa-f]{2}))(?:${free.map(([t]) => escapeRe(t)).join('|')})(?![A-Za-z0-9_])`, 'gi') : null;
   const personAlias = (p) => (/^[^@\s]+@[^@\s]+$/.test(p) ? a.email(p) : isIdShape(p) ? (p.includes('-') ? a.guid(p) : a.hex32(p)) : a.value(p));
 
   const armRegion = (region) => {
