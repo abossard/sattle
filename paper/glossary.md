@@ -47,7 +47,7 @@ The unqualified word "direction" is not used in the paper.
 - **Conformance**: relation `G ⊨ Σ` of a graph to an ontology closure. [Ch. 2]
 - **Content tag**: the `ETag` of every cached response, the first 32 hexadecimal digits of SHA-256 over the media type, a newline and the body; equal bytes have equal tags in any run. [Ch. 12, Prop. 12.10]
 - **Contribution**: the fragments one source record causes, identified by a stable contribution key. [Ch. 9, 10]
-- **Cosmos store**: the storage port on Cosmos DB for NoSQL with five containers and hierarchical partition keys. Built against the vNext emulator. [Ch. 11, 11.12]
+- **Cosmos store**: the storage port on Cosmos DB for NoSQL with five containers and hierarchical partition keys. Built against the vNext emulator. [Ch. 11, 11.6]
 - **Coverage**: an adapter's declaration that a scan enumerated every record of a scope at a consistency level. Source of authoritative absence. [Ch. 10]
 - **Crossing operator**: the path `Series`, `Rollup`, `Delta`, `Threshold` that reads closed windows of telemetry and emits graph data. The only way telemetry influences structure. [Ch. 5, 7]
 - **Dangling relationship**: relationship whose source or target entity is not present in the graph (ADR-084). [Ch. 3] Its missing endpoint is a **reference** (see there).
@@ -102,7 +102,7 @@ The unqualified word "direction" is not used in the paper.
 - **Ingestion sequence**: engine-assigned total order of durably accepted inputs. [Ch. 3]
 - **Input**: any item accepted by the engine: native batch, graph change, logical-time control, closed-window record. [Ch. 3]
 - **Inverse (patch)**: patch with `from`/`to` and every before/after state swapped. Not committed, an undo is a new forward revision. [Ch. 4]
-- **Journal** (of a space): the ordered sequence of everything that entered a served space (input batches, logical-time advances, losses, definition commits, an end marker, and for a live input its envelopes with source positions and its flushes), kept in the store next to the commit log; a restart replays it (after the latest usable state seal, if there is one) and compares every recomputed commit with the stored one. [Ch. 11, 11.7]
+- **Journal** (of a space): the ordered sequence of everything that entered a served space (input batches, logical-time advances, losses, definition commits, an end marker, and for a live input its envelopes with source positions and its flushes), kept in the store next to the commit log; a restart replays it (after the latest usable state seal, if there is one) and compares every recomputed commit with the stored one. [Ch. 11, 11.3]
 - **Kernel**: the closed, compiled meta-ontology of definition graphs, and the engine's only compiled vocabulary besides operators and functions. [Ch. 2]
 - **Kind (telemetry)**: gauge, counter, windowSum or distribution. Fixes how samples roll up. [Ch. 7]
 - **Late horizon**: the number of window widths (3 for a live source, a million for a recorded capture whether replayed or served, unless `--late-horizon` is given) for which a closed window stays revisable before its state is dropped. Not part of Def. 7.6; a later row for such a window is dropped and counted. [Ch. 7]

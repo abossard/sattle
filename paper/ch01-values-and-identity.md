@@ -71,7 +71,7 @@ The writing uses **JSON**, a common text format for nested data: objects with na
 
 ## 1.4 Identity
 
-Sources name things in their own ways. Kubernetes knows a pod by cluster, namespace and name. The network observer knows the same pod by an address. Inside the model each entity needs one name that does not change when the pod changes state, when the definitions change, or when time passes.
+Sources name things in their own ways. Kubernetes knows a pod by its *uid*, a unique id that Kubernetes gives each object, and also by cluster, namespace and name. The network observer knows the same pod by namespace and name only. Inside the model each entity needs one name that does not change when the pod changes state, when the definitions change, or when time passes.
 
 **Definition 1.7 (identity domain).** An identity domain `d` is a name together with an ordered list of components `(c₁:κ₁, …, cₙ:κₙ)`: a name and a kind for each. It says which values identify a kind of thing.
 *Example:* the domain `pod` with the components `(cluster: text, namespace: text, name: text)`.
@@ -93,7 +93,7 @@ The rule set `ν` stands for the rules of 1.1 and 1.2; this chapter is rule set 
 - **Migrate.** For a new rule set `ν'` and every entry `(ν, ck) ↦ e` with components `c`, add `(ν', ck_{ν'}(t, d, c)) ↦ e`.
 
 `resolve(B, ik)` is the entry of `B` for the key under the current rule set if there is one, and a rejection otherwise.
-*Example:* the pod is first seen by Kubernetes and gets its id by *allocate*. Later a network record names it by an address, and a rule that knows the address belongs to this pod adds the address key by *alias*, pointing to the same id.
+*Example:* the pod is first seen by Kubernetes and gets its id by *allocate* from its uid. Later a network record names it by cluster, namespace and name, and a rule that knows this name belongs to this pod adds the name key by *alias*, pointing to the same id. An alias is permanent, and a pod name can be reused when a pod is recreated, which then merges the new pod with the old one; Ch. 10 (10.4) states that limit.
 
 ## 1.5 Theorems on identity
 
@@ -113,7 +113,7 @@ Keys from different domains, or with different components, get different ids unl
 
 *Limits.* The theorem is about the mechanics. Whether a new rule set should also treat two formerly different keys as one is a decision about the subject matter, recorded as an *alias* with its evidence. A replay across a change of the rule set has not been tried on the prototype.
 
-Sometimes two ids were given to what is in truth one entity: the pod was seen under its address before anyone knew which pod has that address. The two must become one, without changing any binding.
+Sometimes two ids were given to what is in truth one entity: the network observer named the pod by its name before Kubernetes listed it with its uid, so the name key got an id of its own. The two must become one, without changing any binding.
 
 **Theorem 1.7 (merge).** A *merge* of two entities is an added *forwarding record* `e₂ → e₁`, allowed only if `e₁ < e₂` in the order of ids as text: the smaller id survives. A record is added only from an id that has none, that is from a current representative, so at most one record leaves any id. The *representative* `rep(e)` is found by following records from `e` until none applies. Then:
 

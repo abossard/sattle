@@ -1,215 +1,177 @@
-# Ch. 13 Performance model and benchmarks
+# Ch. 13 Performance
 
-**Claim.** Performance targets are hypotheses H1 to H14, each with a benchmark and a refutation rule. A status is given by a written decision rule and belongs to a named configuration: a store, a machine and the recorded load.
-**Status.** Measured once per figure: Q14, H1 to H4, H6, H9, H12, and a 240,000-pair estate. Measured in ten runs each, on a machine under load (load average 14 to 115, 239 once; no machine without other load was available): H5, H7, H8, H10. By the rule of 13.6, **H5 (engine part, memory and SQLite), H8 (hot plane, head revision) and H10 (restart from a SQLite journal of 1.2 and 4.1 hours of repeated capture, with and without a state seal) are `supported` for those configurations**. **H7 has no status for a real account**; on the Cosmos emulator one set of runs is `refuted` and a later one `inconclusive`. H9 is met in one run (337 MB). The window close at the estate size is above the target of H4 and H12 in one run. Not measured: H11, H13, H14 (`Join` is built and has no cost measurement), B15, B16. Nothing here is on the reference hardware of Def. 13.4. The figures are in 13.7 and Ch. 14 (14.7). Claim 13.5 (hot read cost) is proved as counts on the layout of Ch. 11 (11.9); the engine's cost is benchmark B6.
-**Gate.** 1c (efficient). The hypotheses H1 to H14 were written before the gate: they name a reference estate of 750,000 entities, Azure hardware and Cosmos DB, and none is a budget per node, edge or telemetry point at 1 million master nodes. They stay as the record against that estate; 13.0 states the target of the gate, leaves a marked place for the budgets and says which hypotheses carry over.
-Uses: Ch. 3 (revision log), Ch. 4 (patch size), Ch. 7 (closed windows, crossing operators), Ch. 11 (stores, estate estimate, hot graph, experiments E1 to E20).
-Forward references: Ch. 5, 6, 9 for operators, T5, T6 and configuration edits (written).
-Used by: Ch. 14.
-Sources: [R01] section 4.2 (P-a to P-g), ADR-093; [R02] section 5, section 6; `ARCHITECTURE.md:3,51,75`; `OPEN-WORK.md` items on bounded memory and load tests.
+**Question.** How fast must the engine be, how much memory may it use, and how is a claim about speed decided rather than asserted?
 
-## 13.0 The target of gate 1c, and what the hypotheses below are
+**What you can state at the end.** The target of gate 1c is a budget of memory, work and stored bytes per node, per edge and per measurement, met at one million master nodes on one machine; the budgets themselves are not stated yet. Before that target existed, fourteen hypotheses H1 to H14 were written against an estate of 750,000 entities, each with a benchmark and a rule that refutes it. A status is decided by a written rule and holds only for a named configuration: a store, a machine and its load. By that rule three hypotheses are supported, each for one configuration; one has no status for the store it names; the rest are met in one run, or not met, or not measured. Four cost statements are proved: a join costs in proportion to what it produces; grouping commits lowers the cost per commit; a chain of stages runs at most at the rate of its slowest stage; and latency budgets of stacked steps add up by a union bound.
 
-**The target.** Gate 1c of the research plan is: a budget per node, per edge and per telemetry point, met at 1 million master nodes on one machine, with persistence that does not depend on one store and that scales.
+This chapter uses the log of versions (Ch. 3), the size of patches (Ch. 4), the evaluation step by step (Ch. 6), closed windows and thresholds (Ch. 7), and the stores, the estimate of a large estate and the hot graph of Ch. 11.
 
-**The budgets are not stated yet.** They come from the investigation `paper/research/04-compute-and-memory-efficiency.md` when it is finished. This table is the place for them.
+**Running example.** The shop's master graph receives the records of its cluster. How many records per second can it accept? How long after a record arrives is the new version there? How long does the service graph take to follow? How much memory does it take to hold everything?
 
-| Per | Memory | Work per change | Persisted bytes |
+## 13.1 The target of gate 1c, and what the hypotheses are
+
+**The target.** Gate 1c of the research plan is a budget per node, per edge and per measurement, met at 1 million master nodes on one machine, with persistence that does not depend on one store and that scales.
+
+**The budgets are not stated yet.** They come from a study of compute and memory efficiency that is not finished. This table is their place.
+
+| Per | Memory | Work per change | Stored bytes |
 |---|---|---|---|
 | master node | not stated | not stated | not stated |
 | master edge | not stated | not stated | not stated |
-| telemetry point | not stated | not stated | not stated |
+| measurement | not stated | not stated | not stated |
 
-**What H1 to H14 are.** They were written before the gate, against a reference estate of about 750,000 entities, a node of 8 vCPU and 32 GB, and Cosmos DB as the store (Def. 13.1 to 13.4, [R02]). They and their measurements stay unchanged as the record against that estate. None of them is a budget per element.
+**What H1 to H14 are.** They were written before the gate, against a reference estate of about 750,000 entities (Ch. 11, 11.4), a machine of 8 cores and 32 GB, and Cosmos DB as the store. They and their measurements stay as the record against that estate. None of them is a budget per element.
 
 | Hypothesis | Carries over to gate 1c | Why |
 |---|---|---|
-| H1 structural ingest, H2 telemetry ingest | yes, to be measured again at 1 million master nodes | rates of the engine, independent of the store |
-| H3 commit latency | not as stated | it names Cosmos DB. Under the gate it is a commit latency per backend, and no backend is the target |
-| H4 projection latency per hop, H12 telemetry to property | yes | engine figures. Already above target at 240,000 pairs (13.7) |
-| H5 source to graph | the engine part yes, the store part per backend | `supported` on memory and SQLite at the scale of the lab capture only |
-| H6 hot reads, H8 element view | yes | engine figures. The sizes they name are those of the old estate |
-| H7 durable reads | not as stated | it names the Cosmos `state` container. It becomes a read latency per backend |
-| H9 memory | superseded | it bounds the hot graph only (about 100 bytes per element, met in one run) and not the whole engine, which holds 5.4 GB on the estate run. The budgets replace it |
-| H10 cold start | yes | measured on SQLite, with nothing specific to a store |
-| H11 edit replay, H14 join cost | yes | engine figures, not measured |
-| H13 materialization lag | no | it measures a watermark that no adapter has; it was specific to the Cosmos design |
+| H1 structural ingest, H2 ingest of measurements | yes, to be measured again at 1 million master nodes | rates of the engine, independent of the store |
+| H3 time to commit | not as stated | it names Cosmos DB; under the gate it becomes a time per store, and no store is the target |
+| H4 time per step of projection, H12 from measurement to property | yes | figures of the engine; already above target at 240,000 pairs (13.6) |
+| H5 from source to graph | the engine's part yes, the store's part per store | supported on memory and SQLite at the scale of the recordings only |
+| H6 reads of the hot graph, H8 view of an element | yes | figures of the engine; the sizes they name are those of the old estate |
+| H7 durable reads | not as stated | it names the Cosmos store; it becomes a read time per store |
+| H9 memory | replaced | it bounds the hot graph only (about 100 bytes per element, met in one run), not the whole engine, which holds 5.4 GB on the estate run; the budgets replace it |
+| H10 restart | yes | measured on SQLite, with nothing specific to a store |
+| H11 time of a definition edit, H14 cost of a join | yes | figures of the engine, not measured |
+| H13 delay before version rows are written | no | it measures a step that no store of the prototype has |
 
-## 13.1 What "very high performance" means here
-
-ADR-093 states "low maintenance and broad scale" as a goal and leaves limits open. This chapter turns the goal into **falsifiable hypotheses**, each with a named benchmark and a refutation rule. A hypothesis is neither a claim nor a result. Section 13.7 reports what the first prototype measured against them.
+A hypothesis is neither a claim nor a result. 13.6 reports what the prototype measured against each.
 
 ## 13.2 Definitions
 
-**Definition 13.1 (workload model).** `W = (E, ρ, Σ, f, d)` with
-- `E`: estate size (entities, relationships, projections);
-- `ρ`: source event rate per family (ARG pages and changes, Kubernetes watch, Hubble flows, network flow logs, OTel metrics);
-- `Σ`: number of telemetry series and their resolution;
-- `f`: the fraction of inputs that change graph data;
-- `d`: stack depth, the longest path from the master in the graph space.
-The reference workload is the estimate of Ch. 11 section 11.3 (all inputs assumptions). The lab capture (`lab/`) replaces assumptions with measurements (E5, E20).
+**Definition 13.1 (workload).** `W = (E, ρ, Σ, f, d)` with
+- `E`: the size of the estate (entities, relationships, projections);
+- `ρ`: the rate of events per source (pages and changes of the Azure resource list, the Kubernetes watch, flows of the network observer, network logs, measurements);
+- `Σ`: the number of series of measurements and their resolution;
+- `f`: the share of inputs that change graph data;
+- `d`: the depth of the stack, the longest path from the master in the graph space.
+The reference workload is the estimate of Ch. 11 (11.4), in which every input is an assumption.
 
 **Definition 13.2 (metrics).**
 
 | Id | Metric | Unit |
 |---|---|---|
-| M1 | sustained structural ingest before backpressure | records/s per graph space |
-| M2 | telemetry append rate | samples/s per node |
-| M3 | commit latency: evaluated commit record to durable | ms, percentiles |
-| M4 | freshness latency per hop: master commit to derived commit | s, percentiles |
-| M5 | source-to-graph latency: engine receipt to master revision | s, percentiles |
-| M6 | telemetry-to-derived-property latency: closing input to derived commit | s, percentiles |
-| M7 | read latency: hot point, hot adjacency, hot k-hop, durable point, durable scan | µs, ms |
-| M8 | element view latency (Def. 7.9) | ms |
-| M9 | memory per entity, relationship and series point; storage per revision | bytes |
-| M10 | cold start: load seal and replay the log tail | s |
-| M11 | configuration edit replay time | s |
-| M12 | materialization lag: commit to watermark (Ch. 11) | s |
+| M1 | rate of structural input accepted before the engine pushes back | records/s per graph space |
+| M2 | rate of appending samples of measurements | samples/s per machine |
+| M3 | time to commit: from an evaluated commit record to a stored one | ms, percentiles |
+| M4 | time per step of projection: from a commit of the master to the derived commit | s, percentiles |
+| M5 | from source to graph: from receipt by the engine to the version of the master | s, percentiles |
+| M6 | from measurement to property: from the input that closes a window to the derived commit | s, percentiles |
+| M7 | time of a read: one element, one step of adjacency, three steps, durable element, durable scan | µs, ms |
+| M8 | time of the view of an element (Def. 7.9) | ms |
+| M9 | memory per entity, relationship and point of a series; stored bytes per version | bytes |
+| M10 | restart: load a seal and process the rest of the log | s |
+| M11 | time of a definition edit | s |
+| M12 | delay before version rows are written (Ch. 11) | s |
 
-**Definition 13.3 (tier).** A tier is `(scale factor over the reference workload, reference hardware, target table)`. Tier 1 is the reference workload (factor 1). Tiers at factor 4 and 16 are used by B9 only (E15). Targets exist for tier 1 only. Targets for other tiers are set after tier-1 results.
+A *percentile* p99 is the value below which 99 percent of the measured times lie.
 
-**Definition 13.4 (reference hardware).** One engine node of 8 vCPU and 32 GB per graph space (assumption). A Cosmos DB account with provisioned autoscale throughput on the master log (11.4). The exact Azure SKUs, regions, throughput settings and consistency level are fixed at the first run and written into every result file. **No result is valid without them.**
+**Definition 13.3 (tier).** A tier is `(scale factor over the reference workload, reference machine, table of targets)`. Tier 1 is the reference workload. Targets exist for tier 1 only.
 
-**Definition 13.5 (hypothesis).** `Hn = (target, benchmark Bn, refutation rule)`. Status is one of `hypothesis`, `supported`, `refuted`, `inconclusive` (13.6).
+**Definition 13.4 (reference machine).** One machine of 8 cores and 32 GB per graph space (assumption), and a Cosmos DB account with throughput bought in advance for the log of the master (Ch. 11, 11.5). The exact machine types, regions, throughput and consistency are to be fixed at the first run and written into every result. **No result is valid for this reference without them.** No run so far was on it.
 
-**Definition 13.6 (per-input cost).** For one accepted structural input:
+**Definition 13.5 (hypothesis).** `Hn = (target, benchmark Bn, rule of refutation)`. Its status is one of `hypothesis`, `supported`, `refuted`, `inconclusive` (13.5).
+
+**Definition 13.6 (cost of one input).** For one accepted structural input:
 
 `cost(input) = parse + identity lookup + Σ_ops cost_op(Δ) + commit / groupSize`
 
-with `cost_op` from Fact 11.1, identity lookup `O(1)` on the binding set, and `commit` one store batch per group (Ch. 11).
+with `cost_op` from Fact 11.1, an identity lookup in constant time in the binding set, and `commit` one batch of the store per group of commits (Ch. 11).
 
 ## 13.3 Cost theorems
 
-**Theorem 13.1 (join cost is output-sensitive).** Let `a` and `b` be indexed by the join key, `d_a` and `d_b` the maximal numbers of rows of the integrals sharing a key. One incremental join step on changes `Δa, Δb` costs `|Δa| + |Δb|` index lookups plus the number of produced rows, and the number of produced rows is at most `|Δa|·d_b + |Δb|·d_a + |Δa|·|Δb|`.
-Status: **proved**, conditional on the bilinear incrementalization rule of [budiu2023] (T5, Ch. 6): `(a ⋈ b)^Δ = Δa ⋈ Δb + I(a) ⋈ Δb + Δa ⋈ I(b)`.
+**Theorem 13.1 (a join costs in proportion to what it produces).** Let `a` and `b` be indexed by the join key, and let `d_a` and `d_b` be the largest numbers of rows of their integrals that share a key. One step of an incremental join on changes `Δa, Δb` costs `|Δa| + |Δb|` lookups in the indexes plus the number of rows produced, and the number of rows produced is at most `|Δa|·d_b + |Δb|·d_a + |Δa|·|Δb|`.
 
-*Proof.* Each of the three terms is a join between a delta and an indexed set. A hash or ordered index finds the matching rows of the other side with one lookup per delta row, and enumerating the matches costs their number. For a delta row `y` with key `κ`, the number of matches in `I(a)` is `deg_a(κ) ≤ d_a`. Summing gives the stated bounds. ∎
+It is proved relative to the rule of [budiu2023] for bilinear operators, cited in Theorem 6.1: `(a ⋈ b)^Δ = Δa ⋈ Δb + I(a) ⋈ Δb + Δa ⋈ I(b)`.
 
-A change that touches a hub of degree `d` costs `Θ(d)` produced rows (Fact 11.2), which is why H14 tests the proportionality.
+*Proof.* Each of the three terms is a join between a change and an indexed set. An index finds the matching rows of the other side with one lookup per row of the change, and listing the matches costs their number. For a row `y` of a change with key `κ`, the number of matches in `I(a)` is `deg_a(κ) ≤ d_a`. Summing gives the stated bounds. ∎
 
-**Proposition 13.2 (group commit amortization).** Let a store batch of `n` revisions cost `C(n) = α + β·n`, with `α` the per-batch overhead and `β` the per-revision payload cost, for `n ≤ n_max = min(100, ⌊2 MB / revision size⌋)` (S1, Ch. 11). Then the cost per revision `β + α/n` decreases strictly in `n` and is smallest at `n_max`. The first revision of a group waits for the group to fill or a flush deadline, so group size trades latency for cost.
-Status: **model** (by arithmetic). `α, β` are hypotheses, measured in E1 and E2.
+*Example:* a new call from a pod of `web` to `api` is one row of `Δa`. If `api` has 3 pods, the join with the `Backs` facts produces 3 rows at most. A change that touches a *hub*, an element with `d` edges, costs `Θ(d)` produced rows (Fact 11.2).
 
-**Theorem 13.3 (tandem pipeline).** Consider stages `1 … m` (acceptance, evaluation, commit, each projection hop) with service rates `μ_i` records per second. With bounded queues that block their producers, the sustained throughput is at most `min_i μ_i`. With unbounded queues, a stage with arrival rate `λ_i > μ_i` accumulates backlog at rate at least `λ_i − μ_i`. A projection that processes its inputs sequentially (ADR-017) has `μ ≤ 1 / s̄` where `s̄` is its mean service time per record or group.
-Status: **proved**.
+**Proposition 13.2 (grouping commits lowers the cost per commit).** Let a batch of the store with `n` versions cost `C(n) = α + β·n`, where `α` is the cost per batch and `β` the cost per version, for `n ≤ n_max = min(100, ⌊2 MB / size of a version⌋)` (S1, Ch. 11). Then the cost per version `β + α/n` decreases strictly in `n` and is smallest at `n_max`. The first version of a group waits until the group is full or a deadline passes, so the size of a group trades time against cost.
 
-*Proof.* Flow conservation: the backlog of stage `i` changes at `λ_i − (departure rate) ≥ λ_i − μ_i`. With blocking queues a producer cannot exceed the consumer's departure rate, so every stage runs at most at the slowest rate. Sequential processing serves one record or group at a time, so the departure rate is at most the reciprocal of the mean service time. ∎
+This is arithmetic on a model of cost. `α` and `β` are not measured; the proposition counts as tested.
 
-Consequence for H1: 5,000 records per second through one sequential evaluator needs a mean service time of at most 200 µs per record, commit amortization included (arithmetic on the target). Parallelism comes from many graphs (sharding by tenant and cluster, Ch. 11), not from within one projection (gap P-a).
+**Theorem 13.3 (a chain of stages).** Consider stages `1 … m` (acceptance, evaluation, commit, each step of projection) with service rates `μ_i` records per second. With bounded queues that make their producers wait, the sustained rate is at most `min_i μ_i`. With unbounded queues, a stage whose arrival rate `λ_i` exceeds `μ_i` builds a backlog at a rate of at least `λ_i − μ_i`. A projection that processes its inputs one after another has `μ ≤ 1 / s̄`, where `s̄` is its mean service time per record or group.
 
-**Theorem 13.4 (latency budget composition).** Let `L = X₁ + … + X_d` with `P(X_j > q_j) ≤ ε_j`. Then `P(L > q₁ + … + q_d) ≤ ε₁ + … + ε_d`. Hence, for a stack of `d` hops, if every hop meets its budget `q` at quantile `1 − 0.01/d`, then `d·q` is an end-to-end budget at p99, and if every hop meets `q` only at p99, then `d·q` holds only at the `1 − 0.01·d` quantile.
-Status: **proved**.
+*Proof.* What arrives either leaves or waits: the backlog of stage `i` changes at `λ_i` minus the rate of departure, which is at least `λ_i − μ_i`. With queues that make producers wait, a producer cannot go faster than its consumer leaves, so every stage runs at most at the slowest rate. One-at-a-time processing serves one record or group at a time, so its rate of departure is at most the reciprocal of the mean service time. ∎
 
-*Proof.* If `L > Σ q_j` then at least one `X_j > q_j` (otherwise the sum is at most `Σ q_j`). The union bound gives the claim. ∎
+*Consequence for H1.* 5,000 records per second through one evaluator that works one record at a time needs a mean service time of at most 200 µs per record, the share of commits included. More speed comes from many graphs (one per customer and cluster, Ch. 11), not from inside one projection.
 
-B4 reports the per-hop histograms and the end-to-end percentile directly. Theorem 13.4 says which per-hop quantile a stack depth requires.
+**Theorem 13.4 (budgets of stacked steps add up).** Let `L = X₁ + … + X_d` with `P(X_j > q_j) ≤ ε_j`. Then `P(L > q₁ + … + q_d) ≤ ε₁ + … + ε_d`. Hence, for a stack of `d` steps: if every step meets its budget `q` at the quantile `1 − 0.01/d`, then `d·q` is a budget for the whole stack at p99; and if every step meets `q` only at p99, then `d·q` holds only at the quantile `1 − 0.01·d`.
 
-**Claim 13.5 (hot read cost).** For the hot layout of Ch. 11 (11.9): dense handles from an intern table, one column per property in fixed segments, adjacency as a base CSR plus an append-only delta log per vertex, each entry with a revision interval.
-- (a) A read of one property of an element by its handle at the published base costs two array accesses, a segment and an offset. From an id it costs one intern lookup first: a hash of the id and an expected constant number of probes in a table of bounded load.
-- (b) A read at a pinned revision inspects in addition the delta entries of that element that are not yet merged into the base: `O(1 + ℓ_k)` for `ℓ_k` such entries.
-- (c) A one-hop adjacency scan of a vertex `v` at a pinned revision visits `deg_base(v) + L_v` entries, each tested against the pinned revision in constant time, where `deg_base(v)` is the length of the vertex's slice of the base CSR and `L_v` the length of its delta log. With the delta log kept below a merge threshold `θ` (a parameter), that is `O(deg(v) + θ)`.
-Status: (a) to (c) are **proved** as counts on the layout of 11.9, restated. They are statements about a design. That the engine's hot graph has this layout, and what the constants are, is a hypothesis of gate 1c, settled by measurement and not by proof: benchmark **B6** (point reads by handle and by id at 10⁴, 10⁵ and 10⁶ elements, where the time per read must not grow with the size; one-hop scans over vertex degrees from 1 to 10⁵ and delta logs from 0 to `θ`, where the time must be linear in `deg_base(v) + L_v`). The first form said that a hot point read is `O(1)` without conditions; (a) and (b) say for which read. Counterexample to the first form: an element edited `ℓ` times since the last merge, read at a revision before those edits, costs `ℓ` entry tests, which no constant bounds unless a merge threshold applies per element.
+*Proof.* If `L > Σ q_j`, then at least one `X_j > q_j`, since otherwise the sum would be at most `Σ q_j`. The union bound gives the claim. ∎
 
-*Proof.* (a) A handle is a dense integer (interning, 11.9). A column lives in fixed segments of 64 K elements, so the value of handle `i` is at segment `⌊i / 2¹⁶⌋`, offset `i mod 2¹⁶`: two accesses. The intern table maps an id to its handle by hashing; with bounded load the expected number of probes is constant, and hashing reads the id once. (b) Base arrays are immutable once published, and a reader at revision `r` filters the delta entries by `from ≤ r < to` (11.9): the entries of the element are inspected once each. (c) The base CSR is sorted by `(vertex, traversal direction, type)`, so the edges of `v` are one contiguous slice, found by two offsets; each entry is tested once. The delta log of `v` is scanned once. ∎
+*Example:* take a stack of projections four deep. If each step meets 1 s at p99, the whole stack meets 4 s only at the 96th percentile. To have 4 s at p99, each step must meet 1 s at the quantile 0.9975.
+
+**Claim 13.5 (cost of a read of the hot graph).** Take the layout of the hot graph designed in Ch. 11 (11.5): small integer handles from a table of interned ids, one column per property in fixed segments, and adjacency as a sorted base plus, per vertex, a log of changes that only grows, each entry with an interval of versions.
+- (a) A read of one property of an element by its handle at the published base costs two array accesses, a segment and an offset. From an id it costs one lookup in the table first: a hash of the id, and an expected constant number of probes in a table whose load is bounded.
+- (b) A read at a pinned version also inspects the entries of that element's log that are not yet merged into the base: `O(1 + ℓ_k)` for `ℓ_k` such entries.
+- (c) A scan of the neighbours of a vertex `v` at a pinned version visits `deg_base(v) + L_v` entries, each tested against the pinned version in constant time, where `deg_base(v)` is the length of the slice of `v` in the base and `L_v` the length of its log. With the log kept below a merge threshold `θ`, that is `O(deg(v) + θ)`.
+
+These are counts on a design, proved below. That the engine's hot graph has this layout, and what the constants are, is a hypothesis of gate 1c, settled by measurement and not by proof. A read is not constant time without a condition: an element edited `ℓ` times since the last merge, read at a version before those edits, costs `ℓ` tests of entries, which no constant bounds unless a merge threshold applies per element.
+
+*Proof.* (a) A handle is a dense integer. A column lives in fixed segments of 2¹⁶ elements, so the value of handle `i` is at segment `⌊i / 2¹⁶⌋`, offset `i mod 2¹⁶`: two accesses. The table maps an id to its handle by hashing; with bounded load the expected number of probes is constant, and hashing reads the id once. (b) The base arrays never change once published, and a reader at version `r` filters the entries of the log by `from ≤ r < to`: the entries of the element are inspected once each. (c) The base is sorted by `(vertex, direction, type)`, so the edges of `v` are one contiguous slice, found by two offsets; each entry is tested once. The log of `v` is scanned once. ∎
 
 ## 13.4 Hypotheses
 
-All values are hypotheses unless stated. H1 to H10 are the targets of [R02] section 5.1. H11 to H14 complete the metrics of Def. 13.2. "Refuted if" follows the rule of 13.6.
+All values are hypotheses. "Refuted if" follows the rule of 13.5. The results are in 13.6.
 
-| Id | Target (tier 1) | Benchmark | Refuted if | Measured (one run, Ch. 14) |
-|---|---|---|---|---|
-| H1 structural ingest | ≥ 5,000 accepted input records/s per graph space. 50 revisions/s steady. A 2,000 revisions/s burst of 10 min drains within 10 min after it ends | **B1** replay lab inputs at 1×, 10×, 100× speed: acceptance rate, revisions/s, backlog drain time | sustained rate below 5,000 records/s, or drain longer than 10 min | about 67,000 records/s on the real capture (243,457 records in 3.6 s, an early engine slice that read fewer record kinds, `engine/PERF.md`), in memory. Estate run: 3.6 M flow rows/s including row generation. Burst and drain not measured. The lab transport delivers about 125 events/s per throughput unit (Ch. 10, 10.6) |
-| H2 telemetry ingest | ≥ 200,000 samples/s per node into the hot ring. Aggregated flow records ≥ 4,000/s into ADX | **B2** synthetic series generator with lab-measured shapes: append rate, ring memory, ADX ingestion lag | either rate below target | 7.84 M samples/s into the in-memory ring. ADX part not built |
-| H3 commit latency | p99 ≤ 20 ms from evaluated commit record to durable commit record | **B3** group-commit sweep on a real Cosmos account (shares E1, E2). The master log is on provisioned throughput because the documented point-write latency SLA is below 10 ms (provisioned) against an SLO below 30 ms (serverless) | p99 above 20 ms at any group size that sustains H1 | memory p99 0.079 ms, SQLite p99 4.31 ms. Cosmos not measured (emulator only, no latency model) |
-| H4 projection latency per hop | p99 ≤ 1 s from master commit to derived commit for linear projections. ≤ 5 s for join projections with touched degrees ≤ 1,000 | **B4** chain of 3 stacked projections over B1 input: per-hop histograms and the end-to-end percentile (Theorem 13.4) | per-hop p99 above target | p99 62.3 ms for a two-graph chain at 5,000 pairs. At 240,000 pairs the first window closes in 9.0 s and windows 1 to 3 in 1.5 to 1.7 s each (4 windows, one run), above 1 s. No 3-hop chain |
-| H5 source to graph | p99 ≤ 2 s from engine receipt to master revision. Source delays are excluded (ARG changes up to 5 minutes, Activity Log 3 to 20 minutes, Fact 0.1) | **B5** timestamps at adapter receipt and at commit | p99 above 2 s | `supported` for the engine part on memory and SQLite; Cosmos not measured in ten runs (13.7) |
-| H6 hot reads | point read ≤ 1 µs. One-hop scan ≤ 0.5 µs + 5 ns per neighbour. 3-hop neighbourhood of 10,000 elements ≤ 20 ms | **B6** BenchmarkDotNet microbenchmarks on the hot graph at the Ch. 11 size ([benchmarkdotnet]) | any median above target | point read 250 to 410 ns and one-hop scan 230 to 270 ns at 6 neighbours with the second hot-graph layout (two runs); 20 ns and 109 ns with the reference layout. 3-hop and the 2.25 M relationship size not measured |
-| H7 durable reads | p99 ≤ 10 ms point read from the Cosmos `state` container. One-hop scan of 100 neighbours ≤ 20 ms | **B7** read load test against `state` | p99 above target | no status for a real account; two labels on the Cosmos emulator (13.7) |
-| H8 element view | structure at `r` joined with 1 hour of 4 series for 10,000 elements ≤ 100 ms from the hot plane | **B8** Def. 7.9 queries inside the hot horizon | above 100 ms | `supported` for the hot plane at the head revision (13.7) |
-| H9 memory | hot graph ≤ 400 MB for 750,000 entities and 2.5 M relationships (estate 2.25 M plus headroom), excluding the telemetry ring and the lookback state of `Series` operators (Ch. 11, 11.8) | **B9** managed heap after load, at tier factors 1, 4, 16 (E15) | above 400 MB at tier 1 | **337 MB** for the hot graph of 750,000 entities and 2.5 M relationships (second layout, one run). The reference layout took 2,395 MB. Whole-engine heap on the 240,000-pair estate: 2.5 GB after structure, 5.4 GB at the end, outside the scope of H9 |
-| H10 cold start | load a seal and replay 1 h of log in ≤ 60 s | **B10** kill and restart the engine during B1 | above 60 s | `supported` for restart from a SQLite journal after a clean stop, with and without a state seal (13.7) |
-| H11 edit replay (new) | replay time of a configuration edit grows linearly in the total number of retained inputs of the affected projection, with a measured slope. A numeric tier-1 target is set after the first measurement | **B11** configuration edits at 1×, 4×, 16× retained inputs (gap P-f; depends on Ch. 9) | growth faster than linear in the retained inputs | built as full replay (Ch. 9, 9.5), not measured |
-| H12 telemetry to property (new) | p99 ≤ 1 s from the closing logical-time input to the derived commit for a threshold crossing operator. The target equals H4's linear hop because a crossing operator is linear on closed records | **B12** threshold projection over lab latency series, with and without hysteresis (E16) | p99 above 1 s | p99 62.3 ms at 5,000 synthetic series (the same close as H4); 1.5 to 1.7 s per close at 240,000 pairs, above 1 s in one run |
-| H13 materialization lag (new) | p99 of commit-to-watermark ≤ 5 s at steady load (parameter chosen here; R02 states "seconds") | **B13** = E3 | p99 above 5 s | not applicable: SQLite and the Cosmos store materialize inside the commit (watermark equals head, D10) |
-| H14 join cost against hub degree (new) | per-change time grows linearly in matched degree (Theorem 13.1), with slope within a factor of 2 over degrees 10 to 100,000 | **B14** = E14, synthetic hubs and the first ten real projections | slope outside the factor, or super-linear growth | `Join` is built, its cost is not measured |
-
-Comparison benchmarks (no target, ratios are reported with confidence intervals):
-
-| Id | Benchmark | Purpose |
-|---|---|---|
-| B15 | Nexmark queries ([nexmark]) for the operator subset Sattle supports (filter, map, join, group), run on Sattle and on Feldera and Materialize | position the incremental core against incremental view engines |
-| B16 | LDBC Social Network Benchmark interactive update stream ([erling2015]) mapped to the hot graph, run against Memgraph and Neo4j | position the hot graph against graph stores |
-
-Neither comparison is a claim. No statement of superiority is made before the results exist and the comparison is fair on hardware and configuration.
-
-## 13.5 How the contract limits of [R01] 4.2 are treated
-
-| Gap | Issue | Treatment in the paper | Tested by |
+| Id | Target (tier 1) | Benchmark | Refuted if |
 |---|---|---|---|
-| P-a | strictly sequential processing per projection caps throughput, stacked projections add latency | accepted. Theorem 13.3, Theorem 13.4, shard by `(tenant, cluster)` | H1, H4 |
-| P-b | patches carry full before and after states, so a one-property change costs `O(entity size)` twice | the logical model keeps full states (guards need `b`, Ch. 4). The physical encoding may store property-level differences if decoding yields the same canonical states. Telemetry never enters this path (Theorem 7.1) | B1 sweeps entity size |
-| P-c | one evaluation request per input, per-input commit | evaluate in batches and commit in groups with revision boundaries preserved (Proposition 13.2, Ch. 11). Batch invariance is T6 (Ch. 6) | H1, H3 |
-| P-d | per-element history keeps up to `N` original payloads | the evidence head holds input ids (Ch. 11). Bytes stay in the input log under its retention (Ch. 9) | H9 |
-| P-e | global relationship uniqueness needs a cross-partition reservation | not needed. Theorem 11.8 | E12 |
-| P-f | configuration edits pause the projection and replay retained inputs | cost model `O(N · elements)`, H11 | B11 |
-| P-g | string ids and polymorphic JSON at every boundary | interning and columns inside the engine (Ch. 11, 11.9). Strings and JSON at the boundary only | H6, H9 |
+| H1 structural ingest | at least 5,000 accepted records/s per graph space; 50 versions/s steady; a burst of 2,000 versions/s for 10 minutes is worked off within 10 minutes after it ends | B1: process recorded inputs at 1, 10 and 100 times their speed; rate of acceptance, versions/s, time to work off the backlog | the sustained rate is below 5,000 records/s, or working off takes longer than 10 minutes |
+| H2 ingest of measurements | at least 200,000 samples/s per machine into the ring in memory; at least 4,000 summed flow records/s into the database for time series | B2: a generator of series with the shapes seen in the recordings | either rate below target |
+| H3 time to commit | p99 at most 20 ms from evaluated to stored commit record | B3: a sweep of group sizes on a real Cosmos account | p99 above 20 ms at any group size that sustains H1 |
+| H4 time per step of projection | p99 at most 1 s from a commit of the master to the derived commit for linear projections; at most 5 s for joins whose touched degrees are at most 1,000 | B4: a chain of 3 stacked projections over the input of B1; per-step histograms and the end-to-end percentile (Theorem 13.4) | p99 per step above target |
+| H5 from source to graph | p99 at most 2 s from receipt by the engine to the version of the master; the delays of the sources are excluded (Fact 0.1) | B5: times at receipt by the adapter and at commit | p99 above 2 s |
+| H6 reads of the hot graph | one element at most 1 µs; a scan of neighbours at most 0.5 µs + 5 ns per neighbour; three steps around 10,000 elements at most 20 ms | B6: micro-benchmarks on the hot graph at the size of Ch. 11 | any median above target |
+| H7 durable reads | p99 at most 10 ms for one element from the Cosmos store; a scan of 100 neighbours at most 20 ms | B7: a load test of reads | p99 above target |
+| H8 view of an element | the structure at `r` joined with 1 hour of 4 series for 10,000 elements in at most 100 ms, from memory | B8: queries of Def. 7.9 inside the hour kept in memory | above 100 ms |
+| H9 memory | hot graph at most 400 MB for 750,000 entities and 2.5 million relationships, without the ring of measurements and the look-back of `Series` | B9: memory after loading, at scale factors 1, 4 and 16 | above 400 MB at tier 1 |
+| H10 restart | load a seal and process 1 hour of log in at most 60 s | B10: stop and start the engine during B1 | above 60 s |
+| H11 time of a definition edit | grows linearly in the number of retained inputs of the affected projection, with a measured slope | B11: definition edits at 1, 4 and 16 times the retained inputs | growth faster than linear |
+| H12 from measurement to property | p99 at most 1 s from the input that closes a window to the derived commit, for a threshold; the same as a linear step of H4, because a threshold is linear on closed records | B12: a threshold projection over series of latency, with and without hysteresis | p99 above 1 s |
+| H13 delay before version rows | p99 at most 5 s at steady load | B13 | p99 above 5 s |
+| H14 cost of a join against the degree of a hub | time per change grows linearly in the matched degree (Theorem 13.1), with a slope within a factor of 2 over degrees 10 to 100,000 | B14: synthetic hubs and the first ten real projections | slope outside the factor, or faster than linear |
 
-## 13.6 Method
+Two comparisons have no target. One would run standard queries of streaming systems ([nexmark]) on this engine and on two incremental view engines, for the operators all three have. The other would run a standard stream of updates of a social network ([erling2015]) against the hot graph and two graph databases. Neither has been run, and no claim of superiority is made before results exist on fair hardware and settings.
 
-- **Determinism of the harness.** Fixed seeds for generators, input from the recorded lab capture where possible, published harness and result files in the repository.
-- **Runs.** A warm-up phase, then at least 10 independent runs per configuration. Report median, p50, p99 and the 95% confidence interval of the median across runs, and the variance.
-- **Decision rule.** A latency or size target is *supported* iff the reported statistic is at or below the target in every run, *refuted* iff the median run is above the target, otherwise *inconclusive*. A throughput target is supported iff the lower bound of the 95% interval is at or above the target.
-- **Scope of a status.** The rule above says nothing about the machine, and Def. 13.4 names a reference that none of the runs so far used. A status is therefore stated for a *configuration*: a store, a machine and the recorded load. The rule is applied to the runs of one configuration, and the status carries its name ("`supported` on SQLite on the lab laptop under load"). It is the status of the hypothesis itself only where the hypothesis names no store (H5 and H10 name none; H7 names the Cosmos `state` container, H3 names Cosmos). For an upper-bound latency target, load on the machine can only raise latencies, so a pass under load holds a fortiori for that configuration, while a failure under load is weak evidence. A `refuted` on the emulator is reported as such and does not refute the hypothesis for a real account. A machine with no other load was not available for any of the ten-run figures, and the threat stays in Ch. 14 (14.9).
-- **Environment record.** Def. 13.4 plus engine commit, .NET version, Cosmos and ADX settings, and the workload parameters actually used.
-- **Microbenchmarks** use BenchmarkDotNet. System benchmarks use the harness and the lab capture.
-- **Separation of causes.** B3 runs against a real Cosmos account (the emulator has no RU accounting, Ch. 11). Hot-plane benchmarks run with the store stubbed, so that store effects do not enter H4, H6, H8.
+## 13.5 Method
 
-## 13.7 Results
+- **The harness is deterministic.** Generators have fixed seeds; inputs come from the recordings where possible; harness and results are kept with the project.
+- **Runs.** A warm-up, then at least 10 independent runs per configuration. Reported: the median, p50, p99, the 95 percent confidence interval of the median across runs, and the variance.
+- **Rule of decision.** A target of time or size is *supported* iff the reported statistic is at or below the target in every run, *refuted* iff the median run is above the target, and *inconclusive* otherwise. A target of rate is supported iff the lower bound of the 95 percent interval is at or above the target.
+- **Scope of a status.** The rule says nothing about the machine, and Def. 13.4 names a reference that no run used. A status is therefore stated for a *configuration*: a store, a machine and the load on it. The rule is applied to the runs of one configuration, and the status names it ("supported on SQLite on the laptop under load"). It is the status of the hypothesis itself only where the hypothesis names no store (H5 and H10 name none; H3 and H7 name Cosmos). For an upper bound on time, other load on the machine can only raise times, so a pass under load holds all the more for that configuration, while a failure under load is weak evidence. A `refuted` on the local emulator of Cosmos is reported as such and does not refute the hypothesis for a real account.
+- **What is recorded.** The machine, the build of the engine and the workload actually used.
+- **Separate causes.** Benchmarks of the hot plane run without a store, so that the store does not enter H4, H6 and H8. B3 must run against a real Cosmos account, because the emulator does not count costs.
 
-Source: the engine's benchmark notes (figures of set B at evaluation 6, each with its command; set B is runs of the project that the authors did not repeat, Ch. 14, 14.1), set A's ten-run output (at evaluation 4 copied unchanged to `paper/evidence/perf-*-orch.txt`, at evaluation 5 to `perf-h8-orch-turn8.txt`, `perf-h10-*-orch-turn8.txt` and `cosmos-cap-orch-turn8.txt`) and this paper's own ten runs of the same harness on clean exports (`bench b5`, `b8`, `b10`; `perf-*-paper.txt` at evaluation 4, `perf-*-head4-paper.txt` at evaluation 5, `perf-*-head6-paper.txt` at evaluation 6); the discussion is in Ch. 14 (14.7). H7 was not repeated in set A or by this paper after evaluation 4 (no emulator was available to this paper). Machine: Apple M1 Max, 10 cores, 64 GB, macOS, .NET 10.0.14, Release build, in-memory and SQLite stores and, for the Cosmos figures (those of sets A and B runs only), the vNext emulator. One run per figure except H5, H7, H8 and H10 (ten runs). Load average: set A 25 to 106 at evaluation 4 and 25 to 75 at evaluation 5; this paper 27 to 91 at evaluation 4, 16 to 70 at evaluation 5 (239 during three restarts) and 16 to 82 at evaluation 6; set B 14 to 60 at evaluation 6 (recorded in the output files and in `engine/PERF.md`). **No run was on a machine with no other load.** The reference machine for the ten-run measurements is the lab laptop when no other work runs on it (a project decision), which is not the Azure reference of Def. 13.4; Def. 13.4 stays the target for Cosmos figures.
+## 13.6 Results
 
-| Id | Status under the rule of 13.6 | Measured |
+**Setup.** One laptop with an Apple M1 Max processor (10 cores) and 64 GB of memory, a release build of the engine, the stores in memory and on SQLite and, for the Cosmos figures, the local emulator of Cosmos. One run per figure, except H5, H7, H8 and H10, which have ten runs per set. The machine always had other work running: its load average was between 14 and 115 in the ten-run sets, and 239 during one set of three restarts. **No run was on a machine without other load**, none on the reference of Def. 13.4, and none on a real cloud account. The ten-run sets were taken by the authors and in runs of the project that the authors did not repeat (Ch. 14, 14.1), at three successive states of the engine; the benchmarks were not repeated at later states.
+
+| Id | Status under the rule of 13.5 | Measured |
 |---|---|---|
-| H1 | met in one run, not `supported` | about 67,000 records/s on the real capture; 3.6 M flow rows/s at the estate size |
-| H2 | met in one run, not `supported` | 7.84 M samples/s |
-| H3 | not tested (Cosmos not built); met locally | memory p99 0.079 ms, SQLite p99 4.31 ms |
-| H4 | met in one run for two graphs at 5,000 pairs, not met in one run at 240,000 pairs; not a 3-hop stack | p99 62.3 ms; 1.5 to 1.7 s per close at the estate size, 9.0 s for the first |
-| H6 | met in one run for point and one-hop reads | 250 to 410 ns, 230 to 270 ns (second layout) |
-| H9 | met in one run for the hot graph, not `supported` | 337 MB against 400 MB. Whole-engine heap 5.4 GB at the estate size, not covered by H9 |
-| H12 | as H4 | p99 62.3 ms at 5,000 series; 1.5 to 1.7 s at 240,000 |
-| H5 | **`supported`** for the engine part on memory and on SQLite (lab laptop, under load): every run of every ten-run set at the last three measured engine commits is at or below 2,000 ms. `hypothesis` for the Cosmos store, which Def. 13.4 names | p99 of the records that make a master revision: 1.11 ms in memory and 23.5 ms on SQLite (this paper, evaluation 6). The worst run of any set is 25.9 ms, a factor of about 77 below the target. One single record took 1.75 s in set B's SQLite set: a p99 target does not bound one record. Cosmos: 0.11 to 0.13 s per revision, a mean on the emulator and not a p99 |
-| H7 | **No status for the hypothesis**, which names the Cosmos `state` container of a real account. On the emulator the two ten-run sets get different labels: **`refuted`** in set A's set at evaluation 4 and **`inconclusive`** in set B's set at evaluation 6 | point read p99 22.5 ms in the first set and 6.55 ms with a worst run of 31 ms in the second, against 10 ms. The read path is the same in both, so the emulator figure follows the load on the machine it shares. SQLite: 0.05 ms, which is not a test of H7 |
-| H8 | **`supported`** for the hot plane at the head revision, in memory (lab laptop, under load): every run of every set is at or below 100 ms since the window scan stopped allocating. `inconclusive` for the code before that | median 29.5 ms, range 16.7 to 41.1 (this paper, evaluation 6). The worst run of any set is 49.4 ms, a factor of 2 below the target. Before: median 73.5 ms with one run of ten at 305 ms, in which the garbage collector ran |
-| H10 | **`supported`** for restart from a SQLite journal after a clean stop, with a state seal and without, at 1.2 h and 4.1 h of repeated capture, in every set. `hypothesis` for a kill during ingestion, for Cosmos and for new data of that length | with a seal 7.35 s at 1.2 h and 7.42 s at 4.1 h; without 7.11 s and 17.4 s (this paper, evaluation 6). With a seal the cost does not grow between the two histories; without one it grows with the journal; at 1.2 h a seal does not pay. Journals of the two real captures: 6 to 8 s. The worst run of any set is 39.8 s. Not the defined path in three respects: the stop is clean, the history is one capture repeated, and a seal is valid only for the build that wrote it |
-| H11, H13, H14, B15, B16 | not measured or not applicable (the `Join` of H14 is built and unmeasured; H13 does not apply to the SQLite and Cosmos stores of the prototype, which materialize in the commit call) | none |
-| Q14 | answered | interpreter 17.0 M rows/s against a hand-fused loop 47.5 M rows/s (2.8 times), 1.8 bytes per row, window close p50 29.2 ms and p99 62.3 ms |
+| H1 | met in one run, not supported | about 67,000 records/s on the real recording (243,457 records in 3.6 s, with an early engine that read fewer kinds of record), in memory; 3.6 million flow rows/s at the size of the estate, generation of the rows included. Burst and working off not measured. The transport of the test environment delivers about 125 events/s (Ch. 10, 10.6) |
+| H2 | met in one run, not supported | 7.84 million samples/s into the ring in memory. The part for the database of time series is not built |
+| H3 | not tested on Cosmos; met locally | p99 0.079 ms in memory, 4.31 ms on SQLite |
+| H4 | met in one run for two graphs at 5,000 pairs; not met in one run at 240,000 pairs; no stack of 3 steps | p99 62.3 ms; at 240,000 pairs the first window closes in 9.0 s and windows 1 to 3 in 1.5 to 1.7 s each (4 windows), above 1 s |
+| H5 | **supported** for the engine's part, in memory and on SQLite, on the laptop under load: every run of every ten-run set at the last three measured states of the engine is at or below 2,000 ms. `hypothesis` for the Cosmos store | p99 of the records that make a version of the master: 1.11 ms in memory, 23.5 ms on SQLite (the authors' last set). The worst run of any set is 25.9 ms, about 77 times below the target. One single record took 1.75 s in one set on SQLite: a target for p99 does not bound one record. On the emulator: 0.11 to 0.13 s per version, a mean and not a p99 |
+| H6 | met in one run for one element and for one step | 250 to 410 ns for one element and 230 to 270 ns for 6 neighbours with the second layout (two runs); 20 ns and 109 ns with the reference structure. Three steps and the size of 2.25 million relationships not measured |
+| H7 | **no status** for a real account, which the hypothesis names. On the emulator two ten-run sets get different labels: `refuted` in the earlier set, `inconclusive` in the later | p99 for one element 22.5 ms in the first set, and 6.55 ms with a worst run of 31 ms in the second, against 10 ms. The path of the read is the same in both, so the emulator's figure follows the load of the machine it shares. SQLite: 0.05 ms, which is not a test of H7 |
+| H8 | **supported** for the plane in memory at the head version, on the laptop under load: every run of every set is at or below 100 ms since the scan of windows stopped allocating memory | median 29.5 ms, range 16.7 to 41.1 ms (the authors' last set). The worst run of any set is 49.4 ms, half the target. Before the change: median 73.5 ms, with one run of ten at 305 ms, in which the collector of unused memory ran |
+| H9 | met in one run for the hot graph, not supported | 337 MB against 400 MB, with the second layout; the reference structure took 2,395 MB. The memory of the whole engine at the size of the estate is 2.5 GB after the structure and 5.4 GB at the end, outside the scope of H9 |
+| H10 | **supported** for a restart from a SQLite journal after a clean stop, with a state seal and without, at 1.2 and 4.1 hours of repeated recording, in every set. `hypothesis` for a kill during input, for Cosmos and for new data of that length | with a seal 7.35 s at 1.2 h and 7.42 s at 4.1 h; without 7.11 s and 17.4 s (the authors' last set). With a seal the cost does not grow between the two histories; without one it grows with the journal; at 1.2 h a seal does not pay. Journals of the two real recordings: 6 to 8 s. The worst run of any set is 39.8 s |
+| H12 | as H4 | p99 62.3 ms at 5,000 series; 1.5 to 1.7 s per close at 240,000 pairs |
+| H11, H13, H14 | not measured, or not applicable | `Join` is built and its cost not measured; H13 does not apply, because the stores of the prototype write version rows inside the commit |
 
-The figures of every set, the workloads and the caveats of H5, H7, H8 and H10 are in Ch. 14 (14.7) and in `paper/evidence/perf-*`; the engine commits that were measured are evaluation 4, evaluation 5 and evaluation 6, and the benchmarks were not repeated at evaluation 7 or evaluation 9. Three hypotheses are `supported`, each for a named configuration: H5 for the engine part on memory and SQLite, H8 for the hot plane at the head revision, and H10 for restart from SQLite after a clean stop. H7 has two labels on the emulator from two sets and none for a real account. Nothing in this chapter says anything about the reference hardware of Def. 13.4, about the Cosmos store on a real account, or about a machine with no other load.
+**Speed of evaluation.** The program that evaluates expressions on many rows at once handles 17.0 million rows per second, against 47.5 million for a loop written by hand for the same computation (2.8 times faster); it uses 1.8 bytes per row. Closing one window takes 29.2 ms at p50 and 62.3 ms at p99.
 
-## 13.8 Delta to iteration 0.1
+**What the figures do not say.** Three hypotheses are supported, each for a named configuration: H5 for the engine's part in memory and on SQLite, H8 for the plane in memory at the head, and H10 for a restart from SQLite after a clean stop. H10 is not the defined path in three respects: the stop is clean, the history is one recording repeated, and a seal is valid only for the build that wrote it. H7 has two labels on the emulator and none for a real account. Nothing here says anything about the reference machine of Def. 13.4, about the Cosmos store on a real account, or about a machine without other load. Ch. 14 (14.7) gives the figures of every set.
 
-- ADR-093 is supplemented by H1 to H14. The oracle and `VERIFICATION.md` remain correctness evidence only.
-- `EvaluationInput` carries one input per request. A batched evaluation input is required (P-c).
-- `RetainedInput.OriginalBytes` per element is replaced by input ids on the element and bytes in the input log (P-d).
-- Numeric targets name hardware and store configuration (Def. 13.4). The research text names a hardware class only (R02 section 5); this paper adds the rule that the SKU is fixed at the first run.
+## 13.7 What the prototype does differently
 
-## 13.9 Deviations found by the prototype
-
-Ids refer to Ch. 14 (14.8).
-
-- **D14 (method).** The benchmark uses Stopwatch and GC counters, not BenchmarkDotNet, and each figure is one run (ten for H5, H7, H8, H10) on an Apple M1 Max, not the reference hardware of Def. 13.4 (`engine/PERF.md`). The ten-run figures were taken at a load average of 14 to 115 (239 during one set of three restarts), so latencies are pessimistic and the spread is wide; no machine with no other load was available. The statuses of 13.7 follow the rule of 13.6 with its scope clause.
-- **Workload.** The synthetic workload has 1,000 pods, 5,000 pod pairs and 100 services. The reference estate has about 240,000 flow pairs.
-- **The health model in H5 and H10 at evaluation 6.** The benchmarks load the tracked definitions and not the local space overlay that `replay` and `serve` apply to a real capture. Since evaluation 6 the tracked space binds the health model to invented names, so on the real capture the health topology and state graphs are empty in a benchmark and the signals are 3 and not 12 (`paper/evidence/bench-overlay-head6.txt`: the same capture replayed without and with the overlay). At evaluation 5 the tracked space carried the capture's names and the benchmarks ran the whole model. `engine/PERF.md` describes the workload of H5 and H10 as the newest real capture without saying this. The H5 and H10 figures at evaluation 6 are therefore for the master graph, the service tree, deployment health, the report and an almost empty health model, which is one more reason not to compare them with the earlier set; the statuses do not depend on it, because the earlier set ran the whole model and is inside the targets too.
-- **H9.** Met in one run by the second hot-graph layout, 337 MB against 400 MB. Differences from the design of Ch. 11 (11.9): adjacency is a linked list per endpoint and not a CSR with a delta log, so removal is `O(degree)`; ids are strings at the API, so reads materialize elements (250 to 410 ns). Whole-engine memory at the estate size is 5.4 GB.
-- **Estate run.** One run of `sattle bench estate`: 150,000 pods, 30,000 services, 300,000 Azure resources, 240,000 active pod pairs, 1 M flow rows per 60 s window, 4 windows. Not a distribution, no p99.
-- **H4 and H12.** Measured by one `Advance` that closes windows of the master graph and commits the derived graph, not by a three-hop stack. At the estate size the close is 1.5 to 1.7 s for windows 1 to 3, above the 1 s target; the plan still keeps up with a 60 s window on one thread. The health model of Ch. 7 (7.5) is a stack of four projections on the lab capture, but its latency was not measured per hop.
-
-## 13.10 Obligations
-
-| Id | Statement | Discharged by |
-|---|---|---|
-| O13.1 | Theorem 13.1 on the engine: matched-degree proportionality | B14, with T5 (Ch. 6) |
-| O13.2 | Claim 13.5 | B6 |
-| O13.3 | `α, β` of Proposition 13.2 | E1, E2 |
-| O13.4 | Each hypothesis receives a status in Ch. 14 | benchmark runs |
-| O13.5 | H5, H7, H8, H10 repeated on a machine with no other load (the lab laptop with no other work running), Cosmos figures on a real account in the engine's region, H10 with a kill during ingestion and with a seal on Cosmos | the harness of `engine/PERF.md`; set B sends the output |
+- **Method.** The benchmarks time with the program's own clock and memory counters, not with a library of micro-benchmarks, and each figure is one run, except the ten-run sets.
+- **Workload.** The synthetic workload has 1,000 pods, 5,000 pairs of pods and 100 services. The run at the size of the estate has 150,000 pods, 30,000 services, 300,000 Azure resources, 240,000 active pairs of pods, 1 million flow rows per window of 60 s, and 4 windows: one run, not a distribution, no p99.
+- **H4 and H12** were measured by one advance of logical time that closes windows of the master graph and commits the derived graph, not by a stack of three steps. At the size of the estate a close takes 1.5 to 1.7 s, above the target of 1 s; the plan still keeps up with a window of 60 s on one thread. The health model of Ch. 7 (7.4) is a stack of four projections, but its time per step was not measured.
+- **The earlier health model in the last sets of H5 and H10.** The benchmarks load the definitions kept with the project, not the local names of the real cluster that the processing of a recording adds. In the last sets those definitions bind the health model to invented names, so on the real recording the health graphs are almost empty there (3 signals, not 12). The earlier sets ran the whole model and are inside the targets too, so the statuses do not depend on it.
+- **Hot graph.** It differs from the design of Ch. 11 (11.5): adjacency is a linked list per entity, so a removal costs time in proportion to the degree; and the interface takes and returns strings, so a read assembles the element from columns (250 to 410 ns).

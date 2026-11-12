@@ -21,16 +21,16 @@
 
 ## Counts
 
-| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated |
-|---|---|---|---|---|---|
-| proved | 81 | 86 | 94 | 90 | 92 |
-| proved, cited | 1 | 2 | 2 | 2 | 2 |
-| proved under premises | 0 | 2 | 9 | 9 | 9 |
-| restatement pending | 0 | 0 | 0 | 4 | 2 |
-| sketch | 19 | 11 | 0 | 0 | 0 |
-| tested | 8 | 8 | 8 | 8 | 8 |
-| open | 4 | 4 | 0 | 0 | 0 |
-| all | 113 | 113 | 113 | 113 | 113 |
+| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated | After the reading of Ch. 7 | With 7.4 and 7.7 restated |
+|---|---|---|---|---|---|---|---|
+| proved | 81 | 86 | 94 | 90 | 92 | 90 | 92 |
+| proved, cited | 1 | 2 | 2 | 2 | 2 | 2 | 2 |
+| proved under premises | 0 | 2 | 9 | 9 | 9 | 9 | 9 |
+| restatement pending | 0 | 0 | 0 | 4 | 2 | 4 | 2 |
+| sketch | 19 | 11 | 0 | 0 | 0 | 0 | 0 |
+| tested | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
+| open | 4 | 4 | 0 | 0 | 0 | 0 | 0 |
+| all | 113 | 113 | 113 | 113 | 113 | 113 | 113 |
 
 The four statements with a pending restatement (5.3, 5.5, 7.1, 10.3) were counted as proved and read only, except 7.1, which has example tests. Theorems 5.5 and 10.3 are restated in their chapters as part D of the third pass proposes, and count as proved again. Theorems 5.3 and 7.1 stay pending until the project chooses between restating them and adding the typing rule for windowed rows. The sentence below still gives the figures after the second pass.
 
@@ -56,21 +56,21 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 2.6 | a migration does not rewrite history | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 2.7 | value roles do not affect evaluation | tested | from the definitions and the results its status names | example tests; (b) a source search |
 | Theorem 3.1 | committed states are well-formed | proved | induction on the log | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 3.2 | history is immutable | proved | append-only log by definition | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 3.3 | equality by digest | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 3.4 | constraint check is local | proved | from the definitions and the results its status names | example tests |
-| Theorem 3.5 | frontier monotonicity | proved | monotonicity under premise F1 | example tests |
-| Theorem 3.6 | scoped graph identity | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 3.7 | evaluation order | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 4.1 | associativity, T2 | proved | case analysis on guards | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 4.2 | application respects composition, T2 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 3.2 | the past does not change | proved | append-only log by definition | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 3.3 | equality by written form | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 3.4 | checking a change is local | proved | from the definitions and the results its status names | example tests |
+| Theorem 3.5 | frontiers only grow | proved | monotonicity under premise F1 | example tests |
+| Theorem 3.6 | identity of scoped graphs | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 3.7 | order of evaluation | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 4.1 | associativity, T2 | proved, strengthened (2026-11-12: holds without the hypothesis that both inner compositions are defined; counted as proved) | case analysis on guards | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 4.2 | applying a composition, T2 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
 | Theorem 4.3 | inverse law, T1 | proved | guards of the inverse match the result | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 4.4 | edit order is irrelevant; dangling edges remove intra-patch ordering | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Proposition 4.5 | algebraic structure, correction of the review | proved, restated | patches as partial injections on graphs; inverse category after adding a zero; groupoid on revisions only in net form | nothing: reading only |
-| Theorem 4.6 | group of signed deltas, T3 | proved | pointwise group of integer weights | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 4.7 | delta is a homomorphism, T4 | proved | computation on facts | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 4.8 | materialization and conversion, T4 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Theorem 4.9 | non-commutativity and non-closure | proved | counterexamples | example test |
+| Theorem 4.4 | the order of edits does not matter | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Proposition 4.5 | what algebraic structure patches form | proved, restated | patches as partial injections on graphs; inverse category after adding a zero; groupoid on revisions only in net form | nothing: reading only |
+| Theorem 4.6 | signed deltas form a group, T3 | proved | pointwise group of integer weights | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 4.7 | delta respects patches, T4 | proved | computation on facts | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 4.8 | from deltas back to graphs, T4 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
+| Theorem 4.9 | two things that fail | proved | counterexamples | example test |
 | Proposition 4.10 | undo is a patch | proved | from the definitions and the results its status names | example tests (`DraftTests.cs`, canvas) |
 | Proposition 4.11 | two views | proved under premises (RT), restated | from Theorems 4.3, 4.8 and the premise RT of Theorem 5.6, on canonical drafts | example test on the example modules; `Unprintable` example |
 | Theorem 5.1 | checking is decidable | proved | structural recursion over a finite definition graph | example tests (`LanguageTests.cs`) |
@@ -85,74 +85,74 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Proposition 5.10 | lifting is a quotient | proved | direct from Def. 5.17 | 28 and 36 example cases (`ProjectionEdgesTests.cs`, `LiftTests.cs`) |
 | Proposition 5.11 | conservation | proved | partition of the edges by fibre | the same cases |
 | Proposition 5.12 | lifting composes | proved | composition of partial functions; sums over a disjoint union | two cases against a one-step lift |
-| Theorem 6.1 | incremental correctness, T5 | proved, cited | structural induction on the plan; chain rule; two cited theorems of [budiu2023], statements checked against the arXiv text; cases added at gate 1a: `Match`, operators filtered by the frontier, `Threshold` as a fold of the recorded sequence, materialization | differential harness against an independent reference evaluator: at the engine of evaluation 12 the engine's incremental result equals the reference's batch result in all 32 worlds, under every batch cut and under reordering inside a batch (149 of 149, from set A). Not covered independently: `Lift` and `Fixpoint` (the reference uses the engine's lowering and unrolling), the type checker and the value library (shared), lens rules, partial windows, `Delta`. The earlier fixture evidence took its expected values from the engine itself |
-| Theorem 6.2 | batch invariance, T6, ADR-009 | proved | from Theorem 6.1 and four premises B1 to B4 (B4 found at gate 1a); one known exception (Law 7.5, remark) | differential harness as for 6.1 (every cut, reordering inside a batch); both captures at five chunk sizes; targeted tests of B1 and B2; B3 on examples and the `link` world; B4 by the harness as far as its worlds put an advance and a structure change into one step (T-B4) |
+| Theorem 6.1 | step by step equals from scratch, T5 | proved, cited | structural induction on the plan; chain rule; two cited theorems of [budiu2023], statements checked against the arXiv text; cases added at gate 1a: `Match`, operators filtered by the frontier, `Threshold` as a fold of the recorded sequence, materialization | differential harness against an independent reference evaluator: at the engine of evaluation 12 the engine's incremental result equals the reference's batch result in all 32 worlds, under every batch cut and under reordering inside a batch (149 of 149, from set A). Not covered independently: `Lift` and `Fixpoint` (the reference uses the engine's lowering and unrolling), the type checker and the value library (shared), lens rules, partial windows, `Delta`. The earlier fixture evidence took its expected values from the engine itself |
+| Theorem 6.2 | batch invariance, T6 | proved | from Theorem 6.1 and four premises B1 to B4 (B4 found at gate 1a); one known exception (Law 7.5, remark) | differential harness as for 6.1 (every cut, reordering inside a batch); both captures at five chunk sizes; targeted tests of B1 and B2; B3 on examples and the `link` world; B4 by the harness as far as its worlds put an advance and a structure change into one step (T-B4) |
 | Theorem 6.3 | replay determinism, T7 | proved | function of the recorded input sequence | two replays compared on fixtures; capture tests |
-| Theorem 6.4 | reconstruction and handoff, T8 | proved | from the definitions and the results its status names | example tests on memory and SQLite (`StoreTests.cs`) |
-| Theorem 6.5 | recursion terminates at the least fixpoint, T9 | proved | ascending chain in a finite lattice | example tests on acyclic input only |
+| Theorem 6.4 | a snapshot and the following records rebuild every version, T8 | proved | from the definitions and the results its status names | example tests on memory and SQLite (`StoreTests.cs`) |
+| Theorem 6.5 | recursion ends at the least fixpoint, T9 | proved | ascending chain in a finite lattice | example tests on acyclic input only |
 | Theorem 6.6 | retraction under recursion, T10 | proved | from Theorem 6.1; counterexample | example tests on acyclic input only |
 | Proposition 6.7 | cross-graph telemetry reads are deterministic | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 6.8 | stateful telemetry operators under revision | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 7.1 | plane separation, ADR-023 | restatement pending | the first sentence (a sample creates no revision) holds by definition. The second ("only if a crossing operator changes graph data") is false for a projection that derives data from the existence of windows: the same counterexample as for Theorem 5.3 (third pass) | example tests; revision counts on the captures |
-| Theorem 7.2 | additivity and roll-up | proved | additivity of exact sums | nothing: reading only |
-| Theorem 7.3 | replayable telemetry-derived structure, L12 | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 7.4 | bounded revision churn | proved | counting of runs of a state machine | one example test |
-| Law 7.5 | series identity under graph change | proved, restated; item 3 ruled | items 1 and 2 from Def. 7.3, 7.9, 3.6; item 3: stored windows combine as monoid values where the combine rule gives one, otherwise equal values or no value with a counted conflict; commutative and associative; a merged value is always the as-if value (Theorem 7.2) | nothing: reading only. The engine differs in four places (D37) |
+| Theorem 7.1 | the planes are separate | restatement pending | the first sentence (a sample creates no revision) holds by definition. The second ("only if a crossing operator changes graph data") is false for a projection that derives data from the existence of windows: the same counterexample as for Theorem 5.3 (third pass) | example tests; revision counts on the captures |
+| Theorem 7.2 | sums add up | proved | additivity of exact sums | nothing: reading only |
+| Theorem 7.3 | structure derived from measurements can be replayed | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 7.4 | bounded change of structure | proved, restated (F6, item 1, applied 2026-11-12) | toggles counted as runs of a state machine, plus the appearance and end of a key's row, bounded by the gap between windows | one example test |
+| Law 7.5 | series follow the element when the graph changes | proved, restated; item 3 ruled | items 1 and 2 from Def. 7.3, 7.9, 3.6; item 3: stored windows combine as monoid values where the combine rule gives one, otherwise equal values or no value with a counted conflict; commutative and associative; a merged value is always the as-if value (Theorem 7.2) | nothing: reading only. The engine differs in four places (D37) |
 | Theorem 7.6 | element view is well defined | proved | from the definitions and the results its status names | nothing: reading only |
-| Proposition 7.7 | roll-up | proved | monotone maximum; state is a function of `A` and the threshold states; churn from Theorems 5.3 and 7.4 | one fixture test, two captures; that the engine's `health` graph equals Def. 7.12 is tested by example only |
+| Proposition 7.7 | roll-up | proved, restated (F6, item 2, applied 2026-11-12) | (a) and (b) proved; (c) restated with the appearance and end of a signal's rows and the hypothesis that graph data derive from measurements only through `Threshold` outputs (true of the shipped definitions); no longer uses Theorem 5.3 | one fixture test, two captures; that the engine's `health` graph equals Def. 7.12 is tested by example only |
 | Proposition 7.8 | bounded reach | proved | breadth-first reach | example test |
 | Theorem 8.1 | bijective rules | proved | inverse function | **void for GetPut** (the test sends only edits with before equal to after, which are dropped before any lens runs); PutGet on generated edit sequences on one lens stands |
 | Theorem 8.2 | the lens steps | proved | direct verification of GetPut, PutGet, PutPut; counterexample for PutPut | **void for GetPut**, as 8.1; PutGet on generated edit sequences on one lens stands |
-| Theorem 8.3 | laws survive stacking, T11 | proved | composition of lenses ([foster2007]) on accepted domains | one link only; GetPut evidence void, as 8.1 |
+| Theorem 8.3 | laws survive stacking | proved | composition of lenses ([foster2007]) on accepted domains | one link only; GetPut evidence void, as 8.1 |
 | Theorem 8.4 | class of a stack | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 8.5 | runtime law check | proved | the staged check is the law it tests | example tests |
+| Theorem 8.5 | the law is checked on every edit | proved | the staged check is the law it tests | example tests |
 | Theorem 8.6 | scope of backward edits | proved | from the definitions and the results its status names | example tests of rejections |
-| Theorem 8.7 | TGG laws for the v1 fragment, T12 | proved, restated | for the grammar of Def. 8.7 and `FWD` of Def. 8.8: a lemma on the shape of the language, then determinism, correctness, completeness, hippocraticness; counterexample to the first form | nothing: reading only. `sync` is not built, so no engine evidence can exist |
-| Theorem 9.1 | edit replay, T13 | proved | from the definitions and the results its status names | example tests |
-| Theorem 9.2 | an edit is not recomputation from scratch, ADR-073 | proved | counterexample | nothing: reading only |
-| Theorem 9.3 | rebuild is exact for graph-input projections | proved, restated | from Theorem 6.1; hypothesis added: operators that are functions of the integrated input and the frontier (no `Threshold`) | nothing: reading only |
+| Theorem 8.7 | laws of the first sync fragment | proved, restated | for the grammar of Def. 8.7 and `FWD` of Def. 8.8: a lemma on the shape of the language, then determinism, correctness, completeness, hippocraticness; counterexample to the first form | nothing: reading only. `sync` is not built, so no engine evidence can exist |
+| Theorem 9.1 | edit replay | proved | from the definitions and the results its status names | example tests |
+| Theorem 9.2 | an edit is not recomputation from scratch | proved | counterexample | nothing: reading only |
+| Theorem 9.3 | rebuild is exact for projections that read graphs | proved, restated | from Theorem 6.1; hypothesis added: operators that are functions of the integrated input and the frontier (no `Threshold`) | nothing: reading only |
 | Theorem 9.4 | evidence is a derived index of the log | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 9.5 | support semantics, ADR-075, ADR-076 | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 9.6 | definitions are pinned, replay of history | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 9.5 | support | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 9.6 | definitions are pinned, the past can be computed again | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 9.7 | lineage soundness | proved, restated | (a) polynomial form of positive plans and restriction; (b) one per-key operator last, non-negative input; (c) `Threshold` by its episode; three counterexamples to the first form | nothing: reading only |
 | Proposition 9.8 | cost of evidence | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 9.9 | releases | tested | from the definitions and the results its status names | example test |
 | Proposition 9.10 | preview | tested | from the definitions and the results its status names | example test for (a) and (c) |
-| Proposition 9.11 | evidence elements are idempotent and withdrawable | tested | from the definitions and the results its status names | nothing: reading only |
-| Theorem 10.1 | idempotent delivery | proved | idempotence of a set of keyed contributions | not tested for evidence elements |
+| Proposition 9.11 | evidence elements are idempotent and can be withdrawn | tested | from the definitions and the results its status names | nothing: reading only |
+| Theorem 10.1 | delivering twice changes nothing | proved | idempotence of a set of keyed contributions | not tested for evidence elements |
 | Theorem 10.2 | withdrawal removes one source's support | proved | from the definitions and the results its status names | example tests |
 | Theorem 10.3 | soundness of reconciliation | proved | restated in the third pass with the hypothesis that the engine holds nothing of that source from behind the scan; counterexample to the first form in the chapter | nothing: reading only |
 | Theorem 10.4 | loss is not deletion | proved | from the definitions and the results its status names | example tests on fixtures |
 | Theorem 10.5 | list then watch, resumption | proved under premises (KW1 to KW3, external), restated | induction over the watch events | nothing: reading only. The premises are the documented contract of the Kubernetes API and cannot be tested here |
-| Theorem 10.6 | replay of a capture is deterministic | proved | from the definitions and the results its status names | capture tests |
-| Proposition 10.7 | live run reproduced by replay | proved under premises (LV1 to LV4), restated | same input sequence in both runs, then Theorem 6.2(b) | **weakened**: the test writes the stream itself and drives the replay; the live loop, its envelope handling and its recording are never replayed (T-LIVE) |
-| Proposition 10.8 | a killed live run resumes to the state of an uninterrupted run | proved under premises (LR1 to LR4), restated | Proposition 11.9 for the journal, idempotent delivery, then Theorem 6.2(b) | simulated kill against a stand-in (T-RESTART) |
-| Theorem 11.1 | reconstruction, L1 | proved | from the definitions and the results its status names | example tests on memory and SQLite |
-| Theorem 11.2 | linear chain, L3 | proved | conditional write on the predecessor (S1, S2) | example tests on memory and SQLite |
-| Theorem 11.3 | per-revision visibility and overlay reads, L2 | proved | from the definitions and the results its status names | example tests |
-| Theorem 11.4 | idempotent materialization, L6 | proved | from the definitions and the results its status names | example tests |
-| Theorem 11.5 | gap-free follow, L5 | proved | from 11.2 and S4, S5 | example tests |
-| Theorem 11.6 | deterministic replay, L4 | proved, restated | induction over the inputs from Theorems 6.3, 11.2, 11.3; hypothesis (iii) on the writers made explicit | nothing: reading only (E6 not run) |
-| Theorem 11.7 | canonical seal, L7 | proved | from the definitions and the results its status names | random histories on two stores |
-| Theorem 11.8 | uniqueness without cross-partition reservation | proved | from the definitions and the results its status names | example tests |
-| Proposition 11.9 | restart reproduces the state | proved under premises | from Theorem 6.3 under J1 to J3 | example tests, end-to-end restarts; **not exercised**: a stored commit whose content differs from the recomputed one |
+| Theorem 10.6 | processing a recording again gives the same versions | proved | from the definitions and the results its status names | capture tests |
+| Proposition 10.7 | a live run is reproduced by its recording | proved under premises (LV1 to LV4), restated | same input sequence in both runs, then Theorem 6.2(b) | **weakened**: the test writes the stream itself and drives the replay; the live loop, its envelope handling and its recording are never replayed (T-LIVE) |
+| Proposition 10.8 | a killed live run resumes to the state of a run that was never killed | proved under premises (LR1 to LR4), restated | Proposition 11.9 for the journal, idempotent delivery, then Theorem 6.2(b) | simulated kill against a stand-in (T-RESTART) |
+| Theorem 11.1 | reconstruction | proved | from the definitions and the results its status names | example tests on memory and SQLite |
+| Theorem 11.2 | one line of versions | proved | conditional write on the predecessor (S1, S2) | example tests on memory and SQLite |
+| Theorem 11.3 | a reader sees whole versions | proved | from the definitions and the results its status names | example tests |
+| Theorem 11.4 | writing version rows twice does no harm | proved | from the definitions and the results its status names | example tests |
+| Theorem 11.5 | following without gaps | proved | from 11.2 and S4, S5 | example tests |
+| Theorem 11.6 | processing again writes the same log | proved, restated | induction over the inputs from Theorems 6.3, 11.2, 11.3; hypothesis (iii) on the writers made explicit | nothing: reading only (E6 not run) |
+| Theorem 11.7 | a seal depends on the state only | proved | from the definitions and the results its status names | random histories on two stores |
+| Theorem 11.8 | uniqueness without a reservation across partitions | proved | from the definitions and the results its status names | example tests |
+| Proposition 11.9 | a restart reproduces the state | proved under premises | from Theorem 6.3 under J1 to J3 | example tests, end-to-end restarts; **not exercised**: a stored commit whose content differs from the recomputed one |
 | Proposition 11.10 | restart from a state seal | proved under premises | from Proposition 11.9 under SL1 (renamed from S1) | example tests; one deleted-entry case; **weakened**: the foreign-build case also carries a bad digest, so the build check is not isolated |
-| Theorem 12.1 | replica correctness | proved | induction on the feed | canvas tests on a fake socket; no end-to-end digest; the engine-side stream test is void, as 12.9 |
-| Proposition 12.2 | late join | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 12.3 | same entity across graphs | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 12.1 | a replica is correct | proved | induction on the feed | canvas tests on a fake socket; no end-to-end digest; the engine-side stream test is void, as 12.9 |
+| Proposition 12.2 | joining late | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 12.3 | the same entity across graphs | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 12.4 | alignment is well defined | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 12.5 | definitions need no new mechanism | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 12.6 | stable block identity, T14 | proved | function of canonical bytes | by construction; document tests |
-| Theorem 12.7 | document patch inversion, T14 | proved | two independent components, each as Theorem 4.3 | nothing: reading only |
-| Theorem 12.8 | rendering is a function, escaping | tested | from the definitions and the results its status names | four escape examples |
-| Proposition 12.9 | reducer contract | proved | from the definitions and the results its status names | canvas tests on a fake socket; **void on the engine side**: the event-stream test asserts over lists that may be empty |
+| Theorem 12.6 | stable block identity | proved | function of canonical bytes | by construction; document tests |
+| Theorem 12.7 | inverting a patch of a document | proved | two independent components, each as Theorem 4.3 | nothing: reading only |
+| Theorem 12.8 | rendering is a function; escaping | tested | from the definitions and the results its status names | four escape examples |
+| Proposition 12.9 | the rule of a client | proved | from the definitions and the results its status names | canvas tests on a fake socket; **void on the engine side**: the event-stream test asserts over lists that may be empty |
 | Proposition 12.10 | resources, tags and caching | proved | from the definitions and the results its status names | example tests (`EtagTests.cs`) |
-| Proposition 12.11 | a document digest per revision | proved | from the definitions and the results its status names | example tests, one capture |
-| Theorem 13.1 | join cost is output-sensitive | proved, cited | from the definitions and the results its status names | nothing: reading only |
-| Proposition 13.2 | group commit amortization | tested | from the definitions and the results its status names | nothing: reading only |
-| Theorem 13.3 | tandem pipeline | proved | from the definitions and the results its status names | nothing: reading only |
-| Theorem 13.4 | latency budget composition | proved | from the definitions and the results its status names | nothing: reading only |
-| Claim 13.5 | hot read cost | proved, restated | counts on the layout of 11.9: by handle, at a pinned revision, one-hop scan | nothing: reading only. That the engine has this layout and its constants is benchmark B6 (gate 1c) |
+| Proposition 12.11 | one digest of a document per version | proved | from the definitions and the results its status names | example tests, one capture |
+| Theorem 13.1 | a join costs in proportion to what it produces | proved, cited | from the definitions and the results its status names | nothing: reading only |
+| Proposition 13.2 | grouping commits lowers the cost per commit | tested | from the definitions and the results its status names | nothing: reading only |
+| Theorem 13.3 | a chain of stages | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 13.4 | budgets of stacked steps add up | proved | from the definitions and the results its status names | nothing: reading only |
+| Claim 13.5 | cost of a read of the hot graph | proved, restated | counts on the layout of 11.9: by handle, at a pinned revision, one-hop scan | nothing: reading only. That the engine has this layout and its constants is benchmark B6 (gate 1c) |
 
 ## Tests wanted from the engine
 
@@ -242,7 +242,7 @@ Two passes. In the first, Proposition 1.8 was derived before its proof was read;
 | Theorem 6.2 (batch invariance) | holds as restated | hidden premise B4; (b) said the step's patch "equals" the net composition, but only the edit sets are equal: revision numbers differ, and a step whose edits cancel commits nothing; what is recorded per commit (reported conflicts, evidence histories) follows the steps; (a) holds only when the same inputs are the same steps, and the prototype makes a chunk one step, so only (b) applies to its replays; the merge of a non-monoid telemetry window is a function of the sequence |
 | Theorem 6.3 (replay determinism) | holds as restated | two proof steps contradicted Def. 6.4 (first pass); the statement could be read as equal commit records for any cut of the same records. It now says that a batch is one input of the recorded sequence and that both runs use one engine release |
 | Theorems 8.1, 8.2 (a), (b), 8.3 | follow as written | none. In 8.2(a) the key condition of `Acc` is needed for the result to be a keyed table, not for PutGet |
-| Theorem 8.2 (c) | holds with one more condition | the emit is injective only while no two keys are forwarded to one representative; after a merge or an alias two rows give one element. The accepted domain now excludes such elements (the engine rejects them `AmbiguousKey`) |
+| Theorem 8.2 (c) | holds with one more condition | the emit is injective only while no two keys are forwarded to one representative; after a merge or an alias two rows give one element. The accepted domain now excludes such elements; the engine is to reject them `AmbiguousKey` and does not yet (F8, item 1) |
 | Propositions 5.10, 5.11 | follow as written | none |
 | Proposition 5.12 | follows as written on the model | written as `lift` statements the two routes agree only for equal look-backs; remark added |
 | Proposition 11.9 (restart) | holds as restated | the statement said that a stored log that ends early refuses the start. The journal is written first, so after a kill the log is short by design: the replay appends the missing commits and refuses only a difference or a log that ends inside one recomputed group. After a kill the space serves the state after the last journaled entry, not "the state before the stop" |
@@ -306,6 +306,24 @@ Two passes. In the first, Proposition 1.8 was derived before its proof was read;
 | Def. 7.13 (third pass) | "`ρ` is at least the late horizon in time"; retained while `b > φ − ρ` | the first clause dropped; retained while `b > λ(φ) − ρ` |
 | Def. 7.14 (third pass) | `since(k)`: the first advance at which `k` has a row "after an advance at which it had none"; progress recorded with each envelope; covered iff `b ≤ coveredUntil(σ)` | the first advance at which `k` has a row and no `since`; progress recorded once per source before each advance; covered iff `b + L ≤ progress(σ)`; the premise of coverage named |
 | Def. 7.16 (third pass) | `e(k)`: the end of the newest record, or `since(k)` if there is none; time to live at most `within`; "enters and leaves no data only at an advance" | `e(k)`: the later of `since(k)` and the end of the newest record; time to live at most `within` less one window; enters at an advance or when a loss mark or retraction removes the newest record, leaves at an advance or on a late row; a no-data record is not a window of the episode |
+| Def. 5.8 (reader rewrite) | the declared contract digest of a `Source` equals the pinned row-contract digest | the reader of every `Source` is known to the program and delivers rows of the declared shape (follows the prototype; a weaker check) |
+| Def. 5.10, `Union.conflict` (reader rewrite) | `requireEqual` fails on unequal values | `requireEqual`, `preferFirst`, `preferLast` defined only for rows with a key; under `requireEqual` two values for one key give no value and a reported conflict; set union inside a `Fixpoint` body; only `preserveEvidence` built |
+| Def. 5.1 (reader rewrite, new) | none | a projection may carry a description; presentation data like value roles, kinds and labels of Ch. 2, not read by evaluation |
+| Theorem 4.1 (reader rewrite) | holds if both inner compositions are defined | holds without that hypothesis (strengthened; the proof is unchanged) |
+| Proposition 6.8 (reader rewrite) | the output after any revision is the fold over the revised sequence | the same inside the revisable range; behind it the correction is dropped and counted (B2) |
+| Def. 6.7, batch semantics (reader rewrite) | a function of the set of closed windows per key and the frontier | each window with its current value inside the retained range and the value it had on leaving it after that |
+| Theorem 7.4 (F6, applied) | at most `⌊N/m⌋` edits, emitted only at a toggle | at most `⌊N/m⌋` toggles plus one change each time the key's row appears or goes; the row goes only after a gap of more than `within − w − L` |
+| Proposition 7.7 (c) (F6, applied) | revisions only at toggles, by Theorem 5.3 | toggles or a `Threshold` row that appears or goes, plus two per appearance; hypothesis that graph data derive from measurements only through `Threshold` outputs |
+| Def. 7.6 (F6, applied) | no late horizon | a late horizon `H`: revisable until the frontier passes `b + L + H`, later rows dropped and counted |
+| Def. 8.4, `Map` and `Union` rows; Theorem 8.2 (c) (F8, applied) | literal outputs of `Map` unclassified; `Union` with `preserveEvidence` over different types ambiguous; (c) for literal set values | literal or repeated outputs make `Map` a lens; `Union` lens for any policy over different types; (c) for field references or literals |
+| Def. 9.5 (F9, applied) | `Carry_keep` is every element of `G` that `Eval` does not produce | only those none of whose creating inputs is in `R`; `Carry_drop` empty |
+| Theorem 9.5 (F9, applied) | remains iff support is positive | and a create fragment exists |
+| Proposition 9.10 (b) (F9, applied) | for a definition edit | for the prototype's full replay, not for Def. 9.4 with a carry |
+| Theorem 10.3 (F10, applied) | the engine holds no contribution from behind the snapshot; withdrawals are exactly the deleted records | the engine processed nothing newer than the snapshot, neither a contribution nor a deletion; withdrawals are exactly the held elements that were deleted |
+| Theorem 10.6 (F10, applied) | the records of a recording, sorted by capture time | the records of a capture sorted, a run's recording in line order; same settings |
+| Proposition 10.8 (F10, applied) | premises LR1 to LR4 | and LR5 (premise LV2), which the proof used |
+| Proposition 11.9 (F11, applied) | after a kill, the state of a run never killed | the same on a store that writes a group of commits all or nothing; on the Cosmos store a kill between the batches of one group refuses the start |
+| Theorem 12.1, Proposition 12.9 (F12, applied) | for every version; never skips a version | up to the first rejected patch; except across a reported gap |
 | Theorems 5.3 and 7.1 (third pass, pending) | "graph data are a function of the data fields and of the outputs of `Threshold` only"; "a closed-window record creates a revision only if a crossing operator changes graph data" | not yet restated: false for a projection that derives data from the existence of windows; two forms proposed |
 
 
@@ -506,6 +524,320 @@ Ch. 1.
 - Limits after Corollary 1.3: "use 64 bits", "the prototype's encoder has not been compared with an independent implementation of the scheme".
 - Proposition 1.8, proof: "Cutting the input into batches does not reorder it (Ch. 6, Theorem 6.2)": a forward reference that the reader has to take on trust; the invariant already gives the claim without it, because its right side depends only on which keys and links were processed.
 
+### F2. Ch. 3 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version of the chapter, statement by statement. No theorem statement changed status. Sent to the paper session as a numbered list; the numbers below are the same.
+
+*Meaning drifted in the rewrite.*
+1. Def. 3.4: "states equal by `≈`, property by property" drops the type, the id and the two ends; the earlier text compared states component by component.
+2. Def. 3.5: the order of the sorted pairs is gone (it was the order of UTF-16 code units, as the canonical JSON scheme sorts names). Entity and relationship ids are not restricted to the alphabet of Rule 1.1, so the order must be named; Theorem 3.3 rests on it.
+3. Def. 3.6: "effective iff `b ≠ a`" lost "by `≈`".
+4. Def. 3.9 says "`apply(E, G_h)` is well-formed", which includes WF4, and the paragraph after it says the rule enforces WF1 to WF3 only. The first sentence should say WF1 to WF3. (The contradiction came in with the gate 1a pass, not with the style pass.)
+5. §3.7: "the marker for measurements" for the telemetry watermark of Def. 6.8; "marker" already names loss marks and forwarder markers.
+
+*Statements with a gap that the new proofs expose.*
+6. Theorem 3.6: the scoped id hashes the customer, the graph name and the scope. If a graph name is unique only within a space (Def. 3.11), two spaces of one customer with a graph of one name get the same scoped ids. Either names are unique per customer, or the space enters the hash.
+7. Theorem 3.5, proof: "the version of the definitions only moves forward" is an unstated premise. It holds because the definitions are themselves a graph with a log (Ch. 2) and a commit pins the version in force; say so, or add it to F1.
+8. Theorem 3.3: "decided in time proportional to the lengths of the written forms" holds once the written forms exist; producing them sorts the keys.
+9. Def. 3.14: "the others in their order" names no order. The topological order of Theorem 3.7 is not unique.
+10. Def. 3.14: "the identity key from which its id was computed" fails for an id introduced by an alias (Ch. 1, Def. 1.10); "the key by which it was named" covers both.
+11. Def. 3.14, example: an endpoint known only by an address; the measured paragraph and Ch. 10 have pods named by namespace and name. Use a pod that Kubernetes never listed.
+
+*Used before it is defined, in this chapter or in Ch. 0 to 2 as rewritten.*
+12. "ontology" and "release" (Def. 3.1): neither is defined in Ch. 0 or Ch. 1.
+13. `𝓡`, relationship ids (Def. 3.1): how they are formed is only in 3.5 (Ch. 5, Def. 5.9); point there at first use.
+14. "commit" as a verb and "commit record" (Def. 3.8) before the commit rule (Def. 3.9).
+15. "input" (Def. 3.8, the cause), "batches" (Def. 3.9), "replayed" and "the engine" (3.4): defined only in Ch. 6, or nowhere.
+16. "kind of `k`" (Def. 3.6) reuses "kind", which Ch. 1 defines for values.
+17. The opening says the chapter "points forward to Ch. 2"; Ch. 2 comes before it.
+
+*Needs engineering background.*
+18. 3.4: "system time", "application time", "the SQL standard of 2011", "periods": one line on what SQL is and what the two periods are.
+19. Def. 3.12, example: "namespace" (a named group of objects in a Kubernetes cluster).
+20. Def. 3.12: "a value that selects a part of `g`": how a value selects elements is not said; if only the written form of the scope matters here, say that and point to where selection is defined.
+21. 3.4, table: "accepts an input for good" (durably: it will not be lost).
+22. Measured paragraph: "replay", "warning events" (a Kubernetes event, a note about an object).
+23. 3.7: "Versions ... decimal strings between programs": fine; "properties on 4,000 random cases" should carry its caveat here (the cases are drawn only among changes the prototype accepts, so a wrong refusal would not be seen), as the rule "limits where the claim is made" asks.
+
+*One term, one meaning.*
+24. Def. 3.13 "measurement plane"; Ch. 7, the glossary and Def. 0.7 say "telemetry plane". Choose one for the whole paper.
+25. "What you can state at the end": "the graphs of one system" for a graph space.
+
+### F3. Ch. 4 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version, statement by statement. No statement changes status; one proposal strengthens Theorem 4.1, and one proof of mine (Proposition 4.5, second pass) has a gap.
+
+*Mathematics.*
+1. **Theorem 4.1 holds without its hypotheses, and the remark after it is only true for that stronger form.** The proof reduces both bracketings to the same three conditions without using that `p then q` and `q then u` are defined. So the theorem holds in the strong form: "`(p then q) then u` is defined iff `p then (q then u)` is defined, and then they are equal." Under the present, weaker form (both inner compositions assumed defined), dropping joined guard-only edits does *not* break associativity: the cancelled keys are edited by `q`, so "`q then u` is defined" already gives the condition the dropped guard would have checked. The remark's example (`u` composes with `p then q` but not with `q`) needs `q then u` undefined, which the present hypothesis excludes. Proposed: state Theorem 4.1 in the strong form; the proof stands as written; the remark is then exact. Add that dropping the guard also breaks Theorem 4.2: the dropped composite applies to graphs on which `p` does not.
+2. **Proposition 4.5, proof (written in the second pass): "the action determines the patch" is false as stated.** Two patches with the same edits and different versions act on graphs in the same way. The action determines the edit set; the versions are part of the patch. Proposed: "a patch is its two versions together with the partial injection `G ↦ apply(p, G)`; the action determines the edit set, and the versions are kept as the object part of the category". The rest of the proof goes through, hom-set by hom-set.
+3. **Proposition 4.5, the groupoid:** the composition of two net forms can produce guard-only edits again (a key changed and changed back), so the groupoid's composition is `net(p then q)`. Say so.
+4. **Def. 4.8: "materializable" should require that the facts of weight 1 form a graph**, each state under its own key (Def. 3.2, WF1), not only that they satisfy `U`. For `z = δ(p)` of a valid patch this holds by Theorem 4.8; for an arbitrary `z` handed to `toPatch` it does not.
+
+*Meaning drifted in the rewrite.*
+5. Def. 4.2: "the after-state of `p` on `k` equals the before-state of `q`" lost "by `≈`" (as Ch. 3, item 3).
+6. After Theorem 4.4: the order of edits in a written patch is "by kind and then by id", with no order of ids named (as Ch. 3, item 2), and "kind" again for entity, relationship or ontology.
+
+*Used before it is defined.*
+7. Def. 4.10: "catalog", "kernel", "release", "refactoring"; Def. 4.12: "module", "canonical text", `print`, `parse`. Ch. 2 is not yet rewritten; until it is, one line each or a pointer.
+8. Def. 4.3: "an inverse cause" is not defined.
+9. After Theorem 4.6: "Z-sets", "integration and differentiation" (defined in Ch. 6).
+10. Def. 4.12, example: `name: Text label;` uses syntax that the reader has not seen.
+
+*Needs engineering background.*
+11. §4.7: "The viewer", "The engine", "redo list": "engine" is still undefined in Ch. 0.
+12. §4.7: the 4,000 random cases need their caveat here (drawn only among changes the prototype accepts, so a wrong refusal is not seen), as in Ch. 3, item 23.
+13. §4.5 is clear. One phrase: "copies of one object" could say "copies of one piece of data kept on several computers".
+
+*Notation.*
+14. The running example writes a patch by its edit set alone (`(k, a, b)`, `ε((k, a, b)) = (k, a, a)`). Say once that a patch is written by its edits when the graph and versions are clear.
+
+### F4. Ch. 5 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version. No statement changes status. Two definitions changed meaning in the rewrite without being listed, and two examples teach something the rest of the paper forbids.
+
+*Meaning changed, not listed.*
+1. Def. 5.8: the check on a source changed from "its declared contract digest equals the pinned digest of the row contract" to "delivers rows of the declared shape". This follows the prototype (Ch. 2 records that adapters declare a shape), but it is a weaker check and belongs in the table "Statements whose meaning changed".
+2. Def. 5.1 gained the projection's *description* (text for people, not read by evaluation). New, harmless; list it with the other presentation data of Ch. 2.
+
+*Conflicts with rulings elsewhere.*
+3. Def. 5.10: "`requireEqual` fails on unequal values" contradicts Def. 5.19 and Def. 6.4, under which nothing fails the event. And a `Union` of plain rows has no key, so "unequal values" has no meaning for it (the prototype refuses every policy except `preserveEvidence` for that reason). Proposed: the three other policies are defined only for rows with a key and are not built; under `requireEqual` two different values for one key give no value and a reported conflict, as Def. 6.4. Theorem 6.5 admits `Union(requireEqual)` in a `Fixpoint` body; there it is set union, which should be said.
+4. Example after Def. 5.9 (a `Link` "under a policy that the address of a running pod identifies it") and the sentence before Theorem 1.7 ("the pod was seen under its address"): a merge is permanent, and an address is reused by later pods. Ch. 10 (10.4) says an address is not a timeless identity and keys an address-only endpoint by cluster, address and a time-bounded lease. With the example's policy, the next pod that gets the address is merged into the first one forever. Use the link of Ch. 10 instead (pod uid and pod name), or key the address with its lease.
+5. Fill paragraph (5.5): "A roll-up key is in no data when every member is" is the older wording; Def. 7.16 now says "every member that has a record, stored, filled or marked no data".
+6. "What follows from the lowering" (5.8): "the crossing from telemetry to data through `Threshold` only" inherits the open gap of Theorem 5.3; say "the value of a measurement reaches data only through `Threshold`".
+
+*Small inaccuracies.*
+7. §5.4 opens with "Five properties"; it holds six numbered statements (5.1, 5.2, 5.3, 5.4, 5.5, 5.6).
+8. Def. 5.11: `Series` also yields filled records and no-data records when the definition declares `fill` or `ttl` (Def. 7.15, 7.16); one clause.
+9. Def. 5.15: "one malformed row must not stop the rows around it (Ch. 6, Theorem 6.2(a))": the principle is Def. 5.19 (a fault is local to its row); 6.2(a) is about the transport.
+10. The running example (Def. 5.2) computes the dependencies with two `Match`es and two `Join`s; the worked example (5.6) does it with one `Match` of three edges. Both are right; say that they are two ways to write the same thing, or use one.
+
+*One term, one meaning.*
+11. "measurement" in the prose and "telemetry" in the rules, Def. 5.11, Def. 5.18 and the `lift` table (Ch. 3, item 24).
+12. "threshold" for the policy's minimum confidence of a `Link` (after Def. 5.9) and for the operator `Threshold`. Say "the policy's minimum confidence".
+13. "canonicalizer" (Def. 5.19) and "normalization" (premise KS) for one thing; Ch. 1 says normal form.
+14. "the planner" and "after planning" (5.8) for what the text has just defined as *lowering*.
+
+*Used before it is defined, or never defined.*
+15. "kernel" (Def. 5.2), "catalog", "module", "release", "ontology", "output ontology": Ch. 2 is not rewritten yet; pointers exist for some.
+16. `gauge`, `delta`, `cumulative` (Def. 5.4): one line each (a reading at a moment; an amount per period; a running total). Def. 5.11 already says "a running total" once.
+17. "hysteresis" (worked example, `lift` table): two thresholds with a band between them, so that a value inside the band changes nothing. The example after Def. 5.11 shows it without the word.
+18. "reset-aware" (Def. 5.11) for what Def. 5.6 says as "starting again when the value drops".
+19. "signed rows" (5.6, `Distinct`), "Z-set of fragments" (proof of 5.7): defined in Ch. 6.
+20. "a `readonly` rule" (start of the `lift` statement): Ch. 8.
+21. "made active" (Def. 5.8, Prop. 5.8): when definitions take effect; one line, or a pointer to Ch. 9.
+
+*Needs engineering background.*
+22. "PG-Schema", "Cypher", "GQL" (5.6): one line, languages for describing and querying graph databases.
+23. "append-only scan" (Def. 5.11).
+24. "a typed error" (5.9): an error that names what is wrong and where.
+
+### F5. Ch. 6 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version. No statement changes status. Four points are inconsistencies inside the chapter that the rewrite makes visible; two are corrections from the third pass that are still missing.
+
+*Inside the chapter.*
+1. Def. 6.7 ends: "their batch semantics is the function of the set of closed windows per key, in `windowStart` order, together with the frontier". For `Threshold` the proof of Theorem 6.1 now says the batch semantics is a fold over the recorded sequence, with the value each window had when it left the retained range. The two agree only if Def. 6.7 says "the set of closed windows per key, each with the value it had when it left the retained range". Proposed: that wording.
+2. Theorem 6.2, last sentence of the proof: "Without them … and (a) fails." Part (a) holds without the premises (it is about the transport); the premises are needed for (b). Proposed: "(b) fails".
+3. Premise B4 names `Threshold` and a link with the rows around it. The proof of Theorem 6.1 now also rests on B4 for a `Series` with a fill or a time-to-live (`since(k)` is set at advances). Add it to B4.
+4. Remark after Theorem 6.5: "the limits only turn non-termination into an atomic failure" contradicts Def. 5.19 and 6.6 (the bound of a `Fixpoint` cuts the result short and does not fail; `maxFacts` is recorded and not enforced). Proposed: "the bound only cuts the result short".
+
+*Corrections from the third pass still missing.*
+5. Proposition 6.8 holds inside the revisable range; a correction for a window behind it is dropped and counted (premise B2). Add the range to the statement. The example after it also needs "and no later run of three exists".
+6. Def. 6.3, `Union` "per its conflict policy (Def. 5.10)": a `Union` of rows has no key, and the only built policy is `preserveEvidence`, which is the sum of the inputs (see F4, item 3). Proposed: "`Union`: the sum of its inputs".
+
+*Out of date.*
+7. §6.6: "Conflicts … are not yet listed with each version." The prototype now sends the conflicts of a commit right after it, when they appear, change or end. Remove the sentence or state what is still missing.
+8. §6.4, table: the state of `Series` with a fill or a time-to-live (one instant per present element, the progress per source) and of `Threshold` (the windows of the retained range and one carried state per key, Def. 7.10) are missing from the column "State".
+
+*Notation.*
+9. `π` now has four meanings: presence in a field type (Ch. 5), carry policy (Ch. 9), the set of rows `π(λ)` in the proof of Theorem 6.1, and the relational projection in 6.5 (`R = seed ∪ π(R ⋈ E)`). Proposed: write `live(λ)` in the proof (as Proposition 5.9 does) and the recursion of 6.5 in words; `⋈` also needs a word.
+
+*Used before it is defined, or never defined.*
+10. "plan" (proof of Theorem 6.1, "by induction on the plan"): the network of operators that is evaluated, after `lift` is replaced.
+11. "Z-set": used in the title of Def. 6.2, defined in the example after it; put the definition in the definition.
+12. "snapshot" (Def. 6.1); "sealed", "consumer", "subscription", "follower", "handoff" (Theorem 6.4): Ch. 11 terms; one line or a pointer.
+13. "stratum" (Theorem 6.6 (a)): a part of a recursive definition that is evaluated as a unit.
+14. "semi-naive iteration" (table of 6.4, example 6.5): iteration that joins only the new rows of the last round; and the prototype does not use it.
+15. "the engine" throughout: still undefined in Ch. 0.
+
+*Needs engineering background.*
+16. "equijoin", "selection" (Def. 6.3): a join on equal values; keeping the rows that satisfy a condition.
+17. "timely dataflow", "source partitions", "consistent snapshots in distributed systems" (Def. 6.6); Ch. 3 says "input streams" for what is here "source partitions".
+18. "transport chunks" (Theorem 6.2 (a)).
+19. §6.4: "hash arrangement", "entity handle", "breadth-first reach", "cursor"; and after the table "laid out by column", "interpreter", "fused", "pipeline".
+
+*Examples.*
+20. The running example and the example after Def. 6.2 have the observer "correct" a call count by retracting it. No source of Ch. 0 sends retractions of counts; Kubernetes replaces an object by a new version, which is a retraction of the old contribution and an insertion of the new (Ch. 10). Either use that, or say the correction is a revision of a window inside the late horizon.
+21. The example after Def. 6.4 is followed by the bullet "What batch invariance requires", which belongs to the definition above the example; move the example after the bullet.
+
+### F6. Ch. 7 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version and with the definitions the prototype ships. Two statements are found false as stated and are marked "restatement pending" (Theorem 7.4, Proposition 7.7); one proof leans on the open gap of Theorem 5.3 without needing it.
+
+*Mathematics.*
+1. **Theorem 7.4 and Def. 7.10 miss the edits at the start and end of a key's row.** Def. 7.10 says "an edit of graph data is emitted only at a toggle". But a `Threshold` gives a key a row only while the key has a window in the look-back (Def. 6.7): the row appears with its state when the first window is read, and goes when the last window leaves the look-back. Both change the output, and downstream they create and remove elements: the health model emits each `Signal` entity from a `Threshold` output, so a signal that starts or stops having windows creates or removes a `Signal`. *Counterexample to Theorem 7.4:* `n_in = n_out = 3`, `N = 2` windows that start an episode. The bound is `⌊2/3⌋ = 0`; the operator emits the key's row once. The row can also go and come back inside one episode, when two consecutive windows are almost `within` apart, so that neither is closed and in the look-back for a while. *Proposed:* "it emits at most `⌊N/m⌋` toggles, plus one change each time the key's row appears or goes. The row goes only after a gap of more than `within − w − L` between two consecutive windows of the key, so over `N` windows without such a gap it appears at most once and goes at most once." Def. 7.10: "an edit is emitted at a toggle, and when the key's row appears or goes".
+2. **Proposition 7.7 (c) is false as stated, for the same reason, and its proof uses the false first sentence of Theorem 5.3.** "While the data inputs of the stack do not change, a revision of `health` is caused by a toggle of a `Threshold`": a signal whose windows start or stop changes `health` without a toggle (the component goes from `Unknown` to a state, or back). The proof cites "by Theorem 5.3 the graph data … is a function of the data fields … and of the outputs of its `Threshold` operators" (first sentence, false as stated). *Proposed (c):* "while the data inputs do not change, a revision of `health` is caused by a toggle of a `Threshold`, or by a `Threshold` row that appears or goes; over `N` windows a signal causes at most `⌊N/m⌋ + ⌊N/m'⌋` revisions plus two per appearance of each of its two rows". The proof then needs only that the stack's graph data derive from measurements through `Threshold` outputs alone, which holds for the shipped definitions (each `Signal` and each state comes from a `Threshold` output) and in general under the typing rule P6.
+3. **Theorem 7.3 does not need Theorem 5.3, but its proof uses it.** "By Theorem 5.3 no other path leads from telemetry to structure" is false as stated (existence of windows). The theorem holds without it: whatever path a closed-window record takes, it is a recorded input, and Theorem 6.3 applies. Proposed: drop the sentence and the reference in the basis line.
+4. **"Rolling up is therefore a linear operator in the sense of Ch. 6"** (after Theorem 7.2) contradicts Ch. 6, where `Rollup` is a per-key function and not linear (a changed aggregate retracts one row and inserts another). Theorem 7.2 says the aggregate is additive over samples. Proposed: "the aggregate is additive over samples; as an operator on rows `Rollup` is a per-key function (Ch. 6)".
+5. **Def. 7.10, episode bullet:** "the state is a function of the set of closed windows and the frontier" against the next bullet, "a function of the recorded input sequence". Same as F5, item 1: "the set of closed windows, each with the value it had when it left the retained range".
+6. **"The late horizon" is used and not defined.** Premise B2, Def. 7.13 ("the smaller of the late horizon and `ρ`") and Def. 7.10 rely on it; §7.6 says "Def. 7.6 has no horizon of its own". Proposed: add to Def. 7.6 a horizon `H`: a closed window stays revisable until the frontier passes `b + L + H`, and a later row for it is dropped and counted.
+7. Still open from the third pass: "a covered window is therefore closed" (Def. 7.14) needs either the premise that logical time is never behind a source's progress or the definition "covered iff closed and …"; Law 7.5 (i) needs "a window without a value stays without one" for monoid rules too, and `last` with an order needs a tie-break.
+
+*One term, one meaning.*
+8. Def. 7.12: "Unknown means 'no data'". *No data* is now the defined state of Def. 7.16 (asserted, with a cause). `Unknown` is *unknown by omission* in the terms of 7.5. Proposed: "Unknown means that no reached signal has a threshold state: unknown by omission, not no data in the sense of Def. 7.16".
+9. `D` is the depth bound (Def. 7.12, Prop. 7.8) and the time-to-live (Def. 7.16), besides `D` of Ch. 6 and `D_n` of Ch. 4. Write the time-to-live as `T`, as its syntax `ttl T` does.
+10. The chapter is titled "Measurements"; its definitions say "telemetry". Choose one (Ch. 3, item 24).
+11. Def. 7.1 declares a series by `(kind, …, widths, …)` with four kinds; Ch. 2 and the syntax declare `(temporality, combine, period)` with one period. The mapping "named combinations" is not total (a `delta` property with combine `max` has no kind), and Def. 7.8 defines the aggregate per kind. Proposed: define the aggregate of Def. 7.8 by temporality and combine rule, and keep the four kinds as names.
+
+*Qualifications that the gap of Theorem 5.3 asks for, still missing.*
+12. §7.1, third bullet: "Telemetry influences structure only through crossing operators".
+13. §7.4, first paragraph: "telemetry reaches structure only through a crossing operator (Theorem 5.3)".
+
+*Out of date.*
+14. §7.6: "the prototype still fills a window that carries a loss or partial mark". The engine now holds no fill on such a window and takes a fill back when a mark arrives later; refuses a fill on a property that an authored source feeds; and counts no data per roll-up member as the reference does.
+
+*Needs engineering background.*
+15. §7.4 is dense with terms of Azure and Kubernetes: load balancer, virtual network, Event Hubs namespace, resource group, node, `providerID`, virtual machine scale set, system pool, Activity Log, and the warning reasons (`FailedScheduling`, `FailedMount`, `NetworkNotReady`, `BackOff`). One short paragraph of plain glosses at the start of 7.4 would carry them.
+16. "at-least-once delivery" (Def. 7.2), "aligned to the epoch" (Def. 7.5), "scaled integers" (Rule 7.1), "ring", "live store", "query-through", "external store of measurements" (figure, Theorem 7.3 and its remark), "heartbeat envelopes from the forwarder", "state seal" (7.5).
+17. "measured by others in the project" (limit 7): the style rule asks not to say who measured; give the result and point to Ch. 14.
+
+### F7. Check of the applied lists F2 to F5, and one inconsistency they expose (2026-11-12)
+
+Spot-checked in the chapters: Def. 3.4, 3.5, 3.6 and 3.9; Theorem 4.1 in its strong form with the remark and Theorem 4.2; the order of edits after Theorem 4.4; Proposition 4.5 with versions as objects and composition `net(p then q)`; Def. 5.10; Def. 6.7; Proposition 6.8; the last sentence of the proof of Theorem 6.2; the identity examples of Ch. 1. Each reads as proposed. The paper session's choice that a *measurement* is one value and *telemetry* the series of them (Def. 0.7) resolves F4 item 11 differently from the proposal and is consistent.
+
+*An inconsistency between Ch. 1 and Ch. 10 that the new examples expose.* Ch. 1 now aliases a pod's name key to the id of its uid (Def. 1.10, *alias*) and says "an alias is permanent, and a pod name can be reused". Ch. 10 (10.4) says a name key "rebinds when a pod of a StatefulSet is recreated under a new UID", and that "a flow is attributed to the pod that held the name at that position of the log". Under Def. 1.10 and Theorem 1.5 a binding never changes, so a name key cannot rebind: after the pod is recreated, every flow that names it resolves to the old pod. Either name keys are not identity keys in the sense of Ch. 1 (they are resolved through a lookup that is graph data and changes with the log, not through the binding set), or the name domain carries the incarnation (the uid when known, or the version at which the name was bound), or Ch. 1 gains bindings that hold for an interval. The first matches what Ch. 10 describes and keeps Ch. 1 as it is; it should be said in Ch. 1, after the alias example, and in Ch. 10, where "rebinds" is used.
+
+*Counts.* README and Ch. 0 say "92 are proved in full"; after F6 the inventory has 90 and 4 pending (5.3, 7.1, 7.4, 7.7).
+
+### F8. Ch. 8 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version and with what the prototype raises. No statement is false. Two descriptions of the prototype are wrong (items 1, 6), and the removal of the rule text took away the cause of the running example's delete (item 2).
+
+*Mathematics and the prototype.*
+1. **`AmbiguousKey` is not built.** Def. 8.4 and Theorem 8.2 (c) say an edit of an element whose identity has several keys "is rejected `AmbiguousKey`", and 8.5 says the reasons not asserted by the tests "are built". The engine raises no `AmbiguousKey`: an update or a delete addresses the master entity by its id, and no step counts the keys bound to it. The theorem stands (it is about the lens on its accepted domain); the prototype does not enforce that domain, and only the staged check of Theorem 8.5 stands between such an edit and the master. No shipped definition binds two keys to one capability (the one equivalence declared is between pod uid and pod name), so the case is not reached. *Proposed:* "is to be rejected `AmbiguousKey`; the prototype does not yet check the number of keys", and in 8.5 name the reasons that are built and not asserted (`TelemetryNotEditable`, `NotAccepted`, `KeyMismatch`, `BadEdit`) instead of "the other reasons". Test T-AMBKEY (G). Engine-core will build the check with the property tests of the proof pass; until it is committed the paper says that it is not built.
+2. **The delete of the running example has no stated cause, and it is not the backward step of Theorem 8.2 (a).** The committed version showed the rule with `on delete set { status: "retired" }`; the restyled one says "deleting a capability sets its status to `retired`" and nothing says why. The engine carries a delete back only through such a clause and refuses any other delete `NotAccepted`. So the removal of a source row, the `put` of Theorem 8.2 (a) and (b) on a delete, is never run, and the capability lens is not a composition of the steps of 8.2: on a delete its `put` changes a field of the complement. Its PutGet on deletes holds because the values set make the row fail the filter, a condition on the rule that no check enforces and the staged check catches. *Proposed:* one sentence in 8.2 that a lens rule has three clauses, `accept`, `on create … default` and `on delete set`, and that a delete is carried back only as the update of `on delete set`; and in the example: "PutGet holds on a delete because the values of `on delete set` make the row fail the filter".
+3. **Def. 8.4, `Map` row, is not total.** A field that appears twice, or an output that is a literal, falls under none of the three cases, or under iso, while edits of the copy or of the literal have no preimage. The emit row already treats literals as lens. *Proposed:* "iso if every input field appears exactly once … and no output is a literal; lens if fields are dropped or repeated, or outputs are literals (edits must keep them)". The prototype's checker is stricter (a `Map` with anything but field references is none), so nothing built is unsound.
+4. **Theorem 8.2 (c), statement:** "whose other set values are literals"; the proof treats set values that are field references or literals. *Proposed:* "whose other set values are field references or literals".
+5. **Def. 8.2, the citation of the complement form.** `put : V × C → S` is the constant-complement form of view update ([bancilhon1981]); the symmetric lenses of [hofmann2011] have `putr : S × C → V × C` and `putl : V × C → S × C`. The capability lens changes its complement on a delete (item 2), so it is not of the constant-complement form either; the form used is the asymmetric one of [foster2007], with the old source as argument. *Proposed:* drop the sentence, or cite [bancilhon1981] and say that the chapter's lenses need not keep the complement constant.
+6. **8.5, GetPut.** "Putting the unchanged view back leaves the digest of the state and the version of the master unchanged." The engine drops an edit whose element is unchanged before any backward step runs, so GetPut holds for the engine's `put` by construction and the test does not exercise a backward step (the test says so itself; rows 8.1 to 8.3 of the table mark the GetPut evidence void). *Proposed:* "GetPut holds by construction: an edit that leaves an element unchanged is dropped before any backward step runs. The test confirms that such an edit changes nothing; it does not exercise a backward step."
+7. **Theorem 8.6, first sentence of the proof.** "A telemetry property is owned by a `readonly` rule or lies in a `forward` projection (8.1, P2)" needs the typing rules of Ch. 5 (telemetry enters a rule only through operators whose class is none). The engine rejects an edit of a telemetry property directly, by the role of the property. *Proposed, shorter and without Ch. 5:* "An edit that touches a telemetry property is rejected `TelemetryNotEditable` (8.1)."
+8. **Union row of Def. 8.4 and Def. 5.10.** Consistent, but in the prototype every `Union` is none (only `preserveEvidence` is built), so no lens may contain a `Union`; one clause in 8.5 "What is built". The row reads ambiguously for a `Union` with `preserveEvidence` over inputs of different types: lens by the first clause, none by the second. *Proposed:* "lens for `preferFirst` or `preferLast`, and for any policy when the inputs have different types; none otherwise".
+
+*One term, one meaning.*
+9. `δ` is the information class (Def. 8.4, 8.5) and the delta of a patch (Def. 4.7, used in Ch. 4 and 6). Write the class as `ι`, or `info(o)`.
+10. `C` is the complement (Def. 8.2) and the set of correspondences (Def. 8.7, 8.8).
+11. *Source* is the input `S` of a lens, a `Source` of Ch. 10 (rule S5, "the authoring source") and the source graph of a triple. The first and third are close; S5 could say "bound to an adapter other than the authoring source".
+12. 8.1 says "a second rule of the same projection", 8.5 "a second rule of the same module". Both are true (the rules sit in one projection of one module); use "projection" in both, the narrower word.
+13. Def. 8.5 says "one input stream" for `bijective` and "exactly one input port" for `lens`. Same thing; use "input port" in both.
+14. Theorem 8.7 (d): "a triple that is already consistent" is not defined; the hypothesis is `(S, C, T) ∈ L(G)`. *Proposed:* "a triple of `L(G)` is left as it is".
+
+*Terms used before they are defined, or never.*
+15. The clause names `accept`, `on create` default, `keep` path, `equate`, `correspond … identity` and emit "mode `create`" (Def. 8.5) are named without the rule text the committed version showed. Item 2 covers the first three; "mode `create`" needs "(Ch. 5, an emit that creates elements, not one that updates them)".
+16. The Def. 8.1 table names correctness, completeness and hippocraticness; they are defined in Theorem 8.7. A gloss in the table ("hippocraticness: a triple already in the language is left as it is") or the pointer "(Theorem 8.7)" instead of "(8.4)".
+17. Def. 8.3: "a proposal, not a commit". *Commit* is not defined in the paper. *Proposed:* "it changes nothing until it is accepted".
+
+*Needs engineering background.*
+18. Def. 8.2: "the integrated input graphs and rows it reads" ("integrated" is the operator `I` of Ch. 6): "the current contents of the graphs and rows it reads".
+19. Theorem 8.5: "a copy that is not yet in use (a staged copy)". What is copied is not said. *Proposed:* "computes the master graph and the view from the stored inputs and the proposed rows, without making the result current".
+20. 8.4, concurrent edits: "an input that the engine has stored but not yet processed" assumes that the engine stores an input before it evaluates it; say so once ("the engine first stores an input, then evaluates it").
+21. Def. 8.6: "activation derives an entity type `<projection>#<rule>` that extends the kernel type `Correspondence`". *Activation* is defined in Def. 5.8 ("made active"); the kernel type and the name pattern need a pointer to Ch. 2.
+22. 8.5: "the digest of the state", "8 seeded groups", "the engine's interface", "the viewer". *Proposed:* "a hash of the whole state"; "8 runs with fixed random seeds, each of 12 sequences"; "through the engine's programming interface"; "the program that displays views (Ch. 12)".
+
+### F9. Ch. 9 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version: the statements are unchanged in meaning. One definition contradicts the step it formalizes (item 1). The proof of Theorem 9.2 needs one more hypothesis (item 2). Two counts of the measurements do not agree with each other (item 7).
+
+*Mathematics.*
+1. **Def. 9.5 carries too much, against step 4 of Def. 9.4.** Step 4: the carry policy decides about the elements of `G` "whose creating inputs are no longer in `R_h`". Def. 9.5: `Carry_γ(G, R)` is every element of `G` that `Eval(P', R)` does not produce and that the policy retains. Under `keep`, a definition that narrows (from "not `Failed`" back to `Running`) then removes nothing: a pod in `Pending` whose input is still retained is not produced by `P'` and is carried. Theorem 9.5 ("or the carry policy retains it") inherits this. *Proposed:* "`Carry_keep(G, R)` is the set of elements of `G` that `Eval(P', R)` does not produce and none of whose creating inputs is in `R`; `Carry_drop` is empty", with *creating inputs of `k`*: the cause inputs of the commit at which `k` last appeared. Theorem 9.1 then names its arguments as `(G, R_h, P', γ)` and the creating inputs, which are a function of the log (Theorem 9.4).
+2. **Def. 9.2 attributes every cause input of a commit to every key the commit edits, and the counterexample of Theorem 9.2 needs `i₁` alone in its commit.** If `i₁` (the pod in `Pending`) is processed in one commit with an input that edits some key, `i₁` qualifies for that key, is retained, and the replay under `P'` creates `p₁`. The theorem ("in general") stands with the hypothesis "`i₁` is the only input of its commit". A consequence worth one sentence: histories, `R_h`, and so the result of a definition edit depend on how inputs were grouped into commits, while the output graph does not (batch invariance, Ch. 6). *Proposed:* add the hypothesis to the proof, and either say this in Def. 9.2 or attribute by contribution: an input qualifies for `k` iff it contributes a fragment of `k` whose weight the commit changes.
+3. **Def. 9.4, step 2, against Def. 9.5.** Step 2 "takes the previous output graph `G` as the starting state"; Def. 9.5 evaluates "starting from the empty state", and the proof of Theorem 9.5 says "starting from `G` does not by itself retain `k`". *Proposed:* "keeps the previous output graph `G` for the carry and for the difference".
+4. **Theorem 9.3, consequence: the recommendation contradicts the paragraph before it.** The paragraph shows that a view that reads graphs and has a `Threshold` loses state under rebuild; then "this paper therefore proposes rebuild for projections that read graphs". *Proposed:* "rebuild for projections that read graphs and have no `Threshold`, replay for all others".
+5. **Theorem 9.5 drops the second condition of presence.** Def. 9.7 and Def. 6.4: present iff `σ(k) > 0` and a create fragment exists. Theorem 9.5: "remains iff its support … is positive". An element whose create input is no longer replayed while update inputs are has positive support and no create fragment; it is absent. *Proposed:* "iff its support … is positive and a create fragment exists". This is the case of the last sentence of the consequence of Theorem 9.3 (a bounded history).
+6. **Def. 9.10:** "Ids are path ids (Def. 2.3), so a rename appears as a changed property." A path id contains the name (Def. 2.3), and a rename keeps the id only when the text says `was <old name>`. *Proposed:* "so a changed property appears as a changed property; a rename does so when the text says `was <old name>`, and is otherwise a removal and an addition".
+7. **The counts of 9.6 and the table count different sets of entities.** Now: 15,154 entities of which 14,622 evidence, so 532 other entities; 48,201 and 47,598, so 603. The table (earlier state): 456 and 491 other entities, matching its rows for 10 and 2 minutes. Ch. 10 (10.6) explains the difference: 532 = 456 + 76 meters and 603 = 491 + 112 meters, which the earlier state did not have. The text gives only the reason for the higher evidence counts. *Proposed:* add "and had no meters (Ch. 10, 10.6), so its other entities are 456 and 491 instead of 532 and 603". Ch. 10 also says that 231 events of the newest recording still get two identities, so "could get two identities" should read "got two identities more often".
+8. **`AuditEvent` is not an evidence element by Def. 9.12**, which requires a relationship `e_ε → x`; the list says it "has no relationship in the master graph". Either Def. 9.12 allows an event whose subject is not in the graph, or the list and the counts of item 7 separate `AuditEvent`.
+9. **Proposition 9.10 (b) holds for the prototype's edit, not for Def. 9.4.** A complete preview computes `Eval(P', R)` with no carry and over the whole retained log; the commit of Def. 9.4 replays `R_h` with a carry. *Proposed:* "… that a commit would perform in the prototype (full replay, policy `drop`)".
+10. **Def. 9.8, "the sets of input ids":** with union for both operations the empty set is neutral for both, and `0 · a = 0` fails. The lineage semiring needs an added bottom element (`Lin(X)` in [green2007]). *Proposed:* name the operations and the added element, or drop this instance.
+11. **Theorem 9.7 (a):** "a finite sum over multisets `m` … with coefficients that depend on `Q` and `f` only". For `Map` the rows with `map(x) = f` need not be finitely many, so the formal sum may be infinite; it is finite at every `S` of finite support, as the proof says. *Proposed:* "a sum over multisets `m` …, with coefficients that depend on `Q` and `f` only, of which finitely many terms are non-zero at any `S` of finite support".
+12. **Def. 9.2:** "qualifies for nothing, also when it changes telemetry (Theorem 7.1)". The sentence holds by Def. 9.2 alone; Theorem 7.1 has a pending restatement (a measurement can change graph data when a `Threshold` row appears), and then the input does qualify. *Proposed:* drop the reference.
+
+*One term, one meaning.*
+13. *Retain* and *retained* have five meanings here: the number `retain` of a projection (history length, Def. 9.2), the retained set `R_h` (Def. 9.3), the input rows a host keeps in its log (Def. 9.11, Proposition 9.10, 9.5, where `R` is "the full retained input"), the operator `Retain` that removes evidence elements by age (9.6), and the retained range of windows (Def. 7.13, in the consequence of Theorem 9.3). Proposition 9.10 writes `R` and Def. 9.3 writes `R_r` for different sets. *Proposed:* "the log of inputs" for the host's rows, `R_log` or no letter in 9.10, and "kept" for histories.
+14. In Theorem 9.7, `L` is an arbitrary set of input rows, `L_S(f)` the lineage at `S`, and Def. 9.8 has `L(f)`. Write the arbitrary set as `U`.
+
+*Needs engineering background.*
+15. "digest of the state" (Proposition 9.10), "the number of the last event" (Proposition 9.10, the event stream of Ch. 12), "in pages" and "the pages give the same list" (lineage in the prototype), "renewals of leases" (`AuditEvent`), "the table of interned strings", "the input rows a host retains". *Proposed:* "a hash of the whole state", "the sequence number of the last event the engine published", "in parts of fixed size", "the periodic messages by which Kubernetes components show they are alive", "the table that stores each distinct string once", "the inputs the engine keeps in its log".
+
+### F10. Ch. 10 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the committed version and with the identity catalog of the prototype. One change of wording changed a meaning (item 3). Two descriptions of identity contradict Ch. 1 and Ch. 5 (items 1, 2). Two proofs use a premise they do not state (items 5, 6).
+
+*Mathematics and meaning.*
+1. **A pod recreated under a stable name merges with its predecessor; it does not get the name (F7, still open, now derived).** 10.4 says the key `podName(cluster, namespace, name)` "points to a new pod" when the pod is recreated, and that "a flow is attributed to the pod that held the name at that position of the log". By Def. 1.10 the alias of the name to the old pod's id is permanent. By Ch. 5 (Def. 5.9) the `Link` of the new uid to the name is a `sameAs` between keys bound to different identities, which is a merge (Theorem 1.7). The engine does the same: a key already bound to another identity of the same entity type merges the two, and the smaller id survives. So the two pods become one entity, and every flow, old or new, is attributed to it. The third bullet of 10.4 says the effect "has not been measured". *Proposed:* state the derived behaviour as a limit ("the old and the new pod become one entity; flows are not separated by incarnation"), or take option (a) of F7 (the name as a lookup in graph data, not an identity key) in Ch. 1 and Ch. 10 together.
+2. **§10.7, "a flow before its pod … the later link is a counted conflict".** By Ch. 5 and in the engine the later link merges the two identities, and the final id does not depend on which came first. The engine counts a conflict only when the two identities have different entity types. *Proposed:* "… gives the pod an id of its own; when the pod's row arrives the two identities merge, and the final id does not depend on the order. A conflict is counted only between identities of different entity types; both recordings had none."
+3. **Theorem 10.6 now says "recording"; the committed version said "capture". The change makes it contradict Proposition 10.7.** The theorem orders the records by `(capturedAt, file path, seq)`. The recording of a live run (Def. 10.7) is one file in the order of consumption, and a test checks that it is read in file order, not by capture time. With arrivals out of capture order, the sort of Theorem 10.6 reorders it and breaks LV1. *Proposed:* "Order the records of a capture (10.5) by …; the recording of a run is one file and is processed in its line order", or let `seq` lead for one file. The theorem also needs the same settings: with another batch size the log of versions differs (Theorem 6.2 (b), as the remark after Proposition 10.7 says). *Proposed:* "with pinned definitions and the same settings (batch size, step of logical time, late horizon)".
+4. **"Contribution" and "key" are used in two senses, and the engine paragraph after Theorem 10.5 is wrong as written.** Def. 9.7: a contribution is "an input, a rule and a weight"; Def. 10.3: "the set of fragments that one record of a source causes", named by a contribution key. "An `ADDED` or `MODIFIED` event replaces the contribution of the object under its delivery key": the delivery key of a watch event contains the `resourceVersion`, so every `MODIFIED` has a new delivery key, and under it the event would add a contribution, not replace one. The second sentence of Theorem 10.1, "a repeated observation with a new key is a new contribution", reads the same way. *Proposed:* one definition of contribution (Def. 10.3, and Def. 9.7 refers to it); "replaces the contribution of the object under its contribution key (kind and uid); the delivery key only drops repeats"; Theorem 10.1: "an observation with a new delivery key is processed; it replaces the contribution with the same contribution key, and adds one otherwise".
+5. **Proposition 10.8 uses LV2 and does not assume it.** The proof ends "the count of rows is a function of the consumed envelopes (premise LV2 of Proposition 10.7)", and LV2 is not among LR1 to LR4. *Proposed:* add LV2 to the premises (LR5).
+6. **LV3 names the horizon only.** LV2 makes the advances of logical time a function of "the settings of the run", among them how often time advances. The second processing must use the live run's step as well as its horizon. *Proposed:* "LV3 (same settings). The second processing uses the late horizon and the step of logical time of the live run."
+7. **Theorem 10.3, second hypothesis.** "From a position behind the scan's snapshot": the example shows that "newer than" is meant. The hypothesis also misses a deletion. If a `DELETED` newer than the snapshot is processed before the list, the list puts the object back. The theorem, which speaks of withdrawals only, does not see this, but the state is wrong. *Proposed:* "Let the engine have processed no record of that source about the scope that is newer than the scan's snapshot." And "the withdrawals are exactly the elements of the scope that the engine holds from that source and that have been deleted at the source" (not "the records … deleted at the source", which counts also what the engine never held).
+8. **Theorem 10.3 on the live path.** A pair `relist-start` … `relist-end` is applied as a coverage declaration, and the forwarder's watch events share the stream. The second hypothesis holds only if no watch event of that kind that is newer than the list's version lies between the two markers. Nothing in the chapter says whether the forwarder stops its watch during a new list. *Proposed:* state it as a property the forwarder must have and that is not checked.
+9. **Theorem 10.4, proof.** "A withdrawal is produced only by an explicit record of deletion and by a reconcile rule." The operator `Retain` (Def. 5.15) also withdraws, when logical time passes an age. The theorem stands. *Proposed:* "only by an explicit record of deletion, by a reconcile rule, and by `Retain` when logical time passes an age; none of them is caused by a loss".
+10. **Def. 10.4:** "level of consistency" and "`level ≥ ℓ`" assume an ordered set of levels that is never given. *Proposed:* name the levels (for example a consistent picture at one version, above eventually consistent) and their order.
+11. **Table of 10.2 against 10.6:** the key of a record of the network logs of Azure is "hash" in the table and "the path of the file and the time of the record" in 10.6.
+12. **"Lateness" and "late horizon".** §10.7 computes `λ = floor(capturedAt / step) × step − lateness`; LV3, Def. 10.9 and 7.6 of the prototype speak of the late horizon (three window widths live, a million in a recording). Def. 10.9 says late rows are "judged by the late horizon (Ch. 7, Def. 7.6)", and Def. 7.6 does not define it (F6, item 6). *Proposed:* say which quantity of Def. 7.6 "lateness" is, and define the horizon there.
+
+*One term, one meaning.*
+13. *Position* is a place in the engine's input sequence (Def. 10.3, "recorded position") and a place in a source (the partition and sequence number of Event Hubs, LR1, Def. 10.8). Three sequences have similar names: `seq` of a file, the ingestion sequence number, and the `sequenceNumber` of Event Hubs. *Proposed:* "source position" for the second.
+
+*Needs engineering background.*
+14. Not glossed: `BOOKMARK` ("an event that reports only the current version"), "410 Gone" ("the answer that the requested version is no longer kept"), "eventually consistent" ("different parts may show different moments"), "namespace" ("a named group of objects in a cluster"), "endpoint slices" ("the lists of pod addresses behind a service"), "the network observer's relay" ("the program that collects the flows of all machines"), "a lease bounded in time" in 10.4 ("the time during which an address belongs to one pod"; Ch. 9 uses *lease* for a Kubernetes object), "file database" ("a store in one file on disk"), "state seal" (pointer to Ch. 11), "retries", "queue held at 64 MB".
+
+### F11. Ch. 11 after its restructuring, read as the target reader (2026-11-12)
+
+Compared with the committed version: Def. 11.10, 11.11 and Propositions 11.9, 11.10 are new as numbered statements, with the text of the committed bullets; the other statements are unchanged in meaning. One leftover of the restructuring (item 1). One proposition claims more than the prototype's Cosmos store allows (item 2). One cited result is stated too strongly (item 4).
+
+*Mathematics and meaning.*
+1. **"No number of 11.4 to 11.6 is measured. The prototype's own figures are in 11.7."** There is no 11.7, and 11.6 holds the prototype's measured figures (337 MB, request counts, 7.84 million samples per second). *Proposed:* "Every number in 11.4 and 11.5 carries one of these labels. No number of 11.4 and 11.5 is measured. The prototype's own figures are in 11.3 and 11.6."
+2. **Proposition 11.9 against the Cosmos store of 11.6.** The proposition refuses a start when "a stored log … ends inside one computed group of patches", and says "after a kill it is the state that a run that was never killed has after that entry; the kill may have cut short the writing of its commits". On Cosmos a group of commits that spans two parts of the log or more than 100 records is several batches, and the group is not all or nothing (11.6). A kill between those batches leaves the stored log inside a group, and the start is refused. So the last sentence holds for a store that writes a group all or nothing (SQLite, the store in memory), and on Cosmos only for groups of one batch. *Proposed:* say so, or let the restart complete a group that the stored log holds in part when the computed group agrees with it.
+3. **Theorem 11.2, proof:** "A commit record `c_r` has the id `c:r` in the logical partition of its part of the log. By S2 at most one create of `c_r` succeeds." S2 is per logical partition, so this needs the part of the log of version `r` to be a function of `r`. *Proposed:* "… in the logical partition of the part of the log that `r` determines".
+4. **Fact 11.2:** "for the others, time per update below linear is impossible under … the OMv conjecture". The lower bound of [berkholz2017] excludes update time `O(n^{1/2−ε})` together with delay `O(n^{1−ε})` (for a Boolean query, together with answer time `O(n^{1−ε})`); it does not exclude every sublinear update time. *Proposed:* "for the others, no algorithm has update time `O(n^{1/2−ε})` and delay `O(n^{1−ε})` under … the OMv conjecture".
+5. **Theorem 11.8, proof:** "the single writer checks each edit set against its hot graph, which equals `G_h`". Theorem 11.2 holds without the lease, and so does this one: each writer checks against its hot graph at its expected head `h'`, and by Theorem 11.2 a commit that succeeds has `h' = h`. *Proposed:* "each writer checks … against its hot graph, which equals `G_{h'}` for its expected head `h'`; by Theorem 11.2 a commit that succeeds has `h' = h`".
+6. **Theorem 11.6 (ii) and `Unavailable`.** A read may return `Unavailable` when the store refuses it for load (Def. 11.3, 11.7), and that is not a function of `(graph, version, key)`. (ii) then requires that the engine retries such a read until it answers and never evaluates on `Unavailable`. *Proposed:* say this after the hypothesis, next to "a duty of each store adapter".
+7. **Transport estimate against the measurement of Ch. 10.** "Summed in windows of 60 s: … about 4,000 per second, about 4 units" uses the documented 1,000 events per second per unit. Ch. 10 measured about 125 events per second with one unit, one partition and one send at a time. At that rate 4,000 per second needs 32 units and more partitions. *Proposed:* add the measured rate and what it implies, or the condition under which the documented rate is reached.
+8. **A1 and A2 lean on statements with a pending restatement.** A1: "They create no version (Theorem 7.1)"; A2: "This is a threshold (Def. 7.10), with the bound of Theorem 7.4". Presence with hysteresis is exactly the case that F6, item 1 found missing from Theorem 7.4: a relationship that appears when its key first has a window and goes when the last window leaves. *Proposed:* refer to the restated Theorem 7.4 once it is applied, or count those changes here ("two per appearance").
+9. **The Cosmos store "differs from 11.5" in that "identity bindings are written after the commit record, not before it"**, but 11.5 says nothing about when bindings are written. *Proposed:* state the designed order in 11.5 (and why it matters: a reader that sees a commit must find its bindings) or drop the point.
+10. **Def. 11.10:** "a crash leaves at most one entry that the log of commits has not caught up with" holds only if the engine writes entry `n+1` after the commits of entry `n`. Say so, or "at most the entries after the last one whose commits were written".
+11. **Two sizes of the estate.** The estimate has about 2.25 million structural relationships; the hot graph of 11.6 and Ch. 13 is measured with 2.5 million. *Proposed:* say that the benchmark rounds up, or use one number.
+12. **Def. 11.9, "a documented property of Cosmos DB … unless noted":** S5 has no citation and nothing is noted. Under the weakest consistency level of Cosmos, "readable within finite time" is the documented promise; name the level the design assumes.
+
+*One term, one meaning.*
+13. `w` is the version up to which version rows are written (Def. 11.3, Theorem 11.1) and the weight of a sample `(t, g, k, p, τ, w, x, i)` (Def. 11.4), in two tables a page apart.
+14. Def. 11.8 writes `JCS`, which no chapter defines; Ch. 1 writes the canonical encoding `enc`. *Proposed:* `digest(enc([pageSize, [page digests…]]))`.
+15. *Seal* is the page seal of Def. 11.8 (not built) and the state seal of Def. 11.11 (built). Def. 11.1 ("the truth from the oldest kept seal on") and Theorem 11.5 ("older than the oldest kept seal") mean the first; the prototype's `Gap` comes from the limit of served history (11.6). The text says the two differ; Theorem 11.5 could add that in the prototype `Gap` is caused by the served limit.
+
+*Needs engineering background.*
+16. "cache", "object storage", "one primary machine", "chunks", "the local emulator" ("a program that imitates the cloud database on one machine"), "synchronous", "a linked list per entity", "Queues between the parts of the engine are bounded", "workload" (used throughout 11.4: a deployment and its pods), "pool" ("a group of machines of one size"), "identities derived from labels", "rollout", "differences of differences of times and the bit differences of values", "entities are stored as columns … which avoids interpreting row by row", "the build of the engine", "byte-equal".
+
+### F12. Ch. 12 after its style pass, read as the target reader (2026-11-12)
+
+Compared with the inventory's statements: unchanged in meaning. One proposition is false across a gap (item 1). The numbering is out of order (item 7).
+
+*Mathematics and meaning.*
+1. **Proposition 12.9 "never skips … a version" fails across a gap.** By Def. 12.7 a subscription whose `after` is older than the kept events receives `gap` and then snapshots. The client then holds the snapshot's version without having held the versions in between. *Proposed:* "… and never skips or repeats a version, except across a reported `gap`, after which it holds the version of the snapshot".
+2. **Proposition 12.10 (b):** "different bytes never share a tag". A tag is the first 128 bits of SHA-256, so two bodies share a tag only by a collision. The other statements of the paper say "unless `H` has a collision". *Proposed:* add it here.
+3. **Theorem 12.3, second sentence**, "An aggregate has a new identity and never reuses the id of a member", is stated as a fact. The text after it says it is a rule for authors that no check enforces. *Proposed:* "By Def. 5.9 an aggregate is to have a new identity …; the checker does not enforce this", or move the sentence out of the theorem. The first sentence also proves less than the highlight needs. "Same id if equal components" is Theorem 1.4. The highlight needs "same id, hence same entity", which holds because an id is minted from one key and other keys are bound to it only by alias or merge (Def. 1.10), unless `H` has a collision. *Proposed:* state that.
+4. **Theorem 12.4, proof:** "or from a field that the store adds (Ch. 11, 11.5)". Ch. 11 after its restructuring says nothing about a field for logical time. *Proposed:* drop the clause, or add the field to Ch. 11, 11.5. The statement's `M` (measurements) is not defined in the chapter.
+5. **Theorem 12.1:** "holds `G_r` … for every `r`", but a rejected patch stops the replica (proof). *Proposed:* "for every `r` up to the first rejected patch". The proof cites Theorem 11.7 for "the snapshot is the state at its version". That theorem is about the seal's digest; Theorem 6.4 is the fitting reference.
+6. **A preview "over part of the input (500,824 of 579,175 rows)"**, while Def. 9.11 replays "the first `n` retained input rows", by default 500,000. The run does not give `n`. With the default the count would be 500,000. Give `n`, or say that a preview reads to the end of the batch that contains row `n`.
+7. **Numbering out of order.** Order in the text: Def. 12.1 to 12.4, Def. 12.7, Def. 12.5, Def. 12.8, with no Def. 12.6. Results: Theorem 12.1, 12.2, 12.3, 12.4, 12.5, then Propositions 12.9 and 12.10 (in 12.4), then Theorems 12.6 to 12.8 and Proposition 12.11 (in 12.5). A reader who looks for Def. 12.6 or follows the numbers is lost. *Proposed:* renumber in reading order and rename the inventory rows, or say in a note that the numbers are kept from the earlier version.
+
+*One term, one meaning.*
+8. `bid = base32(H(JCS([rule, group key])))`: `JCS` is not defined in any chapter (as in Ch. 11, F11 item 14); Ch. 1 writes `enc`. The engine's block id is minted by the identity catalog (`alloc` of Ch. 1, with tenant and domain), not by this formula. Theorem 12.6 holds for both, but Def. 12.5 and Def. 12.8 then give two formulas for one id.
+9. `w` in Def. 12.4 is a window length; in Ch. 11 it is the version up to which version rows are written and the weight of a sample.
+
+*Needs engineering background.*
+10. "subscriber", "fake connection", "media type", "tag" (glossed), "caching", "browser", "focusable group", "screen reader", "Markdown", "a template appends a stable identity as the last key", "summaries at most every 100 ms … so a stream of patches does not overload the page", "a standard checker of accessibility". The ones a mathematician cannot guess: "media type" ("the declared format of a body, such as JSON"), "focusable group" ("one element that the keyboard can reach as a whole"), "screen reader" ("a program that reads the page aloud").
+
 ### G. Tests proposed by the third pass (not yet in the list of 17)
 
 | Id | Name | Generates | Asserts | Backs |
@@ -513,3 +845,4 @@ Ch. 1.
 | T-WINDOWED | `Data_cannot_be_derived_from_the_existence_of_windows_without_a_threshold` | projections that lead a row of a `Series`, a `Window` or a `Rollup` through `Map`, `Filter`, `Distinct`, `Group` or `Join` into a create emit or a data property | the checker refuses each, naming the operator (rule P6); the shipped definitions still check | Theorems 5.3 and 7.1, if P6 is adopted |
 | T-NODATA-NEW-MEMBER | `A_roll_up_key_with_a_new_member_without_a_record_is_not_in_no_data` | a roll-up key with one member long silent and one member that appeared less than the time to live ago and has no record | engine and reference agree, and the key is in no data only if every member is | Def. 7.16, set B's roll-up rule |
 | T-NODATA-RETURN | `A_subject_that_returns_is_not_in_no_data_before_its_time_to_live` | an element with an old record that leaves the structural input and returns | after the return the element is not in no data until the time to live has passed since its return | Def. 7.16 with the proposed `e(k)` |
+| T-AMBKEY | `An_edit_of_an_element_with_two_keys_is_rejected_AmbiguousKey` | a lens over authored rows whose key domain has an equivalence, two rows whose keys are bound to one entity, then an update and a delete of that entity in the view | each edit is rejected `AmbiguousKey` and changes nothing; an element with one key is still accepted | Def. 8.4 and Theorem 8.2 (c), the accepted domain; engine-core builds the check (2026-11-12), not yet committed |

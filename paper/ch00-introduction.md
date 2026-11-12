@@ -70,7 +70,7 @@ Seven terms carry the rest of the paper. Each has a number so that later chapter
 **Definition 0.6 (derived view).** A derived graph, or a document made from derived graphs, that is shown to a person.
 *Example:* a picture of the three services with their states, or a report with one line per service.
 
-**Definition 0.7 (graph data and telemetry).** A property of an entity or relationship is either *graph data* or *telemetry*. Graph data are part of what the graph is: two graphs with different graph data are different graphs, and every change of graph data is recorded as a new version of the graph. Telemetry is a series of measurements over time attached to an entity or relationship. It changes all the time and creates no new version (Ch. 3, Ch. 7).
+**Definition 0.7 (graph data and telemetry).** A property of an entity or relationship is either *graph data* or *telemetry*. Graph data are part of what the graph is: two graphs with different graph data are different graphs, and every change of graph data is recorded as a new version of the graph. Telemetry is a series of measurements over time attached to an entity or relationship. It changes all the time and creates no new version (Ch. 3, Ch. 7). The graph data of a graph form its *structural plane*, its telemetry its *telemetry plane*.
 *Example:* the name of a service is graph data. The number of calls it answered in each minute is telemetry.
 
 Four ideas follow from these terms. Each is the subject of later chapters.
@@ -108,7 +108,7 @@ The design rests on five facts about real sources. Each is taken from the source
 **Fact 0.5 (the common telemetry format).** In OpenTelemetry, a widely used format for measurements, each measurement names the thing it describes by a set of attributes ([otel-resource], [otel-schemas]).
 *Consequence:* such attributes help to recognise an entity, but they are not a name that all sources share.
 
-Together: no source gives a consistent picture of one moment. An engine must treat what it receives as evidence, and must treat absence as unknown unless a source declares otherwise.
+Together: no source gives a consistent picture of one moment. The program that reads the sources, computes the graphs and keeps their history is called the *engine* in this paper. It must treat what it receives as evidence, and must treat absence as unknown unless a source declares otherwise.
 
 ## 0.5 Requirements
 

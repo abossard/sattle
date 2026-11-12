@@ -374,7 +374,38 @@ What the replay found and what was changed for it:
 
 - The notations do not yet have everything of the node canvas (9.8), so both stay in the editor view.
 - A screen reader pass, frame times in a browser, and a user study are not done.
-- When the workload model replaces the example model, the catalog fixtures are written again and the walkthroughs that name the removed modules move.
+
+### 9.12 The same on the workload model (12 November 2026)
+
+The engine replaced the example health model by a workload model: two projections, the structure of one workload (what it is made of, what it talks to, what each part depends on and how that was found) and its health (an abstract component type with subtypes, a lift, many joins, unions and distinct steps, series with a fill and a time to live, thresholds with parameters from the rows and a "no data" state, a traverse). The catalog fixtures were written again from it, and the walkthroughs that read the removed modules moved: the health roll-up is replaced by the workload health (140 operators, 828 commands, made from the definition in the catalog), and the six that each exercise one operator are projections of the workload module now.
+
+All twenty builds are accepted by the engine, print the canonical text of the original and preview to the same digest [T, with an engine]:
+
+| projection | structure | steps | blocks | wires |
+|---|---|---|---|---|
+| deployment health (2 entities, 1 relationship) | 1,005 keys, 124 clicks | 897, 232 | 889, 226 | 897, 237 |
+| service tree with lift (4, 4) | 787, 120 | 707, 200 | 664, 192 | 707, 202 |
+| workload health (55, 66) | 6,113, 1,012 | 5,352, 1,773 | 5,111, 1,711 | 5,352, 1,813 |
+| series with threshold (4, 0) | 424, 72 | 367, 129 | 357, 123 | 367, 135 |
+| fixpoint closure (0, 28) | 210, 64 | 161, 113 | 162, 108 | 161, 120 |
+
+Sums, priced as in 9.10: structure 8,539 keys and 1,392 clicks (3,517 s), steps 7,484 and 2,447 (4,678 s), blocks 7,183 and 2,360 (4,505 s), wires 7,484 and 2,507 (4,756 s). The three notations that are reached by pointer cost 28% to 35% more than the structure editor, as on the old model.
+
+What the move found:
+
+- A property to set on an emitted entity was offered only from the type itself, not from the types it extends; a workload service could not be given the key every component has. The choice now follows the supertypes.
+- A fixpoint relation must be plain rows: the closure of the roll-up edge carries keys, and the two ends of each edge are found again by key.
+- The previews of three walkthroughs hold fewer elements than before (the deployment health 2 entities and 1 relationship where it had 3 and 2), because the estate's data changed with the model; their floors were lowered, text and digests are equal.
+
+### 9.13 The engine's answers per operator (engine 3.21)
+
+Three of the four needs of section 7 are now answered by the engine, and the notations use them [T][B]:
+
+- **Rows after each step.** The Steps notation runs the projection on the space's data on request and shows under each step its rows: how many there are, the first twenty, and whether that is all of them. An element is shown by its name, never by its id: by the name the match read from it, else by the name the data the workspace holds gives it. A point in time is shown as a date. A statement that the engine plans as several operators (a lift) shows the rows of its own output. The rows of an earlier version of the draft are marked as such. On the service tree, the lift shows its 24 rows per window and service pair, named `web` and `api`.
+- **Columns after each step.** Every step in the Steps notation says what it gives (`src: infra.Service, windowStart: Instant, drops: Integer (telemetry), ...`), from the engine's check of the draft, before anything runs.
+- **References in the palette.** Which references an operator has, whether each is required and where its target is found come from the palette. A choice now offers only what the scope allows: the types of the output ontology for what an emit creates, the types of the graph a step reads for what a lift or a traversal follows. On every projection of the catalog the target each reference has is among its choices. The editor's own table remains for the wording, and for the one kind of definition an emit points at where the palette allows two.
+
+Still open: completion of field names while an expression is typed (the columns are known now, the typing is not yet guided by them), and the number of matches of a pattern in By example (a preview per pattern).
 
 ## References
 
