@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The default run: everything except Category=Capture (replays of the real captures, which are not in the repository). The full run (tests/all.runsettings) includes them. -->
+<RunSettings>
+  <RunConfiguration><TestCaseFilter>Category!=Capture</TestCaseFilter></RunConfiguration>
+</RunSettings>

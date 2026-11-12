@@ -1,0 +1,26 @@
+// The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.
+graph deploymentHealth : acme.deployhealth;
+declare query_parameters(minReady:long = 0);
+
+let deployments = graph("master")
+    | graph-match (d) where labels(d) has "Deployment"
+      project deployment = d.id, cluster = d.cluster, namespace = d.namespace, name = d.name, replicas = d.replicas;
+// every Deployment counts zero and every ready pod one, so a Deployment without ready pods still has a row
+let status = union
+        (deployments | project cluster, namespace, name, n = 0),
+        (graph("master") | graph-match (p)-[c]->(d) where labels(c) has "ControlledBy" and coalesce(p.ready, false)
+            project cluster = d.cluster, namespace = d.namespace, name = d.name, n = 1)
+    | summarize readyPods = sum(n) by cluster, namespace, name
+    | extend state = iff(readyPods > minReady, "Healthy", "Unhealthy");
+
+nodes Workload on deployment = deployments;
+extend nodes Workload on workload = status | project workload = identity("deploymentName", cluster, namespace, name), readyPods, state;
+// traffic between pods of two Deployments, Unhealthy when either end is
+edges Talks from src to dst = graph("master")
+    | graph-match (a)-[k]->(b), (a)-[x]->(da), (b)-[y]->(db)
+      where labels(k) has "Calls" and labels(x) has "ControlledBy" and labels(y) has "ControlledBy" and da.id != db.id
+      project sc = da.cluster, sn = da.namespace, sm = da.name, tc = db.cluster, tn = db.namespace, tm = db.name
+    | join kind=inner (status | project sc = cluster, sn = namespace, sm = name, srcState = state) on sc, sn, sm
+    | join kind=inner (status | project tc = cluster, tn = namespace, tm = name, dstState = state) on tc, tn, tm
+    | project src = identity("deploymentName", sc, sn, sm), dst = identity("deploymentName", tc, tn, tm),
+              state = iff(srcState == "Unhealthy" or dstState == "Unhealthy", "Unhealthy", "Healthy");

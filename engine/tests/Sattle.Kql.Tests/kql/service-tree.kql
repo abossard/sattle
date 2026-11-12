@@ -1,0 +1,38 @@
+// The service tree: the services of each namespace, and who calls whom, from the calls between their pods.
+graph serviceDeps : acme.svc;
+
+let services = graph("master")
+    | graph-match (s) where labels(s) has "Service"
+      project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;
+let backing = graph("master")
+    | graph-match (p)-[b]->(s) where labels(b) has "Backs"
+      project pod = p.id, service = s.id;
+// a call between two pods is a call between the services they back; a pod that backs two services counts for both
+let calls = graph("master")
+    | graph-match (a)-[c]->(b) where labels(c) has "Calls"
+      project call = c.id, srcPod = a.id, dstPod = b.id
+    | join kind=inner (backing | project srcPod = pod, src = service) on srcPod
+    | join kind=inner (backing | project dstPod = pod, dst = service) on dstPod
+    | where src != dst
+    | join kind=inner (services | project src = service, cluster, namespace) on src;
+let flows = calls
+    | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, cluster, namespace, windowStart;
+
+nodes ServiceNode on service = services;
+extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;
+nodes ServiceGroup on group = services
+    | summarize services = count() by cluster, namespace
+    | extend group = identity("serviceGroup", cluster, namespace);
+edges Contains from group to service = services | project service, group = identity("serviceGroup", cluster, namespace);
+edges DependsOn from src to dst = calls | distinct src, dst;
+extend edges DependsOn from src to dst = flows
+    | project src, dst, windowStart, flows, drops, dropRatio = iff(flows > 0, drops / flows, 0.0), flowRate = rate(flows);
+extend edges DependsOn from src to dst = flows
+    | project src, dst, windowStart, value = iff(flows > 0, drops / flows, 0.0), above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3
+    | invoke hysteresis("degraded", "ok", "ok")
+    | project src, dst, status = state;
+extend nodes ServiceNode on src = flows | summarize flowsOut = sum(flows) by src, windowStart;
+extend nodes ServiceGroup on group = flows
+    | summarize flowsOut = sum(flows) by cluster, namespace, windowStart
+    | project group = identity("serviceGroup", cluster, namespace), windowStart, flowsOut;

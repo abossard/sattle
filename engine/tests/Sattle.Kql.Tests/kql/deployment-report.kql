@@ -1,0 +1,17 @@
+// A report on the health of the Deployments as a document: counts and one line per Deployment.
+graph deploymentReport : sattle.doc;
+
+let workloads = graph("health")
+    | graph-match (w) where labels(w) has "Workload"
+      project key = strcat(w.cluster, "/", w.namespace, "/", w.name), namespace = w.namespace, name = w.name,
+              state = coalesce(w.state, "Unknown"), readyPods = w.readyPods;
+let totals = workloads | summarize total = count(), unhealthy = countif(state == "Unhealthy") by k = "all";
+
+nodes Block on block = datatable(k:string) ["title"]
+    | project block = identity("block", "title", k), ['kind'] = "heading", ['order'] = "0", level = 1, text = "Deployment health";
+nodes Block on block = totals | project block = identity("block", "total", k), ['kind'] = "stat", ['order'] = "1/total", text = "Deployments", n = total;
+nodes Block on block = totals | project block = identity("block", "unhealthy", k), ['kind'] = "stat", ['order'] = "1/unhealthy", text = "Unhealthy deployments", n = unhealthy;
+nodes Block on block = datatable(k:string) ["header"]
+    | project block = identity("block", "header", k), ['kind'] = "header", ['order'] = "2", a = "Namespace", b = "Deployment", c = "State", d = "Ready pods";
+nodes Block on block = workloads
+    | project block = identity("block", "row", key), ['kind'] = "row", ['order'] = strcat("3/", key), a = namespace, b = name, c = state, n = readyPods;

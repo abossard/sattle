@@ -1,0 +1,39 @@
+// Library of the KQL form: five functions the engine provides. Each one is plain KQL, so Kusto tools check calls to it;
+// the engine recognises them by name and maintains them incrementally.
+
+// The telemetry of a graph: one row per element, property and closed window of the last `lookback`.
+let telemetry = (g:string, lookback:timespan) {
+    Telemetry | where graph == g and windowStart > now() - lookback | project id, property, windowStart, value
+};
+// The same, with every window in which the source reported but the element had no value set to `fill`,
+// and `noData` true for an element that has not reported for `ttl`.
+let telemetry_filled = (g:string, lookback:timespan, ttl:timespan, fill:real) {
+    Telemetry | where graph == g and windowStart > now() - lookback | project id, property, windowStart, value = coalesce(value, fill), noData
+};
+// The id of a node that is not an element of an input graph: the identity domain and the key values.
+let identity = (domain:string, k1:string, k2:string = "", k3:string = "") { strcat(domain, "/", k1, "/", k2, "/", k3) };
+// A threshold with hysteresis per key (all columns that are not windowStart, value, the four thresholds or noData):
+// the state becomes `high` after `enterAfter` consecutive windows at or above `above`, and `low` after `exitAfter`
+// consecutive windows at or below `below`; a window with noData sets `nodata`. One row per key with the latest state.
+let hysteresis = (T:(windowStart:datetime, value:real, above:real, enterAfter:long, below:real, exitAfter:long), high:string, low:string, initial:string, nodata:string = "") {
+    T
+    | extend key = tostring(bag_remove_keys(pack_all(), dynamic(["windowStart", "value", "above", "enterAfter", "below", "exitAfter", "noData"])))
+    | sort by key asc, windowStart asc
+    | scan declare (state:string = "", up:long = 0, down:long = 0, prev:string = "") with (
+        step s output=all: true =>
+            prev = key,
+            up = iff(value >= above, iff(key == s.prev, s.up + 1, 1), 0),
+            down = iff(value <= below, iff(key == s.prev, s.down + 1, 1), 0),
+            state = case(
+                column_ifexists("noData", false), nodata,
+                key != s.prev and value >= above and enterAfter <= 1, high,
+                key != s.prev, initial,
+                s.state == low and value >= above and s.up + 1 >= enterAfter, high,
+                s.state == high and value <= below and s.down + 1 >= exitAfter, low,
+                s.state);
+    )
+    | summarize arg_max(windowStart, *) by key
+    | project-away key, up, down, prev, windowStart, value, above, enterAfter, below, exitAfter
+};
+// Per second: the engine divides by the period of the telemetry property and gives the value the unit 1/s; this definition assumes a period of one minute.
+let rate = (x:real) { x / 60.0 };
