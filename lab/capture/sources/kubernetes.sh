@@ -26,12 +26,49 @@ list)
     echo "$raw" | jq -c '{path:"'"$p"'", resourceVersion:.metadata.resourceVersion}' >> "$out/.versions.ndjson"
   done ;;
 watch)
-  secs="$3"
+  secs="$3"; end=$(( $(date +%s) + secs ))
+  # One watch per kind until the window ends. A watch the server ends early resumes from the last version it delivered.
+  # A watch that fails, or whose version the server no longer has, is reported with the reason and fails the script
+  # after the other kinds have finished: the file capture has no relist, so that kind has a hole.
+  watch_kind() {
+    local p="$1" rv="$2" file err left meta last
+    file="$out/watch.$(name "$p").ndjson"; err="$out/.watch.$(name "$p").err"
+    while left=$(( end - $(date +%s) )); [ "$left" -gt 0 ]; do
+      meta=$(jq -nc --arg p "$p" --arg rv "$rv" '{path:$p, startResourceVersion:$rv}')
+      if ! kubectl get --raw "$p?watch=1&allowWatchBookmarks=true&resourceVersion=$rv&timeoutSeconds=$left" 2>"$err" \
+          | wrap --source kubernetes-watch --meta "$meta" --out "$file"; then
+        echo "watch $p failed: $(tail -1 "$err")" >&2; return 1
+      fi
+      last=$(tail -1 "$file" 2>/dev/null | jq -r 'if .payload.type == "ERROR" then "ERROR" else (.payload.object.metadata.resourceVersion // "") end' 2>/dev/null) || last=""
+      if [ "$last" = ERROR ]; then echo "watch $p failed: the server ended it with an error event (resourceVersion $rv expired?)" >&2; return 1; fi
+      [ -n "$last" ] && rv="$last"
+      sleep 1
+    done
+  }
+  watches=() # path:pid
   while read -r v; do
-    p=$(echo "$v" | jq -r .path); rv=$(echo "$v" | jq -r .resourceVersion)
-    meta=$(jq -nc --arg p "$p" --arg rv "$rv" '{path:$p, startResourceVersion:$rv}')
-    kubectl get --raw "$p?watch=1&allowWatchBookmarks=true&resourceVersion=$rv&timeoutSeconds=$secs" 2>/dev/null \
-      | wrap --source kubernetes-watch --meta "$meta" --out "$out/watch.$(name "$p").ndjson" &
+    watch_kind "$(echo "$v" | jq -r .path)" "$(echo "$v" | jq -r .resourceVersion)" & watches+=("$(echo "$v" | jq -r .path):$!")
   done < "$out/.versions.ndjson"
-  wait ;;
+  # SIGTERM or SIGINT (capture.sh stopping) ends the watches early and is not a failure
+  stopped=0
+  # the watcher first, so it cannot start another round, then what it was running (kubectl, wrap)
+  stop_watches() {
+    stopped=1
+    local w pid kids
+    for w in ${watches[@]+"${watches[@]}"}; do
+      pid="${w##*:}"; kids=$(pgrep -P "$pid" 2>/dev/null || true)
+      kill "$pid" 2>/dev/null || true        # (set -e is on: a watcher that already ended must not stop this loop)
+      if [ -n "$kids" ]; then kill $kids 2>/dev/null || true; fi
+    done
+    return 0
+  }
+  trap stop_watches TERM INT
+  status=0
+  for w in ${watches[@]+"${watches[@]}"}; do
+    code=0; wait "${w##*:}" || code=$?
+    if [ "$stopped" = 1 ] && [ "$code" -ge 128 ]; then code=0; wait "${w##*:}" || code=$?; fi
+    # 128 and up here is a watch that was stopped on purpose
+    if [ "$code" -ne 0 ] && [ "$code" -lt 128 ]; then status=1; fi
+  done
+  exit "$status" ;;
 esac

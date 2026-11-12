@@ -67,14 +67,40 @@ fixtures/build.sh captures/<timestamp>
 - Without Azure: the public tests and the default canvas view use the synthetic estate (`engine/tests/Sattle.Tests/fixtures/build-estate.py`, owned by the engine). `lab/fixtures` is only for people who captured their own data.
 - Tests (scrubber, hooks with stand-ins for `az` and `azd`, forwarder sink and consumer stop rule; no Azure needed): `cd capture && npm test`.
 
-## From nothing to fixtures
-| Step | Command (in `lab/`) | Cost | Leaves behind |
-|---|---|---|---|
-| 1. Deploy | `azd env new ...`, `azd env set SATTLE_AKS_RG ...`, `azd env set SATTLE_AKS_NAME ...`, `azd up` | about 3 minutes; Event Hubs Standard 1 TU about 0.03 USD per hour, storage cents per day, ACNS per node hour while enabled | `rg-sattle-lab`, additions to the cluster, the subscription and `NetworkWatcherRG` (listed above), `.azure/` and `.kube/config` here |
-| 2. Capture | `capture/capture.sh 420` | about 10 minutes (the window, then the pulls) | `captures/<timestamp>/` (about 1 GB), gitignored |
-| 3. Fixtures | `fixtures/build.sh captures/<timestamp>` | about 2 minutes, no Azure calls | `fixtures/**/*.ndjson`, gitignored |
-| 4. Tear down | `azd down` | about 2.5 minutes | the platform's own leftovers (see above); the captures and fixtures stay |
-Steps 2 and 3 can be repeated against the same deployment; run step 4 when done, the costs run until then.
+## From a fresh clone to fixtures
+Run in `lab/`, with the prerequisites above.
+1. Deploy the lab. About 3 minutes. From then on Event Hubs costs about 0.03 USD per hour, storage cents per day, ACNS per node hour.
+   ```bash
+   azd env new sattle --subscription <subscription id> --location <region>
+   azd env set SATTLE_AKS_RG <aks-resource-group>
+   azd env set SATTLE_AKS_NAME <aks-name>
+   azd up
+   ```
+2. Capture and build the fixtures in one command. About 12 minutes: a 420 s window, the pulls, then about 2 minutes for the scrub and its verify.
+   ```bash
+   ./capture-to-fixtures.sh 420
+   ```
+   It is `capture/capture.sh 420` followed by `fixtures/build.sh captures/<timestamp>` on exactly that capture; the two can also be run one after the other, and `build.sh` alone on any older capture. If a stream died during the capture it stops before the build and prints the `build.sh` command to use the incomplete capture anyway.
+3. Run the engine's tests that replay the fixtures (they are skipped on a clone without them). They assert properties that hold for any capture (no rejected record, rows of every source, determinism, batch invariance, retention, serve equals replay), not values of one capture. The second command prints the replay summary.
+   ```bash
+   cd ../engine && dotnet test --settings tests/fixtures.runsettings
+   ```
+   ```bash
+   cd ../engine && dotnet run --project src/Sattle.Cli -- replay ../lab/fixtures
+   ```
+4. Tear down. About 2.5 minutes. Check that the list `azd down` shows holds only the lab's resource group.
+   ```bash
+   azd down
+   ```
+
+What stays on your machine, and why none of it is committed (all git-ignored):
+- `captures/<timestamp>/` (about 1 GB): the raw capture, with real subscription, tenant, resource, user and address values.
+- `captures/.scrub-salt`: the secret the aliases are derived from. With it an alias could be linked back to a real value.
+- `fixtures/**/*.ndjson`: scrubbed, but derived from one real environment. Its shape (which resource types, how many nodes, which operations ran when) still describes that environment, and a scrub rule can miss a field no one has seen yet. The public tests use the synthetic estate instead.
+- `fixtures/space-arguments.json`: the aliases of this capture's cluster and groups for the engine's space. It only fits the fixtures next to it.
+- `.azure/` and `.kube/config`: the azd environment and the lab's kubeconfig.
+
+One lab per subscription: the hooks own one Activity Log diagnostic setting and one flow log by fixed names. `preprovision.sh` stops when the lab's resource group already exists and was not created by this azd environment, or when the Activity Log setting already feeds another lab.
 
 ## Cost
 - ACNS: per node hour for as long as it is enabled on the cluster. Not removed by default.

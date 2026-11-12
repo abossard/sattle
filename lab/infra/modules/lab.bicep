@@ -2,6 +2,8 @@ param location string
 param tags object
 param suffix string
 param principalId string
+@description('User for a person, ServicePrincipal for a pipeline identity')
+param principalType string = 'User'
 param flowLogRetentionDays int
 
 var hubs = {
@@ -56,7 +58,7 @@ resource roles 'Microsoft.Authorization/roleAssignments@2022-04-01' = [for r in 
   name: guid(ns.id, principalId, r)
   properties: {
     principalId: principalId
-    principalType: 'User'
+    principalType: principalType
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', r)
   }
 }]
@@ -85,7 +87,7 @@ resource blobReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(flowStorage.id, principalId, '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
   properties: {
     principalId: principalId
-    principalType: 'User'
+    principalType: principalType
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
   }
 }

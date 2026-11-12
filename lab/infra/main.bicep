@@ -10,6 +10,7 @@ param labResourceGroup string = 'rg-sattle-lab'
 
 @description('Object id of the user that gets Event Hubs data sender and receiver roles and blob read access.')
 param principalId string
+param principalType string = 'User'
 
 @description('Id of the AKS-managed VNet and of the node subnet. Used only as references by the private endpoint.')
 param aksVnetId string
@@ -34,6 +35,7 @@ module lab 'modules/lab.bicep' = {
     tags: tags
     suffix: suffix
     principalId: principalId
+    principalType: principalType
     flowLogRetentionDays: flowLogRetentionDays
   }
 }

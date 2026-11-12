@@ -4,7 +4,7 @@
 set -euo pipefail
 source "$(dirname "$0")/lib.sh"; load_context
 secs="${1:-420}"
-ts=$(date -u +%Y%m%dT%H%M%SZ)
+ts="${CAPTURE_TS:-$(date -u +%Y%m%dT%H%M%SZ)}"   # capture-to-fixtures.sh names the directory in advance
 out="$LAB_DIR/captures/$ts"; mkdir -p "$out"
 src="$CAP_DIR/sources"
 echo "capture -> $out (stream window ${secs}s)"
