@@ -1,4 +1,4 @@
-# H8 element view at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session): sattle bench b8, ten runs. Machine under load, see the load figures below.
+# H8 element view at engine commit engine-of-evaluation-6 (clean export of HEAD, Release build, run by the paper session): sattle bench b8, ten runs. Machine under load, see the load figures below.
 == b8 load before: 23.39 38.86 54.43
 # B8 element view: structure at head joined with 60 windows (1 h at 60 s) of 4 series for 10,000 elements, hot plane only, 10 runs
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.15, Release=True, load average at start 23.39 38.86 54.43

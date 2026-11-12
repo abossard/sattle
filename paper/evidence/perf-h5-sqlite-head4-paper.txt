@@ -1,4 +1,4 @@
-# H5 source to graph, sqlite store, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session): sattle bench b5 --store sqlite, ten runs. Machine under load, see the load figures below.
+# H5 source to graph, sqlite store, at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session): sattle bench b5 --store sqlite, ten runs. Machine under load, see the load figures below.
 == b5-sqlite load before: 44.16 50.63 48.34
 # B5 source to graph: capture 20261110T140542Z, store sqlite, 10 runs, one record per ingest call
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 44.16 50.63 48.34

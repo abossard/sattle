@@ -1,4 +1,4 @@
-# Canvas at commit 53db46e against the engine at 4841a36 (both from a clean export of HEAD, run by the paper session; Chrome headless over CDP; engine: sattle serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth).
+# Canvas at commit canvas-of-evaluation-8 against the engine at engine-of-evaluation-9 (both from a clean export of HEAD, run by the paper session; Chrome headless over CDP; engine: sattle serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth).
 
 ## canvas: npx tsc --noEmit
 tsc exit 0

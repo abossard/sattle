@@ -1,4 +1,4 @@
-# sattle replay at engine commit 4841a36 (Release build, clean export of HEAD, default options, --out DIR, the local space overlay applied, run by the paper session), capture 20261110T105738Z
+# sattle replay at engine commit engine-of-evaluation-9 (Release build, clean export of HEAD, default options, --out DIR, the local space overlay applied, run by the paper session), capture 20261110T105738Z
 capture 20261110T105738Z, space operations, cluster <redacted>, store memory, speed max
 replayed 245,345 record(s) in 4.7 s, capture span 5679 s, 14 logical-time advance(s), 1636 chunk(s)
 records by source: activity-log=5,000, arg=361, arg-page=5, azure-metrics=20, eventhub:sattle-activity=617, eventhub:sattle-aks=749, hubble=235,858, kubernetes-list=1,085, kubernetes-watch=1,112, prometheus=16, vnet-flow-log=522 (5 not consumed: no adapter in this slice)

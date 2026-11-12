@@ -28,7 +28,7 @@
 | open | 4 | 4 | 0 |
 | all | 113 | 113 | 113 |
 
-Of the 105 statements counted as proved in one of the three ways, 2 are checked by a differential harness against an independent reference evaluator (Theorems 6.1 and 6.2; the engine passes it since `ad83e63`), 10 by seeded property tests that a review found weakened, 54 by example tests or measurements only, some of them void or weakened (last section but one), and 39 by reading only. Of the fifteen statements closed in the gate 1a pass, nine were **restated** because their first form was false or too strong (2.5, 5.2, 5.6, 5.7, 7.5, 8.7, 9.7, 11.6, 13.5), and seven are proved under named premises (4.11, 5.2, 5.6, 5.7, 10.5, 10.7, 10.8). "Proved under premises" is not "proved": the premise is the part that a test must still check.
+Of the 105 statements counted as proved in one of the three ways, 2 are checked by a differential harness against an independent reference evaluator (Theorems 6.1 and 6.2; the engine passes it since evaluation 12), 10 by seeded property tests that a review found weakened, 54 by example tests or measurements only, some of them void or weakened (last section but one), and 39 by reading only. Of the fifteen statements closed in the gate 1a pass, nine were **restated** because their first form was false or too strong (2.5, 5.2, 5.6, 5.7, 7.5, 8.7, 9.7, 11.6, 13.5), and seven are proved under named premises (4.11, 5.2, 5.6, 5.7, 10.5, 10.7, 10.8). "Proved under premises" is not "proved": the premise is the part that a test must still check.
 
 ## The table
 
@@ -40,7 +40,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 1.4 | allocation is a pure function, shared identity | proved | allocation is a function of the key; collision resistance assumed | example tests |
 | Theorem 1.5 | timeless binding | proved | case analysis over the three binding rules | example tests |
 | Theorem 1.6 | canonicalization change keeps ids | proved | totality of the migration; conflict case excluded | nothing: reading only |
-| Theorem 1.7 | merge and split | proved | invariant on forwarding chains (strictly decreasing ids) | example tests (`IdentityMergeTests.cs`); **weakened**: assertions were loosened in the commit that changed the rule |
+| Theorem 1.7 | merge and split | proved | invariant on forwarding chains (strictly decreasing ids); hypothesis added at the second reading: a record leaves only a current representative | example tests (`IdentityMergeTests.cs`); **weakened**: assertions were loosened in the commit that changed the rule |
 | Proposition 1.8 | order-independent survivor | proved | induction on the operation sequence with an invariant | example tests (weakened, as 1.7), two captures at five chunk sizes; no generated orders |
 | Theorem 2.1 | conformance is decidable | proved | finite check over a finite graph | example and mutation tests (`KernelTests.cs`) |
 | Theorem 2.2 | the kernel is self-describing | tested | finite check executed by the engine | executed at start-up; mutation tests; the edge-count assertion cannot fail |
@@ -60,7 +60,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 4.2 | application respects composition, T2 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
 | Theorem 4.3 | inverse law, T1 | proved | guards of the inverse match the result | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
 | Theorem 4.4 | edit order is irrelevant; dangling edges remove intra-patch ordering | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
-| Proposition 4.5 | algebraic structure, correction of the review | proved | from the definitions and the results its status names | nothing: reading only |
+| Proposition 4.5 | algebraic structure, correction of the review | proved, restated | patches as partial injections on graphs; inverse category after adding a zero; groupoid on revisions only in net form | nothing: reading only |
 | Theorem 4.6 | group of signed deltas, T3 | proved | pointwise group of integer weights | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
 | Theorem 4.7 | delta is a homomorphism, T4 | proved | computation on facts | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
 | Theorem 4.8 | materialization and conversion, T4 | proved | from the definitions and the results its status names | seeded property tests, 4,000 cases per property (`AlgebraTests.cs`); **weakened**: the generator keeps only patches that the engine's own check accepts, so a wrong rejection cannot be seen |
@@ -79,7 +79,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Proposition 5.10 | lifting is a quotient | proved | direct from Def. 5.17 | 28 and 36 example cases (`ProjectionEdgesTests.cs`, `LiftTests.cs`) |
 | Proposition 5.11 | conservation | proved | partition of the edges by fibre | the same cases |
 | Proposition 5.12 | lifting composes | proved | composition of partial functions; sums over a disjoint union | two cases against a one-step lift |
-| Theorem 6.1 | incremental correctness, T5 | proved, cited | structural induction on the plan; chain rule; two cited theorems of [budiu2023], statements checked against the arXiv text; cases added at gate 1a: `Match`, operators filtered by the frontier, `Threshold` as a fold of the recorded sequence, materialization | differential harness against an independent reference evaluator: at engine `ad83e63` the engine's incremental result equals the reference's batch result in all 32 worlds, under every batch cut and under reordering inside a batch (149 of 149, verified by the orchestrator). Not covered independently: `Lift` and `Fixpoint` (the reference uses the engine's lowering and unrolling), the type checker and the value library (shared), lens rules, partial windows, `Delta`. The earlier fixture evidence took its expected values from the engine itself |
+| Theorem 6.1 | incremental correctness, T5 | proved, cited | structural induction on the plan; chain rule; two cited theorems of [budiu2023], statements checked against the arXiv text; cases added at gate 1a: `Match`, operators filtered by the frontier, `Threshold` as a fold of the recorded sequence, materialization | differential harness against an independent reference evaluator: at the engine of evaluation 12 the engine's incremental result equals the reference's batch result in all 32 worlds, under every batch cut and under reordering inside a batch (149 of 149, verified by the orchestrator). Not covered independently: `Lift` and `Fixpoint` (the reference uses the engine's lowering and unrolling), the type checker and the value library (shared), lens rules, partial windows, `Delta`. The earlier fixture evidence took its expected values from the engine itself |
 | Theorem 6.2 | batch invariance, T6, ADR-009 | proved | from Theorem 6.1 and four premises B1 to B4 (B4 found at gate 1a); one known exception (Law 7.5, remark) | differential harness as for 6.1 (every cut, reordering inside a batch); both captures at five chunk sizes; targeted tests of B1 and B2; B3 on examples and the `link` world; B4 by the harness as far as its worlds put an advance and a structure change into one step (T-B4) |
 | Theorem 6.3 | replay determinism, T7 | proved | function of the recorded input sequence | two replays compared on fixtures; capture tests |
 | Theorem 6.4 | reconstruction and handoff, T8 | proved | from the definitions and the results its status names | example tests on memory and SQLite (`StoreTests.cs`) |
@@ -91,7 +91,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 7.2 | additivity and roll-up | proved | additivity of exact sums | nothing: reading only |
 | Theorem 7.3 | replayable telemetry-derived structure, L12 | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 7.4 | bounded revision churn | proved | counting of runs of a state machine | one example test |
-| Law 7.5 | series identity under graph change | proved, restated | items 1 and 2 from Def. 7.3, 7.9, 3.6; item 3 from Theorem 7.2 for the cases in which the as-if value is a function of the two windows; the remaining case is an open ruling and not claimed | nothing: reading only. The engine adds windows for every property (D36) |
+| Law 7.5 | series identity under graph change | proved, restated; item 3 ruled | items 1 and 2 from Def. 7.3, 7.9, 3.6; item 3: stored windows combine as monoid values where the combine rule gives one, otherwise equal values or no value with a counted conflict; commutative and associative; a merged value is always the as-if value (Theorem 7.2) | nothing: reading only. The engine differs in four places (D37) |
 | Theorem 7.6 | element view is well defined | proved | from the definitions and the results its status names | nothing: reading only |
 | Proposition 7.7 | roll-up | proved | monotone maximum; state is a function of `A` and the threshold states; churn from Theorems 5.3 and 7.4 | one fixture test, two captures; that the engine's `health` graph equals Def. 7.12 is tested by example only |
 | Proposition 7.8 | bounded reach | proved | breadth-first reach | example test |
@@ -104,7 +104,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 8.7 | TGG laws for the v1 fragment, T12 | proved, restated | for the grammar of Def. 8.7 and `FWD` of Def. 8.8: a lemma on the shape of the language, then determinism, correctness, completeness, hippocraticness; counterexample to the first form | nothing: reading only. `sync` is not built, so no engine evidence can exist |
 | Theorem 9.1 | edit replay, T13 | proved | from the definitions and the results its status names | example tests |
 | Theorem 9.2 | an edit is not recomputation from scratch, ADR-073 | proved | counterexample | nothing: reading only |
-| Theorem 9.3 | rebuild is exact for graph-input projections | proved | from the definitions and the results its status names | nothing: reading only |
+| Theorem 9.3 | rebuild is exact for graph-input projections | proved, restated | from Theorem 6.1; hypothesis added: operators that are functions of the integrated input and the frontier (no `Threshold`) | nothing: reading only |
 | Theorem 9.4 | evidence is a derived index of the log | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 9.5 | support semantics, ADR-075, ADR-076 | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 9.6 | definitions are pinned, replay of history | proved | from the definitions and the results its status names | nothing: reading only |
@@ -154,9 +154,9 @@ Each closes a premise or a gap named in a chapter. Name, what it generates, what
 
 | Id | Test name | Generates | Asserts | Closes |
 |---|---|---|---|---|
-| T-B3 | `Identity_is_independent_of_key_arrival_order_on_generated_inputs` | per seed: 5 to 40 keys of one domain, links that form a random partition, 20 random orders of the first uses and links, 3 random chunkings of each | for every key, `Rep` is the smallest own id of its class; the state digest is equal across all orders and chunkings; every forwarding record points to a smaller id | premise B3 of Theorem 6.2, the engine side of Proposition 1.8 |
+| T-B3 | `Identity_is_independent_of_key_arrival_order_on_generated_inputs` | per seed: 5 to 40 keys of one domain, links that form a random partition, 20 random orders of the first uses and links, 3 random chunkings of each; one world with a `Group` (a count and a sum) keyed by the identity that merges | for every key, `Rep` is the smallest own id of its class; the state digest is equal across all chunkings of one order; every forwarding record points to a smaller id; the grouped count and sum of a merged entity equal those of one group over both keys (Theorem 6.1; expected to fail today, D37) | premise B3 of Theorem 6.2, the engine side of Proposition 1.8, deviation D37 |
 | T-B1 | `A_telemetry_sink_whose_group_key_is_finer_than_its_element_key_is_rejected` | projections with a `Rollup` or `Group` over telemetry whose keys canonicalize to one element key | the checker refuses them with a typed error | premise B1 as a checker rule (O6.7) |
-| T-INC (exists as the differential harness since `3629c63`, passes since `ad83e63`) | `The_engine_equals_the_reference_however_the_log_is_cut` and its siblings | per operator kind: random sequences of inserted and retracted rows, late rows inside the horizon, frontier advances | after every input, the sum of the output deltas equals a naive evaluation of the operator on the summed input | O6.1: that each strategy is the rule of Theorem 6.1 |
+| T-INC (exists as the differential harness since evaluation 11a, passes since evaluation 12) | `The_engine_equals_the_reference_however_the_log_is_cut` and its siblings | per operator kind: random sequences of inserted and retracted rows, late rows inside the horizon, frontier advances | after every input, the sum of the output deltas equals a naive evaluation of the operator on the summed input | O6.1: that each strategy is the rule of Theorem 6.1 |
 | T-FIX | `Fixpoint_on_cyclic_input_reaches_the_least_fixpoint_or_reports_the_bound` | random directed graphs with cycles (up to 30 nodes), a closure by `Fixpoint`, random edge retractions | with `max` at least the node count, the result equals a reference transitive closure, also after each retraction; with a smaller `max` the limit is reported and not silent; a body with an arithmetic assignment and no declared bound is refused (F5) | Theorems 6.5 and 6.6 on cyclic input, F5 as a checker rule |
 | T-LENS | `Lens_steps_satisfy_their_laws_on_generated_edits` | per step (`Filter`, a `Map` that drops fields, a one-element `Match`, an emit with literals): random source tables and accepted view edits, among them delete and create of one key | GetPut and PutGet always; PutPut where the rule declares it; a rule over a dropping `Map` that accepts `delete` cannot declare `putput` | Theorem 8.2, experiment Q3 |
 | T-LIFT | `A_lift_equals_definitions_5_17_and_5_18_on_generated_graphs` | random lower graphs (up to 50 nodes, counters over 8 or more windows), random mappings with nodes of 0, 1 and 2 images, each `images` policy, `selfloops`, `when`, two stacked mappings | the lifted edge set equals a reference implementation of Def. 5.17; counters equal the fibre sums per window; conservation under `images reject`; ratio and state equal a recomputation; two lifts equal the one-step lift | the lowering of `lift`, Propositions 5.10 to 5.12 on generated data, O5.8 |
@@ -170,14 +170,14 @@ Each closes a premise or a gap named in a chapter. Name, what it generates, what
 | T-PREVIEW | `A_complete_preview_equals_the_activation_a_commit_performs` | drafts over the fixtures with no input in between | the complete preview's output digest equals the digest after the commit | Proposition 9.10 (b) |
 | T-LIVE | `The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording` | per seed a shuffled envelope sequence of the fixtures with duplicates and records that are not envelopes, random flush points, a stand-in source that feeds the real `LiveInput.Run` | the recording holds the consumed envelopes once each and in order (LV1); a replay with the same horizon and options ends in the live digest (LV2, LV3); a replay with another horizon is reported as different or shown equal | premises LV1 to LV3 of Proposition 10.7 |
 | T-B4 | `A_threshold_gives_one_state_however_an_advance_and_a_structure_change_share_a_step` | worlds with a `Threshold` over a roll-up whose key an element leaves, windows that leave the retained range, random cuts that put the advance and the structure change into one step and into two | the state and the carried state equal the reference's fold of the sequence under every cut | premise B4 of Theorem 6.2 |
-| T-MERGE-TELE | `A_merge_combines_windows_as_if_written_under_the_survivor` | two ids with windows of a property per combine rule (`sum`, `min`, `max`, `mean`, `last`), rows before the link and after it | the merged window is the as-if value for `sum`, `min`, `max` and for equal values; for different values under `mean` or `last` the test records what the engine does in both orders | Law 7.5 item 3 (O7.6, D36) |
+| T-MERGE-TELE | `A_merge_combines_windows_as_if_written_under_the_survivor` | per combine rule (`sum`, `min`, `max`, a mean with sum and count, a mean as one number, a last with its order, a last without), two or three ids with windows, rows before the link and after it (among them rows that reach one window through two groups), every merge order | a monoid value and equal values give the as-if value; two different values that are not monoid values give no value and one counted conflict, also after a third id; the result is equal for every merge order and every chunking | Law 7.5 item 3 as ruled (O7.6, D36, D37). Fails today on the rows after the link and in the reference evaluator |
 
 ## An independent check exists, and what it shows
 
-Since engine commit `3629c63` the engine's tests hold a reference evaluator written from the definitions of this paper (`engine/tests/Sattle.Reference`, which uses the engine's value and language libraries and none of its runtime) and a differential harness (`engine/tests/Sattle.Differential`). The harness compares the engine with the reference per operator kind on generated inputs, with batch cuts and reorderings.
+Since the engine of evaluation 11a the engine's tests hold a reference evaluator written from the definitions of this paper (`engine/tests/Sattle.Reference`, which uses the engine's value and language libraries and none of its runtime) and a differential harness (`engine/tests/Sattle.Differential`). The harness compares the engine with the reference per operator kind on generated inputs, with batch cuts and reorderings.
 
-- **At `3629c63`** the engine failed 34 of 107 cases, on decimal keys, `Retain`, `count` together with `countDistinct`, `last` on ties, `Traverse` at the maximum depth, `Series` outside the look-back, and a retraction that precedes its insertion inside one batch.
-- **At `ad83e63`** those defects are fixed and the harness passes: 149 of 149, in all 32 worlds, under every batch cut and under reordering inside a batch (verified by the orchestrator; the 150-seed run is reported by the engine core session only). The 21 tests written for the known defects pass. This paper ran neither.
+- **At evaluation 11a** the engine failed 34 of 107 cases, on decimal keys, `Retain`, `count` together with `countDistinct`, `last` on ties, `Traverse` at the maximum depth, `Series` outside the look-back, and a retraction that precedes its insertion inside one batch.
+- **At evaluation 12** those defects are fixed and the harness passes: 149 of 149, in all 32 worlds, under every batch cut and under reordering inside a batch (verified by the orchestrator; the 150-seed run is reported by the engine core session only). The 21 tests written for the known defects pass. This paper ran neither.
 - **What this means for gate 1a.** Theorem 6.1 (incremental equals batch) and Theorem 6.2 (batch invariance) are tested against something that is not the engine, per operator kind, and the engine now agrees with it. This is the first evidence for these two theorems that could have failed and did fail.
 - **What the harness does not cover.** `Lift` and `Fixpoint` go through the front end's lowering and unrolling in the reference too, so tests T-LIFT and T-FIX are not independent yet and stay wanted. No lens or bijective rule, no partial window, no draft, no document. `Delta` is not built.
 - **Four places where the paper did not determine the result** were found by writing the reference and are ruled in the chapters: the horizon of a `Threshold` (Def. 6.7, 7.10), conflicting fragments (Def. 6.4), the depth of a `Traverse` (Def. 6.3) and the retention of telemetry windows (Def. 7.13). Later rulings: a row without its time at a `Retain` (Def. 5.15), type conflicts (Def. 6.4), telemetry on an identity merge (Law 7.5).
@@ -186,13 +186,14 @@ Since engine commit `3629c63` the engine's tests hold a reference evaluator writ
 
 - **Telemetry combined by the property's rule on an identity merge** (Law 7.5, item 3; deviation D36). The engine adds the windows of the two ids for every property.
 - **Declared retention by the logical frontier** (Def. 7.13; deviation D35). The store drops windows 48 h behind the newest window it has seen.
+- **Group state re-keyed on an identity merge, and telemetry rows after a link combined by the property's rule** (Theorem 6.1, Law 7.5 item 3; deviation D37). The engine keeps two groups and lets their contributions meet at the sink under the conflict rule.
 - **Conflicts reported with the commit** (Def. 6.4; the open part of D34). The engine applies the conflict rule and counts conflicts per run (`conflicts: 0 property, 0 element, 0 telemetry window, 0 uniqueness` on both captures); a commit does not list them.
 
 ## Test evidence that is void or weakened
 
 A code review (`paper/research/07-code-review-findings.md`, section 2) found tests that cannot fail or do not test what their name says. The table above marks the affected rows. In words:
 
-The engine commit `ad83e63` changed none of the tests named here (it changed `EvidenceAdapterTests.cs` and added `ServerTests.cs`), so every mark below stands, with one exception: the operator-level evidence for Theorems 6.1 and 6.2 is now the differential harness, which can fail.
+The engine of evaluation 12 changed none of the tests named here (it changed `EvidenceAdapterTests.cs` and added `ServerTests.cs`), so every mark below stands, with one exception: the operator-level evidence for Theorems 6.1 and 6.2 is now the differential harness, which can fail.
 
 - **Void until fixed.** GetPut for the lens (8.1 to 8.3): the test sends only edits that change nothing. The engine side of the event stream (12.1, 12.9): assertions over lists that may be empty. The edge count of the kernel (2.2): an assertion that cannot fail. Fixture evidence for Theorems 6.1 and 6.2 at the level of one operator: the expected values came from the engine under another configuration, and no operator test cut batches or reordered a retraction and an insertion; the differential harness replaces it.
 - **Weakened.** The seeded property tests of Ch. 3 and 4 (3.1 to 3.3, 4.1 to 4.8): the generator discards patches the engine's check rejects, and the comparison graph shares the engine's check and encoding, so they test the laws on accepted patches and cannot see a wrong rejection or a wrong encoding. Identity merge (1.7, 1.8): assertions loosened with the rule. Live reproduction (10.7): the test does not replay the live loop. Restart and seal (11.9, 11.10): no test changes the content of a stored commit, and the build check of a seal is not isolated.
@@ -212,7 +213,7 @@ One of three things per statement: (a) a full proof written into the chapter; (b
 | Proposition 5.7 | (b), (a) | six premises R0 to R5; the engine checks R1 and R2 only |
 | Proposition 5.9 | (a) | stated per position; proved without Theorem 6.1, which removes a circle |
 | Proposition 7.7 | (a) | (b) says "no memory" exactly; (c) has an explicit bound; the engine's graph is not part of the statement |
-| Law 7.5 | (b), (a) | items 1 and 2 are consequences of the definitions (Def. 7.9 gained two read outcomes); item 3 claims the as-if value only where it is a function of the two windows; the other case is an open ruling |
+| Law 7.5 | (b), (a) | items 1 and 2 are consequences of the definitions (Def. 7.9 gained two read outcomes); item 3 claims the as-if value only where it is a function of the two windows; the other case was ruled in the second pass (no value, counted conflict) |
 | Theorem 8.7 | (b), (a) | proved for a fragment made exact by the new Def. 8.7 and 8.8 (conditions V1 to V3); a statement about a model, the class is not built |
 | Theorem 9.7 | (b), (a) | three parts; `Group` is not a positive operator; `Threshold` by its episode |
 | Theorem 10.5 | (c) | conditional on the documented list-and-watch contract KW1 to KW3 |
@@ -225,21 +226,73 @@ Two typing rules of Ch. 5 are now stated as the engine's checker has them, becau
 
 ## Proofs derived again at gate 1a
 
-The statements that the rest depends on most were derived again and compared with the written proof. Only Proposition 1.8 was derived before its proof was read; the others had been read while the fifteen statements were closed, so for them this is a second reading step by step, not an independent derivation. No statement is marked "not proved" by this pass; three proofs were corrected.
+Two passes. In the first, Proposition 1.8 was derived before its proof was read; the other proofs had already been read. In the second pass each statement below was derived again from the definitions with the chapter closed and then compared with the text. That is not independent of a memory of the written proof, and it is said so here; it found the differences listed. No statement is marked "not proved". Where a difference changed a statement, the old form is in the next section.
 
 | Statement | Result | Differences |
 |---|---|---|
-| Proposition 1.8 (identity merge) | derived independently, same invariant (the representative of a class of seen keys is the least own id) | the written proof ends with "chunking does not reorder operations"; the invariant gives more: its right side depends on the set of processed operations only, so an engine that reorders inside a step still agrees at the end of the step. Both need `own` injective (collision resistance), which the proof states |
-| Theorem 1.7 (merge) | (a) to (d) follow as written | none |
-| Theorem 6.1 (incremental equals batch) | holds after corrections | the case list missed `Match`, the operators filtered by the frontier (`Series`, the release of a `Window`) and materialization; `Values` was called linear and is a constant; the `Retain` case cited Proposition 5.9 while its sketch cited this theorem; **the `Threshold` case was wrong**: under Def. 7.10 the state is a fold of the recorded sequence and not a per-key function of the integrated input. All corrected in Ch. 6. The two cited theorems of [budiu2023] say what the proof uses (arXiv 2203.16684, Theorems 3.3 and 3.4) |
-| Theorem 6.2 (batch invariance) | holds with one more premise and one exception | hidden premise **B4** (a step is its inputs in order for carried `Threshold` state; Def. 7.10 asked for it, the theorem did not list it); exception: `mean` or `last` telemetry on an identity merge (Law 7.5, remark); evidence histories depend on the steps and are outside the statement. Part (a) holds in the model without any premise; the premises are needed for (b) |
-| Theorem 6.3 (replay determinism) | holds after corrections | steps (5) and (6) of the proof said that conflicts and fixpoint limits fail atomically, which contradicted Def. 6.4 and the bounded unrolling; corrected |
-| Theorems 8.1 to 8.3 (lens laws, stacking) | follow as written | in 8.2(a) the key condition of `Acc` is needed for the result to be a keyed table, not for PutGet; the composition in 8.3 uses every law "where the functions are defined", which the statement says |
-| Propositions 5.10 to 5.12 (lifting) | follow as written | none. They are statements about Def. 5.17 and 5.18; `images each` and `selfloops keep` leave them, as the chapter says |
-| Proposition 11.9 (restart) | follows from J1 to J3 | a restart with another engine build is covered by the comparison with the stored commits (the start is refused), not by a premise |
-| Proposition 11.10 (seal) | follows from SL1 | its premise was named S1, a name that Def. 5.8 and Def. 11.9 already use; renamed SL1 |
+| Theorem 1.7 (merge) | holds with one more hypothesis | `rep` "follows forwarding records until none applies" is a function only if at most one record leaves an id. The statement did not say that a record is added only from a current representative. Added |
+| Proposition 1.8 (order-independent survivor) | derived independently, same invariant | the written proof ends with "chunking does not reorder operations"; the invariant gives more, since its right side depends on the set of processed operations only. Both need `own` injective, which the proof states |
+| Theorem 6.1 (incremental equals batch) | holds after the corrections of the first pass | missing cases (`Match`, operators filtered by the frontier, materialization), `Values` not linear, a circle with Proposition 5.9, and the `Threshold` case wrong for Def. 7.10. **The engine does not satisfy the theorem in one case found in the second pass:** a `Group` keyed by an identity that merges is not re-keyed (D37) |
+| Theorem 6.2 (batch invariance) | holds as restated | hidden premise B4; (b) said the step's patch "equals" the net composition, but only the edit sets are equal: revision numbers differ, and a step whose edits cancel commits nothing; what is recorded per commit (reported conflicts, evidence histories) follows the steps; (a) holds only when the same inputs are the same steps, and the prototype makes a chunk one step, so only (b) applies to its replays; the merge of a non-monoid telemetry window is a function of the sequence |
+| Theorem 6.3 (replay determinism) | holds as restated | two proof steps contradicted Def. 6.4 (first pass); the statement could be read as equal commit records for any cut of the same records. It now says that a batch is one input of the recorded sequence and that both runs use one engine release |
+| Theorems 8.1, 8.2 (a), (b), 8.3 | follow as written | none. In 8.2(a) the key condition of `Acc` is needed for the result to be a keyed table, not for PutGet |
+| Theorem 8.2 (c) | holds with one more condition | the emit is injective only while no two keys are forwarded to one representative; after a merge or an alias two rows give one element. The accepted domain now excludes such elements (the engine rejects them `AmbiguousKey`) |
+| Propositions 5.10, 5.11 | follow as written | none |
+| Proposition 5.12 | follows as written on the model | written as `lift` statements the two routes agree only for equal look-backs; remark added |
+| Proposition 11.9 (restart) | holds as restated | the statement said that a stored log that ends early refuses the start. The journal is written first, so after a kill the log is short by design: the replay appends the missing commits and refuses only a difference or a log that ends inside one recomputed group. After a kill the space serves the state after the last journaled entry, not "the state before the stop" |
+| Proposition 11.10 (seal) | holds with a wider premise | SL1 covered "every part that a later entry reads"; the conclusion also needs the parts that the space serves (history, event ring). Widened; renamed from S1 in the first pass |
 
-Not derived again: the other statements checked by reading only (Ch. 3, 4, 9, 12, 13).
+**Reading-only statements read again in the second pass** (Ch. 3, 4, 9, 12, 13).
+
+| Statement | Result | Differences |
+|---|---|---|
+| Theorems 3.6, 3.7 | follow as written | none |
+| Proposition 4.5 (algebraic structure) | **two claims false as stated**, restated with a proof | "inverse category": `then` is undefined for some pairs with matching revisions, so patches are a category only after a zero is added; "groupoid on committed segments": `p then inverse(p)` is a guard identity with edits and not the empty patch, so the groupoid holds only for net forms |
+| Theorems 9.1, 9.2, 9.4, 9.6, Proposition 9.8 | follow as written | 9.4 and 9.6 inherit the reading of "recorded sequence" of Theorem 6.3. Def. 9.5 does not say which element survives a uniqueness collision between a replayed and a carried element (Def. 6.4 would) |
+| Theorem 9.3 (rebuild is exact) | holds with one more hypothesis | a rebuild is the batch result on the input graphs, which is the output only for operators that are functions of the integrated input. A `Threshold` is a fold of the sequence: a rebuild starts in `initial` and loses states entered behind the retained range. The health signals are such a view. Hypothesis and consequence added |
+| Theorem 9.5 (support) | follows; wording | "no replayed input produces it" is wrong when the replayed inputs hold retractions; stated by the sign of the support |
+| Proposition 12.2, 12.5, Theorem 12.7 | follow as written | none |
+| Theorem 12.3 (same entity across graphs) | first sentence follows; second is not a theorem | the converse (one entity, one id) holds only through `Rep`; "an aggregate never reuses a member's id" is a rule for authors that no judgment enforces. Status text changed |
+| Theorem 12.4 (alignment) | holds after a definition | the proof took the logical time of a revision from Def. 3.8 and Theorem 3.5, neither of which mentions logical time. Defined in the proof |
+| Theorem 12.6 (block identity) | follows | "iff" lacked "unless `H` has a collision" |
+| Theorems 13.1, 13.3, 13.4 | follow as written | 13.1 counts lookups for the two-term form of the join rule, and its degrees are those of the updated integrals |
+
+**Not read again:** Corollaries 1.2, 1.3, Theorem 1.6; Theorems 2.3, 2.6; Theorems 5.3, 5.5, Proposition 5.4; Propositions 6.7, 6.8; Theorems 7.2, 7.3, 7.6; Theorem 8.4; Theorem 10.3.
+
+## Statements whose meaning changed, with the old form
+
+| Statement | Old form | New form |
+|---|---|---|
+| Def. 2.9, table | narrow endpoint types: compatible for readers; add supertype: compatible for writers; add required property: compatible for every reader; add optional property: compatible | breaking for a reader whose pattern uses a removed type; breaking for writers if a required property is gained; breaking for a `lens` or `bijective` rule that accepts `create`; compatible under the name condition (N) |
+| Theorem 2.5 | "if the delta contains only compatible changes and the re-check is run, `D` remains well-typed" (sketch) | the judgments stay derivable, for the corrected table and under (N) |
+| Def. 3.9 | committable iff the result is well-formed (WF1 to WF4) | the commit rule enforces the guards and WF1 to WF3; an element that misses a required property after a counted fault or a reported conflict is committed and reported |
+| Proposition 4.5 | "an inverse category"; "a groupoid on the revisions" for committed segments | an inverse category after a zero is added; a groupoid for net forms only |
+| Proposition 4.11 | conditional on `parse(print(G)) = G` for every well-formed graph | for canonical drafts, under premise RT |
+| Typing rule `Union` | "all `Rᵢ` equal" | same fields with equal kinds and roles; presence is joined |
+| Typing rule EmitEntity | "required properties present for create" | every required property set, and with a `req` value |
+| Def. 5.19 (new) | Theorem 5.2 listed division by zero, overflow and conflicting assignments as failures of the event | a runtime fault is local to its row: the value is absent and counted, the event does not fail |
+| Theorem 5.2 | every committed fact conforms "or the projection event fails atomically" | kinds and ownership always; required properties up to counted faults and reported conflicts; C6 and C7 not implied; premise KS |
+| Theorem 5.6 | `parse(print(G)) = G` for every well-formed definition graph | on canonical graphs (the image of `parse`), under premise RT |
+| Proposition 5.7 | `Out` is equal after any accepted refactoring | under premises R0 to R5 |
+| Theorem 6.1 | the integral of the output deltas equals `⟦P⟧` on the integrated inputs, for every operator | the same with the frontier as an argument for `Retain`, `Series` and window release, and with the recorded sequence for `Threshold` |
+| Theorem 6.2 | premises B1 to B3; the step's patch "equals" the net composition; (a) without condition | premises B1 to B4; equal edit sets, other revision numbers; (a) when the same inputs are the same steps; B1 is about rows written under one id |
+| Theorem 6.3 | equal commit records for the same recorded sequence | the same, with a batch as one input of the sequence and one engine release |
+| Law 7.5, items 1 and 2 | design rules | consequences of Def. 7.3, 7.9, 3.6; Def. 7.9 gained the read outcomes `Undeclared` and "undefined" |
+| Law 7.5, item 3 | first: combine by the property's rule, or conflict (no proof); before that: policies `keepSeparate` and `preferSurvivor` | ruled: monoid values combine in their monoid (`sum`, `min`, `max`, a mean with sum and count, a last with its order); any other stored value: equal or no value with a counted conflict, absorbing; rows after the link under two ids combine the same way |
+| Proposition 7.7 | (b) "the states equal those computed from the data without the incident" | (b) the state is a function of `A` and the threshold states; (c) with an explicit bound |
+| Theorem 8.2 (c) | the accepted domain excludes edits of the literal values | and elements whose identity has more than one key |
+| Def. 8.7, 8.8 (new), Theorem 8.7 | four laws claimed for "the v1 fragment" of Def. 8.6, with no translation defined | proved for the grammar of Def. 8.7 (V1 to V3) and the translation of Def. 8.8 |
+| Theorem 9.3 | rebuild is exact for every projection whose inputs are graph ports | for those without a `Threshold` |
+| Theorem 9.5 | removed iff no replayed input produces it | remains iff its support on the replayed inputs is positive |
+| Theorem 9.7 | lineage for the positive operators "and additive `Group`"; `Threshold` by the deciding run | three parts: positive plans; one per-key operator last on non-negative input; `Threshold` by its episode |
+| Theorem 10.5 | list and watch delivers every change (citation) | conditional on the documented contract KW1 to KW3 |
+| Propositions 10.7, 10.8 | sketches with unnamed premises | premises LV1 to LV4 and LR1 to LR4; 10.7 is about the digest, not the log |
+| Theorem 11.6 | hypotheses (i) and (ii) | and (iii): every writer evaluates the one recorded input sequence |
+| Proposition 11.9 | a stored log that ends early refuses the start; the space serves the state before the stop | missing commits are appended; refused are a difference and a log that ends inside a recomputed group; the state served is the one after the last journaled entry |
+| Proposition 11.10 | premise S1: equal in every part that a later entry reads | premise SL1: equal in every part that a later entry reads or that the space serves |
+| Theorem 12.3 | proved, both sentences | first sentence proved, converse only through `Rep`; second sentence a rule for authors |
+| Theorem 12.6 | same id iff rule and key are equal | unless `H` has a collision |
+| Claim 13.5 | a hot point read is `O(1)` | constant by handle at the base; `O(1 + ℓ_k)` at a pinned revision; one-hop scan `O(deg_base(v) + L_v)` |
 
 ## What the differential harness tests of each theorem, and what it does not
 
@@ -259,9 +312,11 @@ The harness (`engine/tests/Sattle.Differential`) generates input logs for 32 sma
 | Proposition 1.8 | the representative on the logs of the `link` world, against the reference's own catalog | generated orders of many keys (T-B3) |
 | Ch. 3, 4, 8, 9, 10, 11, 12 | nothing | |
 
-## Open rulings and questions found by the pass
+## Open points after the second pass
 
-- **Telemetry under `mean` or `last` on an identity merge** (Law 7.5, remark): the ruled outcome depends on arrival order and differs from the batch result that Theorem 6.1 asks for. Needs a ruling of the paper session.
-- **A runtime fault is local to its row** (Def. 5.19) and the commit rule enforces WF1 to WF3 only (Def. 3.9): written here because Theorem 6.2(b) forces it and the engine does it; to be confirmed by the paper session as a ruling.
-- **B4** is new as a named premise; whether the harness already covers it is a question for the engine core session.
+- **Ruled:** telemetry windows on an identity merge (Law 7.5, item 3), on 2026-11-11, by the principle of D34. Accepted by the project: Def. 5.19, Def. 3.9, the two typing rules, the corrected table of Def. 2.9, premise B4, Def. 8.7 and 8.8.
+- **Deviation D37** (reported by the engine session): a `Group` keyed by an identity is not re-keyed on a merge, so the engine does not give the batch result of Theorem 6.1 there; telemetry rows after a link meet under the rule of B1 and not under the combine rule; the reference evaluator shares the second behaviour, so the differential harness does not see it. Tests T-B3 and T-MERGE-TELE are written to fail on it.
+- **A view with a `Threshold` is not rebuilt exactly** (Theorem 9.3 as restated). The configuration edit by full replay is exact; a rebuild mode is not built, so nothing is wrong today, but the proposal "rebuild for graph-input projections" of Ch. 9 needs this exception.
 - **R3, R4, R5** of Proposition 5.7: the engine reports `preserves: union` without checking them.
+- **B4** has no targeted test (T-B4).
+- **Not read again:** the statements listed at the end of the section on derivations.

@@ -1,4 +1,4 @@
-# Tests at engine commit c201e27 and canvas commit cae860f (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
+# Tests at engine commit engine-of-evaluation-2 and canvas commit canvas-of-evaluation-2 (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
 # The export has no lab/captures (gitignored), so the engine tests that need a capture returned early. The canvas fixtures were synced with scripts/sync-fixtures.mjs.
 
 ## engine: dotnet test

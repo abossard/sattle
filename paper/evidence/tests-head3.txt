@@ -1,4 +1,4 @@
-# Tests at engine commit 588a256 and canvas commit 707baaa (clean git export of HEAD in a scratch directory, run by the paper session; Release build for the engine).
+# Tests at engine commit engine-of-evaluation-4 and canvas commit canvas-of-evaluation-4 (clean git export of HEAD in a scratch directory, run by the paper session; Release build for the engine).
 # No Cosmos emulator was used by this paper: one was running for another session and a replay against it was in progress, so the Cosmos cases of the storage contract tests and of RestartTests did not run (SATTLE_COSMOS_EMULATOR unset). Canvas fixtures were synced with scripts/sync-fixtures.mjs.
 # Wall times are at load average 70 to 100 (other sessions running) and are not a measurement.
 

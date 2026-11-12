@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 4841a36 (Release build, clean export of HEAD, run by the paper session, the local space overlay applied). The state digests are those of 64f7a6a.
+# sattle replay --chunk N at engine commit engine-of-evaluation-9 (Release build, clean export of HEAD, run by the paper session, the local space overlay applied). The state digests are those of engine-of-evaluation-7.
 
 # capture 20261110T105738Z
 

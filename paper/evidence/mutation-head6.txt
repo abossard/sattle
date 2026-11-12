@@ -1,4 +1,4 @@
-# Mutation check of the unit tests of the batch-invariance premises B1 and B2 at engine commit 6f784c9, run by the paper session on a scratch copy of a clean export of HEAD (Release build). Nothing in the repository was changed.
+# Mutation check of the unit tests of the batch-invariance premises B1 and B2 at engine commit engine-of-evaluation-6, run by the paper session on a scratch copy of a clean export of HEAD (Release build). Nothing in the repository was changed.
 # B1: in the copy's engine/definitions/acme.ops.sattle the five groups 'resourceId: lowerInvariant(resourceId)' are changed to 'resourceId: resourceId' (the fix reverted), tests run without a rebuild (the definitions are read at run time). B2: in the copy's Operators.cs the condition that drops a row for a window beyond the late horizon is made false, the copy is rebuilt, the B2 tests run.
 
 ## baseline (unmodified copy): B1 and B2 tests

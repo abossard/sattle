@@ -1,4 +1,4 @@
-# Health and deployment health at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session). Counted with jq from replay --out.
+# Health and deployment health at engine commit engine-of-evaluation-3 (Release build, clean export of HEAD, run by the paper session). Counted with jq from replay --out.
 
 ## capture 20261110T105738Z
 health components (kind, state):

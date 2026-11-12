@@ -1,4 +1,4 @@
-# Restart from a state seal, the journal before it and --verify-journal, at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session).
+# Restart from a state seal, the journal before it and --verify-journal, at engine commit engine-of-evaluation-6 (clean export of HEAD, Release build, run by the paper session).
 # Setup as in restart-seal-prefix-head4.txt: sattle serve FIXTURE --cluster synth --store sqlite=DB --seal-every 10 (fixture tests/Sattle.Tests/fixtures/deploy-health, 17 journal entries, one seal at entry 10), stop. In a copy of DB (sqlite3 .backup), journal entry 5 (an input batch before the seal) is deleted, and the copy is started with no fixture.
 
 ## A: sattle serve --store sqlite=COPY (the seal is used)

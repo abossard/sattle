@@ -1,4 +1,4 @@
-# H10 restart with a state seal (--seal-every 2000), history of 1 h, 10 restarts, orchestrator, engine 9d0fff1. Copy of engine/out/perf-orchestrator/turn8/b10-1h-seal.txt, unchanged below this line.
+# H10 restart with a state seal (--seal-every 2000), history of 1 h, 10 restarts, orchestrator, engine engine-of-evaluation-5. Copy of engine/out/perf-orchestrator/turn8/b10-1h-seal.txt, unchanged below this line.
 # B10 cold start by restart: capture 20261110T140542Z repeated to 1 h of logical time, SQLite journal and log, 10 restarts
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 50.65 45.44 40.63
 pass 1: logical span 0.28 h, 704,027 rows, journal 4,045 entries, wall 22 s

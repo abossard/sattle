@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 588a256 (Release build, clean export of HEAD, run by the paper session). Identity merge is order independent and evidence is retained for 24 h of logical time at this commit.
+# sattle replay --chunk N at engine commit engine-of-evaluation-4 (Release build, clean export of HEAD, run by the paper session). Identity merge is order independent and evidence is retained for 24 h of logical time at this commit.
 
 # capture 20261110T105738Z
 

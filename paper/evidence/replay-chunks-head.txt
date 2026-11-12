@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit c201e27 (Release build of a clean git export of HEAD, run by the paper session).
+# sattle replay --chunk N at engine commit engine-of-evaluation-2 (Release build of a clean git export of HEAD, run by the paper session).
 # Capture 20261110T105738Z (lab/captures, gitignored): the capture of replay-latest.txt. Digests per chunk size; the first lines of the replay report are kept.
 
 ## chunk default

@@ -1,4 +1,4 @@
-# Tests at engine commit 4841a36 (clean export of HEAD by git archive, run by the paper session; Release build).
+# Tests at engine commit engine-of-evaluation-9 (clean export of HEAD by git archive, run by the paper session; Release build).
 # No Cosmos emulator was used by this paper (SATTLE_COSMOS_EMULATOR unset). lab/captures held the two real captures and a copy of the local space overlay with the import pins of this commit. Wall times are on a machine under load.
 
 ## engine: dotnet test -c Release (default run: Category!=Capture and Category!=Slow)

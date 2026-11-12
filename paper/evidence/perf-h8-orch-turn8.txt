@@ -1,4 +1,4 @@
-# H8 after the non-allocating window scan, 10 runs, orchestrator, engine 9d0fff1. Copy of engine/out/perf-orchestrator/turn8/b8.txt, unchanged below this line.
+# H8 after the non-allocating window scan, 10 runs, orchestrator, engine engine-of-evaluation-5. Copy of engine/out/perf-orchestrator/turn8/b8.txt, unchanged below this line.
 # B8 element view: structure at head joined with 60 windows (1 h at 60 s) of 4 series for 10,000 elements, hot plane only, 10 runs
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 39.57 37.44 36.67
 run 1: view of 10,000 elements 35.7 ms (allocated 3 MB, collections gen0 0 gen1 0 gen2 0, GC pause 0.0 ms); single element view p50 0.0173 ms p99 0.0217 ms; load 39.57 37.44 36.67

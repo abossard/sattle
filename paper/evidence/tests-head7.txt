@@ -1,5 +1,5 @@
-# Tests at engine commit 64f7a6a (export of HEAD 6d33b40 from a git archive made by the orchestrator, unpacked in a scratch directory, run by the paper session; Release build).
-# No Cosmos emulator was used by this paper (SATTLE_COSMOS_EMULATOR unset). lab/captures held the two real captures and a copy of the local space overlay for every run. The canvas (478e2f3, unchanged since the sixth evaluation, a turn in progress) was not re-run. Wall times are at load average 5 to 30 and are not a measurement.
+# Tests at engine commit engine-of-evaluation-7 (export of HEAD repository-state-of-evaluation-7 from a git archive made by the orchestrator, unpacked in a scratch directory, run by the paper session; Release build).
+# No Cosmos emulator was used by this paper (SATTLE_COSMOS_EMULATOR unset). lab/captures held the two real captures and a copy of the local space overlay for every run. The canvas (canvas-of-evaluation-6, unchanged since the sixth evaluation, a turn in progress) was not re-run. Wall times are at load average 5 to 30 and are not a measurement.
 
 ## engine: dotnet test -c Release (default run: Category!=Capture and Category!=Slow)
 Passed!  - Failed:     0, Passed:   456, Skipped:     0, Total:   456, Duration: 1 m 52 s - Sattle.Tests.dll (net10.0)

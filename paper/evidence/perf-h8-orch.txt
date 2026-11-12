@@ -1,4 +1,4 @@
-# Copied unchanged from engine/out/perf-orchestrator/b8.txt (run by the orchestrator session at engine commit 588a256, 10 runs, load average recorded per run; not run by the paper session).
+# Copied unchanged from engine/out/perf-orchestrator/b8.txt (run by the orchestrator session at engine commit engine-of-evaluation-4, 10 runs, load average recorded per run; not run by the paper session).
 == b8 load before: 57.13 59.63 52.97
 # B8 element view: structure at head joined with 60 windows (1 h at 60 s) of 4 series for 10,000 elements, hot plane only, 10 runs
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 57.13 59.63 52.97

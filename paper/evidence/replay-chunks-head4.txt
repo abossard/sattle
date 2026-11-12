@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 9d0fff1 (Release build, clean export of HEAD, run by the paper session). Same digests as at 588a256 (replay-chunks-head3.txt): the commit changed the store, the seals, the Cosmos writes and the window scan, not the semantics of replay.
+# sattle replay --chunk N at engine commit engine-of-evaluation-5 (Release build, clean export of HEAD, run by the paper session). Same digests as at engine-of-evaluation-4 (replay-chunks-head3.txt): the commit changed the store, the seals, the Cosmos writes and the window scan, not the semantics of replay.
 
 # capture 20261110T105738Z
 

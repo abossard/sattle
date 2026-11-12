@@ -1,4 +1,4 @@
-# H10 restart from a state seal plus about one hour of journal (--seal-every 38000 on a 4 h history of 50,270 entries: the seal is at entry 38,000 and 12,270 entries follow it), SQLite, 10 restarts, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 4 --seal-every 38000 --runs 10. Machine under load, see the load figures below.
+# H10 restart from a state seal plus about one hour of journal (--seal-every 38000 on a 4 h history of 50,270 entries: the seal is at entry 38,000 and 12,270 entries follow it), SQLite, 10 restarts, at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 4 --seal-every 38000 --runs 10. Machine under load, see the load figures below.
 == b10 4h seal-every 38000 load before: 38.21 77.02 64.26
 # B10 cold start by restart: capture 20261110T140542Z repeated to 4 h of logical time, SQLite journal and log, 10 restarts
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 38.21 77.02 64.26

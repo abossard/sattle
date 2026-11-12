@@ -1,4 +1,4 @@
-# Copied unchanged from engine/out/perf-orchestrator/b5-sqlite.txt (run by the orchestrator session at engine commit 588a256, 10 runs, load average recorded per run; not run by the paper session).
+# Copied unchanged from engine/out/perf-orchestrator/b5-sqlite.txt (run by the orchestrator session at engine commit engine-of-evaluation-4, 10 runs, load average recorded per run; not run by the paper session).
 == b5-sqlite load before: 29.65 36.62 43.93
 # B5 source to graph: capture 20261110T140542Z, store sqlite, 10 runs, one record per ingest call
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 29.65 36.62 43.93

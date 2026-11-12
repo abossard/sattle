@@ -1,5 +1,5 @@
-# HISTORICAL: this defect (D17) was found at fde84db and is resolved at c201e27 (two causes, see Ch. 6, 6.7 and replay-chunks-head.txt).
-# Chunk-size-50 digest difference (engine commit fde84db, Debug build, same capture as replay-latest.txt, run by the paper session).
+# HISTORICAL: this defect (D17) was found at engine-of-evaluation-1 and is resolved at engine-of-evaluation-2 (two causes, see Ch. 6, 6.7 and replay-chunks-head.txt).
+# Chunk-size-50 digest difference (engine commit engine-of-evaluation-1, Debug build, same capture as replay-latest.txt, run by the paper session).
 # A scratch copy of the engine printed one digest per graph state and one over the telemetry windows of each graph. Nothing in the repository was changed.
 # Result for chunk sizes 100000 and 50 (the default and 777 equal 100000):
 graph state digests (all 10 graphs): identical in both runs

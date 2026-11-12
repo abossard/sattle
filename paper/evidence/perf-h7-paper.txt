@@ -1,4 +1,4 @@
-# Output of sattle bench (b7) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+# Output of sattle bench (b7) at engine commit engine-of-evaluation-4 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
 == b7 load before: 69.89 67.04 66.76
 # B7 durable reads: 2,000 entities, 20 hubs with 100 outgoing relationships, per run 1,000 point reads and 200 one-hop scans of 100 neighbours, 10 runs
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 69.89 67.04 66.76

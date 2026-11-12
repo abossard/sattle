@@ -1,4 +1,4 @@
-# sattle check, engine commit c201e27
+# sattle check, engine commit engine-of-evaluation-2
 13 file(s), 13 module(s), 8 projection(s), 1 graph space(s), catalog revision 14, 0 error(s), 0 warning(s)
   sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec
   sattle.source.k8s @ 1.0.0 sha256:5fc3f38bf41ae5c4a8c19d97c4b3466511848691e9206d4588c6f621646024f6
@@ -14,7 +14,7 @@
   acme.healthmodel @ 1.0.0 sha256:7075e6007fe5ba8c91c2dbd80163e53f2984bc6db29c5922a161c17f60ff077b
   acme.space @ 1.0.0 sha256:5b2d342a9eea484da8966a326642258f203d4f32cc60f01d860e1a67f542a982
 
-# sattle check --plan (strategy lines of the operators added since fde84db)
+# sattle check --plan (strategy lines of the operators added since engine-of-evaluation-1)
   allActivity: Union, linear: both inputs' signed rows concatenated (weights add)
   operations: Union, linear: both inputs' signed rows concatenated (weights add)
   counts: Union, linear: both inputs' signed rows concatenated (weights add)

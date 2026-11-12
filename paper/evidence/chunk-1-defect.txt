@@ -1,4 +1,4 @@
-# Chunk size 1 against 100000 on capture 20261110T105738Z at engine commit c201e27 (paper session, clean export of HEAD, nothing in the repository changed).
+# Chunk size 1 against 100000 on capture 20261110T105738Z at engine commit engine-of-evaluation-2 (paper session, clean export of HEAD, nothing in the repository changed).
 # Method: sattle replay CAPTURE --chunk N --out DIR, then final snapshots and telemetry compared as sets with jq.
 state digest chunk 1:      sha256:5e81c78f19d2c0d74e436f7ddbd8d7a348b0d024aec8f0ec0e551f858bf63c21
 state digest chunk 100000: sha256:7ca3d20d7f8f36a5691f461bde69bbb317f9c415b44bf1e1859a6e97a8aad983 (equal to 50, 777 and the default)

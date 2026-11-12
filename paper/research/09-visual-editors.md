@@ -312,6 +312,26 @@ Parameter sorts in the stand-in are two of the eleven of note 08: an expression 
 - No frame times or memory in a browser, no production build, no screen reader pass, no user study. The time estimates of 4.1 remain estimates.
 - Three defects of the existing command code surfaced and were reported to its owner: an author's aggregate `n = count()` is taken for the skeleton's placeholder and removed when another aggregate is added; a pattern edge is given another id and an empty variable where the engine has none; two patches that differ only in the order of property keys are treated as different.
 
+### 9.8 Addendum, 12 November 2026: in the application, three themes, names, the drawn graph
+
+- **In the application.** The editor view shows a projection as its node canvas (the default) or as the five notations, on the same engine draft. A gesture is one editor action; it is composed on a copy of the draft and sent through the draft session, so it is one patch and one step of the 99 steps of undo [T]. On a live engine, in the application: a block put into a row set was accepted (no diagnostics, canonical text printed), the row set's steps took the names of the longer chain, Undo restored them, Redo was offered [B].
+- **What the notations have of the existing editor's functions, and what not.** From the surrounding view, unchanged: undo and redo, the problems list, the text of the module, preview, releases and their diff, commit and discard, the properties panel on the selected step. From the shared core: problems per step and per row, every edit as one undo step. Missing in the notations: selecting several operators (so copy, paste, extract and the other refactorings start from the canvas), comments and groups, rules and their parts, bindings and parameters of the projection, a new projection, constant rows, the body of a fixpoint. The node canvas stays until these are there.
+- **The page showed an older catalog.** The reviewer saw `match`, `filter` and `series` where the definition has one `lift` statement: the page read a catalog snapshot from before `lift` was a statement, not lowered operators. It now reads the catalog a current engine serves, where the lift is one operator, and it is one step, block and card in every notation [T][B].
+- **Themes.** The notations use only theme tokens and follow the light, dark and high contrast themes of the application. In real Chrome, the automated rules with color contrast pass on every notation and on four states an author gets into (a row being edited, a block in hand, a wire in hand, an element picked), in the three themes: 27 cases [T, in a browser]. That check found what the test DOM had not: buttons whose accessible name did not contain the text they show (WCAG 2.5.3). They are named by their text now, with what the row is as the description.
+- **By example.** Elements are named as everywhere in the application, never by internal id. The data graph is drawn with the application's data canvas, and a click on an element picks it; the lists do the same without a pointer [T][B]. The drawing marks only the last pick.
+
+### 9.9 The stand-in for statement kinds against note 08
+
+| | note 08 | the stand-in |
+|---|---|---|
+| declaration | `StatementDecl` with keyword, category, a `shape` (the production), `requires`, a `card`, and what it `realizes` | a name and its parameters; no shape, no checks before expansion, no card |
+| template | a slot of the declaration holding operators, with `Hole`, `Fresh`, `When`, `Each`, `Query` | an ordinary projection the declaration points at; its input ports are the rows and graph parameters, its row set `result` is the output; no conditions, repetition or queries; names it brings in are prefixed with the name of the use |
+| parameters | twelve sorts, required, repeated, default, the graph a type is resolved in | two sorts (an expression, a literal parameter of a step); the default is what stands in the template; the parameter points at the place it fills, where note 08 has the place point at the parameter |
+| use | `StatementUse` with an edge to its declaration and one `ParamValue` per argument | a node whose type is the name of the kind, with the template's ports; an argument is an expression child or a property named after the parameter |
+| text | one clause shape for every derived statement, parsed and printed | none |
+| provenance | edges from each generated node to the use and the parameter | a map from operator to use, in memory; not per parameter |
+| where it lives | the catalog keeps the use, never the expansion | the same for the author; the engine receives only the expansion |
+
 ## References
 
 - [G1] T. R. G. Green, M. Petre. Usability analysis of visual programming environments: a cognitive dimensions framework. Journal of Visual Languages and Computing 7(2), 131-174, 1996. doi:10.1006/jvlc.1996.0009. Times as summarised at https://neverworkintheory.org/2012/06/25/usability-analysis-of-visual-programming-environments-a-cognitive-dimensions-framework.html

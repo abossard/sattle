@@ -1,4 +1,4 @@
-# Restart from a store on the journals of the two real captures at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session, a copy of the local space overlay applied).
+# Restart from a store on the journals of the two real captures at engine commit engine-of-evaluation-6 (clean export of HEAD, Release build, run by the paper session, a copy of the local space overlay applied).
 # sattle serve CAPTURE --cluster <redacted> --store sqlite=DB --seal-every 500, wait until the replay is idle, stop, then sattle serve --store sqlite=DB (no capture, no definitions) 5 times with its seals and, after deleting the seals with sqlite3, 3 times without. The time is from the start of the process to the first answer of GET /space, polled once a second, so it has a resolution of one second (and includes the process start). Each /space answer is compared with the one of the first start. The line after the time is the engine's start message.
 
 ## capture 20261110T105738Z

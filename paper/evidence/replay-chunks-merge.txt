@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session). Identity merge is built at this commit.
+# sattle replay --chunk N at engine commit engine-of-evaluation-3 (Release build, clean export of HEAD, run by the paper session). Identity merge is built at this commit.
 
 # capture 20261110T105738Z
 

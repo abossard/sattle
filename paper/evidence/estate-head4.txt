@@ -1,4 +1,4 @@
-# The synthetic estate fixture at engine commit 9d0fff1 (Release build, clean export of HEAD, run by the paper session).
+# The synthetic estate fixture at engine commit engine-of-evaluation-5 (Release build, clean export of HEAD, run by the paper session).
 # sattle replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --overlay engine/tests/Sattle.Tests/fixtures/estate/space/acme.space.sattle --out DIR; counts by jq from the exported final snapshots (entity and relationship types per graph, health components by kind and state).
 
 replayed 548 record(s) in 0.1 s, capture span 602 s, 12 logical-time advance(s), 86 chunk(s)

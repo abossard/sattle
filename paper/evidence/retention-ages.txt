@@ -1,4 +1,4 @@
-# Retention age against master size at engine commit 588a256 (Release build, clean export of HEAD, run by the paper session).
+# Retention age against master size at engine commit engine-of-evaluation-4 (Release build, clean export of HEAD, run by the paper session).
 # The three evidence rules of acme.ops read rows through 'retain on time for 24h'. Each run replays a capture with that age replaced in a copy of the definitions (--defs; 'sattle check --update-pins' on the copy first, because the import pins of acme.ops change). Nothing else changes.
 
 ## capture 20261110T105738Z, age 24h

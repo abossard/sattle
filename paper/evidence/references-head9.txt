@@ -1,4 +1,4 @@
-# References written by sattle replay --out at engine commit 4841a36 (NAME.references.ndjson, one reference per line; run by the paper session). Counts by jq; the entries name real resources and are not kept.
+# References written by sattle replay --out at engine commit engine-of-evaluation-9 (NAME.references.ndjson, one reference per line; run by the paper session). Counts by jq; the entries name real resources and are not kept.
 
 ## capture 20261110T105738Z
 capabilities: 0

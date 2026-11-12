@@ -1,4 +1,4 @@
-# Health model, deployment health and references at engine commit ad83e63 (sattle replay --out into a scratch directory, one command per capture, run by the paper session; counted with jq). The reference entries name real resources and are not kept.
+# Health model, deployment health and references at engine commit engine-of-evaluation-12 (sattle replay --out into a scratch directory, one command per capture, run by the paper session; counted with jq). The reference entries name real resources and are not kept.
 
 ## capture 20261110T105738Z
 graph deploymentHealth: revision 54, 22 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))

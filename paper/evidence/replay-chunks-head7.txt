@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 64f7a6a (Release build, export of HEAD 6d33b40 from a git archive made by the orchestrator, run by the paper session, the local space overlay applied). The state digests differ from those of 588a256 to 6f784c9 because the definitions changed (lifted capability edges, health evidence scoped to the model, service groups emitted row by row).
+# sattle replay --chunk N at engine commit engine-of-evaluation-7 (Release build, export of HEAD repository-state-of-evaluation-7 from a git archive made by the orchestrator, run by the paper session, the local space overlay applied). The state digests differ from those of engine-of-evaluation-4 to engine-of-evaluation-6 because the definitions changed (lifted capability edges, health evidence scoped to the model, service groups emitted row by row).
 
 # capture 20261110T105738Z
 

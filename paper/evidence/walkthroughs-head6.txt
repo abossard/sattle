@@ -1,4 +1,4 @@
-# npm run walkthroughs at canvas commit 478e2f3 against the engine at 6f784c9, both from a clean export of HEAD, run by the paper session.
+# npm run walkthroughs at canvas commit canvas-of-evaluation-6 against the engine at engine-of-evaluation-6, both from a clean export of HEAD, run by the paper session.
 # Chrome headless over CDP; app: vite with ENGINE_PORT. The preview figures are entities/relationships of the rebuilt projection on that engine. The first line of each run is the engine the script found.
 
 ## engine: sattle serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth  (no overlay; strict: a missing output fails)

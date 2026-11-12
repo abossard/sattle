@@ -1,4 +1,4 @@
-# Default source of the canvas at commit 53db46e: canvas/scripts/make-demo.mjs run by the paper session with ENGINE_DLL set to the Release build of the engine at 64f7a6a (the dotnet run path of the script was not exercised).
+# Default source of the canvas at commit canvas-of-evaluation-8: canvas/scripts/make-demo.mjs run by the paper session with ENGINE_DLL set to the Release build of the engine at engine-of-evaluation-7 (the dotnet run path of the script was not exercised).
 # The script runs: sattle replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --out <tmp>, and copies the result to canvas/public/demo/estate. Last lines of its output:
 
 state digest sha256:ad12a8980fec7f94c518d6a0ad83778a81024e4b1b75833fa44609898e8b1c06

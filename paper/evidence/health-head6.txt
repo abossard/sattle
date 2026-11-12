@@ -1,4 +1,4 @@
-# Health and deployment health at engine commit 6f784c9 (Release build, clean export of HEAD, run by the paper session, the local space overlay applied). Counted with jq from replay --out.
+# Health and deployment health at engine commit engine-of-evaluation-6 (Release build, clean export of HEAD, run by the paper session, the local space overlay applied). Counted with jq from replay --out.
 
 ## capture 20261110T105738Z
 health components (kind, state):

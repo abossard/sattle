@@ -1,4 +1,4 @@
-# Health model and references at engine commit 64f7a6a (Release build, export of HEAD, run by the paper session, the local space overlay applied). Counted with jq from replay --out (NAME.final.snapshot.json).
+# Health model and references at engine commit engine-of-evaluation-7 (Release build, export of HEAD, run by the paper session, the local space overlay applied). Counted with jq from replay --out (NAME.final.snapshot.json).
 
 ## capture 20261110T105738Z
 graph deploymentHealth: revision 54, 22 entities, 38 relationships, telemetry samples 0 (0 element-windows, 0 partial window(s))

@@ -1,4 +1,4 @@
-# Cosmos emulator replay of the newest capture after the batched writes, orchestrator, engine 9d0fff1, one run. Copy of engine/out/perf-orchestrator/turn8/cap-cosmos.txt, unchanged below this line. The emulator reports a charge of 1 per request, so the figures are request counts, not RU.
+# Cosmos emulator replay of the newest capture after the batched writes, orchestrator, engine engine-of-evaluation-5, one run. Copy of engine/out/perf-orchestrator/turn8/cap-cosmos.txt, unchanged below this line. The emulator reports a charge of 1 per request, so the figures are request counts, not RU.
 load 39.97 37.66 36.76
 cosmos commit: 2,099 request(s), charge 2,099.0
 cosmos follow: 26 request(s), charge 26.0

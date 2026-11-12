@@ -1,4 +1,4 @@
-# H10 restart of the same journal without using its seals (--no-seal), history of 1 h, SQLite, 3 restarts, at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 1 --no-seal --runs 3 on the file the seal run wrote. Machine under load, see the load figures below.
+# H10 restart of the same journal without using its seals (--no-seal), history of 1 h, SQLite, 3 restarts, at engine commit engine-of-evaluation-6 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 1 --no-seal --runs 3 on the file the seal run wrote. Machine under load, see the load figures below.
 == b10 1h noseal
 # B10 cold start by restart: capture 20261110T140542Z repeated to 1 h of logical time, SQLite journal and log, 3 restarts
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.15, Release=True, load average at start 21.82 37.84 49.04

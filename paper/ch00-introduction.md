@@ -1,150 +1,188 @@
-# Ch. 0 Introduction and problem
+# Ch. 0 Introduction
 
-**Claim.** Operators of cloud-native estates need change impact (Q1) and incident context (Q2) from one reproducible model, and no source gives a consistent inventory at one point in time. This chapter states the problem, the two questions, the claims C1 to C11 and what is out of scope.
-**Status.** Framing only. The prototype holds the data that Q1 and Q2 need (the master graph, the service level with flow telemetry, the health model; Ch. 14). Q1 and Q2 are not implemented as queries.
-**Gate.** None of its own: this chapter states the plan and the claims that the gates check.
-Uses: nothing. Used by: all chapters.
-Sources: [R01] sections 1 to 5, [R02] sections 2.3 and 4.9, `brainstorm/README.md`, `brainstorm/contracts/docs/ARCHITECTURE.md`.
+**Claim.** A company that runs software in a cloud needs one model of what it runs: what exists, what depends on what, how it is doing, and what changed. No single source of information gives that model, and the sources disagree. This paper defines a model that is built from all of them, that is a graph, and that is reproducible: the same recorded inputs always give the same graph.
 
-**How to read the references.** *Iteration 0.1* is the earlier design of the project (the documents, contracts and decision records, ADR-nnn, under `brainstorm/`). R01, R02 and R03 are three research reviews of it (`paper/research/`): R01 lists numbered *findings*, *gaps* and theorem candidates T1 to T16; R02 covers storage and scale with risks R1 to R20 and experiments E1 to E20; R03 covers the projection language with questions Q1 to Q16. Each chapter ends with a "delta to iteration 0.1" that says which of these it settles. *The prototype* is the engine in `engine/` and the canvas in `canvas/`. A *deviation* D1 to D36 is a place where the prototype differs from the design of this paper; all of them are listed in Ch. 14 (14.8). An *obligation* On.m is a statement a chapter leaves to be discharged by a named test or experiment. Labels that occur with two meanings: Q1 and Q2 in this chapter are the two questions of 0.2, and everywhere else Qn is an open question of [R03] (index in Ch. 15, 15.3); C1 to C11 are the claims of 0.6, and in Ch. 2 C1 to C7 are the conformance conditions of Def. 2.6; D with a number is a deviation unless it is written "[R02] D…", a decision of that review; L1 to L12 are the laws of [R02] (Ch. 11, 11.2 maps them to theorems); G and I with a number are the bibliography checks and the source facts of [R01]; B1 to B3 are binding rules in Ch. 1 and the premises of Theorem 6.2 everywhere else, and Bn from B4 on is a benchmark of Ch. 13; S1 to S5 are store properties in Ch. 11 and space judgments in Ch. 5 and Ch. 8.
-
-## Research plan
-
-The order of the work is fixed, and the paper follows it. The full statement and the gate table are in the [README](README.md) ("Research plan and gates").
-
-- **Phase 1, theory and capabilities.** Gate 1a: every law and theorem with its status. Gate 1b: what the language and the meta-graph can express, and what needs no change of the engine, as claims with evidence. Gate 1c: budgets per node, edge and telemetry point met at 1 million master nodes on one machine, with persistence that does not depend on one store and that scales.
-- **Phase 2, the prototype.** Real Azure data becomes a health model (gate 2a) that is human understandable (gate 2b) and always live (gate 2c), each with checkable criteria.
-- **Where it stands.** Gate 1a has its status table; no numbered statement is a sketch or open, nine are proved under named premises that tests must still check, one ruling is open, and no proof is mechanized. Gate 1b has no stated claim. Gate 1c is open. The Phase 2 results in this paper are early evidence, obtained before Phase 1 was closed.
-- **How the chapters sort.** Each chapter opening names the gate it serves. Ch. 1, 3, 4, 6 and 8 serve gate 1a; Ch. 2, 5 and 9 serve gates 1a and 1b; Ch. 11 and 13 serve gate 1c; Ch. 7, 10 and 12 serve Phase 2 and hold theory of their own; Ch. 14 and 15 are sorted by gate.
-- **How the requirements of 0.5 map.** R-det, R-id, R-data and R-dir are subjects of gate 1a, R-meta of gate 1b, R-perf of gate 1c.
+This chapter states the problem, the idea, the terms, the research plan and the claims. It needs no earlier chapter and no knowledge of cloud systems. Words from that world are explained in one line where they first appear.
 
 ## 0.1 Problem
 
-- Cloud-native estates (Azure resources, AKS and Kubernetes objects, Cilium network flows) change continuously and are described by several sources that disagree in format, timing and completeness.
-- Operators need to answer structural questions (what depends on what, what changed) together with data questions (how healthy, how much traffic) from one model.
-- A useful model must be reproducible. The same recorded inputs must give the same graph, so that an answer can be audited and a definition change can be replayed.
-- No source gives a consistent point-in-time inventory (Facts 0.1 to 0.5). Any engine must treat observations as evidence, and absence as unknown unless a source declares otherwise.
+A **cloud** is a set of computers rented from a provider. This paper uses **Azure**, the cloud of Microsoft, as its example. On those computers a company runs **Kubernetes**, a system that starts and stops programs on a group of machines called a **cluster**. A running copy of a program is a **pod**. A stable name under which several pods are reached is a **service**.
 
-## 0.2 Definitions
+Take a small shop. It has three services: `web` shows pages, `api` holds the logic, `db` stores orders. `web` calls `api`, and `api` calls `db`. Each service has a few pods. The pods run on machines, the machines belong to a cluster, and the cluster belongs to a subscription in Azure.
 
-**Definition 0.1 (estate).** The set of cloud resources, clusters, workloads and network paths under analysis, in one tenant.
+Three questions come up every day.
 
-**Definition 0.2 (source).** An external system that emits native records about an estate: Azure Resource Graph, Kubernetes list and watch, Hubble (Cilium), Azure Network Watcher flow logs, OpenTelemetry exporters.
+- **What exists, and what depends on what?** If `db` is slow, who is affected?
+- **How is it doing?** Is `api` healthy right now, and what is the evidence?
+- **What changed?** What was different an hour ago?
 
-**Definition 0.3 (native record, observation).** A native record is a source's own representation of a state or event. An observation is a native record interpreted by an adapter, with the source, position and time it came from. An observation is evidence. It does not by itself establish a graph fact.
+The answers lie in several systems, and each sees a part.
 
-**Definition 0.4 (master graph).** The unique graph of a graph space that is fed by ingestion of observations. All other graphs derive from it (Ch. 3).
+- Azure can list the resources a company rents, in pages, with delays.
+- Kubernetes can list its pods and services and report changes to them.
+- A network observer inside the cluster sees who talks to whom, and loses some of it under load.
+- Measurement systems report numbers every minute.
 
-**Definition 0.5 (projection, derived graph).** A projection is a definition of a transformation, itself a typed graph (Ch. 5). Its output is a derived graph with its own graph id and revision log. "Projection" never denotes the output (finding 1).
+These systems use different names for the same thing, report at different times, and each of them forgets or loses something. A list that does not mention a pod does not prove the pod is gone.
 
-**Definition 0.6 (derived view).** A derived graph or a document rendered from derived graphs, shown to a user.
+So the problem is this:
 
-**Definition 0.7 (graph data and telemetry).** Properties of an element are either graph data (revisioned, part of equality) or telemetry (series, not revisioned). The split is declared by the ontology (Ch. 3, Ch. 7).
+- Build one model from sources that are incomplete, late and inconsistent with one another.
+- Keep in it both structure (what exists, what depends on what) and measurements (how much, how healthy).
+- Make it **reproducible**: the same recorded inputs give the same model, so that an answer can be checked later and a change of the rules can be replayed.
 
-## 0.3 Anchor user and the two questions
+## 0.2 The idea, and the terms it needs
 
-- Anchor user: a platform or SRE engineer who owns a set of AKS clusters and Azure resources and needs to reason about changes and incidents.
-- **Q1 change impact.** Given an element `x`, a revision `r` of a derived graph and a depth `k`: which elements are reachable from `x` within `k` hops along dependency relationships at `r`, and which of them changed between two revisions `r₁ < r₂`?
-- **Q2 incident context.** Given an element `x`, a revision `r` and a time range `[τ₁, τ₂)`: what is the element view (Def. 7.9) of `x` and its one-hop neighbourhood, and what changed in the neighbourhood in that range?
-- Iteration 0.1 called the first version done when both questions are answerable on the lab capture (`lab/`) with the target latencies of Ch. 13 and the determinism property of Ch. 6. The research plan above replaces that criterion with gates: Q1 and Q2 are uses of the Phase 2 model, not gates. Neither question is implemented as a query; Ch. 14 reports what is measured instead.
+The model is a **graph**: a set of things, called *entities*, and directed links between them, called *relationships*. Both can carry named values, called *properties*. In the shop, `web` is an entity, "`web` calls `api`" is a relationship, and "`api` answered 236 calls in the last minute" is a value on that relationship.
 
-## 0.4 Facts about the sources
+```mermaid
+flowchart LR
+  S1["Azure<br/>resource lists"] --> R["typed rows"]
+  S2["Kubernetes<br/>pods, services"] --> R
+  S3["network observer<br/>who calls whom"] --> R
+  S4["measurements<br/>every minute"] --> R
+  R --> M["master graph<br/>everything observed"]
+  M --> P1["service level<br/>services and their<br/>dependencies"]
+  P1 --> P2["health model<br/>a few components,<br/>each with a state"]
+  classDef src fill:#4a3b6b,stroke:#c3b1e1,color:#ffffff
+  classDef g fill:#1f4e79,stroke:#9cc3e6,color:#ffffff
+  class S1,S2,S3,S4 src
+  class R,M,P1,P2 g
+```
 
-Each fact is checked in research [R01] (section 2.4) or [R02]. Consequences are design inputs, not claims about Sattle.
+Seven terms carry the rest of the paper. Each has a number so that later chapters can point to it.
 
-**Fact 0.1 (Azure Resource Graph).** Query results are paged (`$skipToken`) and can be truncated (`resultTruncated`). ARG "isn't strongly consistent" and a full scan is not a point-in-time snapshot ([arg-paging], [arg-overview]). Page size is 1,000 rows and queries are throttled per user ([arg-throttling]). Change records appear within five minutes ([arg-changes]). The Activity Log lags 3 to 20 minutes ([activity-log]).
-Consequence: completion of paging is not strong evidence. Deletion by absence needs a declared reconciliation policy.
+**Definition 0.1 (estate).** The set of cloud resources, clusters, programs and network paths that are under analysis, for one customer of the cloud.
+*Example:* the shop's subscription with its cluster, its three services and their pods.
 
-**Fact 0.2 (Kubernetes).** A watch resumes from a resource version. An expired history returns 410 Gone and requires a relist. Bookmarks mark progress. For types served by kube-apiserver the resource version is orderable as a monotonically increasing integer within one resource type (required for certification from Kubernetes 1.35). Only extension API servers may use non-numeric versions ([k8s-api-concepts]). Events are kept one hour by default ([k8s-apiserver]).
-Consequence: this corrects `brainstorm/contracts/docs/ADAPTERS.md`, which calls the resource version an opaque token (finding, R01 section 2.3). The engine records the position in its own transport as the resume token and treats the Kubernetes version as source data.
+**Definition 0.2 (source).** An external system that emits records about an estate in its own format.
+*Example:* the resource list of Azure, the object list of Kubernetes, the network observer of the cluster, a measurement system.
 
-**Fact 0.3 (Hubble).** Hubble keeps flows in a finite ring buffer. Its flow protocol has explicit loss messages (`LostEvent`, `LostEventSource`) ([hubble-internals], [hubble-flow-proto]).
-Consequence: loss is explicit incompleteness. It is never read as deletion.
+**Definition 0.3 (native record, observation).** A native record is what a source emits, unchanged. An observation is a native record together with where it came from: the source, the position in that source's stream, and the time. An observation is **evidence**. It does not by itself establish a fact of the graph.
+*Example:* "Kubernetes, record 1,085, at 10:57: pod `api-7c9` is running" is an observation. Whether the graph holds that pod is decided by the rules that read the observation.
 
-**Fact 0.4 (Azure network flow logs).** NSG flow logs retire on 30 September 2027 and cannot be newly created ([nsg-migrate]). VNet flow logs are aggregated: one-minute collection with tuples carrying a state and counters ([vnet-flowlogs]). The tuple layout depends on the format version.
-Consequence: adapters bind a format version. Counters are telemetry (Ch. 7).
+**Definition 0.4 (master graph).** The one graph that is built directly from observations. Every other graph is computed from it (Ch. 3).
+*Example:* in the shop the master graph holds every pod, service, machine and rented resource, and every observed call between pods.
 
-**Fact 0.5 (OpenTelemetry).** A Resource identifies the observed entity and carries attributes such as `service.instance.id`. Schema URLs identify attribute schemas ([otel-resource], [otel-schemas]).
-Consequence: resource attributes give identity context, not a cross-source identity.
+**Definition 0.5 (projection, derived graph).** A projection is a definition of a transformation from graphs to a graph. Its output is a derived graph. The word "projection" always means the definition, never the output (Ch. 5).
+*Example:* "one node per service, and an edge between two services when a pod of one calls a pod of the other" is a projection. The graph with the three nodes `web`, `api`, `db` is its derived graph.
 
-## 0.5 Requirements fixed for the paper
+**Definition 0.6 (derived view).** A derived graph, or a document made from derived graphs, that is shown to a person.
+*Example:* a picture of the three services with their states, or a report with one line per service.
 
-These are decisions of the project, not results.
+**Definition 0.7 (graph data and telemetry).** A property of an entity or relationship is either *graph data* or *telemetry*. Graph data are part of what the graph is: two graphs with different graph data are different graphs, and every change of graph data is recorded as a new version of the graph. Telemetry is a series of measurements over time attached to an entity or relationship. It changes all the time and creates no new version (Ch. 3, Ch. 7).
+*Example:* the name of a service is graph data. The number of calls it answered in each minute is telemetry.
 
-- **R-det.** Same ordered inputs, same pinned definitions and same logical-time inputs give the same revision log (Ch. 6).
-- **R-id.** Entity identity is timeless: independent of state, type, ontology version and time (Ch. 1).
-- **R-data.** The graph carries data (telemetry) as well as structure, in a separate plane that creates no revisions (Ch. 7).
-- **R-perf.** Very high performance is a first-class goal, stated as testable hypotheses with benchmarks (Ch. 13).
-- **R-meta.** Only the engine is compiled. Ontologies, identity domains and projections are typed graphs, loaded without recompiling (Ch. 2, 5).
-- **R-dir.** Projections may be bidirectional, but not always. Sync direction is declared (Ch. 8).
+Four ideas follow from these terms. Each is the subject of later chapters.
 
-## 0.6 Contributions and where they are discharged
+- **Observations are evidence, not facts.** Rules decide what the graph holds, and the graph remembers which observations support each element. When the support is withdrawn, the element goes (Ch. 9, 10).
+- **Levels of abstraction.** A projection that summarizes a graph is a higher level of it. It maps several nodes to one and lifts the edges with them: the dependency between two services is the lifted form of the calls between their pods (Ch. 5). The health model in the figure is such a level.
+- **Two planes.** Structure and measurements are kept apart. Measurements reach the structure only through one narrow door, a threshold with memory, so that a noisy number cannot make the graph flicker (Ch. 7).
+- **Definitions are data.** The types of entities, the rules for names and the projections are themselves graphs. Only a small fixed core is program code. A new kind of entity or a new view needs no new program (Ch. 2, 5).
 
-| # | Claim | Chapter | Status of the claim |
+## 0.3 Two guiding questions
+
+The paper keeps one user in mind: an engineer who is responsible for some clusters and rented resources and has to reason about changes and incidents. Two questions of that engineer guide the design. They are examples of use, not claims of the paper.
+
+- **Q1, change impact.** Given an element `x` of a derived graph, a version `r` of that graph and a depth `k`: which elements can be reached from `x` in at most `k` steps along dependencies at `r`, and which of them changed between two versions `r₁ < r₂`?
+- **Q2, incident context.** Given an element `x`, a version `r` and a time range `[τ₁, τ₂)`: what are the graph data and the measurements of `x` and of its direct neighbours in that range, and what changed among them?
+
+The prototype holds the data that both questions need. It does not yet offer them as ready-made queries.
+
+## 0.4 What the sources promise, and what they do not
+
+The design rests on five facts about real sources. Each is taken from the source's own documentation, cited in [references.md](references.md). Each has a consequence for the design.
+
+**Fact 0.1 (the resource list of Azure).** Answers come in pages of at most 1,000 rows and can be cut short. The service says of itself that it is not strongly consistent, so a full scan is not a picture of one moment ([arg-paging], [arg-overview], [arg-throttling]). Changes show up within about five minutes ([arg-changes]); the log of management actions lags 3 to 20 minutes ([activity-log]).
+*Consequence:* having read every page proves little. An entity may be removed because it is missing from a scan only under a rule that says so explicitly.
+
+**Fact 0.2 (Kubernetes).** A client can list objects and then *watch*, that is, receive every later change. Each change has a version number, and a watch can resume from one. The version numbers of one kind of object are ordered. If the client is away too long, the history is gone and it must list again ([k8s-api-concepts]). Event records are kept for one hour by default ([k8s-apiserver]).
+*Consequence:* a listing replaces what was known, and a gap in a watch is a known loss, not silence.
+
+**Fact 0.3 (the network observer).** The observer used here, Hubble, keeps recent network traffic in a buffer of fixed size and sends an explicit message when it has lost events ([hubble-internals], [hubble-flow-proto]).
+*Consequence:* loss is stated incompleteness. It is never read as "nothing happened".
+
+**Fact 0.4 (network logs of Azure).** The older log format retires on 30 September 2027 ([nsg-migrate]). The newer one reports once per minute, as counters per connection, and its layout depends on a format version ([vnet-flowlogs]).
+*Consequence:* a reader of these logs is tied to a format version, and the counters are telemetry.
+
+**Fact 0.5 (the common telemetry format).** In OpenTelemetry, a widely used format for measurements, each measurement names the thing it describes by a set of attributes ([otel-resource], [otel-schemas]).
+*Consequence:* such attributes help to recognise an entity, but they are not a name that all sources share.
+
+Together: no source gives a consistent picture of one moment. An engine must treat what it receives as evidence, and must treat absence as unknown unless a source declares otherwise.
+
+## 0.5 Requirements
+
+These six requirements are decisions made before the work, not results.
+
+- **R-det, determinism.** The same inputs in the same order, with the same definitions, give the same sequence of graph versions (Ch. 6).
+- **R-id, timeless identity.** What an entity is called inside the model does not depend on its state, its type, the version of the definitions, or the time (Ch. 1).
+- **R-data, structure and measurements.** The graph carries measurements as well as structure, on a separate plane that creates no versions (Ch. 7).
+- **R-perf, efficiency.** Cost is stated as budgets that a measurement can refute (Ch. 13).
+- **R-meta, definitions as data.** Only the engine is program code. Types, naming rules and projections are graphs that are loaded without rebuilding the program (Ch. 2, 5).
+- **R-dir, direction.** Some views may be edited, and the edit flows back to the graph below. Which views, and how, is declared, never guessed (Ch. 8).
+
+## 0.6 Research plan and claims
+
+The work has two phases. The first must be finished before the second counts as a result.
+
+**Phase 1, theory and capabilities.**
+- **1a, theory.** Every law and theorem is stated with a proof, or marked as a sketch or a conjecture.
+- **1b, flexible and expressive.** What the definition language can express, what it cannot, and what needs a change of the engine, stated as claims with evidence.
+- **1c, efficient.** A budget of memory and work per node, per edge and per measurement, met for a master graph of one million nodes on one machine, with storage that does not depend on one database product.
+
+**Phase 2, the prototype.** Real data from Azure become a health model that a person understands and that is always live.
+
+**Where this stands.** For 1a, each of the 113 numbered statements has a proof: 94 in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 8 are properties of the prototype that are tested and not proved. The proofs were read, not checked by a machine ([inventory.md](inventory.md)). For 1b, the paper describes what was built and does not yet state what the language can and cannot express. For 1c, the budgets are not yet stated, and nothing was measured at one million nodes. Phase 1 is therefore not finished. The prototype results in this paper come from an early prototype and are reported as early evidence.
+
+The paper makes eleven claims. The table says where each is established and how firmly.
+
+| # | Claim | Chapter | How firmly |
 |---|---|---|---|
-| C1 | Canonical form and timeless identity are decidable and replay-stable | Ch. 1 | proved, E10 open |
-| C2 | A graph is a partial property graph with a per-graph totally ordered revision log | Ch. 3 | proved |
-| C3 | Patches form a guarded inverse structure and map homomorphically into the signed-delta group | Ch. 4 | proved; property-tested on the engine's types (Ch. 14), not on the contract types of iteration 0.1 |
-| C4 | Telemetry never creates revisions. Structure derived from telemetry is replayable and flap-bounded | Ch. 7 | proved, given T7 (Theorem 6.3) |
-| C5 | A commit protocol over any store with the properties S1 to S5 gives per-revision atomicity, a linear chain and gap-free follow. Persistence does not depend on one store: memory and SQLite are tested, Cosmos DB for NoSQL is one more backend, designed in detail and run on the emulator only | Ch. 11 | proved from the stated store properties; that a backend scales to 1 million master nodes is open (gate 1c); E1 to E8 open for Cosmos DB |
-| C6 | Efficiency is stated as budgets per node, edge and telemetry point, met at 1 million master nodes on one machine (gate 1c). The budgets are not stated yet. H1 to H14 are the earlier targets, falsifiable by named benchmarks, against a reference estate of 750,000 entities with Cosmos DB; they stay as the record, and Ch. 13 (13.0) says which carry over | Ch. 13 | budgets: open. H1 to H14: hypotheses. The prototype measured some against them (Ch. 13, 13.7, Ch. 14); three are `supported` for named configurations (H5 engine part on memory and SQLite, H8 element view on the hot plane, H10 restart from SQLite); H7 has no status for a real account |
-| C7 | Ontologies, projections and identity domains are typed graphs over a closed kernel. A type system makes accepted definitions deterministic and telemetry non-interfering | Ch. 2, 5 | proved or proof sketch, checker mechanization is an obligation |
-| C8 | Incremental evaluation equals batch evaluation. Replay is deterministic. Chunking does not matter | Ch. 6 | T5 proof sketch with citation, T6 and T7 proved |
-| C9 | Sync direction is declared per rule. Lens laws survive stacking | Ch. 8 | proved for the lens steps and composition (T11), TGG laws (T12) are obligations |
-| C10 | Edit replay is defined and is not recomputation. Support, lineage and withdrawal follow a semiring | Ch. 9, 10 | proved or proof sketch |
-| C11 | A projection that summarizes a graph is a level of abstraction: it lifts edges with nodes, and lifting is a quotient that conserves counters and composes across levels | Ch. 5 (5.8), Ch. 7 (7.5) | proved on the model for an image that is a function; tested on examples |
+| C1 | Values have one canonical written form, and the name of an entity inside the model is stable under replay | 1 | proved; one experiment (replay across a change of the naming rules) is open |
+| C2 | A graph has a totally ordered sequence of versions, and every version can be reconstructed | 3 | proved |
+| C3 | Changes of a graph form an algebra: each change has an inverse, changes compose, and they map into a group of signed differences | 4 | proved; tested on the prototype with random cases, which cover only the changes the prototype itself accepts |
+| C4 | Measurements never create versions. Structure that is derived from measurements is reproducible and changes at a bounded rate | 7 | proved, given determinism (C8) |
+| C5 | Any store with five stated properties gives atomic versions, one unbranched history and readers that miss nothing | 11 | proved from the five properties; that a store scales to one million nodes is open |
+| C6 | Efficiency is stated as budgets per node, edge and measurement at one million nodes | 13 | the budgets are not yet stated. Fourteen earlier targets exist; three are met for named setups at the scale of the lab (Ch. 14) |
+| C7 | Types, naming rules and projections are typed graphs over a small fixed core. A type system makes accepted definitions deterministic and keeps measurements from changing structure unnoticed | 2, 5 | proved; type soundness under one named premise about the checking program |
+| C8 | Computing step by step gives the same result as computing from scratch. Replay is deterministic. How the input is cut into batches does not matter | 6 | proved, relative to two cited theorems and four stated premises; tested against an independent implementation |
+| C9 | The direction in which a view may be edited is declared per rule, and the laws of well-behaved editing survive stacking of views | 8 | proved on the model. One further kind of rule is proved for a stated fragment and is not built |
+| C10 | Changing a definition and replaying the inputs is well defined, and is not the same as computing from scratch. What supports an element can be traced | 9, 10 | proved; lineage soundness relative to a cited theorem |
+| C11 | A projection that summarizes a graph is a level of abstraction: it lifts edges with nodes, and lifting is a quotient that keeps totals and composes across levels | 5, 7 | proved on the model; tested by examples |
 
-## 0.7 Scope and non-goals
+## 0.7 Scope
 
-- Out of scope: AI-assisted rule generation and verification projections (ADR-041, ADR-043, ADR-044). They appear in no contract and are not part of the paper (finding 31).
-- Out of scope: virtual graphs and symbolic patches (`DiffProfile.Symbolic`). They are unconfirmed in the contract (finding 26).
-- Out of scope: multi-writer masters. One writer per graph. Commutative merge (CRDTs) is contrasted in Ch. 4.
-- Out of scope: writing back to Azure or Kubernetes. Backward proposals are internal graph edits (ARCHITECTURE.md).
-- ADR provenance: `brainstorm/dist/adrs.json` is the authoritative ADR source in this repository. The original `health-engine-architecture-decisions.md` is not in the repository (finding 36).
+- **In scope:** one writer per graph; data from Azure, Kubernetes and the network observer of the cluster; a prototype that reads recorded and live data.
+- **Out of scope:** changing anything in Azure or Kubernetes. An edit of a view changes the model only.
+- **Out of scope:** several writers of one graph at once, and the merge techniques that this would need (contrasted in Ch. 4).
+- **Out of scope:** graphs that are never stored but computed on demand, and changes that are described by a formula and not by their elements.
+- **Out of scope:** rules written by a language model.
 
-## 0.8 Component map (corrected Wardley map)
-
-Positions and edges are in [R01] section 3. Summary by evolution stage:
-
-| Stage | Components |
-|---|---|
-| Genesis | definition language (typed graphs), projection compiler and type checker, bidirectional sync, incremental deterministic evaluator |
-| Custom built | master graph, change algebra, identity catalog, ontology registry, telemetry plane, graph canvas, document projections, conformance harness, benchmark harness |
-| Product | source adapters, graph storage module (Cosmos DB for NoSQL), time-series storage (Azure Data Explorer) |
-| Commodity | stream transport, source systems, cloud compute |
-
-The anchor is the platform or SRE engineer. The map's visible needs are change impact and incident context (Q1 and Q2).
-
-## 0.9 Reading map
+## 0.8 How the chapters depend on one another
 
 ```mermaid
 flowchart TB
-  L1["Ch.1 Values and identity"] --> L2["Ch.2 Ontologies"]
-  L2 --> L3["Ch.3 Graphs, revisions,<br/>graph space"]
-  L3 --> L4["Ch.4 Change algebra"]
+  L1["Ch.1 Values and identity"] --> L2["Ch.2 Types as graphs"]
+  L2 --> L3["Ch.3 Graphs and versions"]
+  L3 --> L4["Ch.4 Algebra of changes"]
   L4 --> L5["Ch.5 Projection language"]
-  L5 --> L6["Ch.6 Semantics and<br/>incrementality"]
-  L6 --> L7["Ch.7 Telemetry plane"]
-  L6 --> L8["Ch.8 Sync direction"]
-  L6 --> L9["Ch.9 Evolution"]
+  L5 --> L6["Ch.6 Meaning and<br/>step-by-step evaluation"]
+  L6 --> L7["Ch.7 Measurements"]
+  L6 --> L8["Ch.8 Editable views"]
+  L6 --> L9["Ch.9 Changing definitions,<br/>evidence"]
   L3 --> L10["Ch.10 Sources"]
-  L7 --> L11["Ch.11 Storage and scale"]
+  L7 --> L11["Ch.11 Storage"]
   L6 --> L11
-  L11 --> L13["Ch.13 Performance"]
-  L10 --> L14["Ch.14 Evaluation"]
+  L11 --> L13["Ch.13 Efficiency"]
+  L9 --> L12["Ch.12 What a person sees"]
+  L10 --> L14["Ch.14 Experiments"]
   L13 --> L14
-  classDef done fill:#1f4e79,stroke:#9cc3e6,color:#ffffff
-  classDef later fill:#4a3b6b,stroke:#c3b1e1,color:#ffffff
-  class L1,L2,L3,L4,L5,L6,L7,L8,L9,L10,L11,L13 done
-  class L14 later
+  L12 --> L14
+  L14 --> L15["Ch.15 Related work<br/>and limits"]
+  classDef th fill:#1f4e79,stroke:#9cc3e6,color:#ffffff
+  classDef ex fill:#4a3b6b,stroke:#c3b1e1,color:#ffffff
+  class L1,L2,L3,L4,L5,L6,L7,L8,L9,L10,L11,L12,L13 th
+  class L14,L15 ex
 ```
 
-Chapters use only terms from earlier chapters, with marked forward references. Ch. 12 (outputs: documents and canvas) follows Ch. 6 and 9, Ch. 14 reports what the prototype produced (it is drawn in another color because it depends on the prototype and not only on earlier chapters), and Ch. 15 holds related work and the limits.
-
-## Delta to iteration 0.1
-
-- Finding 1: "projection" is the definition only.
-- Finding 31: AI rule generation is out of scope.
-- Finding 36: `adrs.json` is the authoritative ADR source.
-- Kubernetes resource version: ADAPTERS.md says "opaque"; this paper follows the current API documentation (R01 section 2.3).
-- Wardley map: replaced by the corrected map of R01 section 3.
+Chapters 1 to 13 build the theory and the design; each uses only terms from the chapters above it in the figure. Chapter 14 reports experiments, and chapter 15 places the work among others and states its limits. Symbols are listed in [notation.md](notation.md), terms in [glossary.md](glossary.md). How to obtain the software and repeat the experiments is in the appendix [Artifact](appendix-artifact.md).

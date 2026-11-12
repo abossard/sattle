@@ -1,4 +1,4 @@
-# Restart from a store on the journals of the two real captures at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# Restart from a store on the journals of the two real captures at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session).
 # sattle serve CAPTURE --cluster <redacted> --store sqlite=DB [--seal-every N], wait until the replay is idle, stop, then sattle serve --store sqlite=DB (no capture, no definitions) 5 times with its seals and, after deleting the seals with sqlite3, 3 times without. The time is from the start of the process to the first answer of GET /space, polled once a second, so it has a resolution of one second (and includes the process start). Each /space answer is compared with the one of the first start.
 # Part 1 used the default seal interval (5000 entries), which neither journal reached, so no seal existed and all 16 restarts replayed the whole journal. Part 2 used --seal-every 500 and has seals.
 

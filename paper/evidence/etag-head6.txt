@@ -1,4 +1,4 @@
-# Content ETags and the retention of served history at engine commit 6f784c9 (clean export of HEAD, Release build, run by the paper session), on the synthetic estate fixture, with curl.
+# Content ETags and the retention of served history at engine commit engine-of-evaluation-6 (clean export of HEAD, Release build, run by the paper session), on the synthetic estate fixture, with curl.
 
 ## first start: sattle serve estate --cluster synth --store sqlite=DB --retain-patches 5
 GET /graphs/health/ontology:

@@ -1,4 +1,4 @@
-# Tests at engine commit 15e0c8e and canvas commit 4953283 (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
+# Tests at engine commit engine-of-evaluation-3 and canvas commit canvas-of-evaluation-3 (clean git export of HEAD in a scratch directory, run by the paper session; Debug build for the engine).
 # The export has no lab/captures (gitignored), so the engine tests that need a capture are in the full run and were not run (default run: Category!=Capture). No Cosmos emulator was available, so the Cosmos cases of the storage contract tests did not run. Canvas fixtures were synced with scripts/sync-fixtures.mjs.
 
 ## engine: dotnet test (default run)

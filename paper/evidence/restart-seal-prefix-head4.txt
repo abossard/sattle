@@ -1,4 +1,4 @@
-# A restart from a state seal does not recompute the journal before the seal, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# A restart from a state seal does not recompute the journal before the seal, at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session).
 # Setup: sattle serve FIXTURE --cluster synth --store sqlite=DB --seal-every 10 (fixture tests/Sattle.Tests/fixtures/deploy-health, 17 journal entries, one seal at entry 10), stop. Then, in a copy of DB, journal entry 5 (an input batch before the seal) is deleted with sqlite3, and the copy is started with 'sattle serve --store sqlite=COPY' with no fixture.
 
 ## A: the seal is kept

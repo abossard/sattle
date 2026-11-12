@@ -1,4 +1,4 @@
-# Output of sattle bench (b5-sqlite) at engine commit 588a256 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
+# Output of sattle bench (b5-sqlite) at engine commit engine-of-evaluation-4 (Release build, clean export of HEAD), run by the paper session; load average recorded at the start and after. The Cosmos emulator was not used (no --cosmos), so the H7 file has the memory and SQLite sections only.
 == b5-sqlite load before: 63.84 64.22 65.71
 # B5 source to graph: capture 20261110T140542Z, store sqlite, 10 runs, one record per ingest call
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 63.84 64.22 65.71

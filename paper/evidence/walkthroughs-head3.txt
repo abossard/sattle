@@ -1,4 +1,4 @@
-# npm run walkthroughs at canvas commit 707baaa against the engine at 588a256, both from a clean export of HEAD, run by the paper session.
+# npm run walkthroughs at canvas commit canvas-of-evaluation-4 against the engine at engine-of-evaluation-4, both from a clean export of HEAD, run by the paper session.
 # Engine: sattle serve lab/fixtures (Release build); app: vite with ENGINE_PORT; Chrome headless over CDP. The preview figures are entities/relationships of the rebuilt projection on that engine.
 ok    deployment-health: 112 commands, preview deploymentHealth 2/0, dh2 2/0
 ok    fixpoint-closure: 32 commands, preview kLoop 0/0

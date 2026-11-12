@@ -1,4 +1,4 @@
-# Restart from a store at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session).
+# Restart from a store at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session).
 # sattle serve FIXTURE --cluster synth --store sqlite=DB (fixture tests/Sattle.Tests/fixtures/deploy-health), stop, then sattle serve --store sqlite=DB with no fixture and no definitions. Two runs: with the default seal interval (5000 entries, never reached by 17 entries, so no seal exists) and with --seal-every 10 (one seal, at entry 10).
 
 ## without a seal: first start (log)

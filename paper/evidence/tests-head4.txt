@@ -1,6 +1,6 @@
-# Tests at engine commit 9d0fff1 and canvas commit 97deabf (clean git export of HEAD c5210df in a scratch directory, run by the paper session; Release build for the engine). HEAD adds only .claude/launch.json to those two commits.
+# Tests at engine commit engine-of-evaluation-5 and canvas commit canvas-of-evaluation-5 (clean git export of HEAD repository-state-of-evaluation-5 in a scratch directory, run by the paper session; Release build for the engine). HEAD adds only .claude/launch.json to those two commits.
 # No Cosmos emulator was used by this paper: none was running on this machine, so the Cosmos cases of the storage contract tests, RestartTests, SealTests and LiveResumeTests did not run (SATTLE_COSMOS_EMULATOR unset). Canvas fixtures were synced with scripts/sync-fixtures.mjs.
-# lab/captures was linked to the two real captures for both engine runs, so the tests of the default run that use a capture ran on them (at 588a256 the default run did not have the captures and those tests returned early). Wall times are at load average 30 to 70 (other sessions running) and are not a measurement.
+# lab/captures was linked to the two real captures for both engine runs, so the tests of the default run that use a capture ran on them (at engine-of-evaluation-4 the default run did not have the captures and those tests returned early). Wall times are at load average 30 to 70 (other sessions running) and are not a measurement.
 
 ## engine: dotnet test -c Release (default run, Category!=Capture, captures linked)
 Passed!  - Failed:     0, Passed:   443, Skipped:     0, Total:   443, Duration: 6 m 23 s - Sattle.Tests.dll (net10.0)

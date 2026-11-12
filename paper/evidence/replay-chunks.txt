@@ -1,4 +1,4 @@
-# sattle replay <capture> --chunk N  (engine commit fde84db, Debug build, same capture as replay-latest.txt)
+# sattle replay <capture> --chunk N  (engine commit engine-of-evaluation-1, Debug build, same capture as replay-latest.txt)
 ## chunk 777
 replayed 243,979 record(s) in 4.2 s, capture span 5679 s, 14 logical-time advance(s), 1050 chunk(s)
 graph master: revision 168, 434 entities, 408 relationships, telemetry samples 4,595 (3,382 element-windows, 0 partial window(s))

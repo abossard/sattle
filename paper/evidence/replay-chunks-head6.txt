@@ -1,4 +1,4 @@
-# sattle replay --chunk N at engine commit 6f784c9 (Release build, clean export of HEAD b85785c, run by the paper session). The space file now carries invented names; the real captures run with the gitignored lab/captures/space-overlay.sattle that the engine applies. Same digests as at 588a256 and 9d0fff1 (replay-chunks-head3.txt, replay-chunks-head4.txt): value roles and the space bindings change release digests, not state digests.
+# sattle replay --chunk N at engine commit engine-of-evaluation-6 (Release build, clean export of HEAD repository-state-of-evaluation-6, run by the paper session). The space file now carries invented names; the real captures run with the gitignored lab/captures/space-overlay.sattle that the engine applies. Same digests as at engine-of-evaluation-4 and engine-of-evaluation-5 (replay-chunks-head3.txt, replay-chunks-head4.txt): value roles and the space bindings change release digests, not state digests.
 
 # capture 20261110T105738Z
 

@@ -1,4 +1,4 @@
-# H10 restart from the store with a state seal (--seal-every 2000), history of 1 h of repeated capture, SQLite, 10 restarts, at engine commit 9d0fff1 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 1 --seal-every 2000 --runs 10. Machine under load, see the load figures below.
+# H10 restart from the store with a state seal (--seal-every 2000), history of 1 h of repeated capture, SQLite, 10 restarts, at engine commit engine-of-evaluation-5 (clean export of HEAD, Release build, run by the paper session): sattle bench b10 --hours 1 --seal-every 2000 --runs 10. Machine under load, see the load figures below.
 == b10 1h seal load before: 57.88 52.02 49.13
 # B10 cold start by restart: capture 20261110T140542Z repeated to 1 h of logical time, SQLite journal and log, 10 restarts
 environment: macOS 27.2.0, Arm64, 10 logical cores, .NET 10.0.14, Release=True, load average at start 57.88 52.02 49.13

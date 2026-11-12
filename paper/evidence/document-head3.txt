@@ -1,4 +1,4 @@
-# Report document on the first real capture at engine commit 588a256 (Release build, clean export of HEAD, run by the paper session).
+# Report document on the first real capture at engine commit engine-of-evaluation-4 (Release build, clean export of HEAD, run by the paper session).
 # sattle serve CAPTURE --chunk N, then GET /graphs/deploymentReport/document. The Markdown bodies are byte-equal.
 
 ## chunk 1

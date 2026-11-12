@@ -119,7 +119,7 @@ Fixed once here. Chapters add no symbols without adding them here. Terms are def
 | `rev_of(τ)` | largest revision whose logical time is at most `τ` (Def. 12.4) |
 | `D = (order, blocks)` | document (Def. 12.5) |
 | `bid` | block id (Def. 12.5) |
-| `D1` to `D36` | deviations found by the prototype (Ch. 14, 14.8) |
+| `D1` to `D37` | deviations found by the prototype (Ch. 14, 14.8) |
 | `W = (E, ρ, Σ, f, d)`, `α`, `β`, `μ_i`, `Q(k, r)` | symbols local to Ch. 13 (workload model of Def. 13.1, cost coefficients, rates) and Ch. 11 (a point read); inside those chapters they replace the general meanings of `E`, `ρ`, `Σ`, `f` and `Q` |
 | `F1`, `F5` | premises: F1 of Theorem 3.5, F5 of Theorem 6.5 (finite domain of a fixpoint) |
 | A to E | evidence classes (Ch. 14, 14.1) |

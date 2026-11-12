@@ -1,4 +1,4 @@
-# Canvas at commit 53db46e (clean export of HEAD), run by the paper session. Engine in the same export: 64f7a6a, Release build.
+# Canvas at commit canvas-of-evaluation-8 (clean export of HEAD), run by the paper session. Engine in the same export: engine-of-evaluation-7, Release build.
 
 ## canvas: npx tsc --noEmit
 tsc exit 0

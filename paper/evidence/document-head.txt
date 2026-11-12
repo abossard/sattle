@@ -1,4 +1,4 @@
-# Document projection at engine commit 15e0c8e (Release build, clean export of HEAD, run by the paper session).
+# Document projection at engine commit engine-of-evaluation-3 (Release build, clean export of HEAD, run by the paper session).
 # 1. Fixture tests/Sattle.Tests/fixtures/deploy-health (a synthetic shop), sattle serve, GET /graphs/deploymentReport/document.
 #    The graph entry of deploymentReport in GET /space has document true, the others false. GET /graphs/master/document answers 404.
 #    Head: revision 8, X-Document-Digest sha256:060cffd4531aa6faa741e031aa47cf72c4bf92692e138c4b996de38e41081314, Cache-Control no-cache.

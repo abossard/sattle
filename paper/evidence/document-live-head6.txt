@@ -1,3 +1,3 @@
-# npm run document-live at canvas commit 478e2f3 against the engine at 6f784c9 serving lab/fixtures at --speed 2, both from a clean export of HEAD, run by the paper session. The page is opened once in headless Chrome and never reloaded.
+# npm run document-live at canvas commit canvas-of-evaluation-6 against the engine at engine-of-evaluation-6 serving lab/fixtures at --speed 2, both from a clean export of HEAD, run by the paper session. The page is opened once in headless Chrome and never reloaded.
 document-live: deploymentReport followed the stream without a reload through revisions 1, 2, 3 and ends at revision 3, digest sha256:0072cf469e6e as the engine answers
 exit 0
