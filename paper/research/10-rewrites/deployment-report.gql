@@ -1,0 +1,16 @@
+// A report on the health of the Deployments as a document: counts and one line per Deployment.
+CREATE GRAPH deploymentReport TYPED sattle.doc AS {
+  CONSTRUCT (:Block KEY block('title', '') {kind: 'heading', order: '0', level: 1, text: 'Deployment health'}),
+            (:Block KEY block('header', '') {kind: 'header', order: '2', a: 'Namespace', b: 'Deployment', c: 'State', d: 'Ready pods'});
+
+  USE deploymentHealth
+  MATCH (w:Workload)
+  RETURN COUNT(*) AS total, SUM(CASE WHEN w.state = 'Unhealthy' THEN 1 ELSE 0 END) AS unhealthy
+  NEXT CONSTRUCT (:Block KEY block('total', '') {kind: 'stat', order: '1/total', text: 'Deployments', n: total}),
+                 (:Block KEY block('unhealthy', '') {kind: 'stat', order: '1/unhealthy', text: 'Unhealthy deployments', n: unhealthy});
+
+  USE deploymentHealth
+  MATCH (w:Workload)
+  LET key = w.cluster || '/' || w.namespace || '/' || w.name
+  CONSTRUCT (:Block KEY block('row', key) {kind: 'row', order: '3/' || key, a: w.namespace, b: w.name, c: COALESCE(w.state, 'Unknown'), n: w.readyPods})
+}

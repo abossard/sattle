@@ -1,0 +1,196 @@
+// What is my workload made of, what does it talk to, and what does each part depend on?
+// The services of one namespace with their deployments and pods, the nodes, pools and cluster they run on,
+// and the Azure resources they use, with the evidence for each dependency.
+graph structure : acme.workload;
+declare query_parameters(workloadNamespace:string, aksName:string);
+
+let svcKey = (cluster:string, namespace:string, name:string) { strcat("svc/", cluster, "/", namespace, "/", name) };
+
+// ---- composition: what the workload is made of and what carries it ----
+let services = graph("master")
+    | graph-match (s) where labels(s) has "Service" and s.namespace == workloadNamespace
+      project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name, externalName = s.externalName, address = s.address
+    | extend skey = svcKey(cluster, namespace, name);
+let placed = graph("master")
+    | graph-match (p)-[b]->(s), (p)-[c]->(d)
+      where labels(b) has "Backs" and labels(c) has "ControlledBy" and s.namespace == workloadNamespace
+      project pod = p.id, podName = p.name, service = s.id, deployment = d.id,
+              cluster = d.cluster, namespace = d.namespace, deploymentName = d.name, replicas = d.replicas;
+let hosted = graph("master")
+    | graph-match (p)-[b]->(s), (p)-[r]->(n)
+      where labels(b) has "Backs" and labels(r) has "RunsOn" and s.namespace == workloadNamespace
+      project pod = p.id, node = n.id, cluster = n.cluster, nodeName = n.name, pool = n.pool;
+let pooled = hosted | where isnotempty(pool) | distinct node, cluster, pool | extend nodePool = identity("nodePool", cluster, pool);
+let clusters = graph("master")
+    | graph-match (r) where labels(r) has "AzureResource" and r.type == "microsoft.containerservice/managedclusters" and r.name == aksName
+      project clusterId = r.id, name = r.name, resourceId = r.resourceId;
+
+nodes Workload on workload = services
+    | distinct cluster, namespace
+    | project workload = identity("workload", cluster, namespace), key = strcat("ns/", cluster, "/", namespace), ['kind'] = "workload", name = namespace, cluster, namespace;
+nodes WorkloadService on service = services | project service, key = skey, ['kind'] = "service", name, cluster, namespace, externalName;
+edges Contains from workload to service = services | extend workload = identity("workload", cluster, namespace);
+nodes WorkloadPod on pod = placed
+    | distinct pod, podName, cluster, namespace
+    | project pod, key = strcat("pod/", cluster, "/", namespace, "/", podName), ['kind'] = "pod", name = podName, cluster, namespace;
+nodes WorkloadDeployment on deployment = placed
+    | distinct deployment, deploymentName, cluster, namespace, replicas
+    | project deployment, key = strcat("deploy/", cluster, "/", namespace, "/", deploymentName), ['kind'] = "deployment", name = deploymentName, cluster, namespace, replicas;
+edges Contains from service to deployment = placed | distinct service, deployment;
+edges Contains from deployment to pod = placed | distinct deployment, pod;
+nodes WorkloadNode on node = hosted
+    | distinct node, cluster, nodeName, pool
+    | project node, key = strcat("node/", cluster, "/", nodeName), ['kind'] = "node", name = nodeName, cluster, pool;
+edges HostedOn from pod to node = hosted | distinct pod, node;
+nodes NodePool on nodePool = pooled
+    | distinct nodePool, cluster, pool
+    | project nodePool, key = strcat("pool/", cluster, "/", pool), ['kind'] = "pool", name = pool, cluster;
+edges MemberOf from node to nodePool = pooled;
+nodes Cluster on clusterId = clusters | project clusterId, key = tolower(resourceId), ['kind'] = "cluster", name, resourceId;
+let poolsOfCluster = pooled | distinct nodePool | extend one = 1 | join kind=inner (clusters | extend one = 1) on one;
+edges MemberOf from nodePool to clusterId = poolsOfCluster;
+
+// ---- the resources of the subscription by the name they are reached by, and the private endpoints by their address ----
+let suffixes = datatable(rtype:string, suffix:string) [
+    "microsoft.cache/redis", ".redis.cache.windows.net",
+    "microsoft.storage/storageaccounts", ".blob.core.windows.net",
+    "microsoft.dbforpostgresql/flexibleservers", ".postgres.database.azure.com",
+    "microsoft.sql/servers", ".database.windows.net",
+    "microsoft.keyvault/vaults", ".vault.azure.net",
+    "microsoft.servicebus/namespaces", ".servicebus.windows.net",
+    "microsoft.documentdb/databaseaccounts", ".documents.azure.com"];
+let resources = graph("master")
+    | graph-match (r) where labels(r) has "AzureResource"
+      project resource = r.id, rkey = tolower(r.resourceId), rtype = tolower(r.type), rname = r.name, resourceId = r.resourceId;
+let named = resources | join kind=inner (suffixes) on rtype | project resource, rkey, host = strcat(tolower(rname), suffix);
+let endpoints = graph("master")
+    | graph-match (pe) where labels(pe) has "AzureResource" and pe.type == "microsoft.network/privateendpoints" and isnotempty(pe.linkedId) and isnotempty(pe.address)
+      project endpoint = pe.id, endpointName = pe.name, endpointId = pe.resourceId, peAddress = pe.address, linked = tolower(pe.linkedId), vnet = tolower(pe.parentId);
+// a Service that stands for a resource: an ExternalName Service and the resource its name is
+let backed = services
+    | where isnotempty(externalName)
+    | project service, skey, host = tolower(externalName)
+    | join kind=inner (named) on host;
+edges BackedBy from service to resource = backed;
+// which component a resource is to the workload: the Service that stands for it, else the resource itself
+let preferred = union (resources | project rkey, target = rkey, rank = 0), (backed | project rkey, target = skey, rank = 1)
+    | summarize arg_max(rank, target) by rkey;
+
+// ---- dependencies, each with the way it was found ----
+let sent = graph("master")
+    | graph-match (p)-[f]->(dst), (p)-[b]->(s)
+      where labels(f) has "Sends" and labels(b) has "Backs" and s.namespace == workloadNamespace
+      project podName = p.name, srcKey = svcKey(s.cluster, s.namespace, s.name), address = dst.address, dhost = tolower(dst.hostName);
+let accounts = graph("master")
+    | graph-match (p)-[ra]->(sa), (p)-[b]->(s)
+      where labels(ra) has "RunsAs" and labels(b) has "Backs" and s.namespace == workloadNamespace and isnotempty(sa.clientId)
+      project srcKey = svcKey(s.cluster, s.namespace, s.name), account = sa.name, client = tolower(sa.clientId);
+let identities = graph("master")
+    | graph-match (i) where labels(i) has "AzureResource" and i.type == "microsoft.managedidentity/userassignedidentities" and isnotempty(i.clientId)
+      project identityName = i.name, client = tolower(i.clientId), principal = tolower(i.principalId);
+let assignments = graph("master")
+    | graph-match (a) where labels(a) has "AzureResource" and a.type == "microsoft.authorization/roleassignments" and isnotempty(a.scope)
+      project principal = tolower(a.principalId), scope = tolower(a.scope);
+let configured = graph("master")
+    | graph-match (h)-[cf]->(d), (p)-[cb]->(d), (p)-[b]->(s)
+      where labels(cf) has "Configures" and labels(cb) has "ControlledBy" and labels(b) has "Backs" and s.namespace == workloadNamespace
+      project srcKey = svcKey(s.cluster, s.namespace, s.name), variable = h.variable, chost = h.host;
+// 1. flows to the address of a private endpoint, 2. flows to a name Hubble resolved,
+// 3. the pod's workload identity has a role on the resource, 4. an environment variable names the resource
+let toResources = union
+    (sent | join kind=inner (endpoints) on $left.address == $right.peAddress
+          | project srcKey, rkey = linked, how = "privateEndpoint", detail = strcat("pod ", podName, " sends flows to ", address, ", the address of private endpoint ", endpointName)),
+    (sent | join kind=inner (named) on $left.dhost == $right.host
+          | project srcKey, rkey, how = "dnsName", detail = strcat("pod ", podName, " sends flows to ", host)),
+    (accounts | join kind=inner (identities) on client | join kind=inner (assignments) on principal
+          | project srcKey, rkey = scope, how = "identity", detail = strcat("service account ", account, " runs as identity ", identityName, ", which has a role on the resource")),
+    (configured | join kind=inner (named) on $left.chost == $right.host
+          | project srcKey, rkey, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost))
+    | join kind=inner (preferred) on rkey
+    | project srcKey, targetKey = target, how, detail;
+// 4b. an environment variable names a Service, 5. pods of the source called pods of the target
+let toServices = union
+    (configured | join kind=inner (services | project chost = strcat(name, ".", namespace, ".svc.cluster.local"), targetKey = skey) on chost
+          | project srcKey, targetKey, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost)),
+    (graph("master")
+          | graph-match (a)-[k]->(b), (a)-[x]->(sa), (b)-[y]->(sb)
+            where labels(k) has "Calls" and labels(x) has "Backs" and labels(y) has "Backs" and sa.namespace == workloadNamespace and sb.namespace == workloadNamespace
+            project srcKey = svcKey(sa.cluster, sa.namespace, sa.name), targetKey = svcKey(sb.cluster, sb.namespace, sb.name), how = "calls", detail = strcat("pod ", a.name, " calls pod ", b.name));
+let found = union toResources, toServices | where srcKey != targetKey;
+
+// the evidence: one element per dependency and way it was found
+nodes DependencyEvidence on evidence = found
+    | summarize detail = min(detail) by srcKey, targetKey, how
+    | project evidence = identity("dependencyEvidence", srcKey, targetKey, how), sourceKey = srcKey, targetKey, how, detail;
+edges EvidenceFor from evidence to service = found
+    | distinct srcKey, targetKey, how
+    | join kind=inner (services | project srcKey = skey, service) on srcKey
+    | extend evidence = identity("dependencyEvidence", srcKey, targetKey, how);
+// the dependencies: one edge per pair, whatever the ways it was found
+let pairs = found | distinct srcKey, targetKey | join kind=inner (services | project srcKey = skey, src = service) on srcKey;
+let toService = pairs | join kind=inner (services | project targetKey = skey, dst = service) on targetKey;
+let toResource = pairs | join kind=inner (resources | project targetKey = rkey, dst = resource, rtype, rname, resourceId) on targetKey;
+edges DependsOn from src to dst = union toService, toResource;
+
+// the resources the workload depends on or stands for, and what they are reached through
+let used = union (toResource | project rkey = targetKey), (backed | project rkey) | distinct rkey;
+let reached = endpoints | join kind=inner (used) on $left.linked == $right.rkey;
+nodes PlatformResource on resource = union (toResource | project rkey = targetKey), (backed | project rkey)
+    | join kind=inner (resources) on rkey
+    | project resource, key = rkey, ['kind'] = "resource", name = rname, resourceId, resourceType = rtype;
+nodes PlatformResource on endpoint = reached
+    | project endpoint, key = tolower(endpointId), ['kind'] = "privateEndpoint", name = endpointName, resourceId = endpointId, resourceType = "microsoft.network/privateendpoints";
+edges ConnectedThrough from resource to endpoint = reached | join kind=inner (resources) on $left.linked == $right.rkey;
+let networks = reached | join kind=inner (resources | project vnet = rkey, network = resource, rname, resourceId, rtype) on vnet;
+nodes PlatformResource on network = networks | project network, key = vnet, ['kind'] = "network", name = rname, resourceId, resourceType = rtype;
+edges ConnectedThrough from endpoint to network = networks;
+
+// 6. a gateway whose backend is the address of a Service sends it requests: the gateway needs the Service
+let gateways = graph("master")
+    | graph-match (bk) where labels(bk) has "AzureResource" and bk.type == "microsoft.apimanagement/service/backends" and isnotempty(bk.address) and isnotempty(bk.parentId)
+      project baddress = bk.address, rkey = tolower(bk.parentId), backend = bk.name
+    | join kind=inner (services | where isnotempty(address) | project baddress = address, service, skey, sname = name) on baddress
+    | join kind=inner (resources) on rkey;
+nodes PlatformResource on resource = gateways | project resource, key = rkey, ['kind'] = "gateway", name = rname, resourceId, resourceType = rtype;
+edges Exposes from resource to service = gateways;
+nodes DependencyEvidence on evidence = gateways
+    | project evidence = identity("dependencyEvidence", rkey, skey, "backend"), sourceKey = rkey, targetKey = skey, how = "backend",
+              detail = strcat("backend ", backend, " of ", rname, " sends requests to ", baddress, ", the address of Service ", sname);
+edges EvidenceFor from evidence to service = gateways | extend evidence = identity("dependencyEvidence", rkey, skey, "backend");
+
+// ---- communication: who talks to whom, with its flows per window ----
+// between services of the workload: a call between pods is a call between the services they back
+let podCalls = graph("master")
+    | graph-match (a)-[k]->(b), (a)-[x]->(sa), (b)-[y]->(sb)
+      where labels(k) has "Calls" and labels(x) has "Backs" and labels(y) has "Backs" and sa.namespace == workloadNamespace and sb.namespace == workloadNamespace and sa.id != sb.id
+      project link = k.id, src = sa.id, dst = sb.id;
+// to resources and services outside: the destination's address leads to a private endpoint or a resolved name
+let destinationOf = union
+    (endpoints | project address = peAddress, rkey = linked),
+    (graph("master") | graph-match (dst) where labels(dst) has "Destination" project address = dst.address, host = tolower(dst.hostName)
+                     | join kind=inner (named) on host | project address, rkey)
+    | join kind=inner (preferred) on rkey
+    | distinct address, target;
+let sentCalls = graph("master")
+    | graph-match (p)-[f]->(dst), (p)-[b]->(s)
+      where labels(f) has "Sends" and labels(b) has "Backs" and s.namespace == workloadNamespace
+      project link = f.id, src = s.id, address = dst.address
+    | join kind=inner (destinationOf) on address
+    | join kind=leftouter (union (services | project target = skey, dst = service), (resources | project target = rkey, dst = resource)) on target
+    | project link, src, dst;
+let talks = union podCalls, sentCalls;
+edges TalksTo from src to dst = talks | distinct src, dst;
+edges TalksTo from src to dst = talks
+    | join kind=inner (telemetry("master", 30m) | where property in ("flows", "drops") | project link = id, windowStart, property, value) on link
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, windowStart;
+
+// ---- the roll-up edges: a component is affected by what it contains and by what it depends on ----
+edges Affects from src to dst = union
+    (services | project src = identity("workload", cluster, namespace), dst = service),
+    (placed | distinct service, deployment | project src = service, dst = deployment),
+    (toService | project src, dst),
+    (toResource | project src, dst),
+    (backed | project src = service, dst = resource),
+    (gateways | project src = resource, dst = service),
+    (pooled | project src = nodePool, dst = node),
+    (poolsOfCluster | project src = nodePool, dst = clusterId);

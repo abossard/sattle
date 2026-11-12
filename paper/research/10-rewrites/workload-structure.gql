@@ -1,0 +1,130 @@
+// What is my workload made of, what does it talk to, and what does each part depend on?
+// The services of one namespace with their deployments and pods, the nodes, pools and cluster they run on,
+// and the Azure resources they use, with the evidence for each dependency.
+CREATE GRAPH structure TYPED acme.workload AS {
+  VALUE suffixes = [{t: 'microsoft.cache/redis', s: '.redis.cache.windows.net'}, {t: 'microsoft.storage/storageaccounts', s: '.blob.core.windows.net'},
+    {t: 'microsoft.dbforpostgresql/flexibleservers', s: '.postgres.database.azure.com'}, {t: 'microsoft.sql/servers', s: '.database.windows.net'},
+    {t: 'microsoft.keyvault/vaults', s: '.vault.azure.net'}, {t: 'microsoft.servicebus/namespaces', s: '.servicebus.windows.net'},
+    {t: 'microsoft.documentdb/databaseaccounts', s: '.documents.azure.com'}]
+  // the resources by the name they are reached by
+  TABLE named = { USE master MATCH (r:AzureResource) FOR x IN suffixes FILTER LOWER(r.type) = x.t RETURN r, LOWER(r.name) || x.s AS host }
+  // which component a resource is to the workload: the Service that stands for it, else the resource itself
+  TABLE standIn = { FOR n IN TABLE named CALL (n) { USE master OPTIONAL MATCH (x:Service) FILTER x.namespace = $workloadNamespace AND LOWER(x.externalName) = n.host RETURN x }
+                    RETURN n.r AS r, COALESCE(x, n.r) AS target }
+
+  // ---- composition: what the workload is made of and what carries it ----
+  USE master
+  MATCH (s:Service) FILTER s.namespace = $workloadNamespace
+  CONSTRUCT (w:Workload KEY workload(s.cluster, s.namespace) {key: 'ns/' || s.cluster || '/' || s.namespace, kind: 'workload', name: s.namespace, cluster: s.cluster, namespace: s.namespace})
+              -[:Contains]->(s:WorkloadService {key: 'svc/' || s.cluster || '/' || s.namespace || '/' || s.name, kind: 'service', name: s.name, cluster: s.cluster, namespace: s.namespace, externalName: s.externalName}),
+            (w)-[:Affects]->(s);
+
+  USE master
+  MATCH (p:Pod)-[:Backs]->(s:Service), (p)-[:ControlledBy]->(d:Deployment) FILTER s.namespace = $workloadNamespace
+  CONSTRUCT (s)-[:Contains]->(d:WorkloadDeployment {key: 'deploy/' || d.cluster || '/' || d.namespace || '/' || d.name, kind: 'deployment', name: d.name, cluster: d.cluster, namespace: d.namespace, replicas: d.replicas})
+              -[:Contains]->(p:WorkloadPod {key: 'pod/' || p.cluster || '/' || p.namespace || '/' || p.name, kind: 'pod', name: p.name, cluster: p.cluster, namespace: p.namespace}),
+            (s)-[:Affects]->(d);
+
+  USE master
+  MATCH (p:Pod)-[:Backs]->(s:Service), (p)-[:RunsOn]->(n:Node) FILTER s.namespace = $workloadNamespace
+  CONSTRUCT (p)-[:HostedOn]->(n:WorkloadNode {key: 'node/' || n.cluster || '/' || n.name, kind: 'node', name: n.name, cluster: n.cluster, pool: n.pool})
+  FILTER n.pool IS NOT NULL
+  CONSTRUCT (n)-[:MemberOf]->(np:NodePool KEY nodePool(n.cluster, n.pool) {key: 'pool/' || n.cluster || '/' || n.pool, kind: 'pool', name: n.pool, cluster: n.cluster}),
+            (np)-[:Affects]->(n)
+  CALL { USE master MATCH (r:AzureResource) FILTER r.type = 'microsoft.containerservice/managedclusters' AND r.name = $aksName RETURN r }
+  CONSTRUCT (np)-[:MemberOf]->(r:Cluster {key: LOWER(r.resourceId), kind: 'cluster', name: r.name, resourceId: r.resourceId}),
+            (np)-[:Affects]->(r);
+
+  // ---- dependencies, each with the way it was found ----
+  {
+    // 1. flows to the address of a private endpoint: the endpoint leads to the resource
+    USE master
+    MATCH (p:Pod)-[:Sends]->(dst:Destination), (p)-[:Backs]->(s:Service), (pe:AzureResource), (r:AzureResource)
+    FILTER s.namespace = $workloadNamespace AND pe.type = 'microsoft.network/privateendpoints' AND pe.address = dst.address AND LOWER(pe.linkedId) = LOWER(r.resourceId)
+    RETURN s, r, 'privateEndpoint' AS how, 'pod ' || p.name || ' sends flows to ' || dst.address || ', the address of private endpoint ' || pe.name AS detail
+    UNION ALL
+    // 2. the name Hubble resolved for the address of a flow
+    USE master
+    MATCH (p:Pod)-[:Sends]->(dst:Destination), (p)-[:Backs]->(s:Service) FILTER s.namespace = $workloadNamespace
+    FOR n IN TABLE named FILTER LOWER(dst.hostName) = n.host
+    RETURN s, n.r AS r, 'dnsName' AS how, 'pod ' || p.name || ' sends flows to ' || n.host AS detail
+    UNION ALL
+    // 3. the workload identity of the pod's service account has a role on the resource
+    USE master
+    MATCH (p:Pod)-[:RunsAs]->(sa:ServiceAccount), (p)-[:Backs]->(s:Service), (i:AzureResource), (a:AzureResource), (r:AzureResource)
+    FILTER s.namespace = $workloadNamespace AND i.type = 'microsoft.managedidentity/userassignedidentities' AND LOWER(i.clientId) = LOWER(sa.clientId)
+       AND a.type = 'microsoft.authorization/roleassignments' AND LOWER(a.principalId) = LOWER(i.principalId) AND LOWER(a.scope) = LOWER(r.resourceId)
+    RETURN s, r, 'identity' AS how, 'service account ' || sa.name || ' runs as identity ' || i.name || ', which has a role on the resource' AS detail
+    UNION ALL
+    // 4. an environment variable of a Deployment names the host of a resource
+    USE master
+    MATCH (h:HostReference)-[:Configures]->(d:Deployment), (p:Pod)-[:ControlledBy]->(d), (p)-[:Backs]->(s:Service) FILTER s.namespace = $workloadNamespace
+    FOR n IN TABLE named FILTER h.host = n.host
+    RETURN s, n.r AS r, 'configuration' AS how, 'environment variable ' || h.variable || ' names ' || h.host AS detail
+  }
+  // a dependency on a resource that a Service stands for is a dependency on that Service
+  NEXT FOR x IN TABLE standIn FILTER x.r = r
+  LET target = x.target
+  RETURN s, target, how, detail
+  UNION ALL
+  {
+    // 4b. an environment variable names a Service, 5. pods of the source called pods of the target
+    USE master
+    MATCH (h:HostReference)-[:Configures]->(d:Deployment), (p:Pod)-[:ControlledBy]->(d), (p)-[:Backs]->(s:Service), (t:Service)
+    FILTER s.namespace = $workloadNamespace AND h.host = t.name || '.' || t.namespace || '.svc.cluster.local'
+    RETURN s, t AS target, 'configuration' AS how, 'environment variable ' || h.variable || ' names ' || h.host AS detail
+    UNION ALL
+    USE master
+    MATCH (a:Pod)-[:Calls]->(b:Pod), (a)-[:Backs]->(s:Service), (b)-[:Backs]->(t:Service)
+    FILTER s.namespace = $workloadNamespace AND t.namespace = $workloadNamespace
+    RETURN s, t AS target, 'calls' AS how, 'pod ' || a.name || ' calls pod ' || b.name AS detail
+  }
+  NEXT FILTER s <> target
+  LET skey = 'svc/' || s.cluster || '/' || s.namespace || '/' || s.name,
+      tkey = CASE WHEN target IS LABELED Service THEN 'svc/' || target.cluster || '/' || target.namespace || '/' || target.name ELSE LOWER(target.resourceId) END
+  RETURN s, target, skey, tkey, how, MIN(detail) AS detail GROUP BY s, target, skey, tkey, how
+  NEXT CONSTRUCT (e:DependencyEvidence KEY dependencyEvidence(skey, tkey, how) {sourceKey: skey, targetKey: tkey, how: how, detail: detail})-[:EvidenceFor]->(s),
+                 (s)-[:DependsOn]->(target), (s)-[:Affects]->(target)
+  FILTER target IS LABELED AzureResource
+  CONSTRUCT (target:PlatformResource {key: tkey, kind: 'resource', name: target.name, resourceId: target.resourceId, resourceType: LOWER(target.type)})
+  CALL (target) { USE master MATCH (pe:AzureResource), (net:AzureResource)
+                  FILTER pe.type = 'microsoft.network/privateendpoints' AND LOWER(pe.linkedId) = LOWER(target.resourceId) AND LOWER(pe.parentId) = LOWER(net.resourceId) RETURN pe, net }
+  CONSTRUCT (target)-[:ConnectedThrough]->(pe:PlatformResource {key: LOWER(pe.resourceId), kind: 'privateEndpoint', name: pe.name, resourceId: pe.resourceId, resourceType: 'microsoft.network/privateendpoints'})
+              -[:ConnectedThrough]->(net:PlatformResource {key: LOWER(net.resourceId), kind: 'network', name: net.name, resourceId: net.resourceId, resourceType: LOWER(net.type)});
+
+  // a Service that stands for a resource
+  FOR x IN TABLE standIn FILTER x.target IS LABELED Service
+  LET s = x.target, r = x.r
+  CONSTRUCT (s)-[:BackedBy]->(r:PlatformResource {key: LOWER(r.resourceId), kind: 'resource', name: r.name, resourceId: r.resourceId, resourceType: LOWER(r.type)}),
+            (s)-[:Affects]->(r)
+  CALL (r) { USE master MATCH (pe:AzureResource), (net:AzureResource)
+             FILTER pe.type = 'microsoft.network/privateendpoints' AND LOWER(pe.linkedId) = LOWER(r.resourceId) AND LOWER(pe.parentId) = LOWER(net.resourceId) RETURN pe, net }
+  CONSTRUCT (r)-[:ConnectedThrough]->(pe:PlatformResource {key: LOWER(pe.resourceId), kind: 'privateEndpoint', name: pe.name, resourceId: pe.resourceId, resourceType: 'microsoft.network/privateendpoints'})
+              -[:ConnectedThrough]->(net:PlatformResource {key: LOWER(net.resourceId), kind: 'network', name: net.name, resourceId: net.resourceId, resourceType: LOWER(net.type)});
+
+  // 6. a gateway whose backend is the address of a Service sends it requests: the gateway needs the Service
+  USE master
+  MATCH (bk:AzureResource), (s:Service), (g:AzureResource)
+  FILTER bk.type = 'microsoft.apimanagement/service/backends' AND s.namespace = $workloadNamespace AND bk.address = s.address AND LOWER(bk.parentId) = LOWER(g.resourceId)
+  LET skey = 'svc/' || s.cluster || '/' || s.namespace || '/' || s.name
+  CONSTRUCT (g:PlatformResource {key: LOWER(g.resourceId), kind: 'gateway', name: g.name, resourceId: g.resourceId, resourceType: LOWER(g.type)})-[:Exposes]->(s), (g)-[:Affects]->(s),
+            (e:DependencyEvidence KEY dependencyEvidence(LOWER(g.resourceId), skey, 'backend') {sourceKey: LOWER(g.resourceId), targetKey: skey, how: 'backend',
+               detail: 'backend ' || bk.name || ' of ' || g.name || ' sends requests to ' || bk.address || ', the address of Service ' || s.name})-[:EvidenceFor]->(s);
+
+  // ---- communication: who talks to whom, with its flows per window ----
+  USE master
+  MATCH (a:Pod)-[c:Calls]->(b:Pod), (a)-[:Backs]->(s:Service), (b)-[:Backs]->(t:Service)
+  FILTER s.namespace = $workloadNamespace AND t.namespace = $workloadNamespace AND s <> t
+  RETURN s, t, c
+  UNION ALL
+  USE master
+  MATCH (p:Pod)-[c:Sends]->(dst:Destination), (p)-[:Backs]->(s:Service) FILTER s.namespace = $workloadNamespace
+  CALL (dst) { USE master OPTIONAL MATCH (pe:AzureResource) FILTER pe.type = 'microsoft.network/privateendpoints' AND pe.address = dst.address RETURN LOWER(pe.linkedId) AS viaEndpoint }
+  FOR n IN TABLE named FILTER LOWER(dst.hostName) = n.host OR LOWER(n.r.resourceId) = viaEndpoint
+  FOR x IN TABLE standIn FILTER x.r = n.r
+  RETURN s, x.target AS t, c
+  NEXT CONSTRUCT (s)-[:TalksTo]->(t)
+  FOR w IN SERIES(c, 'flows', 'drops' WITHIN DURATION 'PT30M')
+  RETURN s, t, w.windowStart AS ws, SUM(w.flows) AS flows, SUM(w.drops) AS drops GROUP BY s, t, ws
+  NEXT CONSTRUCT (s)-[:TalksTo {flows: flows, drops: drops} AT ws]->(t)
+}

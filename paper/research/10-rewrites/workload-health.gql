@@ -1,0 +1,68 @@
+// Is my workload healthy, and if not, which part is to blame?
+// Each component's state is the worst severity over everything that affects it, up to sixteen edges away.
+// Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod,
+// read against the authored rules. A meter that has not reported for five minutes is in "no data".
+CREATE GRAPH health TYPED acme.workload AS {
+  // the readings of each meter against the rules (a pod's warnings count 0 in a minute without one)
+  TABLE readings = {
+    USE master MATCH (m:Meter)-[:MeterOf]->(r:AzureResource), (u:SignalRule)
+    FILTER m.meter = u.ruleMeter AND (LOWER(r.type) = u.ruleType OR u.ruleType = '*')
+    FOR w IN SERIES(m, 'reading' WITHIN DURATION 'PT30M' NODATA AFTER DURATION 'PT5M')
+    RETURN LOWER(r.resourceId) AS ekey, u, w.windowStart AS ws, w.reading AS raw, w.noData AS noData
+    UNION ALL
+    USE master MATCH (m:Meter)-[:MeterOf]->(n:Node), (u:SignalRule)
+    FILTER m.meter = u.ruleMeter AND (u.ruleType = 'node' OR u.ruleType = '*')
+    FOR w IN SERIES(m, 'reading' WITHIN DURATION 'PT30M' NODATA AFTER DURATION 'PT5M')
+    RETURN 'node/' || n.cluster || '/' || n.name AS ekey, u, w.windowStart AS ws, w.reading AS raw, w.noData AS noData
+    UNION ALL
+    USE master MATCH (p:Pod)-[:Backs]->(s:Service), (u:SignalRule)
+    FILTER s.namespace = $workloadNamespace AND u.ruleMeter = 'warnings' AND u.ruleType = 'pod'
+    FOR w IN SERIES(p, 'warnings' WITHIN DURATION 'PT30M' FILL 0 NODATA AFTER DURATION 'PT5M')
+    RETURN DISTINCT 'pod/' || p.cluster || '/' || p.namespace || '/' || p.name AS ekey, u, w.windowStart AS ws, w.warnings AS raw, w.noData AS noData
+  }
+  // the state of each signal: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on
+  TABLE states = {
+    FOR x IN TABLE readings
+    LET sign = CASE WHEN x.u.ruleInvert THEN -1.0 ELSE 1.0 END
+    RETURN x.ekey AS ekey, x.u AS u,
+           HYSTERESIS(x.raw * sign ORDER BY x.ws ABOVE x.u.ruleAbove FOR x.u.ruleEnter BELOW x.u.ruleBelow FOR x.u.ruleExit
+                      THEN 'on' ELSE 'off' INITIAL 'off' NODATA x.noData 'nodata') AS state GROUP BY ekey, u
+  }
+  // own severity per component key; a pod also counts the node it runs on; a deployment by the share of its pods
+  TABLE signalOwn = { FOR x IN TABLE states
+                      RETURN x.ekey AS k, MAX(CASE WHEN x.state = 'on' THEN x.u.ruleSeverity + 1 WHEN x.state = 'nodata' THEN 1 ELSE 0 END) AS own GROUP BY k }
+  TABLE podOwn = { FOR x IN TABLE signalOwn RETURN x.k AS k, x.own AS own
+                   UNION ALL
+                   USE structure MATCH (p:WorkloadPod)-[:HostedOn]->(n:WorkloadNode) FOR x IN TABLE signalOwn FILTER x.k = n.key RETURN p.key AS k, x.own AS own }
+  TABLE shares = { USE structure MATCH (d:WorkloadDeployment)-[:Contains]->(p:WorkloadPod)
+                   FOR x IN TABLE podOwn FILTER x.k = p.key
+                   RETURN d, COUNT(*) AS n, SUM(CASE WHEN x.own >= 3 THEN 1 ELSE 0 END) AS bad, SUM(CASE WHEN x.own >= 2 THEN 1 ELSE 0 END) AS weak,
+                          SUM(CASE WHEN x.own >= 1 THEN 1 ELSE 0 END) AS silent GROUP BY d }
+  TABLE owns = { FOR x IN TABLE podOwn RETURN x.k AS k, x.own AS own
+                 UNION ALL
+                 FOR x IN TABLE shares RETURN x.d.key AS k, CASE WHEN x.bad * 2 >= x.n THEN 3 WHEN x.weak * 2 >= x.n THEN 2 WHEN x.silent * 2 >= x.n THEN 1 ELSE 0 END AS own }
+
+  // the components and the edges of the structure, except the roll-up edges
+  USE structure MATCH (c:Component) CONSTRUCT (c);
+  USE structure MATCH (a)-[e]->(b) FILTER NOT e IS LABELED Affects CONSTRUCT (a)-[e]->(b);
+  USE structure MATCH (a)-[t:TalksTo]->(b) FOR w IN SERIES(t, 'flows', 'drops' WITHIN DURATION 'PT30M')
+  CONSTRUCT (a)-[t {flows: w.flows, drops: w.drops} AT w.windowStart]->(b);
+
+  // the signals of the components
+  FOR x IN TABLE states
+  CALL (x) { USE structure MATCH (c:Component) FILTER c.key = x.ekey RETURN c }
+  CONSTRUCT (sig:ComponentSignal KEY signal(x.ekey, x.u.ruleId) {componentKey: x.ekey, rule: x.u.ruleId, meter: x.u.ruleMeter, signalSeverity: x.u.ruleSeverity, signalState: x.state})-[:Measures]->(c);
+  FOR x IN TABLE readings
+  CONSTRUCT (sig:ComponentSignal KEY signal(x.ekey, x.u.ruleId) {reading: CASE WHEN x.u.ruleMeter = 'warnings' THEN NULL ELSE x.raw END,
+                                                               events: CASE WHEN x.u.ruleMeter = 'warnings' THEN x.raw ELSE NULL END} AT x.ws);
+  FOR x IN TABLE shares LET d = x.d CONSTRUCT (d {pods: x.n, unhealthyPods: x.bad});
+
+  // the roll-up: the worst own severity over the component and everything that affects it
+  USE structure
+  MATCH (c:Component)-[:Affects]->{0,16}(x:Component)
+  OPTIONAL CALL (x) { FOR o IN TABLE owns FILTER o.k = x.key RETURN MAX(o.own) AS xo }
+  OPTIONAL CALL (c) { FOR o IN TABLE owns FILTER o.k = c.key RETURN MAX(o.own) AS own }
+  RETURN c, own, MAX(COALESCE(xo, -1)) AS w GROUP BY c, own
+  NEXT CONSTRUCT (c {own: own, severity: w,
+                     state: CASE WHEN w >= 3 THEN 'Unhealthy' WHEN w = 2 THEN 'Degraded' WHEN w = 1 THEN 'No data' WHEN w = 0 THEN 'Healthy' ELSE 'Unknown' END})
+}

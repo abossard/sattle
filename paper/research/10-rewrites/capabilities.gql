@@ -1,0 +1,32 @@
+// The business capabilities and the calls between them, from the calls between the services that realize them.
+// Renaming, re-parenting, creating and retiring a capability here writes back to the master graph.
+CREATE GRAPH capabilities TYPED acme.biz AS {
+  USE master
+  MATCH (c:Capability) FILTER c.status <> 'retired'
+  CONSTRUCT (c:BizCapability {name: c.name})
+    EDITABLE CREATE, DELETE, UPDATE name
+    ON CREATE KEY capability SET owner = 'unassigned', status = 'active'
+    ON DELETE SET status = 'retired';
+
+  USE master
+  MATCH (c:Capability)-[:PartOf]->(q:Capability) FILTER c.status <> 'retired' AND q.status <> 'retired'
+  CONSTRUCT (c)-[:Under]->(q) EDITABLE CREATE, DELETE;
+
+  USE master
+  MATCH (s:Service)-[:Realizes]->(c:Capability) FILTER c.status <> 'retired'
+  RETURN c, COUNT(DISTINCT s) AS serviceCount GROUP BY c
+  NEXT CONSTRUCT (c {serviceCount: serviceCount});
+
+  // a call between two services is a call between the capabilities that realize them
+  USE serviceTree
+  MATCH (a)-[d:DependsOn]->(b)
+  CALL { USE master MATCH (a)-[:Realizes]->(x:Capability), (b)-[:Realizes]->(y:Capability)
+         FILTER x.status <> 'retired' AND y.status <> 'retired' AND x <> y RETURN x, y }
+  CONSTRUCT (x)-[:DependsOn]->(y)
+  FOR w IN SERIES(d, 'flows', 'drops' WITHIN DURATION 'PT24H')
+  RETURN x, y, w.windowStart AS ws, SUM(w.flows) AS callFlows, SUM(w.drops) AS callDrops GROUP BY x, y, ws
+  NEXT LET callDropRatio = CASE WHEN callFlows > 0 THEN callDrops / callFlows ELSE 0.0 END
+  CONSTRUCT (x)-[:DependsOn {callFlows: callFlows, callDrops: callDrops, callDropRatio: callDropRatio} AT ws]->(y)
+  RETURN x, y, HYSTERESIS(callDropRatio ORDER BY ws ABOVE 0.05 FOR 3 BELOW 0.02 FOR 3 THEN 'degraded' ELSE 'ok' INITIAL 'ok') AS callStatus GROUP BY x, y
+  NEXT CONSTRUCT (x)-[:DependsOn {callStatus: callStatus}]->(y)
+}

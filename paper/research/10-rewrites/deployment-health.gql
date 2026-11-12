@@ -1,0 +1,17 @@
+// The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.
+CREATE GRAPH deploymentHealth TYPED acme.deployhealth AS {
+  USE master
+  MATCH (d:Deployment)
+  OPTIONAL MATCH (p:Pod)-[:ControlledBy]->(d) FILTER COALESCE(p.ready, FALSE)
+  RETURN d, COUNT(p) AS readyPods GROUP BY d
+  NEXT LET state = CASE WHEN readyPods > $minReady THEN 'Healthy' ELSE 'Unhealthy' END
+  CONSTRUCT (d:Workload {cluster: d.cluster, namespace: d.namespace, name: d.name, replicas: d.replicas, readyPods: readyPods, state: state});
+
+  USE master
+  MATCH (a:Pod)-[:Calls]->(b:Pod), (a)-[:ControlledBy]->(x:Deployment), (b)-[:ControlledBy]->(y:Deployment)
+  FILTER x <> y
+  CALL (x) { OPTIONAL MATCH (p:Pod)-[:ControlledBy]->(x) FILTER COALESCE(p.ready, FALSE) RETURN COUNT(p) AS readyX }
+  CALL (y) { OPTIONAL MATCH (p:Pod)-[:ControlledBy]->(y) FILTER COALESCE(p.ready, FALSE) RETURN COUNT(p) AS readyY }
+  RETURN DISTINCT x, y, CASE WHEN readyX > $minReady AND readyY > $minReady THEN 'Healthy' ELSE 'Unhealthy' END AS state
+  NEXT CONSTRUCT (x)-[:Talks {state: state}]->(y)
+}

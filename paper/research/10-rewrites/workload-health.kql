@@ -1,0 +1,87 @@
+// Is my workload healthy, and if not, which part is to blame?
+// Each component's state is the worst severity over everything that affects it, up to sixteen edges away.
+// Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod,
+// read against the authored rules. A meter that has not reported for five minutes is in "no data".
+graph health : acme.workload;
+declare query_parameters(workloadNamespace:string);
+
+let rules = graph("master")
+    | graph-match (u) where labels(u) has "SignalRule"
+      project rid = u.ruleId, rtype = u.ruleType, meter = u.ruleMeter, above = u.ruleAbove, enterAfter = u.ruleEnter,
+              below = u.ruleBelow, exitAfter = u.ruleExit, severity = u.ruleSeverity, sign = iff(u.ruleInvert, -1.0, 1.0);
+// the meters of Azure resources and nodes, and the warning events of the pods of the workload (a minute without one counts 0)
+let meters = union
+    (graph("master") | graph-match (m)-[o]->(r) where labels(o) has "MeterOf" and labels(r) has "AzureResource"
+        project series = m.id, property = "reading", ekey = tolower(r.resourceId), etype = tolower(r.type), meter = m.meter),
+    (graph("master") | graph-match (m)-[o]->(n) where labels(o) has "MeterOf" and labels(n) has "Node"
+        project series = m.id, property = "reading", ekey = strcat("node/", n.cluster, "/", n.name), etype = "node", meter = m.meter),
+    (graph("master") | graph-match (p)-[b]->(s) where labels(p) has "Pod" and labels(b) has "Backs" and s.namespace == workloadNamespace
+        project series = p.id, property = "warnings", ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), etype = "pod", meter = "warnings")
+    | distinct *;
+let readings = meters
+    | join kind=inner (rules) on meter
+    | where etype == rtype or rtype == "*"
+    | join kind=inner (union (telemetry_filled("master", 30m, 5m, 0.0) | where property == "warnings"),
+                             (telemetry_filled("master", 30m, 5m, real(null)) | where property == "reading")
+                       | project series = id, property, windowStart, raw = value, noData) on series, property;
+let signals = readings
+    | project ekey, rid, severity, meter, windowStart, value = raw * sign, noData, above, enterAfter, below, exitAfter
+    | invoke hysteresis("on", "off", "off", "nodata")
+    | project ekey, rid, severity, meter, state;
+
+// the signals of the components and their severity: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on
+let comps = graph("structure")
+    | graph-match (c) where labels(c) has "Component"
+      project component = c.id, label = labels(c), key = c.key, ['kind'] = c.kind, name = c.name, cluster = c.cluster, namespace = c.namespace,
+              externalName = c.externalName, replicas = c.replicas, pool = c.pool, resourceId = c.resourceId, resourceType = c.resourceType;
+let measured = signals
+    | join kind=inner (comps | project ekey = key, component) on ekey
+    | extend signal = identity("signal", ekey, rid), sev = case(state == "on", severity + 1, state == "nodata", 1, 0);
+nodes ComponentSignal on signal = measured
+    | project signal, componentKey = ekey, rule = rid, meter, signalSeverity = severity, signalState = state;
+edges Measures from signal to component = measured;
+nodes ComponentSignal on signal = readings
+    | summarize reading = maxif(raw, property == "reading"), events = sumif(raw, property == "warnings") by ekey, rid, windowStart
+    | extend signal = identity("signal", ekey, rid);
+
+// a pod is as bad as its own signals and those of its node; a deployment by the share of its pods
+let signalOwn = measured | summarize own = max(sev) by k = ekey;
+let podNode = graph("structure") | graph-match (p)-[h]->(n) where labels(h) has "HostedOn" project pk = p.key, nk = n.key;
+let ownByKey = union signalOwn, (podNode | join kind=inner (signalOwn | project nk = k, own) on nk | project k = pk, own)
+    | summarize own = max(own) by k;
+// the share rule keeps the rank of no data: 3 when at least half of the pods are at 3, else 2, else 1, else 0
+let shares = graph("structure")
+    | graph-match (d)-[c]->(p) where labels(d) has "WorkloadDeployment" and labels(c) has "Contains"
+      project dk = d.key, deployment = d.id, k = p.key
+    | join kind=inner (ownByKey) on k
+    | summarize n = count(), bad = countif(own >= 3), weak = countif(own >= 2), silent = countif(own >= 1) by dk, deployment;
+let owns = union ownByKey, (shares | project k = dk, own = case(bad * 2 >= n, 3, weak * 2 >= n, 2, silent * 2 >= n, 1, 0))
+    | summarize own = max(own) by k;
+
+// the roll-up: the worst own severity over the component and everything that affects it
+let reach = union
+    (comps | project rk = key, dk = key),
+    (graph("structure") | graph-match (c)-[a*1..16]->(d) where all(a, labels(a) has "Affects") project rk = c.key, dk = d.key);
+let levels = union (comps | project k = key, w = -1),
+                   (reach | join kind=inner (owns | project dk = k, own) on dk | summarize w = max(own) by k = rk)
+    | summarize w = max(w) by k;
+
+nodes on component labels label = comps;
+nodes on component labels label = comps
+    | join kind=leftouter (owns) on $left.key == $right.k
+    | join kind=leftouter (levels) on $left.key == $right.k
+    | project component, label, own, severity = w,
+              state = case(w >= 3, "Unhealthy", w == 2, "Degraded", w == 1, "No data", w == 0, "Healthy", "Unknown");
+nodes WorkloadDeployment on deployment = shares | project deployment, pods = n, unhealthyPods = bad;
+
+// the edges a viewer shows: everything of the structure except the roll-up edges, and the flows of TalksTo
+edges from src to dst labels label = graph("structure")
+    | graph-match (a)-[e]->(b) where not(labels(e) has "Affects")
+      project src = a.id, dst = b.id, label = labels(e);
+nodes DependencyEvidence on evidence = graph("structure")
+    | graph-match (e) where labels(e) has "DependencyEvidence"
+      project evidence = e.id, sourceKey = e.sourceKey, targetKey = e.targetKey, how = e.how, detail = e.detail;
+edges TalksTo from src to dst = graph("structure")
+    | graph-match (a)-[t]->(b) where labels(t) has "TalksTo" project link = t.id, src = a.id, dst = b.id
+    | join kind=inner (telemetry("structure", 30m) | where property in ("flows", "drops") | project link = id, windowStart, property, value) on link
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, windowStart;

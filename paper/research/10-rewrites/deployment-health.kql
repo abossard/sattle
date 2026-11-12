@@ -1,0 +1,25 @@
+// The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.
+graph deploymentHealth : acme.deployhealth;
+declare query_parameters(minReady:long = 0);
+
+let deployments = graph("master")
+    | graph-match (d) where labels(d) has "Deployment"
+      project deployment = d.id, cluster = d.cluster, namespace = d.namespace, name = d.name, replicas = d.replicas;
+let status = deployments
+    | join kind=leftouter (graph("master")
+        | graph-match (p)-[c]->(d) where labels(c) has "ControlledBy"
+          project deployment = d.id, ready = coalesce(p.ready, false)
+        | summarize readyPods = countif(ready) by deployment) on deployment
+    | project deployment, readyPods = coalesce(readyPods, 0)
+    | extend state = iff(readyPods > minReady, "Healthy", "Unhealthy");
+
+nodes Workload on deployment = deployments;
+nodes Workload on deployment = status;
+edges Talks from src to dst = graph("master")
+    | graph-match (a)-[k]->(b), (a)-[x]->(da), (b)-[y]->(db)
+      where labels(k) has "Calls" and labels(x) has "ControlledBy" and labels(y) has "ControlledBy" and da.id != db.id
+      project src = da.id, dst = db.id
+    | distinct src, dst
+    | join kind=inner (status | project src = deployment, srcState = state) on src
+    | join kind=inner (status | project dst = deployment, dstState = state) on dst
+    | project src, dst, state = iff(srcState == "Unhealthy" or dstState == "Unhealthy", "Unhealthy", "Healthy");

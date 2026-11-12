@@ -1,0 +1,34 @@
+// The service tree: the services of each namespace, and who calls whom, from the calls between their pods.
+CREATE GRAPH serviceTree TYPED acme.svc AS {
+  USE master
+  MATCH (s:Service)
+  OPTIONAL MATCH (p:Pod)-[:Backs]->(s)
+  RETURN s, COUNT(DISTINCT p) AS pods GROUP BY s
+  NEXT CONSTRUCT (s:ServiceNode {cluster: s.cluster, namespace: s.namespace, name: s.name, pods: pods});
+
+  USE master
+  MATCH (s:Service)
+  CONSTRUCT (g:ServiceGroup KEY serviceGroup(s.cluster, s.namespace) {cluster: s.cluster, namespace: s.namespace})-[:Contains]->(s)
+  RETURN s.cluster AS cluster, s.namespace AS namespace, COUNT(DISTINCT s) AS services GROUP BY cluster, namespace
+  NEXT CONSTRUCT (g:ServiceGroup KEY serviceGroup(cluster, namespace) {services: services});
+
+  // a call between two pods is a call between the services they back; a pod that backs two services counts for both
+  USE master
+  MATCH (a:Pod)-[c:Calls]->(b:Pod), (a)-[:Backs]->(s:Service), (b)-[:Backs]->(t:Service)
+  FILTER s <> t
+  CONSTRUCT (s)-[:DependsOn]->(t)
+  FOR w IN SERIES(c, 'flows', 'drops' WITHIN DURATION 'PT24H')
+  RETURN s, t, w.windowStart AS ws, SUM(w.flows) AS flows, SUM(w.drops) AS drops GROUP BY s, t, ws
+  NEXT LET dropRatio = CASE WHEN flows > 0 THEN drops / flows ELSE 0.0 END
+  CONSTRUCT (s)-[:DependsOn {flows: flows, drops: drops, dropRatio: dropRatio, flowRate: flows / 60.0} AT ws]->(t),
+            (s {flowsOut: flows} AT ws)
+  RETURN s, t, HYSTERESIS(dropRatio ORDER BY ws ABOVE 0.05 FOR 3 BELOW 0.02 FOR 3 THEN 'degraded' ELSE 'ok' INITIAL 'ok') AS status GROUP BY s, t
+  NEXT CONSTRUCT (s)-[:DependsOn {status: status}]->(t);
+
+  USE master
+  MATCH (a:Pod)-[c:Calls]->(b:Pod), (a)-[:Backs]->(s:Service), (b)-[:Backs]->(t:Service)
+  FILTER s <> t
+  FOR w IN SERIES(c, 'flows' WITHIN DURATION 'PT24H')
+  RETURN s.cluster AS cluster, s.namespace AS namespace, w.windowStart AS ws, SUM(w.flows) AS flowsOut GROUP BY cluster, namespace, ws
+  NEXT CONSTRUCT (g:ServiceGroup KEY serviceGroup(cluster, namespace) {flowsOut: flowsOut} AT ws)
+}

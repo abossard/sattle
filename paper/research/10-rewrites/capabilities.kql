@@ -1,0 +1,34 @@
+// The business capabilities and the calls between them, from the calls between the services that realize them.
+// Renaming, re-parenting, creating and retiring a capability here writes back to the master graph.
+graph capabilities : acme.biz;
+
+let capabilities = graph("master")
+    | graph-match (c) where labels(c) has "Capability" and c.status != "retired"
+      project capability = c.id, name = c.name;
+let realizes = graph("master")
+    | graph-match (s)-[r]->(c) where labels(r) has "Realizes" and c.status != "retired"
+      project service = s.id, capability = c.id;
+// a call between two services is a call between the capabilities that realize them
+let deps = graph("serviceTree")
+    | graph-match (a)-[d]->(b) where labels(d) has "DependsOn"
+      project dep = d.id, srcService = a.id, dstService = b.id
+    | join kind=inner (realizes | project srcService = service, src = capability) on srcService
+    | join kind=inner (realizes | project dstService = service, dst = capability) on dstService
+    | where src != dst;
+let calls = deps
+    | join kind=inner (telemetry("serviceTree", 24h) | where property in ("flows", "drops") | project dep = id, windowStart, property, value) on dep
+    | summarize callFlows = sumif(value, property == "flows"), callDrops = sumif(value, property == "drops") by src, dst, windowStart;
+
+nodes BizCapability on capability
+    with (edit = "create, delete, update(name)", createKey = "capability", createDefaults = "owner = 'unassigned', status = 'active'", deleteSets = "status = 'retired'")
+    = capabilities;
+edges Under from child to parent with (edit = "create, delete") = graph("master")
+    | graph-match (c)-[p]->(q) where labels(p) has "PartOf" and c.status != "retired" and q.status != "retired"
+      project child = c.id, parent = q.id;
+nodes BizCapability on capability = realizes | distinct service, capability | summarize serviceCount = count() by capability;
+edges DependsOn from src to dst = deps | distinct src, dst;
+edges DependsOn from src to dst = calls | extend callDropRatio = iff(callFlows > 0, callDrops / callFlows, 0.0);
+edges DependsOn from src to dst = calls
+    | project src, dst, windowStart, value = iff(callFlows > 0, callDrops / callFlows, 0.0), above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3
+    | invoke hysteresis("degraded", "ok", "ok")
+    | project src, dst, callStatus = state;
