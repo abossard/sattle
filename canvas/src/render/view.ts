@@ -1,4 +1,5 @@
 // GraphView: canvas pair (WebGL + 2D label layer), camera, pointer and keyboard input, picking, level of detail.
+import { LabelPlacer, keepInside } from "./labels";
 import { GraphRenderer, type Camera, type RenderParams } from "./renderer";
 import { Ex, Scene, Shape, St, WORDS_EDGE } from "./scene";
 import { SpatialGrid, type PointSet } from "./spatial";
@@ -508,22 +509,15 @@ export class GraphView {
     // node labels
     ctx.font = "12px system-ui, sans-serif";
     ctx.textAlign = "center";
-    const boxes = new Map<number, number[]>();
-    const tryPlace = (x: number, y: number, w: number, h: number): boolean => {
-      const x0 = x - w / 2, y0 = y - h / 2;
-      const cx0 = Math.floor(x0 / 64), cx1 = Math.floor((x0 + w) / 64), cy0 = Math.floor(y0 / 64), cy1 = Math.floor((y0 + h) / 64);
-      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
-        const l = boxes.get(cy * 100003 + cx);
-        if (!l) continue;
-        for (let k = 0; k < l.length; k += 4) if (x0 < l[k] + l[k + 2] && x0 + w > l[k] && y0 < l[k + 1] + l[k + 3] && y0 + h > l[k + 1]) return false;
-      }
-      for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
-        const key = cy * 100003 + cx;
-        const l = boxes.get(key);
-        if (l) l.push(x0, y0, w, h); else boxes.set(key, [x0, y0, w, h]);
-      }
-      return true;
-    };
+    const placer = new LabelPlacer();
+    // in a graph small enough to read node by node, a label never covers another node: the nodes take their boxes first
+    if (s.nodeCount <= 400) for (let i = 0; i < s.nodeCount; i++) {
+      if (!s.nodeVisible(i)) continue;
+      const [nx, ny] = toS(s.positions[2 * i], s.positions[2 * i + 1]);
+      if (!inView(nx, ny, 30)) continue;
+      const nr = Math.max(s.radius[i] * z, 1.4);
+      placer.take(nx, ny, nr * 2, nr * 2);
+    }
     let drawn = 0;
     const MAX_LABELS = 320;
     const labelNode = (i: number, force: boolean): void => {
@@ -539,10 +533,12 @@ export class GraphView {
       if (!text) return;
       const w = this.textWidth(text) + 6;
       const ly = y + r + 8;
-      if (!special && !tryPlace(x, ly, w, 14)) return;
-      if (special) tryPlace(x, ly, w, 14);
-      ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText(text, x, ly);
-      ctx.fillStyle = special ? th.text : th.muted; ctx.fillText(text, x, ly);
+      const lx = keepInside(x, w, W);                      // a label at the edge of the pane is moved in, not cut off
+      // the selected and the hovered node always say their name; every other label, highlighted or not, gives way to what is already there
+      const always = (st & (St.Selected | St.Hover)) !== 0;
+      if (always) placer.take(lx, ly, w, 14); else if (!placer.place(lx, ly, w, 14)) return;
+      ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText(text, lx, ly);
+      ctx.fillStyle = special ? th.text : th.muted; ctx.fillText(text, lx, ly);
       drawn++;
     };
     // special nodes first so they always win

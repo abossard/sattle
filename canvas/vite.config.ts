@@ -11,5 +11,6 @@ export default defineConfig({
   preview: { proxy: engine },
   worker: { format: "es" },
   build: { target: "es2022" },
-  test: { include: ["tests/**/*.test.{ts,tsx}"], environment: "node", setupFiles: ["tests/setup.ts"] },
+  // four workers: the jsdom files are heavy, and with every core taken by other suites their axe runs and dialogs starve; the time limits are ceilings for a busy machine (another suite beside this one): a test that is done returns at once; what they wait for is a condition, not a time
+  test: { maxWorkers: 4, testTimeout: 30000, hookTimeout: 30000, include: ["tests/**/*.test.{ts,tsx}"], environment: "node", setupFiles: ["tests/setup.ts"] },
 } as Parameters<typeof defineConfig>[0]);

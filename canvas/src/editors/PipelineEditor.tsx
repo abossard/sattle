@@ -51,7 +51,7 @@ export function PipelineEditor(p: PipelineProps): ReactElement {
           {p.doc.statements.map((st) => {
             const problems = st.steps.reduce((n, x) => n + x.missing.length + x.diagnostics.length, 0);
             return (
-              <Tab key={st.name} value={st.name}>
+              <Tab key={st.name} value={st.name} data-row-set={st.name}>
                 <span className={s.tab}>
                   <Text weight="semibold">{st.name}</Text>
                   <Text size={200}>{st.steps.map((x) => kindWord(x.kind)).join(" › ")}{st.readers.length ? `, read by ${st.readers.join(", ")}` : ""}{problems ? `, ${problems} to fix` : ""}</Text>

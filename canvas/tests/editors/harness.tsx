@@ -5,6 +5,7 @@ import axe from "axe-core";
 import type { ComponentType, ReactElement } from "react";
 import { afterEach } from "vitest";
 import { Graph } from "../../src/core/graph";
+import type { DraftPort } from "../../src/editing/draft";
 import { useDraft, type EditorProps } from "../../src/editors/host";
 import { demoCatalog, memoryDraft, type MemoryDraft } from "../editing/memory-draft";
 
@@ -18,7 +19,7 @@ export const SVC = "d:acme.svc/projection:serviceDeps", OPS = "d:acme.ops/projec
 const base = demoCatalog();
 export const freshDraft = (): MemoryDraft => memoryDraft(Graph.fromSnapshot(base.toSnapshot()));
 
-function Host({ draft, projection, Editor }: { draft: MemoryDraft; projection: string; Editor: ComponentType<EditorProps> }): ReactElement {
+function Host({ draft, projection, Editor }: { draft: DraftPort; projection: string; Editor: ComponentType<EditorProps> }): ReactElement {
   const { props, notice } = useDraft(draft, projection);
   return (
     <FluentProvider theme={webLightTheme}>
@@ -28,7 +29,8 @@ function Host({ draft, projection, Editor }: { draft: MemoryDraft; projection: s
   );
 }
 
-export function mount(Editor: ComponentType<EditorProps>, projection = SVC, draft = freshDraft()) {
+/** One notation on a draft: the demo's draft in memory unless another is given (the estate's, the engine's). */
+export function mount<D extends DraftPort = MemoryDraft>(Editor: ComponentType<EditorProps>, projection = SVC, draft: D = freshDraft() as DraftPort as D) {
   return { draft, ...render(<Host draft={draft} projection={projection} Editor={Editor} />) };
 }
 

@@ -21,7 +21,10 @@ const quote = (s: string): string => `"${s.replace(/[\\"]/g, (c) => `\\${c}`)}"`
 function literal(e: Entity): string {
   const v = e.props.value;
   if (!v || v.kind === "null") return "null";
-  return v.kind === "text" ? quote(v.value) : valueText(v);
+  if (v.kind === "text") return quote(v.value);
+  // a decimal keeps its point: `0` typed back would be an integer, and `if(x, 0.5, 0)` has branches of two kinds
+  const t = valueText(v);
+  return v.kind === "decimal" && /^-?\d+$/.test(t) ? `${t}.0` : t;
 }
 
 /** How the module `from` names an identity domain: bare in its own module, `alias.name` through the import that brings it in. */

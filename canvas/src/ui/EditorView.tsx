@@ -375,7 +375,8 @@ export function EditorView() {
   const onKeyDown = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement;
     // a control that has focus keeps its own keys: Enter presses a button, Delete is not "delete the selected operators" (dialogs are portals, but their events reach this handler)
-    if (t.closest("input, textarea, select, button, a[href], [role=combobox], [role=button], [role=tab], [role=menuitem], [role=option], [role=dialog], [role=spinbutton], [role=switch], [role=checkbox]")) return;
+    // the operators of the canvas are buttons for a screen reader, and the canvas's own keys (W, A, Delete) are meant for them
+    if (!t.closest("[data-node]") && t.closest("input, textarea, select, button, a[href], [role=combobox], [role=button], [role=tab], [role=menuitem], [role=option], [role=dialog], [role=spinbutton], [role=switch], [role=checkbox]")) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     const stop = () => { e.preventDefault(); e.stopPropagation(); };

@@ -2,10 +2,13 @@
 // reference projections use), with the palette of the same engine.
 import { describe, expect, it } from "vitest";
 import { Catalog } from "../../src/core/catalog";
+import type { Edit } from "../../src/core/model";
 import { allSteps, readProjection, statementOf } from "../../src/editing/doc";
 import { docOf, perform } from "../../src/editing/draft";
 import { lower, withStatements } from "../../src/editing/statements";
+import { setExprEdits } from "../../src/editor/commands";
 import { parseExpr } from "../../src/editor/expr";
+import { coalesce } from "../../src/editor/patches";
 import { layoutOf } from "../../src/editors/graph-layout";
 import { rowsOf } from "../../src/editors/rows";
 import { estateCatalog, estatePalette as palette } from "./estate";
@@ -18,6 +21,13 @@ const docs = new Map(projections.map((id) => [id, readProjection(cat, palette, i
 const fresh = () => memoryDraft(estateCatalog(), palette);
 const before = shape(base);
 const rowSets = projections.flatMap((p) => docs.get(p)!.statements.filter((s) => !s.sink));
+
+/** The edits that change what is said: a decimal written `0.0` where the engine holds `0` is the same decimal. */
+const real = (edits: Edit[]): Edit[] => coalesce(edits).filter((e) => {
+  if (e.kind !== "entity" || !e.before || !e.after || e.after.type !== "Literal") return true;
+  const a = e.before.props.value, b = e.after.props.value;
+  return !(a?.kind === "decimal" && b?.kind === "decimal" && Number(a.value) === Number(b.value));
+});
 
 it("the catalog holds the projections the editors are meant for", () => {
   // loose on purpose: the definitions of the estate change, and the fixture is written again from the engine (scripts/sync-catalog.mjs)
@@ -68,6 +78,22 @@ describe.each(projections)("%s", (id) => {
     const texts = allSteps(doc).flatMap((s) => s.slots.flatMap((sl) => sl.entries.flatMap((e) => [e.expr, ...e.parts.flatMap((p) => p.entries.map((x) => x.expr))]))).filter((t): t is string => t !== null);
     for (const t of texts) expect(parseExpr(t), t).toMatchObject({ ok: true });
   });
+  it("every expression that stands alone in its slot, typed back as the text it prints, is the expression it was", () => {
+    const changed: string[] = [];
+    for (const s of allSteps(doc)) for (const sl of s.slots) {
+      if (sl.entries.length !== 1 || sl.entries[0].expr === null || sl.multiplicity === "*" || sl.multiplicity === "+") continue;
+      const edits = setExprEdits(base, s.id, sl.name, sl.entries[0].expr, palette);
+      if (!edits.ok || real(edits.value).length) changed.push(`${s.name} ${sl.name}: ${sl.entries[0].expr}${edits.ok ? "" : ` (${edits.reason})`}`);
+    }
+    // and inside an entry (an assignment, a property that is set): the value of the entry
+    for (const s of allSteps(doc)) for (const sl of s.slots) for (const e of sl.entries) for (const p of e.parts) {
+      if (p.entries.length !== 1 || p.entries[0].expr === null) continue;
+      const edits = setExprEdits(base, e.id, p.slot, p.entries[0].expr, palette);
+      if (!edits.ok || real(edits.value).length) changed.push(`${s.name} ${sl.name} ${e.key} ${p.slot}: ${p.entries[0].expr}${edits.ok ? "" : ` (${edits.reason})`}`);
+    }
+    expect(changed).toEqual([]);
+    // the ingest projection has some hundred expressions, each typed back on the whole catalog: seconds when the machine is busy
+  }, 60_000);
   it("has a row for everything and a card for every step, no card on another", () => {
     const rows = rowsOf(doc, palette, cat);
     expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);

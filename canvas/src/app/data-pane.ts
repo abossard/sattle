@@ -317,7 +317,7 @@ export class DataPane {
     this.refreshAll();
   }
   /** A tile of the graph space draws fewer kinds than the view of the graph until the person chooses. */
-  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; if (!this.userHiddenKinds) this.refreshAll(); } }
+  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; if (!this.userHiddenKinds) this.refreshAll(); else this.view.requestRender(); } }
 
   private writeEdges(lo: number, hi: number): void {
     const g = this.graph, s = this.scene;
@@ -352,6 +352,8 @@ export class DataPane {
     const st = this.coloring[target];
     const v = st && colorValueOf(st.c, props);
     if (!v) return "";
+    // in a tile the glyph of the role says the state (the color repeats it): the name of the property and its value would crowd the labels
+    if (this.tile && v.role && v.role !== "neutral") return ` ${ROLE_GLYPH[v.role]}`;
     return ` · ${v.text}${v.role ? ` ${ROLE_GLYPH[v.role]}` : ""}`;
   }
 

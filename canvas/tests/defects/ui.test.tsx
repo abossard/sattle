@@ -26,6 +26,14 @@ const seed = () => {
 };
 
 /** The editor over an engine in memory, with the module `m`, one projection and one operator on screen. */
+/**
+ * The dialog that the click opened. It is looked for with `hidden: true`: the modal management of the component library (tabster) hides the
+ * other parts of the page from assistive technology with `aria-hidden` and does it after a delay, and on a busy machine a dialog opened right
+ * after another test's dialog finds its own portal hidden by that late pass. The dialog is there (a condition that is met), and what the test
+ * is about is what it holds, not whether the library has finished hiding the page behind it.
+ */
+const findDialog = () => screen.findByRole("dialog", { hidden: true });
+
 async function openEditor() {
   const eng = fakeEngine(seed());
   await openApp("tree-review", "data");
@@ -71,7 +79,20 @@ describe("ui/EditorView.tsx:374-418 the root key handler", () => {
     const add = await screen.findByRole("button", { name: /^Add/ });
     act(() => add.focus());
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("dialog", {}, { timeout: 10000 }), "the handler took Enter for 'edit properties'").toBeTruthy();
+    expect(await screen.findByRole("dialog", { hidden: true }, { timeout: 15000 }), "the handler took Enter for 'edit properties'").toBeTruthy();
+  }, 30000);
+});
+
+describe("the keys of the canvas on a focused operator", () => {
+  // the operators are role=button for a screen reader; the keys the canvas offers (A adds, W connects) are meant for them, unlike those of a toolbar button
+  it("A on a focused operator opens the add dialog", async () => {
+    const user = userEvent.setup();
+    await openEditor();
+    const node = document.querySelector<HTMLElement>("[data-node]");
+    expect(node, "the operator is drawn").toBeTruthy();
+    act(() => node!.focus());
+    await user.keyboard("a");
+    expect(await screen.findByRole("dialog", { hidden: true }, { timeout: 15000 })).toBeTruthy();
   }, 30000);
 });
 
@@ -80,7 +101,7 @@ describe("ui/editor/NewProjection.tsx:38 the graph a new projection produces", (
     const user = userEvent.setup();
     await openEditor();
     await user.click(await screen.findByRole("button", { name: /New projection/ }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await findDialog();
     await user.type(within(dialog).getByLabelText("Name"), "serviceView");
     expect((within(dialog).getByLabelText("Graph it produces in the space") as HTMLInputElement).value).toBe("serviceView");
   }, 30000);
