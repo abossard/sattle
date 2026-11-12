@@ -57,7 +57,23 @@ capture/capture.sh 420
 ```bash
 fixtures/build.sh captures/<timestamp>
 ```
-- Samples every source, scrubs it deterministically and verifies that no real identifier survives. See CAPTURE-FORMAT.md.
+- Needs: a capture directory from `capture/capture.sh`, `node` 24. No Azure access and no `az`/`azd` login.
+- Writes: `fixtures/<source>/*.ndjson`, a small scrubbed sample of every source (same layout and envelope as the capture). It builds in a temporary directory, verifies, and only then replaces the old files. The salt for the aliases is created once in `captures/.scrub-salt`.
+- Never writes: anything outside `fixtures/` and `captures/`, and no real value. The files are git-ignored (`lab/fixtures/**/*.ndjson`); do not commit them.
+- Verify is the last step and fails the build, printing counts only, when anything the capture itself holds as identifying (every id, address and e-mail written anywhere in it, resource, group and node names, people behind claims, tag and claim values) is still in the output.
+- Record selection (the first records in capture order, so a rebuild from the same capture gives the same files): Resource Graph resources one per type, up to 10; resource containers two per type, up to 4; ARG pages 5; Kubernetes list one per list kind, up to 25; Kubernetes watch one per event type and kind, merged into one file; Hubble flows two per verdict, protocol and direction, up to 14; Prometheus one per query, up to 16; Azure metrics the first record of each file; Activity Log one per operation, up to 10; VNet flow logs two allowed and two denied; Event Hubs three per source, up to 8. The table is `SAMPLE` in `fixtures/scrub.mjs`.
+- Scrub rules and what is kept: see CAPTURE-FORMAT.md, section Fixtures.
+- Without Azure: the public tests and the default canvas view use the synthetic estate (`engine/tests/Sattle.Tests/fixtures/build-estate.py`, owned by the engine). `lab/fixtures` is only for people who captured their own data.
+- Tests (scrubber, hooks with stand-ins for `az` and `azd`, forwarder sink and consumer stop rule; no Azure needed): `cd capture && npm test`.
+
+## From nothing to fixtures
+| Step | Command (in `lab/`) | Cost | Leaves behind |
+|---|---|---|---|
+| 1. Deploy | `azd env new ...`, `azd env set SATTLE_AKS_RG ...`, `azd env set SATTLE_AKS_NAME ...`, `azd up` | about 3 minutes; Event Hubs Standard 1 TU about 0.03 USD per hour, storage cents per day, ACNS per node hour while enabled | `rg-sattle-lab`, additions to the cluster, the subscription and `NetworkWatcherRG` (listed above), `.azure/` and `.kube/config` here |
+| 2. Capture | `capture/capture.sh 420` | about 10 minutes (the window, then the pulls) | `captures/<timestamp>/` (about 1 GB), gitignored |
+| 3. Fixtures | `fixtures/build.sh captures/<timestamp>` | about 2 minutes, no Azure calls | `fixtures/**/*.ndjson`, gitignored |
+| 4. Tear down | `azd down` | about 2.5 minutes | the platform's own leftovers (see above); the captures and fixtures stay |
+Steps 2 and 3 can be repeated against the same deployment; run step 4 when done, the costs run until then.
 
 ## Cost
 - ACNS: per node hour for as long as it is enabled on the cluster. Not removed by default.

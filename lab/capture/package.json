@@ -6,5 +6,8 @@
   "dependencies": {
     "@azure/event-hubs": "^6.0.0",
     "@azure/identity": "^4.5.0"
+  },
+  "scripts": {
+    "test": "node --test ../tests/*.test.mjs"
   }
 }

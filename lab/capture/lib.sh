@@ -38,3 +38,19 @@ start_relay() {
   export HUBBLE_ARGS="--port-forward=false --server localhost:$port --tls --tls-server-name instance.hubble-relay.cilium.io --tls-ca-cert-files $RELAY_DIR/ca.crt --tls-client-cert-file $RELAY_DIR/tls.crt --tls-client-key-file $RELAY_DIR/tls.key"
 }
 stop_relay() { [ -n "${RELAY_PID:-}" ] && kill "$RELAY_PID" 2>/dev/null; [ -n "${RELAY_DIR:-}" ] && rm -rf "$RELAY_DIR"; return 0; }
+
+# wait_streams <name:pid>...  Waits for every job on its own and reports each failure as "FAILED stream: <name> (exit N)".
+# Returns 1 when any stream other than the churn job failed (a dead watch or consumer means a hole in the capture);
+# a failing churn job only generates load, so it is reported and does not count. Never stops at the first failure.
+wait_streams() {
+  local item name code status=0
+  for item in "$@"; do
+    name="${item%%:*}"
+    code=0; wait "${item#*:}" || code=$?
+    if [ "$code" -ne 0 ]; then
+      echo "FAILED stream: $name (exit $code)" >&2
+      [ "$name" = churn ] || status=1
+    fi
+  done
+  return "$status"
+}

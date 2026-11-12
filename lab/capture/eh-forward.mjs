@@ -24,8 +24,10 @@ const startedAt = Date.now();
 // ---- destinations
 const ingestClient = producer(a.namespace, a.hub);
 const hubbleClient = producer(a.namespace, 'sattle-hubble');
-const ingest = sink(ingestClient, '0');
-const hubbleSink = sink(hubbleClient, '0');
+// when a queue is full the sink replaces the events it drops by one marker at their place in the stream
+const lossMarker = ({ count, from, to, seq }) => JSON.stringify(envelope({ source: 'sattle-forwarder', capturedAt: to, seq, payload: { at: to, event: 'dropped', reason: 'queue-full', count, from, to } }));
+const ingest = sink(ingestClient, '0', { marker: lossMarker });
+const hubbleSink = sink(hubbleClient, '0', { marker: lossMarker });
 const sinks = [ingest, hubbleSink];
 
 // ---- one place that turns records into stream events; seq is global and increasing for this process
@@ -35,13 +37,16 @@ const route = (e) => {
   e.seq = seq++;
   counts[e.source] = (counts[e.source] ?? 0) + 1;
   const body = JSON.stringify(e); // text body: the sinks bound memory by its length
-  ingest.add({ body });
-  if (e.source === 'hubble' && a['mirror-hubble']) hubbleSink.add({ body }); // doubles the volume: off by default
+  const ev = { body, at: e.capturedAt, seq: e.seq };
+  ingest.add(ev);
+  if (e.source === 'hubble' && a['mirror-hubble']) hubbleSink.add(ev); // doubles the volume: off by default
 };
 const emit = (source, payload, meta) => route(envelope({ source, capturedAt: new Date().toISOString(), seq: 0, payload, meta }));
 const marker = (payload) => { emit('sattle-forwarder', { at: new Date().toISOString(), ...payload }); console.error('marker', JSON.stringify(payload).slice(0, 200)); };
+let badLines = 0; // lines that were not JSON: counted, and reported by a marker with the next flush
 const forwardLine = (source) => (line) => { // a line from a child: JSON native record
-  try { emit(source, JSON.parse(line)); } catch { /* partial or non-JSON noise */ }
+  let rec; try { rec = JSON.parse(line); } catch { badLines++; return; }
+  emit(source, rec);
 };
 
 // ---- lifecycle
@@ -98,8 +103,7 @@ if (!a['no-metrics']) {
 const flushAll = () => sinks.map((k) => k.flush().catch((e) => console.error('send error', String(e.message).slice(0, 120))));
 const timer = setInterval(async () => {
   await Promise.all(flushAll());
-  const n = ingest.takeDropped() + hubbleSink.takeDropped();
-  if (n) marker({ event: 'dropped', count: n, reason: 'queue-full' }); // events were lost between the previous event and this marker
+  if (badLines) { marker({ event: 'dropped', count: badLines, reason: 'non-json' }); badLines = 0; }
 }, 1000);
 const statsTimer = setInterval(() => {
   const s = { event: 'stats', uptimeSeconds: Math.round((Date.now() - startedAt) / 1000), ingest: ingest.stats(), hubble: hubbleSink.stats(), counts, rssMB: Math.round(process.memoryUsage().rss / 1e6) };
@@ -117,14 +121,19 @@ const stop = async (why) => {
   for (const c of children) c.kill();
   await Promise.race([Promise.allSettled(loops), sleep(8000)]);
   marker({ event: 'stop', reason: why, counts });
+  // retry until every queue is empty or the deadline passes; events left behind make the exit status non-zero
   const deadline = Date.now() + 15_000;
   for (const k of sinks) {
-    while (!k.idle() && Date.now() < deadline) await sleep(50);
-    await k.flush().catch((e) => console.error('final send error', String(e.message).slice(0, 120)));
+    while ((!k.idle() || k.stats().queued) && Date.now() < deadline) {
+      if (k.idle()) await k.flush().catch((e) => console.error('final send error', String(e.message).slice(0, 120)));
+      await sleep(k.stats().queued ? 500 : 50);
+    }
   }
+  const lost = sinks.reduce((n, k) => n + k.stats().queued, 0);
   await Promise.allSettled([ingestClient.close(), hubbleClient.close()]);
   console.error(`eh-forward: sent ingest=${ingest.stats().sent} hubble=${hubbleSink.stats().sent}`, JSON.stringify(counts));
-  process.exit(0);
+  if (lost) console.error(`eh-forward: ${lost} events were still queued at exit and are lost`);
+  process.exit(lost ? 1 : 0);
 };
 process.on('SIGINT', () => stop('SIGINT'));
 process.on('SIGTERM', () => stop('SIGTERM'));

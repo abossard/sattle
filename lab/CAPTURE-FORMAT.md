@@ -66,14 +66,14 @@ Startup is a relist of every kind (`relist-start`, items, `relist-end`), then wa
 - `watch-error {path, code, stderr}`: a watch died and is retried from its last resourceVersion with backoff. No events are lost.
 - `hubble-reconnect {exitCode, ranSeconds, retryInMs}`: the relay port-forward or CLI died. After reconnecting the forwarder replays what the relay still holds from the gap start (`--since`), so duplicates are possible (dedupe on `key`) and flows older than the relay's ring buffer are lost. Flow loss on the node side is reported by Hubble as `lost_events` records.
 - `poll-failed {poll, code}`: a metrics poll failed, the next interval retries.
-- `dropped {count, reason: "queue-full"}`: Event Hubs was unreachable long enough that the bounded queue (64 MB of event text per hub, `QUEUE_MAX_MB`) overflowed and the oldest `count` events were dropped. The loss is between the previous event and this marker. Treat state as stale and wait for the next relist (`start` of a new process) or restart the forwarder.
+- `dropped {count, reason, from, to}`: `reason` is `queue-full` or `non-json`. For `queue-full`, Event Hubs was unreachable long enough that the bounded queue (64 MB of event text per hub, `QUEUE_MAX_MB`) overflowed and the oldest `count` events were dropped. The marker stands in the stream where those events would have been, and `from` and `to` are the times of the oldest and the newest dropped event, so the windows it marks incomplete are the right ones. Each hub gets its own marker (a loss on `sattle-hubble` is marked on that hub). Treat state as stale and wait for the next relist (`start` of a new process) or restart the forwarder. For `non-json`, `count` lines from a child process were not JSON and were skipped.
 - `stats {uptimeSeconds, ingest:{sent,queued,dropped}, hubble:{...}, counts, rssMB}` every 60 s.
 
 ### Failure behaviour
 - Hubble relay or CLI dies: restarted with backoff 1 s doubling to 30 s, marker `hubble-reconnect`, replay from the gap.
 - Watch ends (server timeout every 5 min is normal) or errors: resumed from the last seen `resourceVersion`. On expiry: `watch-expired`, relist.
-- Event Hubs send fails: retried in order, queue bounded, oldest dropped with a `dropped` marker.
-- `SIGTERM`/`SIGINT`: children are stopped, queues drained for up to 15 s, a `stop` marker is written, clients closed.
+- Event Hubs send fails: retried in order (events a partly failed send already delivered are not sent again), queue bounded, oldest dropped with a `dropped` marker at their place.
+- `SIGTERM`/`SIGINT`: children are stopped, queues drained for up to 15 s, a `stop` marker is written, clients closed. Events still queued at exit are reported and the exit status is 1.
 - The forwarder does not persist state. A restart starts a new run with relists.
 
 ## VNet flow logs
@@ -108,7 +108,7 @@ Startup is a relist of every kind (`relist-start`, items, `relist-end`), then wa
 - `kubernetes-list` then `kubernetes-watch`: the watch starts from each list's `resourceVersion`, so nothing is missed between them. `resourceVersion` is opaque, only comparable per resource kind. `BOOKMARK` events carry only a `resourceVersion`. Watches end after the capture window. Kubernetes `Event` objects are captured as kind `events`.
 - `activity-log` backfill: newest first, bounded by `ACTIVITY_MAX` (5000), so a busy subscription is truncated at the old end.
 - `prometheus`: values every `step` seconds, gaps where a series did not report. Metric names of Hubble appear only after scraping started.
-- Event Hubs: see the live stream section. `eh-consume.mjs` reads until the hub is quiet for 10 s after the window.
+- Event Hubs: see the live stream section. `eh-consume.mjs` reads to the point each partition had reached when the window closed, then stops (so a forwarder running next to it does not keep it alive); 10 s of quiet and a cap of 2 minutes are the fallbacks.
 - `vnet-flow-log`: see the VNet flow logs section.
 
 ## Versions
@@ -116,10 +116,11 @@ Startup is a relist of every kind (`relist-start`, items, `relist-end`), then wa
 
 ## Fixtures
 - `fixtures/<same layout>`: a small sample per source (a few records per kind of record), scrubbed by `fixtures/scrub.mjs`. Same envelope. `managedFields` is dropped from Kubernetes objects and Prometheus results are cut to 3 series.
-- Scrubbing is deterministic under a secret salt kept in `captures/.scrub-salt`: the same real value gets the same alias in every source, so references still join.
-  - GUIDs map to GUIDs. IPv4 map to `10.x.y.z` (private) or `198.18.0.0/15` (public). IPv6 map to `fd00::/16`. MACs map to `02:...`.
-  - Emails map to `user-<hash>@example.com`. Person claims (`name`, `emailaddress`, `ipaddr`, `puid`, ...) map to `redacted-<hash>`.
-  - Resource group and resource names found in ARM ids, and the subscription, tenant and user names, map to `<prefix>-<hash>` (prefix kept for `mc_` and short `xx-` prefixes). AKS API server host names map to `<hash>.hcp.<region>.azmk8s.io`.
-  - Unchanged: loopback and link-local addresses, the Azure wire server `168.63.129.16`, generic names such as `kubernetes` and `default`.
+- The scrub is a walk over parsed JSON with a rule per field (`fixtures/scrub/rules.mjs`): keys are never touched, and neither are vocabularies (resource types, operation names, metric names, kinds). Only values change.
+- Scrubbing is deterministic under a secret salt kept in `captures/.scrub-salt`: the same real value gets the same alias in every source and in every spelling (aliases are lower case), so references still join. An alias keeps the shape of its value:
+  - GUIDs map to GUIDs, and the same 32 digits without dashes map to the same alias without dashes (role assignment ids, internal ids, machine ids, principal ids). IPv4 map to `10.x.y.z` (private) or `198.18.0.0/15` (public). IPv6 map to `fd00::/16`. MACs map to `02:...`.
+  - Emails map to `user-<hash>@example.com`. Token claims map to `redacted-<hash>` unless they are public vocabulary or an id (those keep the shape of their value). Tag values and custom role names map to `redacted-<hash>`.
+  - Resource group and resource names map to `res-<hash>`, in resource ids, in name fields and in free text, as whole words. Nothing of the real name is kept; `mc_<hash>` marks an AKS node resource group. The names come from the capture itself: the name positions of the resource ids in it, Resource Graph names, node names, and the people behind claims and callers. A name that is also an ordinary word (a VM called `memory`) is replaced where it stands as a name in a resource id or a name field, and nowhere else. AKS API server host names map to `<hash>.hcp.<region>.azmk8s.io`.
+  - Unchanged: loopback and link-local addresses, the Azure wire server `168.63.129.16`, regions, generic names such as `kubernetes` and `default`, and the lab's own names (`sattle-*` hubs, `sattle-demo`).
   - `key` fields that are content hashes are not recomputed. They are opaque.
-- `fixtures/build.sh <capture dir>` rebuilds and then runs `scrub.mjs verify`, which fails when any GUID, IP, MAC, email, resource name or literal tenant, subscription or user value from the real capture is still present in the fixtures. It prints counts only, never the values.
+- `fixtures/build.sh <capture dir> [output dir]` rebuilds and then runs `scrub.mjs verify`. Verify is independent of the scrub: it builds its own list from the capture (every id, address and e-mail written anywhere, resource names, people, tag and claim values) and fails when any of it is in the fixtures. It prints counts only, never the values. `node --test lab/tests/` runs the tests of the scrubber, the hooks and the capture tooling.
