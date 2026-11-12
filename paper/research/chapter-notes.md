@@ -1968,7 +1968,7 @@ Open: the share rule for a deployment whose pods are all in no data. The text st
 - Item 2: Theorems 7.1 and 7.4 use your wording: twice, plus twice more for each record accepted while no other record of the key is in the look-back, with the gap `within − w − L − H` under late records. The proofs follow, and "record" replaces "window" in 7.1.
 - Inventory: 5.3, 7.1 and 7.4 are "proved, restated", and the counts column "With F14 applied" reads 96 proved and 0 pending, as README and Ch. 0 already say.
 
-## Waiting for a commit: Law 7.5 item 3 in the engine (protocol 3.22)
+## Applied after commit 28b0585: Law 7.5 item 3 in the engine (protocol 3.22)
 
 Engine-core reports this as built in the working tree on fc88d37, not yet committed. Ch. 7 (7.6) and Ch. 6 (6.6) change only once it is committed. Changes to make then:
 - Rows after the link combine by the property's rule. They no longer meet under B1, so drop that point from 7.6 and the matching paragraph of 6.6 ("A Group is not re-keyed").

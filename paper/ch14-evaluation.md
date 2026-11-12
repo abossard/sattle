@@ -116,7 +116,7 @@ Ch. 13 (13.6) gives the status of each hypothesis. This section adds the detail 
 
 ## 14.8 Where the prototype differs from the design
 
-Each chapter ends with what the prototype does differently. Taken together, the differences that matter most for the claims are: `Delta`, `sync` rules and the page seal are not built; `Fixpoint` is a bounded unrolling; the history of an element and the carry policy of a definition edit are not built; a `Group` keyed by an identity is not re-keyed on a merge; the age of retention of measurements is a setting of the running engine, not a declaration (Def. 7.13); a document has no truncation; and the Cosmos store has never run against a real account. Ch. 15 (15.2) lists every limit in one table.
+Each chapter ends with what the prototype does differently. Taken together, the differences that matter most for the claims are: `Delta`, `sync` rules and the page seal are not built; `Fixpoint` is a bounded unrolling; the history of an element and the carry policy of a definition edit are not built; the age of retention of measurements is a setting of the running engine, not a declaration (Def. 7.13); a document has no truncation; and the Cosmos store has never run against a real account. Ch. 15 (15.2) lists every limit in one table.
 
 ## 14.9 Threats to validity
 
