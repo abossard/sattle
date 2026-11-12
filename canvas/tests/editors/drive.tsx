@@ -153,6 +153,13 @@ export async function build(way: Way, h: Hands, d: DraftPort, projection: string
     if (shape.fields.length === 1 && shape.fields[0].kind !== "ref" && shape.fields[0].kind !== "choice") await h.text(row, values[shape.fields[0].key]);
     else await h.fill(row, filled.map((f) => ({ label: f.label, value: values[f.key], choice: f.kind === "ref" || f.kind === "choice" })));
     await until(`${sl.name} of ${step.name}: ${e.text}`, () => now(id).slots.find((s) => s.name === sl.name)!.entries.length === count + 1);
+    // what an expression entry has besides its text (the `fill` of a field a series reads), in the rows under it
+    const made = now(id).slots.find((s) => s.name === sl.name)!.entries[count];
+    for (const f of e.expr !== null ? e.fields : []) {
+      if (f.value === "") continue;
+      await h.text(`${made.id}#field:${f.name}`, f.value);
+      await until(`${f.name} of ${e.text}`, () => now(id).slots.find((s) => s.name === sl.name)!.entries[count].fields.find((x) => x.name === f.name)?.value === f.value);
+    }
   };
   for (const st of like.statements) {
     for (const [i, s] of st.steps.entries()) {

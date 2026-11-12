@@ -6,6 +6,7 @@ import type { Entity } from "../core/model";
 import { valueText } from "../core/model";
 import type { EdgeKind, PresentationHint, Role, TreeSpec } from "../source/presentation";
 import type { GraphInfo } from "../source/types";
+import { kindAxes } from "./edge-kinds";
 
 export type { TreeSpec };
 
@@ -40,6 +41,8 @@ const cellOf = (e: Entity, property: string | undefined, hints: ReadonlyMap<stri
   return { value, role: hints.get(property!)?.[value] ?? "neutral" };
 };
 
+const rowEnd = (g: Graph, id: string, spec: TreeSpec): boolean => !!spec.hierarchy.parentRows?.includes(g.entity(id)?.type ?? "");
+
 export const inHierarchy = (spec: TreeSpec, type: string): boolean => type === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(type);
 
 /** Which kind of edge forms the hierarchy of a graph that declares one: what the ontology says of the hierarchy type, composition when it says nothing. */
@@ -64,15 +67,17 @@ export function specForKind(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontolo
   const base = info.tree;
   if (!base) return undefined;
   if (kind === declaredHierarchyKind(info)) return base;
-  const chosen = Object.entries(info.edgeKinds ?? {}).filter(([, k]) => k === kind).map(([t]) => t).sort();
+  // dependency: what a part needs, and what that is made of in turn (a server backed by, connected through); a gateway hangs under what it exposes
+  const chosen = kind === "dependency" ? [...kindAxes(info).horizontal].sort() : Object.entries(info.edgeKinds ?? {}).filter(([, k]) => k === kind).map(([t]) => t).sort();
   if (!chosen.length) return base;
+  const rows = kind === "dependency" ? [...new Set(info.ontology.relationshipTypes.filter((r) => r.id.value === base.hierarchy.relationship).flatMap((r) => [...r.sourceTypes, ...r.targetTypes].map((t) => t.value)))] : undefined;
   const ends = new Set<string>();
   for (const r of info.ontology.relationshipTypes) if (chosen.includes(r.id.value)) for (const t of [...(r.sourceTypes ?? []), ...(r.targetTypes ?? [])]) ends.add(t.value);
   const edgeRoles: TreeSpec["edgeRoles"] = {};
   for (const [t, k] of Object.entries(info.edgeKinds ?? {})) if (!chosen.includes(t)) edgeRoles[t] = k === "support" ? "support" : "cross";
   // the declared hierarchy becomes a link too
   edgeRoles[base.hierarchy.relationship] = "cross";
-  return { ...base, hierarchy: { relationship: chosen[0], childIsSource: false, ...(chosen.length > 1 ? { also: chosen.slice(1) } : {}) }, edgeRoles, ...(ends.size ? { types: [...ends] } : { types: undefined }) };
+  return { ...base, hierarchy: { relationship: chosen[0], childIsSource: false, ...(chosen.length > 1 ? { also: chosen.slice(1) } : {}), ...(rows ? { parentRows: rows } : {}) }, edgeRoles, ...(ends.size ? { types: [...ends] } : { types: undefined }) };
 }
 
 export function buildTree(g: Graph, spec: TreeSpec, hints: readonly PresentationHint[]): TreeModel {
@@ -99,7 +104,8 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
   }
   for (const r of g.relationships()) {
     if (inHierarchy(spec, r.type)) {
-      const child = spec.hierarchy.childIsSource ? r.source : r.target, parent = spec.hierarchy.childIsSource ? r.target : r.source;
+      const flip = spec.hierarchy.childIsSource || (!!spec.hierarchy.parentRows && rowEnd(g, r.target, spec) && !rowEnd(g, r.source, spec));
+      const child = flip ? r.source : r.target, parent = flip ? r.target : r.source;
       const c = nodes.get(child), p = nodes.get(parent);
       // each node has one parent (the first), and a cycle is never followed; another parent is a link, shown as a badge like the other kinds
       if (c && p && c.parent === null && child !== parent) { c.parent = parent; p.children.push(child); }
@@ -244,4 +250,45 @@ export function explainNode(g: Graph, m: TreeModel, id: string): Explanation | n
 export function hasTreeRows(g: Graph, spec: TreeSpec): boolean {
   for (const e of g.entities()) if (!spec.types || spec.types.includes(e.type)) return true;
   return false;
+}
+
+/** Whether the graph holds an edge of the hierarchy: a graph that marks a hierarchy and has none of its edges is not a tree to lay out or to list. */
+export function hasHierarchyEdges(g: Graph, spec: TreeSpec): boolean {
+  for (const r of g.relationships()) if (inHierarchy(spec, r.type)) return true;
+  return false;
+}
+
+/**
+ * The rows a small view of a tree shows: the paths to where something is wrong, the worst first, when anything is; else the roots and as many levels
+ * below them as fit. `more` is the number of elements that are not among the rows.
+ */
+/** What is open when a tree is first shown: the paths to where something is wrong, else the top levels while the rows still fit in `limit`. */
+export function defaultOpen(m: TreeModel, limit: number): Set<string> {
+  const rowsFor = (expanded: ReadonlySet<string>) => visibleRows(m, { expanded, onlyWrong: false, query: "", sort: "severity" }).rows;
+  if (wrongNodes(m).length) return attentionPaths(m);
+  const opened = new Set<string>();
+  let all = rowsFor(opened);
+  for (let level = 0; level < 12; level++) {
+    const next = new Set(opened);
+    for (const r of all) if (r.hasChildren && r.level === level + 1) next.add(r.node.id);   // levels count from 1, as aria-level does
+    const grown = rowsFor(next);
+    if (grown.length === all.length) break;
+    for (const id of next) opened.add(id);
+    all = grown;
+    if (grown.length >= limit) break;   // the rows are cut at `limit`: the last level may be shown in part
+  }
+  return opened;
+}
+
+export function tileRows(m: TreeModel, limit = 14): { rows: TreeRow[]; more: number } {
+  const all = visibleRows(m, { expanded: defaultOpen(m, limit), onlyWrong: false, query: "", sort: "severity" }).rows;
+  const rows = all.slice(0, limit);
+  return { rows, more: Math.max(0, m.nodes.size - rows.length) };   // the elements the list does not show, whether collapsed or cut
+}
+
+/** How many elements the tree of a graph has: the entities of the tree's types, without building it. */
+export function treeRowCount(g: Graph, spec: TreeSpec): number {
+  let n = 0;
+  for (const e of g.entities()) if (!spec.types || spec.types.includes(e.type)) n++;
+  return n;
 }

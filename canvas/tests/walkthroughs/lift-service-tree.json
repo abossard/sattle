@@ -786,7 +786,7 @@
  "nonEmpty": true,
  "atLeast": {
   "entities": 4,
-  "relationships": 5
+  "relationships": 4
  },
  "durations": [
   {

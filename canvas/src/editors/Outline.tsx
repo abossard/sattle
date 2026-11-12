@@ -1,7 +1,7 @@
 // A projection as a tree of rows (Fluent FlatTree, only the rows in view are rendered): the surface of the structure editor and the
 // keyboard and screen reader form of the graph editor. Arrow keys move over the whole list, Enter or F2 edits the row, Delete removes it.
 // Keys typed in a row's editor never reach the tree, and Delete on a button or a field deletes nothing.
-import { FlatTree, FlatTreeItem, TreeItemLayout, makeStyles, tokens, useHeadlessFlatTree_unstable, type HeadlessFlatTreeItemProps } from "@fluentui/react-components";
+import { FlatTree, FlatTreeItem, TreeItemLayout, makeStyles, mergeClasses, tokens, useHeadlessFlatTree_unstable, type HeadlessFlatTreeItemProps } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactElement } from "react";
 import type { Gesture } from "../editing/gestures";
 import type { EditorProps } from "./host";
@@ -99,7 +99,7 @@ export function Outline(p: OutlineProps): ReactElement {
             const isSelected = !!p.selected && r.id === p.selected;
             return (
               <FlatTreeItem {...item.getTreeItemProps()} key={r.id} data-row-id={r.id} data-kind={r.kind} aria-selected={isSelected} aria-label={editing === r.id ? rowText(r) : undefined}
-                className={isSelected ? `${s.row} ${s.selected}` : s.row}
+                className={mergeClasses(s.row, isSelected && s.selected)}
                 onClick={() => { if (r.element) p.onSelect(r.element); }} onDoubleClick={() => { if (r.edit) setEditing(r.id); }}>
                 <TreeItemLayout aside={<Problems list={r.problems} />}>
                   {editing === r.id && r.edit ? <Editing spec={r.edit} done={(g) => done(r, g)} /> : <Tokens tokens={r.tokens} />}

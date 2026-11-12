@@ -10,11 +10,14 @@ export function ontologyGraph(o: OntologyDefinition, withProperties = true): Gra
   const entities: Entity[] = [];
   const rels: Rel[] = [];
   const propDef = new Map(o.properties.map((p) => [p.id.value, p]));
+  // the placeholders `NoType` are no types an author declared: they are not drawn
   for (const t of o.entityTypes) {
+    if (t.id.value === o.noEntityType.value) continue;
     const props: Props = { name: text(t.id.value), properties: text(t.properties.map((p) => p.value).join(", ")) };
     entities.push({ id: `type:${t.id.value}`, type: "EntityType", props });
   }
   for (const rt of o.relationshipTypes) {
+    if (rt.id.value === o.noRelationshipType.value) continue;
     const props: Props = { name: text(rt.id.value), properties: text(rt.properties.map((p) => p.value).join(", ")) };
     for (const s of rt.sourceTypes) for (const t of rt.targetTypes) {
       rels.push({ id: `rel:${rt.id.value}:${s.value}>${t.value}`, source: `type:${s.value}`, target: `type:${t.value}`, type: rt.id.value, props });

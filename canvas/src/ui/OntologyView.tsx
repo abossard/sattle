@@ -24,7 +24,8 @@ interface Content { graph: Graph; entities: Item[]; rels: Item[]; summary: strin
 
 function fromOntology(ws: NonNullable<typeof runtime.ws>, graphId: string): Content {
   const o = ws.graphInfo(graphId)!.ontology;
-  const g = ontologyGraph(o);
+  // the picture is the types and how they relate; their properties are listed beside it (as nodes they bury the relationships under "has" edges)
+  const g = ontologyGraph(o, false);
   return {
     graph: g,
     entities: o.entityTypes.filter((t) => t.id.value !== o.noEntityType.value).map((t) => ({ id: `type:${t.id.value}`, label: t.id.value, detail: t.properties.map((p) => p.value).join(", ") })),

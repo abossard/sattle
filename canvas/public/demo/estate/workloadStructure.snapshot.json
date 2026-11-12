@@ -1,0 +1,1 @@
+{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"workloadStructure"},"revision":{"value":"0"}},"projection":{"value":"workloadStructure"},"ontology":{"id":"acme.workload","version":"1.0.0","digest":{"value":"sha256:c9e0d3afb3c2de5bdabe9d9efa19b938ff2eae56043087c0814d372b3fa786be"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

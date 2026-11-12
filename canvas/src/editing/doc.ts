@@ -14,7 +14,30 @@ import { EXPR_TYPES, exprText } from "./exprtext";
 /** A parameter of a step or of an entry: what the palette says it is and what the draft holds. */
 export interface FieldDoc { name: string; value: string; kind: string; required: boolean; values?: string[]; quantity?: string }
 /** A relationship from a step or an entry to a definition elsewhere (the type an emit creates, the property a `set` writes). */
-export interface RefDoc { rel: string; label: string; to: string; required: boolean; target: string | null; targetName: string }
+/**
+ * A relationship from a step or an entry to a definition elsewhere (the type an emit creates, the property a `set` writes). `to` is the
+ * kind of definition it points at; `scope` is where the engine looks for it (engine 3.21: `outputOntology`, `inputGraph`, `module`, `step`).
+ */
+export interface RefDoc { rel: string; label: string; to: string; scope?: string; required: boolean; target: string | null; targetName: string }
+
+/** `liftEdge` as an author reads it: `lift edge`. */
+const words = (name: string): string => name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+
+/**
+ * The references of an operator kind: what the engine's palette declares (which there are, whether each is required, where its target
+ * is found), with the editor's own table for the wording and for the one kind of definition each points at where the palette allows
+ * several (an entity emit points at an entity type). Without references in the palette, the table alone.
+ */
+export function referencesOf(palette: Palette, kind: string): Omit<RefDoc, "target" | "targetName">[] {
+  const table = refsOf(kind);
+  const declared = palette.operators.find((o) => o.kind === kind)?.references;
+  if (!declared) return table;
+  return declared.map((r) => {
+    const known = table.find((t) => t.rel === r.name);
+    const to = known && (r.targets.includes(known.to) || known.to === "OutPort") ? known.to : r.targets[0] === "Port" ? "OutPort" : r.targets[0] ?? "";
+    return { rel: r.name, label: known?.label ?? words(r.name), to, scope: r.scope, required: r.required };
+  });
+}
 /** One child of a slot. An expression is its text; anything else is a key, fields, references and nested parts. */
 export interface EntryDoc {
   id: string; type: string; key: string;
@@ -133,7 +156,7 @@ function step(cat: Catalog, out: Out, palette: Palette, id: string, missing: str
     entries: cat.children(id, s.name).filter((c) => !placeholders.has(c)).map((c) => entry(cat, out, s, c)),
     placeholders: cat.children(id, s.name).filter((c) => placeholders.has(c)),
   }));
-  const refs = refsOf(kind).map((r): RefDoc => { const target = cat.targets(id, r.rel)[0] ?? null; return { ...r, target, targetName: target ? cat.typeLabel(target.includes("/port:") ? ownerOfPort(target) : target, moduleOfId(id)) : "" }; });
+  const refs = referencesOf(palette, kind).map((r): RefDoc => { const target = cat.targets(id, r.rel)[0] ?? null; return { ...r, target, targetName: target ? cat.typeLabel(target.includes("/port:") ? ownerOfPort(target) : target, moduleOfId(id)) : "" }; });
   return {
     id, kind, name, role: spec?.role ?? "", fields: fields(cat, id, (spec?.params ?? []).filter((p) => p.name !== "name")), refs, slots, inputs,
     out: ports.find((p) => p.dir === "out")?.id ?? null, missing, diagnostics,

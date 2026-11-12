@@ -1,6 +1,6 @@
 // The editors on a draft, as one piece: which document is open (a projection, or the template of a statement kind), the five
 // notations on it, what the draft answered, and the statement kinds when the draft can hold them.
-import { Field, MessageBar, MessageBarBody, Select, makeStyles, tokens } from "@fluentui/react-components";
+import { Field, MessageBar, MessageBarBody, Select, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
 import { useMemo, useState, type ReactElement } from "react";
 import type { ExampleData } from "./ExampleEditor";
 import type { DraftPort } from "../editing/draft";
@@ -29,7 +29,7 @@ export function Bench(p: BenchProps): ReactElement {
   const { props, notice } = useDraft(p.draft, open);
   const documents = useMemo(() => (props ? props.cat.projections().filter((x) => x.module === props.doc.module).map((x) => ({ id: x.id, name: x.name })) : []), [props?.cat, props?.doc.module]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className={p.kinds ? `${s.root} ${s.withKinds}` : s.root}>
+    <div className={mergeClasses(s.root, p.kinds && s.withKinds)}>
       <div className={s.head}>
         <Field label="Document" size="small" orientation="horizontal"><Select size="small" value={open} onChange={(_, d) => setOpen(d.value)}>{documents.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}</Select></Field>
         <div className={s.grow} role="status">{notice && <MessageBar intent="warning"><MessageBarBody>{notice}</MessageBarBody></MessageBar>}</div>

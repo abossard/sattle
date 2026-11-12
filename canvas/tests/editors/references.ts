@@ -9,7 +9,7 @@ const files = import.meta.glob("../walkthroughs/*.json", { eager: true, import: 
 export const walk = (file: string): Walk => files[`../walkthroughs/${file}.json`];
 /** The five reference projections of the research note (09, section 1), by the walkthrough that rebuilds each. */
 export const REFERENCES: [string, string][] = [
-  ["deployment health", "deployment-health"], ["service tree with lift", "lift-service-tree"], ["health roll-up", "health-rollup"],
+  ["deployment health", "deployment-health"], ["service tree with lift", "lift-service-tree"], ["workload health", "workload-health"],
   ["series with threshold", "series-threshold-aggregates"], ["fixpoint closure", "fixpoint-closure"],
 ];
 

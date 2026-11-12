@@ -61,6 +61,11 @@ export function styleForType(type: string, theme: Theme): TypeStyle {
 }
 
 /** Relationship color: muted neutral, with a small stable hue shift per type so parallel types stay distinguishable. */
+/** The color of an edge of a declared kind (engine 3.17). It repeats what the line pattern and the head say; it never says it alone. */
+export const KIND_EDGE_COLOR: Record<"composition" | "dependency" | "communication" | "support", string> = {
+  composition: "#8ea4c4", dependency: "#e3a33b", communication: "#3fb5c9", support: "#8b949e",
+};
+
 export function edgeColorForType(type: string, theme: Theme): number {
   const h = hash(type) % 3;
   const base = theme.edge;

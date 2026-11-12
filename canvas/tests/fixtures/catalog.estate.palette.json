@@ -27,6 +27,7 @@
      "required": true
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "key",
@@ -44,7 +45,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -58,7 +60,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -102,7 +105,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -131,6 +135,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "port",
@@ -172,7 +177,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -205,6 +211,19 @@
      ]
     }
    ],
+   "references": [
+    {
+     "name": "ofType",
+     "targets": [
+      "EntityType",
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "outputOntology",
+     "meaning": "the entity type the sink writes (not abstract)"
+    }
+   ],
    "slots": [
     {
      "name": "id",
@@ -216,7 +235,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -230,7 +250,19 @@
      "childTypes": [
       {
        "type": "SetProperty",
-       "params": []
+       "params": [],
+       "references": [
+        {
+         "name": "property",
+         "targets": [
+          "PropertyType"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "emittedType",
+         "meaning": "the property of the emitted type this value sets"
+        }
+       ]
       }
      ]
     },
@@ -274,7 +306,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -322,6 +355,19 @@
      ]
     }
    ],
+   "references": [
+    {
+     "name": "ofType",
+     "targets": [
+      "EntityType",
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "outputOntology",
+     "meaning": "the relationship type the sink writes (not abstract)"
+    }
+   ],
    "slots": [
     {
      "name": "source",
@@ -333,7 +379,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -347,7 +394,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -361,7 +409,19 @@
      "childTypes": [
       {
        "type": "SetProperty",
-       "params": []
+       "params": [],
+       "references": [
+        {
+         "name": "property",
+         "targets": [
+          "PropertyType"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "emittedType",
+         "meaning": "the property of the emitted type this value sets"
+        }
+       ]
       }
      ]
     },
@@ -405,7 +465,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -433,6 +494,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "predicate",
@@ -444,7 +506,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -488,7 +551,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -531,6 +595,18 @@
      "unit": "iterations"
     }
    ],
+   "references": [
+    {
+     "name": "over",
+     "targets": [
+      "Port"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "step",
+     "meaning": "the output port of the last operator of the step: the relation that is iterated"
+    }
+   ],
    "slots": [
     {
      "name": "relation",
@@ -553,7 +629,8 @@
          "kind": "Text",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -567,7 +644,8 @@
      "childTypes": [
       {
        "type": "Operator",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -611,7 +689,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -639,6 +718,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "key",
@@ -656,7 +736,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -693,7 +774,8 @@
           "last"
          ]
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -737,7 +819,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -770,6 +853,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "on",
@@ -781,7 +865,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -825,7 +910,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -888,6 +974,39 @@
      ]
     }
    ],
+   "references": [
+    {
+     "name": "ofType",
+     "targets": [
+      "EntityType",
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "outputOntology",
+     "meaning": "the relationship type the lifted edges are written as"
+    },
+    {
+     "name": "liftEdge",
+     "targets": [
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "inputGraph",
+     "meaning": "the relationship type that is lifted (in the graph the lift reads its edges from)"
+    },
+    {
+     "name": "liftVia",
+     "targets": [
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "inputGraph",
+     "meaning": "the mapping relationship from a node to its image (in the graph the lift reads the mapping from)"
+    }
+   ],
    "slots": [
     {
      "name": "carry",
@@ -905,7 +1024,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ],
      "value": {
@@ -930,7 +1050,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ],
      "value": {
@@ -955,7 +1076,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ],
      "value": {
@@ -977,7 +1099,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ],
      "value": {
@@ -1053,7 +1176,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -1097,7 +1221,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1120,6 +1245,18 @@
     }
    ],
    "params": [],
+   "references": [
+    {
+     "name": "policy",
+     "targets": [
+      "EquivalencePolicy"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "module",
+     "meaning": "the equivalence policy whose two identity domains the link binds"
+    }
+   ],
    "slots": [
     {
      "name": "left",
@@ -1131,7 +1268,19 @@
      "childTypes": [
       {
        "type": "IdOf",
-       "params": []
+       "params": [],
+       "references": [
+        {
+         "name": "domain",
+         "targets": [
+          "IdentityDomain"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "module",
+         "meaning": "the identity domain that computes the id"
+        }
+       ]
       }
      ]
     },
@@ -1145,7 +1294,19 @@
      "childTypes": [
       {
        "type": "IdOf",
-       "params": []
+       "params": [],
+       "references": [
+        {
+         "name": "domain",
+         "targets": [
+          "IdentityDomain"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "module",
+         "meaning": "the identity domain that computes the id"
+        }
+       ]
       }
      ]
     },
@@ -1159,7 +1320,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -1203,7 +1365,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1231,6 +1394,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "assign",
@@ -1248,7 +1412,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -1292,7 +1457,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1320,6 +1486,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "node",
@@ -1350,6 +1517,19 @@
          "name": "create",
          "kind": "Boolean",
          "required": false
+        }
+       ],
+       "references": [
+        {
+         "name": "ofType",
+         "targets": [
+          "EntityType",
+          "RelationshipType"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "inputGraph",
+         "meaning": "the entity type the pattern variable ranges over"
         }
        ]
       }
@@ -1399,6 +1579,39 @@
          "kind": "Boolean",
          "required": false
         }
+       ],
+       "references": [
+        {
+         "name": "ofType",
+         "targets": [
+          "EntityType",
+          "RelationshipType"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "inputGraph",
+         "meaning": "the relationship type of the pattern edge"
+        },
+        {
+         "name": "from",
+         "targets": [
+          "PatternNode"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "pattern",
+         "meaning": "the pattern node the edge starts at"
+        },
+        {
+         "name": "to",
+         "targets": [
+          "PatternNode"
+         ],
+         "required": true,
+         "multiplicity": "1",
+         "scope": "pattern",
+         "meaning": "the pattern node the edge ends at"
+        }
        ]
       }
      ]
@@ -1443,7 +1656,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1486,6 +1700,7 @@
      "example": "24h"
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "port",
@@ -1527,7 +1742,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1561,6 +1777,7 @@
      "required": false
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "key",
@@ -1578,7 +1795,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -1615,7 +1833,8 @@
           "last"
          ]
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -1659,7 +1878,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1711,6 +1931,7 @@
      "example": "24h"
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "read",
@@ -1735,7 +1956,8 @@
          "quantity": "value",
          "unit": "unit of the property read"
         }
-       ]
+       ],
+       "references": []
       }
      ],
      "value": {
@@ -1784,7 +2006,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -1871,6 +2094,7 @@
      "required": false
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "key",
@@ -1888,7 +2112,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -1902,7 +2127,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -1916,7 +2142,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -1930,7 +2157,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -1944,7 +2172,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -1958,7 +2187,8 @@
      "childTypes": [
       {
        "type": "Expr",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -2002,7 +2232,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2070,6 +2301,19 @@
      "required": true
     }
    ],
+   "references": [
+    {
+     "name": "ofType",
+     "targets": [
+      "EntityType",
+      "RelationshipType"
+     ],
+     "required": true,
+     "multiplicity": "1",
+     "scope": "inputGraph",
+     "meaning": "the relationship type the traversal follows"
+    }
+   ],
    "slots": [
     {
      "name": "port",
@@ -2111,7 +2355,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2156,6 +2401,7 @@
      ]
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "port",
@@ -2197,7 +2443,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2220,6 +2467,7 @@
     }
    ],
    "params": [],
+   "references": [],
    "slots": [
     {
      "name": "row",
@@ -2231,7 +2479,8 @@
      "childTypes": [
       {
        "type": "RowValue",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -2275,7 +2524,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2328,6 +2578,7 @@
      ]
     }
    ],
+   "references": [],
    "slots": [
     {
      "name": "port",
@@ -2369,7 +2620,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2567,6 +2819,223 @@
    ]
   }
  ],
+ "references": {
+  "Call": [
+   {
+    "name": "function",
+    "targets": [
+     "Function"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "kernel",
+    "meaning": "the built-in function called"
+   }
+  ],
+  "EmitEntity": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "outputOntology",
+    "meaning": "the entity type the sink writes (not abstract)"
+   }
+  ],
+  "EmitRelationship": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "outputOntology",
+    "meaning": "the relationship type the sink writes (not abstract)"
+   }
+  ],
+  "Fixpoint": [
+   {
+    "name": "over",
+    "targets": [
+     "Port"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "step",
+    "meaning": "the output port of the last operator of the step: the relation that is iterated"
+   }
+  ],
+  "IdOf": [
+   {
+    "name": "domain",
+    "targets": [
+     "IdentityDomain"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "module",
+    "meaning": "the identity domain that computes the id"
+   }
+  ],
+  "Lift": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "outputOntology",
+    "meaning": "the relationship type the lifted edges are written as"
+   },
+   {
+    "name": "liftEdge",
+    "targets": [
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "inputGraph",
+    "meaning": "the relationship type that is lifted (in the graph the lift reads its edges from)"
+   },
+   {
+    "name": "liftVia",
+    "targets": [
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "inputGraph",
+    "meaning": "the mapping relationship from a node to its image (in the graph the lift reads the mapping from)"
+   }
+  ],
+  "Link": [
+   {
+    "name": "policy",
+    "targets": [
+     "EquivalencePolicy"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "module",
+    "meaning": "the equivalence policy whose two identity domains the link binds"
+   }
+  ],
+  "PatternEdge": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "inputGraph",
+    "meaning": "the relationship type of the pattern edge"
+   },
+   {
+    "name": "from",
+    "targets": [
+     "PatternNode"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "pattern",
+    "meaning": "the pattern node the edge starts at"
+   },
+   {
+    "name": "to",
+    "targets": [
+     "PatternNode"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "pattern",
+    "meaning": "the pattern node the edge ends at"
+   }
+  ],
+  "PatternNode": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "inputGraph",
+    "meaning": "the entity type the pattern variable ranges over"
+   }
+  ],
+  "Rule": [
+   {
+    "name": "governs",
+    "targets": [
+     "EmitEntity",
+     "EmitRelationship",
+     "Link",
+     "Lift"
+    ],
+    "required": true,
+    "multiplicity": "+",
+    "scope": "projection",
+    "meaning": "the sinks of the rule"
+   },
+   {
+    "name": "createKey",
+    "targets": [
+     "IdentityDomain"
+    ],
+    "required": false,
+    "multiplicity": "1",
+    "scope": "module",
+    "meaning": "the identity domain the rule creates keys in"
+   }
+  ],
+  "SetComponent": [
+   {
+    "name": "component",
+    "targets": [
+     "KeyComponent"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "domain",
+    "meaning": "the key component of that identity domain this value is for"
+   }
+  ],
+  "SetProperty": [
+   {
+    "name": "property",
+    "targets": [
+     "PropertyType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "emittedType",
+    "meaning": "the property of the emitted type this value sets"
+   }
+  ],
+  "Traverse": [
+   {
+    "name": "ofType",
+    "targets": [
+     "EntityType",
+     "RelationshipType"
+    ],
+    "required": true,
+    "multiplicity": "1",
+    "scope": "inputGraph",
+    "meaning": "the relationship type the traversal follows"
+   }
+  ]
+ },
  "declarations": [
   {
    "slot": "entity",
@@ -2680,7 +3149,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2763,7 +3233,8 @@
          "kind": "Text",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -2849,7 +3320,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -2863,7 +3335,8 @@
      "childTypes": [
       {
        "type": "Operator",
-       "params": []
+       "params": [],
+       "references": []
       }
      ]
     },
@@ -2928,6 +3401,31 @@
          "kind": "Text",
          "required": false
         }
+       ],
+       "references": [
+        {
+         "name": "governs",
+         "targets": [
+          "EmitEntity",
+          "EmitRelationship",
+          "Link",
+          "Lift"
+         ],
+         "required": true,
+         "multiplicity": "+",
+         "scope": "projection",
+         "meaning": "the sinks of the rule"
+        },
+        {
+         "name": "createKey",
+         "targets": [
+          "IdentityDomain"
+         ],
+         "required": false,
+         "multiplicity": "1",
+         "scope": "module",
+         "meaning": "the identity domain the rule creates keys in"
+        }
        ]
       }
      ]
@@ -2967,7 +3465,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -2992,7 +3491,8 @@
          "kind": "Text",
          "required": true
         }
-       ]
+       ],
+       "references": []
       }
      ]
     },
@@ -3012,7 +3512,8 @@
          "kind": "Any",
          "required": false
         }
-       ]
+       ],
+       "references": []
       }
      ]
     }
@@ -3267,6 +3768,31 @@
     "required": false
    }
   ],
+  "references": [
+   {
+    "name": "governs",
+    "targets": [
+     "EmitEntity",
+     "EmitRelationship",
+     "Link",
+     "Lift"
+    ],
+    "required": true,
+    "multiplicity": "+",
+    "scope": "projection",
+    "meaning": "the sinks of the rule"
+   },
+   {
+    "name": "createKey",
+    "targets": [
+     "IdentityDomain"
+    ],
+    "required": false,
+    "multiplicity": "1",
+    "scope": "module",
+    "meaning": "the identity domain the rule creates keys in"
+   }
+  ],
   "slots": [
    {
     "name": "createDefault",
@@ -3278,7 +3804,19 @@
     "childTypes": [
      {
       "type": "SetProperty",
-      "params": []
+      "params": [],
+      "references": [
+       {
+        "name": "property",
+        "targets": [
+         "PropertyType"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "emittedType",
+        "meaning": "the property of the emitted type this value sets"
+       }
+      ]
      }
     ]
    },
@@ -3292,7 +3830,19 @@
     "childTypes": [
      {
       "type": "SetProperty",
-      "params": []
+      "params": [],
+      "references": [
+       {
+        "name": "property",
+        "targets": [
+         "PropertyType"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "emittedType",
+        "meaning": "the property of the emitted type this value sets"
+       }
+      ]
      }
     ]
    },
@@ -3325,6 +3875,19 @@
         "name": "create",
         "kind": "Boolean",
         "required": false
+       }
+      ],
+      "references": [
+       {
+        "name": "ofType",
+        "targets": [
+         "EntityType",
+         "RelationshipType"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "inputGraph",
+        "meaning": "the entity type the pattern variable ranges over"
        }
       ]
      }
@@ -3374,6 +3937,39 @@
         "kind": "Boolean",
         "required": false
        }
+      ],
+      "references": [
+       {
+        "name": "ofType",
+        "targets": [
+         "EntityType",
+         "RelationshipType"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "inputGraph",
+        "meaning": "the relationship type of the pattern edge"
+       },
+       {
+        "name": "from",
+        "targets": [
+         "PatternNode"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "pattern",
+        "meaning": "the pattern node the edge starts at"
+       },
+       {
+        "name": "to",
+        "targets": [
+         "PatternNode"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "pattern",
+        "meaning": "the pattern node the edge ends at"
+       }
       ]
      }
     ]
@@ -3388,7 +3984,19 @@
     "childTypes": [
      {
       "type": "IdOf",
-      "params": []
+      "params": [],
+      "references": [
+       {
+        "name": "domain",
+        "targets": [
+         "IdentityDomain"
+        ],
+        "required": true,
+        "multiplicity": "1",
+        "scope": "module",
+        "meaning": "the identity domain that computes the id"
+       }
+      ]
      }
     ]
    },
@@ -3402,7 +4010,8 @@
     "childTypes": [
      {
       "type": "Expr",
-      "params": []
+      "params": [],
+      "references": []
      }
     ]
    },
@@ -3429,7 +4038,8 @@
         "quantity": "value",
         "unit": "unit of the property read"
        }
-      ]
+      ],
+      "references": []
      }
     ]
    }

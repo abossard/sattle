@@ -6,7 +6,7 @@ import { BlockEditor } from "./BlockEditor";
 import { ExampleEditor, type ExampleData } from "./ExampleEditor";
 import { GraphEditor } from "./GraphEditor";
 import type { EditorProps } from "./host";
-import { PipelineEditor, type StepRows } from "./PipelineEditor";
+import { PipelineEditor, type StepResults } from "./PipelineEditor";
 import { StructureEditor } from "./StructureEditor";
 
 export const NOTATIONS = [
@@ -26,12 +26,12 @@ const useStyles = makeStyles({
 export interface WorkbenchProps extends EditorProps {
   /** data graphs the projection reads, by graph input: what the example notation picks from */
   examples?: Readonly<Record<string, ExampleData>>;
-  /** rows after a step, when the engine returns them */
-  rowsAfter?: (stepId: string) => StepRows | undefined;
+  /** the rows after each step, where an engine answers */
+  results?: StepResults;
   initial?: Notation;
 }
 
-export function Workbench({ examples, rowsAfter, initial, ...p }: WorkbenchProps): ReactElement {
+export function Workbench({ examples, results, initial, ...p }: WorkbenchProps): ReactElement {
   const s = useStyles();
   const [on, setOn] = useState<Notation>(initial ?? "structure");
   return (
@@ -41,7 +41,7 @@ export function Workbench({ examples, rowsAfter, initial, ...p }: WorkbenchProps
       </TabList>
       <div className={s.body} role="tabpanel" aria-label={NOTATIONS.find((n) => n.id === on)!.label}>
         {on === "structure" && <StructureEditor {...p} />}
-        {on === "pipeline" && <PipelineEditor {...p} rowsAfter={rowsAfter} />}
+        {on === "pipeline" && <PipelineEditor {...p} results={results} />}
         {on === "blocks" && <BlockEditor {...p} />}
         {on === "graph" && <GraphEditor {...p} />}
         {on === "example" && <ExampleEditor {...p} examples={examples ?? {}} />}

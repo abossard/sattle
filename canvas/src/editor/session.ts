@@ -47,8 +47,12 @@ export class EditorSession {
   }
   get ok(): boolean { return !this.diagnostics.some((d) => d.severity === "error"); }
 
-  private absorb(a: Pick<Applied, "diagnostics" | "modules">): void {
+  /** engine 3.21: the columns after each operator, by projection id, from the last check or patch answer that carried them */
+  schemas: Record<string, import("./service").OperatorSchema[]> = {};
+
+  private absorb(a: Pick<Applied, "diagnostics" | "modules" | "schemas">): void {
     this.diagnostics = a.diagnostics;
+    if (a.schemas) this.schemas = a.schemas;
     for (const [m, v] of Object.entries(a.modules)) if (v.text !== undefined) this.texts[m] = v.text;
   }
 

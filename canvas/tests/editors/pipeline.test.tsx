@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { docOf } from "../../src/editing/draft";
 import type { EditorProps } from "../../src/editors/host";
-import { PipelineEditor } from "../../src/editors/PipelineEditor";
+import { PipelineEditor, type StepResults } from "../../src/editors/PipelineEditor";
 import { freshDraft, mount, SVC, violations } from "./harness";
 
 describe("the pipeline editor", () => {
@@ -13,7 +13,7 @@ describe("the pipeline editor", () => {
     const doc = docOf(draft, SVC)!;
     expect(within(screen.getByRole("tablist", { name: "Row sets" })).getAllByRole("tab").length).toBe(doc.statements.length);
     expect(screen.getAllByRole("group", { name: /^Step \d+: / }).length).toBe(doc.statements[0].steps.length);
-    expect(screen.getByText(/does not return the rows after a step/)).toBeTruthy();
+    expect(screen.getByText(/come from the engine/)).toBeTruthy();
     expect(await violations()).toEqual([]);
   });
 
@@ -37,12 +37,33 @@ describe("the pipeline editor", () => {
     await waitFor(() => expect(docOf(draft, SVC)!.statements.find((s) => s.name === st.name)?.steps.length ?? 0).toBe(st.steps.length - 1));
   });
 
-  it("shows the rows after a step when the engine returns them", () => {
+  it("asks for the rows after each step, and shows them under each step", async () => {
+    const user = userEvent.setup();
     const draft = freshDraft();
     const first = docOf(draft, SVC)!.statements[0].steps[0].id;
-    const WithRows = (p: EditorProps) => <PipelineEditor {...p} rowsAfter={(id) => (id === first ? { columns: ["a", "b"], rows: [["1", "2"]], total: 1 } : undefined)} />;
-    mount(WithRows, SVC, draft);
-    expect(screen.getByRole("table", { name: "1 rows after this step" })).toBeTruthy();
-    expect(screen.queryByText(/does not return the rows after a step/)).toBeNull();
+    let asked = 0;
+    const results = (loaded: boolean): StepResults => ({
+      rowsAfter: (id) => (loaded && id === first ? { columns: ["s", "n"], rows: [["web", "2"]], total: 3, complete: false } : loaded ? { columns: [], rows: [], total: 0, complete: true } : undefined),
+      load: () => { asked++; }, loading: false, notice: "", stale: false,
+      columnsAfter: (id) => (id === first ? ["s: Service", "n: Integer"] : undefined),
+    });
+    const Before = (p: EditorProps) => <PipelineEditor {...p} results={results(false)} />;
+    const page = mount(Before, SVC, draft);
+    await user.click(screen.getByRole("button", { name: "Show the rows after each step" }));
+    expect(asked).toBe(1);
+    page.unmount();
+    const After = (p: EditorProps) => <PipelineEditor {...p} results={results(true)} />;
+    mount(After, SVC, draft);
+    expect(screen.getByRole("table", { name: "3 rows after this step" })).toBeTruthy();
+    expect(screen.getByText("The first 1 of 3 rows after this step")).toBeTruthy();
+    expect(screen.getByText("gives s: Service, n: Integer")).toBeTruthy();
+    expect(screen.getAllByText("No rows after this step.").length).toBeGreaterThan(0);
+    expect(await violations()).toEqual([]);
+  });
+
+  it("says where the rows would come from when no engine answers", () => {
+    mount(PipelineEditor);
+    expect(screen.getByText(/come from the engine/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Show the rows after each step" })).toBeNull();
   });
 });

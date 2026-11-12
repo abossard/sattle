@@ -3,11 +3,19 @@ import type { Graph } from "../core/graph";
 import type { GraphInfo } from "../source/types";
 import { edgelessNotice } from "./graph-view-model";
 
-export type TileKind = "document" | "notice" | "graph";
+export type TileKind = "document" | "tree" | "summary" | "notice" | "graph";
+
+/** The master of an estate has this many nodes or more: as a tile it is a count of what was observed, not a picture of all of it. */
+export const SUMMARY_NODES = 40;
+
+/** A graph with a hierarchy and this many nodes is read as a list of its top rows: drawn as a graph it is too dense to read at the size of a tile. */
+export const TREE_TILE_NODES = 24;
 
 /** A document graph shows the document (the blocks drawn as nodes are nothing to look at); a projection with nodes and no edges says why; the rest is drawn. */
-export function tileKind(info: GraphInfo, sum: { nodes: number; edges: number }, canRenderDocument: boolean): TileKind {
+export function tileKind(info: GraphInfo, sum: { nodes: number; edges: number }, canRenderDocument: boolean, treeRows = 0): TileKind {
   if (info.document && canRenderDocument) return "document";
+  if (info.tree && treeRows >= 3 && sum.nodes >= TREE_TILE_NODES) return "tree";
+  if (info.role === "master" && sum.nodes >= SUMMARY_NODES) return "summary";
   if (edgelessNotice(info.role, sum.nodes, sum.edges, info.ontology.relationshipTypes.map((t) => t.id.value))) return "notice";
   return "graph";
 }
@@ -53,4 +61,22 @@ export function typesHeld(g: Graph): string[] {
   const n = new Map<string, number>();
   for (const e of g.entities()) n.set(e.type, (n.get(e.type) ?? 0) + 1);
   return [...n].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+}
+
+/** The nodes of a graph that no edge reaches. A tile leaves them out when the graph has others: a ring of unconnected dots says nothing. */
+export function isolatedNodes(g: Graph): number {
+  let n = 0;
+  for (const slot of g.nodeSlot.values()) if (!g.isStub(slot) && g.out[slot].length + g.inn[slot].length === 0) n++;
+  return n;
+}
+/** Whether a tile of this graph leaves out the nodes without edges: only when there are some, and others that have them. */
+export const tileThinsIsolated = (g: Graph): boolean => { const iso = isolatedNodes(g); return iso > 0 && iso < g.nodeCount; };
+
+/** What a graph holds, by type: entities and relationships with their counts, the most numerous first. */
+export function countsByType(g: Graph): { entities: [string, number][]; relationships: [string, number][] } {
+  const e = new Map<string, number>(), r = new Map<string, number>();
+  for (const x of g.entities()) e.set(x.type, (e.get(x.type) ?? 0) + 1);
+  for (const x of g.relationships()) r.set(x.type, (r.get(x.type) ?? 0) + 1);
+  const order = (m: Map<string, number>): [string, number][] => [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  return { entities: order(e), relationships: order(r) };
 }

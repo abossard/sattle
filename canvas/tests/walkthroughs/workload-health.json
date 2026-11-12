@@ -1,0 +1,7588 @@
+{
+ "name": "workloadHealth2",
+ "module": "acme.workload",
+ "original": "workloadHealth",
+ "commands": [
+  {
+   "label": "new projection",
+   "cmd": {
+    "t": "newProjection",
+    "spec": {
+     "module": "acme.workload",
+     "name": "workloadHealth2",
+     "description": "Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.\nIts own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.\nA pod also counts the node it runs on; a deployment is unhealthy only when at least half of its pods are (degraded when at least half are degraded or worse). No data counts above healthy and below degraded; a component that nothing measured is Unknown. An observed call carries no failure.",
+     "outputModule": "d:acme.workload",
+     "graphName": "workloadHealth2",
+     "purpose": "view",
+     "retain": "4",
+     "inputs": [
+      {
+       "port": "master",
+       "graph": "master",
+       "ontology": "d:acme.ops"
+      },
+      {
+       "port": "structure",
+       "graph": "workloadStructure",
+       "ontology": "d:acme.workload"
+      }
+     ],
+     "params": [
+      {
+       "port": "workloadNamespace",
+       "kind": "Text",
+       "value": "$original"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "label": "add Match carried",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "carried"
+   }
+  },
+  {
+   "label": "wire structure to carried.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:carried/port:graph"
+   }
+  },
+  {
+   "label": "carried.node (a: WorkloadPod)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:carried",
+    "variable": "a",
+    "type": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "carried.node (b: WorkloadNode)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:carried",
+    "variable": "b",
+    "type": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "carried.edge (a)-[:HostedOn]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:carried",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:HostedOn"
+   }
+  },
+  {
+   "label": "add Match clusters#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "clusters#0"
+   }
+  },
+  {
+   "label": "add Map clusters",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "clusters"
+   }
+  },
+  {
+   "label": "wire structure to clusters#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusters#0/port:graph"
+   }
+  },
+  {
+   "label": "clusters#0.node (c: Cluster)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:clusters#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:Cluster"
+   }
+  },
+  {
+   "label": "wire clusters to clusters.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusters#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusters/port:in"
+   }
+  },
+  {
+   "label": "clusters.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:clusters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "clusters.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:clusters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match comps",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "comps"
+   }
+  },
+  {
+   "label": "wire structure to comps.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:comps/port:graph"
+   }
+  },
+  {
+   "label": "comps.node (c: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:comps",
+    "variable": "c",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "add Map componentKeys",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "componentKeys"
+   }
+  },
+  {
+   "label": "wire comps to componentKeys.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:comps/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:componentKeys/port:in"
+   }
+  },
+  {
+   "label": "componentKeys.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:componentKeys",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "componentKeys.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:componentKeys",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match connections",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "connections"
+   }
+  },
+  {
+   "label": "wire structure to connections.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:connections/port:graph"
+   }
+  },
+  {
+   "label": "connections.node (a: PlatformResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:connections",
+    "variable": "a",
+    "type": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "connections.node (b: PlatformResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:connections",
+    "variable": "b",
+    "type": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "connections.edge (a)-[:ConnectedThrough]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:connections",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:ConnectedThrough"
+   }
+  },
+  {
+   "label": "add Match contained",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "contained"
+   }
+  },
+  {
+   "label": "wire structure to contained.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:contained/port:graph"
+   }
+  },
+  {
+   "label": "contained.node (a: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:contained",
+    "variable": "a",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "contained.node (b: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:contained",
+    "variable": "b",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "contained.edge (a)-[:Contains]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:contained",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:Contains"
+   }
+  },
+  {
+   "label": "add Match deployed#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "deployed#0"
+   }
+  },
+  {
+   "label": "add Map deployed",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "deployed"
+   }
+  },
+  {
+   "label": "wire structure to deployed#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deployed#0/port:graph"
+   }
+  },
+  {
+   "label": "deployed#0.node (d: WorkloadDeployment)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployed#0",
+    "variable": "d",
+    "type": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "deployed#0.node (p: WorkloadPod)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployed#0",
+    "variable": "p",
+    "type": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "deployed#0.edge (d)-[:Contains]->(p)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployed#0",
+    "variable": "",
+    "from": "d",
+    "to": "p",
+    "type": "d:acme.workload/rel:Contains"
+   }
+  },
+  {
+   "label": "wire deployed to deployed.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployed#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deployed/port:in"
+   }
+  },
+  {
+   "label": "deployed.assign dk = d.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployed",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "dk",
+    "src": "d.key"
+   }
+  },
+  {
+   "label": "deployed.assign pk2 = p.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployed",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "pk2",
+    "src": "p.key"
+   }
+  },
+  {
+   "label": "add Match deployments#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "deployments#0"
+   }
+  },
+  {
+   "label": "add Map deployments",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "deployments"
+   }
+  },
+  {
+   "label": "wire structure to deployments#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deployments#0/port:graph"
+   }
+  },
+  {
+   "label": "deployments#0.node (c: WorkloadDeployment)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployments#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "wire deployments to deployments.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployments#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deployments/port:in"
+   }
+  },
+  {
+   "label": "deployments.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployments",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "deployments.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deployments",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match evidence",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "evidence"
+   }
+  },
+  {
+   "label": "wire structure to evidence.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:evidence/port:graph"
+   }
+  },
+  {
+   "label": "evidence.node (e: DependencyEvidence)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:evidence",
+    "variable": "e",
+    "type": "d:acme.workload/entity:DependencyEvidence"
+   }
+  },
+  {
+   "label": "evidence.node (s: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:evidence",
+    "variable": "s",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "evidence.edge (e)-[:EvidenceFor]->(s)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:evidence",
+    "variable": "",
+    "from": "e",
+    "to": "s",
+    "type": "d:acme.workload/rel:EvidenceFor"
+   }
+  },
+  {
+   "label": "add Match exposed",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "exposed"
+   }
+  },
+  {
+   "label": "wire structure to exposed.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:exposed/port:graph"
+   }
+  },
+  {
+   "label": "exposed.node (a: PlatformResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:exposed",
+    "variable": "a",
+    "type": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "exposed.node (b: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:exposed",
+    "variable": "b",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "exposed.edge (a)-[:Exposes]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:exposed",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:Exposes"
+   }
+  },
+  {
+   "label": "add Match members",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "members"
+   }
+  },
+  {
+   "label": "wire structure to members.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:members/port:graph"
+   }
+  },
+  {
+   "label": "members.node (a: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:members",
+    "variable": "a",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "members.node (b: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:members",
+    "variable": "b",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "members.edge (a)-[:MemberOf]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:members",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:MemberOf"
+   }
+  },
+  {
+   "label": "add Match needs",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "needs"
+   }
+  },
+  {
+   "label": "wire structure to needs.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:needs/port:graph"
+   }
+  },
+  {
+   "label": "needs.node (a: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:needs",
+    "variable": "a",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "needs.node (b: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:needs",
+    "variable": "b",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "needs.edge (a)-[:DependsOn]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:needs",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:DependsOn"
+   }
+  },
+  {
+   "label": "add Match nodeMeters#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "nodeMeters#0"
+   }
+  },
+  {
+   "label": "add Map nodeMeters",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "nodeMeters"
+   }
+  },
+  {
+   "label": "wire master to nodeMeters#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeMeters#0/port:graph"
+   }
+  },
+  {
+   "label": "nodeMeters#0.node (m: Meter)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters#0",
+    "variable": "m",
+    "type": "d:acme.ops/entity:Meter"
+   }
+  },
+  {
+   "label": "nodeMeters#0.node (n: Node)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters#0",
+    "variable": "n",
+    "type": "d:sattle.infra/entity:Node"
+   }
+  },
+  {
+   "label": "nodeMeters#0.edge (m)-[:MeterOf]->(n)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters#0",
+    "variable": "",
+    "from": "m",
+    "to": "n",
+    "type": "d:acme.ops/rel:MeterOf"
+   }
+  },
+  {
+   "label": "wire nodeMeters to nodeMeters.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeMeters#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeMeters/port:in"
+   }
+  },
+  {
+   "label": "nodeMeters.assign m = m",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "m",
+    "src": "m"
+   }
+  },
+  {
+   "label": "nodeMeters.assign ekey = concat(\"node/\", n.cluster, \"/\", n.name)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "concat(\"node/\", n.cluster, \"/\", n.name)"
+   }
+  },
+  {
+   "label": "nodeMeters.assign etype = \"node\"",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "etype",
+    "src": "\"node\""
+   }
+  },
+  {
+   "label": "nodeMeters.assign meter = m.meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "m.meter"
+   }
+  },
+  {
+   "label": "add Match nodePools#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "nodePools#0"
+   }
+  },
+  {
+   "label": "add Map nodePools",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "nodePools"
+   }
+  },
+  {
+   "label": "wire structure to nodePools#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePools#0/port:graph"
+   }
+  },
+  {
+   "label": "nodePools#0.node (c: NodePool)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodePools#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:NodePool"
+   }
+  },
+  {
+   "label": "wire nodePools to nodePools.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePools#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePools/port:in"
+   }
+  },
+  {
+   "label": "nodePools.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodePools",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "nodePools.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodePools",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match nodes#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "nodes#0"
+   }
+  },
+  {
+   "label": "add Map nodes",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "nodes"
+   }
+  },
+  {
+   "label": "wire structure to nodes#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodes#0/port:graph"
+   }
+  },
+  {
+   "label": "nodes#0.node (c: WorkloadNode)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodes#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "wire nodes to nodes.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodes#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodes/port:in"
+   }
+  },
+  {
+   "label": "nodes.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodes",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "nodes.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodes",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match platformResources#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "platformResources#0"
+   }
+  },
+  {
+   "label": "add Map platformResources",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "platformResources"
+   }
+  },
+  {
+   "label": "wire structure to platformResources#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResources#0/port:graph"
+   }
+  },
+  {
+   "label": "platformResources#0.node (c: PlatformResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:platformResources#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "wire platformResources to platformResources.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResources#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResources/port:in"
+   }
+  },
+  {
+   "label": "platformResources.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:platformResources",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "platformResources.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:platformResources",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match podNode#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "podNode#0"
+   }
+  },
+  {
+   "label": "add Map podNode",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "podNode"
+   }
+  },
+  {
+   "label": "wire structure to podNode#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podNode#0/port:graph"
+   }
+  },
+  {
+   "label": "podNode#0.node (n: WorkloadNode)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podNode#0",
+    "variable": "n",
+    "type": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "podNode#0.node (p: WorkloadPod)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podNode#0",
+    "variable": "p",
+    "type": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "podNode#0.edge (p)-[:HostedOn]->(n)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podNode#0",
+    "variable": "",
+    "from": "p",
+    "to": "n",
+    "type": "d:acme.workload/rel:HostedOn"
+   }
+  },
+  {
+   "label": "wire podNode to podNode.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podNode#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podNode/port:in"
+   }
+  },
+  {
+   "label": "podNode.assign pk = p.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podNode",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "pk",
+    "src": "p.key"
+   }
+  },
+  {
+   "label": "podNode.assign nk = n.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podNode",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "nk",
+    "src": "n.key"
+   }
+  },
+  {
+   "label": "add Match pods#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "pods#0"
+   }
+  },
+  {
+   "label": "add Map pods",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "pods"
+   }
+  },
+  {
+   "label": "wire structure to pods#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:pods#0/port:graph"
+   }
+  },
+  {
+   "label": "pods#0.node (c: WorkloadPod)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:pods#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "wire pods to pods.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:pods#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:pods/port:in"
+   }
+  },
+  {
+   "label": "pods.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:pods",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "pods.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:pods",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Traverse reach#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Traverse",
+    "name": "reach#0"
+   }
+  },
+  {
+   "label": "add Map reach",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "reach"
+   }
+  },
+  {
+   "label": "wire structure to reach#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:reach#0/port:graph"
+   }
+  },
+  {
+   "label": "wire comps to reach#0.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:comps/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:reach#0/port:in"
+   }
+  },
+  {
+   "label": "reach#0 direction",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "name": "direction",
+    "value": "out"
+   }
+  },
+  {
+   "label": "reach#0 minDepth",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "name": "minDepth",
+    "value": "0"
+   }
+  },
+  {
+   "label": "reach#0 maxDepth",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "name": "maxDepth",
+    "value": "16"
+   }
+  },
+  {
+   "label": "reach#0 start",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "name": "start",
+    "value": "c"
+   }
+  },
+  {
+   "label": "reach#0 target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "name": "target",
+    "value": "d"
+   }
+  },
+  {
+   "label": "reach#0 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach#0",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:Affects"
+   }
+  },
+  {
+   "label": "wire reach to reach.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:reach#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:reach/port:in"
+   }
+  },
+  {
+   "label": "reach.assign rk = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rk",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "reach.assign dk2 = d.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reach",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "dk2",
+    "src": "d.key"
+   }
+  },
+  {
+   "label": "add Match resourceMeters#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "resourceMeters#0"
+   }
+  },
+  {
+   "label": "add Map resourceMeters",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "resourceMeters"
+   }
+  },
+  {
+   "label": "wire master to resourceMeters#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceMeters#0/port:graph"
+   }
+  },
+  {
+   "label": "resourceMeters#0.node (m: Meter)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters#0",
+    "variable": "m",
+    "type": "d:acme.ops/entity:Meter"
+   }
+  },
+  {
+   "label": "resourceMeters#0.node (r: AzureResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters#0",
+    "variable": "r",
+    "type": "d:sattle.azure/entity:AzureResource"
+   }
+  },
+  {
+   "label": "resourceMeters#0.edge (m)-[:MeterOf]->(r)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters#0",
+    "variable": "",
+    "from": "m",
+    "to": "r",
+    "type": "d:acme.ops/rel:MeterOf"
+   }
+  },
+  {
+   "label": "wire resourceMeters to resourceMeters.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceMeters#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceMeters/port:in"
+   }
+  },
+  {
+   "label": "resourceMeters.assign m = m",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "m",
+    "src": "m"
+   }
+  },
+  {
+   "label": "resourceMeters.assign ekey = lowerInvariant(r.resourceId)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "lowerInvariant(r.resourceId)"
+   }
+  },
+  {
+   "label": "resourceMeters.assign etype = lowerInvariant(r.type)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "etype",
+    "src": "lowerInvariant(r.type)"
+   }
+  },
+  {
+   "label": "resourceMeters.assign meter = m.meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceMeters",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "m.meter"
+   }
+  },
+  {
+   "label": "add Match rules#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "rules#0"
+   }
+  },
+  {
+   "label": "add Map rules",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "rules"
+   }
+  },
+  {
+   "label": "wire master to rules#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:rules#0/port:graph"
+   }
+  },
+  {
+   "label": "rules#0.node (u: SignalRule)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules#0",
+    "variable": "u",
+    "type": "d:acme.ops/entity:SignalRule"
+   }
+  },
+  {
+   "label": "wire rules to rules.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:rules#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:rules/port:in"
+   }
+  },
+  {
+   "label": "rules.assign rid = u.ruleId",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "u.ruleId"
+   }
+  },
+  {
+   "label": "rules.assign rtype = u.ruleType",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rtype",
+    "src": "u.ruleType"
+   }
+  },
+  {
+   "label": "rules.assign rmeter = u.ruleMeter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rmeter",
+    "src": "u.ruleMeter"
+   }
+  },
+  {
+   "label": "rules.assign above = u.ruleAbove",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "above",
+    "src": "u.ruleAbove"
+   }
+  },
+  {
+   "label": "rules.assign enterAfter = u.ruleEnter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "enterAfter",
+    "src": "u.ruleEnter"
+   }
+  },
+  {
+   "label": "rules.assign below = u.ruleBelow",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "below",
+    "src": "u.ruleBelow"
+   }
+  },
+  {
+   "label": "rules.assign exitAfter = u.ruleExit",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "exitAfter",
+    "src": "u.ruleExit"
+   }
+  },
+  {
+   "label": "rules.assign severity = u.ruleSeverity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "u.ruleSeverity"
+   }
+  },
+  {
+   "label": "rules.assign sign = if(u.ruleInvert, -1.0, 1.0)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rules",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "sign",
+    "src": "if(u.ruleInvert, -1.0, 1.0)"
+   }
+  },
+  {
+   "label": "add Join nodeRuledMeters",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodeRuledMeters"
+   }
+  },
+  {
+   "label": "wire nodeMeters to nodeRuledMeters.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeMeters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeRuledMeters/port:left"
+   }
+  },
+  {
+   "label": "wire rules to nodeRuledMeters.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:rules/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeRuledMeters/port:right"
+   }
+  },
+  {
+   "label": "nodeRuledMeters.on meter == rmeter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeRuledMeters",
+    "slot": "on",
+    "src": "meter == rmeter"
+   }
+  },
+  {
+   "label": "add Filter nodeRuled",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "nodeRuled"
+   }
+  },
+  {
+   "label": "wire nodeRuledMeters to nodeRuled.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeRuledMeters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeRuled/port:in"
+   }
+  },
+  {
+   "label": "nodeRuled.predicate etype == rtype or rtype == \"*\"",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeRuled",
+    "slot": "predicate",
+    "src": "etype == rtype or rtype == \"*\""
+   }
+  },
+  {
+   "label": "add Series nodeReadings#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "nodeReadings#0"
+   }
+  },
+  {
+   "label": "add Map nodeReadings",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "nodeReadings"
+   }
+  },
+  {
+   "label": "wire master to nodeReadings#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0/port:graph"
+   }
+  },
+  {
+   "label": "wire nodeRuled to nodeReadings#0.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeRuled/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0/port:in"
+   }
+  },
+  {
+   "label": "nodeReadings#0 within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0",
+    "name": "within",
+    "value": "30m"
+   }
+  },
+  {
+   "label": "nodeReadings#0 ttl",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0",
+    "name": "ttl",
+    "value": "5m"
+   }
+  },
+  {
+   "label": "nodeReadings#0.read m.reading",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0",
+    "slot": "read",
+    "path": "m.reading"
+   }
+  },
+  {
+   "label": "wire nodeReadings to nodeReadings.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeReadings#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeReadings/port:in"
+   }
+  },
+  {
+   "label": "nodeReadings.assign ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "nodeReadings.assign rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "nodeReadings.assign severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "nodeReadings.assign meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "nodeReadings.assign windowStart = windowStart",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "windowStart",
+    "src": "windowStart"
+   }
+  },
+  {
+   "label": "nodeReadings.assign raw = reading",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "raw",
+    "src": "reading"
+   }
+  },
+  {
+   "label": "nodeReadings.assign v = reading * sign",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "v",
+    "src": "reading * sign"
+   }
+  },
+  {
+   "label": "nodeReadings.assign above = above",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "above",
+    "src": "above"
+   }
+  },
+  {
+   "label": "nodeReadings.assign enterAfter = enterAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "enterAfter",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "nodeReadings.assign below = below",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "below",
+    "src": "below"
+   }
+  },
+  {
+   "label": "nodeReadings.assign exitAfter = exitAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "exitAfter",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "nodeReadings.assign noData = noData",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "noData",
+    "src": "noData"
+   }
+  },
+  {
+   "label": "add Threshold nodeSignals",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Threshold",
+    "name": "nodeSignals"
+   }
+  },
+  {
+   "label": "wire nodeReadings to nodeSignals.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeReadings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeSignals/port:in"
+   }
+  },
+  {
+   "label": "nodeSignals target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "target",
+    "value": "state"
+   }
+  },
+  {
+   "label": "nodeSignals above",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "above",
+    "value": "0"
+   }
+  },
+  {
+   "label": "nodeSignals enterAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "enterAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "nodeSignals high",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "high",
+    "value": "on"
+   }
+  },
+  {
+   "label": "nodeSignals below",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "below",
+    "value": "0"
+   }
+  },
+  {
+   "label": "nodeSignals exitAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "exitAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "nodeSignals low",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "low",
+    "value": "off"
+   }
+  },
+  {
+   "label": "nodeSignals initial",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "initial",
+    "value": "off"
+   }
+  },
+  {
+   "label": "nodeSignals nodata",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "name": "nodata",
+    "value": "nodata"
+   }
+  },
+  {
+   "label": "nodeSignals.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "nodeSignals.key meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "nodeSignals.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "nodeSignals.key severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "nodeSignals.value v",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "value",
+    "src": "v"
+   }
+  },
+  {
+   "label": "nodeSignals.aboveBy above",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "aboveBy",
+    "src": "above"
+   }
+  },
+  {
+   "label": "nodeSignals.enterBy enterAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "enterBy",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "nodeSignals.belowBy below",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "belowBy",
+    "src": "below"
+   }
+  },
+  {
+   "label": "nodeSignals.exitBy exitAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeSignals",
+    "slot": "exitBy",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "add Rollup nodeValues",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "nodeValues"
+   }
+  },
+  {
+   "label": "wire nodeReadings to nodeValues.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeReadings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeValues/port:in"
+   }
+  },
+  {
+   "label": "nodeValues.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "nodeValues.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "nodeValues.agg value = max(raw)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeValues",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "value",
+    "src": "raw",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Join resourceRuledMeters",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "resourceRuledMeters"
+   }
+  },
+  {
+   "label": "wire resourceMeters to resourceRuledMeters.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceMeters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceRuledMeters/port:left"
+   }
+  },
+  {
+   "label": "wire rules to resourceRuledMeters.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:rules/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceRuledMeters/port:right"
+   }
+  },
+  {
+   "label": "resourceRuledMeters.on meter == rmeter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceRuledMeters",
+    "slot": "on",
+    "src": "meter == rmeter"
+   }
+  },
+  {
+   "label": "add Filter resourceRuled",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "resourceRuled"
+   }
+  },
+  {
+   "label": "wire resourceRuledMeters to resourceRuled.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceRuledMeters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceRuled/port:in"
+   }
+  },
+  {
+   "label": "resourceRuled.predicate etype == rtype or rtype == \"*\"",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceRuled",
+    "slot": "predicate",
+    "src": "etype == rtype or rtype == \"*\""
+   }
+  },
+  {
+   "label": "add Series resourceReadings#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "resourceReadings#0"
+   }
+  },
+  {
+   "label": "add Map resourceReadings",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "resourceReadings"
+   }
+  },
+  {
+   "label": "wire master to resourceReadings#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0/port:graph"
+   }
+  },
+  {
+   "label": "wire resourceRuled to resourceReadings#0.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceRuled/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0/port:in"
+   }
+  },
+  {
+   "label": "resourceReadings#0 within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0",
+    "name": "within",
+    "value": "30m"
+   }
+  },
+  {
+   "label": "resourceReadings#0 ttl",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0",
+    "name": "ttl",
+    "value": "5m"
+   }
+  },
+  {
+   "label": "resourceReadings#0.read m.reading",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0",
+    "slot": "read",
+    "path": "m.reading"
+   }
+  },
+  {
+   "label": "wire resourceReadings to resourceReadings.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceReadings#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceReadings/port:in"
+   }
+  },
+  {
+   "label": "resourceReadings.assign ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "resourceReadings.assign rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "resourceReadings.assign severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "resourceReadings.assign meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "resourceReadings.assign windowStart = windowStart",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "windowStart",
+    "src": "windowStart"
+   }
+  },
+  {
+   "label": "resourceReadings.assign raw = reading",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "raw",
+    "src": "reading"
+   }
+  },
+  {
+   "label": "resourceReadings.assign v = reading * sign",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "v",
+    "src": "reading * sign"
+   }
+  },
+  {
+   "label": "resourceReadings.assign above = above",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "above",
+    "src": "above"
+   }
+  },
+  {
+   "label": "resourceReadings.assign enterAfter = enterAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "enterAfter",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "resourceReadings.assign below = below",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "below",
+    "src": "below"
+   }
+  },
+  {
+   "label": "resourceReadings.assign exitAfter = exitAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "exitAfter",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "resourceReadings.assign noData = noData",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceReadings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "noData",
+    "src": "noData"
+   }
+  },
+  {
+   "label": "add Threshold resourceSignals",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Threshold",
+    "name": "resourceSignals"
+   }
+  },
+  {
+   "label": "wire resourceReadings to resourceSignals.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceReadings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceSignals/port:in"
+   }
+  },
+  {
+   "label": "resourceSignals target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "target",
+    "value": "state"
+   }
+  },
+  {
+   "label": "resourceSignals above",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "above",
+    "value": "0"
+   }
+  },
+  {
+   "label": "resourceSignals enterAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "enterAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "resourceSignals high",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "high",
+    "value": "on"
+   }
+  },
+  {
+   "label": "resourceSignals below",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "below",
+    "value": "0"
+   }
+  },
+  {
+   "label": "resourceSignals exitAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "exitAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "resourceSignals low",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "low",
+    "value": "off"
+   }
+  },
+  {
+   "label": "resourceSignals initial",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "initial",
+    "value": "off"
+   }
+  },
+  {
+   "label": "resourceSignals nodata",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "name": "nodata",
+    "value": "nodata"
+   }
+  },
+  {
+   "label": "resourceSignals.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "resourceSignals.key meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "resourceSignals.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "resourceSignals.key severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "resourceSignals.value v",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "value",
+    "src": "v"
+   }
+  },
+  {
+   "label": "resourceSignals.aboveBy above",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "aboveBy",
+    "src": "above"
+   }
+  },
+  {
+   "label": "resourceSignals.enterBy enterAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "enterBy",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "resourceSignals.belowBy below",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "belowBy",
+    "src": "below"
+   }
+  },
+  {
+   "label": "resourceSignals.exitBy exitAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceSignals",
+    "slot": "exitBy",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "add Union meterStates",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "meterStates"
+   }
+  },
+  {
+   "label": "wire resourceSignals to meterStates.in0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceSignals/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:meterStates/port:in0"
+   }
+  },
+  {
+   "label": "wire nodeSignals to meterStates.in1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeSignals/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:meterStates/port:in1"
+   }
+  },
+  {
+   "label": "meterStates conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:meterStates",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "add Rollup resourceValues",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "resourceValues"
+   }
+  },
+  {
+   "label": "wire resourceReadings to resourceValues.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceReadings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:resourceValues/port:in"
+   }
+  },
+  {
+   "label": "resourceValues.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "resourceValues.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "resourceValues.agg value = max(raw)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:resourceValues",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "value",
+    "src": "raw",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Match services#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "services#0"
+   }
+  },
+  {
+   "label": "add Map services",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "services"
+   }
+  },
+  {
+   "label": "wire structure to services#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:services#0/port:graph"
+   }
+  },
+  {
+   "label": "services#0.node (c: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:services#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "wire services to services.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:services#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:services/port:in"
+   }
+  },
+  {
+   "label": "services.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:services",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "services.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:services",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Match standIns",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "standIns"
+   }
+  },
+  {
+   "label": "wire structure to standIns.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:standIns/port:graph"
+   }
+  },
+  {
+   "label": "standIns.node (a: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:standIns",
+    "variable": "a",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "standIns.node (b: PlatformResource)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:standIns",
+    "variable": "b",
+    "type": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "standIns.edge (a)-[:BackedBy]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:standIns",
+    "variable": "",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:BackedBy"
+   }
+  },
+  {
+   "label": "add Match talks",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "talks"
+   }
+  },
+  {
+   "label": "wire structure to talks.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:talks/port:graph"
+   }
+  },
+  {
+   "label": "talks.node (a: WorkloadService)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talks",
+    "variable": "a",
+    "type": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "talks.node (b: Component)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talks",
+    "variable": "b",
+    "type": "d:acme.workload/entity:Component"
+   }
+  },
+  {
+   "label": "talks.edge (a)-[t: TalksTo]->(b)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talks",
+    "variable": "t",
+    "from": "a",
+    "to": "b",
+    "type": "d:acme.workload/rel:TalksTo"
+   }
+  },
+  {
+   "label": "add Series talkFlows#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "talkFlows#0"
+   }
+  },
+  {
+   "label": "add Rollup talkFlows",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "talkFlows"
+   }
+  },
+  {
+   "label": "wire structure to talkFlows#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0/port:graph"
+   }
+  },
+  {
+   "label": "wire talks to talkFlows#0.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:talks/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0/port:in"
+   }
+  },
+  {
+   "label": "talkFlows#0 within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0",
+    "name": "within",
+    "value": "30m"
+   }
+  },
+  {
+   "label": "talkFlows#0.read t.flows",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0",
+    "slot": "read",
+    "path": "t.flows"
+   }
+  },
+  {
+   "label": "talkFlows#0.read t.drops",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0",
+    "slot": "read",
+    "path": "t.drops"
+   }
+  },
+  {
+   "label": "wire talkFlows to talkFlows.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:talkFlows#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:talkFlows/port:in"
+   }
+  },
+  {
+   "label": "talkFlows.key a = a",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "a",
+    "src": "a"
+   }
+  },
+  {
+   "label": "talkFlows.key b = b",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "b",
+    "src": "b"
+   }
+  },
+  {
+   "label": "talkFlows.agg drops = sum(drops)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "drops",
+    "src": "drops",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "talkFlows.agg flows = sum(flows)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:talkFlows",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "flows",
+    "src": "flows",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Map unrated",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "unrated"
+   }
+  },
+  {
+   "label": "wire comps to unrated.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:comps/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:unrated/port:in"
+   }
+  },
+  {
+   "label": "unrated.assign k = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:unrated",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "k",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "unrated.assign w = 0 - 1",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:unrated",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "w",
+    "src": "0 - 1"
+   }
+  },
+  {
+   "label": "add Match workloadPods#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "workloadPods#0"
+   }
+  },
+  {
+   "label": "add Filter workloadPods#1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "workloadPods#1"
+   }
+  },
+  {
+   "label": "add Map workloadPods#2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "workloadPods#2"
+   }
+  },
+  {
+   "label": "add Distinct workloadPods",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Distinct",
+    "name": "workloadPods"
+   }
+  },
+  {
+   "label": "wire master to workloadPods#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadPods#0/port:graph"
+   }
+  },
+  {
+   "label": "workloadPods#0.node (p: Pod)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#0",
+    "variable": "p",
+    "type": "d:sattle.infra/entity:Pod"
+   }
+  },
+  {
+   "label": "workloadPods#0.node (s: Service)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#0",
+    "variable": "s",
+    "type": "d:sattle.infra/entity:Service"
+   }
+  },
+  {
+   "label": "workloadPods#0.edge (p)-[:Backs]->(s)",
+   "cmd": {
+    "t": "patternEdge",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#0",
+    "variable": "",
+    "from": "p",
+    "to": "s",
+    "type": "d:sattle.infra/rel:Backs"
+   }
+  },
+  {
+   "label": "wire workloadPods to workloadPods#1.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadPods#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadPods#1/port:in"
+   }
+  },
+  {
+   "label": "workloadPods#1.predicate s.namespace == workloadNamespace",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#1",
+    "slot": "predicate",
+    "src": "s.namespace == workloadNamespace"
+   }
+  },
+  {
+   "label": "wire workloadPods to workloadPods#2.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadPods#1/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadPods#2/port:in"
+   }
+  },
+  {
+   "label": "workloadPods#2.assign p = p",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#2",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "p",
+    "src": "p"
+   }
+  },
+  {
+   "label": "workloadPods#2.assign ekey = concat(\"pod/\", p.cluster, \"/\", p.namespace, \"/\", p.name)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#2",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "concat(\"pod/\", p.cluster, \"/\", p.namespace, \"/\", p.name)"
+   }
+  },
+  {
+   "label": "workloadPods#2.assign meter = \"warnings\"",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadPods#2",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "\"warnings\""
+   }
+  },
+  {
+   "label": "wire workloadPods to workloadPods.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadPods#2/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadPods/port:in"
+   }
+  },
+  {
+   "label": "add Join podRules",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "podRules"
+   }
+  },
+  {
+   "label": "wire workloadPods to podRules.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadPods/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podRules/port:left"
+   }
+  },
+  {
+   "label": "wire rules to podRules.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:rules/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podRules/port:right"
+   }
+  },
+  {
+   "label": "podRules.on meter == rmeter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podRules",
+    "slot": "on",
+    "src": "meter == rmeter"
+   }
+  },
+  {
+   "label": "add Filter podRuled",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Filter",
+    "name": "podRuled"
+   }
+  },
+  {
+   "label": "wire podRules to podRuled.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podRules/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podRuled/port:in"
+   }
+  },
+  {
+   "label": "podRuled.predicate rtype == \"pod\"",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podRuled",
+    "slot": "predicate",
+    "src": "rtype == \"pod\""
+   }
+  },
+  {
+   "label": "add Series warnings#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Series",
+    "name": "warnings#0"
+   }
+  },
+  {
+   "label": "add Map warnings",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "warnings"
+   }
+  },
+  {
+   "label": "wire master to warnings#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:master",
+    "to": "d:acme.workload/projection:workloadHealth2/op:warnings#0/port:graph"
+   }
+  },
+  {
+   "label": "wire podRuled to warnings#0.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podRuled/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:warnings#0/port:in"
+   }
+  },
+  {
+   "label": "warnings#0 within",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings#0",
+    "name": "within",
+    "value": "30m"
+   }
+  },
+  {
+   "label": "warnings#0 ttl",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings#0",
+    "name": "ttl",
+    "value": "5m"
+   }
+  },
+  {
+   "label": "warnings#0.read p.warnings fill 0",
+   "cmd": {
+    "t": "read",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings#0",
+    "slot": "read",
+    "path": "p.warnings"
+   }
+  },
+  {
+   "label": "warnings#0.read p.warnings fill 0 fill",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings#0/read:#0",
+    "name": "fill",
+    "value": "0"
+   }
+  },
+  {
+   "label": "wire warnings to warnings.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:warnings#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:warnings/port:in"
+   }
+  },
+  {
+   "label": "warnings.assign ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "warnings.assign rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "warnings.assign severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "warnings.assign meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "warnings.assign windowStart = windowStart",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "windowStart",
+    "src": "windowStart"
+   }
+  },
+  {
+   "label": "warnings.assign raw = toDecimal(warnings)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "raw",
+    "src": "toDecimal(warnings)"
+   }
+  },
+  {
+   "label": "warnings.assign v = toDecimal(warnings) * sign",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "v",
+    "src": "toDecimal(warnings) * sign"
+   }
+  },
+  {
+   "label": "warnings.assign above = above",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "above",
+    "src": "above"
+   }
+  },
+  {
+   "label": "warnings.assign enterAfter = enterAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "enterAfter",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "warnings.assign below = below",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "below",
+    "src": "below"
+   }
+  },
+  {
+   "label": "warnings.assign exitAfter = exitAfter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "exitAfter",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "warnings.assign noData = noData",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warnings",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "noData",
+    "src": "noData"
+   }
+  },
+  {
+   "label": "add Threshold podSignals",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Threshold",
+    "name": "podSignals"
+   }
+  },
+  {
+   "label": "wire warnings to podSignals.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:warnings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podSignals/port:in"
+   }
+  },
+  {
+   "label": "podSignals target",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "target",
+    "value": "state"
+   }
+  },
+  {
+   "label": "podSignals above",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "above",
+    "value": "0"
+   }
+  },
+  {
+   "label": "podSignals enterAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "enterAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "podSignals high",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "high",
+    "value": "on"
+   }
+  },
+  {
+   "label": "podSignals below",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "below",
+    "value": "0"
+   }
+  },
+  {
+   "label": "podSignals exitAfter",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "exitAfter",
+    "value": "0"
+   }
+  },
+  {
+   "label": "podSignals low",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "low",
+    "value": "off"
+   }
+  },
+  {
+   "label": "podSignals initial",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "initial",
+    "value": "off"
+   }
+  },
+  {
+   "label": "podSignals nodata",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "name": "nodata",
+    "value": "nodata"
+   }
+  },
+  {
+   "label": "podSignals.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "podSignals.key meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "podSignals.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "podSignals.key severity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "severity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "podSignals.value v",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "value",
+    "src": "v"
+   }
+  },
+  {
+   "label": "podSignals.aboveBy above",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "aboveBy",
+    "src": "above"
+   }
+  },
+  {
+   "label": "podSignals.enterBy enterAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "enterBy",
+    "src": "enterAfter"
+   }
+  },
+  {
+   "label": "podSignals.belowBy below",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "belowBy",
+    "src": "below"
+   }
+  },
+  {
+   "label": "podSignals.exitBy exitAfter",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podSignals",
+    "slot": "exitBy",
+    "src": "exitAfter"
+   }
+  },
+  {
+   "label": "add Union allStates",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "allStates"
+   }
+  },
+  {
+   "label": "wire meterStates to allStates.in0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:meterStates/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:allStates/port:in0"
+   }
+  },
+  {
+   "label": "wire podSignals to allStates.in1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podSignals/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:allStates/port:in1"
+   }
+  },
+  {
+   "label": "allStates conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:allStates",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "add Map signalRows",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "signalRows"
+   }
+  },
+  {
+   "label": "wire allStates to signalRows.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:allStates/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:signalRows/port:in"
+   }
+  },
+  {
+   "label": "signalRows.assign sk = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "sk",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "signalRows.assign rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "signalRows.assign meter = meter",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "signalRows.assign signalSeverity = severity",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "signalSeverity",
+    "src": "severity"
+   }
+  },
+  {
+   "label": "signalRows.assign signalState = state",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "signalState",
+    "src": "state"
+   }
+  },
+  {
+   "label": "signalRows.assign sev = if(state == \"on\", severity + 1, if(state == \"nodata\", 1, 0))",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalRows",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "sev",
+    "src": "if(state == \"on\", severity + 1, if(state == \"nodata\", 1, 0))"
+   }
+  },
+  {
+   "label": "add Join measured",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "measured"
+   }
+  },
+  {
+   "label": "wire signalRows to measured.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:signalRows/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:measured/port:left"
+   }
+  },
+  {
+   "label": "wire componentKeys to measured.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:componentKeys/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:measured/port:right"
+   }
+  },
+  {
+   "label": "measured.on sk == ck",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:measured",
+    "slot": "on",
+    "src": "sk == ck"
+   }
+  },
+  {
+   "label": "add Group signalOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "signalOwn"
+   }
+  },
+  {
+   "label": "wire measured to signalOwn.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:measured/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:signalOwn/port:in"
+   }
+  },
+  {
+   "label": "signalOwn.key k = ck",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalOwn",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "ck"
+   }
+  },
+  {
+   "label": "signalOwn.agg own = max(sev)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:signalOwn",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "own",
+    "src": "sev",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Join nodeOfPod",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodeOfPod"
+   }
+  },
+  {
+   "label": "wire podNode to nodeOfPod.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podNode/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeOfPod/port:left"
+   }
+  },
+  {
+   "label": "wire signalOwn to nodeOfPod.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:signalOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeOfPod/port:right"
+   }
+  },
+  {
+   "label": "nodeOfPod.on nk == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeOfPod",
+    "slot": "on",
+    "src": "nk == k"
+   }
+  },
+  {
+   "label": "add Map fromNode",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "fromNode"
+   }
+  },
+  {
+   "label": "wire nodeOfPod to fromNode.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeOfPod/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:fromNode/port:in"
+   }
+  },
+  {
+   "label": "fromNode.assign k = pk",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:fromNode",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "k",
+    "src": "pk"
+   }
+  },
+  {
+   "label": "fromNode.assign own = own",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:fromNode",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add Union podCandidates",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "podCandidates"
+   }
+  },
+  {
+   "label": "wire signalOwn to podCandidates.in0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:signalOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podCandidates/port:in0"
+   }
+  },
+  {
+   "label": "wire fromNode to podCandidates.in1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:fromNode/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podCandidates/port:in1"
+   }
+  },
+  {
+   "label": "podCandidates conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podCandidates",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "add Group ownByKey",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "ownByKey"
+   }
+  },
+  {
+   "label": "wire podCandidates to ownByKey.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podCandidates/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:ownByKey/port:in"
+   }
+  },
+  {
+   "label": "ownByKey.key k = k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:ownByKey",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "k"
+   }
+  },
+  {
+   "label": "ownByKey.agg own = max(own)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:ownByKey",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "own",
+    "src": "own",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Join podsOfDeployment",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "podsOfDeployment"
+   }
+  },
+  {
+   "label": "wire deployed to podsOfDeployment.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployed/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podsOfDeployment/port:left"
+   }
+  },
+  {
+   "label": "wire ownByKey to podsOfDeployment.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:ownByKey/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podsOfDeployment/port:right"
+   }
+  },
+  {
+   "label": "podsOfDeployment.on pk2 == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podsOfDeployment",
+    "slot": "on",
+    "src": "pk2 == k"
+   }
+  },
+  {
+   "label": "add Group shares",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "shares"
+   }
+  },
+  {
+   "label": "wire podsOfDeployment to shares.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podsOfDeployment/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:shares/port:in"
+   }
+  },
+  {
+   "label": "shares.key dk = dk",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:shares",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "dk",
+    "src": "dk"
+   }
+  },
+  {
+   "label": "shares.agg bad = sum(if(own >= 3, 1, 0))",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:shares",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "bad",
+    "src": "if(own >= 3, 1, 0)",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "shares.agg n = count()",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:shares",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "n",
+    "src": "",
+    "extra": {
+     "fn": "count"
+    }
+   }
+  },
+  {
+   "label": "shares.agg weak = sum(if(own >= 2, 1, 0))",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:shares",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "weak",
+    "src": "if(own >= 2, 1, 0)",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Map byShare",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "byShare"
+   }
+  },
+  {
+   "label": "wire shares to byShare.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:shares/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:byShare/port:in"
+   }
+  },
+  {
+   "label": "byShare.assign k = dk",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:byShare",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "k",
+    "src": "dk"
+   }
+  },
+  {
+   "label": "byShare.assign own = if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0))",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:byShare",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "own",
+    "src": "if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0))"
+   }
+  },
+  {
+   "label": "add Union allOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "allOwn"
+   }
+  },
+  {
+   "label": "wire ownByKey to allOwn.in0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:ownByKey/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:allOwn/port:in0"
+   }
+  },
+  {
+   "label": "wire byShare to allOwn.in1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:byShare/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:allOwn/port:in1"
+   }
+  },
+  {
+   "label": "allOwn conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:allOwn",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "add Join deploymentShares",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "deploymentShares"
+   }
+  },
+  {
+   "label": "wire deployments to deploymentShares.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployments/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentShares/port:left"
+   }
+  },
+  {
+   "label": "wire shares to deploymentShares.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:shares/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentShares/port:right"
+   }
+  },
+  {
+   "label": "deploymentShares.on ck == dk",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deploymentShares",
+    "slot": "on",
+    "src": "ck == dk"
+   }
+  },
+  {
+   "label": "add Group owns",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "owns"
+   }
+  },
+  {
+   "label": "wire allOwn to owns.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:allOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:owns/port:in"
+   }
+  },
+  {
+   "label": "owns.key k = k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:owns",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "k"
+   }
+  },
+  {
+   "label": "owns.agg own = max(own)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:owns",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "own",
+    "src": "own",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Join clusterOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "clusterOwn"
+   }
+  },
+  {
+   "label": "wire clusters to clusterOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusterOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to clusterOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusterOwn/port:right"
+   }
+  },
+  {
+   "label": "clusterOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:clusterOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join deploymentOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "deploymentOwn"
+   }
+  },
+  {
+   "label": "wire deployments to deploymentOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployments/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to deploymentOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentOwn/port:right"
+   }
+  },
+  {
+   "label": "deploymentOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deploymentOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join nodeOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodeOwn"
+   }
+  },
+  {
+   "label": "wire nodes to nodeOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodes/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to nodeOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeOwn/port:right"
+   }
+  },
+  {
+   "label": "nodeOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join nodePoolOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodePoolOwn"
+   }
+  },
+  {
+   "label": "wire nodePools to nodePoolOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePools/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePoolOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to nodePoolOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePoolOwn/port:right"
+   }
+  },
+  {
+   "label": "nodePoolOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodePoolOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join platformResourceOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "platformResourceOwn"
+   }
+  },
+  {
+   "label": "wire platformResources to platformResourceOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResources/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResourceOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to platformResourceOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResourceOwn/port:right"
+   }
+  },
+  {
+   "label": "platformResourceOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:platformResourceOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join podOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "podOwn"
+   }
+  },
+  {
+   "label": "wire pods to podOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:pods/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to podOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podOwn/port:right"
+   }
+  },
+  {
+   "label": "podOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join reachedOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "reachedOwn"
+   }
+  },
+  {
+   "label": "wire reach to reachedOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:reach/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:reachedOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to reachedOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:reachedOwn/port:right"
+   }
+  },
+  {
+   "label": "reachedOwn.on dk2 == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:reachedOwn",
+    "slot": "on",
+    "src": "dk2 == k"
+   }
+  },
+  {
+   "label": "add Join serviceOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "serviceOwn"
+   }
+  },
+  {
+   "label": "wire services to serviceOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:services/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:serviceOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to serviceOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:serviceOwn/port:right"
+   }
+  },
+  {
+   "label": "serviceOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:serviceOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Rollup warningValues",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Rollup",
+    "name": "warningValues"
+   }
+  },
+  {
+   "label": "wire warnings to warningValues.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:warnings/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:warningValues/port:in"
+   }
+  },
+  {
+   "label": "warningValues.key ekey = ekey",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warningValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "ekey",
+    "src": "ekey"
+   }
+  },
+  {
+   "label": "warningValues.key rid = rid",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warningValues",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "rid",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "warningValues.agg value = sum(raw)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:warningValues",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "value",
+    "src": "raw",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
+   "label": "add Match workloads#0",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Match",
+    "name": "workloads#0"
+   }
+  },
+  {
+   "label": "add Map workloads",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Map",
+    "name": "workloads"
+   }
+  },
+  {
+   "label": "wire structure to workloads#0.graph",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/port:structure",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloads#0/port:graph"
+   }
+  },
+  {
+   "label": "workloads#0.node (c: Workload)",
+   "cmd": {
+    "t": "patternNode",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloads#0",
+    "variable": "c",
+    "type": "d:acme.workload/entity:Workload"
+   }
+  },
+  {
+   "label": "wire workloads to workloads.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloads#0/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloads/port:in"
+   }
+  },
+  {
+   "label": "workloads.assign c = c",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloads",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "c",
+    "src": "c"
+   }
+  },
+  {
+   "label": "workloads.assign ck = c.key",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloads",
+    "slot": "assign",
+    "childType": "Assign",
+    "name": "ck",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "add Join workloadOwn",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "workloadOwn"
+   }
+  },
+  {
+   "label": "wire workloads to workloadOwn.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloads/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadOwn/port:left"
+   }
+  },
+  {
+   "label": "wire owns to workloadOwn.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:owns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadOwn/port:right"
+   }
+  },
+  {
+   "label": "workloadOwn.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadOwn",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Group worst",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "worst"
+   }
+  },
+  {
+   "label": "wire reachedOwn to worst.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:reachedOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:worst/port:in"
+   }
+  },
+  {
+   "label": "worst.key k = rk",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:worst",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "rk"
+   }
+  },
+  {
+   "label": "worst.agg w = max(own)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:worst",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "own",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Union rated",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Union",
+    "name": "rated"
+   }
+  },
+  {
+   "label": "wire unrated to rated.in0",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:unrated/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:rated/port:in0"
+   }
+  },
+  {
+   "label": "wire worst to rated.in1",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:worst/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:rated/port:in1"
+   }
+  },
+  {
+   "label": "rated conflict",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:rated",
+    "name": "conflict",
+    "value": "preserveEvidence"
+   }
+  },
+  {
+   "label": "add Group levels",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Group",
+    "name": "levels"
+   }
+  },
+  {
+   "label": "wire rated to levels.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:rated/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:levels/port:in"
+   }
+  },
+  {
+   "label": "levels.key k = k",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:levels",
+    "slot": "key",
+    "childType": "Assign",
+    "name": "k",
+    "src": "k"
+   }
+  },
+  {
+   "label": "levels.agg w = max(w)",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:levels",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "w",
+    "src": "w",
+    "extra": {
+     "fn": "max"
+    }
+   }
+  },
+  {
+   "label": "add Join clusterLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "clusterLevel"
+   }
+  },
+  {
+   "label": "wire clusters to clusterLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusterLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to clusterLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:clusterLevel/port:right"
+   }
+  },
+  {
+   "label": "clusterLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:clusterLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join deploymentLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "deploymentLevel"
+   }
+  },
+  {
+   "label": "wire deployments to deploymentLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployments/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to deploymentLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:deploymentLevel/port:right"
+   }
+  },
+  {
+   "label": "deploymentLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:deploymentLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join nodeLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodeLevel"
+   }
+  },
+  {
+   "label": "wire nodes to nodeLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodes/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to nodeLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodeLevel/port:right"
+   }
+  },
+  {
+   "label": "nodeLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodeLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join nodePoolLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "nodePoolLevel"
+   }
+  },
+  {
+   "label": "wire nodePools to nodePoolLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePools/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePoolLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to nodePoolLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:nodePoolLevel/port:right"
+   }
+  },
+  {
+   "label": "nodePoolLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:nodePoolLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join platformResourceLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "platformResourceLevel"
+   }
+  },
+  {
+   "label": "wire platformResources to platformResourceLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResources/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResourceLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to platformResourceLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:platformResourceLevel/port:right"
+   }
+  },
+  {
+   "label": "platformResourceLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:platformResourceLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join podLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "podLevel"
+   }
+  },
+  {
+   "label": "wire pods to podLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:pods/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to podLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:podLevel/port:right"
+   }
+  },
+  {
+   "label": "podLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:podLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join serviceLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "serviceLevel"
+   }
+  },
+  {
+   "label": "wire services to serviceLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:services/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:serviceLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to serviceLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:serviceLevel/port:right"
+   }
+  },
+  {
+   "label": "serviceLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:serviceLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add Join workloadLevel",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "Join",
+    "name": "workloadLevel"
+   }
+  },
+  {
+   "label": "wire workloads to workloadLevel.left",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloads/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadLevel/port:left"
+   }
+  },
+  {
+   "label": "wire levels to workloadLevel.right",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:levels/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:workloadLevel/port:right"
+   }
+  },
+  {
+   "label": "workloadLevel.on ck == k",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:workloadLevel",
+    "slot": "on",
+    "src": "ck == k"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.1",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.1"
+   }
+  },
+  {
+   "label": "wire resourceValues to emit.1.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:resourceValues/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.1/port:in"
+   }
+  },
+  {
+   "label": "emit.1 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.1",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.1 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.1",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:ComponentSignal"
+   }
+  },
+  {
+   "label": "emit.1.id signal(component: ekey, rule: rid)",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.1",
+    "slot": "id",
+    "src": "signal(component: ekey, rule: rid)"
+   }
+  },
+  {
+   "label": "emit.1.set reading = value",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:reading",
+    "src": "value"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.2",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.2"
+   }
+  },
+  {
+   "label": "wire nodeValues to emit.2.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeValues/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.2/port:in"
+   }
+  },
+  {
+   "label": "emit.2 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.2",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.2 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.2",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:ComponentSignal"
+   }
+  },
+  {
+   "label": "emit.2.id signal(component: ekey, rule: rid)",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.2",
+    "slot": "id",
+    "src": "signal(component: ekey, rule: rid)"
+   }
+  },
+  {
+   "label": "emit.2.set reading = value",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.2",
+    "slot": "set",
+    "property": "d:acme.workload/prop:reading",
+    "src": "value"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.3",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.3"
+   }
+  },
+  {
+   "label": "wire warningValues to emit.3.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:warningValues/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.3/port:in"
+   }
+  },
+  {
+   "label": "emit.3 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.3",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.3 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.3",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:ComponentSignal"
+   }
+  },
+  {
+   "label": "emit.3.id signal(component: ekey, rule: rid)",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.3",
+    "slot": "id",
+    "src": "signal(component: ekey, rule: rid)"
+   }
+  },
+  {
+   "label": "emit.3.set events = value",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.3",
+    "slot": "set",
+    "property": "d:acme.workload/prop:events",
+    "src": "value"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.4",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.4"
+   }
+  },
+  {
+   "label": "wire measured to emit.4.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:measured/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.4/port:in"
+   }
+  },
+  {
+   "label": "emit.4 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.4 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:ComponentSignal"
+   }
+  },
+  {
+   "label": "emit.4.id signal(component: sk, rule: rid)",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "id",
+    "src": "signal(component: sk, rule: rid)"
+   }
+  },
+  {
+   "label": "emit.4.set componentKey = sk",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "set",
+    "property": "d:acme.workload/prop:componentKey",
+    "src": "sk"
+   }
+  },
+  {
+   "label": "emit.4.set meter = meter",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "set",
+    "property": "d:acme.workload/prop:meter",
+    "src": "meter"
+   }
+  },
+  {
+   "label": "emit.4.set rule = rid",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "set",
+    "property": "d:acme.workload/prop:rule",
+    "src": "rid"
+   }
+  },
+  {
+   "label": "emit.4.set signalSeverity = signalSeverity",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "set",
+    "property": "d:acme.workload/prop:signalSeverity",
+    "src": "signalSeverity"
+   }
+  },
+  {
+   "label": "emit.4.set signalState = signalState",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.4",
+    "slot": "set",
+    "property": "d:acme.workload/prop:signalState",
+    "src": "signalState"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.5",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.5"
+   }
+  },
+  {
+   "label": "wire measured to emit.5.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:measured/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.5/port:in"
+   }
+  },
+  {
+   "label": "emit.5 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.5 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "name": "key",
+    "value": "measures"
+   }
+  },
+  {
+   "label": "emit.5 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.5 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:Measures"
+   }
+  },
+  {
+   "label": "emit.5.source signal(component: sk, rule: rid)",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "slot": "source",
+    "src": "signal(component: sk, rule: rid)"
+   }
+  },
+  {
+   "label": "emit.5.target c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.5",
+    "slot": "target",
+    "src": "c"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.6",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.6"
+   }
+  },
+  {
+   "label": "wire workloads to emit.6.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloads/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.6/port:in"
+   }
+  },
+  {
+   "label": "emit.6 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.6 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Workload"
+   }
+  },
+  {
+   "label": "emit.6.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.6.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.6.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.6.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.6.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.6.set namespace = c.namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.6",
+    "slot": "set",
+    "property": "d:acme.workload/prop:namespace",
+    "src": "c.namespace"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.7",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.7"
+   }
+  },
+  {
+   "label": "wire workloadOwn to emit.7.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.7/port:in"
+   }
+  },
+  {
+   "label": "emit.7 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.7",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.7 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.7",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Workload"
+   }
+  },
+  {
+   "label": "emit.7.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.7",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.7.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.7",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.8",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.8"
+   }
+  },
+  {
+   "label": "wire workloadLevel to emit.8.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:workloadLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.8/port:in"
+   }
+  },
+  {
+   "label": "emit.8 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.8",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.8 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.8",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Workload"
+   }
+  },
+  {
+   "label": "emit.8.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.8",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.8.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.8",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.8.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.8",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.9",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.9"
+   }
+  },
+  {
+   "label": "wire services to emit.9.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:services/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.9/port:in"
+   }
+  },
+  {
+   "label": "emit.9 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.9 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "emit.9.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.9.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.9.set externalName = c.externalName",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:externalName",
+    "src": "c.externalName"
+   }
+  },
+  {
+   "label": "emit.9.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.9.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.9.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.9.set namespace = c.namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.9",
+    "slot": "set",
+    "property": "d:acme.workload/prop:namespace",
+    "src": "c.namespace"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.10",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.10"
+   }
+  },
+  {
+   "label": "wire serviceOwn to emit.10.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:serviceOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.10/port:in"
+   }
+  },
+  {
+   "label": "emit.10 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.10",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.10 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.10",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "emit.10.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.10",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.10.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.10",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.11",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.11"
+   }
+  },
+  {
+   "label": "wire serviceLevel to emit.11.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:serviceLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.11/port:in"
+   }
+  },
+  {
+   "label": "emit.11 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.11",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.11 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.11",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadService"
+   }
+  },
+  {
+   "label": "emit.11.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.11",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.11.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.11",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.11.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.11",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.12",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.12"
+   }
+  },
+  {
+   "label": "wire deployments to emit.12.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deployments/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.12/port:in"
+   }
+  },
+  {
+   "label": "emit.12 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.12 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "emit.12.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.12.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.12.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.12.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.12.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.12.set namespace = c.namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:namespace",
+    "src": "c.namespace"
+   }
+  },
+  {
+   "label": "emit.12.set replicas = c.replicas",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.12",
+    "slot": "set",
+    "property": "d:acme.workload/prop:replicas",
+    "src": "c.replicas"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.13",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.13"
+   }
+  },
+  {
+   "label": "wire deploymentOwn to emit.13.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deploymentOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.13/port:in"
+   }
+  },
+  {
+   "label": "emit.13 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.13",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.13 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.13",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "emit.13.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.13",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.13.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.13",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.14",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.14"
+   }
+  },
+  {
+   "label": "wire deploymentLevel to emit.14.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deploymentLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.14/port:in"
+   }
+  },
+  {
+   "label": "emit.14 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.14",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.14 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.14",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "emit.14.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.14",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.14.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.14",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.14.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.14",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.15",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.15"
+   }
+  },
+  {
+   "label": "wire pods to emit.15.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:pods/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.15/port:in"
+   }
+  },
+  {
+   "label": "emit.15 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.15 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "emit.15.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.15.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.15.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.15.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.15.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.15.set namespace = c.namespace",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.15",
+    "slot": "set",
+    "property": "d:acme.workload/prop:namespace",
+    "src": "c.namespace"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.16",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.16"
+   }
+  },
+  {
+   "label": "wire podOwn to emit.16.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.16/port:in"
+   }
+  },
+  {
+   "label": "emit.16 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.16",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.16 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.16",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "emit.16.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.16",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.16.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.16",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.17",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.17"
+   }
+  },
+  {
+   "label": "wire podLevel to emit.17.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:podLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.17/port:in"
+   }
+  },
+  {
+   "label": "emit.17 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.17",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.17 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.17",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadPod"
+   }
+  },
+  {
+   "label": "emit.17.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.17",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.17.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.17",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.17.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.17",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.18",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.18"
+   }
+  },
+  {
+   "label": "wire nodes to emit.18.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodes/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.18/port:in"
+   }
+  },
+  {
+   "label": "emit.18 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.18 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "emit.18.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.18.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.18.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.18.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.18.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.18.set pool = c.pool",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.18",
+    "slot": "set",
+    "property": "d:acme.workload/prop:pool",
+    "src": "c.pool"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.19",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.19"
+   }
+  },
+  {
+   "label": "wire nodeOwn to emit.19.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.19/port:in"
+   }
+  },
+  {
+   "label": "emit.19 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.19",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.19 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.19",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "emit.19.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.19",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.19.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.19",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.20",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.20"
+   }
+  },
+  {
+   "label": "wire nodeLevel to emit.20.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodeLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.20/port:in"
+   }
+  },
+  {
+   "label": "emit.20 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.20",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.20 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.20",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadNode"
+   }
+  },
+  {
+   "label": "emit.20.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.20",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.20.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.20",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.20.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.20",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.21",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.21"
+   }
+  },
+  {
+   "label": "wire nodePools to emit.21.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePools/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.21/port:in"
+   }
+  },
+  {
+   "label": "emit.21 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.21 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:NodePool"
+   }
+  },
+  {
+   "label": "emit.21.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.21.set cluster = c.cluster",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "slot": "set",
+    "property": "d:acme.workload/prop:cluster",
+    "src": "c.cluster"
+   }
+  },
+  {
+   "label": "emit.21.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.21.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.21.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.21",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.22",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.22"
+   }
+  },
+  {
+   "label": "wire nodePoolOwn to emit.22.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePoolOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.22/port:in"
+   }
+  },
+  {
+   "label": "emit.22 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.22",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.22 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.22",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:NodePool"
+   }
+  },
+  {
+   "label": "emit.22.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.22",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.22.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.22",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.23",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.23"
+   }
+  },
+  {
+   "label": "wire nodePoolLevel to emit.23.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:nodePoolLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.23/port:in"
+   }
+  },
+  {
+   "label": "emit.23 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.23",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.23 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.23",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:NodePool"
+   }
+  },
+  {
+   "label": "emit.23.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.23",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.23.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.23",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.23.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.23",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.24",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.24"
+   }
+  },
+  {
+   "label": "wire clusters to emit.24.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusters/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.24/port:in"
+   }
+  },
+  {
+   "label": "emit.24 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.24 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Cluster"
+   }
+  },
+  {
+   "label": "emit.24.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.24.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.24.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.24.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.24.set resourceId = c.resourceId",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.24",
+    "slot": "set",
+    "property": "d:acme.workload/prop:resourceId",
+    "src": "c.resourceId"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.25",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.25"
+   }
+  },
+  {
+   "label": "wire clusterOwn to emit.25.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusterOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.25/port:in"
+   }
+  },
+  {
+   "label": "emit.25 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.25",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.25 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.25",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Cluster"
+   }
+  },
+  {
+   "label": "emit.25.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.25",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.25.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.25",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.26",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.26"
+   }
+  },
+  {
+   "label": "wire clusterLevel to emit.26.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:clusterLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.26/port:in"
+   }
+  },
+  {
+   "label": "emit.26 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.26",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.26 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.26",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:Cluster"
+   }
+  },
+  {
+   "label": "emit.26.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.26",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.26.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.26",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.26.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.26",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.27",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.27"
+   }
+  },
+  {
+   "label": "wire platformResources to emit.27.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResources/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.27/port:in"
+   }
+  },
+  {
+   "label": "emit.27 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.27 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "emit.27.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.27.set key = c.key",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "set",
+    "property": "d:acme.workload/prop:key",
+    "src": "c.key"
+   }
+  },
+  {
+   "label": "emit.27.set kind = c.kind",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "set",
+    "property": "d:acme.workload/prop:kind",
+    "src": "c.kind"
+   }
+  },
+  {
+   "label": "emit.27.set name = c.name",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "set",
+    "property": "d:acme.workload/prop:name",
+    "src": "c.name"
+   }
+  },
+  {
+   "label": "emit.27.set resourceId = c.resourceId",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "set",
+    "property": "d:acme.workload/prop:resourceId",
+    "src": "c.resourceId"
+   }
+  },
+  {
+   "label": "emit.27.set resourceType = c.resourceType",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.27",
+    "slot": "set",
+    "property": "d:acme.workload/prop:resourceType",
+    "src": "c.resourceType"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.28",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.28"
+   }
+  },
+  {
+   "label": "wire platformResourceOwn to emit.28.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResourceOwn/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.28/port:in"
+   }
+  },
+  {
+   "label": "emit.28 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.28",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.28 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.28",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "emit.28.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.28",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.28.set own = own",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.28",
+    "slot": "set",
+    "property": "d:acme.workload/prop:own",
+    "src": "own"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.29",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.29"
+   }
+  },
+  {
+   "label": "wire platformResourceLevel to emit.29.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:platformResourceLevel/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.29/port:in"
+   }
+  },
+  {
+   "label": "emit.29 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.29",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.29 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.29",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:PlatformResource"
+   }
+  },
+  {
+   "label": "emit.29.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.29",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.29.set severity = w",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.29",
+    "slot": "set",
+    "property": "d:acme.workload/prop:severity",
+    "src": "w"
+   }
+  },
+  {
+   "label": "emit.29.set state = if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.29",
+    "slot": "set",
+    "property": "d:acme.workload/prop:state",
+    "src": "if(w >= 3, \"Unhealthy\", if(w == 2, \"Degraded\", if(w == 1, \"No data\", if(w == 0, \"Healthy\", \"Unknown\"))))"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.30",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.30"
+   }
+  },
+  {
+   "label": "wire deploymentShares to emit.30.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:deploymentShares/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.30/port:in"
+   }
+  },
+  {
+   "label": "emit.30 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.30",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.30 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.30",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:WorkloadDeployment"
+   }
+  },
+  {
+   "label": "emit.30.id c",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.30",
+    "slot": "id",
+    "src": "c"
+   }
+  },
+  {
+   "label": "emit.30.set pods = n",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.30",
+    "slot": "set",
+    "property": "d:acme.workload/prop:pods",
+    "src": "n"
+   }
+  },
+  {
+   "label": "emit.30.set unhealthyPods = bad",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.30",
+    "slot": "set",
+    "property": "d:acme.workload/prop:unhealthyPods",
+    "src": "bad"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.31",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.31"
+   }
+  },
+  {
+   "label": "wire contained to emit.31.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:contained/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.31/port:in"
+   }
+  },
+  {
+   "label": "emit.31 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.31 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "name": "key",
+    "value": "contains"
+   }
+  },
+  {
+   "label": "emit.31 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.31 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:Contains"
+   }
+  },
+  {
+   "label": "emit.31.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.31.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.31",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.32",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.32"
+   }
+  },
+  {
+   "label": "wire carried to emit.32.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:carried/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.32/port:in"
+   }
+  },
+  {
+   "label": "emit.32 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.32 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "name": "key",
+    "value": "runsOn"
+   }
+  },
+  {
+   "label": "emit.32 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.32 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:HostedOn"
+   }
+  },
+  {
+   "label": "emit.32.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.32.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.32",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.33",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.33"
+   }
+  },
+  {
+   "label": "wire members to emit.33.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:members/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.33/port:in"
+   }
+  },
+  {
+   "label": "emit.33 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.33 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "name": "key",
+    "value": "memberOf"
+   }
+  },
+  {
+   "label": "emit.33 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.33 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:MemberOf"
+   }
+  },
+  {
+   "label": "emit.33.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.33.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.33",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.34",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.34"
+   }
+  },
+  {
+   "label": "wire standIns to emit.34.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:standIns/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.34/port:in"
+   }
+  },
+  {
+   "label": "emit.34 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.34 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "name": "key",
+    "value": "backedBy"
+   }
+  },
+  {
+   "label": "emit.34 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.34 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:BackedBy"
+   }
+  },
+  {
+   "label": "emit.34.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.34.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.34",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.35",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.35"
+   }
+  },
+  {
+   "label": "wire connections to emit.35.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:connections/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.35/port:in"
+   }
+  },
+  {
+   "label": "emit.35 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.35 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "name": "key",
+    "value": "connectedThrough"
+   }
+  },
+  {
+   "label": "emit.35 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.35 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:ConnectedThrough"
+   }
+  },
+  {
+   "label": "emit.35.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.35.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.35",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.36",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.36"
+   }
+  },
+  {
+   "label": "wire needs to emit.36.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:needs/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.36/port:in"
+   }
+  },
+  {
+   "label": "emit.36 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.36 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "name": "key",
+    "value": "dependsOn"
+   }
+  },
+  {
+   "label": "emit.36 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.36 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:DependsOn"
+   }
+  },
+  {
+   "label": "emit.36.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.36.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.36",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.37",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.37"
+   }
+  },
+  {
+   "label": "wire exposed to emit.37.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:exposed/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.37/port:in"
+   }
+  },
+  {
+   "label": "emit.37 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.37 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "name": "key",
+    "value": "exposes"
+   }
+  },
+  {
+   "label": "emit.37 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.37 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:Exposes"
+   }
+  },
+  {
+   "label": "emit.37.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.37.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.37",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.38",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.38"
+   }
+  },
+  {
+   "label": "wire talks to emit.38.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:talks/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.38/port:in"
+   }
+  },
+  {
+   "label": "emit.38 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.38 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "name": "key",
+    "value": "talksTo"
+   }
+  },
+  {
+   "label": "emit.38 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.38 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:TalksTo"
+   }
+  },
+  {
+   "label": "emit.38.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.38.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.38",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.39",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.39"
+   }
+  },
+  {
+   "label": "wire talkFlows to emit.39.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:talkFlows/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.39/port:in"
+   }
+  },
+  {
+   "label": "emit.39 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "name": "mode",
+    "value": "update"
+   }
+  },
+  {
+   "label": "emit.39 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "name": "key",
+    "value": "talksTo"
+   }
+  },
+  {
+   "label": "emit.39 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.39 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:TalksTo"
+   }
+  },
+  {
+   "label": "emit.39.source a",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "slot": "source",
+    "src": "a"
+   }
+  },
+  {
+   "label": "emit.39.target b",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "slot": "target",
+    "src": "b"
+   }
+  },
+  {
+   "label": "emit.39.set drops = drops",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "slot": "set",
+    "property": "d:acme.workload/prop:drops",
+    "src": "drops"
+   }
+  },
+  {
+   "label": "emit.39.set flows = flows",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.39",
+    "slot": "set",
+    "property": "d:acme.workload/prop:flows",
+    "src": "flows"
+   }
+  },
+  {
+   "label": "add EmitEntity emit.40",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitEntity",
+    "name": "emit.40"
+   }
+  },
+  {
+   "label": "wire evidence to emit.40.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:evidence/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.40/port:in"
+   }
+  },
+  {
+   "label": "emit.40 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.40 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "rel": "ofType",
+    "target": "d:acme.workload/entity:DependencyEvidence"
+   }
+  },
+  {
+   "label": "emit.40.id e",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "slot": "id",
+    "src": "e"
+   }
+  },
+  {
+   "label": "emit.40.set detail = e.detail",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "slot": "set",
+    "property": "d:acme.workload/prop:detail",
+    "src": "e.detail"
+   }
+  },
+  {
+   "label": "emit.40.set how = e.how",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "slot": "set",
+    "property": "d:acme.workload/prop:how",
+    "src": "e.how"
+   }
+  },
+  {
+   "label": "emit.40.set sourceKey = e.sourceKey",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "slot": "set",
+    "property": "d:acme.workload/prop:sourceKey",
+    "src": "e.sourceKey"
+   }
+  },
+  {
+   "label": "emit.40.set targetKey = e.targetKey",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.40",
+    "slot": "set",
+    "property": "d:acme.workload/prop:targetKey",
+    "src": "e.targetKey"
+   }
+  },
+  {
+   "label": "add EmitRelationship emit.41",
+   "cmd": {
+    "t": "addOperator",
+    "kind": "EmitRelationship",
+    "name": "emit.41"
+   }
+  },
+  {
+   "label": "wire evidence to emit.41.in",
+   "cmd": {
+    "t": "wire",
+    "from": "d:acme.workload/projection:workloadHealth2/op:evidence/port:out",
+    "to": "d:acme.workload/projection:workloadHealth2/op:emit.41/port:in"
+   }
+  },
+  {
+   "label": "emit.41 mode",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "name": "mode",
+    "value": "create"
+   }
+  },
+  {
+   "label": "emit.41 key",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "name": "key",
+    "value": "evidenceFor"
+   }
+  },
+  {
+   "label": "emit.41 retype",
+   "cmd": {
+    "t": "param",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "name": "retype",
+    "value": "reject"
+   }
+  },
+  {
+   "label": "emit.41 ofType",
+   "cmd": {
+    "t": "ref",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "rel": "ofType",
+    "target": "d:acme.workload/rel:EvidenceFor"
+   }
+  },
+  {
+   "label": "emit.41.source e",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "slot": "source",
+    "src": "e"
+   }
+  },
+  {
+   "label": "emit.41.target s",
+   "cmd": {
+    "t": "expr",
+    "id": "d:acme.workload/projection:workloadHealth2/op:emit.41",
+    "slot": "target",
+    "src": "s"
+   }
+  }
+ ],
+ "graphs": [
+  "workload",
+  "workloadHealth2"
+ ],
+ "nonEmpty": true,
+ "atLeast": {
+  "entities": 40,
+  "relationships": 40
+ }
+}

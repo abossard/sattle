@@ -18,7 +18,6 @@ import { History } from "../src/app/history";
 import { hasTreeRows } from "../src/app/tree-model";
 import { darkTheme } from "../src/render/theme";
 import { StaticSource } from "../src/source/static";
-import { withStandIn } from "../src/source/tree-standin";
 import type { GraphInfo } from "../src/source/types";
 import type { TreeSpec } from "../src/source/presentation";
 import { ent, rel, ver } from "./helpers";
@@ -57,7 +56,7 @@ const fetcher = async (url: string) => { const t = files[`/public${new URL(url).
 describe("the graphs of the default source", () => {
   it("every graph that declares a hierarchy and has rows in it is laid out as a tree", async () => {
     const src = new StaticSource("t", "http://localhost/demo/estate/manifest.json", fetcher);
-    const opened = { graphs: (await src.open()).graphs.map(withStandIn) };
+    const opened = await src.open();
     const trees = opened.graphs.filter((g) => g.tree);
     expect(trees.length, "the default source has graphs that declare a hierarchy").toBeGreaterThan(0);
     for (const g of opened.graphs) {

@@ -44,11 +44,11 @@ describe.skipIf(!ENGINE)("the walkthroughs through the gesture layer, on the eng
       const pv = await svc.preview(session.draft.draft, { graphs: w.graphs, include: ["counts"], limit: "3000" });
       expect(pv.graphs.map((g) => g.id).sort()).toEqual([...w.graphs].sort());
       expect(new Set(pv.graphs.map((g) => g.digest)).size, pv.graphs.map((g) => `${g.id} ${g.digest}`).join(", ")).toBe(1);
+      console.log(`${w.name}: ${commands.length} commands, preview ${pv.graphs.map((g) => `${g.id} ${g.counts.entities}/${g.counts.relationships} ${String(g.digest).slice(0, 19)}`).join(", ")}`);
       for (const g of pv.graphs) {
         if (w.nonEmpty) expect(Number(g.counts.entities) + Number(g.counts.relationships)).toBeGreaterThan(0);
         for (const [k, n] of Object.entries(w.atLeast ?? {})) expect(Number(g.counts[k as "entities" | "relationships"]), `${g.id} ${k}`).toBeGreaterThanOrEqual(n);
       }
-      console.log(`${w.name}: ${commands.length} commands, preview ${pv.graphs.map((g) => `${g.id} ${g.counts.entities}/${g.counts.relationships} ${String(g.digest).slice(0, 19)}`).join(", ")}`);
     } finally { await svc.discard(session.draft.draft).catch(() => {}); }
   }, 600_000);
 });

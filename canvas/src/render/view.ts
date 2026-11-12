@@ -520,25 +520,32 @@ export class GraphView {
     }
     let drawn = 0;
     const MAX_LABELS = 320;
+    const labelled = new Set<number>();   // a node that got its label among the special ones is not labelled again
     const labelNode = (i: number, force: boolean): void => {
+      if (labelled.has(i)) return;
       const x0 = s.positions[2 * i], y0 = s.positions[2 * i + 1];
       if (!Number.isFinite(x0)) return;
       const [x, y] = toS(x0, y0);
       if (!inView(x, y, 30)) return;
       const r = Math.max(s.radius[i] * z, 1.4);
       const st = s.nodeState(i);
-      const special = (st & (St.Selected | St.Hover | St.Match | St.Added | St.Changed | St.Removed | St.Identity)) !== 0 || (s.nodeExtra(i) & Ex.Source) !== 0;
+      const special = (st & (St.Selected | St.Hover | St.Match | St.Added | St.Changed | St.Removed | St.Identity)) !== 0 || (s.nodeExtra(i) & (Ex.Source | Ex.Blame)) !== 0;
       if (!force && !special && r < 2.4) return;
       const text = this.hooks.nodeLabel?.(i);
       if (!text) return;
       const w = this.textWidth(text) + 6;
       const ly = y + r + 8;
-      const lx = keepInside(x, w, W);                      // a label at the edge of the pane is moved in, not cut off
-      // the selected and the hovered node always say their name; every other label, highlighted or not, gives way to what is already there
+      // the selected and the hovered node always say their name, below the node; every other label, highlighted or not, gives way to what is already
+      // there. In a graph small enough to read node by node it tries the other sides of the node before it gives up: a node without its name says nothing.
       const always = (st & (St.Selected | St.Hover)) !== 0;
-      if (always) placer.take(lx, ly, w, 14); else if (!placer.place(lx, ly, w, 14)) return;
-      ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText(text, lx, ly);
-      ctx.fillStyle = special ? th.text : th.muted; ctx.fillText(text, lx, ly);
+      const sides: [number, number][] = [[keepInside(x, w, W), ly]];
+      if (s.nodeCount <= 60) sides.push([keepInside(x, w, W), y - r - 8], [keepInside(x + r + 4 + w / 2, w, W), y], [keepInside(x - r - 4 - w / 2, w, W), y]);
+      let at: [number, number] | null = null;
+      if (always) { at = sides[0]; placer.take(at[0], at[1], w, 14); } else for (const [px, py] of sides) if (placer.place(px, py, w, 14)) { at = [px, py]; break; }
+      if (!at) return;
+      labelled.add(i);
+      ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText(text, at[0], at[1]);
+      ctx.fillStyle = special ? th.text : th.muted; ctx.fillText(text, at[0], at[1]);
       drawn++;
     };
     // special nodes first so they always win

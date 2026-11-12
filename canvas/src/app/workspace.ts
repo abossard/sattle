@@ -3,7 +3,6 @@
 import { nameGraph } from "../core/naming";
 import type { Correspondence, GraphInfo, GraphSource, Reference, SpaceInfo } from "../source/types";
 import { stubEntity } from "../core/reference";
-import { withStandIn } from "../source/tree-standin";
 import { DataPane, type PaneEvents, type Selection } from "./data-pane";
 import type { Action } from "../state/types";
 import { History } from "./history";
@@ -42,8 +41,7 @@ export class Workspace {
     this.unsub.push(this.source.onRejected((r) => this.dispatch({ type: "feed/rejected", rejection: r, at: Date.now() })));
     const opened = await this.source.open();
     if (this.disposed) return; // the source was replaced while it was loading: nothing of this load reaches the store
-    // the stand-in for the engine's hierarchy marker (src/source/tree-standin.ts, to be removed)
-    this.info = { ...opened, graphs: opened.graphs.map(withStandIn) };
+    this.info = { ...opened, graphs: [...opened.graphs] };
     for (const g of this.info.graphs) {
       const snap = await this.source.snapshot(g.id);
       if (this.disposed) return;
@@ -373,7 +371,7 @@ export class Workspace {
   applyMeta(graph: string, meta: import("../source/types").GraphMeta): void {
     const info = this.info.graphs.find((g) => g.id === graph);
     if (!info) return;
-    Object.assign(info, withStandIn({ ...info, ...meta }));
+    Object.assign(info, meta);
     const g = this.histories.get(graph)?.graph;
     if (g) { g.namer = null; nameGraph(g, info.ontology, info.labels); }
     this.panes.get(graph)?.refreshAll();

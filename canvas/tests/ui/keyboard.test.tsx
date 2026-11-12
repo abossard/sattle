@@ -14,8 +14,10 @@ describe("keyboard only", () => {
     await openApp("synth-small", "data");
     screen.getByRole("button", { name: "Keyboard shortcuts" }).focus();
     await user.keyboard("?");
-    const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts" });
-    expect(within(dialog).getByRole("table")).toBeTruthy();
+    // `hidden: true`: the modal management of the component library marks the page behind a dialog aria-hidden after a delay, and on a busy machine
+    // a pass that is late can still be at work when the dialog is open (see tests/defects/ui.test.tsx, findDialog). The test is about what opens and closes.
+    const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts", hidden: true });
+    expect(within(dialog).getByRole("table", { hidden: true })).toBeTruthy();
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(useStore.getState().dialog).toBeNull();

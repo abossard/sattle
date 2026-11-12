@@ -16,7 +16,7 @@ beforeAll(() => {
   }) as typeof fetch;
 });
 
-const GRAPHS = ["master", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "healthSignals", "healthTopology", "healthState", "health"];
+const GRAPHS = ["master", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "treeSignals", "treeStructure", "treeRollup", "healthTree", "healthReport", "workloadStructure", "workload"];
 const tile = (id: string) => screen.findByRole("group", { name: `Graph ${id}` });
 
 describe("a tile of the graph space of the default source", () => {
@@ -27,14 +27,15 @@ describe("a tile of the graph space of the default source", () => {
     const line = describeGraph(ws.graphInfo(id)!, typesHeld(ws.histories.get(id)!.graph));
     expect(line.length).toBeGreaterThan(10);
     expect(isInternalId(line) || isInternalId(t.textContent ?? ""), `${id}: ${t.textContent?.slice(0, 200)}`).toBe(false);
-    expect(within(t).getByText(line), `${id} shows no line that says what it is`).toBeTruthy();
+    // the line may be followed by what the tile leaves out
+    expect(within(t).getByText(line, { exact: false }), `${id} shows no line that says what it is`).toBeTruthy();
   }, 30000);
 
   it("a document graph shows the document: its title and figures, not its blocks as nodes", async () => {
     await openApp("demo", "space");
     const t = await tile("deploymentReport");
     expect(await within(t).findByRole("heading", { name: "Deployment health" })).toBeTruthy();
-    expect(within(t).getByText("Deployments: 3")).toBeTruthy();
+    expect(within(t).getByText("Deployments: 2")).toBeTruthy();
     expect(t.querySelector("canvas"), "a document tile draws no graph").toBeNull();
     expect(isInternalId(t.textContent ?? "")).toBe(false);
   }, 30000);
@@ -50,8 +51,8 @@ describe("a tile of the graph space of the default source", () => {
 
   it("a graph with nodes and no edges says why and lists what it holds, instead of a ring of dots", async () => {
     await openApp("demo", "space");
-    const t = await tile("healthSignals");
-    expect(within(t).getByText(/has 6 nodes and no edges/)).toBeTruthy();
+    const t = await tile("treeSignals");
+    expect(within(t).getByText(/has 12 nodes and no edges/)).toBeTruthy();
     expect(within(t).getByText("It holds:")).toBeTruthy();
     expect(t.querySelector("canvas")).toBeNull();
   }, 30000);

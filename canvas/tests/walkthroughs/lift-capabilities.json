@@ -652,6 +652,6 @@
  "nonEmpty": true,
  "atLeast": {
   "entities": 4,
-  "relationships": 4
+  "relationships": 3
  }
 }

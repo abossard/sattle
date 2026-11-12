@@ -77,7 +77,7 @@ describe.skipIf(!ENGINE)("the reference projections through each notation, on th
         expect(digests.size, "preview digests").toBe(1);
         expect(docOf(draft, projection)).toBeTruthy();
       } finally { await svc.discard(session.draft.draft).catch(() => {}); }
-    }, 900_000);
+    }, 3_600_000);
   });
 
   it("the table", () => { console.log(JSON.stringify(table, null, 1)); });

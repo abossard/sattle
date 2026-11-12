@@ -50,6 +50,7 @@ const drawn = (p: DataPane, h: History) => Object.fromEntries(Object.keys(types)
 describe("a pane draws each edge with the kind its type declares", () => {
   it("every kind has its own code and an edge without a kind has none", () => {
     const h = world(); const p = paneOf(info(declared), h);
+    p.setKindFilter([]);                                              // every kind drawn
     expect(drawn(p, h)).toEqual({ Is: EdgeKindCode.composition, Needs: EdgeKindCode.dependency, Calls: EdgeKindCode.communication, Explains: EdgeKindCode.support, Plain: 0 });
   });
   it.each(KINDS)("leaving %s out hides its edges and only those", (kind) => {
@@ -67,10 +68,11 @@ describe("a pane draws each edge with the kind its type declares", () => {
 
 describe("a tile leaves out what does not make the graph readable at its size", () => {
   it.each<[string, Set<EdgeKind>, boolean, EdgeKind[]]>([
-    ["in the view nothing is left out", new Set<EdgeKind>(["composition", "communication"]), false, []],
+    ["in the view only support is left out (it is counted on what it supports)", new Set<EdgeKind>(["composition", "communication", "support"]), false, ["support"]],
+    ["a view of a graph that is all support draws it", new Set<EdgeKind>(["support"]), false, []],
     ["a tile with composition leaves out communication and support", new Set<EdgeKind>(["composition", "communication", "support"]), true, ["communication", "support"]],
     ["a tile with dependency does too", new Set<EdgeKind>(["dependency", "communication"]), true, ["communication", "support"]],
-    ["a tile of a graph that is all communication draws what it has", new Set<EdgeKind>(["communication"]), true, []],
+    ["a tile of a graph that is all communication draws it, without support", new Set<EdgeKind>(["communication", "support"]), true, ["support"]],
     ["a tile of a graph with no kinds draws what it has", new Set<EdgeKind>(), true, []],
   ])("%s", (_, present, tile, hidden) => expect(defaultHiddenKinds(tile, present)).toEqual(hidden));
 
@@ -79,8 +81,8 @@ describe("a tile leaves out what does not make the graph readable at its size", 
     expect(Object.fromEntries(Object.entries(drawn(p, h)).map(([t, k]) => [t, k !== null]))).toEqual({ Is: true, Needs: true, Calls: false, Explains: false, Plain: true });
     p.setKindFilter([]);                                              // the person turned them all on
     expect(Object.values(drawn(p, h)).every((k) => k !== null)).toBe(true);
-    p.setKindFilter(null); p.setTile(false);                          // opened: the default of the view
-    expect(Object.values(drawn(p, h)).every((k) => k !== null)).toBe(true);
+    p.setKindFilter(null); p.setTile(false);                          // opened: the default of the view leaves out only support
+    expect(Object.fromEntries(Object.entries(drawn(p, h)).map(([t, k]) => [t, k !== null]))).toEqual({ Is: true, Needs: true, Calls: true, Explains: false, Plain: true });
   });
   it("the tile of a graph whose edges are all communication still draws them", () => {
     const h = world(["Calls"]); const p = paneOf(info({ Calls: "communication" }), h, true);
@@ -121,5 +123,22 @@ describe("a tree by the kind that nests", () => {
     const links = [...m.nodes.values()].reduce((n, x) => n + x.cross, 0);
     const nesting = [...m.nodes.values()].filter((x) => x.parent !== null).length;
     expect(links, `${kind}: 5 edges, ${nesting} nest`).toBe((5 - nesting) * 2);
+  });
+});
+
+describe("an element that only supports others", () => {
+  // hub supports nothing; s1 and s2 only explain hub (support); c is a part of hub (composition)
+  const world2 = () => new History({ version: ver("1"), entities: [ent("hub"), ent("c"), ent("s1", "Sig"), ent("s2", "Sig")], relationships: [rel("p", "hub", "c", "Is"), rel("e1", "s1", "hub", "Explains"), rel("e2", "s2", "hub", "Explains")] });
+  const nodeShown = (p: DataPane, h: History, id: string) => scene(p).nodeVisible(h.graph.nodeSlot.get(id)!);
+  it("is left out with its edges by default, and what it supports counts it", () => {
+    const h = world2(); const p = paneOf(info(declared), h);
+    expect(["hub", "c", "s1", "s2"].map((id) => nodeShown(p, h, id))).toEqual([true, true, false, false]);
+    expect(p.labelsShown()).toContain("hub (+2)");
+  });
+  it("comes back as a node when support is turned on", () => {
+    const h = world2(); const p = paneOf(info(declared), h);
+    p.setKindFilter([]);
+    expect(["s1", "s2"].map((id) => nodeShown(p, h, id))).toEqual([true, true]);
+    expect(p.labelsShown()).toContain("hub");
   });
 });

@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ROLE_GLYPH, ROLE_WORD } from "../app/color-by";
 import type { EdgeKind } from "../source/presentation";
 import { KIND_WORD } from "./EdgeKinds";
-import { attentionPaths, buildTree, declaredHierarchyKind, expandBelow, hierarchyKinds, isWrong, specForKind, typeAhead, visibleRows, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
+import { attentionPaths, buildTree, declaredHierarchyKind, defaultOpen, expandBelow, hierarchyKinds, isWrong, specForKind, typeAhead, visibleRows, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
 import { dispatch, useStore } from "../state/store";
 import { useGraphSummary, useWorkspace } from "./common";
 
@@ -69,7 +69,9 @@ export function TreeView({ graph }: { graph: string }) {
 
   // the tree opens on the paths to what is wrong, once per graph; after that what the reader opened and closed is theirs
   const opened = useRef<string>("");
-  useEffect(() => { if (model && opened.current !== graph) { opened.current = graph; setExpanded(attentionPaths(model)); } }, [model, graph]);
+  // a tree opens on the paths to where something is wrong, or else on its top levels (one row of a root says nothing)
+  // so does a tree chosen by another kind of edge: its rows are other ones
+  useEffect(() => { if (model && opened.current !== `${graph}|${kind}`) { opened.current = `${graph}|${kind}`; setExpanded(defaultOpen(model, 40)); } }, [model, graph, kind]);
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;

@@ -112,6 +112,8 @@ void main(){
   if((st & 1u) != 0u){ float m = 1.0 - smoothstep(1.2, 2.2, abs(d + 0.5)); rgb = mix(rgb, uSel, m); a = max(a, m); float halo = 1.0 - smoothstep(0.0, 6.0, d); a = max(a, halo * 0.25 * step(0.0, d)); }
   if((st & 2u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.6, abs(d + 0.2)); rgb = mix(rgb, uSel, m); a = max(a, m); }
   if((ex & 8u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uRemoved, m * (1.0 - fill)); a = max(a, m); }
+  // on the way to the part to blame: a thick ring, apart from the shape, so it reads beside the state colors
+  if((ex & 128u) != 0u){ float m = 1.0 - smoothstep(1.4, 2.6, abs(d - 5.0)); rgb = mix(rgb, uRemoved, m * (1.0 - fill)); a = max(a, m); }
   if((ex & 16u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uChanged, m * (1.0 - fill)); a = max(a, m); }
   if(uTel == 1 && shape != 6u){
     // ring gauge: track plus an arc from the top, clockwise, filled to the channel value; warning state is thicker and segmented
@@ -163,6 +165,8 @@ void main(){
   if((st & 1u) != 0u) w = max(w, 2.0);
   if((st & 240u) != 0u) w = max(w, 1.6);
   uint kind = (aMeta >> 24) & 255u;
+  uint edgeEx = (aMeta >> 16) & 255u;
+  if((edgeEx & 128u) != 0u) w = max(w, 2.6);                      // on the way to the part to blame
   if(kind == 1u) w = max(w, 1.1);                                  // composition: a little heavier
   if(kind == 4u) w = min(w, 0.55);                                 // support: thin
   vec2 p; vec2 n; float dist;
@@ -227,6 +231,7 @@ void main(){
   if((st & 128u) != 0u) rgb = uIdentity;
   if((st & 5u) != 0u) rgb = mix(rgb, uSel, 0.75);
   if((st & 240u) != 0u) a = max(a, 0.85 * edge);
+  if(((vMeta >> 16) & 128u) != 0u){ rgb = mix(rgb, uRemoved, 0.85); a = max(a, 0.95 * edge); }
   a *= uDim;
   if(a < 0.01) discard;
   outColor = vec4(rgb, a);

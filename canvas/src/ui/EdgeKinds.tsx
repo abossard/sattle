@@ -1,5 +1,6 @@
 // What the four kinds of edge look like and are called (engine 3.17). The pattern of the line and the shape of the head say the kind; color does not.
 import type { EdgeKind } from "../source/presentation";
+import { KIND_EDGE_COLOR } from "../render/theme";
 
 export const KIND_WORD: Record<EdgeKind, { word: string; help: string }> = {
   composition: { word: "Composition", help: "one end is a part of the other or is carried by it: solid line, diamond head" },
@@ -13,7 +14,7 @@ export function KindSample({ kind, width = 44 }: { kind: EdgeKind; width?: numbe
   const y = 8, end = width - 9;
   const line = { composition: { w: 2, dash: undefined, op: 1 }, dependency: { w: 1.5, dash: "7 2 2 3", op: 1 }, communication: { w: 1.5, dash: "1.5 3.5", op: 1 }, support: { w: 1, dash: undefined, op: 0.55 } }[kind];
   return (
-    <svg width={width} height={16} viewBox={`0 0 ${width} 16`} aria-hidden focusable="false" style={{ flex: "none" }}>
+    <svg width={width} height={16} viewBox={`0 0 ${width} 16`} aria-hidden focusable="false" style={{ flex: "none", color: KIND_EDGE_COLOR[kind] }}>
       <line x1={1} y1={y} x2={kind === "support" ? width - 2 : end} y2={y} stroke="currentColor" strokeWidth={line.w} strokeDasharray={line.dash} strokeLinecap={kind === "communication" ? "round" : "butt"} opacity={line.op} />
       {kind === "composition" && <polygon points={`${width - 1},${y} ${end + 3},${y - 4} ${end - 3},${y} ${end + 3},${y + 4}`} fill="currentColor" />}
       {kind === "dependency" && <polygon points={`${width - 1},${y} ${end - 8},${y - 1.8} ${end - 8},${y + 1.8}`} fill="currentColor" />}

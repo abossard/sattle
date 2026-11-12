@@ -2,10 +2,10 @@
 // what it says (statements, steps, what each reads, every field, reference and entry), not by the ids it says it with.
 import { describe, expect, it } from "vitest";
 import { Catalog } from "../../src/core/catalog";
-import { allSteps, readProjection, type EntryDoc, type ProjectionDoc, type SlotDoc, type StepDoc } from "../../src/editing/doc";
+import { allSteps, readProjection, type ProjectionDoc } from "../../src/editing/doc";
 import { docOf, perform } from "../../src/editing/draft";
 import type { Gesture } from "../../src/editing/gestures";
-import type { Command } from "../../src/state/types";
+import { entryCommand } from "./commands-of";
 import { estateCatalog, estatePalette as palette } from "./estate";
 import { dangling, memoryDraft } from "./memory-draft";
 import { differing, reading } from "./reading";
@@ -13,27 +13,6 @@ import { differing, reading } from "./reading";
 const base = estateCatalog();
 const cat = new Catalog(base);
 const projections = cat.projections().map((p) => p.id).sort();
-
-const value = (e: EntryDoc, slot?: string): string => (slot ? e.parts.find((p) => p.slot === slot) : e.parts[0])?.entries[0]?.expr ?? "";
-const field = (e: EntryDoc, name: string): string => e.fields.find((f) => f.name === name)?.value ?? "";
-const ref = (e: EntryDoc, rel: string) => e.refs.find((r) => r.rel === rel);
-
-/** The command that adds the entry `e` to `slot` of `step`, or null when the editors have no gesture for an entry of its type. */
-function entryCommand(step: StepDoc, slot: SlotDoc, e: EntryDoc): Command | null {
-  const id = step.id;
-  if (e.expr !== null) {
-    if (slot.value?.kind === "fieldRef") return { t: "read", id, slot: slot.name, path: e.expr };
-    return slot.multiplicity === "*" || slot.multiplicity === "+" ? { t: "exprAdd", id, slot: slot.name, src: e.expr } : { t: "expr", id, slot: slot.name, src: e.expr };
-  }
-  switch (e.type) {
-    case "Assign": return { t: "named", id, slot: slot.name, childType: "Assign", name: e.key, src: value(e) };
-    case "Aggregate": { const second = e.parts.filter((p) => p.slot !== "value" && p.entries[0]?.expr != null)[0]?.entries[0].expr; return { t: "named", id, slot: slot.name, childType: "Aggregate", name: e.key, src: value(e, "value"), extra: { fn: field(e, "fn"), ...(second ? { second } : {}) } }; }
-    case "SetProperty": return ref(e, "property")?.target ? { t: "set", id, slot: slot.name, property: ref(e, "property")!.target!, src: value(e) } : null;
-    case "PatternNode": return ref(e, "ofType")?.target ? { t: "patternNode", id, variable: e.key, type: ref(e, "ofType")!.target! } : null;
-    case "PatternEdge": return { t: "patternEdge", id, variable: field(e, "var"), from: ref(e, "from")!.targetName, to: ref(e, "to")!.targetName, type: ref(e, "ofType")!.target! };
-    default: return e.fields.some((f) => f.name === "target") && !e.parts.length && !e.refs.length ? { t: "child", id, slot: slot.name, childType: e.type, key: field(e, "target"), params: Object.fromEntries(e.fields.filter((f) => f.value !== "").map((f) => [f.name, f.value])) } : null;
-  }
-}
 
 /** The gestures that build `doc` in an empty projection, in the order an author would: row set by row set, first its steps, then what is in them. `skipped` gets what has no gesture. */
 function gesturesOf(doc: ProjectionDoc, skipped: string[]): { label: string; g: Gesture }[] {
@@ -46,6 +25,8 @@ function gesturesOf(doc: ProjectionDoc, skipped: string[]): { label: string; g: 
       for (const sl of s.slots) for (const e of sl.entries) {
         const cmd = entryCommand(s, sl, e);
         if (cmd) out.push({ label: `${s.name} ${sl.name} ${e.text}`, g: { g: "do", cmd } }); else skipped.push(`${s.kind}.${sl.name}: ${e.type}`);
+        // what an expression entry has besides its text (the `fill` of a field a series reads)
+        if (cmd && e.expr !== null) for (const f of e.fields) if (f.value !== "") out.push({ label: `${s.name} ${sl.name} ${e.text} ${f.name}`, g: { g: "do", cmd: { t: "param", id: e.id, name: f.name, value: f.value } } });
       }
     }
   }

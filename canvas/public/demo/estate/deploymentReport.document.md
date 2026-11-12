@@ -1,10 +1,9 @@
 # Deployment health
 
-- Deployments: 3
+- Deployments: 2
 - Unhealthy deployments: 0
 
 | Namespace | Deployment | State | Ready pods |
 | --- | --- | --- | --- |
 | shop | api | Healthy | 2 |
-| shop | db | Healthy | 1 |
-| shop | web | Healthy | 2 |
+| shop | web | Healthy | 3 |

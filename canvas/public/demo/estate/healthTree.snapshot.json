@@ -1,0 +1,1 @@
+{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"healthTree"},"revision":{"value":"0"}},"projection":{"value":"healthTree"},"ontology":{"id":"acme.tree","version":"1.0.0","digest":{"value":"sha256:7c000bb14826c4d771e54b43e9e4d824389a83c00c25660cb1bf1215c6e27773"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

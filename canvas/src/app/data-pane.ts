@@ -8,13 +8,15 @@ import type { GraphValue } from "../core/wire-types";
 import { placeIncremental } from "../layout/force";
 import { LayoutClient } from "../layout/client";
 import { Ex, EdgeKindCode, EdgeStyle, Scene, St, parseColor } from "../render/scene";
-import { type Theme, edgeColorForType, styleForType, type TypeStyle } from "../render/theme";
+import { KIND_EDGE_COLOR, type Theme, edgeColorForType, styleForType, type TypeStyle } from "../render/theme";
 import { GraphView, type Ghost, type Pick } from "../render/view";
 import {
   FlagLayer, type Filter, type Grouping, computeAnchors, defaultHiddenKinds, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood,
 } from "./graph-view-model";
 import type { History, StepResult } from "./history";
-import { hasTreeRows } from "./tree-model";
+import { hasHierarchyEdges, hasTreeRows, inHierarchy } from "./tree-model";
+import { besidePositions, blamePath, kindAxes, restatingTypes } from "./edge-kinds";
+import { tileThinsIsolated } from "./tile";
 import type { GraphInfo } from "../source/types";
 import { EDGE_CHANNELS, NODE_CHANNELS, type TelemetryHub } from "./telemetry-hub";
 import { ROLE_GLYPH, colorValueOf, entryOf, legendOf, tally, type Coloring, type LegendEntry, type Target } from "./color-by";
@@ -30,6 +32,12 @@ export interface PaneEvents {
   changed(): void;
   announce(text: string): void;
   key(ev: KeyboardEvent): boolean;
+}
+
+/** A label that is a path (a resource id) is its last segment, and a long one is cut: the whole text is in the Inspector. */
+export function shortLabel(l: string, max = 30): string {
+  const t = l.includes("/") ? l.slice(l.lastIndexOf("/", l.length - 2) + 1).replace(/\/$/, "") || l : l;
+  return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
 export class DataPane {
@@ -50,8 +58,11 @@ export class DataPane {
   /** the edge kinds the person left out (null: the default of the place the pane is shown) and whether the pane is a tile of the graph space */
   private userHiddenKinds: EdgeKind[] | null = null;
   private tile = false;
+  /** the tile leaves out the nodes without edges (set by the last full pass) */
+  private thinsIsolated = false;
   /** what colors nodes and edges (null: the type colors) and the legend each was computed with */
-  private coloring: Record<Target, { c: Coloring; legend: LegendEntry[] } | null> = { node: null, edge: null };
+  /** `none`: no element carries a value of the property, so the type colors stay (a graph of structure does not turn grey for a state it does not hold) */
+  private coloring: Record<Target, { c: Coloring; legend: LegendEntry[]; none: boolean } | null> = { node: null, edge: null };
   /** a value appeared that the legend does not know: recompute it after the step */
   private legendStale = false;
   selection: Selection | null = null;
@@ -89,12 +100,12 @@ export class DataPane {
       if (connected >= g0.nodeCount * 0.8) this.layoutKind = "layered";
     }
     // a graph whose ontology declares a hierarchy is a tree: the root on top, whatever its size
-    if (info.tree && hasTreeRows(g0, info.tree)) this.layoutKind = "layered";
+    if (info.tree && hasTreeRows(g0, info.tree) && hasHierarchyEdges(g0, info.tree)) this.layoutKind = "layered";
     this.view = new GraphView(host);
     this.view.setTheme(theme);
     this.view.setScene(this.scene);
     this.view.hooks = {
-      nodeLabel: (slot) => { const n = this.graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = this.graph.label(n) + this.valueMark("node", n.props); return g ? `${l} (+${g})` : l; },
+      nodeLabel: (slot) => { const n = this.graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = (this.blame.blamed.has(n.id) ? "⚑ " : "") + shortLabel(this.graph.label(n)) + this.valueMark("node", n.props); const sup = this.supportCounts.get(slot); if (sup) l += ` (+${sup})`; return g ? `${l} (+${g})` : l; },
       nodeGlyph: (slot) => { const st = this.scene.nodeState(slot); return st & St.Added ? "+" : st & St.Changed ? "Δ" : null; },
       edgeLabel: (slot) => { const r = this.graph.edges[slot]; return r ? r.type + this.valueMark("edge", r.props) : null; },
       ghosts: () => this.ghostList,
@@ -177,13 +188,21 @@ export class DataPane {
       src[e] = dense[a]; dst[e] = dense[b];
     }
     // a declared hierarchy ranks the layers: parent above child, what explains a row below it; dependencies between rows do not rank
-    const tree = kind === "layered" ? this.info.tree : undefined;
+    const tree = kind === "layered" && this.info.tree && hasHierarchyEdges(g, this.info.tree) ? this.info.tree : undefined;
     if (tree) {
+      // what explains an element (a signal, evidence) hangs below it: the end of a support edge that takes part in nothing else is the child
+      const isSupport = (type: string) => this.kindOf(type) === "support" || tree.edgeRoles[type] === "support";
+      const structural = new Uint8Array(g.nodes.length);
+      for (let e = 0; e < g.edges.length; e++) { const r = g.edges[e]; if (r && !isSupport(r.type)) { if (g.edgeSrc[e] >= 0) structural[g.edgeSrc[e]] = 1; if (g.edgeDst[e] >= 0) structural[g.edgeDst[e]] = 1; } }
+      // with declared kinds the parts stack below their wholes along every vertical composition (a pod above its node, a node above its pool);
+      // what a part depends on is placed beside it once the layers are done, and communication takes no part
+      const axes = this.info.edgeKinds ? kindAxes(this.info) : null;
       for (let e = 0; e < g.edges.length; e++) {
         const r = g.edges[e];
         if (src[e] < 0 || !r) continue;
-        if (r.type === tree.hierarchy.relationship) { if (tree.hierarchy.childIsSource) [src[e], dst[e]] = [dst[e], src[e]]; }
-        else if (tree.edgeRoles[r.type] === "support") { if (!tree.types || !tree.types.includes(g.nodes[g.edgeSrc[e]]?.type ?? "")) [src[e], dst[e]] = [dst[e], src[e]]; }
+        if (inHierarchy(tree, r.type)) { if (tree.hierarchy.childIsSource) [src[e], dst[e]] = [dst[e], src[e]]; }
+        else if (axes?.vertical.has(r.type)) { /* the source (the part) above the target */ }
+        else if (isSupport(r.type)) { if (!structural[g.edgeSrc[e]] && structural[g.edgeDst[e]]) [src[e], dst[e]] = [dst[e], src[e]]; }
         else { src[e] = -1; dst[e] = -1; }
       }
     }
@@ -200,8 +219,13 @@ export class DataPane {
     if (kind === "layered") {
       const w = new Float32Array(n), h = new Float32Array(n);
       for (let i = 0; i < n; i++) { const r = this.styleOf(g.nodes[slots[i]]!.type).radius; w[i] = r * 2; h[i] = r * 2; }
-      const job = this.layoutClient.run({ kind: "layered", n, src, dst, width: w, height: h, options: { direction: this.layoutDirection, layerGap: 70, nodeGap: 14 } });
-      job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.lastLayoutMs = this.layoutClient.lastMs; this.fit(!first); this.ev.changed(); });
+      const job = this.layoutClient.run({ kind: "layered", n, src, dst, width: w, height: h, options: { direction: this.layoutDirection, layerGap: 70, nodeGap: this.info.edgeKinds ? 40 : 14 } });
+      job.done.then((p) => {
+        if (this.disposed) return;
+        scatter(p);
+        if (tree && this.info.edgeKinds) this.placeBeside();
+        this.layoutRunning = false; this.lastLayoutMs = this.layoutClient.lastMs; this.fit(!first); this.ev.changed();
+      });
     } else {
       // keep existing positions as the starting point so a re-run refines instead of scrambling
       const start = new Float32Array(n * 2).fill(NaN);
@@ -213,6 +237,14 @@ export class DataPane {
       });
       job.done.then((p) => { if (this.disposed) return; scatter(p); this.layoutRunning = false; this.layoutProgress = 1; this.lastLayoutMs = this.layoutClient.lastMs; if (first || n < 100) this.fit(!first); this.ev.changed(); });
     }
+  }
+
+  /** The elements on the side of the dependencies, to the right of the parts that need them (see `besidePositions`). */
+  private placeBeside(): void {
+    const s = this.scene;
+    const moves = besidePositions(this.graph, this.info, (slot) => (Number.isFinite(s.positions[2 * slot]) ? [s.positions[2 * slot], s.positions[2 * slot + 1]] : null), (slot) => !!this.vis[slot]);
+    for (const [slot, [x, y]] of moves) { s.positions[2 * slot] = x; s.positions[2 * slot + 1] = y; }
+    if (moves.size) { s.positionsDirty = true; s.positionsVersion++; this.view.requestRender(); }
   }
 
   /** What the canvas can write next to the nodes of the scene: the labels of the visible ones. */
@@ -241,7 +273,8 @@ export class DataPane {
 
   /** The extra bits of a node in the scene: the layers, and what the graph says (an aggregate of a collapsed group, a reference stub). The only place they are put together. */
   private extraOf(slot: number): number {
-    return (this.nodeExtra.bits[slot] ?? 0) | (this.groupCounts.has(slot) ? Ex.Aggregate : 0) | (this.graph.isStub(slot) ? Ex.Reference : 0);
+    const n = this.graph.nodes[slot];
+    return (this.nodeExtra.bits[slot] ?? 0) | (this.groupCounts.has(slot) ? Ex.Aggregate : 0) | (this.graph.isStub(slot) ? Ex.Reference : 0) | (n && this.blame.nodes.has(n.id) ? Ex.Blame : 0);
   }
 
   private computeVisibility(): void {
@@ -251,6 +284,13 @@ export class DataPane {
     const f = this.filter;
     const focusSet = this.focusDepth > 0 && this.selection?.kind === "entity" && g.nodeSlot.has(this.selection.id)
       ? neighbourhood(g, g.nodeSlot.get(this.selection.id)!, this.focusDepth) : null;
+    // a tile leaves out the nodes no edge reaches when the graph has others: a ring of unconnected dots says nothing at that size
+    this.thinsIsolated = this.tile && tileThinsIsolated(g);
+    const thin = this.thinsIsolated;
+    // with support left out, an element that only supports others (a signal, evidence) is left out too; what it supports counts it
+    const supportOnly = this.hiddenNow.has("support") ? this.supportOnlyNodes() : null;
+    this.supportCounts = new Map();
+    if (supportOnly) for (const [slot, supported] of supportOnly) for (const t of supported) this.supportCounts.set(t, (this.supportCounts.get(t) ?? 0) + 1);
     for (let i = 0; i < n; i++) {
       const e = g.nodes[i];
       let v = e ? 1 : 0;
@@ -258,6 +298,8 @@ export class DataPane {
         if (f.hiddenTypes.has(e.type)) v = 0;
         else if (f.prop && !entityMatchesProp(e, f.prop)) v = 0;
         else if (focusSet && !focusSet.has(i)) v = 0;
+        else if (thin && !g.isStub(i) && g.out[i].length + g.inn[i].length === 0) v = 0;
+        else if (supportOnly?.has(i)) v = 0;
       }
       vis[i] = v;
     }
@@ -273,8 +315,10 @@ export class DataPane {
   /** Rebuild every instance from the graph. Used on load and when filters, grouping or theme change. */
   refreshAll(): void {
     const g = this.graph, s = this.scene;
-    this.computeVisibility();
     this.hiddenNow = this.hiddenKinds();
+    this.restated = this.info.edgeKinds ? restatingTypes(g) : new Set();
+    this.blame = blamePath(g, this.info, this.restated);
+    this.computeVisibility();
     for (let i = 0; i < g.nodes.length; i++) this.writeNode(i);
     s.nodeCount = Math.max(s.nodeCount, g.nodes.length);
     this.writeEdges(0, g.edges.length);
@@ -290,13 +334,27 @@ export class DataPane {
     if (!n || !this.vis[slot]) { s.hideNode(slot); if (slot >= s.nodeCount && n === undefined) return; return; }
     const st = this.styleOf(n.type);
     const stub = this.graph.isStub(slot);
-    const color = stub ? parseColor("#8a94a3") : this.coloring.node ? parseColor(this.entry("node", n.props)?.color ?? "#66758a") : st.color;
+    const color = stub ? parseColor("#8a94a3") : this.coloring.node && !this.coloring.node.none ? parseColor(this.entry("node", n.props)?.color ?? "#66758a") : st.color;
     const deg = this.graph.out[slot].length + this.graph.inn[slot].length;
     const group = this.groupCounts.has(slot);
     const r = st.radius * (group ? 1.35 : 1);
     s.setNode(slot, st.shape, r, r, color, this.nodeFlags.bits[slot] ?? 0, this.extraOf(slot));
     s.priority[slot] = (stub ? 0 : st.radius * 40) + Math.log2(1 + deg) * 12 + (group ? 500 : 0);
   }
+
+  /** The nodes whose every edge is a support edge, with the nodes they support. */
+  private supportOnlyNodes(): Map<number, number[]> {
+    const g = this.graph, out = new Map<number, number[]>();
+    for (let i = 0; i < g.nodes.length; i++) {
+      if (!g.nodes[i] || g.isStub(i)) continue;
+      const edges = [...g.out[i], ...g.inn[i]];
+      if (!edges.length || !edges.every((e) => g.edges[e] && this.kindOf(g.edges[e]!.type) === "support")) continue;
+      out.set(i, edges.map((e) => (g.edgeSrc[e] === i ? g.edgeDst[e] : g.edgeSrc[e])).filter((x) => x >= 0));
+    }
+    return out;
+  }
+  /** per supported node: how many elements that only support it are left out (shown as a count on its label) */
+  private supportCounts = new Map<number, number>();
 
   /** What an edge of a type means, as the ontology declares it; no kind when it declares none. */
   private kindOf(type: string): EdgeKind | undefined { return this.info.edgeKinds?.[type]; }
@@ -311,13 +369,20 @@ export class DataPane {
   hiddenKinds(): ReadonlySet<EdgeKind> { return new Set(this.userHiddenKinds ?? defaultHiddenKinds(this.tile, this.presentKinds())); }
   /** the kinds hidden as of the last full pass: a patch draws its edges by it (reading them again for every edge would cost the graph per edge) */
   private hiddenNow: ReadonlySet<EdgeKind> = new Set();
+  /** relationship types that restate others (see `restatingTypes`), as of the last full pass, and whether the person asked to see them */
+  private restated: ReadonlySet<string> = new Set();
+  private showRestated = false;
+  /** the parts to blame and the way to them from the top (see `blamePath`), as of the last full pass */
+  private blame: ReturnType<typeof blamePath> = { blamed: new Set(), nodes: new Set(), edges: new Set() };
+  restatedTypes(): ReadonlySet<string> { return this.restated; }
+  setShowRestated(show: boolean): void { if (show !== this.showRestated) { this.showRestated = show; this.refreshAll(); } }
   setKindFilter(hidden: EdgeKind[] | null): void {
     if (JSON.stringify(hidden) === JSON.stringify(this.userHiddenKinds)) return;
     this.userHiddenKinds = hidden;
     this.refreshAll();
   }
   /** A tile of the graph space draws fewer kinds than the view of the graph until the person chooses. */
-  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; if (!this.userHiddenKinds) this.refreshAll(); else this.view.requestRender(); } }
+  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; this.refreshAll(); } }
 
   private writeEdges(lo: number, hi: number): void {
     const g = this.graph, s = this.scene;
@@ -327,13 +392,13 @@ export class DataPane {
       const r = g.edges[e];
       const a = g.edgeSrc[e], b = g.edgeDst[e];
       const kind = this.kindOf(r?.type ?? "");
-      if (!r || a < 0 || b < 0 || (kind && hidden.has(kind))) { s.hideEdge(e); continue; }
+      if (!r || a < 0 || b < 0 || (kind && hidden.has(kind)) || (!this.showRestated && this.restated.has(r.type))) { s.hideEdge(e); continue; }
       let ea = a, eb = b, agg = false;
       if (this.anchor) { ea = this.anchor[a]; eb = this.anchor[b]; agg = ea !== a || eb !== b; }
       if (!this.vis[ea] || !this.vis[eb] || ea === eb) { s.hideEdge(e); continue; }
       if (agg && seen) { const key = `${ea}>${eb}>${r.type}`; if (seen.has(key)) { s.hideEdge(e); continue; } seen.add(key); }
-      const ent = this.coloring.edge ? this.entry("edge", r.props) : undefined;
-      s.setEdge(e, ea, eb, ent ? parseColor(ent.color) : edgeColorForType(r.type, this.theme), agg || ent?.role === "danger" || g.isStub(g.edgeSrc[e]) || g.isStub(g.edgeDst[e]) ? EdgeStyle.Dashed : EdgeStyle.Solid, this.edgeFlags.bits[e] ?? 0, agg ? Ex.Aggregate : 0, kind ? EdgeKindCode[kind] : 0);
+      const ent = this.coloring.edge && !this.coloring.edge.none ? this.entry("edge", r.props) : undefined;
+      s.setEdge(e, ea, eb, ent ? parseColor(ent.color) : kind ? parseColor(KIND_EDGE_COLOR[kind]) : edgeColorForType(r.type, this.theme), agg || ent?.role === "danger" || g.isStub(g.edgeSrc[e]) || g.isStub(g.edgeDst[e]) ? EdgeStyle.Dashed : EdgeStyle.Solid, this.edgeFlags.bits[e] ?? 0, (agg ? Ex.Aggregate : 0) | (this.blame.edges.has(r.id) ? Ex.Blame : 0), kind ? EdgeKindCode[kind] : 0);
     }
     if (hi > s.edgeCount) s.edgeCount = hi;
   }
@@ -352,8 +417,9 @@ export class DataPane {
     const st = this.coloring[target];
     const v = st && colorValueOf(st.c, props);
     if (!v) return "";
-    // in a tile the glyph of the role says the state (the color repeats it): the name of the property and its value would crowd the labels
-    if (this.tile && v.role && v.role !== "neutral") return ` ${ROLE_GLYPH[v.role]}`;
+    // the glyph of the role says the state (the color repeats it); the name of the property and its value on every label would bury the names.
+    // The value is in the Inspector and the element list
+    if (v.role && v.role !== "neutral") return ` ${ROLE_GLYPH[v.role]}`;
     return ` · ${v.text}${v.role ? ` ${ROLE_GLYPH[v.role]}` : ""}`;
   }
 
@@ -361,7 +427,7 @@ export class DataPane {
   setColoring(target: Target, c: Coloring | null): void {
     if (!c) { this.coloring[target] = null; this.refreshAll(); return; }
     const { counts, missing, hint } = tally(c, target === "node" ? this.graph.entities() : this.graph.relationships());
-    this.coloring[target] = { c, legend: legendOf(counts, missing, hint, roleColors(this.theme.name)) };
+    this.coloring[target] = { c, legend: legendOf(counts, missing, hint, roleColors(this.theme.name)), none: counts.size === 0 };
     this.legendStale = false;
     this.refreshAll();
   }
@@ -394,7 +460,7 @@ export class DataPane {
     }
     this.hub?.revalidate(res.dirtyNodes, res.dirtyEdges);
     s.positionsDirty = true; s.positionsVersion++;
-    if (this.filter.hiddenTypes.size || this.filter.prop || this.grouping && this.collapsed.size || this.focusDepth) this.refreshAll();
+    if (this.filter.hiddenTypes.size || this.filter.prop || this.grouping && this.collapsed.size || this.focusDepth || this.thinsIsolated || (this.tile && tileThinsIsolated(g)) || this.hiddenNow.has("support") || (this.info.tree && Object.keys(this.info.tree.state).length)) this.refreshAll();
     else {
       for (const slot of res.dirtyNodes) { this.vis[slot] = g.nodes[slot] ? 1 : 0; this.writeNode(slot); }
       // degree changed for neighbours of touched edges, keep priorities current
@@ -623,7 +689,7 @@ export class DataPane {
     for (const bit of [St.Selected, St.Related, St.Hover, St.Identity]) for (const e of this.edgeFlags.members_(bit)) hotEdges.add(e);
     const nodes = [...hotNodes].filter((s) => this.scene.nodeVisible(s)).slice(0, 6000);
     const edges = [...hotEdges].filter((e) => this.scene.edgeVisible(e)).slice(0, 8000);
-    this.view.hotNodes = [...this.nodeFlags.members_(St.Selected), ...this.nodeFlags.members_(St.Hover), ...this.nodeFlags.members_(St.Identity), ...this.nodeExtra.members_(Ex.Source), ...this.nodeFlags.members_(St.Related)].filter((s) => this.scene.nodeVisible(s)).slice(0, 200);
+    this.view.hotNodes = [...[...this.blame.nodes].map((id) => this.graph.nodeSlot.get(id)).filter((x): x is number => x !== undefined), ...this.nodeFlags.members_(St.Selected), ...this.nodeFlags.members_(St.Hover), ...this.nodeFlags.members_(St.Identity), ...this.nodeExtra.members_(Ex.Source), ...this.nodeFlags.members_(St.Related)].filter((s) => this.scene.nodeVisible(s)).slice(0, 200);
     this.view.hotEdges = [...this.edgeFlags.members_(St.Selected), ...this.edgeFlags.members_(St.Hover), ...this.edgeFlags.members_(St.Identity)].filter((e) => this.scene.edgeVisible(e));
     this.view.setHot(nodes, edges);
     const focused = this.nodeFlags.members_(St.Selected).size + this.edgeFlags.members_(St.Selected).size > 0 || this.matches.size > 0 || this.nodeFlags.members_(St.Identity).size > 0 || this.nodeExtra.members_(Ex.Source).size > 0 || this.edgeFlags.members_(St.Identity).size > 0;

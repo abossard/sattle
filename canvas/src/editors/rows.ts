@@ -4,7 +4,7 @@
 import type { Catalog } from "../core/catalog";
 import type { EntryDoc, ProjectionDoc, SlotDoc, StatementDoc, StepDoc } from "../editing/doc";
 import type { Gesture } from "../editing/gestures";
-import { candidates, sources, type Option } from "../editing/scope";
+import { candidates, referenceCandidates, sources, type Option } from "../editing/scope";
 import { entryShape, type ShapeField } from "../editing/shapes";
 import type { Palette } from "../editor/palette";
 
@@ -116,7 +116,7 @@ function stepRows(c: Ctx, st: StatementDoc, step: StepDoc, index: number, parent
     rows.push({
       id: `${step.id}#ref:${r.rel}`, parent: step.id, level: inner, kind: "ref", element: step.id, hasChildren: false,
       tokens: [pl(`${r.label.replace(/ \(.*/, "").toLowerCase()}: `), r.target ? nm(r.targetName) : hole("…")], problems: r.required && !r.target ? [`${r.label.replace(/ \(.*/, "").toLowerCase()} is needed`] : [],
-      edit: { kind: "choice", label: r.label, value: r.target ?? "", get options() { return candidates(c.cat, c.doc, r.to, step); }, commit: (v) => (v === (r.target ?? "") ? null : { g: "do", cmd: { t: "ref", id: step.id, rel: r.rel, target: v } }) },
+      edit: { kind: "choice", label: r.label, value: r.target ?? "", get options() { return referenceCandidates(c.cat, c.doc, r, step); }, commit: (v) => (v === (r.target ?? "") ? null : { g: "do", cmd: { t: "ref", id: step.id, rel: r.rel, target: v } }) },
     });
   }
   rows.push(...fieldRows(c, step, step.id, inner));

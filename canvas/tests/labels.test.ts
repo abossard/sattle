@@ -65,6 +65,6 @@ describe("the label of a node with a colored state", () => {
     p.refreshAll();
     return p.labelsShown();
   };
-  it("in the view says the value and its role", () => expect(pane(false)).toEqual(["api · Degraded ⚠", "web · Healthy ✓", "db · Plain ○", "cache"]));
+  it("in the view is the name and the glyph of the role, as in a tile (the value is in the Inspector)", () => expect(pane(false)).toEqual(["api ⚠", "web ✓", "db · Plain ○", "cache"]));
   it("in a tile is the name and the glyph of the role; a value without a role is still written out", () => expect(pane(true)).toEqual(["api ⚠", "web ✓", "db · Plain ○", "cache"]));
 });

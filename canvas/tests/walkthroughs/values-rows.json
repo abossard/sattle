@@ -1,5 +1,5 @@
 {
- "module": "acme.healthmodel",
+ "module": "acme.workload",
  "name": "kValues",
  "graphs": [
   "kValues"
@@ -10,10 +10,10 @@
    "cmd": {
     "t": "newProjection",
     "spec": {
-     "module": "acme.healthmodel",
+     "module": "acme.workload",
      "name": "kValues",
      "description": "",
-     "outputModule": "d:acme.health",
+     "outputModule": "d:acme.workload",
      "graphName": "kValues",
      "inputs": [
       {
@@ -22,9 +22,9 @@
        "ontology": "d:acme.ops"
       },
       {
-       "port": "st",
-       "graph": "healthState",
-       "ontology": "d:acme.health"
+       "port": "structure",
+       "graph": "workloadStructure",
+       "ontology": "d:acme.workload"
       }
      ],
      "params": [],
@@ -44,7 +44,7 @@
    "label": "row a",
    "cmd": {
     "t": "valuesRow",
-    "id": "d:acme.healthmodel/projection:kValues/op:vals",
+    "id": "d:acme.workload/projection:kValues/op:vals",
     "cells": [
      {
       "name": "k",
@@ -61,7 +61,7 @@
    "label": "row b",
    "cmd": {
     "t": "valuesRow",
-    "id": "d:acme.healthmodel/projection:kValues/op:vals",
+    "id": "d:acme.workload/projection:kValues/op:vals",
     "cells": [
      {
       "name": "k",
@@ -86,15 +86,15 @@
    "label": "wire vals to tally",
    "cmd": {
     "t": "wire",
-    "from": "d:acme.healthmodel/projection:kValues/op:vals/port:out",
-    "to": "d:acme.healthmodel/projection:kValues/op:tally/port:in"
+    "from": "d:acme.workload/projection:kValues/op:vals/port:out",
+    "to": "d:acme.workload/projection:kValues/op:tally/port:in"
    }
   },
   {
    "label": "tally.key:k",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "key",
     "childType": "Assign",
     "name": "k",
@@ -105,7 +105,7 @@
    "label": "tally.agg:a",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "a",
@@ -120,7 +120,7 @@
    "label": "tally.agg:b",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "b",
@@ -135,7 +135,7 @@
    "label": "tally.agg:l",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "l",
@@ -150,7 +150,7 @@
    "label": "tally.agg:w",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "w",
@@ -165,7 +165,7 @@
    "label": "tally.agg:s",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "s",
@@ -180,7 +180,7 @@
    "label": "tally.agg:d",
    "cmd": {
     "t": "named",
-    "id": "d:acme.healthmodel/projection:kValues/op:tally",
+    "id": "d:acme.workload/projection:kValues/op:tally",
     "slot": "agg",
     "childType": "Aggregate",
     "name": "d",
@@ -203,62 +203,76 @@
    "label": "wire vals to emit.1",
    "cmd": {
     "t": "wire",
-    "from": "d:acme.healthmodel/projection:kValues/op:vals/port:out",
-    "to": "d:acme.healthmodel/projection:kValues/op:emit.1/port:in"
+    "from": "d:acme.workload/projection:kValues/op:vals/port:out",
+    "to": "d:acme.workload/projection:kValues/op:emit.1/port:in"
    }
   },
   {
    "label": "emit.1 ofType",
    "cmd": {
     "t": "ref",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
     "rel": "ofType",
-    "target": "d:acme.health/entity:Component"
+    "target": "d:acme.workload/entity:ComponentSignal"
    }
   },
   {
    "label": "emit.1.id",
    "cmd": {
     "t": "expr",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
     "slot": "id",
-    "src": "health.component(id: k)"
+    "src": "signal(component: k, rule: \"demo\")"
    }
   },
   {
-   "label": "emit.1 set d:acme.health/prop:key",
+   "label": "emit.1 set componentKey",
    "cmd": {
     "t": "set",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
-    "property": "d:acme.health/prop:key",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:componentKey",
     "src": "k"
    }
   },
   {
-   "label": "emit.1 set d:acme.health/prop:kind",
+   "label": "emit.1 set rule",
    "cmd": {
     "t": "set",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
-    "property": "d:acme.health/prop:kind",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:rule",
     "src": "\"demo\""
    }
   },
   {
-   "label": "emit.1 set d:acme.health/prop:name",
+   "label": "emit.1 set meter",
    "cmd": {
     "t": "set",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
-    "property": "d:acme.health/prop:name",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:meter",
     "src": "k"
    }
   },
   {
-   "label": "emit.1 set d:acme.health/prop:own",
+   "label": "emit.1 set signalSeverity",
    "cmd": {
     "t": "set",
-    "id": "d:acme.healthmodel/projection:kValues/op:emit.1",
-    "property": "d:acme.health/prop:own",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:signalSeverity",
     "src": "n"
+   }
+  },
+  {
+   "label": "emit.1 set signalState",
+   "cmd": {
+    "t": "set",
+    "id": "d:acme.workload/projection:kValues/op:emit.1",
+    "slot": "set",
+    "property": "d:acme.workload/prop:signalState",
+    "src": "\"off\""
    }
   }
  ],

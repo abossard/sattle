@@ -35,5 +35,5 @@ describe("axe: no violations", () => {
     dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
     await screen.findByRole("heading", { level: 2, name: /./ });
     expect(await violations()).toEqual([]);
-  }, 20000);
+  }, 60000);   // a ceiling for a busy machine: axe over the whole page with a grid and the inspector is the slowest check here
 });

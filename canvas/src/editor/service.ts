@@ -12,11 +12,46 @@ export class EngineError extends Error {
 }
 
 export interface Draft { draft: string; baseRevision: string; revision: string }
+/** engine 3.21: a column of the rows after an operator. `kind` is `Entity`, `Relationship` or the value kind; `unit` a unit other than 1; `item` the item kind of a list. */
+export interface Column { name: string; kind: string; type: string | null; unit: string | null; item: string | null; required: boolean; role: "data" | "telemetry"; temporality: string | null; period: string | null }
+/** engine 3.21: the columns after each typed operator of a projection, in order, from a draft check or a draft patch */
+export interface OperatorSchema { op: string; name: string; kind: string; window: string | null; columns: Column[] }
+/** engine 3.21: the rows a physical operator holds after the replay of a preview (`include: ["rows"]`), with the first `rowLimit` of them */
+export interface OperatorRows { op: string; name: string; kind: string; columns: Column[]; rows: string; weight: string; sample: { weight: string; cells: Record<string, string> }[]; truncated: boolean }
+
+const str = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
+/** Columns as a check names them (objects), or as a preview with `include: ["rows"]` does (the names alone, as the live engine sends them): a name alone has no kind. */
+export function parseColumns(list: unknown): Column[] {
+  return (Array.isArray(list) ? list : []).map((x): Column => {
+    if (typeof x === "string") return { name: x, kind: "", type: null, unit: null, item: null, required: true, role: "data", temporality: null, period: null };
+    const c = (x ?? {}) as Record<string, unknown>;
+    return { name: String(c.name ?? ""), kind: String(c.kind ?? ""), type: str(c.type), unit: str(c.unit), item: str(c.item), required: c.required === true, role: c.role === "telemetry" ? "telemetry" : "data", temporality: str(c.temporality), period: str(c.period) };
+  });
+}
+/** The `schemas` of a check or patch answer, by projection id; absent from an older engine. */
+export function parseSchemas(raw: unknown): Record<string, OperatorSchema[]> | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  return Object.fromEntries(Object.entries(raw as Record<string, unknown>).map(([p, ops]) => [p, (Array.isArray(ops) ? ops : []).map((x) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    return { op: String(o.op ?? ""), name: String(o.name ?? ""), kind: String(o.kind ?? ""), window: str(o.window), columns: parseColumns(o.columns) };
+  })]));
+}
+export function parseOperatorRows(list: unknown): OperatorRows[] {
+  return (Array.isArray(list) ? list : []).map((x) => {
+    const o = (x ?? {}) as Record<string, unknown>;
+    const sample = (Array.isArray(o.sample) ? o.sample : []).map((r) => { const s = (r ?? {}) as Record<string, unknown>; return { weight: String(s.weight ?? ""), cells: Object.fromEntries(Object.entries((s.cells ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])) }; });
+    return { op: String(o.op ?? ""), name: String(o.name ?? ""), kind: String(o.kind ?? ""), columns: parseColumns(o.columns), rows: String(o.rows ?? "0"), weight: String(o.weight ?? "0"), sample, truncated: o.truncated === true };
+  });
+}
 export interface Applied {
   /** restore: the patch the engine applied */
-  patch?: Patch; revision: string; ok: boolean; diagnostics: EngineDiagnostic[]; modules: Record<string, { text: string; changed?: boolean }> }
+  patch?: Patch; revision: string; ok: boolean; diagnostics: EngineDiagnostic[]; modules: Record<string, { text: string; changed?: boolean }>;
+  /** engine 3.21: the columns after each operator, by projection id */
+  schemas?: Record<string, OperatorSchema[]> }
 export interface Release { module: string; version: string; digest: string; catalogRevision: string; supersedes: string | null }
-export interface PreviewGraph { id: string; removed?: boolean; counts: { entities: string; relationships: string; telemetryWindows: string }; digest?: string; diff: Patch | null; snapshot?: Snapshot; truncated?: boolean }
+export interface PreviewGraph { id: string; removed?: boolean; counts: { entities: string; relationships: string; telemetryWindows: string }; digest?: string; diff: Patch | null; snapshot?: Snapshot; truncated?: boolean;
+  /** engine 3.21, with `include: ["rows"]`: the rows after each operator of the graph's plan */
+  operators?: OperatorRows[] }
 /** Engine 3.7: what identity resolution did in the previewed space (counters are integers as strings). `difference` is preview minus live, present when `comparable`. */
 export interface IdentityCounts { minted: string; aliased: string; merged: string; conflicts: string }
 export interface IdentityEffect { preview: IdentityCounts; live: IdentityCounts; comparable: boolean; difference?: IdentityCounts }
@@ -91,7 +126,8 @@ export class EditorService {
   }
   private applied(raw: unknown): Applied {
     const o = raw as Record<string, unknown>;
-    return { revision: String(o.revision), ok: o.ok === true, diagnostics: parseDiagnostics(o.diagnostics), modules: (o.modules ?? {}) as Applied["modules"] };
+    const schemas = parseSchemas(o.schemas);
+    return { revision: String(o.revision), ok: o.ok === true, diagnostics: parseDiagnostics(o.diagnostics), modules: (o.modules ?? {}) as Applied["modules"], ...(schemas ? { schemas } : {}) };
   }
   async applyPatch(id: string, patch: Patch, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("POST", `/drafts/${id}/patches`, { patch: patchToWire(patch), expectedRevision })); }
   async check(id: string): Promise<Applied> { return this.applied(await this.call("POST", `/drafts/${id}/check`)); }
@@ -111,13 +147,15 @@ export class EditorService {
   }
   async draftText(id: string, module: string): Promise<string> { return String(await this.call("GET", `/drafts/${id}/text/${encodeURIComponent(module)}`)); }
 
-  async preview(id: string, body: { graphs?: string[]; include?: string[]; limit?: string; scope?: { maxRows: string } }): Promise<Preview> {
+  /** `rowLimit` (engine 3.21): how many rows of each operator a preview with `include: ["rows"]` samples (the engine's default is 20, at most 1000) */
+  async preview(id: string, body: { graphs?: string[]; include?: string[]; limit?: string; rowLimit?: string; scope?: { maxRows: string } }): Promise<Preview> {
     const o = (await this.call("POST", `/drafts/${id}/preview`, body)) as Record<string, unknown>;
     const reject = throwing("preview");
     const graphs = ((o.graphs ?? []) as Record<string, unknown>[]).map((g): PreviewGraph => ({
       id: String(g.id), removed: g.removed === true, counts: g.counts as PreviewGraph["counts"], digest: g.digest ? String(g.digest) : undefined, truncated: g.truncated === true,
       diff: g.diff ? parsePatch(g.diff, "preview", `diff of ${g.id}`, reject) : null,
       snapshot: g.snapshot ? parseSnapshot(g.snapshot, "preview", reject)?.snapshot : undefined,
+      ...(Array.isArray(g.operators) ? { operators: parseOperatorRows(g.operators) } : {}),
     }));
     return { scope: o.scope as Preview["scope"], diagnostics: parseDiagnostics(o.diagnostics), graphs, identity: parseIdentity(o.identity), milliseconds: String(o.milliseconds ?? "") };
   }

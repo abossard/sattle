@@ -79,6 +79,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
   const grouped = !!resolveGrouping(info, f.grouping);
   const kinds = kindsOf(info.edgeKinds);
   const hiddenKinds: ReadonlySet<EdgeKind> = new Set(f.hiddenKinds ?? pane?.hiddenKinds() ?? []);
+  const restated = [...(pane?.restatedTypes() ?? [])].sort();
   const meters = (target: "node" | "edge") => tel?.meters.filter((m) => m.target === target) ?? [];
   const channel = (label: string, target: "node" | "edge", key: string, value: string) => (
     <Field label={label} key={`${target}-${key}`}>
@@ -115,6 +116,10 @@ export function FiltersPanel({ graph }: { graph: string }) {
               <Checkbox key={kind} checked={!hiddenKinds.has(kind)} onChange={(_, d) => set(graph, { hiddenKinds: d.checked ? [...hiddenKinds].filter((x) => x !== kind) : [...hiddenKinds, kind] })}
                 label={<span style={{ display: "inline-flex", alignItems: "center", columnGap: 8 }}><KindSample kind={kind} />{KIND_WORD[kind].word} <Text size={200}>({types.map((t) => t.slice(t.lastIndexOf(".") + 1)).join(", ")})</Text></span>} />
             ))}
+            {restated.length > 0 && (
+              <Checkbox checked={f.showRestated} onChange={(_, d) => set(graph, { showRestated: !!d.checked })}
+                label={<span>Edges that restate others <Text size={200}>({restated.map((t) => t.slice(t.lastIndexOf(".") + 1)).join(", ")}: every one runs beside an edge of another type)</Text></span>} />
+            )}
           </AccordionPanel>
         </AccordionItem>
       )}

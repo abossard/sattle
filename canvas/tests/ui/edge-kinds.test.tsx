@@ -24,9 +24,10 @@ const wrap = (ui: React.ReactElement) => render(<FluentProvider theme={webLightT
 describe("a sample of each kind", () => {
   const svg = (k: EdgeKind) => render(<KindSample kind={k} />).container.innerHTML;
   it("no two kinds look the same, and the difference is not a color", () => {
-    const looks = KINDS.map((k) => svg(k));
+    // the color repeats the kind; without it the pattern and the head still differ
+    const looks = KINDS.map((k) => svg(k).replace(/ style="[^"]*"/, ""));
     expect(new Set(looks).size).toBe(KINDS.length);
-    for (const l of looks) expect(l).not.toMatch(/#[0-9a-f]{3,6}|rgb\(/i); // one color for all: the current text color
+    for (const l of looks) expect(l).not.toMatch(/#[0-9a-f]{3,6}|rgb\(/i);
   });
   it.each(KINDS)("%s has a name and says what it means", (k) => expect([KIND_WORD[k].word.length > 3, KIND_WORD[k].help.length > 20]).toEqual([true, true]));
   it("lists the kinds a graph declares with their types, in a fixed order", () => {
@@ -108,10 +109,9 @@ describe("the tree chooses which kind is the hierarchy", () => {
     // by composition: "row c" is a root of its own, "row a" holds "row b"
     expect(rows().some((r) => /row a/.test(r))).toBe(true);
     await userEvent.setup().selectOptions(choose, "dependency");
-    // by dependency "row c" needs "row a": "row a" is nested under "row c"
-    const after = rows();
-    expect(after.some((r) => /row c/.test(r))).toBe(true);
-    expect(after.some((r) => /row a/.test(r))).toBe(false);
+    // by dependency "row c" needs "row a": "row a" is nested under "row c" (the new tree opens on its top levels)
+    const level = (name: RegExp) => screen.getAllByRole("treeitem").find((r) => name.test(r.textContent ?? ""))?.getAttribute("aria-level");
+    expect([level(/row c/), level(/row a/)]).toEqual(["1", "2"]);
   });
   it("offers no choice when the graph has one kind", async () => {
     runtime.ws = { ...(ws() as object), graphInfo: () => ({ ...(ws() as { graphInfo(): object }).graphInfo(), edgeKinds: { Contains: "composition" } }) } as never;

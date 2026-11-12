@@ -5,6 +5,7 @@ import { Catalog } from "../../src/core/catalog";
 import type { Edit } from "../../src/core/model";
 import { allSteps, readProjection, statementOf } from "../../src/editing/doc";
 import { docOf, perform } from "../../src/editing/draft";
+import { candidates, referenceCandidates } from "../../src/editing/scope";
 import { lower, withStatements } from "../../src/editing/statements";
 import { setExprEdits } from "../../src/editor/commands";
 import { parseExpr } from "../../src/editor/expr";
@@ -65,6 +66,13 @@ it("a parameter the kernel gained shows in the rows with no change here: an opti
   expect(row(`${read.id}#field:fill`).kind).toBe("field");
 });
 
+it("a property to set offers what the emitted type inherits: a WorkloadService has the key of every Component", () => {
+  const doc = docs.get("d:acme.workload/projection:workloadStructure")!;
+  const emit = allSteps(doc).find((s) => s.refs.some((r) => r.targetName.endsWith("WorkloadService") && r.rel === "ofType"))!;
+  const offered = candidates(cat, doc, "PropertyType", emit).map((o) => o.label).sort();
+  expect(offered).toEqual(expect.arrayContaining(["cluster", "externalName", "key", "kind", "name", "namespace", "own", "severity", "state"]));
+});
+
 describe.each(projections)("%s", (id) => {
   const doc = docs.get(id)!;
   it("reads as statements that hold every operator once, each after what it reads", () => {
@@ -94,6 +102,15 @@ describe.each(projections)("%s", (id) => {
     expect(changed).toEqual([]);
     // the ingest projection has some hundred expressions, each typed back on the whole catalog: seconds when the machine is busy
   }, 60_000);
+  it("offers every reference's present target among its choices, from the scope the palette names", () => {
+    const missing: string[] = [];
+    for (const s of allSteps(doc)) for (const r of s.refs) {
+      if (!r.target) continue;
+      const offered = referenceCandidates(cat, doc, r, s).map((o) => o.value);
+      if (!offered.includes(r.target)) missing.push(`${s.name} ${r.rel} -> ${r.targetName} (scope ${r.scope ?? "none"}, ${offered.length} offered)`);
+    }
+    expect(missing).toEqual([]);
+  });
   it("has a row for everything and a card for every step, no card on another", () => {
     const rows = rowsOf(doc, palette, cat);
     expect(new Set(rows.map((r) => r.id)).size).toBe(rows.length);

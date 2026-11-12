@@ -12,12 +12,15 @@ export function labelPadding(labels: string[]): number {
   return Math.min(120, Math.max(40, 8 + 3.4 * Math.min(longest, 32)));
 }
 /**
- * The edge kinds a graph is drawn without when the person has not chosen: none in the view; in a tile of the graph space only what makes the graph readable
- * at that size, composition and dependency, with communication and support one click away. A graph that has neither draws what it has.
+ * The edge kinds a graph is drawn without when the person has not chosen. Support (signals, evidence) is never drawn by default when the graph has other
+ * kinds: the supported element counts it and the Inspector lists it. A tile of the graph space draws only composition and dependency, with communication
+ * one click away; a graph that has neither draws what it has.
  */
 export function defaultHiddenKinds(tile: boolean, present: ReadonlySet<EdgeKind>): EdgeKind[] {
-  if (!tile) return [];
-  return present.has("composition") || present.has("dependency") ? ["communication", "support"] : [];
+  const structure = present.has("composition") || present.has("dependency");
+  // what explains an element (signals, evidence) is listed in the Inspector and counted on the element, not drawn as peers of it
+  if (!tile) return structure || present.has("communication") ? ["support"] : [];
+  return structure ? ["communication", "support"] : present.has("communication") ? ["support"] : [];
 }
 
 export const emptyFilter = (): Filter => ({ hiddenTypes: new Set(), prop: null, search: "" });
@@ -149,7 +152,9 @@ export function edgelessNotice(role: string, nodes: number, edges: number, decla
 }
 
 /** What `FilterState.grouping` stands for on a graph: the supporting-elements default, a relationship type, or nothing. */
-export function resolveGrouping(info: { ontology: OntologyDefinition; presentation?: { property: string }[] }, setting: string): { type: string; childIsSource?: boolean } | null {
+export function resolveGrouping(info: { ontology: OntologyDefinition; presentation?: { property: string }[]; edgeKinds?: Record<string, EdgeKind> }, setting: string): { type: string; childIsSource?: boolean } | null {
+  // an ontology that declares which edges are support (engine 3.17) says it itself: the supporting elements are left out by kind (Edge kinds), not grouped
+  if (setting === SUPPORT_GROUPING && Object.values(info.edgeKinds ?? {}).includes("support")) return null;
   if (setting === SUPPORT_GROUPING) return supportRelation(info.ontology, new Set((info.presentation ?? []).map((h) => h.property)));
   return setting ? { type: setting } : null;
 }

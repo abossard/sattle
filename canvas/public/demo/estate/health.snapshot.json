@@ -1,1 +1,0 @@
-{"descriptor":{"version":{"tenant":{"value":"lab"},"graph":{"value":"health"},"revision":{"value":"0"}},"projection":{"value":"health"},"ontology":{"id":"acme.health","version":"1.0.0","digest":{"value":"sha256:a8f7320292f1f6651ee61b2ecc61ee2367fb2a32cd5846811ced87e4008e326d"}},"virtualRegions":[]},"extent":{"entities":[],"relationships":[]}}

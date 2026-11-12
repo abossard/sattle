@@ -16,7 +16,7 @@ const out = resolve(here, "../public/demo/estate");
 const fixture = join(root, "engine/tests/Sattle.Tests/fixtures/estate");
 
 /** Graphs of the estate space that must have edges: the master and every projection whose ontology has relationship types that the data uses. */
-export const EXPECT_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "healthTopology", "healthState", "health"];
+export const EXPECT_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "workloadStructure", "workload", "treeStructure", "treeRollup", "healthTree"];
 
 /** The graphs of a manifest with the number of entities and relationships of their final snapshot (`finalOf(id)` reads it). */
 export function sizesOf(manifest, finalOf) {

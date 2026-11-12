@@ -1084,7 +1084,7 @@
  ],
  "nonEmpty": true,
  "atLeast": {
-  "entities": 3,
-  "relationships": 2
+  "entities": 2,
+  "relationships": 1
  }
 }

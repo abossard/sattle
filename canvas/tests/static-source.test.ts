@@ -20,7 +20,7 @@ const patchesOf = (src: StaticSource, graph: string): Promise<Patch[]> => new Pr
 });
 
 const url = "http://localhost/demo/estate/manifest.json";
-const GRAPHS = ["master", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "healthSignals", "healthTopology", "healthState", "health"];
+const GRAPHS = ["master", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "treeSignals", "treeStructure", "treeRollup", "healthTree", "healthReport", "workloadStructure", "workload"];
 
 describe("StaticSource: the engine's output on the estate fixture", () => {
   it("loads every graph without rejections and its patches apply in order", async () => {
@@ -44,7 +44,7 @@ describe("StaticSource: the engine's output on the estate fixture", () => {
       for (const p of await patchesOf(src, id)) graph.apply(p);
       edges[id] = graph.edgeCount;
     }
-    expect(Object.entries(edges).filter(([id, n]) => n === 0 && !["deploymentReport", "healthSignals"].includes(id))).toEqual([]);
+    expect(Object.entries(edges).filter(([id, n]) => n === 0 && !["deploymentReport", "healthReport", "treeSignals"].includes(id))).toEqual([]);
   });
 });
 
@@ -107,7 +107,7 @@ describe("the estate output: telemetry and references", () => {
     const entry = { id: { value: "e:x" }, state: "absent", graph: null, entityType: "Pod", identity: { domain: "d", key: { name: "web" } }, uses: [{ relationshipType: "Calls", end: "target", count: 2 }] };
     const src = new StaticSource("t", url, fetcher({ "/demo/estate/master.references.ndjson": JSON.stringify(entry) + "\n" }));
     expect((await src.references("master")).map((r) => [r.id, r.state, r.entityType])).toEqual([["e:x", "absent", "Pod"]]);
-    expect(await new StaticSource("t", url, fetcher()).references("health")).toEqual([]);
+    expect(await new StaticSource("t", url, fetcher()).references("workload")).toEqual([]);
   });
 });
 
@@ -116,7 +116,7 @@ describe("rejections are reported, never silent", () => {
   const cases: [string, Record<string, string>, string][] = [
     ["invalid patch", { "/demo/estate/master.patches.json": JSON.stringify([{ ...base[0], unexpected: true }, ...base.slice(1)]) }, "master.patches.json"],
     ["invalid entity in snapshot", { "/demo/estate/master.snapshot.json": JSON.stringify((() => { const s = JSON.parse(files["/public/demo/estate/master.snapshot.json"]); s.extent.entities = [{ type: {} }]; return s; })()) }, "entity #0"],
-    ["malformed ontology", { "/demo/estate/health.ontology.json": JSON.stringify({ nope: 1 }) }, "ontology"],
+    ["malformed ontology", { "/demo/estate/workload.ontology.json": JSON.stringify({ nope: 1 }) }, "ontology"],
   ];
   it.each(cases)("%s", async (_n, overrides, fragment) => {
     const src = new StaticSource("t", url, fetcher(overrides));

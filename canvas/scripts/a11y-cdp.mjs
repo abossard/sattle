@@ -127,9 +127,9 @@ for (const theme of ["light", "dark", "contrast"]) {
   await runAxe(`document/${theme}`);
 }
 // value roles (engine 3.2): a graph whose ontology declares roles is colored by them with no user action, in each theme. The engine's graph
-// (A11Y_ROLES_GRAPH, default health) is looked at in a real screenshot: every legend color of a role shows as pixels in the canvas, every element
+// (A11Y_ROLES_GRAPH, default workload) is looked at in a real screenshot: every legend color of a role shows as pixels in the canvas, every element
 // of a type that carries a hinted property has a role, and the legend in the panel names each role.
-const ROLES_GRAPH = process.env.A11Y_ROLES_GRAPH ?? "health";
+const ROLES_GRAPH = process.env.A11Y_ROLES_GRAPH ?? "workload";
 const rgb = (hex) => { const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex); return m ? [1, 2, 3].map((i) => parseInt(m[i], 16)) : null; };
 for (const theme of ["light", "dark", "contrast"]) {
   const name = `roles ${ROLES_GRAPH}/${theme}`;
@@ -171,8 +171,8 @@ for (const theme of ["light", "dark", "contrast"]) {
 }
 // the default source: the engine's output on the estate (static files, `npm run demo`). The master and every projection are drawn with their
 // edges; selecting a lifted edge highlights what it aggregates below it in other graphs, selecting a master node what it is part of above it;
-// a projection without edges says so; the supporting elements of the health roll-up are collapsed onto what they support.
-const HAS_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "healthTopology", "healthState", "health"];
+// a projection without edges says so; the supporting elements of the workload health are collapsed onto what they support.
+const HAS_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "treeStructure", "treeRollup", "healthTree", "workloadStructure", "workload"];
 for (const theme of ["light", "dark", "contrast"]) {
   const name = `default source/${theme}`;
   await open("demo", "space", theme);
@@ -180,28 +180,30 @@ for (const theme of ["light", "dark", "contrast"]) {
   const sizes = JSON.parse(await evaluate(`JSON.stringify(window.__sattle.store.getState().graphs.map((g) => [g.id, g.nodes, g.edges]))`));
   for (const id of HAS_EDGES) { const g = sizes.find((x) => x[0] === id); if (!g || !(g[2] > 0)) fail.push(`${name}: ${id} has ${g ? g[2] : "no"} edges`); }
   const notices = JSON.parse(await evaluate(`JSON.stringify([...document.querySelectorAll('[role=group]')].filter((g) => /^Graph [A-Za-z]+$/.test(g.getAttribute("aria-label") ?? "") && /no edges\\. Its ontology/.test(g.textContent)).map((g) => g.getAttribute("aria-label")))`));
-  if (JSON.stringify(notices) !== JSON.stringify(["Graph healthSignals"])) fail.push(`${name}: the notice of a projection without edges is on ${JSON.stringify(notices)}, expected only Graph healthSignals`);
+  if (JSON.stringify(notices) !== JSON.stringify(["Graph treeSignals"])) fail.push(`${name}: the notice of a projection without edges is on ${JSON.stringify(notices)}, expected only Graph treeSignals`);
   await runAxe(name);
   if (theme !== "light") continue;
   const reach = async (sel) => {
     await dispatch({ type: "select/element", selection: sel });
     await sleep(2500);
-    return JSON.parse(await evaluate(`JSON.stringify(Object.fromEntries([...window.__sattle.ws.panes].map(([id, p]) => [id, p.crossCount()])))`));
+    // what the selection reaches in each graph, below it (lower) and above it (upper): tiles that are a list or a count have no pane to count in
+    return JSON.parse(await evaluate(`(() => { const c = window.__sattle.ws.closure(${JSON.stringify(sel)}); const n = {}; for (const [g, s] of [...c.lower, ...c.upper]) n[g] = (n[g] ?? 0) + s.size; return JSON.stringify(n); })()`));
   };
   const lifted = await evaluate(`[...window.__sattle.ws.histories.get("capabilities").graph.relationships()].find((r) => r.type.endsWith("DependsOn"))?.id ?? ""`);
   const down = await reach({ graph: "capabilities", kind: "relationship", id: lifted });
   if (!(down.serviceTree > 0 && down.master > 0)) fail.push(`${name}: selecting a lifted edge highlights ${JSON.stringify(down)}, expected elements in serviceTree and master`);
   const service = await evaluate(`[...window.__sattle.ws.histories.get("master").graph.entities()].find((e) => e.type === "Service")?.id ?? ""`);
   const up = await reach({ graph: "master", kind: "entity", id: service });
-  for (const g of ["serviceTree", "healthTopology", "health"]) if (!(up[g] > 0)) fail.push(`${name}: selecting a master service highlights ${up[g] ?? 0} elements in ${g}`);
+  for (const g of ["serviceTree", "workloadStructure", "workload"]) if (!(up[g] > 0)) fail.push(`${name}: selecting a master service highlights ${up[g] ?? 0} elements in ${g}`);
   results.keyboard.push({ name: "abstraction highlight", lifted: down, service: up, ok: true });
   await dispatch({ type: "select/element", selection: null });
-  await dispatch({ type: "ui/view", view: "data" }); await dispatch({ type: "ui/activeGraph", graph: "health" });
+  await dispatch({ type: "ui/view", view: "data" }); await dispatch({ type: "ui/activeGraph", graph: "workload" });
   await showGraphTab();
   await sleep(2500);
-  const grouped = JSON.parse(await evaluate(`(() => { const p = window.__sattle.ws.panes.get("health"); return JSON.stringify({ type: p?.grouping?.type ?? "", hidden: p ? [...p.groupCounts.values()].reduce((a, b) => a + b, 0) : 0 }); })()`));
-  if (!grouped.type || !(grouped.hidden > 0)) fail.push(`${name}: the supporting elements of health are not collapsed (${JSON.stringify(grouped)})`);
-  await runAxe(`${name} health collapsed`);
+  // the ontology declares which edges are support (engine 3.17): the elements that only support others are left out and counted on what they support
+  const grouped = JSON.parse(await evaluate(`(() => { const p = window.__sattle.ws.panes.get("workload"); return JSON.stringify({ hiddenKinds: p ? [...p.hiddenKinds()] : [], counted: p ? p.labelsShown().filter((l) => /\\(\\+\\d+\\)/.test(l)).length : 0 }); })()`));
+  if (!grouped.hiddenKinds.includes("support") || !(grouped.counted > 0)) fail.push(`${name}: the supporting elements of workload are not left out and counted (${JSON.stringify(grouped)})`);
+  await runAxe(`${name} workload collapsed`);
   // telemetry of the default source (static meters and windows): the lifted edges carry callDropRatio, the panel offers it
   await dispatch({ type: "ui/activeGraph", graph: "capabilities" }); await sleep(1500);
   await clickText("button", "Telemetry"); await sleep(600);
@@ -210,7 +212,7 @@ for (const theme of ["light", "dark", "contrast"]) {
   await runAxe(`${name} telemetry`);
   // a selection whose lineage is partial says so in the Inspector, and a complete one does not
   await dispatch({ type: "ui/view", view: "space" });
-  const partialSel = { graph: "healthState", kind: "entity", id: await evaluate(`(async () => { const ws = window.__sattle.ws; for (const e of ws.histories.get("healthState").graph.entities()) { const l = await ws.source.lineage("healthState", e.id); if (l && l.complete === false) return e.id; } return ""; })()`) };
+  const partialSel = { graph: "treeStructure", kind: "entity", id: await evaluate(`(async () => { const ws = window.__sattle.ws; for (const e of ws.histories.get("treeStructure").graph.entities()) { const l = await ws.source.lineage("treeStructure", e.id); if (l && l.complete === false) return e.id; } return ""; })()`) };
   await dispatch({ type: "select/element", selection: partialSel }); await sleep(2500);
   const inspector = await evaluate(`document.querySelector('aside[aria-label="Inspector"]')?.textContent ?? ""`);
   if (!partialSel.id || !/The highlight is partial/.test(inspector)) fail.push(`${name}: the Inspector does not say the highlight is partial for ${partialSel.id || "(none found)"}`);

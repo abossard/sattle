@@ -4,6 +4,29 @@ import type { ProjectionDoc, StepDoc } from "./doc";
 
 export interface Option { value: string; label: string }
 
+/** The modules a reference may point into: `scope` as the engine's palette says it (engine 3.21), for the step it is on. */
+function scopeModules(cat: Catalog, doc: ProjectionDoc, scope: string | undefined, step: StepDoc | undefined): string[] | null {
+  const withImports = (m: string) => modules(cat, moduleOfId(m));
+  switch (scope) {
+    case "outputOntology": { const out = cat.targets(doc.id, "outputOntology")[0]; return out ? withImports(out) : null; }
+    case "inputGraph": {
+      // the ontology the graph a step reads is typed by: the port it reads from expects it
+      const from = step?.inputs.find((i) => i.kind === "graph" && i.from)?.from;
+      const expects = from ? cat.targets(from, "expects")[0] : undefined;
+      return expects ? withImports(expects) : null;
+    }
+    default: return null;
+  }
+}
+
+/** What a reference of a step can point at: the definitions of its kind in the scope the palette gives it, all in scope otherwise. */
+export function referenceCandidates(cat: Catalog, doc: ProjectionDoc, ref: { to: string; scope?: string }, step?: StepDoc): Option[] {
+  const mods = scopeModules(cat, doc, ref.scope, step);
+  const slot = ({ EntityType: "entity", RelationshipType: "rel", EquivalencePolicy: "equivalence" } as Record<string, string>)[ref.to];
+  if (!mods || !slot) return candidates(cat, doc, ref.to, step);
+  return mods.flatMap((m) => cat.children(m, slot).map((id) => ({ value: id, label: cat.typeLabel(id, doc.module) }))).sort((a, b) => a.label.localeCompare(b.label));
+}
+
 /** The module of the projection and the modules it imports. */
 function modules(cat: Catalog, module: string): string[] {
   const own = `d:${module}`;
@@ -21,9 +44,12 @@ export function candidates(cat: Catalog, doc: ProjectionDoc, to: string, step?: 
     case "RelationshipType": return declared(cat, doc.module, "rel");
     case "EquivalencePolicy": return declared(cat, doc.module, "equivalence");
     case "PropertyType": {
-      // the properties of the type the step emits, when it says which; all properties in scope otherwise
+      // the properties of the type the step emits, when it says which, with those it inherits; all properties in scope otherwise
       const type = step?.refs.find((r) => r.target && (r.to === "EntityType" || r.to === "RelationshipType"))?.target;
-      const own = type ? cat.targets(type, "hasProperty").map((id) => ({ value: id, label: cat.name(id) })) : [];
+      // its own properties and those of the types it extends (a WorkloadService has the key of every Component)
+      const lineage: string[] = [];
+      for (let t = type ?? undefined; t && !lineage.includes(t); t = cat.targets(t, "extends")[0]) lineage.push(t);
+      const own = lineage.flatMap((t) => cat.targets(t, "hasProperty")).map((id) => ({ value: id, label: cat.name(id) }));
       return own.length ? own.sort((a, b) => a.label.localeCompare(b.label)) : declared(cat, doc.module, "prop");
     }
     case "OutPort": return doc.statements.flatMap((s) => s.steps).filter((s) => s.out).map((s) => ({ value: s.out!, label: s.name }));

@@ -19,7 +19,7 @@ export const isEdgeKind = (k: unknown): k is EdgeKind => (EDGE_KINDS as unknown[
 /** What the ontology says about a hierarchy (engine 3.14); absent from a graph that is not one. */
 export interface TreeSpec {
   /** the hierarchy relationship type (the one the ontology marks `hierarchy: true`), and whether its edges point child to parent (the engine's point parent to child) */
-  hierarchy: { relationship: string; childIsSource: boolean; /** more types that form the hierarchy together with `relationship` (a hierarchy chosen by kind) */ also?: string[] };
+  hierarchy: { relationship: string; childIsSource: boolean; /** more types that form the hierarchy together with `relationship` (a hierarchy chosen by kind) */ also?: string[]; /** a hierarchy chosen by kind: an edge whose target is one of these types and whose source is not hangs its source below its target (a gateway under what it exposes) */ parentRows?: string[] };
   /** relationship types that are not the hierarchy, read from the structure of the ontology: `support` has an end outside the tree types (evidence, signals) and explains a node, `cross` joins two types of the tree (a dependency) */
   edgeRoles: Record<string, "support" | "cross">;
   /** per entity type: the properties of its own state, of its rolled-up state, of the integer that orders states (higher is worse), of its kind (what the row says it is), and of the count of descendants per state value */

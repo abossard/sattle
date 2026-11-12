@@ -14,12 +14,12 @@ beforeAll(() => {
   }) as typeof fetch;
 });
 
-const HAS_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "healthTopology", "healthState", "health"];
+const HAS_EDGES = ["master", "serviceTree", "capabilities", "deploymentHealth", "treeStructure", "treeRollup", "healthTree", "workloadStructure", "workload"];
 
 describe("the default source: the engine's output on the estate", () => {
   it("shows the master and every projection, each with its edges where it has any, and has no axe violations", async () => {
     await openApp("demo", "space");
-    for (const id of ["master", "deploymentReport", "healthSignals", ...HAS_EDGES]) await screen.findByRole("group", { name: `Graph ${id}` });
+    for (const id of ["master", "deploymentReport", "healthReport", "treeSignals", ...HAS_EDGES]) await screen.findByRole("group", { name: `Graph ${id}` });
     for (const id of HAS_EDGES) {
       const header = within(screen.getByRole("group", { name: `Graph ${id}` })).getByText(/ nodes · .* edges/).textContent ?? "";
       expect(Number(/· ([\d,]+) edges/.exec(header)?.[1].replace(",", "")), `${id}: ${header}`).toBeGreaterThan(0);
@@ -29,9 +29,9 @@ describe("the default source: the engine's output on the estate", () => {
 
   it("a projection with nodes and no edges says so, a document and the master do not", async () => {
     await openApp("demo", "space");
-    expect(within(await screen.findByRole("group", { name: "Graph healthSignals" })).getByText(/has 6 nodes and no edges/)).toBeTruthy();
+    expect(within(await screen.findByRole("group", { name: "Graph treeSignals" })).getByText(/has 12 nodes and no edges/)).toBeTruthy();
     expect(within(screen.getByRole("group", { name: "Graph master" })).queryByText(/and no edges/)).toBeNull();
-    expect(within(screen.getByRole("group", { name: "Graph health" })).queryByText(/and no edges/)).toBeNull();
+    expect(within(screen.getByRole("group", { name: "Graph workload" })).queryByText(/and no edges/)).toBeNull();
   }, 30000);
 
   it("a lifted edge stands for the lower edges and nodes down to the master, and a master node is part of what is above it", async () => {
@@ -49,17 +49,17 @@ describe("the default source: the engine's output on the estate", () => {
     const service = [...ws.histories.get("master")!.graph.entities()].find((e) => e.type === "Service")!;
     const node = { graph: "master", kind: "entity", id: service.id } as const;
     ws.select(node);
-    await vi.waitFor(() => expect(["serviceTree", "healthTopology", "health"].filter((g) => !(ws.closure(node).upper.get(g)?.size))).toEqual([]));
+    await vi.waitFor(() => expect(["serviceTree", "workloadStructure", "workload"].filter((g) => !(ws.closure(node).upper.get(g)?.size))).toEqual([]));
     dispatch({ type: "select/element", selection: null });
   }, 30000);
 
   it("says where the highlight is partial and not where it is complete", async () => {
     await openApp("demo", "space");
     const ws = runtime.ws!;
-    const incomplete = (files["/public/demo/estate/healthState.lineage.ndjson"].trim().split("\n").map((l) => JSON.parse(l)) as { element: string; complete: boolean }[]).find((r) => !r.complete)!;
-    const state = { graph: "healthState", kind: incomplete.element.startsWith("e:") ? "entity" : "relationship", id: incomplete.element } as const;
+    const incomplete = (files["/public/demo/estate/treeStructure.lineage.ndjson"].trim().split("\n").map((l) => JSON.parse(l)) as { element: string; complete: boolean }[]).find((r) => !r.complete)!;
+    const state = { graph: "treeStructure", kind: incomplete.element.startsWith("e:") ? "entity" : "relationship", id: incomplete.element } as const;
     ws.select(state);
-    await vi.waitFor(() => expect(ws.partialOf(state).below.map((b) => b.graph)).toContain("healthState"));
+    await vi.waitFor(() => expect(ws.partialOf(state).below.map((b) => b.graph)).toContain("treeStructure"));
     expect(ws.partialOf(state).cutOff).toBe(false);
 
     const lifted = [...ws.histories.get("capabilities")!.graph.relationships()].find((r) => r.type.endsWith("DependsOn"))!;
@@ -70,14 +70,14 @@ describe("the default source: the engine's output on the estate", () => {
     dispatch({ type: "select/element", selection: null });
   }, 30000);
 
-  it("the health roll-up opens as a tree through the stand-in hierarchy, with the graph as the other tab", async () => {
+  it("the workload opens as a tree (its hierarchy is marked, its states are read through the stand-in), with the graph as the other tab", async () => {
     await openApp("demo", "data");
-    dispatch({ type: "ui/activeGraph", graph: "health" });
-    const tree = await screen.findByRole("tree", { name: "Tree of health" }, { timeout: 10000 });
+    dispatch({ type: "ui/activeGraph", graph: "workload" });
+    const tree = await screen.findByRole("tree", { name: "Tree of workload" }, { timeout: 10000 });
     const items = within(tree).getAllByRole("treeitem");
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((r) => r.getAttribute("aria-level") && r.textContent)).toBe(true);
-    expect(items.some((r) => /state Degraded, warning/.test(r.textContent ?? ""))).toBe(true);
+    expect(items.some((r) => /state (Healthy|No data|Degraded|Unhealthy)/.test(r.textContent ?? ""))).toBe(true);
     expect(within(screen.getByRole("tablist", { name: "How to show this graph" })).getAllByRole("tab")[0].textContent).toBe("Tree");
     expect(await violations()).toEqual([]);
   }, 30000);
