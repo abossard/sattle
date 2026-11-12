@@ -46,7 +46,7 @@ export function applyFilter(pane: DataPane, f: FilterState, changed: Partial<Fil
   if (has("hiddenKinds")) pane.setKindFilter(f.hiddenKinds);
   if (has("showRestated")) pane.setShowRestated(f.showRestated);
   if (has("focusDim")) { pane.focusDim = f.focusDim; pane.setSelection(pane.selection); }
-  if (has("layout") && pane.layoutKind !== f.layout) pane.runLayout(f.layout, true);
+  if (has("layout") && pane.layoutKind !== f.layout) { pane.userLayout = true; pane.runLayout(f.layout, true); }
   if (has("grouping")) {
     const g = resolveGrouping(pane.info, f.grouping);
     // a pane that already groups this way keeps what the user collapsed or expanded

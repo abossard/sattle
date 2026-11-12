@@ -6,13 +6,14 @@ import type { Entity } from "../core/model";
 import { valueText } from "../core/model";
 import type { EdgeKind, PresentationHint, Role, TreeSpec } from "../source/presentation";
 import type { GraphInfo } from "../source/types";
-import { kindAxes } from "./edge-kinds";
+import { causeLinks, isOrigin, kindAxes, type CauseLink } from "./edge-kinds";
 
 export type { TreeSpec };
 
 export interface StateCell { value: string; role: Role }
 export interface TreeNode {
-  id: string; type: string; label: string; parent: string | null; children: string[];
+  /** `parent`: the first of `parents`; a tree by cause has an element under every element whose state takes it in */
+  id: string; type: string; label: string; parent: string | null; parents: string[]; children: string[];
   own: StateCell | null; rolled: StateCell | null;
   /** how bad the node is: the severity property when the type has one, otherwise the role of the rolled-up (or own) value */
   severity: number;
@@ -22,6 +23,10 @@ export interface TreeNode {
   curatedBy: string | null; critical: boolean; hidden: boolean; policy: { mode: string; share: string | null } | null;
   /** the descendants by state (the engine's counts) or, without them, the direct children by rolled-up state, worst first */
   counts: { value: string; role: Role; n: number }[];
+  /** where a problem starts: wrong, and its own state as bad as its rolled-up one (see `isOrigin`) */
+  origin: boolean;
+  /** for a wrong element that is no origin: the children as bad as it is, through which it is wrong */
+  through: string[];
 }
 export interface TreeModel { nodes: Map<string, TreeNode>; roots: string[]; spec: TreeSpec }
 
@@ -80,7 +85,11 @@ export function specForKind(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontolo
   return { ...base, hierarchy: { relationship: chosen[0], childIsSource: false, ...(chosen.length > 1 ? { also: chosen.slice(1) } : {}), ...(rows ? { parentRows: rows } : {}) }, edgeRoles, ...(ends.size ? { types: [...ends] } : { types: undefined }) };
 }
 
-export function buildTree(g: Graph, spec: TreeSpec, hints: readonly PresentationHint[]): TreeModel {
+/**
+ * The tree of a graph. With `links` (a tree by cause, see `causeTree`) an element is under every element whose state takes it in, so one reached
+ * by two paths is under both; the relationships of the links nest, every other one is counted by `spec.edgeRoles`.
+ */
+export function buildTree(g: Graph, spec: TreeSpec, hints: readonly PresentationHint[], links?: { types: ReadonlySet<string>; links: readonly CauseLink[] }): TreeModel {
   const roles = new Map(hints.map((h) => [h.property, h.roles]));
   const nodes = new Map<string, TreeNode>();
   const inTree = (e: Entity) => (spec.types ? spec.types.includes(e.type) : true);
@@ -93,7 +102,7 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     const kind = st.kind && e.props[st.kind] ? valueText(e.props[st.kind]) : e.type;
     const sev = st.severity ? e.props[st.severity] : undefined;
     nodes.set(e.id, {
-      id: e.id, type: kind, label: g.label(e), parent: null, children: [], own, rolled,
+      id: e.id, type: kind, label: g.label(e), parent: null, parents: [], children: [], own, rolled, origin: isOrigin(e, spec, hints), through: [],
       severity: sev && /^-?\d+$/.test(valueText(sev)) ? Number(valueText(sev)) : declared ? ENGINE_SEVERITY[(rolled ?? own)?.role ?? "neutral"] : roleSeverity((rolled ?? own)?.role ?? "neutral"),
       supporting: 0, cross: 0, counts: [],
       curatedBy: st.curatedBy && e.props[st.curatedBy] ? valueText(e.props[st.curatedBy]) || null : null,
@@ -102,13 +111,20 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
       policy: st.mode && e.props[st.mode] ? { mode: valueText(e.props[st.mode]), share: st.share && e.props[st.share] ? valueText(e.props[st.share]) : null } : null,
     });
   }
+  if (links) for (const l of links.links) {
+    const c = nodes.get(l.child), p = nodes.get(l.parent);
+    if (!c || !p || l.child === l.parent || c.parents.includes(l.parent)) continue;
+    c.parents.push(l.parent); p.children.push(l.child);
+    if (c.parent === null) c.parent = l.parent;
+  }
   for (const r of g.relationships()) {
-    if (inHierarchy(spec, r.type)) {
+    if (links?.types.has(r.type)) continue;
+    if (!links && inHierarchy(spec, r.type)) {
       const flip = spec.hierarchy.childIsSource || (!!spec.hierarchy.parentRows && rowEnd(g, r.target, spec) && !rowEnd(g, r.source, spec));
       const child = flip ? r.source : r.target, parent = flip ? r.target : r.source;
       const c = nodes.get(child), p = nodes.get(parent);
       // each node has one parent (the first), and a cycle is never followed; another parent is a link, shown as a badge like the other kinds
-      if (c && p && c.parent === null && child !== parent) { c.parent = parent; p.children.push(child); }
+      if (c && p && c.parent === null && child !== parent) { c.parent = parent; c.parents = [parent]; p.children.push(child); }
       else if (c && p && c.parent !== parent) { c.cross++; p.cross++; }
       continue;
     }
@@ -116,12 +132,12 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     if (!role) continue;
     for (const end of [r.source, r.target]) { const n = nodes.get(end); if (n) { if (role === "support") n.supporting++; else n.cross++; } }
   }
-  // a cycle (a parent chain that never reaches a root) is cut at the node that closes it
-  for (const n of nodes.values()) {
+  // a cycle (a parent chain that never reaches a root) is cut at the node that closes it; by cause the walks guard against cycles instead
+  if (!links) for (const n of nodes.values()) {
     const seen = new Set<string>([n.id]);
     let p = n.parent;
     while (p !== null) {
-      if (seen.has(p)) { const par = nodes.get(n.parent!); if (par) par.children = par.children.filter((x) => x !== n.id); n.parent = null; break; }
+      if (seen.has(p)) { const par = nodes.get(n.parent!); if (par) par.children = par.children.filter((x) => x !== n.id); n.parent = null; n.parents = []; break; }
       seen.add(p); p = nodes.get(p)?.parent ?? null;
     }
   }
@@ -137,7 +153,15 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     for (const c of n.children) { const s = nodes.get(c)?.rolled ?? nodes.get(c)?.own; if (!s) continue; const k = by.get(s.value) ?? { ...s, n: 0 }; k.n++; by.set(s.value, k); }
     n.counts = [...by.values()].sort((a, b) => ROLES_WORST(a.role) - ROLES_WORST(b.role) || a.value.localeCompare(b.value));
   }
-  const roots = [...nodes.values()].filter((n) => n.parent === null).map((n) => n.id);
+  for (const n of nodes.values()) if (isWrong(n) && !n.origin) n.through = n.children.filter((c) => { const k = nodes.get(c)!; return isWrong(k) && k.severity === n.severity; });
+  const roots = [...nodes.values()].filter((n) => n.parents.length === 0).map((n) => n.id);
+  // by cause, a cycle that nothing outside takes in has no root: its first element by id becomes one, so every element has a row
+  if (links) {
+    const reached = new Set<string>();
+    const reach = (id: string) => { const stack = [id]; while (stack.length) { const x = stack.pop()!; if (reached.has(x)) continue; reached.add(x); stack.push(...nodes.get(x)!.children); } };
+    roots.forEach(reach);
+    for (const id of [...nodes.keys()].sort()) if (!reached.has(id)) { roots.push(id); reach(id); }
+  }
   return { nodes, roots, spec };
 }
 const ROLES_WORST = (r: Role): number => WORST_FIRST.indexOf(r);
@@ -147,23 +171,29 @@ export const labelCompare = (a: TreeNode, b: TreeNode): number => a.label.locale
 export const severityCompare = (a: TreeNode, b: TreeNode): number => b.severity - a.severity || labelCompare(a, b);
 
 export interface TreeView { expanded: ReadonlySet<string>; onlyWrong: boolean; query: string; sort: "severity" | "label"; showHidden?: boolean }
-export interface TreeRow { node: TreeNode; level: number; expanded: boolean; hasChildren: boolean; posInSet: number; setSize: number; match: boolean }
+/** `key`: the row's place, the ids from its root down (an element under two parents has two rows); `parentKey` that of the row above it. */
+export interface TreeRow { key: string; parentKey: string | null; node: TreeNode; level: number; expanded: boolean; hasChildren: boolean; posInSet: number; setSize: number; match: boolean }
 
-/** The node and every ancestor of it, for each given node. */
-export function ancestorsOrSelf(m: TreeModel, ids: Iterable<string>): Set<string> {
-  const out = new Set<string>();
-  for (const id of ids) for (let x: string | null = id; x !== null && !out.has(x); x = m.nodes.get(x)?.parent ?? null) out.add(x);
-  return out;
-}
-/** Only the ancestors: the path to each node, not the node itself. */
+/** Only the ancestors: every element above each node along all its parents, not the node itself. */
 export function ancestorsOf(m: TreeModel, ids: Iterable<string>): Set<string> {
   const out = new Set<string>();
-  for (const id of ids) for (let x = m.nodes.get(id)?.parent ?? null; x !== null && !out.has(x); x = m.nodes.get(x)?.parent ?? null) out.add(x);
+  const stack = [...ids].flatMap((id) => m.nodes.get(id)?.parents ?? []);
+  while (stack.length) { const x = stack.pop()!; if (out.has(x)) continue; out.add(x); stack.push(...(m.nodes.get(x)?.parents ?? [])); }
+  return out;
+}
+/** The node and every ancestor of it, for each given node. */
+export function ancestorsOrSelf(m: TreeModel, ids: Iterable<string>): Set<string> {
+  const list = [...ids];
+  const out = ancestorsOf(m, list);
+  for (const id of list) if (m.nodes.has(id)) out.add(id);
   return out;
 }
 export const wrongNodes = (m: TreeModel): string[] => [...m.nodes.values()].filter(isWrong).map((n) => n.id);
-/** What opens by default: the paths to the nodes where something is wrong, so the tree starts on them and everything else is collapsed. */
-export const attentionPaths = (m: TreeModel): Set<string> => ancestorsOf(m, wrongNodes(m));
+/** What opens by default: the paths to where problems start (the origins), or, in a tree that marks none, to where something is wrong. */
+export const attentionPaths = (m: TreeModel): Set<string> => {
+  const origins = [...m.nodes.values()].filter((n) => n.origin).map((n) => n.id);
+  return ancestorsOf(m, origins.length ? origins : wrongNodes(m));
+};
 /** The ids that match a search by label, type or id. */
 export function searchMatches(m: TreeModel, query: string): string[] {
   const q = query.trim().toLowerCase();
@@ -174,7 +204,7 @@ export function searchMatches(m: TreeModel, query: string): string[] {
 export function expandBelow(m: TreeModel, id: string): Set<string> {
   const out = new Set<string>();
   const stack = [id];
-  while (stack.length) { const x = stack.pop()!; const n = m.nodes.get(x); if (n?.children.length) { out.add(x); stack.push(...n.children); } }
+  while (stack.length) { const x = stack.pop()!; const n = m.nodes.get(x); if (n?.children.length && !out.has(x)) { out.add(x); stack.push(...n.children); } }
   return out;
 }
 
@@ -194,16 +224,18 @@ export function visibleRows(m: TreeModel, v: TreeView): { rows: TreeRow[]; match
   const rows: TreeRow[] = [];
   // an element curated to be hidden is left out with everything below it, unless asked for
   const shownNode = (n: TreeNode) => v.showHidden || !n.hidden;
-  const walk = (ids: string[], level: number) => {
-    const kids = ids.map((id) => m.nodes.get(id)!).filter((n) => shownNode(n) && (!include || include.has(n.id))).sort(compare);
+  // a row is opened by its element: opened once, it is open wherever the element appears; a walk never goes into an element already on its path
+  const walk = (ids: string[], level: number, parentKey: string | null, path: ReadonlySet<string>) => {
+    const kids = ids.map((id) => m.nodes.get(id)!).filter((n) => !path.has(n.id) && shownNode(n) && (!include || include.has(n.id))).sort(compare);
     kids.forEach((n, i) => {
-      const shown = n.children.filter((c) => shownNode(m.nodes.get(c)!) && (!include || include.has(c))).length;
+      const key = parentKey === null ? n.id : `${parentKey}\u001f${n.id}`;
+      const shown = n.children.filter((c) => !path.has(c) && c !== n.id && shownNode(m.nodes.get(c)!) && (!include || include.has(c))).length;
       const open = shown > 0 && (v.expanded.has(n.id) || !!reveal?.has(n.id));
-      rows.push({ node: n, level, expanded: open, hasChildren: n.children.length > 0, posInSet: i + 1, setSize: kids.length, match: matches.has(n.id) });
-      if (open) walk(n.children, level + 1);
+      rows.push({ key, parentKey, node: n, level, expanded: open, hasChildren: n.children.length > 0, posInSet: i + 1, setSize: kids.length, match: matches.has(n.id) });
+      if (open) walk(n.children, level + 1, key, new Set([...path, n.id]));
     });
   };
-  walk(m.roots, 1);
+  walk(m.roots, 1, null, new Set());
   return { rows, matches };
 }
 
@@ -244,6 +276,42 @@ export function explainNode(g: Graph, m: TreeModel, id: string): Explanation | n
     }
   }
   return { drivers, support, cross };
+}
+
+/** How a tree can be made: by cause (the relation the roll-up follows), or by a kind of edge. */
+export type HierarchyChoice = EdgeKind | "cause";
+
+/**
+ * The tree by cause of a graph with a roll-up (its hierarchy declares states): every element under each element whose state takes it in
+ * (`causeLinks`), one row for every element of a type with a state; the other relationships are counted, support as support and the rest as links.
+ * Undefined for a graph without states.
+ */
+export function causeTree(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "presentation">): { spec: TreeSpec; links: ReturnType<typeof causeLinks> } | undefined {
+  const base = info.tree;
+  if (!base || !Object.keys(base.state).length) return undefined;
+  const links = causeLinks(g, info);
+  if (!links.links.length) return undefined;
+  const edgeRoles: TreeSpec["edgeRoles"] = { ...base.edgeRoles };
+  for (const [t, k] of Object.entries(info.edgeKinds ?? {})) if (!links.types.has(t)) edgeRoles[t] = k === "support" ? "support" : "cross";
+  // its rows are every element with a state, not only the ends of the declared hierarchy: what a part needs is a cause too
+  return { spec: { ...base, edgeRoles, types: Object.keys(base.state) }, links };
+}
+
+/** The choices of a graph, the default first: by cause when the graph has a roll-up, then the kinds (`hierarchyKinds`) with the declared one first. */
+export function hierarchyChoices(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "presentation">): HierarchyChoice[] {
+  const kinds = hierarchyKinds(info);
+  const declared = declaredHierarchyKind(info);
+  const ordered = info.tree ? [declared, ...kinds.filter((k) => k !== declared)] : kinds;
+  return causeTree(g, info) ? ["cause", ...ordered] : ordered;
+}
+
+/** The tree of a graph for a choice (the default when none or one it does not offer). */
+export function treeOf(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology" | "presentation">, choice?: HierarchyChoice | null): { choice: HierarchyChoice; model: TreeModel } | undefined {
+  const choices = hierarchyChoices(g, info);
+  const c = choice && choices.includes(choice) ? choice : choices[0];
+  if (c === "cause") { const t = causeTree(g, info)!; return { choice: c, model: buildTree(g, t.spec, info.presentation ?? [], t.links) }; }
+  const spec = c ? specForKind(info, c) : undefined;
+  return spec ? { choice: c, model: buildTree(g, spec, info.presentation ?? []) } : undefined;
 }
 
 /** Whether the graph has anything to show as a tree: an entity of a type of the tree (a graph that shares the ontology but holds only other types has not). */

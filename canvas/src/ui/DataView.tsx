@@ -5,7 +5,7 @@ import { dispatch, useStore } from "../state/store";
 import { CanvasHost } from "./CanvasHost";
 import { DocumentView } from "./DocumentView";
 import { TreeView } from "./TreeView";
-import { buildTree, declaredHierarchyKind, hasHierarchyEdges, hasTreeRows, specForKind, tileRows, treeRowCount } from "../app/tree-model";
+import { hasHierarchyEdges, hasTreeRows, tileRows, treeOf, treeRowCount } from "../app/tree-model";
 import { ROLE_GLYPH } from "../app/color-by";
 import { edgelessNotice } from "../app/graph-view-model";
 import { countsByType, describeGraph, isolatedNodes, purposesOf, tileKind, tileThinsIsolated, typesHeld } from "../app/tile";
@@ -111,12 +111,12 @@ function TreeTile({ graph }: { graph: string }) {
   const version = useGraphSummary(graph)?.version;
   const info = ws?.graphInfo(graph);
   const g = ws?.histories.get(graph)?.graph;
-  const spec = useMemo(() => (info ? specForKind(info, declaredHierarchyKind(info)) : undefined), [info]);
+  // the tree the Tree tab opens on: by cause when the graph has a roll-up
   const { rows, more, wrong, total } = useMemo(() => {
-    if (!g || !spec) return { rows: [], more: 0, wrong: 0, total: 0 };
-    const m = buildTree(g, spec, info?.presentation ?? []);
+    const m = g && info ? treeOf(g, info)?.model : undefined;
+    if (!m) return { rows: [], more: 0, wrong: 0, total: 0 };
     return { ...tileRows(m), wrong: [...m.nodes.values()].filter((n) => (n.rolled ?? n.own)?.role === "warning" || (n.rolled ?? n.own)?.role === "danger").length, total: m.nodes.size };
-  }, [g, spec, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [g, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!rows.length) return null;
   return (
     <div className={s.notice} tabIndex={0} role="region" aria-label={`Top of the hierarchy of ${graph}`}>
@@ -125,8 +125,8 @@ function TreeTile({ graph }: { graph: string }) {
         {rows.map((r) => {
           const st = r.node.rolled ?? r.node.own;
           return (
-            <li key={r.node.id} style={{ paddingLeft: (r.level - 1) * 14, display: "flex", columnGap: 6, alignItems: "baseline" }}>
-              <Text size={200} weight={st && (st.role === "danger" || st.role === "warning") ? "semibold" : "regular"}>{r.node.label}</Text>
+            <li key={r.key} style={{ paddingLeft: (r.level - 1) * 14, display: "flex", columnGap: 6, alignItems: "baseline" }}>
+              <Text size={200} weight={st && (st.role === "danger" || st.role === "warning") ? "semibold" : "regular"}>{r.node.origin ? "⚑ " : ""}{r.node.label}</Text>
               <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{r.node.type}</Text>
               {st && <Text size={200}>{ROLE_GLYPH[st.role]} {st.value}</Text>}
               {r.node.cross + r.node.supporting > 0 && <Text size={100} style={{ color: tokens.colorNeutralForeground3 }}>{r.node.cross + r.node.supporting} {r.node.cross + r.node.supporting === 1 ? "link" : "links"}</Text>}

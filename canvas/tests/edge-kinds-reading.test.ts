@@ -1,7 +1,7 @@
 // How the declared kinds of edge are read on a workload: what restates others, which compositions stack the parts and which stand beside them,
 // where the elements beside go, which part is to blame, and the tree by dependency. A small workload, with every kind the engine declares.
 import { describe, expect, it } from "vitest";
-import { besidePositions, blamePath, kindAxes, restatingTypes } from "../src/app/edge-kinds";
+import { besidePositions, blamePath, causeLinks, kindAxes, restatingTypes } from "../src/app/edge-kinds";
 import { buildTree, specForKind } from "../src/app/tree-model";
 import { Graph } from "../src/core/graph";
 import type { EdgeKind, TreeSpec } from "../src/source/presentation";
@@ -26,17 +26,18 @@ const edges: [string, string, string][] = [
   ["HostedOn", "pod", "node"], ["MemberOf", "node", "pool"], ["MemberOf", "pool", "cluster"],
   ["DependsOn", "web", "cache"], ["DependsOn", "web", "api"], ["DependsOn", "api", "database"], ["BackedBy", "database", "pg"], ["ConnectedThrough", "pg", "pe"], ["ConnectedThrough", "pe", "vnet"], ["Exposes", "apim", "api"],
   ["TalksTo", "web", "api"], ["Measures", "sig", "web"],
-  ["Affects", "web", "shop"], ["Affects", "api", "web"], ["Affects", "node", "pod"],
 ];
-const workload = (states: Record<string, string> = {}) => Graph.fromSnapshot({
+// the roll-up edges as the engine writes them: from the element whose state takes the other in (a workload its service, a service what it needs)
+const affects: [string, string, string][] = [["Affects", "shop", "web"], ["Affects", "web", "api"], ["Affects", "pod", "node"]];
+const workload = (states: Record<string, string> = {}, rollup = false) => Graph.fromSnapshot({
   version: ver("1"),
   entities: Object.entries(types).map(([id, t]) => ent(id, t, { name: id, ...(states[id] ? { state: states[id] } : {}) })),
-  relationships: edges.map(([t, a, b], i) => rel(`${t}-${i}`, a, b, t)),
+  relationships: (rollup ? edges.concat(affects) : edges).map(([t, a, b], i) => rel(`${t}-${i}`, a, b, t)),
 });
 
 describe("edges that restate others", () => {
   it("a type every edge of which runs beside an edge of three or more other types is a restatement; one beside a single other type is not", () => {
-    expect([...restatingTypes(workload())]).toEqual(["Affects"]);
+    expect([...restatingTypes(workload({}, true))]).toEqual(["Affects"]);
   });
 });
 
@@ -81,13 +82,21 @@ describe("which part is to blame", () => {
     const b = blamePath(g, info);
     expect([...b.edges].map((id) => id.split("-")[0]).sort()).toEqual(["BackedBy", "DependsOn"]);
   });
-  it("a type that restates others names no cause: a shop that a roll-up edge says the web affects does not shift the blame onto the web", () => {
-    const g = workload({ web: "Unhealthy", shop: "Unhealthy" });
-    expect([...blamePath(g, info, new Set(["Affects"])).blamed]).toEqual(["web"]);
+  it("a graph that holds the roll-up edges is read along them alone: the web takes in no wrong element there, though it needs the database", () => {
+    const g = workload({ web: "Unhealthy", shop: "Unhealthy", database: "Unhealthy" }, true);
+    expect([...blamePath(g, info).blamed].sort()).toEqual(["database", "web"]);
   });
   it("a graph whose hierarchy declares no states blames nothing", () => {
     expect(blamePath(workload({ pg: "Unhealthy" }), { ...info, tree: { ...tree, state: {} } }).blamed.size).toBe(0);
   });
+});
+
+describe("the relation the roll-up follows", () => {
+  const pairs = (g: Graph) => causeLinks(g, info).links.map((l) => `${l.parent}>${l.child}`).sort();
+  it.each<[string, boolean, string[]]>([
+    ["a graph that holds the roll-up edges: those alone", true, ["pod>node", "shop>web", "web>api"]],
+    ["one that does not: the hierarchy, every composition and dependency, from the source", false, ["api>database", "apim>api", "database>pg", "node>pool", "pe>vnet", "pg>pe", "pod>node", "pool>cluster", "shop>api", "shop>database", "shop>web", "web>api", "web>cache", "web>webd", "webd>pod"]],
+  ])("%s", (_, rollup, want) => expect(pairs(workload({}, rollup))).toEqual(want));
 });
 
 describe("the tree by dependency", () => {

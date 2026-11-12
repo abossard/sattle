@@ -4,9 +4,8 @@
 import { Badge, Button, FlatTree, FlatTreeItem, MessageBar, MessageBarBody, SearchBox, Select, Switch, Text, TreeItemLayout, makeStyles, tokens, useHeadlessFlatTree_unstable, type HeadlessFlatTreeItemProps } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ROLE_GLYPH, ROLE_WORD } from "../app/color-by";
-import type { EdgeKind } from "../source/presentation";
 import { KIND_WORD } from "./EdgeKinds";
-import { attentionPaths, buildTree, declaredHierarchyKind, defaultOpen, expandBelow, hierarchyKinds, isWrong, specForKind, typeAhead, visibleRows, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
+import { attentionPaths, defaultOpen, expandBelow, hierarchyChoices, isWrong, treeOf, typeAhead, visibleRows, type HierarchyChoice, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
 import { dispatch, useStore } from "../state/store";
 import { useGraphSummary, useWorkspace } from "./common";
 
@@ -50,12 +49,13 @@ export function TreeView({ graph }: { graph: string }) {
   const sel = useStore((x) => x.selection);
   const info = ws?.graphInfo(graph);
   const hist = ws?.histories.get(graph);
-  // the kind of edge that is the hierarchy: what the ontology declares (composition when it says nothing); the others are links
-  const [kindChoice, setKindChoice] = useState<EdgeKind | null>(null);
-  const kinds = info ? hierarchyKinds(info) : [];
-  const kind = kindChoice && kinds.includes(kindChoice) ? kindChoice : info ? declaredHierarchyKind(info) : "composition";
-  const spec = useMemo(() => (info ? specForKind(info, kind) : undefined), [info, kind]);
-  const model = useMemo(() => (hist && spec ? buildTree(hist.graph, spec, info?.presentation ?? []) : null), [hist, spec, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  // what makes the hierarchy: by cause when the graph has a roll-up (the relation its state was computed from), else the kind of edge the ontology
+  // declares (composition when it says nothing); the other kinds can be chosen
+  const [choice, setChoice] = useState<HierarchyChoice | null>(null);
+  const choices = useMemo(() => (hist && info ? hierarchyChoices(hist.graph, info) : []), [hist, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const made = useMemo(() => (hist && info ? treeOf(hist.graph, info, choice) : undefined), [hist, info, choice, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const model = made?.model ?? null;
+  const kind = made?.choice ?? "composition";
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
   const [onlyWrong, setOnlyWrong] = useState(false);
   const [query, setQuery] = useState("");
@@ -67,11 +67,20 @@ export function TreeView({ graph }: { graph: string }) {
   const scroller = useRef<HTMLDivElement>(null);
   const typed = useRef({ text: "", at: 0 });
 
-  // the tree opens on the paths to what is wrong, once per graph; after that what the reader opened and closed is theirs
+  // a tree opens on the paths to where problems start, or else on its top levels (one row of a root says nothing), at the revision it shows: until
+  // the reader opens or closes a row, what is open is a function of the revision, however the timeline got there; after that it is theirs. A tree
+  // chosen by another kind of edge starts again: its rows are other ones
   const opened = useRef<string>("");
-  // a tree opens on the paths to where something is wrong, or else on its top levels (one row of a root says nothing)
-  // so does a tree chosen by another kind of edge: its rows are other ones
-  useEffect(() => { if (model && opened.current !== `${graph}|${kind}`) { opened.current = `${graph}|${kind}`; setExpanded(defaultOpen(model, 40)); } }, [model, graph, kind]);
+  const own = useRef(false);
+  // keyed on the revision, not on the model object: a model made again for the same revision opens nothing new
+  const shownAt = useRef<string>("");
+  useEffect(() => {
+    if (!model) return;
+    if (opened.current !== `${graph}|${kind}`) { opened.current = `${graph}|${kind}`; own.current = false; shownAt.current = ""; }
+    const at = `${version}|${hist?.cursor}`;
+    if (!own.current && shownAt.current !== at) { shownAt.current = at; setExpanded(defaultOpen(model, 40)); }
+  }, [model, graph, kind, version, hist?.cursor]);
+  const setOpen = (f: Set<string> | ((cur: Set<string> | null) => Set<string>)) => { own.current = true; setExpanded(f); };
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
@@ -91,21 +100,23 @@ export function TreeView({ graph }: { graph: string }) {
     return new Map([...c.entities].map(([id, x]) => [id, CHANGE_WORD[x.kind]]));
   }, [hist, version, model]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const items: HeadlessFlatTreeItemProps[] = useMemo(() => rows.map((r) => ({ value: r.node.id, parentValue: r.node.parent ?? undefined, itemType: r.hasChildren ? "branch" as const : "leaf" as const })), [rows]);
-  const openItems = useMemo(() => new Set(rows.filter((r) => r.expanded).map((r) => r.node.id)), [rows]);
-  const toggle = (id: string, open: boolean) => setExpanded((cur) => { const n = new Set(cur ?? []); if (open) n.add(id); else n.delete(id); return n; });
-  const tree = useHeadlessFlatTree_unstable(items, { openItems, onOpenChange: (_, d) => toggle(String(d.value), d.open) });
+  // a row is its place in the tree (an element under two parents has two rows); it opens and closes its element
+  const items: HeadlessFlatTreeItemProps[] = useMemo(() => rows.map((r) => ({ value: r.key, parentValue: r.parentKey ?? undefined, itemType: r.hasChildren ? "branch" as const : "leaf" as const })), [rows]);
+  const openItems = useMemo(() => new Set(rows.filter((r) => r.expanded).map((r) => r.key)), [rows]);
+  const byKey = useMemo(() => new Map(rows.map((r, i) => [r.key, i])), [rows]);
+  const toggle = (id: string, open: boolean) => setOpen((cur) => { const n = new Set(cur ?? []); if (open) n.add(id); else n.delete(id); return n; });
+  const tree = useHeadlessFlatTree_unstable(items, { openItems, onOpenChange: (_, d) => { const r = rows[byKey.get(String(d.value)) ?? -1]; if (r) toggle(r.node.id, d.open); } });
 
   const start = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN), end = Math.min(rows.length, Math.ceil((top + height) / ROW_H) + OVERSCAN);
   const visibleItems = useMemo(() => [...tree.items()].slice(start, end), [tree, start, end, openItems, rows]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const indexOf = (id: string) => rows.findIndex((r) => r.node.id === id);
+  const indexOf = (key: string) => byKey.get(key) ?? -1;
   const select = (id: string) => dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
   const goTo = (i: number) => {
     if (i < 0 || i >= rows.length) return;
     const el = scroller.current;
     if (el) { if (i * ROW_H < el.scrollTop) el.scrollTop = i * ROW_H; else if ((i + 1) * ROW_H > el.scrollTop + el.clientHeight) el.scrollTop = (i + 1) * ROW_H - el.clientHeight; setTop(el.scrollTop); }
-    setFocusId(rows[i].node.id);
+    setFocusId(rows[i].key);
   };
   // focus the row the keyboard moved to, once it is rendered
   useEffect(() => {
@@ -131,9 +142,9 @@ export function TreeView({ graph }: { graph: string }) {
       case "PageDown": return handled(() => goTo(Math.min(rows.length - 1, i + Math.max(1, Math.floor(height / ROW_H) - 1))));
       case "PageUp": return handled(() => goTo(Math.max(0, i - Math.max(1, Math.floor(height / ROW_H) - 1))));
       case "ArrowRight": return handled(() => { if (!r.hasChildren) return; if (!r.expanded) toggle(r.node.id, true); else goTo(i + 1); });
-      case "ArrowLeft": return handled(() => { if (r.expanded) toggle(r.node.id, false); else if (r.node.parent) { const p = indexOf(r.node.parent); if (p >= 0) goTo(p); } });
+      case "ArrowLeft": return handled(() => { if (r.expanded) toggle(r.node.id, false); else if (r.parentKey) { const p = indexOf(r.parentKey); if (p >= 0) goTo(p); } });
       case "Enter": case " ": return handled(() => select(r.node.id));
-      case "*": return handled(() => model && setExpanded((cur) => new Set([...(cur ?? []), ...expandBelow(model, r.node.id)])));
+      case "*": return handled(() => model && setOpen((cur) => new Set([...(cur ?? []), ...expandBelow(model, r.node.id)])));
       default:
         if (e.key.length === 1 && /\S/.test(e.key)) {
           const now = Date.now();
@@ -144,7 +155,7 @@ export function TreeView({ graph }: { graph: string }) {
     }
   };
 
-  if (!model || !spec) return <div className={s.root}><MessageBar intent="info"><MessageBarBody>This graph has no hierarchy.</MessageBarBody></MessageBar></div>;
+  if (!model) return <div className={s.root}><MessageBar intent="info"><MessageBarBody>This graph has no hierarchy.</MessageBarBody></MessageBar></div>;
   const selected = sel && sel.graph === graph ? sel.id : null;
   const wrongCount = [...model.nodes.values()].filter(isWrong).length;
   const hiddenCount = [...model.nodes.values()].filter((x) => x.hidden).length;
@@ -154,11 +165,11 @@ export function TreeView({ graph }: { graph: string }) {
         <SearchBox aria-label="Find in the tree" placeholder="Find (opens the path)" value={query} onChange={(_, d) => setQuery(d.value)} />
         <Switch checked={onlyWrong} label="Only where something is wrong" onChange={(_, d) => setOnlyWrong(d.checked)} />
         {hiddenCount > 0 && <Switch checked={showHidden} label={`Show hidden (${hiddenCount})`} onChange={(_, d) => setShowHidden(d.checked)} />}
-        {kinds.length > 1 && <Select aria-label="Hierarchy by" value={kind} onChange={(_, d) => setKindChoice(d.value as EdgeKind)}>{kinds.map((k) => <option key={k} value={k}>{KIND_WORD[k].word}</option>)}</Select>}
+        {choices.length > 1 && <Select aria-label="Hierarchy by" value={kind} onChange={(_, d) => setChoice(d.value as HierarchyChoice)}>{choices.map((k) => <option key={k} value={k}>{k === "cause" ? "Cause (what the state was computed from)" : KIND_WORD[k].word}</option>)}</Select>}
         <Select aria-label="Sort children" value={sort} onChange={(_, d) => setSort(d.value as "severity" | "label")}><option value="severity">Worst first</option><option value="label">By name</option></Select>
-        <Button size="small" disabled={!selected} onClick={() => selected && setExpanded((cur) => new Set([...(cur ?? []), ...expandBelow(model, selected)]))}>Expand below selected</Button>
-        <Button size="small" onClick={() => setExpanded(new Set())}>Collapse all</Button>
-        <Button size="small" onClick={() => setExpanded(attentionPaths(model))}>Open paths to problems</Button>
+        <Button size="small" disabled={!selected} onClick={() => selected && setOpen((cur) => new Set([...(cur ?? []), ...expandBelow(model, selected)]))}>Expand below selected</Button>
+        <Button size="small" onClick={() => setOpen(new Set())}>Collapse all</Button>
+        <Button size="small" onClick={() => setOpen(attentionPaths(model))}>Open paths to problems</Button>
         <span className={s.grow} />
         <Text size={200} role="status">{rows.length.toLocaleString()} rows · {model.nodes.size.toLocaleString()} nodes · {wrongCount.toLocaleString()} where something is wrong{query.trim() ? ` · ${matches.size.toLocaleString()} found` : ""}</Text>
       </div>
@@ -171,11 +182,15 @@ export function TreeView({ graph }: { graph: string }) {
                 if (!r) return null;
                 const n: TreeNode = r.node;
                 const changed = change.get(n.id);
+                const through = n.through.map((c) => model.nodes.get(c)?.label ?? c);
                 return (
-                  <FlatTreeItem {...item.getTreeItemProps()} key={n.id} data-row-id={n.id} aria-selected={selected === n.id} onClick={(e) => { e.preventDefault(); select(n.id); }}
+                  <FlatTreeItem {...item.getTreeItemProps()} key={r.key} data-row-id={r.key} aria-selected={selected === n.id} onClick={(e) => { e.preventDefault(); select(n.id); }}
                     style={{ height: ROW_H, backgroundColor: selected === n.id ? tokens.colorSubtleBackgroundSelected : undefined }}>
                     <TreeItemLayout aside={
                       <span className={s.cell}>
+                        {n.origin && <Badge size="small" appearance="filled" color={n.rolled?.role === "warning" ? "warning" : "danger"} title="Where the problem starts: its own state is as bad as its rolled-up state"><span aria-hidden="true">⚑ </span>origin</Badge>}
+                        {through.length > 0 && <Text size={200} title={`${n.rolled?.value ?? "Wrong"} through ${through.join(", ")}`}>through {through.join(", ")}</Text>}
+                        {n.parents.length > 1 && <Badge size="small" appearance="outline" title={`The same element, under ${n.parents.length} parents`}><span aria-hidden="true">⧉ </span>same element, under {n.parents.length}</Badge>}
                         {n.counts.map((c) => <span key={c.value} title={`${c.n} ${c.value} (${ROLE_WORD[c.role]})`}><Text size={200}><span aria-hidden="true">{ROLE_GLYPH[c.role]}</span>{c.n} {c.value}</Text></span>)}
                         {n.supporting > 0 && <Badge size="small" appearance="outline" title={`${n.supporting} supporting elements`}>{n.supporting} supporting</Badge>}
                         {n.cross > 0 && <Badge size="small" appearance="outline" title={`${n.cross} cross relationships`}>{n.cross} {n.cross === 1 ? "link" : "links"}</Badge>}

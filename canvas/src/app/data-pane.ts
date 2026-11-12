@@ -91,16 +91,7 @@ export class DataPane {
   constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: TelemetryHub | null = null) {
     this.graph = history.graph;
     nameGraph(this.graph, info.ontology, info.labels);
-    // derived trees and forests read best as layers; general graphs use the force layout
-    const g0 = history.graph;
-    if (g0.nodeCount > 2 && g0.edgeCount >= g0.nodeCount * 0.5 && g0.edgeCount <= g0.nodeCount) {
-      // a tree or forest: most nodes take part in an edge; many isolated nodes would make a flat strip
-      let connected = 0;
-      for (let i = 0; i < g0.nodes.length; i++) if (g0.nodes[i] && g0.out[i].length + g0.inn[i].length > 0) connected++;
-      if (connected >= g0.nodeCount * 0.8) this.layoutKind = "layered";
-    }
-    // a graph whose ontology declares a hierarchy is a tree: the root on top, whatever its size
-    if (info.tree && hasTreeRows(g0, info.tree) && hasHierarchyEdges(g0, info.tree)) this.layoutKind = "layered";
+    this.layoutKind = this.autoLayoutKind();
     this.view = new GraphView(host);
     this.view.setTheme(theme);
     this.view.setScene(this.scene);
@@ -171,21 +162,51 @@ export class DataPane {
 
   private relayoutIfLayered(): void { if (this.layoutKind === "layered") this.runLayout("layered", true); }
 
+  /**
+   * The layout the graph as it is now reads best in: a graph whose ontology declares a hierarchy and that has rows and edges of it is a tree (the root on
+   * top, whatever its size); a tree or forest by its shape is layered too; the rest is drawn by force. A function of the graph alone, so a pane made
+   * on an empty revision chooses again when the graph has grown.
+   */
+  private autoLayoutKind(): LayoutKind {
+    const g = this.graph, info = this.info;
+    if (info.tree && hasTreeRows(g, info.tree) && hasHierarchyEdges(g, info.tree)) return "layered";
+    if (g.nodeCount > 2 && g.edgeCount >= g.nodeCount * 0.5 && g.edgeCount <= g.nodeCount) {
+      // a tree or forest: most nodes take part in an edge; many isolated nodes would make a flat strip
+      let connected = 0;
+      for (let i = 0; i < g.nodes.length; i++) if (g.nodes[i] && g.out[i].length + g.inn[i].length > 0) connected++;
+      if (connected >= g.nodeCount * 0.8) return "layered";
+    }
+    return "force";
+  }
+  /** set when the person chose the layout (Filters): the pane then keeps it */
+  userLayout = false;
+
   runLayout(kind: LayoutKind = this.layoutKind, fitWhenDone = false): void {
     this.layoutKind = kind;
     const g = this.graph, sc = this.scene;
     // lay out what is visible: collapsed groups and filtered nodes do not take space
+    // nodes and edges go to the layout in the order of their ids, not of their slots: the slots of a graph depend on how it got to this revision
+    // (a scrub back and forth frees and reuses them), its ids do not, so a layered layout is a function of the revision alone
+    const byId = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
     const slots: number[] = [];
+    for (let i = 0; i < g.nodes.length; i++) if (g.nodes[i] && (sc.nodeVisible(i) || i >= sc.nodeCount)) slots.push(i);
+    slots.sort((a, b) => byId(g.nodes[a]!.id, g.nodes[b]!.id));
     const dense = new Int32Array(g.nodes.length).fill(-1);
-    for (let i = 0; i < g.nodes.length; i++) if (g.nodes[i] && (sc.nodeVisible(i) || i >= sc.nodeCount)) { dense[i] = slots.length; slots.push(i); }
+    slots.forEach((s, i) => { dense[s] = i; });
     const n = slots.length;
     this.layoutSlots = Int32Array.from(slots);
-    const src = new Int32Array(g.edges.length).fill(-1), dst = new Int32Array(g.edges.length).fill(-1);
-    for (let e = 0; e < g.edges.length; e++) {
-      if (!g.edges[e] || !sc.edgeVisible(e)) continue;
+    const edgeSlots: number[] = [];
+    for (let e = 0; e < g.edges.length; e++) if (g.edges[e]) edgeSlots.push(e);
+    edgeSlots.sort((a, b) => byId(g.edges[a]!.id, g.edges[b]!.id));
+    // `src`/`dst` are indexed by the edge's place in id order; `edgeAt` maps it back to the slot
+    const edgeAt = Int32Array.from(edgeSlots);
+    const src = new Int32Array(edgeAt.length).fill(-1), dst = new Int32Array(edgeAt.length).fill(-1);
+    for (let k = 0; k < edgeAt.length; k++) {
+      const e = edgeAt[k];
+      if (!sc.edgeVisible(e)) continue;
       const [a, b] = sc.edgeEnds(e);
       if (a < 0 || b < 0 || dense[a] < 0 || dense[b] < 0) continue;
-      src[e] = dense[a]; dst[e] = dense[b];
+      src[k] = dense[a]; dst[k] = dense[b];
     }
     // a declared hierarchy ranks the layers: parent above child, what explains a row below it; dependencies between rows do not rank
     const tree = kind === "layered" && this.info.tree && hasHierarchyEdges(g, this.info.tree) ? this.info.tree : undefined;
@@ -197,13 +218,13 @@ export class DataPane {
       // with declared kinds the parts stack below their wholes along every vertical composition (a pod above its node, a node above its pool);
       // what a part depends on is placed beside it once the layers are done, and communication takes no part
       const axes = this.info.edgeKinds ? kindAxes(this.info) : null;
-      for (let e = 0; e < g.edges.length; e++) {
-        const r = g.edges[e];
-        if (src[e] < 0 || !r) continue;
-        if (inHierarchy(tree, r.type)) { if (tree.hierarchy.childIsSource) [src[e], dst[e]] = [dst[e], src[e]]; }
+      for (let k = 0; k < edgeAt.length; k++) {
+        const e = edgeAt[k], r = g.edges[e];
+        if (src[k] < 0 || !r) continue;
+        if (inHierarchy(tree, r.type)) { if (tree.hierarchy.childIsSource) [src[k], dst[k]] = [dst[k], src[k]]; }
         else if (axes?.vertical.has(r.type)) { /* the source (the part) above the target */ }
-        else if (isSupport(r.type)) { if (!structural[g.edgeSrc[e]] && structural[g.edgeDst[e]]) [src[e], dst[e]] = [dst[e], src[e]]; }
-        else { src[e] = -1; dst[e] = -1; }
+        else if (isSupport(r.type)) { if (!structural[g.edgeSrc[e]] && structural[g.edgeDst[e]]) [src[k], dst[k]] = [dst[k], src[k]]; }
+        else { src[k] = -1; dst[k] = -1; }
       }
     }
     this.layoutRunning = true; this.layoutProgress = 0;
@@ -474,6 +495,11 @@ export class DataPane {
     if (this.legendStale) this.recolor();
     this.updateMatches();
     this.view.requestRender();
+    // the layout of a revision is a function of that revision: when the graph now reads best in another layout (a pane made on an empty revision,
+    // a scrub that brought the tree), or a layered graph changed its nodes or edges, it is laid out again
+    const structural = [...res.changes.entities.values(), ...res.changes.relationships.values()].some((c) => c.kind !== "changed");
+    const want = this.userLayout ? this.layoutKind : this.autoLayoutKind();
+    if (want !== this.layoutKind || (want === "layered" && structural && g.nodeCount <= 5000)) this.runLayout(want, want !== this.layoutKind);
   }
 
   /** Highlight the elements of a change set (added, changed on the graph; removed as ghosts). */

@@ -163,3 +163,27 @@ describe("whether a graph has anything to show as a tree", () => {
     ["no types listed: any entity is a row", { ...treeSpec, types: undefined }, true],
   ])("%s", (_, spec, want) => expect(hasTreeRows(treeGraph(), spec)).toBe(want));
 });
+
+describe("a tree by cause", () => {
+  // the hierarchy and the dependencies: web needs api and db, so both are under their region and under web
+  const links = (extra: [string, string][] = []) => {
+    const g = treeGraph();
+    const ls = [...g.relationships()].filter((r) => r.type === "Contains" || r.type === "DependsOn").map((r) => ({ parent: r.source, child: r.target, edge: r.id }));
+    return { types: new Set(["Contains", "DependsOn"]), links: ls.concat(extra.map(([parent, child], i) => ({ parent, child, edge: `x${i}` }))) };
+  };
+  const all = (m: ReturnType<typeof model>) => new Set(m.nodes.keys());
+  it("puts an element under every element whose state takes it in, each row in its own place", () => {
+    const m = buildTree(treeGraph(), treeSpec, treeHints, links());
+    const rows = visibleRows(m, view({ expanded: all(m) })).rows;
+    expect([rows.filter((r) => r.node.id === "api").length, m.nodes.get("api")!.parents, new Set(rows.map((r) => r.key)).size]).toEqual([2, ["ra", "web"], rows.length]);
+  });
+  it.each<[string, [string, string][], string[]]>([
+    ["the origins are where the own state is as bad as the rolled-up one, and the paths to them open", [], ["api", "web"]],
+    ["a cycle is walked once per path and leaves no element without a row", [["api", "web"]], ["api", "web"]],
+  ])("%s", (_, extra, origins) => {
+    const m = buildTree(treeGraph(), treeSpec, treeHints, links(extra));
+    expect([...m.nodes.values()].filter((n) => n.origin).map((n) => n.id).sort()).toEqual(origins);
+    expect([...attentionPaths(m)].sort()).toEqual(extra.length ? ["api", "estate", "ra", "rb", "web"] : ["estate", "ra", "rb", "web"]);
+    expect(new Set(visibleRows(m, view({ expanded: expandBelow(m, "estate") })).rows.map((r) => r.node.id))).toEqual(all(m));
+  });
+});

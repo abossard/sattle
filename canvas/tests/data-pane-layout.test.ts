@@ -41,8 +41,8 @@ describe("a graph with a declared hierarchy", () => {
     pane.start();
     const r = requests.at(-1)!;
     expect(r.kind).toBe("layered");
-    // dense slots: p 0, c 1, s 2
-    expect([[r.src[0], r.dst[0]], [r.src[1], r.dst[1]], [r.src[2], r.dst[2]]]).toEqual([[0, 1], [0, 2], [-1, -1]]);
+    // nodes in id order: c 0, p 1, s 2; edges in id order: r0, r1, r2
+    expect([[r.src[0], r.dst[0]], [r.src[1], r.dst[1]], [r.src[2], r.dst[2]]]).toEqual([[1, 0], [1, 2], [-1, -1]]);
   });
 
   it("a graph without one is not, however few its nodes", () => {

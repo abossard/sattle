@@ -1,6 +1,7 @@
 // What the declared kinds of edge (engine 3.17) say about how to read a graph: which edges restate others, which compositions stack the graph from
 // top to bottom and which belong to the side of what a part depends on, and where the elements on that side go. Pure: graph and ontology in, data out.
 import type { Graph } from "../core/graph";
+import { valueText, type Entity } from "../core/model";
 import type { EdgeKind, TreeSpec } from "../source/presentation";
 import type { GraphInfo } from "../source/types";
 
@@ -103,6 +104,49 @@ export function besidePositions(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKi
   return out;
 }
 
+/** One step of the relation a roll-up follows: the state of `parent` takes in the state of `child`; `edge` is the relationship that says so. */
+export interface CauseLink { parent: string; child: string; edge: string }
+
+/**
+ * The relation the rolled-up state of a graph was computed from. When the graph holds the roll-up edges themselves (a composition or dependency type
+ * that restates others, such as `Affects`), those, from the element whose state takes the other in. Otherwise the edges such a type is made from:
+ * the hierarchy as declared, and every other composition and dependency with the source as the one whose state takes in the target's (what a part
+ * needs, what it is made of, what a gateway exposes). Communication and support take no part. `types`: the relationship types of the links.
+ */
+export function causeLinks(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds">, restated: ReadonlySet<string> = restatingTypes(g)): { types: Set<string>; links: CauseLink[] } {
+  const spec = info.tree;
+  if (!spec) return { types: new Set(), links: [] };
+  const kinds: Kinds = info.edgeKinds ?? {};
+  const structural = (t: string) => kinds[t] === "composition" || kinds[t] === "dependency";
+  const hier = (t: string) => t === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(t);
+  const rollup = [...restated].filter(structural);
+  const types = new Set<string>();
+  for (const r of g.relationships()) if (rollup.length ? rollup.includes(r.type) : !restated.has(r.type) && (hier(r.type) || structural(r.type))) types.add(r.type);
+  const links: CauseLink[] = [];
+  for (const r of g.relationships()) {
+    if (!types.has(r.type)) continue;
+    const flip = !rollup.length && hier(r.type) && spec.hierarchy.childIsSource;
+    links.push(flip ? { parent: r.target, child: r.source, edge: r.id } : { parent: r.source, child: r.target, edge: r.id });
+  }
+  return { types, links };
+}
+
+/**
+ * Whether an element is where a problem starts: its state is a warning or a danger and its own state is as bad as its rolled-up one, so nothing it
+ * takes in made it worse. Read on the numbers when the own state is one (the same scale as the severity), else on the value roles.
+ */
+export function isOrigin(e: Entity, spec: TreeSpec, hints: readonly { property: string; roles: Record<string, string> }[]): boolean {
+  const role = stateRole(e, spec, hints);
+  if (role !== "warning" && role !== "danger") return false;
+  const st = spec.state[e.type];
+  const own = st?.own ? e.props[st.own] : undefined;
+  if (!own || !st?.own) return false;
+  const text = valueText(own);
+  const sev = st.severity ? e.props[st.severity] : undefined;
+  if (/^-?\d+$/.test(text) && sev) return Number(text) === Number(valueText(sev));
+  return hints.find((h) => h.property === st.own)?.roles[text] === role;
+}
+
 /** The role of an element's state: the rolled-up state its type's `treeState` names, read through the value roles. */
 function stateRole(e: { type: string; props: Record<string, unknown> }, spec: TreeSpec, hints: readonly { property: string; roles: Record<string, string> }[]): string | null {
   const prop = spec.state[e.type]?.rolledUp ?? spec.state[e.type]?.own;
@@ -113,31 +157,21 @@ function stateRole(e: { type: string; props: Record<string, unknown> }, spec: Tr
 }
 
 /**
- * Which part is to blame, and the way from the top to it. An element whose state is a warning or a danger is caused by what it is made of (its children
- * in the hierarchy) and by what it needs (the targets of its other compositions and of its dependencies) when those are wrong too; one with no wrong
- * cause is to blame. The path is every wrong element above a blamed one through those edges, and the edges between them. `skip`: types that restate
- * others (see `restatingTypes`), which are no causes.
+ * Which part is to blame, and the way from the top to it. The elements where a problem starts (`isOrigin`) are to blame; in a graph that holds no own
+ * state, an element whose state is a warning or a danger and that takes in no wrong one (`causeLinks`). The path is every wrong element above a blamed
+ * one along the links, and the edges between them. `skip`: types that restate others (see `restatingTypes`).
  */
-export function blamePath(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology" | "presentation">, skip: ReadonlySet<string> = new Set()): { blamed: Set<string>; nodes: Set<string>; edges: Set<string> } {
+export function blamePath(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology" | "presentation">, skip: ReadonlySet<string> = restatingTypes(g)): { blamed: Set<string>; nodes: Set<string>; edges: Set<string> } {
   const out = { blamed: new Set<string>(), nodes: new Set<string>(), edges: new Set<string>() };
   const spec = info.tree;
   if (!spec || !Object.keys(spec.state).length) return out;
-  const kinds: Kinds = info.edgeKinds ?? {};
   const hints = (info.presentation ?? []) as { property: string; roles: Record<string, string> }[];
   const wrong = new Set<string>();
-  for (const e of g.entities()) { const r = stateRole(e, spec, hints); if (r === "warning" || r === "danger") wrong.add(e.id); }
+  for (const e of g.entities()) { const r = stateRole(e, spec, hints); if (r === "warning" || r === "danger") { wrong.add(e.id); if (isOrigin(e, spec, hints)) out.blamed.add(e.id); } }
   if (!wrong.size) return out;
-  // cause edges: parent -> child of the hierarchy; source -> target of every other composition and dependency
   const causes = new Map<string, { id: string; edge: string }[]>();
-  for (const r of g.relationships()) {
-    const hier = r.type === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(r.type);
-    const k = kinds[r.type];
-    // a type that restates others (a roll-up edge) names no cause of its own
-    if (skip.has(r.type) || (!hier && k !== "composition" && k !== "dependency")) continue;
-    const [from, to] = hier && spec.hierarchy.childIsSource ? [r.target, r.source] : [r.source, r.target];
-    const l = causes.get(from); if (l) l.push({ id: to, edge: r.id }); else causes.set(from, [{ id: to, edge: r.id }]);
-  }
-  for (const id of wrong) if (!(causes.get(id) ?? []).some((c) => wrong.has(c.id))) out.blamed.add(id);
+  for (const c of causeLinks(g, { tree: spec, edgeKinds: info.edgeKinds }, skip).links) { const l = causes.get(c.parent); if (l) l.push({ id: c.child, edge: c.edge }); else causes.set(c.parent, [{ id: c.child, edge: c.edge }]); }
+  if (!out.blamed.size) for (const id of wrong) if (!(causes.get(id) ?? []).some((c) => wrong.has(c.id))) out.blamed.add(id);
   // walk up from each blamed element through the wrong elements whose cause it is
   const caused = new Map<string, { id: string; edge: string }[]>();
   for (const [from, list] of causes) for (const c of list) { const l = caused.get(c.id); if (l) l.push({ id: from, edge: c.edge }); else caused.set(c.id, [{ id: from, edge: c.edge }]); }

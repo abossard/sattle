@@ -175,7 +175,7 @@ Found while verifying (not worked around silently):
 - A constraint whose name is not the engine's default (`kind-Type[.property]`) prints as a named constraint and breaks the module text; the canvas names constraints by that default (a key has no property in its name).
 - The graph space's `activation` that names a new graph makes the canvas reload the source (see below).
 - Not used: `POST /graphs/{g}/edits` and the editability endpoint.
-- Stacked projections: the seven projections of `acme.healthmodel` open without problems, with a breadcrumb from the source graph to the health graph.
+- Stacked projections: the breadcrumb of each projection of `acme.workload` runs from the source graph through `master` (`ingest`); that of `workloadStructure` ends in the projection it feeds, `workloadHealth`. The breadcrumb follows a projection's first input only, so `workloadHealth` does not show `workloadStructure` above it.
 
 ## Visual language
 

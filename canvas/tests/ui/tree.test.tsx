@@ -29,7 +29,7 @@ describe("a graph whose ontology marks a hierarchy", () => {
     const text = row(tree, "api").textContent!;
     expect(text).toMatch(/^api Component.*state Unhealthy, danger/);
     // the glyphs are drawn and hidden from readers: the words stand for them
-    expect(row(tree, "api").querySelector('[aria-hidden="true"]')?.textContent).toMatch(/✖/);
+    expect([...row(tree, "api").querySelectorAll('[aria-hidden="true"]')].map((x) => x.textContent).join("")).toMatch(/✖/);
   }, 30000);
 
   it("says the level and position of a row, and its state in words as well as color", async () => {
@@ -135,6 +135,17 @@ describe("a graph whose ontology marks a hierarchy", () => {
     await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.first }); });
     await waitFor(() => expect(row(tree, "db").textContent).toMatch(/state Healthy, ok/));
     expect(row(tree, "db").textContent).not.toMatch(/in this revision/);
+  }, 30000);
+
+  it.each([["no row was touched: the rows are those of the revision", false], ["the reader closed a row: it stays closed", true]])("after a scrub to the first revision and back, %s", async (_, touch) => {
+    const user = userEvent.setup();
+    const tree = await open();
+    const before = names(tree);
+    if (touch) { act(() => row(tree, "Region A").focus()); await user.keyboard("{ArrowLeft}"); await waitFor(() => expect(names(tree)).not.toContain("api")); }
+    const shown = names(tree);
+    await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.first }); });
+    await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.last }); });
+    await waitFor(() => expect(names(tree)).toEqual(touch ? shown : before));
   }, 30000);
 
   it("has no axe violations", async () => {
