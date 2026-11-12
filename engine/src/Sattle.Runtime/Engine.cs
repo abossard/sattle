@@ -9,7 +9,8 @@ namespace Sattle.Runtime;
 public sealed record EngineOptions
 {
     public string Tenant { get; init; } = "lab";
-    public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new InMemoryGraphStore();
+    /// <summary>The store of the committed patches. The default keeps the head and a tail of commits, and reads the head from the engine's own graphs (`HeadOnlyGraphStore`); `InMemoryGraphStore` keeps the full history (the test double of the conformance suite).</summary>
+    public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     public Func<ITelemetryStore> TelemetryFactory { get; init; } = () => new InMemoryTelemetryStore();
     /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6).</summary>
     public int LateHorizonWindows { get; init; } = 3;
@@ -308,6 +309,7 @@ public sealed class Engine : IDisposable, IEngineInput
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
             gr.Head = store.Head(key).Head;
+            if (store is HeadOnlyGraphStore headOnly) headOnly.Attach(key, gr.State);
             if (next.Master) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
@@ -554,7 +556,11 @@ public sealed class Engine : IDisposable, IEngineInput
     public void AdoptState(StateRoot root)
     {
         epochId = root.EpochId; lambda = root.Lambda; InputRows = root.InputRows;
-        foreach (var gs in root.Graphs) { var g = byName[gs.Name]; g.Head = gs.Head; g.TelemetryPosition = gs.TelemetryPosition; g.Skipped = gs.Skipped; }
+        foreach (var gs in root.Graphs)
+        {
+            var g = byName[gs.Name]; g.Head = gs.Head; g.TelemetryPosition = gs.TelemetryPosition; g.Skipped = gs.Skipped;
+            if (store is HeadOnlyGraphStore headOnly) { headOnly.Resume(g.Key, g.Head); headOnly.Attach(g.Key, g.State); }          // the store's history starts at the restored head
+        }
     }
     public void Dispose() => store.Dispose();
 }

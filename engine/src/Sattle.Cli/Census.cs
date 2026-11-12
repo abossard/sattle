@@ -121,13 +121,14 @@ static class Census
         }
     }
 
-    /// <summary>The roots of an engine: shared lookups first, then the stores, the state of every graph, the output layers of every graph (each field on its own), the operator state by operator kind.</summary>
+    /// <summary>The roots of an engine: shared lookups first, then the state of every graph (before the store, which may read the engine's own graphs), the stores, the output layers of every graph (each field on its own), the operator state by operator kind.</summary>
     public static List<(string Label, string Graph, object? Root)> EngineRoots(Engine e, params (string Label, object? Root)[] extra)
     {
         var roots = new List<(string, string, object?)>
         {
             ("interner", "-", e.Interner), ("identities", "-", e.Identities), ("telemetry", "-", e.Telemetry),
         };
+        foreach (var g in e.Graphs) foreach (var (n, v) in Expand("graph.state", g.State)) roots.Add((n, g.Name, v));
         foreach (var (n, v) in Expand("store", e.Store))
         {
             if (n == "store.graphs" && v is System.Collections.IDictionary gd)
@@ -137,7 +138,6 @@ static class Census
             }
             else roots.Add((n, "-", v));
         }
-        foreach (var g in e.Graphs) foreach (var (n, v) in Expand("graph.state", g.State)) roots.Add((n, g.Name, v));
         foreach (var g in e.Graphs) foreach (var (n, v) in Expand("graph.sink", g.Out)) roots.Add((n, g.Name, v));
         foreach (var g in e.Graphs) foreach (var op in g.Plan.Ops) roots.Add(("op:" + op.GetType().Name, g.Name, op));
         foreach (var (l, r) in extra) roots.Add((l, "-", r));

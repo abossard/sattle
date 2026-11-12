@@ -240,6 +240,26 @@ Program `experiments/X2-lineage`; commands, census rows and full outputs: `out/e
 - Finding: the one-row `Lineage` records and `GroupRefs` are not removed when an element is retracted (52 of 68 differing records on the newest capture, 8 of 29 on the older, belong to elements no longer in the graph; 6 and 5 stale `GroupRefs`): history-dependent leftovers, harmless for results, a leak in memory.
 - Finding: feeding the recorded rows in 48 merged batches took 1.3 s against about 3 s of engine time in the 4,029-batch replay (identical digest): per-batch overhead may be about half of the engine time; not isolated.
 
+## S1 step (a): the head-only default store (2026-11-12)
+Steady-state run at 100,000 master nodes: `bench estate --look-back 30m --windows 75 --census --pods 31250 --services 6250 --resources 62500 --pairs 50000 --per-window 208000`, tree graphs and readings, the census at the end. Before: the committed engine 6a69582 (Release build, full-history in-memory store); after: the working tree with `HeadOnlyGraphStore` as the default (an optimized build of its own). Raw outputs `out/s1/before-6a69582.txt`, `out/s1/after-headonly-tail.txt` (gitignored). Load average 30 to 50, so the times are noisy; bytes do not depend on load.
+
+| census row (MB) | before | after |
+|---|---|---|
+| `store.graph.Commits` (every patch) | 475.3 | (gone) |
+| `store.graph.Head` (a second copy of every graph) | 277.3 | (gone) |
+| `store.graph.Versions` (every element version) | 205.0 | (gone) |
+| `store.graph.Bindings` (unused copy of the identity bindings) | 168.4 | (gone) |
+| `store.graph.Adjacency` (adjacency intervals) | 153.2 | (gone) |
+| `store.graph.Tail` (the last commits, at most 4,096 edits per graph) | | 7.7 |
+| `graph.sink.elems` | 394.8 | 494.1 (objects the commit log shared with the sink's contributions are now counted here) |
+| live bytes at the end (forced compacting collection) | **9,760** | **8,588 (-1,172, -12.0 %)** |
+| live bytes when the retention filled (window 59) | 9,698 | 8,528 |
+
+- The design's target was minus 1.29 GB, the five store rows. The measured drop is 1,172 MB. The difference is the 99 MB of the commit log that the sink's contributions also hold, which stay alive.
+- The census attributed the engine's own graphs (about 245 MB) to the store in this run, because it walked the store first; it now walks the graph state first.
+- Window close p50 5,402 ms before, 4,538 ms after (load-dependent).
+- State digests of the estate, `lab/fixtures` and both captures at chunk sizes 1, 50 and 100,000: all 12 unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

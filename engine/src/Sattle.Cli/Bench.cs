@@ -48,7 +48,7 @@ static partial class Bench
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
         // the shipped ratio: telemetry is retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention
         var retention = lookBack is null ? new EngineOptions().TelemetryRetentionNs : 2 * Lexer.DurationNs(lookBack);
-        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new InMemoryGraphStore(), TelemetryRetentionNs = retention });
+        return new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => store ?? new HeadOnlyGraphStore(), TelemetryRetentionNs = retention });
     }
 
     static string FindDefs()

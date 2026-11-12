@@ -29,7 +29,7 @@ public sealed record HostOptions
     public int LateHorizonWindows { get; init; } = 3;
     public string? SpaceName { get; init; }
     public long InputRowCap { get; init; } = 40_000_000;
-    public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new InMemoryGraphStore();
+    public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     public string Mode { get; set; } = "replay";
     /// <summary>A durable store (SQLite or Cosmos) that also keeps the journal: the space survives a restart and is rebuilt from it alone.</summary>
     public IGraphStore? Durable { get; init; }

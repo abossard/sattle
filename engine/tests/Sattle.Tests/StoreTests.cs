@@ -9,12 +9,13 @@ public class StoreConformanceTests
 {
     /// <summary>The Cosmos store joins when SATTLE_COSMOS_EMULATOR names a Cosmos DB emulator endpoint (docker run -p 8081:8081 mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview --protocol http).</summary>
     public static string? CosmosEndpoint => Environment.GetEnvironmentVariable("SATTLE_COSMOS_EMULATOR");
-    public static IEnumerable<object[]> Stores() => CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
+    public static IEnumerable<object[]> Stores() => CosmosEndpoint is null ? [["memory"], ["headOnly"], ["sqlite"]] : [["memory"], ["headOnly"], ["sqlite"], ["cosmos"]];
     static readonly GraphKey G = new("t", "g");
 
     static IGraphStore Make(string kind)
     {
         if (kind == "memory") return new InMemoryGraphStore();
+        if (kind == "headOnly") return new HeadOnlyGraphStore();          // its declared limit: history over the last commits up to 4,096 edits
         if (kind == "cosmos") return Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, "t" + Guid.NewGuid().ToString("N")[..12], dropOnDispose: true);
         var path = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N") + ".db");
         return new SqliteGraphStore(path);
@@ -195,11 +196,12 @@ public class StoreConformanceTests
         readonly string path = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N") + ".db");
         readonly string database = "t" + Guid.NewGuid().ToString("N")[..12];
         readonly InMemoryGraphStore memory = new();
+        readonly HeadOnlyGraphStore headOnly = new();
         readonly List<IGraphStore> opened = [];
-        public IGraphStore Open() { IGraphStore s = kind switch { "memory" => memory, "cosmos" => Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
+        public IGraphStore Open() { IGraphStore s = kind switch { "memory" => memory, "headOnly" => headOnly, "cosmos" => Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
         public void Dispose()
         {
-            foreach (var s in opened) if (kind != "memory") s.Dispose();
+            foreach (var s in opened) if (kind is not ("memory" or "headOnly")) s.Dispose();
             if (kind == "cosmos") { using var _ = Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, true); }
             else foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
         }

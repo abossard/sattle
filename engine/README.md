@@ -36,6 +36,7 @@ sattle replay CAPTURE [--space NAME] [--cluster NAME] [--speed N] [--advance-eve
 ```
 - `CAPTURE` is a capture directory, `lab/fixtures`, or `latest` (newest under `lab/captures`). Records are merged in capture-time order. Each source's adapter turns them into rows. Explicit `Advance(λ)` controls are inserted when the capture clock crosses a step boundary: `λ = floor(capturedAt / step) * step - lateness`, so logical time is a recorded input and never the wall clock.
 - `--speed N` plays N capture seconds per wall second (0, the default, is as fast as possible). `--chunk` sets rows per batch; it changes patch granularity, never the result (T6).
+- `--store memory` (the default) keeps, per graph, the head revision and the last commits up to 4,096 edits; the elements of the head are the engine's own graphs, not a copy. Reads of older revisions and following the commits further back answer that the history is not available. `sqlite=` and `cosmos=` keep the whole history.
 - Prints records and rows per source, rejections, per graph revision, element counts per type and telemetry counts, the service tree with top dependencies, identity statistics, runtime faults, lost events and a state digest. `--out DIR` writes the canvas files.
 ```bash
 sattle serve CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]]

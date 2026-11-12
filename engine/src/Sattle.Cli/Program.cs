@@ -260,7 +260,7 @@ public static class Program
         {
             Tenant = "lab",
             LateHorizonWindows = LateHorizonFor(o),   // a replay is finite: keep every window revisable so history is not dropped as too late (a live source keeps 3; `serve` of a capture uses the same value as `replay`)
-            StoreFactory = _ => store.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(store["sqlite=".Length..]) : store.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(store["cosmos=".Length..]) : new InMemoryGraphStore(),
+            StoreFactory = _ => store.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(store["sqlite=".Length..]) : store.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(store["cosmos=".Length..]) : new HeadOnlyGraphStore(),
         };
         var engine = new Engine(cat, spaceId, opts);
         engine.TrackAllocations = o.Flags.Contains("trace-alloc");
