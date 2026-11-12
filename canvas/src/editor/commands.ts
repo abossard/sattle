@@ -2,7 +2,6 @@
 import { Catalog, DIRECTION_CLASSES } from "../core/catalog";
 import type { Graph } from "../core/graph";
 import type { Edit } from "../core/model";
-import { valueText } from "../core/model";
 import type { GraphValue } from "../core/wire-types";
 import { canonicalFunctions, exprEdits, parseExpr, unknownComponents, unknownDomains, type Expr } from "./expr";
 import { aggregateAllowed, scalarFunctions, slotOf, type Palette, type PaletteOperator, type PaletteParam } from "./palette";
@@ -83,21 +82,13 @@ export function slotIsOrdered(g: Graph, palette: Palette, owner: string, slot: s
   return !!slots?.find((x) => x.name === slot)?.ordered;
 }
 /**
- * Children the skeleton makes so that a new operator prints (an assignment `x` with an empty literal, an aggregate `n`, a read `x.y`):
- * the first real child of the slot replaces them.
+ * The children of a slot that a skeleton made only so that the new operator prints (an assignment `x`, an aggregate `n = count()`, a read `x.y`):
+ * the first real child of the slot replaces them. Which they are is not in the graph (an author's `n = count()` is the same element), so the
+ * caller says: `known` holds the ids the engine named in its skeleton answers (engine 3.19). A child that is not in it is the author's.
  */
-export function placeholderChildren(g: Graph, owner: string, slot: string): string[] {
-  const c = new Catalog(g);
-  return c.children(owner, slot).filter((k) => {
-    const e = g.entity(k);
-    if (!e) return false;
-    const value = c.children(k, "value").map((v) => g.entity(v)).find(Boolean);
-    const emptyLiteral = !!value && value.type === "Literal" && value.props.value?.kind === "text" && value.props.value.value === "";
-    if (e.type === "Assign") return valueText(e.props.target ?? { kind: "text", value: "" }) === "x" && emptyLiteral;
-    if (e.type === "Aggregate") return valueText(e.props.target ?? { kind: "text", value: "" }) === "n" && valueText(e.props.fn ?? { kind: "text", value: "" }) === "count" && c.children(k, "value").length === 0;
-    if (e.type === "FieldRef") return valueText(e.props.path ?? { kind: "text", value: "" }) === "x.y";
-    return false;
-  });
+export function placeholderChildren(g: Graph, owner: string, slot: string, known: ReadonlySet<string>): string[] {
+  if (!known.size) return [];
+  return new Catalog(g).children(owner, slot).filter((k) => known.has(k) && !!g.entity(k));
 }
 
 const nextOrdinal = (c: Catalog, parent: string, slot: string) => c.children(parent, slot).length;
@@ -163,14 +154,14 @@ export function addExprItemEdits(g: Graph, parent: string, slot: string, src: st
 /** The slot of an aggregate that holds its second argument: `last(value, order)` and `weightedMean(value, weight)`. The palette does not describe an aggregate's own slots. */
 export const AGGREGATE_SECOND: Record<string, string> = { last: "order", weightedMean: "weight" };
 
-export function addNamedEdits(g: Graph, op: string, slot: string, childType: string, name: string, src: string, palette: Palette, extra: Record<string, string> = {}): Result<Edit[]> {
+export function addNamedEdits(g: Graph, op: string, slot: string, childType: string, name: string, src: string, palette: Palette, extra: Record<string, string> = {}, placeholders: ReadonlySet<string> = new Set()): Result<Edit[]> {
   if (!nameOk(name)) return no("a name is letters, digits and _");
   if (childType === "Aggregate" && extra.fn) {
     const allowed = aggregateAllowed(palette, extra.fn, g.entity(op)?.type ?? "");
     if (!allowed.ok) return no(allowed.reason);
   }
   const id = `${op}/${slot}:${name}`;
-  if (g.entity(id) && !placeholderChildren(g, op, slot).includes(id)) return no(`${name} already exists in ${slot}`);
+  if (g.entity(id) && !placeholderChildren(g, op, slot, placeholders).includes(id)) return no(`${name} already exists in ${slot}`);
   // a slot whose children hold a path (the carried properties of a lift, the values it keeps) takes a field, not an expression
   const value = slotOf(palette, g.entity(op)?.type ?? "", slot)?.value;
   if (value?.kind === "fieldRef") {
@@ -202,7 +193,7 @@ export function addNamedEdits(g: Graph, op: string, slot: string, childType: str
     built.push(...exprEdits(id, part.slot, 0, expr, false, domains));
   }
   const props = Object.fromEntries(Object.entries({ target: name, ...(extra.fn ? { fn: extra.fn } : {}) }).map(([k, v]) => [k, text(v)]));
-  const old = placeholderChildren(g, op, slot);
+  const old = placeholderChildren(g, op, slot, placeholders);
   const ordered = slotIsOrdered(g, palette, op, slot);
   return ok([...(old.length ? removeEdits(g, old) : []), ent(id, childType, props), contains(op, id, slot, ordered ? nextOrdinal(new Catalog(g), op, slot) - old.length : undefined), ...built]);
 }
@@ -253,10 +244,10 @@ export function setOfTypeEdits(g: Graph, op: string, typeId: string): Result<Edi
   return ok([...old.map((r): Edit => ({ kind: "relationship", id: r.id, before: r, after: null })), rel(op, "ofType", typeId)]);
 }
 
-export function addReadEdits(g: Graph, op: string, path: string, slot = "read"): Result<Edit[]> {
+export function addReadEdits(g: Graph, op: string, path: string, slot = "read", placeholders: ReadonlySet<string> = new Set()): Result<Edit[]> {
   if (!/^[A-Za-z_][\w.]*$/.test(path)) return no("a field path is names separated by dots");
   const c = new Catalog(g);
-  const old = placeholderChildren(g, op, slot);
+  const old = placeholderChildren(g, op, slot, placeholders);
   const n = nextOrdinal(c, op, slot) - old.length;
   const id = `${op}/${slot}:#${n}`;
   return ok([...(old.length ? removeEdits(g, old) : []), ent(id, "FieldRef", { path: text(path) }), contains(op, id, slot, n)]);

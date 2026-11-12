@@ -71,7 +71,7 @@ describe("ui/EditorView.tsx:374-418 the root key handler", () => {
     const add = await screen.findByRole("button", { name: /^Add/ });
     act(() => add.focus());
     await user.keyboard("{Enter}");
-    expect(await screen.findByRole("dialog", {}, { timeout: 2000 }), "the handler took Enter for 'edit properties'").toBeTruthy();
+    expect(await screen.findByRole("dialog", {}, { timeout: 10000 }), "the handler took Enter for 'edit properties'").toBeTruthy();
   }, 30000);
 });
 

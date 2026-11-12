@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import { EditorService } from "../../src/editor/service";
 import { EditorSession } from "../../src/editor/session";
-import { perform } from "../../src/editing/draft";
+import { docOf, perform } from "../../src/editing/draft";
 import { sessionDraft } from "../../src/editing/session-draft";
 import type { Command } from "../../src/state/types";
 
@@ -51,4 +51,35 @@ describe.skipIf(!ENGINE)("the walkthroughs through the gesture layer, on the eng
       console.log(`${w.name}: ${commands.length} commands, preview ${pv.graphs.map((g) => `${g.id} ${g.counts.entities}/${g.counts.relationships} ${String(g.digest).slice(0, 19)}`).join(", ")}`);
     } finally { await svc.discard(session.draft.draft).catch(() => {}); }
   }, 600_000);
+});
+
+describe.skipIf(!ENGINE)("placeholders of the engine's skeleton (engine 3.19)", () => {
+  const P = "d:acme.svc/projection:serviceDeps";
+  it("a new rollup holds a placeholder aggregate; the first real one replaces it, and an author's `n = count()` stays", async () => {
+    const svc = new EditorService(ENGINE!);
+    const session = await EditorSession.open(svc);
+    try {
+      const draft = sessionDraft(session);
+      const agg = (step: string) => docOf(draft, P)!.statements.flatMap((s) => s.steps).find((s) => s.id === step)!.slots.find((s) => s.name === "agg")!;
+      /** done, or the reason it was not, as the failure */
+      const done = async (r: ReturnType<typeof perform>) => { const x = await r; expect(x.ok ? "" : x.error).toBe(""); };
+      const add = (statement: string) => perform(draft, P, { g: "addStep", kind: "Rollup", statement, from: { in: `${P}/op:dependsOn/port:out` } });
+      const entry = (step: string, name: string, fn: string, src: string) => perform(draft, P, { g: "addEntry", step, slot: "agg", childType: "Aggregate", values: { name, fn, src } });
+      await done(add("probeA"));
+      const a = `${P}/op:probeA`;
+      // the engine named the placeholder, the draft knows it, and the author sees an empty slot
+      expect(agg(a).placeholders.length).toBe(1);
+      expect(agg(a).entries).toEqual([]);
+      await done(entry(a, "total", "sum", "flows"));
+      expect(agg(a)).toMatchObject({ placeholders: [] });
+      expect(agg(a).entries.map((e) => e.text)).toEqual(["total = sum(flows)"]);
+      // in a second rollup the author writes what the placeholder is, then another aggregate: both stay
+      await done(add("probeB"));
+      const b = `${P}/op:probeB`;
+      await done(entry(b, "n", "count", ""));
+      await done(entry(b, "total", "sum", "flows"));
+      expect(agg(b).entries.map((e) => e.text).sort()).toEqual(["n = count()", "total = sum(flows)"]);
+      console.log(`placeholders: ${[...draft.placeholders].length} still known after the two rollups (their keys)`);
+    } finally { await svc.discard(session.draft.draft).catch(() => {}); }
+  }, 300_000);
 });

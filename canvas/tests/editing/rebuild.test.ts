@@ -46,12 +46,7 @@ function entryCommand(step: StepDoc, slot: SlotDoc, e: EntryDoc): Command | null
   }
 }
 
-/**
- * The gestures that build `doc` in an empty projection, in the order an author would: row set by row set, first its steps, then
- * what is in them. `skipped` gets what has no gesture.
- * An aggregate `n = count()` is added last in its slot: it is what the engine's skeleton puts there as a placeholder, and the
- * command that adds an entry replaces placeholders, so one added earlier is taken away by the next (editor/commands.ts, placeholderChildren).
- */
+/** The gestures that build `doc` in an empty projection, in the order an author would: row set by row set, first its steps, then what is in them. `skipped` gets what has no gesture. */
 function gesturesOf(doc: ProjectionDoc, skipped: string[]): { label: string; g: Gesture }[] {
   const out: { label: string; g: Gesture }[] = [];
   for (const st of doc.statements) {
@@ -59,7 +54,7 @@ function gesturesOf(doc: ProjectionDoc, skipped: string[]): { label: string; g: 
     for (const s of st.steps) {
       for (const f of s.fields) if (f.value !== "") out.push({ label: `${s.name} ${f.name}`, g: { g: "do", cmd: { t: "param", id: s.id, name: f.name, value: f.value } } });
       for (const r of s.refs) if (r.target) out.push({ label: `${s.name} ${r.rel}`, g: { g: "do", cmd: { t: "ref", id: s.id, rel: r.rel, target: r.target } } });
-      for (const sl of s.slots) for (const e of [...sl.entries].sort((x, y) => Number(x.text === "n = count()") - Number(y.text === "n = count()"))) {
+      for (const sl of s.slots) for (const e of sl.entries) {
         const cmd = entryCommand(s, sl, e);
         if (cmd) out.push({ label: `${s.name} ${sl.name} ${e.text}`, g: { g: "do", cmd } }); else skipped.push(`${s.kind}.${sl.name}: ${e.type}`);
       }

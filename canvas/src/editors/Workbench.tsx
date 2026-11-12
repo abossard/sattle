@@ -2,9 +2,8 @@
 // so a step chosen as a card is the step open as a block.
 import { Tab, TabList, makeStyles, tokens } from "@fluentui/react-components";
 import { useState, type ReactElement } from "react";
-import type { Graph } from "../core/graph";
 import { BlockEditor } from "./BlockEditor";
-import { ExampleEditor } from "./ExampleEditor";
+import { ExampleEditor, type ExampleData } from "./ExampleEditor";
 import { GraphEditor } from "./GraphEditor";
 import type { EditorProps } from "./host";
 import { PipelineEditor, type StepRows } from "./PipelineEditor";
@@ -26,7 +25,7 @@ const useStyles = makeStyles({
 
 export interface WorkbenchProps extends EditorProps {
   /** data graphs the projection reads, by graph input: what the example notation picks from */
-  examples?: Readonly<Record<string, Graph>>;
+  examples?: Readonly<Record<string, ExampleData>>;
   /** rows after a step, when the engine returns them */
   rowsAfter?: (stepId: string) => StepRows | undefined;
   initial?: Notation;

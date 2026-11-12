@@ -2,7 +2,7 @@
 // notations on it, what the draft answered, and the statement kinds when the draft can hold them.
 import { Field, MessageBar, MessageBarBody, Select, makeStyles, tokens } from "@fluentui/react-components";
 import { useMemo, useState, type ReactElement } from "react";
-import type { Graph } from "../core/graph";
+import type { ExampleData } from "./ExampleEditor";
 import type { DraftPort } from "../editing/draft";
 import { useDraft } from "./host";
 import { StatementKinds } from "./StatementKinds";
@@ -17,7 +17,7 @@ const useStyles = makeStyles({
 
 export interface BenchProps {
   draft: DraftPort; projection: string;
-  examples?: Readonly<Record<string, Graph>>;
+  examples?: Readonly<Record<string, ExampleData>>;
   /** show the statement kinds: for a draft that can hold them (editing/statements.ts) */
   kinds?: boolean;
   initial?: Notation;

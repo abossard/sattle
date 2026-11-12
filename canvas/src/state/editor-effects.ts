@@ -9,6 +9,9 @@ import { addBindingEdits, setPortDefaultEdits, addValueRoleEdits, bindParamEdits
 import { paramOf } from "../editor/palette";
 import { EditorService } from "../editor/service";
 import { EditorSession, type Outcome } from "../editor/session";
+import { compose } from "../editing/gestures";
+import { remember } from "../editing/draft";
+import { sessionDraft } from "../editing/session-draft";
 import { runtime } from "./runtime";
 import { ENGINE_URL } from "./sources";
 import type { Action, Command, EditorState, ReleaseDiff, State } from "./types";
@@ -59,7 +62,7 @@ function plan(cmd: Command, s: EditorSession, st: State): { edits: Edit[]; label
     case "param": { const p = paramOf(pal, g.entity(cmd.id)?.type ?? "", cmd.name); if (!p) throw new Error(`${cmd.name} is not a parameter of this element`); return { edits: need(paramEdits(g, cmd.id, p, cmd.value)), label: `set ${cmd.name}` }; }
     case "child": return { edits: need(addParamChildEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.key, cmd.params, pal)), label: `add ${cmd.key}` };
     case "expr": return { edits: need(setExprEdits(g, cmd.id, cmd.slot, cmd.src, pal)), label: `set ${cmd.slot}` };
-    case "named": return { edits: need(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, pal, cmd.extra)), label: `add ${cmd.name}` };
+    case "named": return { edits: need(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, pal, cmd.extra, s.placeholders)), label: `add ${cmd.name}` };
     case "set": return { edits: need(addSetEdits(g, cmd.id, cmd.property, cmd.src, pal, cmd.slot ?? "set")), label: "set property" };
     case "ref": return { edits: need(setRefEdits(g, cmd.id, cmd.rel, cmd.target)), label: `set ${cmd.rel}` };
     case "ofType": return { edits: need(setOfTypeEdits(g, cmd.id, cmd.type)), label: "set type" };
@@ -74,7 +77,7 @@ function plan(cmd: Command, s: EditorSession, st: State): { edits: Edit[]; label
     case "createKey": return { edits: need(setCreateKeyEdits(g, cmd.id, cmd.domain)), label: "set create key" };
     case "governs": return { edits: need(governsEdits(g, cmd.id, cmd.target, cmd.on)), label: cmd.on ? "govern" : "stop governing" };
     case "ruleSet": return { edits: need(addRuleSetEdits(g, cmd.id, cmd.slot, cmd.property, cmd.src, pal)), label: `add ${cmd.slot}` };
-    case "read": return { edits: need(addReadEdits(g, cmd.id, cmd.path, cmd.slot ?? "read")), label: "add read" };
+    case "read": return { edits: need(addReadEdits(g, cmd.id, cmd.path, cmd.slot ?? "read", s.placeholders)), label: "add read" };
     case "exprAdd": return { edits: need(addExprItemEdits(g, cmd.id, cmd.slot, cmd.src, pal)), label: `add to ${cmd.slot}` };
     case "valueRole": return { edits: need(addValueRoleEdits(g, cmd.property, cmd.value, cmd.role, pal)), label: `role of ${cmd.value}` };
     case "setValueRole": return { edits: setValueRoleEdits(g, cmd.id, cmd.role), label: "change role" };
@@ -145,6 +148,17 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
         dispatch({ type: "editor/summary", patch: { committed: `Committed catalog revision ${done.catalogRevision}${done.modules.length ? ` (${done.modules.join(", ")})` : ""}` } });
         return;
       }
+      case "editor/gesture": {
+        // a gesture of one of the notations: composed on a copy of the draft (editing/gestures.ts), sent as one patch, one undo step
+        if (!s || !st) return;
+        dispatch({ type: "editor/summary", patch: { busy: "edit" } });
+        const composed = await compose(s.graph, s.palette, st.editor.projection, a.gesture, sessionDraft(s).skeleton, s.placeholders);
+        if (!composed.ok) { dispatch({ type: "editor/summary", patch: { ...summary(s), notice: composed.reason } }); return; }
+        const applied = composed.value.edits.length ? await s.apply(composed.value.edits, composed.value.label) : null;
+        if (!applied || applied.ok) remember(s.placeholders, composed.value.placeholders);
+        report(applied, composed.value.select.length ? composed.value.select : undefined);
+        return;
+      }
       case "editor/do": {
         if (!s || !st) return;
         const cmd = a.cmd;
@@ -158,7 +172,9 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
             // parameters the palette gives a default (a lift's `within`) start at it, not at the skeleton's placeholder
             const defaults = Object.fromEntries((s.palette.operators.find((o) => o.kind === cmd.kind)?.params ?? []).filter((x) => x.default !== undefined).map((x) => [x.name, x.default!]));
             const p = await s.svc.skeleton(s.draft.draft, cmd.kind, st.editor.projection, name, defaults);
-            report(await s.apply(p.edits, `add ${cmd.kind}`), [`${st.editor.projection}/op:${name}`]);
+            const added = await s.apply(p.edits, `add ${cmd.kind}`);
+            if (added.ok) for (const id of p.placeholders) s.placeholders.add(id); // what the next real entry of a slot replaces
+            report(added, [`${st.editor.projection}/op:${name}`]);
             return;
           }
           case "text": { const head = headGraph(); report(head ? await s.applyText(cmd.module, cmd.text, head) : null); return; }

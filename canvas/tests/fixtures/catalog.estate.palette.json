@@ -1,5 +1,5 @@
 {
- "kernelDigest": "sha256:92d76214083af520627c6e783fdac6c9347c569a4a6032f0407f274381e234b5",
+ "kernelDigest": "sha256:df107fbdf074b95e5bfca837afbc1bf3948b05ebf45f9288c40c3940abe920a1",
  "version": "3",
  "operators": [
   {
@@ -1554,7 +1554,13 @@
      "kind": "rows"
     }
    ],
-   "params": [],
+   "params": [
+    {
+     "name": "nodata",
+     "kind": "Text",
+     "required": false
+    }
+   ],
    "slots": [
     {
      "name": "key",
@@ -1694,6 +1700,15 @@
      "unit": "ns",
      "literal": "<integer><ms|s|m|h>",
      "example": "24h"
+    },
+    {
+     "name": "ttl",
+     "kind": "Integer",
+     "required": false,
+     "quantity": "duration",
+     "unit": "ns",
+     "literal": "<integer><ms|s|m|h>",
+     "example": "24h"
     }
    ],
    "slots": [
@@ -1712,6 +1727,13 @@
          "name": "path",
          "kind": "Text",
          "required": true
+        },
+        {
+         "name": "fill",
+         "kind": "Decimal",
+         "required": false,
+         "quantity": "value",
+         "unit": "unit of the property read"
         }
        ]
       }
@@ -1837,6 +1859,16 @@
      "name": "initial",
      "kind": "Text",
      "required": true
+    },
+    {
+     "name": "nodata",
+     "kind": "Text",
+     "required": false
+    },
+    {
+     "name": "nodataIgnore",
+     "kind": "Boolean",
+     "required": false
     }
    ],
    "slots": [
@@ -3389,6 +3421,13 @@
         "name": "path",
         "kind": "Text",
         "required": true
+       },
+       {
+        "name": "fill",
+        "kind": "Decimal",
+        "required": false,
+        "quantity": "value",
+        "unit": "unit of the property read"
        }
       ]
      }

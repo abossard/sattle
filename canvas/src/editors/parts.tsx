@@ -87,19 +87,19 @@ export function Editing({ spec, done }: { spec: EditSpec; done(g: Gesture | null
 }
 
 /**
- * A row outside a tree (in a card, a block, a panel): its text is a button that opens the row's editor, and a row that can be
- * removed has a button for it. Every change has a click and a key (the buttons), so nothing here needs a drag.
+ * A row outside a tree (in a card, a block, a panel): its text is a button that opens the row's editor (named by the text it
+ * shows, described by what the row is), and a row that can be removed has a button for it. Every change has a click and a key (the buttons), so nothing here needs a drag.
  */
 export function RowLine({ row, busy, onGesture, extra }: { row: Row; busy: boolean; onGesture(g: Gesture): void; /** what a notation adds to the row's actions */ extra?: ReactNode }): ReactElement {
   const s = useParts();
   const [editing, setEditing] = useState(false);
-  const text = rowText(row);
+  const text = rowText(row), shown = row.tokens.map((t) => t.text).join("");
   return (
     <div className={s.line} data-row-id={row.id} data-kind={row.kind}>
       {editing && row.edit
         ? <Editing spec={row.edit} done={(g) => { setEditing(false); if (g) onGesture(g); }} />
         : row.edit
-          ? <Button size="small" appearance="subtle" aria-label={`${text}, edit`} onClick={() => setEditing(true)}><Tokens tokens={row.tokens} /></Button>
+          ? <Button size="small" appearance="subtle" aria-label={`${shown}, edit`} title={text === shown ? undefined : text} onClick={() => setEditing(true)}><Tokens tokens={row.tokens} /></Button>
           : <Tokens tokens={row.tokens} />}
       <span className={s.grow} />
       <Problems list={row.problems} />

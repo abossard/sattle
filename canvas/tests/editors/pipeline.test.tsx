@@ -23,7 +23,7 @@ describe("the pipeline editor", () => {
     const st = docOf(draft, SVC)!.statements.find((s) => !s.sink && s.steps.length > 1)!;
     await user.click(screen.getByRole("tab", { name: new RegExp(`^${st.name}`) }));
     expect(screen.getAllByRole("group", { name: /^Step \d+: / }).length).toBe(st.steps.length);
-    await user.click(screen.getByRole("button", { name: `add a step to ${st.name}, edit` }));
+    await user.click(screen.getByRole("button", { name: "+ step, edit" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "step" }), "filter");
     await waitFor(() => expect(docOf(draft, SVC)!.statements.find((s) => s.name === st.name)!.steps.length).toBe(st.steps.length + 1));
     await waitFor(() => expect(screen.getAllByRole("group", { name: /^Step \d+: / }).length).toBe(st.steps.length + 1));

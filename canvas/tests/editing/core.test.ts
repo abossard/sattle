@@ -135,6 +135,60 @@ describe("moving a step", () => {
   });
 });
 
+describe("placeholders of a skeleton", () => {
+  const P = SVC, rollup = `${P}/op:sums`;
+  const slot = (draft: ReturnType<typeof memoryDraft>, id: string, name: string) => docOf(draft, P)!.statements.flatMap((s) => s.steps).find((s) => s.id === id)!.slots.find((s) => s.name === name)!;
+  const start = async () => {
+    const draft = memoryDraft(copy());
+    expect(await perform(draft, P, { g: "addStep", kind: "Rollup", statement: "sums", from: { in: `${P}/op:depWindows/port:out` } })).toMatchObject({ ok: true });
+    return draft;
+  };
+  const agg = (id: string, name: string, fn: string, src = "") => ({ g: "addEntry" as const, step: id, slot: "agg", childType: "Aggregate", values: { name, fn, src } });
+
+  it("a required slot of a new step holds a placeholder, which is not one of its entries and is known to the draft", async () => {
+    const draft = await start();
+    expect(slot(draft, rollup, "agg")).toMatchObject({ entries: [], placeholders: [`${rollup}/agg:n`] });
+    expect(slot(draft, rollup, "key")).toMatchObject({ entries: [], placeholders: [`${rollup}/key:x`] });
+    expect([...draft.placeholders].sort()).toEqual([`${rollup}/agg:n`, `${rollup}/key:x`]);
+  });
+
+  it("the first real entry of the slot takes its place, and only its place", async () => {
+    const draft = await start();
+    expect(await perform(draft, P, agg(rollup, "total", "sum", "flows"))).toMatchObject({ ok: true });
+    expect(slot(draft, rollup, "agg").entries.map((e) => e.text)).toEqual(["total = sum(flows)"]);
+    expect(draft.graph.entity(`${rollup}/agg:n`)).toBeUndefined();
+    expect([...draft.placeholders]).toEqual([`${rollup}/key:x`]);
+  });
+
+  it("an author's `n = count()` in place of the placeholder `n = count()` is the author's: the next aggregate leaves it", async () => {
+    const draft = await start();
+    expect(await perform(draft, P, agg(rollup, "n", "count"))).toMatchObject({ ok: true });
+    expect(slot(draft, rollup, "agg")).toMatchObject({ placeholders: [] });
+    expect(await perform(draft, P, agg(rollup, "total", "sum", "flows"))).toMatchObject({ ok: true });
+    expect(slot(draft, rollup, "agg").entries.map((e) => e.text).sort()).toEqual(["n = count()", "total = sum(flows)"]);
+  });
+
+  it("an aggregate that only looks like a placeholder is never taken for one", async () => {
+    const draft = memoryDraft(copy());
+    // `backed` ends in a group of the catalog: nothing in it came from a skeleton of this draft
+    const group = `${P}/op:backed`;
+    expect(await perform(draft, P, agg(group, "n", "count"))).toMatchObject({ ok: true });
+    expect(await perform(draft, P, agg(group, "m", "countDistinct", "p"))).toMatchObject({ ok: true });
+    expect(slot(draft, group, "agg").entries.map((e) => e.key).sort()).toEqual(["m", "n", "pods"]);
+  });
+
+  it("a placeholder is known under its new id when its step is renamed with its row set", async () => {
+    const draft = await start();
+    expect(await perform(draft, P, { g: "addStep", kind: "Distinct", statement: "sums" })).toMatchObject({ ok: true });
+    const moved = `${P}/op:sums#0`;
+    expect([...draft.placeholders].sort()).toEqual([`${moved}/agg:n`, `${moved}/key:x`]);
+    expect(await perform(draft, P, agg(moved, "total", "sum", "flows"))).toMatchObject({ ok: true });
+    expect(slot(draft, moved, "agg").entries.map((e) => e.text)).toEqual(["total = sum(flows)"]);
+    expect(await perform(draft, P, { g: "rename", statement: "sums", to: "totals" })).toMatchObject({ ok: true });
+    expect([...draft.placeholders]).toEqual([`${P}/op:totals#0/key:x`]);
+  });
+});
+
 describe("a new statement", () => {
   it("a match from picked elements has a pattern node per element and an edge per relationship", async () => {
     const draft = memoryDraft(copy());

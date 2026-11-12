@@ -41,6 +41,22 @@ export type RefactorRequest =
 
 const throwing = (where: string) => (r: { source: string; where: string; errors: string[] }) => { throw new Error(`${where}: ${r.where}: ${r.errors.join("; ")}`); };
 
+/** The `placeholders` of a skeleton answer as element ids; entries that are not `{ id: { value } }` are left out. */
+export function parsePlaceholders(raw: unknown): string[] {
+  const list = (raw as { placeholders?: unknown } | null)?.placeholders;
+  return (Array.isArray(list) ? list : []).flatMap((x) => { const v = (x as { id?: { value?: unknown } } | null)?.id?.value; return typeof v === "string" && v ? [v] : []; });
+}
+
+/**
+ * A skeleton answer: the patch, checked against the contract schema, and the ids of its placeholders. `placeholders` is the engine's own key beside
+ * the patch (3.19) and the schema allows no extra key, so it is taken off before the check.
+ */
+export function parseSkeleton(raw: unknown): Patch & { placeholders: string[] } {
+  const { placeholders: _taken, ...patch } = (raw ?? {}) as Record<string, unknown>;
+  const p = parsePatch(patch, "skeleton", "skeleton", throwing("skeleton"));
+  return { ...p!, placeholders: parsePlaceholders(raw) };
+}
+
 export class EditorService {
   private readonly base: string;
   constructor(base: string, private readonly f: typeof fetch = (...a) => fetch(...a)) { this.base = new URL(base, globalThis.location?.href ?? "http://localhost/").href.replace(/\/$/, ""); }
@@ -58,10 +74,12 @@ export class EditorService {
     return json;
   }
   async palette(): Promise<Palette> { return parsePalette(await this.call("GET", "/palette")); }
-  /** The patch that creates an operator with its ports and placeholders for required slots, starting at the draft's revision. */
-  async skeleton(draft: string, kind: string, container: string, name: string, params: Record<string, string> = {}): Promise<Patch> {
-    const p = parsePatch(await this.call("POST", `/drafts/${draft}/skeleton`, { kind, container, name, params }), "skeleton", "skeleton", throwing("skeleton"));
-    return p!;
+  /**
+   * The patch that creates an operator with its ports and placeholders for required slots, starting at the draft's revision, and the ids of
+   * those placeholders (engine 3.19): the children the patch creates only so that the operator prints. An engine before 3.19 names none.
+   */
+  async skeleton(draft: string, kind: string, container: string, name: string, params: Record<string, string> = {}): Promise<Patch & { placeholders: string[] }> {
+    return parseSkeleton(await this.call("POST", `/drafts/${draft}/skeleton`, { kind, container, name, params }));
   }
 
   async createDraft(base?: string): Promise<Draft> { const d = (await this.call("POST", "/drafts", base ? { base } : {})) as Draft; return { draft: String(d.draft), baseRevision: String(d.baseRevision), revision: String(d.revision) }; }

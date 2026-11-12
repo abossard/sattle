@@ -27,6 +27,34 @@ it("the catalog holds the projections the editors are meant for", () => {
   for (const k of ["Match", "Filter", "Group", "Map", "Series", "Rollup", "Threshold", "Lift", "EmitEntity", "EmitRelationship"]) expect([...kinds]).toContain(k);
 });
 
+it("a lift is one step with its clauses as entries, as the definition has one statement for it", () => {
+  const doc = docs.get("d:acme.svc/projection:serviceDeps")!;
+  const lift = doc.statements.find((s) => s.name === "dependsOn")!;
+  expect(lift.steps.map((s) => s.kind)).toEqual(["Lift"]);
+  expect(lift.steps[0].inputs.map((i) => `${i.port} from ${i.fromName}`)).toEqual(["edges from master", "map from master"]);
+  expect(lift.steps[0].slots.find((s) => s.name === "state")!.entries.map((e) => e.text)).toEqual(["status of dropRatio above 0.05 enterAfter 3 high degraded below 0.02 exitAfter 3 low ok initial ok"]);
+  expect(lift.readers.sort()).toEqual(["groupOut", "serviceOut"]);
+});
+
+it("a parameter the kernel gained shows in the rows with no change here: an optional one as a place to add it, also on an entry", async () => {
+  const draft = fresh();
+  const find = () => { for (const p of projections) { const doc = docOf(draft, p)!; const step = allSteps(doc).find((s) => s.kind === "Series"); if (step) return { p, doc, step }; } throw new Error("no series in the catalog"); };
+  const { p, step } = find();
+  const row = (id: string) => rowsOf(find().doc, palette, new Catalog(draft.graph)).find((r) => r.id === id)!;
+  /** What typing `value` into the row gives: its edit is a text field. */
+  const typed = (r: ReturnType<typeof row>, value: string) => { if (r.edit?.kind !== "text") throw new Error("not a text edit"); return r.edit.commit(value)!; };
+  // `ttl` of a series and `fill` of a field it reads came with kernel 3.18
+  const ttl = row(`${step.id}#field:ttl`), read = step.slots.find((s) => s.name === "read")!.entries[0];
+  expect([ttl.kind, ttl.label]).toEqual(["hole", "add ttl"]);
+  expect(await perform(draft, p, typed(ttl, "36h"))).toMatchObject({ ok: true });
+  expect(find().step.fields.find((f) => f.name === "ttl")!.value).toBe("36h");
+  const fill = row(`${read.id}#field:fill`);
+  expect([fill.kind, fill.label]).toEqual(["hole", `add fill of ${read.expr}`]);
+  expect(await perform(draft, p, typed(fill, "0"))).toMatchObject({ ok: true });
+  expect(find().step.slots.find((s) => s.name === "read")!.entries[0].text).toBe(`${read.expr} fill 0`);
+  expect(row(`${read.id}#field:fill`).kind).toBe("field");
+});
+
 describe.each(projections)("%s", (id) => {
   const doc = docs.get(id)!;
   it("reads as statements that hold every operator once, each after what it reads", () => {

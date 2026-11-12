@@ -74,7 +74,7 @@ const ways: Record<string, Way> = {
     Editor: BlockEditor, show: none,
     start: async (h, d, name, kind, reads) => {
       await h.click(screen.getByRole("button", { name: kind }));
-      await h.click(screen.getByRole("button", { name: /as a new row set$/ }));
+      await h.click(screen.getByRole("button", { name: / here: a new row set$/ }));
       await waitFor(() => expect(statement(d, "rows1")).toBeTruthy());
       await h.text("stmt:rows1", name);
       await waitFor(() => expect(statement(d, name)).toBeTruthy());
@@ -82,7 +82,7 @@ const ways: Record<string, Way> = {
     },
     append: async (h, d, st, kind) => {
       await h.click(screen.getByRole("button", { name: kind }));
-      await h.click(screen.getByRole("button", { name: `put ${kind} to ${st}, position ${statement(d, st)!.steps.length + 1}` }));
+      await h.click(screen.getByRole("button", { name: `${kind} here: ${st}, position ${statement(d, st)!.steps.length + 1}` }));
     },
   },
   graph: {

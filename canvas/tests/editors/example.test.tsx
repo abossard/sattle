@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { Catalog } from "../../src/core/catalog";
@@ -79,7 +79,7 @@ describe("a pattern from an example", () => {
 });
 
 describe("the example editor", () => {
-  const WithData = (p: EditorProps) => <ExampleEditor {...p} examples={{ [MASTER]: data }} />;
+  const WithData = (p: EditorProps) => <ExampleEditor {...p} examples={{ [MASTER]: { graph: data } }} />;
   const Without = (p: EditorProps) => <ExampleEditor {...p} examples={{}} />;
 
   it("says so when no data is open", () => {
@@ -108,9 +108,22 @@ describe("the example editor", () => {
     expect(within(screen.getByRole("list", { name: "Pattern elements" })).queryAllByRole("listitem")).toEqual([]);
   });
 
+  it("a click on the drawn graph picks the element, and the drawing is taken away with the editor", async () => {
+    const seen: { host: HTMLElement | null; pick: ((id: string) => void) | null; gone: number } = { host: null, pick: null, gone: 0 };
+    const draw = (host: HTMLElement, on: { pick(id: string): void }) => { seen.host = host; seen.pick = on.pick; return () => { seen.gone++; }; };
+    const Drawn = (p: EditorProps) => <ExampleEditor {...p} examples={{ [MASTER]: { graph: data, draw } }} />;
+    const { unmount } = mount(Drawn);
+    expect(screen.getByRole("group", { name: /^The data of master, drawn/ }).contains(seen.host)).toBe(true);
+    act(() => seen.pick!(call.id));
+    expect(within(screen.getByRole("list", { name: "Pattern elements" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual(expect.arrayContaining([expect.stringContaining("(p)-[:Calls]->(p2)")]));
+    expect(await violations()).toEqual([]);
+    unmount();
+    expect(seen.gone).toBe(1);
+  });
+
   it("taking a line out of the pattern takes the pick back", async () => {
     const user = userEvent.setup();
-    const Picked = (p: EditorProps) => <ExampleEditor {...p} examples={{ [MASTER]: data }} picked={[call.id]} />;
+    const Picked = (p: EditorProps) => <ExampleEditor {...p} examples={{ [MASTER]: { graph: data } }} picked={[call.id]} />;
     mount(Picked);
     await user.click(screen.getByRole("button", { name: "remove (p)-[:Calls]->(p2)" }));
     expect(within(screen.getByRole("list", { name: "Pattern elements" })).queryAllByRole("listitem")).toEqual([]);

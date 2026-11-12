@@ -10,7 +10,7 @@ import { statementOf } from "./doc";
 import { plan, type Command } from "./plan";
 import { entryShape } from "./shapes";
 import { addParam, declare, expand } from "./statements";
-import { Work, add, chain, chainIn, drop, fresh, inPort, nameOfOp, opId, outOf, outPort, pieceName, port, relsFrom, relsTo, renameEdits, spec, under, type Skeleton } from "./work";
+import { Work, add, chain, chainIn, drop, fresh, inPort, nameOfOp, opId, outOf, outPort, pieceName, port, relsFrom, relsTo, spec, under, type Skeleton } from "./work";
 
 export type { Skeleton };
 
@@ -39,7 +39,8 @@ export type Gesture =
   /** a match from elements picked on the data: one pattern node per entity, one pattern edge per relationship between them, and a step that keeps the rows `where` holds */
   | { g: "match"; statement: string; graph: string; nodes: { variable: string; type: string }[]; edges: { from: string; to: string; type: string }[]; where?: string };
 
-export interface Composed { edits: Edit[]; label: string; select: string[] }
+/** `placeholders`: every placeholder of the draft after the change (what it knew, less what the change replaced, plus what its skeletons brought): the draft's knowledge once the edits are applied. */
+export interface Composed { edits: Edit[]; label: string; select: string[]; placeholders: string[] }
 
 /** Put an operator at position `at` of a statement and connect it: `make` creates it under the id it is given. Returns that id. */
 async function putIn(w: Work, statement: string, position: number | undefined, s: PaletteOperator, make: (id: string) => Promise<void> | void): Promise<string> {
@@ -49,7 +50,7 @@ async function putIn(w: Work, statement: string, position: number | undefined, s
   const final = Array.from({ length: old.length + 1 }, (_, i) => opId(w.projection, pieceName(statement, i, old.length + 1)));
   const moves = new Map<string, string>();
   old.forEach((o, i) => { const to = final[i < at ? i : i + 1]; if (to !== o) moves.set(o, to); });
-  if (moves.size) w.push(renameEdits(w.g, moves));
+  if (moves.size) w.rename(moves);
   const me = final[at], prev = at > 0 ? final[at - 1] : null, next = at < old.length ? final[at + 1] : null;
   await make(me);
   const myIn = chainIn(s), myOut = outOf(s);
@@ -76,7 +77,9 @@ async function place(w: Work, kind: string, id: string): Promise<void> {
   const s = spec(w.palette, kind);
   if (!s?.supported) throw new Error(s ? `${kind} is not supported: ${s.unsupportedReason ?? ""}` : `unknown operator ${kind}`);
   const defaults = Object.fromEntries(s.params.filter((p) => p.default !== undefined).map((p) => [p.name, p.default!]));
-  w.push(await w.skeleton(kind, w.projection, nameOfOp(id), defaults));
+  const made = await w.skeleton(kind, w.projection, nameOfOp(id), defaults);
+  w.push(made.edits);
+  for (const p of made.placeholders) w.placeholders.add(p);
 }
 
 async function addStep(w: Work, x: Extract<Gesture, { g: "addStep" }>): Promise<void> {
@@ -98,7 +101,7 @@ function takeOut(w: Work, id: string, keepAs: string | null): void {
   const readers = myOut ? [...relsFrom(w.g, myOut), ...relsTo(w.g, myOut)] : [];
   if (keepAs) {
     w.push([...feeding, ...readers].map(drop));
-    w.push(renameEdits(w.g, new Map([[id, keepAs]])));
+    w.rename(new Map([[id, keepAs]]));
   } else {
     const gone: Edit[] = [];
     for (const r of [...w.g.relationships()]) if (under(r.source, id) || under(r.target, id)) gone.push(drop(r));
@@ -109,7 +112,7 @@ function takeOut(w: Work, id: string, keepAs: string | null): void {
   const moves = new Map<string, string>();
   rest.forEach((o, i) => { const to = opId(w.projection, pieceName(statement, i, rest.length)); if (to !== o) moves.set(o, to); });
   const moved = (p: string): string => { for (const [a, b] of moves) if (under(p, a)) return b + p.slice(a.length); return p; };
-  if (moves.size) w.push(renameEdits(w.g, moves));
+  if (moves.size) w.rename(moves);
   // what read the step reads what it read; at the end of a statement, the new end
   const end = rest.length ? outPort(w, opId(w.projection, statement)) : null;
   const feed = feeding.length ? moved(feeding[0].source) : at === old.length - 1 ? end : null;
@@ -125,7 +128,7 @@ async function moveStep(w: Work, id: string, statement: string, at: number | und
   if (!s) throw new Error("no such step");
   const waiting = opId(w.projection, "~moving");
   takeOut(w, id, waiting);
-  w.select = [await putIn(w, statement, at, s, (me) => w.push(renameEdits(w.g, new Map([[waiting, me]]))))];
+  w.select = [await putIn(w, statement, at, s, (me) => w.rename(new Map([[waiting, me]])))];
 }
 
 function connect(w: Work, to: string, from: string | null): void {
@@ -134,7 +137,7 @@ function connect(w: Work, to: string, from: string | null): void {
 }
 
 function run(w: Work, cmd: Command): string {
-  const p = plan(w.g, w.palette, w.projection, cmd);
+  const p = plan(w.g, w.palette, w.projection, cmd, w.placeholders);
   if (!p.ok) throw new Error(p.reason);
   w.push(p.value.edits);
   return p.value.label;
@@ -160,7 +163,7 @@ async function step(w: Work, x: Gesture): Promise<string> {
       if (!/^[A-Za-z_]\w*$/.test(x.to)) throw new Error("a name is letters, digits and _");
       if (chain(w, x.to).length) throw new Error(`${x.to} already exists`);
       const old = chain(w, x.statement);
-      w.push(renameEdits(w.g, new Map(old.map((o, i) => [o, opId(w.projection, pieceName(x.to, i, old.length))]))));
+      w.rename(new Map(old.map((o, i) => [o, opId(w.projection, pieceName(x.to, i, old.length))])));
       return `rename ${x.statement}`;
     }
     case "connect": connect(w, x.to, x.from); return x.from ? "connect" : "disconnect";
@@ -193,11 +196,11 @@ async function step(w: Work, x: Gesture): Promise<string> {
   }
 }
 
-/** The gesture as one list of edits against `g`. `g` is not changed. */
-export async function compose(g: Graph, palette: Palette, projection: string, gesture: Gesture, skeleton: Skeleton): Promise<Result<Composed>> {
-  const w = new Work(Graph.fromSnapshot(g.toSnapshot()), palette, projection, skeleton);
+/** The gesture as one list of edits against `g`. `g` is not changed. `placeholders` are the ones the draft knows. */
+export async function compose(g: Graph, palette: Palette, projection: string, gesture: Gesture, skeleton: Skeleton, placeholders: Iterable<string> = []): Promise<Result<Composed>> {
+  const w = new Work(Graph.fromSnapshot(g.toSnapshot()), palette, projection, skeleton, placeholders);
   try {
     const label = await step(w, gesture);
-    return { ok: true, value: { edits: coalesce(w.edits), label, select: w.select } };
+    return { ok: true, value: { edits: coalesce(w.edits), label, select: w.select, placeholders: [...w.placeholders] } };
   } catch (e) { return { ok: false, reason: (e as Error).message }; }
 }

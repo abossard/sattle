@@ -6,6 +6,7 @@ import type { Rejection } from "../core/validate";
 import type { ConnectionStatus, EngineDiagnostic, TelemetryBatch } from "../source/types";
 import type { IdentityEffect, RefactorRequest, Release } from "../editor/service";
 import type { ProjectionSpec } from "../editor/structures";
+import type { Gesture } from "../editing/gestures";
 
 export type View = "data" | "space" | "editor" | "ontology";
 export type ThemeName = "light" | "dark" | "contrast";
@@ -151,6 +152,8 @@ export type Action =
   | { type: "editor/projection"; module: string; projection: string }
   | { type: "editor/wiring"; from: string | null }
   | { type: "editor/do"; cmd: Command }
+  /** what an author did in one of the notations (editors/Workbench): composed into one patch and one undo step */
+  | { type: "editor/gesture"; gesture: Gesture }
   | { type: "editor/undo" }
   | { type: "editor/redo" }
   | { type: "editor/commit"; version?: string }

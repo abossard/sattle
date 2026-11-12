@@ -11,10 +11,16 @@ import { EngineError, type Applied, type Draft, type EditorService, type Refacto
 
 export const MAX_UNDO = 99;
 
-export interface Step { label: string; edits: Edit[] }
+/** `consumed`: the placeholders this step replaced or changed; undoing the step makes them placeholders again */
+export interface Step { label: string; edits: Edit[]; consumed?: string[] }
 export type Outcome = { ok: true; applied: Applied } | { ok: false; error: string; code?: string; element?: string };
 
 export class EditorSession {
+  /**
+   * The ids of the children that skeletons made only so that a new operator prints (engine 3.19), as far as they are still that: the first real
+   * entry of the slot replaces exactly these. Nothing in the graph says it, so the session remembers; after a reload none are known.
+   */
+  readonly placeholders = new Set<string>();
   readonly undoStack: Step[] = [];
   readonly redoStack: Step[] = [];
   diagnostics: EngineDiagnostic[] = [];
@@ -79,9 +85,22 @@ export class EditorSession {
 
   apply(all: Edit[], label: string): Promise<Outcome> { return this.serial(() => this.applyNow(all, label)); }
   private async applyNow(all: Edit[], label: string): Promise<Outcome> {
+    // a placeholder that an edit removes or changes is no placeholder any more: an element of the same id that comes later is the author's.
+    // Read before the edits are coalesced: an author who writes exactly what the placeholder is (`n = count()`) removes it and creates it
+    // again, which is no change of the graph and still makes the element theirs.
+    const consumed = [...new Set(all.flatMap((e) => (e.kind === "entity" && e.before !== null && this.placeholders.has(e.id) ? [e.id] : [])))];
     const edits = coalesce(all);
+    if (!edits.length && consumed.length) {
+      for (const id of consumed) this.placeholders.delete(id);
+      return { ok: true, applied: { revision: this.revision, ok: this.ok, diagnostics: this.diagnostics, modules: {} } };
+    }
     const r = await this.send(edits);
-    if (r.ok) { this.undoStack.push({ label, edits }); if (this.undoStack.length > MAX_UNDO) this.undoStack.shift(); this.redoStack.length = 0; }
+    if (r.ok) {
+      for (const id of consumed) this.placeholders.delete(id);
+      this.undoStack.push({ label, edits, ...(consumed.length ? { consumed } : {}) });
+      if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
+      this.redoStack.length = 0;
+    }
     return r;
   }
   undo(): Promise<Outcome | null> { return this.serial(() => this.undoNow()); }
@@ -89,7 +108,7 @@ export class EditorSession {
     const step = this.undoStack[this.undoStack.length - 1];
     if (!step) return null;
     const r = await this.send(invertEdits(step.edits));
-    if (r.ok) { this.undoStack.pop(); this.redoStack.push(step); }
+    if (r.ok) { this.undoStack.pop(); this.redoStack.push(step); for (const id of step.consumed ?? []) this.placeholders.add(id); }
     return r;
   }
   redo(): Promise<Outcome | null> { return this.serial(() => this.redoNow()); }
@@ -97,7 +116,7 @@ export class EditorSession {
     const step = this.redoStack[this.redoStack.length - 1];
     if (!step) return null;
     const r = await this.send(step.edits);
-    if (r.ok) { this.redoStack.pop(); this.undoStack.push(step); }
+    if (r.ok) { this.redoStack.pop(); this.undoStack.push(step); for (const id of step.consumed ?? []) this.placeholders.delete(id); }
     return r;
   }
 

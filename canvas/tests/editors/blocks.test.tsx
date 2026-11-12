@@ -59,11 +59,11 @@ describe("the block editor", () => {
     screen.getByRole("button", { name: "filter" }).focus();
     await user.keyboard("{Enter}");
     expect(screen.getAllByRole("status").some((x) => /Holding filter/.test(x.textContent ?? ""))).toBe(true);
-    screen.getByRole("button", { name: `put filter to ${st.name}, position 2` }).focus();
+    screen.getByRole("button", { name: `filter here: ${st.name}, position 2` }).focus();
     await user.keyboard("{Enter}");
     await waitFor(() => expect(steps(draft, st.name).map((s) => s.kind)).toEqual([st.steps[0].kind, "Filter", ...st.steps.slice(1).map((s) => s.kind)]));
     expect(draft.log.length).toBe(1);
-    expect(screen.queryByRole("button", { name: /^put / })).toBeNull();
+    expect(screen.queryByRole("button", { name: / here: / })).toBeNull();
     await waitFor(() => expect(document.activeElement?.getAttribute("aria-label")).toBe(`move filter, step 2 of ${st.name}`));
     expect(await violations()).toEqual([]);
   });
@@ -88,12 +88,12 @@ describe("the block editor", () => {
     const st = long(draft);
     const move = screen.getByRole("button", { name: new RegExp(`^move .*, step ${st.steps.length} of ${st.name}$`) });
     await user.click(move);
-    expect(screen.getAllByRole("button", { name: /^put / }).length).toBeGreaterThan(1);
+    expect(screen.getAllByRole("button", { name: / here: / }).length).toBeGreaterThan(1);
     await user.keyboard("{Escape}");
-    expect(screen.queryByRole("button", { name: /^put / })).toBeNull();
+    expect(screen.queryByRole("button", { name: / here: / })).toBeNull();
     expect(draft.log.length).toBe(0);
     await user.click(screen.getByRole("button", { name: new RegExp(`^move .*, step ${st.steps.length} of ${st.name}$`) }));
-    await user.click(screen.getByRole("button", { name: /as a new row set$/ }));
+    await user.click(screen.getByRole("button", { name: / here: a new row set$/ }));
     await waitFor(() => expect(steps(draft, "rows1").map((s) => s.kind)).toEqual([st.steps[st.steps.length - 1].kind]));
     expect(steps(draft, st.name).length).toBe(st.steps.length - 1);
   });
@@ -102,7 +102,7 @@ describe("the block editor", () => {
     const { draft } = mount(BlockEditor);
     const st = long(draft);
     fireEvent.dragStart(screen.getByRole("button", { name: "distinct" }));
-    fireEvent.drop(await screen.findByRole("button", { name: `put distinct to ${st.name}, position ${st.steps.length + 1}` }));
+    fireEvent.drop(await screen.findByRole("button", { name: `distinct here: ${st.name}, position ${st.steps.length + 1}` }));
     await waitFor(() => expect(steps(draft, st.name).at(-1)!.kind).toBe("Distinct"));
   });
 });

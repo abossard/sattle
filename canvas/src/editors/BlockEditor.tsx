@@ -25,7 +25,6 @@ export function places(doc: ProjectionDoc, palette: Palette, held: Held): Place[
   const spec = (kind: string) => palette.operators.find((o) => o.kind === kind);
   const continues = (kind: string) => !!spec(kind)?.ports.some((p) => p.direction === "in" && p.kind === "rows");
   const sink = !spec(held.kind)?.ports.some((p) => p.direction === "out");
-  const word = kindWord(held.kind);
   const put = (statement: string, at: number | undefined): Gesture => (held.step ? { g: "moveStep", id: held.step.id, statement, at } : { g: "addStep", kind: held.kind, statement, at });
   const out: Place[] = [];
   if (continues(held.kind) && !sink) for (const st of doc.statements) {
@@ -34,11 +33,11 @@ export function places(doc: ProjectionDoc, palette: Palette, held: Held): Place[
     for (let gap = 0; gap <= st.steps.length; gap++) {
       // before a step that reads no rows nothing can stand; the gaps around the held step are where it is
       if ((gap === 0 && !continues(st.steps[0].kind)) || (own >= 0 && (gap === own || gap === own + 1))) continue;
-      out.push({ statement: st.name, gap, label: `${word} to ${st.name}, position ${gap + 1}`, gesture: put(st.name, own >= 0 && gap > own ? gap - 1 : gap) });
+      out.push({ statement: st.name, gap, label: `${st.name}, position ${gap + 1}`, gesture: put(st.name, own >= 0 && gap > own ? gap - 1 : gap) });
     }
   }
   const alone = held.step && doc.statements.find((s) => s.name === held.step!.statement)?.steps.length === 1;
-  if (!alone) out.push({ statement: null, gap: 0, label: `${word} as a new ${sink ? "sink" : "row set"}`, gesture: put(freeName(doc, sink), undefined) });
+  if (!alone) out.push({ statement: null, gap: 0, label: `a new ${sink ? "sink" : "row set"}`, gesture: put(freeName(doc, sink), undefined) });
   return out;
 }
 
@@ -94,7 +93,7 @@ export function BlockEditor(p: BlockProps): ReactElement {
   const target = (statement: string | null, gap: number): ReactElement | null => {
     const pl = open.find((x) => x.statement === statement && x.gap === gap);
     if (!pl) return null;
-    return <Button key={`put:${statement}:${gap}`} className={s.place} size="small" appearance="outline" aria-label={`put ${pl.label}`} onClick={() => { follow.current = true; put(pl); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); put(pl); }}>{kindWord(held!.kind)} here</Button>;
+    return <Button key={`put:${statement}:${gap}`} className={s.place} size="small" appearance="outline" aria-label={`${kindWord(held!.kind)} here: ${pl.label}`} onClick={() => { follow.current = true; put(pl); }} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); put(pl); }}>{kindWord(held!.kind)} here</Button>;
   };
   const byOne = (e: KeyboardEvent, h: Held) => {
     if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;

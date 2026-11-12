@@ -44,10 +44,10 @@ describe("statement kinds in the editor", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "Document" }), "serviceDeps");
     await user.click(screen.getByRole("tab", { name: "Blocks" }));
     await user.click(await screen.findByRole("button", { name: "pairs" }));
-    await user.click(screen.getByRole("button", { name: "put pairs as a new row set" }));
+    await user.click(screen.getByRole("button", { name: "pairs here: a new row set" }));
     await waitFor(() => expect(steps(draft, "rows1").map((s) => s.kind)).toEqual(["pairs"]));
     const use = within(screen.getByRole("group", { name: "row set rows1" }));
-    await user.click(use.getByRole("button", { name: "add keep, edit" }));
+    await user.click(use.getByRole("button", { name: "+ keep, edit" }));
     await user.type(use.getByRole("textbox", { name: "keep" }), "s == t{Enter}");
     await waitFor(() => expect(steps(inner, "rows1").map((s) => `${s.kind} ${s.slots.find((x) => x.name === "predicate")?.entries[0]?.expr ?? ""}`.trim())).toEqual(["Match", "Filter s == t"]));
     expect(await violations()).toEqual([]);

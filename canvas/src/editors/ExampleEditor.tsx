@@ -3,7 +3,7 @@
 // and a property becomes a condition only when the author asks for it. Nothing is written until the pattern is added as a row set.
 import { Button, Caption1, Checkbox, Field, Input, MessageBar, MessageBarBody, Select, Subtitle2, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { Dismiss16Regular } from "@fluentui/react-icons";
-import { useMemo, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import type { Graph } from "../core/graph";
 import { around, conditions, edgeText, generalise, matchGesture, nodeText } from "../editing/example";
 import { freeName } from "../editing/scope";
@@ -16,12 +16,18 @@ const useStyles = makeStyles({
   list: { display: "flex", flexDirection: "column", margin: 0, padding: 0, listStyleType: "none" },
   row: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, minHeight: "28px" },
   grow: { flexGrow: 1 },
+  canvas: { height: "300px", flexShrink: 0, borderRadius: tokens.borderRadiusMedium, border: `1px solid ${tokens.colorNeutralStroke2}`, overflow: "hidden", position: "relative" },
   bar: { display: "flex", alignItems: "flex-end", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap" },
 });
 
+/** Draws a data graph into `host` and reports the element an author clicks. Returns how to take the drawing away, or null when it cannot draw. */
+export type Drawing = (host: HTMLElement, on: { pick(id: string): void }) => (() => void) | null;
+/** A data graph an example is picked from. With `draw` the author picks on the drawn graph; the list does the same without a pointer. */
+export interface ExampleData { graph: Graph; draw?: Drawing }
+
 export interface ExampleProps extends EditorProps {
   /** the data graphs the projection reads, by the id of the graph input they are bound to */
-  examples: Readonly<Record<string, Graph>>;
+  examples: Readonly<Record<string, ExampleData>>;
   /** elements the author picked elsewhere (on the data canvas) */
   picked?: readonly string[];
 }
@@ -34,8 +40,23 @@ export function ExampleEditor(p: ExampleProps): ReactElement {
   const inputs = p.doc.inputs.filter((i) => i.kind === "graph" && p.examples[i.id]);
   const [inputId, setInputId] = useState("");
   const input = inputs.find((i) => i.id === inputId) ?? inputs[0];
-  const data = input && p.examples[input.id];
+  const source = input && p.examples[input.id];
+  const data = source?.graph;
   const [picked, setPicked] = useState<readonly string[]>(p.picked ?? []);
+  const pick = useCallback((...ids: string[]) => setPicked((cur) => [...cur, ...ids.filter((id) => !cur.includes(id))]), []);
+  // the drawn graph, when the host can draw one: a click on an element picks it
+  const canvas = useRef<HTMLDivElement>(null);
+  const draw = source?.draw;
+  const [drawn, setDrawn] = useState(false);
+  useEffect(() => {
+    if (!canvas.current || !draw) return setDrawn(false);
+    const el = document.createElement("div");
+    el.style.height = "100%";
+    canvas.current.replaceChildren(el);
+    const off = draw(el, { pick });
+    setDrawn(!!off);
+    return () => { off?.(); };
+  }, [draw, pick]);
   const [query, setQuery] = useState("");
   const [where, setWhere] = useState<readonly string[]>([]);
   const [name, setName] = useState("");
@@ -56,7 +77,6 @@ export function ExampleEditor(p: ExampleProps): ReactElement {
   }, [data, query, picked]);
 
   if (!data || !input || !pattern) return <MessageBar intent="info"><MessageBarBody>No data is open for a graph this projection reads, so there is nothing to pick an example from.</MessageBarBody></MessageBar>;
-  const pick = (...ids: string[]) => setPicked((cur) => [...cur, ...ids.filter((id) => !cur.includes(id))]);
   const unpick = (...ids: string[]) => { setPicked((cur) => cur.filter((id) => !ids.includes(id))); setWhere([]); };
   const offered = conditions(pattern).filter((c) => !where.includes(c.text));
   const statement = name || freeName(p.doc, false);
@@ -72,6 +92,7 @@ export function ExampleEditor(p: ExampleProps): ReactElement {
           {inputs.length > 1 && <Field label="Graph" size="small"><Select size="small" value={input.id} onChange={(_, d) => { setInputId(d.value); setPicked([]); setWhere([]); }}>{inputs.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}</Select></Field>}
           <Field label={`Find in ${input.name}`} size="small" className={s.grow}><Input size="small" value={query} onChange={(_, d) => setQuery(d.value)} placeholder="type or name" /></Field>
         </div>
+        {draw && <div ref={canvas} className={s.canvas} role="group" aria-label={`The data of ${input.name}, drawn: a click on an element picks it. The lists below pick without a pointer.`} hidden={!drawn} />}
         {next.length > 0 && <>
           <Subtitle2 as="h3">Next to the example</Subtitle2>
           <ul className={s.list} aria-label="Next to the example">

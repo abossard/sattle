@@ -19,7 +19,7 @@ import type { EngineDiagnostic } from "../source/types";
 import { statementOf } from "./doc";
 import type { DraftPort } from "./draft";
 import { exprText } from "./exprtext";
-import { Work, chain, drop, nameOfOp, opId, outOf, pieceName, port, renameEdits, spec, under, type Skeleton } from "./work";
+import { Work, chain, drop, nameOfOp, opId, outOf, pieceName, port, spec, under, type Skeleton } from "./work";
 
 export const DECL = "StatementDecl", PARAM = "ParamDecl", RESULT = "result", ROLE = "statement";
 
@@ -148,7 +148,7 @@ export function expand(w: Work, use: string): string[] {
   const renamed = new Map<string, string>();
   mine.filter((o) => o !== use).forEach((o, i) => { const to = opId(P, pieceName(S, i < at ? i : i + result.length, n)); if (to !== o) renamed.set(o, to); });
   const now = (id: string): string => { for (const [a, b] of renamed) if (under(id, a)) return b + id.slice(a.length); return id; };
-  if (renamed.size) w.push(renameEdits(w.g, renamed));
+  if (renamed.size) w.rename(renamed);
   // the steps of the template: `result` in the row set, any other row set of it under the name of the use
   const moves = new Map<string, string>([...result.map((o, i) => [o, opId(P, pieceName(S, at + i, n))] as const), ...others.map((o) => [o, opId(P, `${S}__${nameOfOp(o)}`)] as const)]);
   w.push(copyEdits(w.g, moves, (r, target) => {
@@ -222,11 +222,12 @@ export function diffEdits(a: Graph, b: Graph): Edit[] {
 export function withStatements(inner: DraftPort): DraftPort & { lowered(): Graph } {
   const graph = Graph.fromSnapshot(inner.graph.toSnapshot());
   graph.version = inner.graph.version;
+  const placeholders = new Set(inner.placeholders);
   let palette = inner.palette, from = new Map<string, string>(), stale = false;
   const refresh = () => { if (stale) { palette = paletteWith(inner.palette, new Catalog(graph)); stale = false; } };
   const patch = (g: Graph, edits: Edit[]) => { const v = g.version ?? { tenant: "", graph: "catalog", revision: "0" }; return g.apply({ from: v, to: { ...v, revision: String(Number(v.revision) + 1) }, projection: "catalog", profile: "extensionalFinite", edits, cause: { inputs: [], configurationVersion: "0" } }); };
   return {
-    graph,
+    graph, placeholders,
     get palette(): Palette { refresh(); return palette; },
     /** diagnostics of an expansion are reported at the use it came from */
     get diagnostics(): EngineDiagnostic[] { return inner.diagnostics.map((d) => { for (const [op, use] of from) if (under(d.focus, op)) return { ...d, focus: use }; return d; }); },
@@ -235,7 +236,7 @@ export function withStatements(inner: DraftPort): DraftPort & { lowered(): Graph
       const s = palette.operators.find((o) => o.kind === kind);
       if (s?.role !== ROLE) return inner.skeleton(kind, container, name, params);
       const id = opId(container, name);
-      return [ent(id, kind, { name: text(name) }), contains(container, id, "op"), ...s.ports.flatMap((p) => portEdits(id, p.name, p.direction, p.kind))];
+      return { edits: [ent(id, kind, { name: text(name) }), contains(container, id, "op"), ...s.ports.flatMap((p) => portEdits(id, p.name, p.direction, p.kind))], placeholders: [] };
     },
     async apply(edits, label) {
       const next = Graph.fromSnapshot(graph.toSnapshot());
@@ -248,6 +249,7 @@ export function withStatements(inner: DraftPort): DraftPort & { lowered(): Graph
       const sent = diff.length ? await inner.apply(diff, label) : { ok: true as const };
       if (!sent.ok) return sent;
       patch(graph, edits);
+      for (const e of edits) if (e.kind === "entity" && e.before !== null) placeholders.delete(e.id);
       from = low.from; stale = true;
       return { ok: true };
     },

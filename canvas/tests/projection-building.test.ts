@@ -106,9 +106,13 @@ describe("children an operator needs to print are replaced, not added to", () =>
     functions: [], aggregates: [{ name: "count", supported: true }, { name: "last", supported: true }],
   });
   const g = build(ent(P, "Projection"), ent(`${P}/op:g`, "Group", { name: text("g") }), contains(P, `${P}/op:g`, "op"), ent(`${P}/op:g/key:x`, "Assign", { target: text("x") }), contains(`${P}/op:g`, `${P}/op:g/key:x`, "key"), ent(`${P}/op:g/key:x/value:#0`, "Literal", { kind: text("text"), value: text("") }), contains(`${P}/op:g/key:x`, `${P}/op:g/key:x/value:#0`, "value"));
-  it("the first key replaces the skeleton's placeholder `x`", () => {
-    const r = addNamedEdits(g, `${P}/op:g`, "key", "Assign", "c", "r.id", palette);
+  it("the first key replaces the skeleton's placeholder `x` (the engine named it in its skeleton answer)", () => {
+    const r = addNamedEdits(g, `${P}/op:g`, "key", "Assign", "c", "r.id", palette, {}, new Set([`${P}/op:g/key:x`]));
     expect(r.ok && r.value.some((e) => e.kind === "entity" && e.before?.id === `${P}/op:g/key:x` && e.after === null)).toBe(true);
+  });
+  it("a child that looks like a placeholder and was not named as one is the author's: it stays", () => {
+    const r = addNamedEdits(g, `${P}/op:g`, "key", "Assign", "c", "r.id", palette);
+    expect(r.ok && r.value.some((e) => e.kind === "entity" && e.after === null)).toBe(false);
   });
   it.each([["count", ""], ["last", "t"]])("an aggregate %s with its second argument %j is built", (fn, second) => {
     const r = addNamedEdits(g, `${P}/op:g`, "agg", "Aggregate", "n", fn === "count" ? "" : "r.v", palette, { fn, second });

@@ -18,8 +18,14 @@ export interface Planned { edits: Edit[]; label: string }
 const ok = (edits: Edit[], label: string): Result<Planned> => ({ ok: true, value: { edits, label } });
 const from = (r: Result<Edit[]>, label: string): Result<Planned> => (r.ok ? ok(r.value, label) : r);
 
-/** The edits of one command against `g`, or the reason it cannot be done. Commands that need the engine (a new operator, text, refactoring) are not planned here. */
-export function plan(g: Graph, palette: Palette, projection: string, cmd: Command): Result<Planned> {
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * The edits of one command against `g`, or the reason it cannot be done. Commands that need the engine (a new operator, text,
+ * refactoring) are not planned here. `placeholders` are the children a skeleton made only so that an operator prints: the first
+ * real entry of their slot replaces them, and nothing else is ever taken for one.
+ */
+export function plan(g: Graph, palette: Palette, projection: string, cmd: Command, placeholders: ReadonlySet<string> = NONE): Result<Planned> {
   switch (cmd.t) {
     case "delete": return ok(removeEdits(g, cmd.ids), `delete ${cmd.ids.length} element${cmd.ids.length === 1 ? "" : "s"}`);
     case "wire": { const can = canWire(g, cmd.from, cmd.to); return can.ok ? ok(wireEdits(cmd.from, cmd.to), "connect") : can; }
@@ -31,11 +37,11 @@ export function plan(g: Graph, palette: Palette, projection: string, cmd: Comman
     case "child": return from(addParamChildEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.key, cmd.params, palette), `add ${cmd.key}`);
     case "expr": return from(setExprEdits(g, cmd.id, cmd.slot, cmd.src, palette), `set ${cmd.slot}`);
     case "exprAdd": return from(addExprItemEdits(g, cmd.id, cmd.slot, cmd.src, palette), `add to ${cmd.slot}`);
-    case "named": return from(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, palette, cmd.extra), `add ${cmd.name}`);
+    case "named": return from(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, palette, cmd.extra, placeholders), `add ${cmd.name}`);
     case "set": return from(addSetEdits(g, cmd.id, cmd.property, cmd.src, palette, cmd.slot ?? "set"), "set property");
     case "ref": return from(setRefEdits(g, cmd.id, cmd.rel, cmd.target), `set ${cmd.rel}`);
     case "ofType": return from(setOfTypeEdits(g, cmd.id, cmd.type), "set type");
-    case "read": return from(addReadEdits(g, cmd.id, cmd.path, cmd.slot ?? "read"), "add read");
+    case "read": return from(addReadEdits(g, cmd.id, cmd.path, cmd.slot ?? "read", placeholders), "add read");
     case "valuesRow": return from(addValuesRowEdits(g, cmd.id, cmd.cells, palette), "add row");
     case "patternNode": return from(addPatternNodeEdits(g, cmd.id, cmd.variable, cmd.type), `add node ${cmd.variable}`);
     case "patternEdge": return from(addPatternEdgeEdits(g, cmd.id, cmd.variable, cmd.from, cmd.to, cmd.type), "add edge");

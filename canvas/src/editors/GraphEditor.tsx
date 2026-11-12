@@ -8,7 +8,7 @@ import { stepHolding } from "../editing/doc";
 import { freeName, upstream } from "../editing/scope";
 import type { EditorProps } from "./host";
 import { CARD_W, inView, layoutOf, neighbour, type Card, type CardPort, type Rect } from "./graph-layout";
-import { RowLine } from "./parts";
+import { RowLine, useParts } from "./parts";
 import { kindWord, rowText, rowsOf, type Row } from "./rows";
 import { StepCard } from "./StepCard";
 import { useViewSize } from "./view-size";
@@ -45,7 +45,7 @@ const what = (c: Card): string => c.statement ?? c.name;
 const snap = (n: number): number => Math.floor(n / STEP) * STEP;
 
 export function GraphEditor(p: GraphProps): ReactElement {
-  const s = useStyles();
+  const s = useStyles(), parts = useParts();
   const scroller = useRef<HTMLDivElement>(null);
   const [from, setFrom] = useState<string | null>(null);
   const [at, setAt] = useState({ left: 0, top: 0 });
@@ -123,9 +123,9 @@ export function GraphEditor(p: GraphProps): ReactElement {
           </svg>
           {shown.cards.map((c) => (
             <div key={c.id} className={mergeClasses(s.card, c.id === current && s.on)} style={{ left: c.x, top: c.y, width: c.w, height: c.h }} role="group" aria-label={`${c.title} ${c.name}`}>
-              <Button className={s.head} size="small" appearance="transparent" data-card={c.id} tabIndex={c.id === (current ?? first) ? 0 : -1} aria-pressed={c.id === current} aria-label={`${c.title} ${c.name}${c.problems ? `, ${c.problems} to fix` : ""}`} onClick={() => p.onSelect(c.id)}>
-                <span className={s.kind}>{c.title}</span><span>{c.name}</span>
-                {c.problems > 0 && <Badge size="small" appearance="outline" color="danger"><span aria-hidden="true">! </span>{c.problems}</Badge>}
+              <Button className={s.head} size="small" appearance="transparent" data-card={c.id} tabIndex={c.id === (current ?? first) ? 0 : -1} aria-pressed={c.id === current} onClick={() => p.onSelect(c.id)}>
+                <span className={s.kind}>{c.title}</span>{" "}<span>{c.name}</span>
+                {c.problems > 0 && <>{" "}<Badge size="small" appearance="outline" color="danger">! {c.problems}<span className={parts.only}> to fix</span></Badge></>}
               </Button>
               <div className={s.lines}>
                 {c.lines.map((l, i) => <div key={i} className={s.line} title={l}>{l}</div>)}

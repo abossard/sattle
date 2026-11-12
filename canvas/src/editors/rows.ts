@@ -41,10 +41,12 @@ export const rowText = (r: Row): string => r.label ?? r.tokens.map((t) => t.text
 
 interface Ctx { doc: ProjectionDoc; palette: Palette; cat: Catalog }
 
-function fieldRows(c: Ctx, owner: { id: string; fields: StepDoc["fields"] }, parent: string, level: number): Row[] {
-  return owner.fields.filter((f) => f.value !== "" || f.required).map((f): Row => ({
-    id: `${owner.id}#field:${f.name}`, parent, level, kind: "field", element: owner.id, hasChildren: false,
-    tokens: [pl(`${f.name}: `), f.value === "" ? hole("…") : val(f.value)], problems: f.value === "" ? [`${f.name} is needed`] : [],
+/** A row per parameter: its value, a hole that says it is needed, or for an optional one that is not set a place to add it. `of` says whose parameter it is when that is not the step. */
+function fieldRows(c: Ctx, owner: { id: string; fields: StepDoc["fields"] }, parent: string, level: number, of = ""): Row[] {
+  return owner.fields.map((f): Row => ({
+    id: `${owner.id}#field:${f.name}`, parent, level, kind: f.value === "" && !f.required ? "hole" : "field", element: owner.id, hasChildren: false,
+    tokens: f.value === "" && !f.required ? [hole(`+ ${f.name}${of && ` of ${of}`}`)] : [pl(`${of && `${of} `}${f.name}: `), f.value === "" ? hole("…") : val(f.value)],
+    label: f.value === "" && !f.required ? `add ${f.name}${of && ` of ${of}`}` : undefined, problems: f.value === "" && f.required ? [`${f.name} is needed`] : [],
     edit: f.values
       ? { kind: "choice", label: f.name, value: f.value, options: f.values.map((v) => ({ value: v, label: v })), commit: (v) => (v === f.value ? null : { g: "do", cmd: { t: "param", id: owner.id, name: f.name, value: v } }) }
       : { kind: "text", label: f.name, value: f.value, commit: (v) => (v.trim() === f.value ? null : { g: "do", cmd: { t: "param", id: owner.id, name: f.name, value: v.trim() } }) },
@@ -64,7 +66,7 @@ function entryRow(c: Ctx, step: StepDoc, slot: SlotDoc, e: EntryDoc, parent: str
   const eq = text.indexOf(" = ");
   return {
     id: e.id, parent, level, kind: "entry", element: e.id, hasChildren: false, problems: [],
-    tokens: [pl(`${slot.name}: `), ...(e.expr !== null || eq < 0 ? [val(text)] : [nm(text.slice(0, eq)), pl(" = "), val(text.slice(eq + 3))])],
+    tokens: [pl(`${slot.name}: `), ...(e.expr !== null ? [val(e.expr)] : eq < 0 ? [val(text)] : [nm(text.slice(0, eq)), pl(" = "), val(text.slice(eq + 3))])],
     edit, remove: single && slot.multiplicity === "1" ? undefined : { g: "do", cmd: { t: "delete", ids: [e.id] } },
   };
 }
@@ -119,7 +121,11 @@ function stepRows(c: Ctx, st: StatementDoc, step: StepDoc, index: number, parent
   }
   rows.push(...fieldRows(c, step, step.id, inner));
   for (const slot of step.slots) {
-    for (const e of slot.entries) rows.push(entryRow(c, step, slot, e, step.id, inner));
+    for (const e of slot.entries) {
+      rows.push(entryRow(c, step, slot, e, step.id, inner));
+      // what an expression entry has besides its text (the `fill` of a field a series reads)
+      if (e.expr !== null) rows.push(...fieldRows(c, e, step.id, inner, e.expr));
+    }
     const h = holeRow(c, step, slot, step.id, inner);
     if (h) rows.push(h);
   }
@@ -147,12 +153,12 @@ export function rowsOf(doc: ProjectionDoc, palette: Palette, cat: Catalog, open:
     if (!shown(sid)) continue;
     st.steps.forEach((step, i) => { const rs = stepRows(c, st, step, i, sid, 2); rows.push(...(shown(step.id) ? rs : rs.slice(0, 1))); });
     if (!st.sink) rows.push({
-      id: `${sid}#add`, parent: sid, level: 2, kind: "addStep", hasChildren: false, problems: [], tokens: [hole("|> …")], label: `add a step to ${st.name}`,
+      id: `${sid}#add`, parent: sid, level: 2, kind: "addStep", hasChildren: false, problems: [], tokens: [hole("+ step")], label: `add a step to ${st.name}`,
       edit: { kind: "choice", label: "step", value: "", options: stepKinds(palette, "next"), commit: (v) => (v ? { g: "addStep", kind: v, statement: st.name } : null) },
     });
   }
   rows.push({
-    id: "#new", parent: null, level: 1, kind: "addStatement", hasChildren: false, problems: [], tokens: [hole("let …")], label: "add a statement",
+    id: "#new", parent: null, level: 1, kind: "addStatement", hasChildren: false, problems: [], tokens: [hole("+ row set")], label: "add a row set",
     edit: {
       kind: "form", label: "new statement",
       fields: [{ key: "name", label: "name", kind: "name" }, { key: "kind", label: "starts with", kind: "choice", options: stepKinds(palette, "head") }],

@@ -25,7 +25,8 @@ export interface EntryDoc {
   /** one line for a card, a block or a cell: `key = expr`, `(a: Type)` */
   text: string;
 }
-export interface SlotDoc { name: string; children: string[]; multiplicity: string; ordered: boolean; value?: PaletteSlotValue; entries: EntryDoc[] }
+/** `entries` are what the author put in the slot. `placeholders` are children a skeleton put there only so that the operator prints: the slot is still to be filled, and they are not shown as entries. */
+export interface SlotDoc { name: string; children: string[]; multiplicity: string; ordered: boolean; value?: PaletteSlotValue; entries: EntryDoc[]; placeholders: string[] }
 /** Where an input port of a step gets its rows or its graph from. */
 export interface InputDoc {
   port: string; portId: string; kind: string;
@@ -85,8 +86,12 @@ function entryRefs(cat: Catalog, out: Out, id: string): RefDoc[] {
 
 function entry(cat: Catalog, out: Out, slot: PaletteSlot | undefined, id: string): EntryDoc {
   const type = cat.typeOf(id);
-  if (EXPR_TYPES.has(type)) { const expr = exprText(cat, id); return { id, type, key: "", expr, fields: [], refs: [], parts: [], text: expr }; }
   const params = slot?.childTypes?.find((c) => c.type === type)?.params ?? [];
+  if (EXPR_TYPES.has(type)) {
+    // an expression is its text; what the palette gives it besides (the `fill` of a field a series reads) are fields said after it
+    const expr = exprText(cat, id), more = fields(cat, id, params.filter((p) => p.name !== "path"));
+    return { id, type, key: "", expr, fields: more, refs: [], parts: [], text: [expr, ...more.filter((f) => f.value).map((f) => `${f.name} ${f.value}`)].join(" ") };
+  }
   const fs = fields(cat, id, params);
   const refs = entryRefs(cat, out, id);
   const bySlot = new Map<string, EntryDoc[]>();
@@ -98,7 +103,8 @@ function entry(cat: Catalog, out: Out, slot: PaletteSlot | undefined, id: string
   const parts = [...bySlot].map(([s, entries]) => ({ slot: s, entries })).sort((a, b) => a.slot.localeCompare(b.slot));
   // the key is what the author named the entry: its first parameter, or the definition it writes to
   const key = fs[0]?.value || refs[0]?.targetName || "";
-  const rest = [...fs.slice(1).filter((f) => f.value).map((f) => f.value), ...refs.slice(fs[0]?.value ? 0 : 1).map((r) => r.targetName)];
+  // further parameters are said with their names (`status of dropRatio above 0.05 ...`), as the text language says them
+  const rest = [...fs.slice(1).filter((f) => f.value).map((f) => `${f.name} ${f.value}`), ...refs.slice(fs[0]?.value ? 0 : 1).map((r) => r.targetName)];
   const values = parts.map((p) => p.entries.map((e) => e.text).join(", ")).filter(Boolean);
   const head = [key, ...rest].filter(Boolean).join(" ");
   const to = (rel: string): string => refs.find((r) => r.rel === rel)?.targetName || "…";
@@ -110,7 +116,7 @@ function entry(cat: Catalog, out: Out, slot: PaletteSlot | undefined, id: string
   return { id, type, key, expr: null, fields: fs, refs, parts, text };
 }
 
-function step(cat: Catalog, out: Out, palette: Palette, id: string, missing: string[], diagnostics: EngineDiagnostic[]): StepDoc {
+function step(cat: Catalog, out: Out, palette: Palette, id: string, missing: string[], diagnostics: EngineDiagnostic[], placeholders: ReadonlySet<string>): StepDoc {
   const kind = cat.typeOf(id);
   const spec = palette.operators.find((o) => o.kind === kind);
   const name = cat.name(id);
@@ -124,7 +130,8 @@ function step(cat: Catalog, out: Out, palette: Palette, id: string, missing: str
   });
   const slots = (spec?.slots ?? []).filter((s) => s.name !== "port").map((s): SlotDoc => ({
     name: s.name, children: s.children, multiplicity: s.multiplicity, ordered: s.ordered, value: s.value,
-    entries: cat.children(id, s.name).map((c) => entry(cat, out, s, c)),
+    entries: cat.children(id, s.name).filter((c) => !placeholders.has(c)).map((c) => entry(cat, out, s, c)),
+    placeholders: cat.children(id, s.name).filter((c) => placeholders.has(c)),
   }));
   const refs = refsOf(kind).map((r): RefDoc => { const target = cat.targets(id, r.rel)[0] ?? null; return { ...r, target, targetName: target ? cat.typeLabel(target.includes("/port:") ? ownerOfPort(target) : target, moduleOfId(id)) : "" }; });
   return {
@@ -133,15 +140,20 @@ function step(cat: Catalog, out: Out, palette: Palette, id: string, missing: str
   };
 }
 
-/** The projection `id` as statements in the order an author reads them: every statement after the ones it reads, sinks last. */
-export function readProjection(cat: Catalog, palette: Palette, id: string, diagnostics: EngineDiagnostic[] = []): ProjectionDoc | null {
+const NONE: ReadonlySet<string> = new Set();
+
+/**
+ * The projection `id` as statements in the order an author reads them: every statement after the ones it reads, sinks last.
+ * `placeholders` are the children the draft knows a skeleton made (draft.ts): they are left out of the entries.
+ */
+export function readProjection(cat: Catalog, palette: Palette, id: string, diagnostics: EngineDiagnostic[] = [], placeholders: ReadonlySet<string> = NONE): ProjectionDoc | null {
   const p = cat.entity(id);
   if (!p) return null;
   const ops = cat.children(id, "op");
   const missing = new Map(incompleteOperators(cat.g, palette, id).map((m) => [m.op, m.missing]));
   const mine = (opId: string) => diagnostics.filter((d) => d.focus === opId || d.focus.startsWith(`${opId}/`));
   const out = outgoing(cat);
-  const steps = ops.map((o) => step(cat, out, palette, o, missing.get(o) ?? [], mine(o)));
+  const steps = ops.map((o) => step(cat, out, palette, o, missing.get(o) ?? [], mine(o), placeholders));
   const groups = new Map<string, StepDoc[]>();
   for (const s of steps) { const k = statementOf(s.name); groups.set(k, [...(groups.get(k) ?? []), s]); }
   const statements = [...groups].map(([name, ss]): StatementDoc => {

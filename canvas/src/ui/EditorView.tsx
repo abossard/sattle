@@ -26,6 +26,7 @@ import { incompleteOperators } from "../editor/incomplete";
 import { Definitions } from "./editor/Definitions";
 import { NewProjectionDialog } from "./editor/NewProjection";
 import { Properties } from "./editor/Properties";
+import { Notations } from "../editors/Notations";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr) minmax(260px, 340px)", minHeight: 0, height: "100%", "@media (max-width: 1000px)": { gridTemplateColumns: "1fr", height: "auto" } },
@@ -330,6 +331,8 @@ export function EditorView() {
   const [wireIdx, setWireIdx] = useState(0);
   const [marquee, setMarquee] = useState<{ a: Pos; b: Pos } | null>(null);
   const [zoom, setZoom] = useState(1);
+  // how the projection is shown in the centre: the node canvas of this view, or the five notations of editors/Workbench on the same draft
+  const [shown, setShown] = useState<"canvas" | "notations">("canvas");
   useEffect(() => { if (ed.status === "idle") dispatch({ type: "editor/open" }); }, [ed.status]);
   const key = `sattle-canvas-editor:${ed.projection}`;
   useEffect(() => { const v = store(key); setManual(v?.manual ?? {}); setNotes(v?.notes ?? []); setGroups(v?.groups ?? []); }, [key]);
@@ -448,6 +451,7 @@ export function EditorView() {
           <Badge appearance="outline">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
           {ed.busy && <Spinner size="tiny" label={ed.busy} labelPosition="after" />}
           <span className={s.grow} />
+          <TabList size="small" selectedValue={shown} onTabSelect={(_, d) => setShown(d.value as "canvas" | "notations")} aria-label="How the projection is shown"><Tab value="canvas">Canvas</Tab><Tab value="notations">Notations</Tab></TabList>
           <Button size="small" onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} aria-label="Zoom out">−</Button><Text size={200}>{Math.round(zoom * 100)}%</Text><Button size="small" onClick={() => setZoom(Math.min(2, zoom + 0.1))} aria-label="Zoom in">+</Button>
         </div>
         <div className={s.bar}>
@@ -482,10 +486,10 @@ export function EditorView() {
           <ToolbarButton aria-label="Keyboard shortcuts" icon={<Keyboard20Regular />} onClick={() => dispatch({ type: "ui/dialog", dialog: "shortcuts" })} />
         </Toolbar></div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
+          {shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
             keyMarquee={marquee} wiring={ed.wiring} wireTarget={ed.wiring ? targets[wireIdx] ?? null : null} canWire={(a, b) => canWire(g, a, b).ok}
             onSelect={(ids) => dispatch({ type: "editor/select", ids })} onMove={(ids, dx, dy) => move(ids, dx, dy)} onWire={(from, to) => run({ t: "wire", from, to })}
-            onNoteMove={(id, x, y) => persist(manual, notes.map((n) => (n.id === id ? { ...n, x, y } : n)), groups)} onNoteEdit={(id, text) => persist(manual, notes.map((n) => (n.id === id ? { ...n, text } : n)), groups)} />
+            onNoteMove={(id, x, y) => persist(manual, notes.map((n) => (n.id === id ? { ...n, x, y } : n)), groups)} onNoteEdit={(id, text) => persist(manual, notes.map((n) => (n.id === id ? { ...n, text } : n)), groups)} />}
           {ed.notice && <div style={{ position: "absolute", left: 8, right: 8, bottom: 8 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}
         </div>

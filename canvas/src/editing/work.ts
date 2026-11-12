@@ -7,24 +7,38 @@ import type { Palette, PaletteOperator } from "../editor/palette";
 import { coalesce, relId, text } from "../editor/patches";
 import { statementOf } from "./doc";
 
-/** The engine's skeleton of a new operator: its node, ports and the placeholders of its required slots. */
-export type Skeleton = (kind: string, container: string, name: string, params: Record<string, string>) => Promise<Edit[]>;
+/**
+ * The engine's skeleton of a new operator: its node, its ports and a child in every required slot, and which of those children are
+ * placeholders (there only so that the operator prints; the first real entry of the slot replaces them).
+ */
+export type Skeleton = (kind: string, container: string, name: string, params: Record<string, string>) => Promise<{ edits: Edit[]; placeholders: string[] }>;
 
 /** A scratch copy of the draft that edits are applied to as they are composed, so each sees the result of the ones before. */
 export class Work {
   readonly edits: Edit[] = [];
   select: string[] = [];
-  constructor(readonly g: Graph, readonly palette: Palette, readonly projection: string, readonly skeleton: Skeleton) {}
+  /** the placeholders known in the scratch graph: what the draft knew, what the skeletons of this change brought, less what the change replaced */
+  readonly placeholders: Set<string>;
+  constructor(readonly g: Graph, readonly palette: Palette, readonly projection: string, readonly skeleton: Skeleton, placeholders: Iterable<string> = []) { this.placeholders = new Set(placeholders); }
   private read: { at: number; cat: Catalog } | null = null;
   /** The scratch graph as a catalog, indexed again only after it changed. */
   get cat(): Catalog { if (this.read?.at !== this.edits.length) this.read = { at: this.edits.length, cat: new Catalog(this.g) }; return this.read.cat; }
   push(edits: Edit[]): void {
+    // an element that is removed or changed is no placeholder any more, also when what replaces it is equal to it (an author's
+    // `n = count()` in place of the placeholder `n = count()` is no edit at all, and it is the author's from then on)
+    for (const e of edits) if (e.kind === "entity" && e.before !== null) this.placeholders.delete(e.id);
     const net = coalesce(edits);
     if (!net.length) return;
     const v = this.g.version ?? { tenant: "", graph: "catalog", revision: "0" };
     const r = this.g.apply({ from: v, to: { ...v, revision: String(Number(v.revision) + 1) }, projection: "catalog", profile: "extensionalFinite", edits: net, cause: { inputs: [], configurationVersion: "0" } });
     if (!r.ok) throw new Error(r.conflicts[0]?.message ?? "the edit does not apply");
     this.edits.push(...net);
+  }
+  /** Move operators to new ids, with everything below them; the placeholders among it are known under the new ids. */
+  rename(moves: ReadonlyMap<string, string>): void {
+    const moved = [...this.placeholders].flatMap((id) => { for (const [a, b] of moves) if (under(id, a)) return [b + id.slice(a.length)]; return []; });
+    this.push(renameEdits(this.g, moves));
+    for (const id of moved) this.placeholders.add(id);
   }
 }
 
