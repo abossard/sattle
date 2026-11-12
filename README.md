@@ -32,7 +32,7 @@ flowchart LR
   S["Sources<br/>Azure, Kubernetes,<br/>flows, metrics, events"] --> M["Master graph<br/>one per graph space"]
   M --> P1["Projection<br/>services and their calls"]
   P1 --> P2["Projection<br/>capabilities"]
-  M --> H["Projection chain<br/>health model with roll-up"]
+  M --> H["Workload model<br/>structure, then health with roll-up"]
   P1 --> H
   H --> D["Document projection<br/>report"]
   C["Catalog graph<br/>ontologies and projections<br/>as graphs"] -.defines.-> P1
@@ -42,8 +42,8 @@ flowchart LR
   class S,M,P1,P2,H,D,C box;
 ```
 
-- An edge between two lower-level nodes becomes an edge between their higher-level images. The language has one statement for that, [`lift`](engine/definitions/acme.svc.sattle#L55).
-- Health is not built into the engine. It is an ontology and a few projections: [`acme.health`](engine/definitions/acme.health.sattle), [`acme.healthmodel`](engine/definitions/acme.healthmodel.sattle).
+- An edge between two lower-level nodes becomes an edge between their higher-level images. The language has one statement for that, [`lift`](engine/definitions/acme.svc.sattle#L56).
+- Health is not built into the engine. It is an ontology and two projections: [`acme.workload`](engine/definitions/acme.workload.sattle).
 
 ## Portfolio
 
@@ -62,7 +62,7 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 ![Service tree](docs/screenshots/service-tree.png)
 
 - Pod-to-pod calls lifted to service-to-service dependencies, with flows summed per pair.
-- Definition: [`serviceDeps` in `acme.svc`](engine/definitions/acme.svc.sattle#L29), the `lift` statement at [line 55](engine/definitions/acme.svc.sattle#L55).
+- Definition: [`serviceDeps` in `acme.svc`](engine/definitions/acme.svc.sattle#L30), the `lift` statement at [line 56](engine/definitions/acme.svc.sattle#L56).
 - Theory: edge lifting as a quotient in [Ch. 5](paper/ch05-projection-language.md).
 
 ### 3. One level higher: capabilities
@@ -70,22 +70,30 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 ![Capabilities](docs/screenshots/capabilities.png)
 
 - Service dependencies lifted again to the business capabilities the services realize.
-- Definition: [`capabilityView` in `acme.biz`](engine/definitions/acme.biz.sattle#L21), lifted at [line 52](engine/definitions/acme.biz.sattle#L52).
+- Definition: [`capabilityView` in `acme.biz`](engine/definitions/acme.biz.sattle#L22), lifted at [line 53](engine/definitions/acme.biz.sattle#L53).
 
-### 4. A health model with roll-up
+### 4. What a workload is made of and depends on
 
-![Health model as a graph](docs/screenshots/health-graph.png)
+![Workload structure](docs/screenshots/workload-structure.png)
 
-- Components, signals with thresholds, and a state per component. Here one service is degraded by its own signal, and the roll-up carries that to its dependants and to the workload.
-- Colors come from value roles declared in the ontology ([`acme.health`](engine/definitions/acme.health.sattle#L7)), not from code in the viewer.
-- Four stacked projections: [`topology`](engine/definitions/acme.healthmodel.sattle#L11), [`signals`](engine/definitions/acme.healthmodel.sattle#L83), [`state`](engine/definitions/acme.healthmodel.sattle#L173), [`health`](engine/definitions/acme.healthmodel.sattle#L202).
+- The question it answers: what is my workload made of, what does it talk to, and what does each part depend on?
+- Top to bottom: the workload, its services, their deployments and pods, the nodes, pool and cluster they run on. To the right: the cache, the storage account and the database server a service depends on, each reached through its private endpoint and the network. To the left: the gateway that exposes a service.
+- Three kinds of edges, declared in the ontology and drawn differently: composition, dependency, communication ([lines 37 to 57](engine/definitions/acme.workload.sattle#L37)).
+- Every dependency is derived from data and carries its evidence: flows to a private endpoint's address, a resolved host name, a role of the pod's identity, an environment variable, calls between pods, a gateway backend. Definition: [`workloadStructure`](engine/definitions/acme.workload.sattle#L65).
+
+### 5. Its health, and which part is to blame
+
+![Workload health with the database server down](docs/screenshots/workload-health.png)
+
+- The question it answers: is my workload healthy, and if not, which part is to blame?
+- Here the database server is down. The path from the workload to the origin is drawn in red; the origin carries a flag. A crash-looping pod is a second, smaller origin: its deployment stays healthy because two of three pods are.
+- A component's state is the worst severity over what it contains and what it depends on. Signals are meters read against authored rules; a meter that stops reporting becomes "no data", which is a state of its own. Definition: [`workloadHealth`](engine/definitions/acme.workload.sattle#L295).
+- Colors come from value roles declared in the ontology ([line 14](engine/definitions/acme.workload.sattle#L14)), not from code in the viewer.
 - Theory: [Ch. 7, the telemetry plane](paper/ch07-telemetry-plane.md).
 
-### 5. The same model as a tree
+![The same state as a tree of causes](docs/screenshots/workload-tree.png)
 
-![Health model as a tree](docs/screenshots/health-tree.png)
-
-- One row per component with its state, what changed in this revision, and how many supporting elements and links it has.
+- The tree follows the relation the state was computed from. Each row says through which part it is unhealthy; the origin is marked.
 - Code: [`tree-model.ts`](canvas/src/app/tree-model.ts), [`TreeView.tsx`](canvas/src/ui/TreeView.tsx).
 
 ### 6. A document is a projection too
@@ -93,8 +101,8 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 ![Report document](docs/screenshots/report-document.png)
 
 - A report rendered from a graph of document blocks, with a digest per revision.
-- Definition: [`deploymentReport`](engine/definitions/acme.report.sattle#L7) into the ontology [`sattle.doc`](engine/definitions/sattle.doc.sattle). Renderer: [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
-- A smaller health example with value roles: [`deploymentHealth`](engine/definitions/acme.deployhealth.sattle#L18).
+- Definition: [`deploymentReport`](engine/definitions/acme.report.sattle#L8) into the ontology [`sattle.doc`](engine/definitions/sattle.doc.sattle). Renderer: [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
+- A smaller health example with value roles: [`deploymentHealth`](engine/definitions/acme.deployhealth.sattle#L19).
 
 ### 7. Editing a projection as a graph
 
@@ -103,7 +111,7 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 - Every operator kind can be built without typing text. The editor changes a draft on the engine, which checks every step.
 - The cards and the palette are generated from the engine's own description of the language ([`Kernel.cs`](engine/src/Sattle.Core/Kernel.cs), served as `/palette`, see [PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions)).
 - Code: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`EditorCanvas.tsx`](canvas/src/ui/editor/EditorCanvas.tsx), [`commands.ts`](canvas/src/editor/commands.ts).
-- Recorded editing sessions that rebuild real projections and compare them with the originals: [`lift-service-tree`](canvas/tests/walkthroughs/lift-service-tree.json), [`health-rollup`](canvas/tests/walkthroughs/health-rollup.json), run by [`walkthroughs-cdp.mjs`](canvas/scripts/walkthroughs-cdp.mjs).
+- Recorded editing sessions that rebuild real projections and compare them with the originals: [`lift-service-tree`](canvas/tests/walkthroughs/lift-service-tree.json), [`workload-health`](canvas/tests/walkthroughs/workload-health.json), run by [`walkthroughs-cdp.mjs`](canvas/scripts/walkthroughs-cdp.mjs).
 
 ### 8. Ontologies are graphs
 
@@ -161,9 +169,9 @@ Research notes behind the paper:
 
 Definitions, all plain text and all loaded as graphs:
 
-- Ontologies: [`sattle.infra`](engine/definitions/sattle.infra.sattle), [`sattle.azure`](engine/definitions/sattle.azure.sattle), [`sattle.doc`](engine/definitions/sattle.doc.sattle), [`acme.health`](engine/definitions/acme.health.sattle).
+- Ontologies: [`sattle.infra`](engine/definitions/sattle.infra.sattle), [`sattle.azure`](engine/definitions/sattle.azure.sattle), [`sattle.doc`](engine/definitions/sattle.doc.sattle).
 - Source row types: [Kubernetes](engine/definitions/sattle.source.k8s.sattle), [Hubble flows](engine/definitions/sattle.source.hubble.sattle), [Prometheus](engine/definitions/sattle.source.prometheus.sattle), [Azure](engine/definitions/sattle.source.azure.sattle).
-- Projections: [`acme.ops`](engine/definitions/acme.ops.sattle) (master), [`acme.svc`](engine/definitions/acme.svc.sattle), [`acme.biz`](engine/definitions/acme.biz.sattle), [`acme.deployhealth`](engine/definitions/acme.deployhealth.sattle), [`acme.healthmodel`](engine/definitions/acme.healthmodel.sattle), [`acme.report`](engine/definitions/acme.report.sattle).
+- Projections: [`acme.ops`](engine/definitions/acme.ops.sattle) (master), [`acme.svc`](engine/definitions/acme.svc.sattle), [`acme.biz`](engine/definitions/acme.biz.sattle), [`acme.deployhealth`](engine/definitions/acme.deployhealth.sattle), [`acme.workload`](engine/definitions/acme.workload.sattle), [`acme.report`](engine/definitions/acme.report.sattle).
 - The graph space that binds them: [`acme.space`](engine/definitions/acme.space.sattle).
 
 How it is tested:
