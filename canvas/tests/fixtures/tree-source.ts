@@ -1,7 +1,7 @@
 // The hand-made tree graph as a source of its own: one graph `tree` with the ontology marks of a hierarchy, a snapshot at revision 1 and one patch
 // (revision 2) in which db degrades, so the timeline has something to move and the rows something to mark as changed.
 import type { Snapshot } from "../../src/core/model";
-import { NOT_AVAILABLE, type EvaluateResult, type GraphSource, type SpaceInfo, type StreamEvent } from "../../src/source/types";
+import { type GraphSource, type SpaceInfo, type StreamEvent } from "../../src/source/types";
 import { RejectionBus } from "../../src/source/base";
 import { curated, curatedSpec, treeGraph, treeHints, treeSpec } from "./tree-graph";
 import { patch, setN, text } from "../helpers";
@@ -34,6 +34,5 @@ export class TreeSource implements GraphSource {
     queueMicrotask(() => { sink({ type: "patch", patch: patch("1", "2", [degraded]) }); sink({ type: "end" }); });
     return () => {};
   }
-  evaluate(): Promise<EvaluateResult> { return Promise.resolve(NOT_AVAILABLE); }
   onRejected(cb: Parameters<RejectionBus["on"]>[0]): () => void { return this.bus.on(cb); }
 }

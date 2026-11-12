@@ -21,6 +21,8 @@ describe("what a tile shows", () => {
 
 describe("the line that says what a graph is", () => {
   it.each<[string, Partial<GraphInfo>, string[], string | undefined, string]>([
+    ["only the first sentence of a description is the caption", { description: "Services and who calls whom. The rest says how the graph is derived, lifted from calls." }, ["Service"], undefined, "Services and who calls whom."],
+    ["a description without a full stop is whole", { description: "Services and who calls whom" }, ["Service"], undefined, "Services and who calls whom"],
     ["the purpose the source gives wins", { description: "Which services depend on which" }, ["Service"], "from the catalog", "Which services depend on which"],
     ["else the purpose in the catalog", { projectionName: "serviceTree" }, ["Service"], "Services and their groups", "Services and their groups"],
     ["else the types it holds and where it comes from", {}, ["Service", "Group"], undefined, "Service, Group from master"],

@@ -13,8 +13,10 @@ export type Expr =
 
 const INFIX: [string, string, number][] = [
   ["||", "Or", 1], ["&&", "And", 2], ["==", "Equal", 3], ["!=", "NotEqual", 3], ["<=", "LessOrEqual", 4], [">=", "GreaterOrEqual", 4], ["<", "LessThan", 4], [">", "GreaterThan", 4],
-  ["+", "Add", 5], ["-", "Subtract", 5], ["*", "Multiply", 6], ["/", "Divide", 6],
+  ["++", "Concat", 5], ["+", "Add", 5], ["-", "Subtract", 5], ["*", "Multiply", 6], ["/", "Divide", 6],
 ];
+
+const NS_PER: Record<string, bigint> = { ms: 1_000_000n, s: 1_000_000_000n, m: 60_000_000_000n, h: 3_600_000_000_000n };
 
 export function parseExpr(src: string): { ok: true; expr: Expr } | { ok: false; error: string } {
   let i = 0;
@@ -34,6 +36,9 @@ export function parseExpr(src: string): { ok: true; expr: Expr } | { ok: false; 
       if (src[i] !== '"') fail("unterminated string");
       i++; return { k: "lit", kind: "text", value: s };
     }
+    // a duration literal is the integer of its nanoseconds, as the engine reads it (5m, 24h, 250ms, 30s)
+    const dur = /^(\d+)(ms|s|m|h)(?![\w.])/.exec(src.slice(i));
+    if (dur) { i += dur[0].length; return { k: "lit", kind: "integer", value: String(BigInt(dur[1]) * NS_PER[dur[2]]) }; }
     const num = /^\d+(\.\d+)?/.exec(src.slice(i));
     if (num) { i += num[0].length; return { k: "lit", kind: num[1] ? "decimal" : "integer", value: num[0] }; }
     const id = /^[A-Za-z_][\w]*(\.[A-Za-z_][\w]*)*/.exec(src.slice(i));

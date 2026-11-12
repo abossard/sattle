@@ -35,17 +35,23 @@ export class Workspace {
   /** `dispatch` receives every event the source pushes, in order; the effects of the store apply them back through `apply*`. */
   constructor(readonly source: GraphSource, public theme: Theme, private readonly dispatch: (a: Action) => void) {}
 
+  private disposed = false;
+
   async load(): Promise<void> {
     const t0 = performance.now();
     this.unsub.push(this.source.onRejected((r) => this.dispatch({ type: "feed/rejected", rejection: r, at: Date.now() })));
     const opened = await this.source.open();
+    if (this.disposed) return; // the source was replaced while it was loading: nothing of this load reaches the store
     // the stand-in for the engine's hierarchy marker (src/source/tree-standin.ts, to be removed)
     this.info = { ...opened, graphs: opened.graphs.map(withStandIn) };
     for (const g of this.info.graphs) {
-      const hist = new History(await this.source.snapshot(g.id));
-      nameGraph(hist.graph, g.ontology);
+      const snap = await this.source.snapshot(g.id);
+      if (this.disposed) return;
+      const hist = new History(snap);
+      nameGraph(hist.graph, g.ontology, g.labels);
       this.histories.set(g.id, hist);
       const c = await this.source.correspondences?.(g.id);
+      if (this.disposed) return;
       if (c?.length) this.addCorrespondences(g.id, c);
     }
     // telemetry: pull the ticks a non-streaming source can give up front; streamed ticks arrive as events
@@ -59,6 +65,7 @@ export class Workspace {
       for (let t = 0; t <= feed.ticks; t++) {
         for (const g of this.info.graphs) {
           const { batches, release } = await feed.fetch(g.id, t);
+          if (this.disposed) return;
           const hub = this.hubs.get(g.id)!;
           for (const b of batches) hub.ingest(b);
           release?.();
@@ -69,17 +76,21 @@ export class Workspace {
     if (this.source.meters) {
       for (const g of this.info.graphs) {
         const d = await this.source.meters(g.id);
+        if (this.disposed) return;
         if (d) this.hubs.set(g.id, new TelemetryHub(this.histories.get(g.id)!.graph, d, 241));
       }
     }
+    if (this.disposed) return;
     // subscribe; static sources deliver everything at once, simulated ones over time
     await Promise.all(this.info.graphs.map((g) => new Promise<void>((resolve) => {
       let ended = false;
       const done = () => { if (!ended) { ended = true; resolve(); } };
       this.unsub.push(this.source.subscribe(g.id, (e) => {
+        if (this.disposed) return;
         if (e.type === "patch") this.dispatch({ type: "feed/patch", graph: g.id, patch: e.patch, time: e.time });
         else if (e.type === "telemetry") this.dispatch({ type: "feed/telemetry", graph: g.id, batch: e.batch });
         else if (e.type === "telemetry-reset") this.dispatch({ type: "feed/telemetryReset", graph: g.id });
+        else if (e.type === "meta") this.dispatch({ type: "feed/meta", graph: g.id, meta: e.meta });
         else if (e.type === "resync") this.dispatch({ type: "feed/resync", reason: e.reason });
         else if (e.type === "rejected") this.dispatch({ type: "feed/rejected", rejection: e.rejection, at: Date.now() });
         else if (e.type === "caught-up" || e.type === "end") done();
@@ -358,7 +369,18 @@ export class Workspace {
     return e ? ("type" in e ? `${e.type} ${h.graph.label(e)}` : sel.id) : sel.id;
   }
 
+  /** What a definition edit can change in a graph (its ontology, the roles of its values), read again by the source. */
+  applyMeta(graph: string, meta: import("../source/types").GraphMeta): void {
+    const info = this.info.graphs.find((g) => g.id === graph);
+    if (!info) return;
+    Object.assign(info, withStandIn({ ...info, ...meta }));
+    const g = this.histories.get(graph)?.graph;
+    if (g) { g.namer = null; nameGraph(g, info.ontology, info.labels); }
+    this.panes.get(graph)?.refreshAll();
+  }
+
   dispose(): void {
+    this.disposed = true;
     for (const u of this.unsub) u();
     this.source.dispose?.();
     for (const p of this.panes.values()) p.dispose();

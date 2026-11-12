@@ -1,16 +1,17 @@
 // DataPane: one data graph on the canvas engine. Binds Graph (data) to Scene (render arrays), layout, selection and highlights.
 import type { ApplyResult } from "../core/graph";
 import { Graph } from "../core/graph";
+import type { EdgeKind } from "../source/presentation";
 import { type ChangeSet, type ElementKey, type Entity, type Rel } from "../core/model";
 import { nameGraph } from "../core/naming";
 import type { GraphValue } from "../core/wire-types";
 import { placeIncremental } from "../layout/force";
 import { LayoutClient } from "../layout/client";
-import { Ex, EdgeStyle, Scene, St, parseColor } from "../render/scene";
+import { Ex, EdgeKindCode, EdgeStyle, Scene, St, parseColor } from "../render/scene";
 import { type Theme, edgeColorForType, styleForType, type TypeStyle } from "../render/theme";
 import { GraphView, type Ghost, type Pick } from "../render/view";
 import {
-  FlagLayer, type Filter, type Grouping, computeAnchors, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood,
+  FlagLayer, type Filter, type Grouping, computeAnchors, defaultHiddenKinds, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood,
 } from "./graph-view-model";
 import type { History, StepResult } from "./history";
 import { hasTreeRows } from "./tree-model";
@@ -46,6 +47,9 @@ export class DataPane {
   grouping: Grouping | null = null;
   collapsed = new Set<number>();
   focusDim = true;
+  /** the edge kinds the person left out (null: the default of the place the pane is shown) and whether the pane is a tile of the graph space */
+  private userHiddenKinds: EdgeKind[] | null = null;
+  private tile = false;
   /** what colors nodes and edges (null: the type colors) and the legend each was computed with */
   private coloring: Record<Target, { c: Coloring; legend: LegendEntry[] } | null> = { node: null, edge: null };
   /** a value appeared that the legend does not know: recompute it after the step */
@@ -75,7 +79,7 @@ export class DataPane {
 
   constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: TelemetryHub | null = null) {
     this.graph = history.graph;
-    nameGraph(this.graph, info.ontology);
+    nameGraph(this.graph, info.ontology, info.labels);
     // derived trees and forests read best as layers; general graphs use the force layout
     const g0 = history.graph;
     if (g0.nodeCount > 2 && g0.edgeCount >= g0.nodeCount * 0.5 && g0.edgeCount <= g0.nodeCount) {
@@ -227,9 +231,22 @@ export class DataPane {
   }
 
   // ---- scene construction ----
+  /** Every per-slot array at the size of the graph: called first by everything that reads or writes them, so a slot a patch brought is never past an end. */
+  private ensureSized(): void {
+    const g = this.graph, n = g.nodes.length;
+    if (this.vis.length < n) { const v = new Uint8Array(Math.max(n, this.vis.length * 2)); v.set(this.vis); this.vis = v; }
+    this.nodeFlags.ensure(n); this.nodeExtra.ensure(n); this.edgeFlags.ensure(g.edges.length);
+    this.scene.ensureNodes(n);
+  }
+
+  /** The extra bits of a node in the scene: the layers, and what the graph says (an aggregate of a collapsed group, a reference stub). The only place they are put together. */
+  private extraOf(slot: number): number {
+    return (this.nodeExtra.bits[slot] ?? 0) | (this.groupCounts.has(slot) ? Ex.Aggregate : 0) | (this.graph.isStub(slot) ? Ex.Reference : 0);
+  }
+
   private computeVisibility(): void {
     const g = this.graph, n = g.nodes.length;
-    if (this.vis.length < n) this.vis = new Uint8Array(Math.max(n, this.vis.length * 2));
+    this.ensureSized();
     const vis = this.vis;
     const f = this.filter;
     const focusSet = this.focusDepth > 0 && this.selection?.kind === "entity" && g.nodeSlot.has(this.selection.id)
@@ -257,8 +274,7 @@ export class DataPane {
   refreshAll(): void {
     const g = this.graph, s = this.scene;
     this.computeVisibility();
-    s.ensureNodes(g.nodes.length);
-    this.nodeFlags.ensure(g.nodes.length); this.nodeExtra.ensure(g.nodes.length);
+    this.hiddenNow = this.hiddenKinds();
     for (let i = 0; i < g.nodes.length; i++) this.writeNode(i);
     s.nodeCount = Math.max(s.nodeCount, g.nodes.length);
     this.writeEdges(0, g.edges.length);
@@ -278,23 +294,46 @@ export class DataPane {
     const deg = this.graph.out[slot].length + this.graph.inn[slot].length;
     const group = this.groupCounts.has(slot);
     const r = st.radius * (group ? 1.35 : 1);
-    s.setNode(slot, st.shape, r, r, color, this.nodeFlags.bits[slot] ?? 0, (this.nodeExtra.bits[slot] ?? 0) | (group ? Ex.Aggregate : 0) | (stub ? Ex.Reference : 0));
+    s.setNode(slot, st.shape, r, r, color, this.nodeFlags.bits[slot] ?? 0, this.extraOf(slot));
     s.priority[slot] = (stub ? 0 : st.radius * 40) + Math.log2(1 + deg) * 12 + (group ? 500 : 0);
   }
 
+  /** What an edge of a type means, as the ontology declares it; no kind when it declares none. */
+  private kindOf(type: string): EdgeKind | undefined { return this.info.edgeKinds?.[type]; }
+
+  /** The kinds that have at least one edge now. */
+  presentKinds(): Set<EdgeKind> {
+    const kinds = new Set<EdgeKind>(), seen = new Set<string>();
+    for (const r of this.graph.relationships()) { if (seen.has(r.type)) continue; seen.add(r.type); const k = this.kindOf(r.type); if (k) kinds.add(k); }
+    return kinds;
+  }
+  /** The kinds drawn without: the person's choice, or the default of the place. */
+  hiddenKinds(): ReadonlySet<EdgeKind> { return new Set(this.userHiddenKinds ?? defaultHiddenKinds(this.tile, this.presentKinds())); }
+  /** the kinds hidden as of the last full pass: a patch draws its edges by it (reading them again for every edge would cost the graph per edge) */
+  private hiddenNow: ReadonlySet<EdgeKind> = new Set();
+  setKindFilter(hidden: EdgeKind[] | null): void {
+    if (JSON.stringify(hidden) === JSON.stringify(this.userHiddenKinds)) return;
+    this.userHiddenKinds = hidden;
+    this.refreshAll();
+  }
+  /** A tile of the graph space draws fewer kinds than the view of the graph until the person chooses. */
+  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; if (!this.userHiddenKinds) this.refreshAll(); } }
+
   private writeEdges(lo: number, hi: number): void {
     const g = this.graph, s = this.scene;
+    const hidden = this.hiddenNow;
     const seen = this.anchor ? new Set<string>() : null;
     for (let e = lo; e < hi; e++) {
       const r = g.edges[e];
       const a = g.edgeSrc[e], b = g.edgeDst[e];
-      if (!r || a < 0 || b < 0) { s.hideEdge(e); continue; }
+      const kind = this.kindOf(r?.type ?? "");
+      if (!r || a < 0 || b < 0 || (kind && hidden.has(kind))) { s.hideEdge(e); continue; }
       let ea = a, eb = b, agg = false;
       if (this.anchor) { ea = this.anchor[a]; eb = this.anchor[b]; agg = ea !== a || eb !== b; }
       if (!this.vis[ea] || !this.vis[eb] || ea === eb) { s.hideEdge(e); continue; }
       if (agg && seen) { const key = `${ea}>${eb}>${r.type}`; if (seen.has(key)) { s.hideEdge(e); continue; } seen.add(key); }
       const ent = this.coloring.edge ? this.entry("edge", r.props) : undefined;
-      s.setEdge(e, ea, eb, ent ? parseColor(ent.color) : edgeColorForType(r.type, this.theme), agg || ent?.role === "danger" || g.isStub(g.edgeSrc[e]) || g.isStub(g.edgeDst[e]) ? EdgeStyle.Dashed : EdgeStyle.Solid, this.edgeFlags.bits[e] ?? 0, agg ? Ex.Aggregate : 0);
+      s.setEdge(e, ea, eb, ent ? parseColor(ent.color) : edgeColorForType(r.type, this.theme), agg || ent?.role === "danger" || g.isStub(g.edgeSrc[e]) || g.isStub(g.edgeDst[e]) ? EdgeStyle.Dashed : EdgeStyle.Solid, this.edgeFlags.bits[e] ?? 0, agg ? Ex.Aggregate : 0, kind ? EdgeKindCode[kind] : 0);
     }
     if (hi > s.edgeCount) s.edgeCount = hi;
   }
@@ -333,8 +372,7 @@ export class DataPane {
   applyStep(step: StepResult): void {
     const res: Extract<ApplyResult, { ok: true }> = step.result;
     const g = this.graph, s = this.scene;
-    s.ensureNodes(g.nodes.length);
-    this.nodeFlags.ensure(g.nodes.length); this.nodeExtra.ensure(g.nodes.length); this.edgeFlags.ensure(g.edges.length);
+    this.ensureSized();
     for (const [id, slot] of res.removedSlots) this.lastPos.set(id, [s.positions[2 * slot], s.positions[2 * slot + 1]]);
     const added: number[] = [];
     for (const [id, c] of res.changes.entities) {
@@ -429,23 +467,23 @@ export class DataPane {
 
   // ---- flags ----
   private flushNodeLayer(bit: number, slots: number[]): void {
-    this.nodeFlags.ensure(this.graph.nodes.length);
+    this.ensureSized();
     const changed = this.nodeFlags.set(bit, slots);
     this.writeFlags(changed);
   }
   private flushExtraLayer(bit: number, slots: number[]): void {
-    this.nodeExtra.ensure(this.graph.nodes.length);
+    this.ensureSized();
     this.writeFlags(this.nodeExtra.set(bit, slots));
   }
   private flushEdgeLayer(bit: number, slots: number[]): void {
-    this.edgeFlags.ensure(this.graph.edges.length);
+    this.ensureSized();
     for (const e of this.edgeFlags.set(bit, slots)) if (this.scene.edgeVisible(e)) this.scene.setEdgeState(e, this.edgeFlags.bits[e]);
   }
   private writeFlags(slots: number[]): void {
     const s = this.scene;
     for (const slot of slots) {
       if (!s.nodeVisible(slot)) continue;
-      s.setNodeMeta(slot, s.nodeShape(slot), this.nodeFlags.bits[slot] ?? 0, (this.nodeExtra.bits[slot] ?? 0) | (this.groupCounts.has(slot) ? Ex.Aggregate : 0));
+      s.setNodeMeta(slot, s.nodeShape(slot), this.nodeFlags.bits[slot] ?? 0, this.extraOf(slot));
     }
   }
 

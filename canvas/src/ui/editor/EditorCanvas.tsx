@@ -3,7 +3,7 @@
 import { makeStyles, tokens } from "@fluentui/react-components";
 import { useMemo, useRef, useState } from "react";
 import { DIRECTION, type DirectionClass } from "../../core/catalog";
-import type { DefGraph, DefNode } from "../../core/projection/defgraph";
+import type { DefGraph, DefNode } from "../../core/def-graph";
 import { NODE_W, nodesInRect, portAnchor, rowH, type Pos } from "../../editor/layout";
 
 const useStyles = makeStyles({

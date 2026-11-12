@@ -3,6 +3,8 @@ import { Accordion, AccordionHeader, AccordionItem, AccordionPanel, Button, Chec
 import { useEffect, useMemo, useState } from "react";
 import { dispatch, useStore } from "../state/store";
 import { emptyFilter, type FilterState } from "../state/types";
+import type { EdgeKind } from "../source/presentation";
+import { KIND_WORD, KindSample, kindsOf } from "./EdgeKinds";
 import { DEFAULT_COLORING, ROLE_GLYPH, ROLE_WORD, coloringLabel, legendOf, propertiesOf, resolveColoring, type Target } from "../app/color-by";
 import { roleCss } from "../app/roles";
 import { SUPPORT_GROUPING, resolveGrouping } from "../app/graph-view-model";
@@ -75,6 +77,8 @@ export function FiltersPanel({ graph }: { graph: string }) {
   const propKeys = [...new Set(info.ontology.properties.map((p) => p.id.value))];
   const support = resolveGrouping(info, SUPPORT_GROUPING);
   const grouped = !!resolveGrouping(info, f.grouping);
+  const kinds = kindsOf(info.edgeKinds);
+  const hiddenKinds: ReadonlySet<EdgeKind> = new Set(f.hiddenKinds ?? pane?.hiddenKinds() ?? []);
   const meters = (target: "node" | "edge") => tel?.meters.filter((m) => m.target === target) ?? [];
   const channel = (label: string, target: "node" | "edge", key: string, value: string) => (
     <Field label={label} key={`${target}-${key}`}>
@@ -103,6 +107,17 @@ export function FiltersPanel({ graph }: { graph: string }) {
           ))}
         </AccordionPanel>
       </AccordionItem>
+      {kinds.length > 0 && (
+        <AccordionItem value="kinds">
+          <AccordionHeader>Edge kinds</AccordionHeader>
+          <AccordionPanel className={s.col}>
+            {kinds.map(({ kind, types }) => (
+              <Checkbox key={kind} checked={!hiddenKinds.has(kind)} onChange={(_, d) => set(graph, { hiddenKinds: d.checked ? [...hiddenKinds].filter((x) => x !== kind) : [...hiddenKinds, kind] })}
+                label={<span style={{ display: "inline-flex", alignItems: "center", columnGap: 8 }}><KindSample kind={kind} />{KIND_WORD[kind].word} <Text size={200}>({types.map((t) => t.slice(t.lastIndexOf(".") + 1)).join(", ")})</Text></span>} />
+            ))}
+          </AccordionPanel>
+        </AccordionItem>
+      )}
       <AccordionItem value="color">
         <AccordionHeader>Color by property</AccordionHeader>
         <AccordionPanel className={s.col}>

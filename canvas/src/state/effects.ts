@@ -72,7 +72,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
   const ws = runtime.ws;
   if (a.type.startsWith("editor/") && a.type !== "editor/summary" && a.type !== "editor/select" && a.type !== "editor/projection" && a.type !== "editor/wiring" && a.type !== "editor/dismiss") { void runEditor(a, dispatch, s); return; }
   switch (a.type) {
-    case "source/opening": runtime.session = null; void openSource(a.id, s, dispatch); break;
+    case "source/opening": if (!a.resync) runtime.session = null; void openSource(a.id, s, dispatch); break;
     case "feed/patch":
       ws?.applyPatch(a.graph, a.patch, a.time);
       if (ws) applyHighlight(ws, a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step
@@ -82,10 +82,11 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
       ws?.hubFor(a.graph).ingest(a.batch);
       throttle("time", 250, () => { if (runtime.ws === ws && ws) { reportTime(ws, dispatch); reportData(ws, dispatch); } });
       break;
+    case "feed/meta": ws?.applyMeta(a.graph, a.meta); bump(a.graph); break;
     case "feed/telemetryReset": ws?.hubs.get(a.graph)?.reset(); bump(a.graph); break;
     // panes report changes (layout, telemetry applied, lineage loaded) far more often than panels need to look: at most 4 per second
     case "data/touched": throttle(`touched:${a.graph}`, 250, () => { if (runtime.ws === ws && ws) { bump(a.graph); reportData(ws, dispatch); } }); break;
-    case "feed/resync": if (s.sourceId) setTimeout(() => dispatch({ type: "source/opening", id: s.sourceId }), 0); break;
+    case "feed/resync": if (s.sourceId) setTimeout(() => dispatch({ type: "source/opening", id: s.sourceId, resync: true }), 0); break;
     case "ui/dialog":
       if (a.dialog && !s.dialog) runtime.opener = document.activeElement as HTMLElement | null;
       else if (!a.dialog && s.dialog) setTimeout(() => runtime.opener?.focus(), 50);

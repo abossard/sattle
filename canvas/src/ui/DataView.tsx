@@ -13,6 +13,7 @@ import { ElementsPanel } from "./Elements";
 import { FiltersPanel } from "./Filters";
 import { Inspector } from "./Inspector";
 import { Timeline } from "./Timeline";
+import { KIND_WORD, KindSample, kindsOf } from "./EdgeKinds";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(220px, 300px) minmax(0, 1fr) minmax(240px, 340px)", minHeight: 0, height: "100%", "@media (max-width: 1000px)": { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(360px, 1fr) auto", height: "auto" } },
@@ -21,9 +22,10 @@ const useStyles = makeStyles({
   center: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto", minHeight: 0 },
   bar: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` },
   grow: { flexGrow: 1 },
-  grid: { display: "grid", gap: "6px", minHeight: 0, overflow: "auto", padding: "6px", alignContent: "start" },
-  pane: { display: "grid", gridTemplateRows: "auto minmax(260px, 1fr) auto", minHeight: "340px", border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
+  grid: { display: "grid", gap: "6px", minHeight: 0, overflow: "auto", padding: "6px", alignContent: "start", gridAutoRows: "440px" },
+  pane: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0, overflow: "hidden", border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
   activePane: { border: `2px solid ${tokens.colorBrandStroke1}` },
+  caption: { display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" },
   head: { display: "grid", rowGap: "2px", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` },
   headRow: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap" },
   tileBody: { minHeight: 0, overflow: "hidden", position: "relative", backgroundColor: tokens.colorNeutralBackground1 },
@@ -33,12 +35,22 @@ const useStyles = makeStyles({
   notice: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", alignContent: "start", rowGap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM, overflow: "auto", height: "100%", boxSizing: "border-box" },
 });
 
-const Legend = () => (
-  <Popover><PopoverTrigger disableButtonEnhancement><Button size="small">Legend</Button></PopoverTrigger>
-    <PopoverSurface aria-label="How to read the canvas"><div style={{ display: "grid", rowGap: 4 }}>
-      <Text>+ added: solid ring</Text><Text>Δ changed: double ring</Text><Text>− removed: dashed ghost</Text><Text>Same entity elsewhere: pink ring</Text><Text>Source element: dashed ring</Text><Text>Shape and label give the type; color repeats it</Text>
-    </div></PopoverSurface></Popover>
-);
+/** How to read the canvas; the edge kinds are the ones the graph's ontology declares, each with the relationship types that have it. */
+export function Legend({ graph }: { graph: string }) {
+  const ws = useWorkspace();
+  const kinds = kindsOf(ws?.graphInfo(graph)?.edgeKinds);
+  return (
+    <Popover><PopoverTrigger disableButtonEnhancement><Button size="small">Legend</Button></PopoverTrigger>
+      <PopoverSurface aria-label="How to read the canvas"><div style={{ display: "grid", rowGap: 4 }}>
+        <Text>+ added: solid ring</Text><Text>Δ changed: double ring</Text><Text>− removed: dashed ghost</Text><Text>Same entity elsewhere: pink ring</Text><Text>Source element: dashed ring</Text><Text>Shape and label give the type; color repeats it</Text>
+        {kinds.length > 0 && <Text weight="semibold">Edges</Text>}
+        {kinds.map(({ kind, types }) => (
+          <div key={kind} style={{ display: "flex", alignItems: "center", columnGap: 8 }}><KindSample kind={kind} /><Text>{KIND_WORD[kind].word}: {types.map((t) => t.slice(t.lastIndexOf(".") + 1)).join(", ")}. {KIND_WORD[kind].help}</Text></div>
+        ))}
+      </div></PopoverSurface>
+    </Popover>
+  );
+}
 
 function SidePanel({ graph }: { graph: string }) {
   const [tab, setTab] = useState("filters");
@@ -77,7 +89,7 @@ export function DataView() {
           {sum && <Text size={200}>{sum.nodes.toLocaleString()} nodes · {sum.edges.toLocaleString()} edges</Text>}
           <span className={s.grow} />
           {(isDoc || isTree) && <TabList size="small" selectedValue={mode} onTabSelect={(_, d) => setShown({ ...shown, [active]: String(d.value) })} aria-label="How to show this graph"><Tab value={first}>{isDoc ? "Document" : "Tree"}</Tab><Tab value="graph">Graph</Tab></TabList>}
-          {mode === "graph" && <><Button size="small" onClick={() => dispatch({ type: "pane/command", graph: active, command: "fit" })}>Fit</Button><Legend /></>}
+          {mode === "graph" && <><Button size="small" onClick={() => dispatch({ type: "pane/command", graph: active, command: "fit" })}>Fit</Button><Legend graph={active} /></>}
         </div>
         {mode === "document" ? <DocumentView graph={active} /> : mode === "tree" ? <TreeView graph={active} /> : <CanvasHost graph={active} />}
         <Timeline graph={active} />
@@ -125,7 +137,7 @@ export function SpaceView() {
         <div className={s.bar}>
           <Text weight="semibold">Graph space {ws.info.id}</Text><Badge appearance="outline">{graphs.length} graphs</Badge><span className={s.grow} />
           <Button size="small" onClick={() => setRows(!rows)}>{rows ? "Side by side" : "Stack vertically"}</Button>
-          <Button size="small" onClick={() => graphs.forEach((g) => dispatch({ type: "pane/command", graph: g.id, command: "fit" }))}>Fit all</Button><Legend />
+          <Button size="small" onClick={() => graphs.forEach((g) => dispatch({ type: "pane/command", graph: g.id, command: "fit" }))}>Fit all</Button><Legend graph={active} />
         </div>
         <div className={s.grid} style={{ gridTemplateColumns: rows ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))" }}>
           {graphs.map((g) => (
@@ -137,10 +149,10 @@ export function SpaceView() {
                   <Button size="small" aria-pressed={g.id === active} onClick={() => dispatch({ type: "ui/activeGraph", graph: g.id })}>Use for filters</Button>
                   <Button size="small" onClick={() => { dispatch({ type: "ui/activeGraph", graph: g.id }); dispatch({ type: "ui/view", view: "data" }); }}>Open</Button>
                 </div>
-                <Text size={200}>{subtitle(g.id)}</Text>
+                <Text size={200} className={s.caption} title={subtitle(g.id)}>{subtitle(g.id)}</Text>
               </div>
               <div className={s.tileBody}>
-                {kindOf(g) === "document" ? <><DocumentView graph={g.id} compact /><div className={s.fade} /></> : kindOf(g) === "notice" ? <NoticeTile graph={g.id} /> : <CanvasHost graph={g.id} />}
+                {kindOf(g) === "document" ? <><DocumentView graph={g.id} compact /><div className={s.fade} /></> : kindOf(g) === "notice" ? <NoticeTile graph={g.id} /> : <CanvasHost graph={g.id} tile />}
               </div>
             </div>
           ))}

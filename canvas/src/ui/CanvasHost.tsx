@@ -21,7 +21,8 @@ export function webgl2Available(): boolean {
   return glOk;
 }
 
-export function CanvasHost({ graph, focus = false }: { graph: string; focus?: boolean }) {
+/** `tile`: shown in the graph space, where a graph draws the edge kinds that make it readable at that size until the person chooses. */
+export function CanvasHost({ graph, focus = false, tile = false }: { graph: string; focus?: boolean; tile?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const s = useStyles();
   const gen = useStore((x) => x.generation);
@@ -39,10 +40,12 @@ export function CanvasHost({ graph, focus = false }: { graph: string; focus?: bo
     const changed = f ? Object.fromEntries(Object.entries(f).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(empty[k as keyof FilterState]))) : {};
     // the coloring and the grouping always apply: their defaults come from the ontology, which a default filter state does not mention
     if (f) applyFilter(pane, f, { ...changed, colorNodes: f.colorNodes, colorEdges: f.colorEdges, grouping: f.grouping });
+    pane.setTile(tile);
+    pane.setKindFilter(f?.hiddenKinds ?? null);
     pane.fit(false);
     if (focus) host.focus({ preventScroll: true });
     return () => host.remove();
-  }, [graph, gen, ready, gl, focus]);
+  }, [graph, gen, ready, gl, focus, tile]);
   const sum = useGraphSummary(graph);
   const info = useWorkspace(graph)?.graphInfo(graph);
   const notice = sum && info ? edgelessNotice(info.role, sum.nodes, sum.edges, info.ontology.relationshipTypes.map((t) => t.id.value)) : null;

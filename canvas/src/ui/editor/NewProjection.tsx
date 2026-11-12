@@ -14,7 +14,8 @@ export function NewProjectionDialog({ open, onClose }: { open: boolean; onClose:
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [output, setOutput] = useState("");
-  const [graphName, setGraphName] = useState("");
+  // the graph is named like the projection until the person names it otherwise
+  const [typedGraph, setTypedGraph] = useState<string | null>(null);
   const [inputs, setInputs] = useState<ProjectionSpec["inputs"]>([{ port: "master", graph: "master", ontology: "" }]);
   const [params, setParams] = useState<ProjectionSpec["params"]>([]);
   const [rows, setRows] = useState<NonNullable<ProjectionSpec["rows"]>>([]);
@@ -28,6 +29,7 @@ export function NewProjectionDialog({ open, onClose }: { open: boolean; onClose:
   const sources = [...g.entities()].filter((e) => e.type === "Source").map((e) => ({ id: e.id, name: e.id.slice(e.id.lastIndexOf(":") + 1) }));
   const purposes = session.palette.declarations.projection?.params.find((p) => p.name === "purpose")?.values ?? ["view"];
   const kinds = session.palette.projectionPorts.find((x) => x.kind === "param")?.text.match(/<([^>]+)>/)?.[1].split("|") ?? ["Text", "Integer", "Decimal", "Boolean"];
+  const graphName = typedGraph ?? name;
   const upd = <T,>(list: T[], i: number, patch: Partial<T>, set: (l: T[]) => void) => set(list.map((x, n) => (n === i ? { ...x, ...patch } : x)));
   return (
     <Dialog open={open} onOpenChange={(_, d) => { if (!d.open) onClose(); }}>
@@ -35,8 +37,8 @@ export function NewProjectionDialog({ open, onClose }: { open: boolean; onClose:
         <DialogTitle>New projection in {ed.module}</DialogTitle>
         <DialogContent className={s.col}>
           <div className={s.row}>
-            <Field label="Name"><Input value={name} onChange={(_, d) => { setName(d.value); if (!graphName) setGraphName(d.value); }} /></Field>
-            <Field label="Graph it produces in the space"><Input value={graphName} onChange={(_, d) => setGraphName(d.value)} /></Field>
+            <Field label="Name"><Input value={name} onChange={(_, d) => setName(d.value)} /></Field>
+            <Field label="Graph it produces in the space"><Input value={graphName} onChange={(_, d) => setTypedGraph(d.value)} /></Field>
             <Field label="Purpose"><Select value={purpose} onChange={(_, d) => setPurpose(d.value)}>{purposes.map((p) => <option key={p}>{p}</option>)}</Select></Field>
             <Field label="Retain (revisions)"><Input value={retain} onChange={(_, d) => setRetain(d.value)} /></Field>
             <Field label="Output ontology"><Select value={output} onChange={(_, d) => setOutput(d.value)}><option value="">(choose)</option>{modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Select></Field>

@@ -4,7 +4,8 @@
 import type { Graph } from "../core/graph";
 import type { Entity } from "../core/model";
 import { valueText } from "../core/model";
-import type { PresentationHint, Role, TreeSpec } from "../source/presentation";
+import type { EdgeKind, PresentationHint, Role, TreeSpec } from "../source/presentation";
+import type { GraphInfo } from "../source/types";
 
 export type { TreeSpec };
 
@@ -39,6 +40,41 @@ const cellOf = (e: Entity, property: string | undefined, hints: ReadonlyMap<stri
   return { value, role: hints.get(property!)?.[value] ?? "neutral" };
 };
 
+export const inHierarchy = (spec: TreeSpec, type: string): boolean => type === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(type);
+
+/** Which kind of edge forms the hierarchy of a graph that declares one: what the ontology says of the hierarchy type, composition when it says nothing. */
+export function declaredHierarchyKind(info: Pick<GraphInfo, "tree" | "edgeKinds">): EdgeKind {
+  return (info.tree && info.edgeKinds?.[info.tree.hierarchy.relationship]) || "composition";
+}
+
+/** The kinds a tree can be made from: those with relationship types in the ontology (support explains rows, it does not nest them). */
+export function hierarchyKinds(info: Pick<GraphInfo, "tree" | "edgeKinds">): EdgeKind[] {
+  const present = new Set(Object.values(info.edgeKinds ?? {}));
+  const kinds = (["composition", "dependency", "communication"] as EdgeKind[]).filter((k) => present.has(k));
+  const declared = declaredHierarchyKind(info);
+  return info.tree && !kinds.includes(declared) ? [declared, ...kinds] : kinds;
+}
+
+/**
+ * The tree of a graph for the kind of edge that is its hierarchy. The declared hierarchy stays as the ontology says (which end is the parent);
+ * another kind nests by its types with the source as the parent (the one that needs, or talks, above what it needs or talks to). Every other
+ * type is a link: support explains a row, the rest are badges.
+ */
+export function specForKind(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology">, kind: EdgeKind): TreeSpec | undefined {
+  const base = info.tree;
+  if (!base) return undefined;
+  if (kind === declaredHierarchyKind(info)) return base;
+  const chosen = Object.entries(info.edgeKinds ?? {}).filter(([, k]) => k === kind).map(([t]) => t).sort();
+  if (!chosen.length) return base;
+  const ends = new Set<string>();
+  for (const r of info.ontology.relationshipTypes) if (chosen.includes(r.id.value)) for (const t of [...(r.sourceTypes ?? []), ...(r.targetTypes ?? [])]) ends.add(t.value);
+  const edgeRoles: TreeSpec["edgeRoles"] = {};
+  for (const [t, k] of Object.entries(info.edgeKinds ?? {})) if (!chosen.includes(t)) edgeRoles[t] = k === "support" ? "support" : "cross";
+  // the declared hierarchy becomes a link too
+  edgeRoles[base.hierarchy.relationship] = "cross";
+  return { ...base, hierarchy: { relationship: chosen[0], childIsSource: false, ...(chosen.length > 1 ? { also: chosen.slice(1) } : {}) }, edgeRoles, ...(ends.size ? { types: [...ends] } : { types: undefined }) };
+}
+
 export function buildTree(g: Graph, spec: TreeSpec, hints: readonly PresentationHint[]): TreeModel {
   const roles = new Map(hints.map((h) => [h.property, h.roles]));
   const nodes = new Map<string, TreeNode>();
@@ -62,11 +98,12 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     });
   }
   for (const r of g.relationships()) {
-    if (r.type === spec.hierarchy.relationship) {
+    if (inHierarchy(spec, r.type)) {
       const child = spec.hierarchy.childIsSource ? r.source : r.target, parent = spec.hierarchy.childIsSource ? r.target : r.source;
       const c = nodes.get(child), p = nodes.get(parent);
-      // each node has one parent (the first), and a cycle is never followed
+      // each node has one parent (the first), and a cycle is never followed; another parent is a link, shown as a badge like the other kinds
       if (c && p && c.parent === null && child !== parent) { c.parent = parent; p.children.push(child); }
+      else if (c && p && c.parent !== parent) { c.cross++; p.cross++; }
       continue;
     }
     const role = spec.edgeRoles[r.type];
@@ -191,9 +228,10 @@ export function explainNode(g: Graph, m: TreeModel, id: string): Explanation | n
     for (const es of [...g.out[slot], ...g.inn[slot]]) {
       const r = g.edges[es];
       if (!r) continue;
-      const role = m.spec.edgeRoles[r.type];
-      if (!role) continue;
       const otherId = r.source === id ? r.target : r.source;
+      // a hierarchy edge is the tree itself unless the node has another parent through it: then it is a link
+      const role = m.spec.edgeRoles[r.type] ?? (inHierarchy(m.spec, r.type) && m.nodes.get(m.spec.hierarchy.childIsSource ? r.source : r.target)?.parent !== (m.spec.hierarchy.childIsSource ? r.target : r.source) ? "cross" : undefined);
+      if (!role) continue;
       const other = g.entity(otherId);
       if (role === "support" && other) support.push({ id: otherId, type: other.type, label: g.label(other), relationship: r.type, props: Object.entries(other.props).map(([k, v]) => [k, valueText(v)] as [string, string]) });
       else if (role === "cross") cross.push({ id: otherId, label: other ? g.label(other) : otherId, relationship: r.type, direction: r.source === id ? "out" : "in" });

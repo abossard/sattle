@@ -8,8 +8,8 @@ import {
 import type { GraphDescriptorWire, OntologyDefinition, OntologyRef, Operator, ProjectionDefinition } from "../core/wire-types";
 import type { Rejection } from "../core/validate";
 import { ESTATE_DEFAULTS, ESTATE_METERS, allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "../core/synth-telemetry";
-import { RejectionBus, evaluateUnavailable } from "./base";
-import type { Correspondence, EvaluateResult, GraphInfo, GraphSource, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "./types";
+import { RejectionBus } from "./base";
+import type { Correspondence, GraphInfo, GraphSource, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "./types";
 import type { Snapshot as Snap } from "../core/model";
 
 const id = (value: string) => ({ value });
@@ -213,6 +213,5 @@ export class SyntheticSource implements GraphSource {
   }
 
   async correspondences(graph: string): Promise<Correspondence[]> { await this.open(); return this.built!.corr.get(graph) ?? []; }
-  evaluate(): Promise<EvaluateResult> { return evaluateUnavailable(); }
   onRejected(cb: (r: Rejection) => void): () => void { return this.bus.on(cb); }
 }

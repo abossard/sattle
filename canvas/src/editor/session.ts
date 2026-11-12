@@ -51,6 +51,14 @@ export class EditorSession {
     return { from: v(this.revision), to: v(String(Number(this.revision) + 1)), projection: "catalog", profile: "extensionalFinite", edits, cause: { inputs: [], configurationVersion: "0" } };
   }
 
+  /** Commands one after the other: two started together (a double click on Undo) read the stack and the revision one after the other, not both from the same state. */
+  private tail: Promise<unknown> = Promise.resolve();
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = this.tail.then(fn, fn);
+    this.tail = run.catch(() => {});
+    return run;
+  }
+
   /** Apply edits to the draft. `record` false is for undo and redo themselves. A rejected patch changes nothing, here or on the engine. */
   private async send(edits: Edit[]): Promise<Outcome> {
     if (edits.length === 0) return { ok: false, error: "nothing to change" };
@@ -58,31 +66,34 @@ export class EditorSession {
     try {
       const applied = await this.svc.applyPatch(this.draft.draft, patch, this.revision);
       const res = this.graph.apply(patch);
-      if (!res.ok) { await this.resync(); return { ok: false, error: `the browser copy of the draft was out of step (${res.conflicts[0]?.message}); reloaded it` }; }
+      if (!res.ok) { await this.resyncNow(); return { ok: false, error: `the browser copy of the draft was out of step (${res.conflicts[0]?.message}); reloaded it` }; }
       this.revision = applied.revision;
       this.version++;
       this.absorb(applied);
       return { ok: true, applied };
     } catch (e) {
-      if (e instanceof EngineError) { if (e.code === "StaleRevision" || e.code === "GuardFailed") await this.resync().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
+      if (e instanceof EngineError) { if (e.code === "StaleRevision" || e.code === "GuardFailed") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
       return { ok: false, error: (e as Error).message };
     }
   }
 
-  async apply(all: Edit[], label: string): Promise<Outcome> {
+  apply(all: Edit[], label: string): Promise<Outcome> { return this.serial(() => this.applyNow(all, label)); }
+  private async applyNow(all: Edit[], label: string): Promise<Outcome> {
     const edits = coalesce(all);
     const r = await this.send(edits);
     if (r.ok) { this.undoStack.push({ label, edits }); if (this.undoStack.length > MAX_UNDO) this.undoStack.shift(); this.redoStack.length = 0; }
     return r;
   }
-  async undo(): Promise<Outcome | null> {
+  undo(): Promise<Outcome | null> { return this.serial(() => this.undoNow()); }
+  private async undoNow(): Promise<Outcome | null> {
     const step = this.undoStack[this.undoStack.length - 1];
     if (!step) return null;
     const r = await this.send(invertEdits(step.edits));
     if (r.ok) { this.undoStack.pop(); this.redoStack.push(step); }
     return r;
   }
-  async redo(): Promise<Outcome | null> {
+  redo(): Promise<Outcome | null> { return this.serial(() => this.redoNow()); }
+  private async redoNow(): Promise<Outcome | null> {
     const step = this.redoStack[this.redoStack.length - 1];
     if (!step) return null;
     const r = await this.send(step.edits);
@@ -93,11 +104,13 @@ export class EditorSession {
   /** A change the engine computed (refactoring, restore): the patch is applied to the draft like any other, so it can be undone. */
   applyRefactoring(r: Refactoring, label: string): Promise<Outcome> { return this.apply(r.patch.edits, label); }
   /** The engine applied a restore itself and answered the patch: it joins the draft like any other, so it can be undone. An empty patch is no step. */
-  async absorbRestore(applied: Applied & { patch: Patch }, label: string): Promise<void> {
+  absorbRestore(applied: Applied & { patch: Patch }, label: string): Promise<void> { return this.serial(() => this.absorbRestoreNow(applied, label)); }
+  private async absorbRestoreNow(applied: Applied & { patch: Patch }, label: string): Promise<void> {
     const edits = applied.patch.edits;
+    // an empty patch still moves the revision: the browser copy follows it, or the next edit starts from a revision the engine has left
+    const r = this.graph.apply(applied.patch);
+    if (!r.ok) await this.resyncNow();
     if (edits.length) {
-      const r = this.graph.apply(applied.patch);
-      if (!r.ok) await this.resync();
       this.undoStack.push({ label, edits });
       if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
       this.redoStack.length = 0;
@@ -107,7 +120,8 @@ export class EditorSession {
     this.absorb(applied);
   }
 
-  async resync(): Promise<void> {
+  resync(): Promise<void> { return this.serial(() => this.resyncNow()); }
+  private async resyncNow(): Promise<void> {
     const snap = await this.svc.snapshot(this.draft.draft);
     this.graph = Graph.fromSnapshot(snap);
     this.revision = snap.version.revision;
@@ -119,7 +133,8 @@ export class EditorSession {
    * Text to graph: the engine parses the module text; the draft is edited by the difference between its graph and the parsed one
    * (restricted to that module's elements). One step on the undo stack.
    */
-  async applyText(module: string, text: string, head: Graph): Promise<Outcome> {
+  applyText(module: string, text: string, head: Graph): Promise<Outcome> { return this.serial(() => this.applyTextNow(module, text, head)); }
+  private async applyTextNow(module: string, text: string, head: Graph): Promise<Outcome> {
     const checked = await this.svc.checkText(module, text);
     if (!checked.ok || !checked.patch) { this.diagnostics = checked.diagnostics; return { ok: false, error: checked.diagnostics[0]?.message ?? "the engine rejects this text" }; }
     const parsed = Graph.fromSnapshot(head.toSnapshot());
@@ -142,6 +157,6 @@ export class EditorSession {
     }
     const gone = (e: Edit) => (e.kind === "entity" || e.kind === "relationship") && e.after === null;
     const edits: Edit[] = [...rels.filter(gone), ...ents.filter(gone), ...ents.filter((e) => !gone(e)), ...rels.filter((e) => !gone(e))];
-    return edits.length ? this.apply(edits, "edit text") : { ok: false, error: "the text equals the draft" };
+    return edits.length ? this.applyNow(edits, "edit text") : { ok: false, error: "the text equals the draft" };
   }
 }

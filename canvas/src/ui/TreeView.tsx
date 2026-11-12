@@ -4,7 +4,9 @@
 import { Badge, Button, FlatTree, FlatTreeItem, MessageBar, MessageBarBody, SearchBox, Select, Switch, Text, TreeItemLayout, makeStyles, tokens, useHeadlessFlatTree_unstable, type HeadlessFlatTreeItemProps } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ROLE_GLYPH, ROLE_WORD } from "../app/color-by";
-import { attentionPaths, buildTree, expandBelow, isWrong, typeAhead, visibleRows, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
+import type { EdgeKind } from "../source/presentation";
+import { KIND_WORD } from "./EdgeKinds";
+import { attentionPaths, buildTree, declaredHierarchyKind, expandBelow, hierarchyKinds, isWrong, specForKind, typeAhead, visibleRows, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
 import { dispatch, useStore } from "../state/store";
 import { useGraphSummary, useWorkspace } from "./common";
 
@@ -48,7 +50,11 @@ export function TreeView({ graph }: { graph: string }) {
   const sel = useStore((x) => x.selection);
   const info = ws?.graphInfo(graph);
   const hist = ws?.histories.get(graph);
-  const spec = info?.tree;
+  // the kind of edge that is the hierarchy: what the ontology declares (composition when it says nothing); the others are links
+  const [kindChoice, setKindChoice] = useState<EdgeKind | null>(null);
+  const kinds = info ? hierarchyKinds(info) : [];
+  const kind = kindChoice && kinds.includes(kindChoice) ? kindChoice : info ? declaredHierarchyKind(info) : "composition";
+  const spec = useMemo(() => (info ? specForKind(info, kind) : undefined), [info, kind]);
   const model = useMemo(() => (hist && spec ? buildTree(hist.graph, spec, info?.presentation ?? []) : null), [hist, spec, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
   const [onlyWrong, setOnlyWrong] = useState(false);
@@ -146,6 +152,7 @@ export function TreeView({ graph }: { graph: string }) {
         <SearchBox aria-label="Find in the tree" placeholder="Find (opens the path)" value={query} onChange={(_, d) => setQuery(d.value)} />
         <Switch checked={onlyWrong} label="Only where something is wrong" onChange={(_, d) => setOnlyWrong(d.checked)} />
         {hiddenCount > 0 && <Switch checked={showHidden} label={`Show hidden (${hiddenCount})`} onChange={(_, d) => setShowHidden(d.checked)} />}
+        {kinds.length > 1 && <Select aria-label="Hierarchy by" value={kind} onChange={(_, d) => setKindChoice(d.value as EdgeKind)}>{kinds.map((k) => <option key={k} value={k}>{KIND_WORD[k].word}</option>)}</Select>}
         <Select aria-label="Sort children" value={sort} onChange={(_, d) => setSort(d.value as "severity" | "label")}><option value="severity">Worst first</option><option value="label">By name</option></Select>
         <Button size="small" disabled={!selected} onClick={() => selected && setExpanded((cur) => new Set([...(cur ?? []), ...expandBelow(model, selected)]))}>Expand below selected</Button>
         <Button size="small" onClick={() => setExpanded(new Set())}>Collapse all</Button>

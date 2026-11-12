@@ -4,6 +4,8 @@
 
 export const Shape = { Hidden: 0, Circle: 1, Square: 2, Diamond: 3, Triangle: 4, Hexagon: 5, Card: 6 } as const;
 export const EdgeStyle = { Hidden: 0, Solid: 1, Dashed: 2 } as const;
+/** What an edge means (engine 3.17), drawn by line pattern and arrowhead so it never rests on color: composition solid with a diamond, dependency dash-dot with a spike, communication dotted with a triangle, support thin and faint with none. */
+export const EdgeKindCode = { none: 0, composition: 1, dependency: 2, communication: 3, support: 4 } as const;
 
 /** state flags (meta byte 1) */
 export const St = {
@@ -124,12 +126,12 @@ export class Scene {
   }
   nodeVisible(slot: number): boolean { return slot < this.nodeCount && (this.nodeU32[slot * WORDS_NODE + 4] & 255) !== 0; }
 
-  setEdge(slot: number, src: number, dst: number, color: number, style: number, state = 0, extra = 0): void {
+  setEdge(slot: number, src: number, dst: number, color: number, style: number, state = 0, extra = 0, kind = 0): void {
     this.ensureEdges(slot + 1);
     const o = slot * WORDS_EDGE;
     this.edgeI32[o] = src; this.edgeI32[o + 1] = dst;
     this.edgeU32[o + 2] = color;
-    this.edgeU32[o + 3] = (style | (state << 8) | (extra << 16)) >>> 0;
+    this.edgeU32[o + 3] = (style | (state << 8) | (extra << 16) | (kind << 24)) >>> 0;
     if (slot >= this.edgeCount) this.edgeCount = slot + 1;
     this.markEdge(slot);
   }
@@ -140,6 +142,7 @@ export class Scene {
   }
   edgeStyle(slot: number): number { return this.edgeU32[slot * WORDS_EDGE + 3] & 255; }
   edgeState(slot: number): number { return (this.edgeU32[slot * WORDS_EDGE + 3] >>> 8) & 255; }
+  edgeKind(slot: number): number { return (this.edgeU32[slot * WORDS_EDGE + 3] >>> 24) & 255; }
   edgeExtra(slot: number): number { return (this.edgeU32[slot * WORDS_EDGE + 3] >>> 16) & 255; }
   setEdgeState(slot: number, state: number): void {
     const o = slot * WORDS_EDGE + 3;

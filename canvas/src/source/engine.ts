@@ -6,15 +6,15 @@ import type { Patch, Snapshot } from "../core/model";
 import { checkOntology, type Rejection } from "../core/validate";
 import { RejectionBus } from "./base";
 import {
-  ENGINE_ENDPOINTS, batchFromWire, instantSeconds, parseCheckResponse, parseCommitResponse, parseLineage, parseReferencePage, parseReverseLineage, parseMeters, parseModules, parseSpace, parseWsMessage, subscribeMessage,
+  ENGINE_ENDPOINTS, batchFromWire, instantSeconds, parseLineage, parseReferencePage, parseReverseLineage, parseMeters, parseModules, parseSpace, parseWsMessage, subscribeMessage,
   type SpaceDoc,
 } from "./engine-protocol";
+import { initialStream, transition, type Effect, type Event as StreamInput, type StreamState, type Why } from "./engine-stream";
 import { readPresentation } from "./presentation";
 import { parsePatch, parseRecords, parseSnapshot } from "./snapshot-file";
 import type {
-  CheckResult, CommitResult, ConnectionStatus, DefinitionService, DocumentText, EvaluateResult, GraphInfo, GraphSource, Lineage, Reference, ReverseLineage, ModuleText, SpaceInfo, StreamEvent, TelemetryBatch,
+  ConnectionStatus, DefinitionService, DocumentText, GraphInfo, GraphSource, Lineage, Reference, ReverseLineage, ModuleText, SpaceInfo, StreamEvent, TelemetryBatch,
 } from "./types";
-import { NOT_AVAILABLE } from "./types";
 
 export interface EngineOptions {
   fetch?: typeof fetch;
@@ -31,20 +31,16 @@ export class EngineSource implements GraphSource {
   readonly bus = new RejectionBus();
   readonly status: ConnectionStatus = { state: "connecting", detail: "not connected", gapsFilled: 0, reconnects: 0 };
   catalogGraph: string | undefined;
-  /** engine logical time (epoch seconds) from the latest `time` message, used as the commit time of live patches */
-  logicalTime = NaN;
   private readonly base: string;
   private doc: SpaceDoc | null = null;
   private info: SpaceInfo | null = null;
   private snaps = new Map<string, { snapshot: Snapshot; descriptor: GraphInfo["descriptor"] }>();
   private sinks = new Map<string, Set<Sink>>();
-  private lastRevision = new Map<string, string>();
   /** head revision of each graph when the space was opened: history up to it is read from immutable URLs */
   private heads = new Map<string, string>();
-  /** server-wide sequence number: where the stream resumes */
-  private seq: string | undefined;
-  private lastWindow = new Map<string, number>();
-  private fills = new Map<string, Promise<void>>();
+  /** what the stream is: see engine-stream.ts */
+  private stream: StreamState = initialStream([], undefined);
+  private retryTimers = new Set<ReturnType<typeof setTimeout>>();
   /** graphs whose immutable history up to the opening head was read */
   private filled = new Set<string>();
   private ws: WebSocket | null = null;
@@ -85,12 +81,11 @@ export class EngineSource implements GraphSource {
   async open(): Promise<SpaceInfo> {
     if (this.info) return this.info;
     this.doc = parseSpace(JSON.parse(await this.text(ENGINE_ENDPOINTS.space)));
-    // the stream resumes after the sequence number of the space document; history read later overlaps it and duplicates are dropped by revision
-    this.seq = this.doc.seq;
     for (const g of this.doc.graphs) this.heads.set(g.id, g.head);
     const graphs: GraphInfo[] = [];
+    const seed: { id: string; revision: string | undefined; telemetry: boolean }[] = [];
     for (const g of this.doc.graphs) {
-      const { hints, tree, ontology: rawOntology } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(g.id))));
+      const { hints, tree, kinds, labels, ontology: rawOntology } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(g.id))));
       const ont = checkOntology(rawOntology);
       if (!ont.ok) {
         this.reject({ source: ENGINE_ENDPOINTS.ontology(g.id), where: `ontology of ${g.id}`, errors: ont.errors });
@@ -101,11 +96,13 @@ export class EngineSource implements GraphSource {
       const snap = await this.genesis(g.id);
       if (!snap) continue;
       graphs.push({
-        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, inputs: g.inputs, direction: g.direction, editable: g.editable, document: g.document || undefined,
+        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, description: g.description, inputs: g.inputs, direction: g.direction, editable: g.editable, document: g.document || undefined,
         projectionName: g.projection ?? undefined,
       });
-      this.lastRevision.set(g.id, snap.snapshot.version.revision);
+      seed.push({ id: g.id, revision: snap.snapshot.version.revision, telemetry: g.role !== "catalog" });
     }
+    // the stream resumes after the sequence number of the space document; history read later overlaps it and duplicates are dropped by revision
+    this.stream = initialStream(seed, this.doc.seq);
     this.catalogGraph = graphs.find((g) => g.role === "catalog")?.id;
     this.info = { id: this.doc.space, graphs };
     return this.info;
@@ -134,58 +131,81 @@ export class EngineSource implements GraphSource {
     try { const m = parseMeters(JSON.parse(await this.text(ENGINE_ENDPOINTS.meters(graph)))); return m.meters.length ? m : null; } catch { return null; }
   }
 
-  // ---- stream ----
+  // ---- stream: the shell. What happens is `transition` (engine-stream.ts); this reads, sends and tells the sinks. ----
   subscribe(graph: string, sink: Sink): () => void {
     let set = this.sinks.get(graph);
     if (!set) this.sinks.set(graph, (set = new Set()));
     set.add(sink);
-    void this.history(graph).then(() => { sink({ type: "caught-up" }); this.ensureSocket(); })
-      .catch((e) => { this.reject({ source: this.base, where: `history of ${graph}`, errors: [(e as Error).message] }); sink({ type: "caught-up" }); });
+    this.step({ t: "subscribed", graph });
     return () => { set!.delete(sink); };
   }
 
   private emit(graph: string, e: StreamEvent): void { for (const s of this.sinks.get(graph) ?? []) s(e); }
 
-  private async history(graph: string): Promise<void> {
-    for (const p of await this.patchesAfter(graph)) this.emit(graph, { type: "patch", patch: p });
-    if (this.hasTelemetry(graph)) for (const b of await this.telemetryFrom(graph)) this.emit(graph, { type: "telemetry", batch: b });
+  /** Fold one event into the stream state and run what the transition asks for. */
+  private step(e: StreamInput): void {
+    const r = transition(this.stream, e);
+    this.stream = r.state;
+    for (const f of r.effects) this.run(f);
   }
 
-  /** The catalog graph has no telemetry and the engine answers 404 for it. */
-  private hasTelemetry(graph: string): boolean { return this.doc?.graphs.find((g) => g.id === graph)?.role !== "catalog"; }
-
-  /** Patches after the last revision seen, in order. A patch that does not continue the log is reported, not applied. */
-  private async patchesAfter(graph: string): Promise<Patch[]> {
-    const after = this.lastRevision.get(graph) ?? "0";
-    const head = this.heads.get(graph);
-    // up to the head seen at open: immutable, so cached; later fills read the moving head
-    const path = ENGINE_ENDPOINTS.patches(graph, after, head !== undefined && num(after) < num(head) && !this.filled.has(graph) ? head : undefined);
-    this.filled.add(graph);
-    const items = parseRecords(await this.text(path), path, true, (r) => this.reject(r));
-    const out: Patch[] = [];
-    for (const [i, raw] of items.entries()) {
-      const p = parsePatch(raw, path, `patch #${i + 1}`, (r) => this.reject(r));
-      if (!p) continue;
-      const last = this.lastRevision.get(graph) ?? after;
-      if (num(p.to.revision) <= num(last)) continue;
-      out.push(p);
-      this.lastRevision.set(graph, p.to.revision);
+  private run(f: Effect): void {
+    switch (f.k) {
+      case "emit": this.emit(f.graph, f.event); return;
+      case "status": if (f.gapFilled) this.status.gapsFilled++; this.setStatus(f.state ?? this.status.state, f.detail); return;
+      case "reject": this.reject({ source: this.base, where: f.where, errors: f.errors }); return;
+      case "openSocket": this.ensureSocket(); return;
+      case "closeSocket": this.ws?.close(); return;
+      case "retry": {
+        const delays = this.opts.backoff ?? [500, 1000, 2000, 5000];
+        const t = setTimeout(() => { this.retryTimers.delete(t); this.step({ t: "retry", graph: f.graph, gen: f.gen }); }, delays[Math.min(f.attempt - 1, delays.length - 1)]);
+        this.retryTimers.add(t);
+        return;
+      }
+      case "readPatches": void this.readPatches(f.graph, f.gen, f.why, f.after); return;
+      case "readTelemetry": void this.readTelemetry(f.graph, f.gen, f.why, f.from); return;
+      case "readMeta": void this.readMeta(f.graph, f.gen); return;
     }
-    return out;
+  }
+
+  /** Patches after a revision, parsed; one that does not continue the log is for the transition to judge, a record that is not a patch is reported here. */
+  private async readPatches(graph: string, gen: number, why: Why, after: string): Promise<void> {
+    try {
+      const head = this.heads.get(graph);
+      // up to the head seen at open: immutable, so cached; later reads use the moving head
+      const path = ENGINE_ENDPOINTS.patches(graph, after, head !== undefined && num(after) < num(head) && !this.filled.has(graph) ? head : undefined);
+      this.filled.add(graph);
+      const patches: Patch[] = [];
+      for (const [i, raw] of parseRecords(await this.text(path), path, true, (r) => this.reject(r)).entries()) {
+        const p = parsePatch(raw, path, `patch #${i + 1}`, (r) => this.reject(r));
+        if (p) patches.push(p);
+      }
+      this.step({ t: "patches", graph, gen, why, patches });
+    } catch (e) { this.step({ t: "readFailed", graph, gen, why, error: (e as Error).message }); }
   }
 
   /** Telemetry windows from the last window seen (inclusive: a window may have been revised). */
-  private async telemetryFrom(graph: string): Promise<TelemetryBatch[]> {
-    const last = this.lastWindow.get(graph);
-    const path = ENGINE_ENDPOINTS.telemetry(graph, last === undefined ? undefined : new Date(last * 1000).toISOString());
-    const out: TelemetryBatch[] = [];
-    for (const [i, raw] of parseRecords(await this.text(path), path, true, (r) => this.reject(r)).entries()) {
-      const r = batchFromWire(raw);
-      if (!r.ok) { this.reject({ source: path, where: `line ${i + 1}`, errors: r.errors }); continue; }
-      out.push(r.batch);
-      this.lastWindow.set(graph, Math.max(this.lastWindow.get(graph) ?? -Infinity, r.batch.t));
-    }
-    return out;
+  private async readTelemetry(graph: string, gen: number, why: Why, from: number | undefined): Promise<void> {
+    try {
+      const path = ENGINE_ENDPOINTS.telemetry(graph, from === undefined ? undefined : new Date(from * 1000).toISOString());
+      const batches: TelemetryBatch[] = [];
+      for (const [i, raw] of parseRecords(await this.text(path), path, true, (r) => this.reject(r)).entries()) {
+        const r = batchFromWire(raw);
+        if (!r.ok) { this.reject({ source: path, where: `line ${i + 1}`, errors: r.errors }); continue; }
+        batches.push(r.batch);
+      }
+      this.step({ t: "windows", graph, gen, why, batches });
+    } catch (e) { this.step({ t: "readFailed", graph, gen, why, error: (e as Error).message }); }
+  }
+
+  /** An activation can change the ontology of a graph and the roles of its values: read them again and tell the workspace. */
+  private async readMeta(graph: string, gen: number): Promise<void> {
+    try {
+      const { hints, tree, kinds, labels, ontology: raw } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(graph))));
+      const ont = checkOntology(raw);
+      if (!ont.ok) { this.reject({ source: ENGINE_ENDPOINTS.ontology(graph), where: `ontology of ${graph}`, errors: ont.errors }); return; }
+      this.step({ t: "meta", graph, gen, meta: { ontology: ont.value as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined } });
+    } catch (e) { this.reject({ source: this.base, where: `ontology of ${graph}`, errors: [(e as Error).message] }); }
   }
 
   // ---- socket with reconnect ----
@@ -200,13 +220,12 @@ export class EngineSource implements GraphSource {
     ws.onopen = () => {
       const resumed = this.retry > 0;
       this.retry = 0;
-      this.setStatus("live", resumed ? "reconnected" : "connected");
       // resume after the last sequence number seen; the engine sends what was missed, or a gap notice when its history no longer reaches back
-      ws.send(subscribeMessage([...this.sinks.keys()], this.seq));
-      if (resumed) for (const g of this.sinks.keys()) void this.fill(g, "reconnect");
+      ws.send(subscribeMessage([...this.sinks.keys()], this.stream.seq));
+      this.step({ t: "socketOpened", resumed });
     };
-    ws.onmessage = (ev) => { void this.onMessage(String(ev.data)); };
-    ws.onclose = () => { this.ws = null; if (!this.closed && this.status.state !== "ended") this.scheduleReconnect("connection closed"); };
+    ws.onmessage = (ev) => this.onMessage(String(ev.data));
+    ws.onclose = () => { this.ws = null; this.step({ t: "socketClosed" }); if (!this.closed && this.status.state !== "ended") this.scheduleReconnect("connection closed"); };
     ws.onerror = () => { /* onclose follows */ };
   }
 
@@ -220,72 +239,27 @@ export class EngineSource implements GraphSource {
     this.timer = setTimeout(() => { this.timer = null; this.ensureSocket(); }, d);
   }
 
-  private async onMessage(raw: string): Promise<void> {
+  /** A socket message becomes an event of the stream; what does not parse is reported and dropped. */
+  private onMessage(raw: string): void {
     let m;
     try { m = parseWsMessage(JSON.parse(raw)); } catch (e) { this.reject({ source: "ws", where: "message", errors: [`not JSON: ${(e as Error).message}`] }); return; }
-    if ("seq" in m && m.seq !== undefined && (this.seq === undefined || BigInt(m.seq) > BigInt(this.seq))) this.seq = m.seq;
+    if ("seq" in m && m.seq !== undefined) this.step({ t: "seq", seq: m.seq });
     switch (m.type) {
-      case "patch": {
-        const p = parsePatch(m.patch, "ws", `patch of ${m.graph}`, (r) => this.reject(r));
-        if (!p) return;
-        const last = this.lastRevision.get(m.graph);
-        if (last !== undefined && num(p.to.revision) <= num(last)) return; // already delivered by the HTTP history
-        if (last !== undefined && p.from.revision !== last) await this.fill(m.graph, `expected a patch from revision ${last}, got ${p.from.revision}`);
-        const now = this.lastRevision.get(m.graph);
-        if (now !== undefined && num(p.to.revision) <= num(now)) return; // the fill delivered it
-        this.lastRevision.set(m.graph, p.to.revision);
-        this.emit(m.graph, { type: "patch", patch: p, time: Number.isFinite(this.logicalTime) ? this.logicalTime : undefined });
-        return;
-      }
+      case "patch": { const p = parsePatch(m.patch, "ws", `patch of ${m.graph}`, (r) => this.reject(r)); if (p) this.step({ t: "wsPatch", graph: m.graph, patch: p, seq: m.seq }); return; }
       case "telemetry": {
         const r = batchFromWire(m.batch);
         if (!r.ok) { this.reject({ source: "ws", where: `telemetry of ${m.graph}`, errors: r.errors }); return; }
-        // the stream replays events after the sequence number read before the history: windows older than the newest one are already ingested
-        const newest = this.lastWindow.get(m.graph);
-        if (newest !== undefined && r.batch.t < newest) return;
-        this.lastWindow.set(m.graph, r.batch.t);
-        this.emit(m.graph, { type: "telemetry", batch: r.batch });
+        this.step({ t: "wsTelemetry", graph: m.graph, batch: r.batch, seq: m.seq });
         return;
       }
-      case "time": { const t = instantSeconds(m.logicalTime); if (Number.isFinite(t)) this.logicalTime = t; return; }
-      case "activation": {
-        // a definition edit re-activated the space: stored telemetry may differ, read it again
-        // a graph the space did not have before (a committed projection brought it): the view reloads to show it
-        const known = new Set(this.info?.graphs.map((g) => g.id));
-        if (m.graphs.some((g) => !known.has(g.id))) { for (const g of this.sinks.keys()) this.emit(g, { type: "resync", reason: "the space has a new graph" }); return; }
-        for (const g of this.sinks.keys()) { this.lastWindow.delete(g); this.emit(g, { type: "telemetry-reset" }); void this.fill(g, `activation of catalog revision ${m.catalogRevision}`); }
-        return;
-      }
-      case "gap": {
-        this.reject({ source: "ws", where: "event stream", errors: [`the engine's retained events start at ${m.firstSeq}; resynchronizing from a snapshot`] });
-        this.seq = undefined;
-        for (const g of this.sinks.keys()) this.emit(g, { type: "resync", reason: "event gap" });
-        return;
-      }
+      case "time": { const t = instantSeconds(m.logicalTime); if (Number.isFinite(t)) this.step({ t: "wsTime", logicalTime: t }); return; }
+      case "activation": this.step({ t: "wsActivation", catalogRevision: m.catalogRevision, graphs: m.graphs.map((g) => g.id), seq: m.seq }); return;
+      case "gap": this.step({ t: "wsGap", firstSeq: m.firstSeq }); return;
+      case "error": this.step({ t: "wsError", code: m.code, message: m.message }); return;
+      case "end": this.step({ t: "wsEnd", seq: m.seq }); return;
       case "snapshot": case "draft": return; // snapshots follow a gap or a subscription without `after`, which the resync reload reads over HTTP; drafts are the editor's
-      case "error": {
-        this.reject({ source: "ws", where: m.code, errors: [m.message || m.code] });
-        if (m.code === "SlowConsumer") this.ws?.close(); // the reconnect resumes with `after`
-        if (m.code === "AheadOfHead") for (const g of this.sinks.keys()) this.emit(g, { type: "resync", reason: "this client is ahead of the engine" });
-        return;
-      }
-      case "end": this.setStatus("ended", "the engine ended the stream"); for (const g of this.sinks.keys()) this.emit(g, { type: "end" }); return;
       case "hello": case "other": return;
     }
-  }
-
-  /** Read what the stream missed over HTTP. One fill per graph at a time. */
-  private fill(graph: string, why: string): Promise<void> {
-    const busy = this.fills.get(graph);
-    if (busy) return busy;
-    const p = (async () => {
-      const patches = await this.patchesAfter(graph);
-      for (const patch of patches) this.emit(graph, { type: "patch", patch });
-      if (this.hasTelemetry(graph)) for (const b of await this.telemetryFrom(graph)) this.emit(graph, { type: "telemetry", batch: b });
-      if (patches.length) { this.status.gapsFilled++; this.setStatus(this.status.state, `${why}: filled ${patches.length} revision(s)`); }
-    })().catch((e) => this.reject({ source: this.base, where: `catch-up of ${graph}`, errors: [(e as Error).message] })).finally(() => this.fills.delete(graph));
-    this.fills.set(graph, p);
-    return p;
   }
 
   // ---- lineage, evaluate, rejections ----
@@ -353,14 +327,11 @@ export class EngineSource implements GraphSource {
     return text;
   }
 
-  evaluate(): Promise<EvaluateResult> { return Promise.resolve(NOT_AVAILABLE); }
   onRejected(cb: (r: Rejection) => void): () => void { return this.bus.on(cb); }
 
   // ---- definitions ----
   readonly definitions: DefinitionService = {
     modules: () => this.readModules(),
-    check: (module, text) => this.check(module, text),
-    commit: (module, text, expectedRevision) => this.commit(module, text, expectedRevision),
   };
 
   private async readModules(): Promise<ModuleText[]> {
@@ -370,30 +341,11 @@ export class EngineSource implements GraphSource {
     return out;
   }
 
-  private async post(path: string, body: unknown): Promise<{ status: number; json: unknown }> {
-    let res: Response;
-    try { res = await this.f(this.url(path), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); } catch (e) { throw new Error(`engine not reachable at ${this.base}: ${(e as Error).message}`); }
-    const text = await res.text();
-    let json: unknown = null;
-    try { json = text ? JSON.parse(text) : null; } catch { throw new Error(`${path}: HTTP ${res.status}, not JSON: ${text.slice(0, 160)}`); }
-    return { status: res.status, json };
-  }
-
-  private async check(module: string, text: string): Promise<CheckResult> {
-    const { status, json } = await this.post(ENGINE_ENDPOINTS.check, { module, text });
-    if (status !== 200) throw new Error(`POST /check: HTTP ${status} ${(json as { error?: { message?: string } })?.error?.message ?? ""}`);
-    return parseCheckResponse(json, (r) => this.reject({ ...r, source: "/check" }));
-  }
-
-  private async commit(module: string, text: string, expectedRevision: string): Promise<CommitResult> {
-    const { status, json } = await this.post(ENGINE_ENDPOINTS.definition(module), { text, expectedRevision });
-    return parseCommitResponse(status, json);
-  }
-
   dispose(): void {
     this.closed = true;
+    for (const t of this.retryTimers) clearTimeout(t);
+    this.retryTimers.clear();
     if (this.timer) clearTimeout(this.timer);
-    this.ws?.close();
-    this.setStatus("closed", "closed");
+    this.step({ t: "dispose" }); // the generations move on (what was in flight delivers nothing), the socket closes, the status says closed
   }
 }

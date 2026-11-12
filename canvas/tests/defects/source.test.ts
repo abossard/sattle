@@ -1,4 +1,4 @@
-// Defects of the code review in the sources and the effects (section 3): each test says what should be true and fails today for the reason the review gives.
+// Defects of the code review in the sources and the effects (section 3): each test says what should be true; each failed for the reason the review gives until its fix.
 import { describe, expect, it } from "vitest";
 import { EngineSource } from "../../src/source/engine";
 import { SimulatedStream } from "../../src/source/simulated";

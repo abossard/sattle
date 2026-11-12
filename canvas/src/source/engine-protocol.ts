@@ -1,9 +1,7 @@
 // The engine wire contract, protocol version 3: engine/PROTOCOL.md (authoritative). Every endpoint and message shape the canvas
 // relies on is in this file, so a protocol change touches one place. Differences between the document and the running engine
 // are listed in README.md ("Engine protocol notes").
-import { checkPatch, type Rejection } from "../core/validate";
-import { patchFromWire } from "../core/wire";
-import type { CheckResult, CommitResult, EngineDiagnostic, Lineage, Meter, ChannelDefaults, ModuleText, Reference, ReverseLineage } from "./types";
+import type { EngineDiagnostic, Lineage, Meter, ChannelDefaults, ModuleText, Reference, ReverseLineage } from "./types";
 
 export const ENGINE_ENDPOINTS = {
   space: "/space",
@@ -30,6 +28,8 @@ export const ENGINE_ENDPOINTS = {
 
 export interface SpaceGraph {
   id: string; role: "master" | "projection" | "catalog"; head: string; ontology: string; inputs: string[]; direction: string; editable: boolean; projection: string | null; document: boolean;
+  /** engine 3.17: the first sentence of the projection's `///` comment stands alone as a caption */
+  description?: string;
 }
 export interface SpaceDoc { space: string; protocol: string; kernelDigest: string; /** event sequence the document is consistent with: the stream resumes after it */ seq: string | undefined; catalogRevision: string; graphs: SpaceGraph[]; input: { mode: string; logicalTime: string; rows: string } | null }
 
@@ -43,7 +43,7 @@ export function parseSpace(raw: unknown): SpaceDoc {
     graphs: gs.map((g) => {
       const x = g as Record<string, unknown>;
       const role = x.role === "catalog" ? "catalog" : x.role === "master" ? "master" : "projection";
-      return { id: String(x.id), role, head: String(x.head ?? "0"), ontology: String(x.ontology ?? ""), inputs: Array.isArray(x.inputs) ? x.inputs.map(String) : [], direction: String(x.direction ?? ""), editable: x.editable === true, document: x.document === true, projection: x.projection ? String(x.projection) : null };
+      return { id: String(x.id), role, head: String(x.head ?? "0"), ontology: String(x.ontology ?? ""), inputs: Array.isArray(x.inputs) ? x.inputs.map(String) : [], direction: String(x.direction ?? ""), editable: x.editable === true, document: x.document === true, projection: x.projection ? String(x.projection) : null, description: typeof x.description === "string" && x.description ? x.description : undefined };
     }),
     input: o.input ? { mode: String((o.input as Record<string, unknown>).mode), logicalTime: String((o.input as Record<string, unknown>).logicalTime ?? ""), rows: String((o.input as Record<string, unknown>).rows ?? "") } : null,
   };
@@ -116,35 +116,11 @@ export function parseWsMessage(raw: unknown): WsMessage {
 /** One subscription per connection (v3): the graphs to follow and where to resume. Without `after` the server sends a snapshot per graph first. */
 export const subscribeMessage = (graphs: string[], after?: string, drafts = false): string => JSON.stringify({ op: "subscribe", graphs, drafts, ...(after !== undefined ? { after } : {}) });
 
-function toPatch(raw: unknown, where: string, reject: (r: Omit<Rejection, "source">) => void) {
-  const r = checkPatch(raw);
-  if (!r.ok) { reject({ where, errors: r.errors }); return null; }
-  return patchFromWire(r.value);
-}
-
 export function parseDiagnostics(list: unknown): EngineDiagnostic[] {
   return (Array.isArray(list) ? list : []).map((d) => {
     const x = d as Record<string, unknown>;
     return { code: String(x.code ?? ""), severity: String(x.severity ?? "error"), focus: x.element ? String(x.element) : "", message: String(x.message ?? ""), line: Number(x.line ?? 0), col: Number(x.column ?? 0) };
   });
-}
-
-/** POST /check response. */
-export function parseCheckResponse(raw: unknown, reject: (r: Omit<Rejection, "source">) => void): CheckResult {
-  const o = raw as Record<string, unknown> | null;
-  const aff = (o?.affected ?? {}) as { modules?: string[]; graphs?: string[] };
-  return {
-    ok: o?.ok === true, baseRevision: String(o?.baseRevision ?? ""), diagnostics: parseDiagnostics(o?.diagnostics),
-    patch: o?.patch ? toPatch(o.patch, "check patch", reject) : null, affected: { modules: aff.modules ?? [], graphs: aff.graphs ?? [] },
-  };
-}
-
-/** POST /definitions/{module}: 200 with activation, or the error body of 409 and 422. */
-export function parseCommitResponse(status: number, raw: unknown): CommitResult {
-  const o = raw as Record<string, unknown> | null;
-  if (status >= 200 && status < 300) return { ok: true, catalogRevision: String(o?.catalogRevision ?? ""), activation: o?.activation as CommitResult["activation"] };
-  const e = (o?.error ?? {}) as Record<string, unknown>;
-  return { ok: false, error: { code: String(e.code ?? `HTTP ${status}`), message: e.message ? String(e.message) : undefined, actual: e.actual ? String(e.actual) : undefined, diagnostics: parseDiagnostics(e.diagnostics) } };
 }
 
 export function parseModules(raw: unknown): Omit<ModuleText, "text">[] {

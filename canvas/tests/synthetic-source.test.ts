@@ -2,18 +2,15 @@ import { describe, expect, it } from "vitest";
 import { SyntheticSource, dependenciesDefinition, dependenciesOntology, ownershipDefinition, ownershipOntology } from "../src/source/synthetic";
 import { estateOntology } from "../src/core/synth";
 import { checkDescriptor, checkOntology, checkProjection } from "../src/core/validate";
-import { checkDefinition } from "../src/core/projection/typecheck";
 import { Graph } from "../src/core/graph";
 
 describe("synthetic source definitions", () => {
   it.each([
     ["ownership", ownershipDefinition(), ownershipOntology],
     ["dependencies", dependenciesDefinition(), dependenciesOntology],
-  ])("%s definition is schema valid and type checks against the estate ontology", (_n, def, out) => {
+  ])("%s definition and its output ontology are schema valid", (_n, def, out) => {
     expect(checkProjection(def).ok).toBe(true);
     expect(checkOntology(out).ok).toBe(true);
-    const errors = checkDefinition(def, { output: out, inputs: { estate: estateOntology } }).diagnostics.filter((d) => d.severity === "error");
-    expect(errors.map((e) => e.message)).toEqual([]);
   });
 });
 

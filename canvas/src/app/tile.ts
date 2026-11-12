@@ -12,6 +12,13 @@ export function tileKind(info: GraphInfo, sum: { nodes: number; edges: number },
   return "graph";
 }
 
+/** The first sentence of a description stands alone as a caption (engine 3.17: the rest says how the graph is derived). */
+export function firstSentence(text: string): string {
+  const t = text.trim();
+  const m = /^(.+?[.!?])(\s|$)/s.exec(t);
+  return (m ? m[1] : t).replace(/\s+/g, " ");
+}
+
 const list = (xs: string[], max = 4): string => (xs.length <= max ? xs.join(", ") : `${xs.slice(0, max).join(", ")} and ${xs.length - max} more`);
 /** `acme.health.Contains` is `Contains`: the module is for the Inspector. */
 const plain = (qualified: string): string => qualified.slice(qualified.lastIndexOf(".") + 1);
@@ -22,7 +29,7 @@ const plain = (qualified: string): string => qualified.slice(qualified.lastIndex
  */
 export function describeGraph(info: GraphInfo, present: string[], purposeOf: (projection: string) => string | undefined = () => undefined): string {
   const given = info.description ?? (info.projectionName ? purposeOf(info.projectionName) : undefined);
-  if (given) return given;
+  if (given) return firstSentence(given);
   const from = info.inputs.length ? ` from ${list(info.inputs)}` : "";
   if (info.document) return `A report${from}, written as a document`;
   if (info.role === "master") return `Everything ingested: ${list(present)}`;

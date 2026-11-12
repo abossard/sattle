@@ -1,6 +1,7 @@
 // Accessibility checks in real Chrome, driven over CDP: axe-core with color contrast on every view, theme and dialog,
 // and keyboard-only walkthroughs with real key events (tab order, tab list arrows, dialog focus, focus visibility).
 // Usage: node scripts/a11y-cdp.mjs [base-url] [chrome-path]   (serve the app first: npm run dev, or vite preview; default http://localhost:5173/)
+// Exit code: 0 all checks ran and passed, 1 a check failed, 2 all that ran passed but some were skipped (no engine, no document graph, ...; A11Y_ALLOW_SKIP=1 accepts that).
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -42,7 +43,23 @@ const clickText = (sel, text) => evaluate(`(()=>{const e=[...document.querySelec
 /** A graph that is a tree (or a document) opens on its own tab: the checks of the canvas need the Graph tab. */
 const showGraphTab = async () => { await evaluate(`(() => { const t = [...document.querySelectorAll('[aria-label="How to show this graph"] [role=tab]')].find((x) => x.textContent.startsWith("Graph")); if (t) t.click(); })()`); await sleep(1200); };
 const who = () => evaluate(`(()=>{const e=document.activeElement;const n=e.getAttribute('aria-label')||e.textContent.trim().slice(0,40)||e.tagName;return n})()`);
-const focusVisible = () => evaluate(`(()=>{const e=document.activeElement;if(!e||e===document.body)return false;const c=getComputedStyle(e);const a=getComputedStyle(e,'::after');const hasRing=(s)=>s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0||s.boxShadow!=='none'||(s.borderStyle!=='none'&&s.content!=='none');return e.matches(':focus-visible')&&(hasRing(c)||hasRing(a)||!!e.closest('[data-tabster]'))})()`);
+/**
+ * Whether the focused element shows a focus ring that a person can see. The element must match :focus-visible, and either have a visible outline,
+ * or a visible border on its ::after (the Fluent focus indicator), or a style (box shadow, border) that changes between focused and not focused.
+ * A shadow or border the element always has is a design, not a ring; being inside a tabster root is not a ring either.
+ */
+const focusVisible = () => evaluate(`(()=>{
+  const e=document.activeElement; if(!e||e===document.body) return false;
+  const shown=(c)=>!!c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)';
+  const outline=(s)=>s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>0&&shown(s.outlineColor);
+  const border=(s)=>s.content!=='none'&&s.borderTopStyle!=='none'&&parseFloat(s.borderTopWidth)>0&&shown(s.borderTopColor);
+  const sig=()=>{const c=getComputedStyle(e),a=getComputedStyle(e,'::after');return JSON.stringify([c.outlineStyle,c.outlineWidth,c.outlineColor,c.boxShadow,c.borderTopColor,c.borderTopWidth,a.content,a.borderTopStyle,a.borderTopWidth,a.borderTopColor])};
+  if(!e.matches(':focus-visible')) return false;
+  const c=getComputedStyle(e),a=getComputedStyle(e,'::after');
+  if(outline(c)||border(a)) return true;
+  const focused=sig(); e.blur(); const plain=sig(); e.focus();
+  return focused!==plain;
+})()`);
 
 const results = { axe: [], keyboard: [] };
 const fail = [];
@@ -335,6 +352,9 @@ console.log(JSON.stringify(results.axe.map((r) => ({ name: r.name, violations: r
 for (const r of results.axe) if (r.violations) console.log(JSON.stringify(r.detail));
 console.log(JSON.stringify(results.keyboard));
 if (results.roles) console.log(JSON.stringify(results.roles));
-console.log(fail.length ? `FAILED (${fail.length}):\n${fail.join("\n")}` : "a11y: all checks passed");
+// a check that was skipped (the engine has no document graph, no Lift, ...) was not made: it is not a pass. A11Y_ALLOW_SKIP=1 accepts skips for a run without the engine.
+const skipped = results.axe.filter((r) => r.skipped);
+if (skipped.length) console.log(`a11y: ${skipped.length} check(s) SKIPPED, not passed:\n${skipped.map((r) => `  ${r.name}: ${r.skipped}`).join("\n")}`);
+console.log(fail.length ? `FAILED (${fail.length}):\n${fail.join("\n")}` : skipped.length ? "a11y: the checks that ran passed, others were skipped" : "a11y: all checks passed");
 stop();
-process.exit(fail.length ? 1 : 0);
+process.exit(fail.length ? 1 : skipped.length && !process.env.A11Y_ALLOW_SKIP ? 2 : 0);

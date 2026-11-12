@@ -43,3 +43,20 @@ describe("the hierarchy marks of an ontology (engine 3.14)", () => {
   });
   it("a graph that is not a hierarchy is read as before", () => expect(readPresentation({ properties: [] }).tree).toBeNull());
 });
+
+describe("what an ontology declares for viewers (engine 3.17): the kind of a relationship type and the label of an entity type", () => {
+  const id = (v: string) => ({ value: v });
+  const raw = (rel: Record<string, unknown>[], ent: Record<string, unknown>[] = []) => ({ schemaVersion: "1.0", properties: [], entityTypes: [{ id: id("NoType"), properties: [], label: null }, ...ent], relationshipTypes: rel });
+  it.each([
+    ["communication", "communication"], ["composition", "composition"], ["dependency", "dependency"], ["support", "support"],
+  ])("reads the kind %s of a type", (kind, want) => expect(readPresentation(raw([{ id: id("R"), sourceTypes: [], targetTypes: [], properties: [], kind }])).kinds).toEqual({ R: want }));
+  it.each([[null], [undefined], ["something else"], [3]])("a kind that is %j is no kind", (kind) => expect(readPresentation(raw([{ id: id("R"), sourceTypes: [], targetTypes: [], properties: [], kind }])).kinds).toEqual({}));
+  it("reads the label of an entity type and none for a type that declares none", () => {
+    const r = readPresentation(raw([], [{ id: id("Pod"), properties: [id("name")], label: id("name") }, { id: id("Blob"), properties: [], label: null }]));
+    expect(r.labels).toEqual({ Pod: "name" });
+  });
+  it("removes both from the ontology: the contract schema forbids extra fields", () => {
+    const r = readPresentation(raw([{ id: id("R"), sourceTypes: [], targetTypes: [], properties: [], kind: "composition", hierarchy: false }], [{ id: id("Pod"), properties: [], label: id("name") }]));
+    expect(JSON.stringify(r.ontology)).not.toMatch(/"kind"|"label"|"hierarchy"/);
+  });
+});

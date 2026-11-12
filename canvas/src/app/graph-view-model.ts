@@ -1,4 +1,5 @@
 // Pure view calculations for data graphs: filters, search, neighbourhood focus, group collapse, flag layers.
+import type { EdgeKind } from "../source/presentation";
 import type { Graph } from "../core/graph";
 import { type Entity, valueText } from "../core/model";
 import type { OntologyDefinition } from "../core/wire-types";
@@ -10,6 +11,15 @@ export function labelPadding(labels: string[]): number {
   const longest = labels.reduce((m, l) => Math.max(m, l.length), 0);
   return Math.min(120, Math.max(40, 8 + 3.4 * Math.min(longest, 32)));
 }
+/**
+ * The edge kinds a graph is drawn without when the person has not chosen: none in the view; in a tile of the graph space only what makes the graph readable
+ * at that size, composition and dependency, with communication and support one click away. A graph that has neither draws what it has.
+ */
+export function defaultHiddenKinds(tile: boolean, present: ReadonlySet<EdgeKind>): EdgeKind[] {
+  if (!tile) return [];
+  return present.has("composition") || present.has("dependency") ? ["communication", "support"] : [];
+}
+
 export const emptyFilter = (): Filter => ({ hiddenTypes: new Set(), prop: null, search: "" });
 
 export function entityMatchesProp(e: Entity, f: PropertyFilter): boolean {

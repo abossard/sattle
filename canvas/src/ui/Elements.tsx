@@ -19,6 +19,8 @@ export function ElementsPanel({ graph }: { graph: string }) {
   const sel = useStore((x) => x.selection);
   const [kind, setKind] = useState<"entity" | "relationship">("entity");
   const [q, setQ] = useState("");
+  // a sorted list is sorted before it is cut: the first rows by that order, not by slot
+  const [sort, setSort] = useState<{ column: keyof Row; dir: "ascending" | "descending" } | null>(null);
   const g = ws?.histories.get(graph)?.graph;
   const filters = useStore((x) => x.filters[graph]) ?? emptyFilter();
   const info = ws?.graphInfo(graph);
@@ -30,6 +32,7 @@ export function ElementsPanel({ graph }: { graph: string }) {
   const { rows, total } = useMemo(() => {
     if (!g) return { rows: [] as Row[], total: 0 };
     const out: Row[] = [];
+    const cut = !sort; // without a sort order the first rows in slot order will do; with one, every row is needed to know which come first
     let n = 0;
     const lab = (id: string) => { const e = g.entity(id); return e ? g.label(e) : id; };
     const want = q.toLowerCase();
@@ -37,13 +40,13 @@ export function ElementsPanel({ graph }: { graph: string }) {
       for (const e of g.entities() as Iterable<Entity>) {
         if (want && !entityMatchesSearch(e, q)) continue;
         n++;
-        if (out.length < LIMIT) out.push({ id: e.id, type: e.type, name: g.label(e), detail: e.id, value: valueOf(e.props) });
+        if (!cut || out.length < LIMIT) out.push({ id: e.id, type: e.type, name: g.label(e), detail: e.id, value: valueOf(e.props) });
       }
     } else {
       for (const r of g.relationships() as Iterable<Rel>) {
         if (want && !`${r.type} ${r.id} ${lab(r.source)} ${lab(r.target)}`.toLowerCase().includes(want)) continue;
         n++;
-        if (out.length < LIMIT) out.push({ id: r.id, type: r.type, name: `${lab(r.source)} → ${lab(r.target)}`, detail: r.id, value: valueOf(r.props) });
+        if (!cut || out.length < LIMIT) out.push({ id: r.id, type: r.type, name: `${lab(r.source)} → ${lab(r.target)}`, detail: r.id, value: valueOf(r.props) });
       }
     }
     // the selected row is always shown, so the list follows the canvas
@@ -51,8 +54,14 @@ export function ElementsPanel({ graph }: { graph: string }) {
       const e = kind === "entity" ? g.entity(sel.id) : g.rel(sel.id);
       if (e) out.unshift({ id: e.id, type: e.type, name: kind === "entity" ? g.label(e) : `${lab((e as Rel).source)} → ${lab((e as Rel).target)}`, detail: e.id, value: valueOf(e.props) });
     }
+    if (sort) {
+      const col = { type: "type", name: "name", value: "value" }[sort.column as "type" | "name" | "value"] as "type" | "name" | "value";
+      const sign = sort.dir === "ascending" ? 1 : -1;
+      out.sort((a, b) => sign * a[col].localeCompare(b[col]));
+      out.length = Math.min(out.length, LIMIT);
+    }
     return { rows: out, total: n };
-  }, [g, q, kind, sel, version, prop]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [g, q, kind, sel, version, prop, sort]); // eslint-disable-line react-hooks/exhaustive-deps
   const columns: TableColumnDefinition<Row>[] = useMemo(() => [
     createTableColumn<Row>({ columnId: "type", compare: (a, b) => a.type.localeCompare(b.type), renderHeaderCell: () => "Type", renderCell: (r) => <TableCellLayout media={ws ? <TypeGlyph {...styleOf(ws, graph, r.type)} /> : undefined}>{r.type}</TableCellLayout> }),
     createTableColumn<Row>({ columnId: "name", compare: (a, b) => a.name.localeCompare(b.name), renderHeaderCell: () => (kind === "entity" ? "Name" : "Source → target"), renderCell: (r) => <TableCellLayout truncate>{r.name}</TableCellLayout> }),
@@ -65,7 +74,7 @@ export function ElementsPanel({ graph }: { graph: string }) {
       <Field label="List"><Select value={kind} onChange={(_, d) => setKind(d.value as typeof kind)}><option value="entity">Nodes ({g.nodeCount.toLocaleString()})</option><option value="relationship">Edges ({g.edgeCount.toLocaleString()})</option></Select></Field>
       <SearchBox value={q} aria-label="Filter the list" placeholder="Filter the list" onChange={(_, d) => setQ(d.value)} />
       <Text size={200} role="status" aria-live="polite">{total > rows.length ? `Showing ${rows.length} of ${total.toLocaleString()}. Refine the filter to see others.` : `${total.toLocaleString()} shown`}</Text>
-      <DataGrid items={rows} columns={columns} getRowId={(r) => r.id} size="small" sortable selectionMode="single" selectedItems={selected} focusMode="composite" aria-label={kind === "entity" ? "Nodes of the graph" : "Edges of the graph"}
+      <DataGrid items={rows} columns={columns} getRowId={(r) => r.id} size="small" sortable sortState={sort ? { sortColumn: sort.column, sortDirection: sort.dir } : undefined} onSortChange={(_, d) => setSort({ column: String(d.sortColumn) as keyof Row, dir: d.sortDirection })} selectionMode="single" selectedItems={selected} focusMode="composite" aria-label={kind === "entity" ? "Nodes of the graph" : "Edges of the graph"}
         onSelectionChange={(_, d) => { const id = [...d.selectedItems][0] as string | undefined; if (id) { dispatch({ type: "select/element", selection: { graph, kind, id } }); dispatch({ type: "pane/command", graph, command: "focus" }); } }}>
         <DataGridHeader><DataGridRow selectionCell={{ checkboxIndicator: { "aria-label": "Select row" } }}>{({ renderHeaderCell }) => <DataGridHeaderCell>{renderHeaderCell()}</DataGridHeaderCell>}</DataGridRow></DataGridHeader>
         <DataGridBody<Row>>{({ item, rowId }) => <DataGridRow<Row> key={rowId} selectionCell={{ radioIndicator: { "aria-label": `Select ${item.name}` } }}>{({ renderCell }) => <DataGridCell>{renderCell(item)}</DataGridCell>}</DataGridRow>}</DataGridBody>

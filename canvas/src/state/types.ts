@@ -19,8 +19,8 @@ export interface GraphSummary {
   version: number;
 }
 
-export interface FilterState { search: string; hiddenTypes: string[]; propKey: string; propOp: "equals" | "contains" | "not equals"; propValue: string; focusDepth: number; grouping: string; focusDim: boolean; layout: "force" | "layered"; hlMode: "step" | "since" | "off"; hlSince: number; /** what colors nodes and edges: "@default" (the ontology's presentation hint when it has one), "" (type colors) or a property id */ colorNodes: string; colorEdges: string }
-export const emptyFilter = (): FilterState => ({ search: "", hiddenTypes: [], propKey: "", propOp: "equals", propValue: "", focusDepth: 0, grouping: "@support", focusDim: true, layout: "force", hlMode: "step", hlSince: 0, colorNodes: "@default", colorEdges: "@default" });
+export interface FilterState { search: string; hiddenTypes: string[]; propKey: string; propOp: "equals" | "contains" | "not equals"; propValue: string; focusDepth: number; grouping: string; focusDim: boolean; layout: "force" | "layered"; hlMode: "step" | "since" | "off"; hlSince: number; /** what colors nodes and edges: "@default" (the ontology's presentation hint when it has one), "" (type colors) or a property id */ colorNodes: string; colorEdges: string; /** edge kinds left out (engine 3.17); null: the default of the place the graph is shown (a tile leaves out communication and support) */ hiddenKinds: import("../source/presentation").EdgeKind[] | null }
+export const emptyFilter = (): FilterState => ({ search: "", hiddenTypes: [], propKey: "", propOp: "equals", propValue: "", focusDepth: 0, grouping: "@support", focusDim: true, layout: "force", hlMode: "step", hlSince: 0, colorNodes: "@default", colorEdges: "@default", hiddenKinds: null });
 
 export interface TelemetryState {
   hasData: boolean; enabled: boolean; flow: boolean;
@@ -130,7 +130,8 @@ export interface State {
 
 export type Action =
   // lifecycle
-  | { type: "source/opening"; id: string }
+  /** `resync`: the same source is read again after a gap; the author's editor session and draft stay */
+  | { type: "source/opening"; id: string; resync?: boolean }
   | { type: "source/opened"; graphs: GraphSummary[]; catalog: string; ms: number; telemetry: Record<string, TelemetryState>; active: string }
   | { type: "source/failed"; message: string }
   // server push, dispatched in the order the source delivers it
@@ -139,6 +140,7 @@ export type Action =
   | { type: "data/touched"; graph: string }
   | { type: "feed/telemetry"; graph: string; batch: TelemetryBatch }
   | { type: "feed/telemetryReset"; graph: string }
+  | { type: "feed/meta"; graph: string; meta: import("../source/types").GraphMeta }
   | { type: "feed/resync"; reason: string }
   | { type: "feed/rejected"; rejection: Rejection; at: number }
   | { type: "feed/connection"; status: ConnectionStatus }

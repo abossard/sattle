@@ -24,11 +24,11 @@ export function usualName(e: Entity): string {
 
 /** `entities` lists the graph's elements; the short index of a type counts them in slot order, once, and keeps the number it gave. */
 /** Gives the graph the naming its ontology implies, unless it has one already. */
-export function nameGraph(g: { namer: Namer | null; entities(): Iterable<Entity> }, ontology: OntologyDefinition | undefined): void {
-  if (!g.namer) g.namer = makeNamer(ontology, () => g.entities());
+export function nameGraph(g: { namer: Namer | null; entities(): Iterable<Entity> }, ontology: OntologyDefinition | undefined, labels: Readonly<Record<string, string>> = {}): void {
+  if (!g.namer) g.namer = makeNamer(ontology, () => g.entities(), labels);
 }
 
-export function makeNamer(ontology: OntologyDefinition | undefined, entities: () => Iterable<Entity>): Namer {
+export function makeNamer(ontology: OntologyDefinition | undefined, entities: () => Iterable<Entity>, labels: Readonly<Record<string, string>> = {}): Namer {
   const defs = new Map((ontology?.properties ?? []).map((p) => [p.id.value, p]));
   const required = new Map<string, string[]>();
   const requiredOf = (type: string): string[] => {
@@ -49,6 +49,9 @@ export function makeNamer(ontology: OntologyDefinition | undefined, entities: ()
     return n;
   };
   return (e) => {
+    // the ontology says which property names an element of the type (engine 3.17); only when it declares none the guesses below apply
+    const declared = labels[e.type] ? readable(e, labels[e.type]) : "";
+    if (declared) return declared;
     const name = usualName(e);
     if (name) return name;
     const parts = requiredOf(e.type).map((k) => readable(e, k)).filter(Boolean);

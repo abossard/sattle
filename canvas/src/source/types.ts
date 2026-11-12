@@ -4,7 +4,7 @@
 import type { Patch, Snapshot } from "../core/model";
 import type { Rejection } from "../core/validate";
 import type { GraphDescriptorWire, OntologyDefinition, ProjectionDefinition } from "../core/wire-types";
-import type { PresentationHint, TreeSpec } from "./presentation";
+import type { EdgeKind, PresentationHint, TreeSpec } from "./presentation";
 
 export interface GraphInfo {
   id: string;
@@ -15,6 +15,10 @@ export interface GraphInfo {
   presentation?: PresentationHint[];
   /** engine 3.14: the ontology marks one relationship type as the hierarchy of this graph, so it can be read as a tree */
   tree?: TreeSpec;
+  /** engine 3.17: what an edge of each relationship type means (communication, composition, dependency, support); a type that declares none is absent */
+  edgeKinds?: Record<string, EdgeKind>;
+  /** engine 3.17: per entity type, the property that names an element; a type that declares none is absent */
+  labels?: Record<string, string>;
   /** definition of the projection that produces this graph (projection graphs only) */
   definition?: ProjectionDefinition;
   /** graphs this graph is derived from */
@@ -31,6 +35,9 @@ export interface GraphInfo {
   /** engine 3.4: the graph is a document (output ontology sattle.doc); the engine renders it to Markdown */
   document?: boolean;
 }
+
+/** What a graph says about itself that an activation can change. */
+export type GraphMeta = Pick<GraphInfo, "ontology" | "presentation" | "tree" | "edgeKinds" | "labels">;
 
 export interface SpaceInfo { id: string; graphs: GraphInfo[] }
 
@@ -102,9 +109,9 @@ export type StreamEvent =
   | { type: "resync"; reason: string }
   /** stored telemetry is stale (a definition edit re-activated the space); batches follow */
   | { type: "telemetry-reset" }
+  /** the definition edit that re-activated the space can change the ontology and the value roles of a graph: they are read again */
+  | { type: "meta"; meta: GraphMeta }
   | { type: "end" };
-
-export type EvaluateResult = { status: "unavailable"; reason: string } | { status: "ok"; output: Snapshot };
 
 /** Optional playback controls, offered by sources that replay recorded patches. */
 export interface StreamControls {
@@ -129,7 +136,6 @@ export interface GraphSource {
   subscribe(graph: string, sink: (e: StreamEvent) => void): () => void;
   correspondences?(graph: string): Promise<Correspondence[]>;
   /** Re-run a projection definition. Sources without an engine answer "unavailable". */
-  evaluate(def: ProjectionDefinition): Promise<EvaluateResult>;
   /** Records rejected by seam validation, as they occur. */
   onRejected(cb: (r: Rejection) => void): () => void;
   /** Release what the source holds open (a live connection); called when the workspace is closed or reloaded. */
@@ -158,10 +164,6 @@ export interface GraphSource {
 /** A rendered document: the revision it is the state of, the digest of its bytes and the Markdown. */
 export interface DocumentText { revision: string; digest: string; markdown: string }
 
-export const NOT_AVAILABLE: EvaluateResult = {
-  status: "unavailable",
-  reason: "No engine is connected. Projections are not re-executed; the definition is only checked statically.",
-};
 
 /** Connection state of a live source, shown in the status bar. */
 export interface ConnectionStatus {
@@ -174,24 +176,6 @@ export interface ConnectionStatus {
 
 /** Diagnostic from the engine's checker: positioned in the module text (line and col are 1-based, 0 when there is no position) and tied to a catalog element. */
 export interface EngineDiagnostic { code: string; severity: "error" | "warning" | string; focus: string; message: string; line: number; col: number }
-
-export interface CheckResult {
-  ok: boolean;
-  /** catalog revision the check ran against */
-  baseRevision: string;
-  diagnostics: EngineDiagnostic[];
-  /** the catalog patch the edit would produce, null when not ok */
-  patch: Patch | null;
-  /** modules and graphs the edit affects */
-  affected: { modules: string[]; graphs: string[] };
-}
-
-export interface CommitResult {
-  ok: boolean;
-  catalogRevision?: string;
-  activation?: { graphs: { id: string; from: string; to: string; edits: string }[]; replayedRows: string; milliseconds: string };
-  error?: { code: string; message?: string; actual?: string; diagnostics?: EngineDiagnostic[] };
-}
 
 export interface ModuleText { module: string; text: string; version: string; digest: string; revision: string }
 
@@ -224,8 +208,4 @@ export interface Reference {
 export interface DefinitionService {
   /** modules known to the engine with their canonical `.sattle` text */
   modules(): Promise<ModuleText[]>;
-  /** check an edited module text without applying it */
-  check(module: string, text: string): Promise<CheckResult>;
-  /** apply an edit; the engine re-activates and emits one output patch per changed graph on the feed */
-  commit(module: string, text: string, expectedRevision: string): Promise<CommitResult>;
 }

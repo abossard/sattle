@@ -46,11 +46,6 @@ describe("StaticSource: the engine's output on the estate fixture", () => {
     }
     expect(Object.entries(edges).filter(([id, n]) => n === 0 && !["deploymentReport", "healthSignals"].includes(id))).toEqual([]);
   });
-  it("evaluate answers unavailable", async () => {
-    const src = new StaticSource("t", url, fetcher());
-    const info = await src.open();
-    expect((await src.evaluate(info.graphs[0].definition!)).status).toBe("unavailable");
-  });
 });
 
 describe("the estate space: inputs, lineage in both directions, documents", () => {
@@ -152,7 +147,6 @@ describe("SimulatedStream", () => {
     sim.reset();
     expect(sim.delivered).toBe(0);
     expect(sim.state).toBe("idle");
-    sim.evaluate(null as never).then((r) => expect(r.status).toBe("unavailable"));
   });
   it("lineage, reverse lineage and documents pass through to the source it plays", async () => {
     const sim = new SimulatedStream(new StaticSource("t", url, fetcher()));

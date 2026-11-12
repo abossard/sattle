@@ -43,6 +43,7 @@ export function applyFilter(pane: DataPane, f: FilterState, changed: Partial<Fil
     pane.setFilter({ hiddenTypes: new Set(f.hiddenTypes), prop: f.propKey ? { key: f.propKey, op: f.propOp, value: f.propValue } : null, search: f.search });
   }
   if (has("focusDepth")) { pane.focusDepth = f.focusDepth; pane.refreshAll(); }
+  if (has("hiddenKinds")) pane.setKindFilter(f.hiddenKinds);
   if (has("focusDim")) { pane.focusDim = f.focusDim; pane.setSelection(pane.selection); }
   if (has("layout") && pane.layoutKind !== f.layout) pane.runLayout(f.layout, true);
   if (has("grouping")) {

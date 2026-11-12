@@ -61,6 +61,9 @@ export function copyEdits(g: G, ids: string[], rename: (id: string) => string): 
  * Edits that touch the same element more than once become one: first before-state, last after-state (an element removed and created
  * again by one edit is a change; one that ends as it began is no edit). A patch must name an element once.
  */
+/** JSON with the keys of every object in order: the same properties in another order are the same value. */
+const stable = (v: unknown): string => JSON.stringify(v, (_, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : x));
+
 export function coalesce(edits: Edit[]): Edit[] {
   const order: string[] = [];
   const byKey = new Map<string, Edit>();
@@ -70,5 +73,5 @@ export function coalesce(edits: Edit[]): Edit[] {
     const prev = byKey.get(k) as Extract<Edit, { kind: "entity" | "relationship" }> | undefined;
     if (!prev) { order.push(k); byKey.set(k, e); } else byKey.set(k, { ...e, before: prev.before } as Edit);
   }
-  return order.map((k) => byKey.get(k)!).filter((e) => !((e.kind === "entity" || e.kind === "relationship") && JSON.stringify(e.before) === JSON.stringify(e.after)));
+  return order.map((k) => byKey.get(k)!).filter((e) => !((e.kind === "entity" || e.kind === "relationship") && stable(e.before) === stable(e.after)));
 }

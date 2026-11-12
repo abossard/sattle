@@ -212,7 +212,9 @@ export function addValuesRowEdits(g: Graph, op: string, cells: { name: string; s
   if (!cells.length) return no("a row needs at least one column");
   if (new Set(cells.map((c) => c.name)).size !== cells.length) return no("column names must differ");
   const c = new Catalog(g);
-  const n = c.children(op, "row").length;
+  // the next index no row has: after a middle row was deleted the child count is the index of a row that still exists
+  let n = c.children(op, "row").length;
+  while (g.entity(`${op}/row:#${n}`)) n++;
   const row = `${op}/row:#${n}`;
   const domains = domainsOf(g, op);
   const edits: Edit[] = [ent(row, "RowValue", {}), contains(op, row, "row", n)];
@@ -273,8 +275,10 @@ export function addPatternEdgeEdits(g: Graph, op: string, variable: string, from
   if (!g.entity(f) || !g.entity(t)) return no("an edge joins two nodes of this pattern");
   if (!g.entity(type)) return no("unknown relationship type");
   const n = nextOrdinal(new Catalog(g), op, "edge");
-  const id = `${op}/edge:#${n}`;
-  return ok([ent(id, "PatternEdge", { var: text(variable) }), rel(id, "from", f), rel(id, "to", t), rel(id, "ofType", type), contains(op, id, "edge", n)]);
+  // as the engine names them: a named edge by its variable and with a `var` property, an unnamed one by its index and with none
+  const id = variable ? `${op}/edge:${variable}` : `${op}/edge:#${n}`;
+  if (g.entity(id)) return no(variable ? `an edge ${variable} already exists in this pattern` : "an edge with this index already exists");
+  return ok([ent(id, "PatternEdge", variable ? { var: text(variable) } : {}), rel(id, "from", f), rel(id, "to", t), rel(id, "ofType", type), contains(op, id, "edge", n)]);
 }
 
 // ---- rules ----

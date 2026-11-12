@@ -110,7 +110,7 @@ function TextPanel() {
         <Field label="Module" orientation="horizontal"><Select value={module} onChange={(_, d) => { setModule(d.value); setText(session?.texts[d.value] ?? ""); }}>{mods.map((m) => <option key={m}>{m}</option>)}</Select></Field>
         <Text size={200}>The text is the draft printed canonically. Edits are checked by the engine and become one undo step.</Text>
       </div>
-      <Textarea className={s.mono} resize="vertical" rows={12} aria-label={`Text of module ${module}`} value={text} onFocus={() => { focused.current = true; }} onBlur={() => { focused.current = false; setText(session?.texts[module] ?? text); }} onChange={(_, d) => setText(d.value)} textarea={{ style: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre" } }} />
+      <Textarea className={s.mono} resize="vertical" rows={12} aria-label={`Text of module ${module}`} value={text} onFocus={() => { focused.current = true; }} onBlur={() => { focused.current = false; if (text !== (session?.texts[module] ?? "")) run({ t: "text", module, text }); /* the pending edit is sent now, not lost with the timer */ else setText(session?.texts[module] ?? text); }} onChange={(_, d) => setText(d.value)} textarea={{ style: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre" } }} />
     </div>
   );
 }
@@ -371,7 +371,8 @@ export function EditorView() {
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement;
-    if (t.closest("input, textarea, select, [role=combobox]")) return;
+    // a control that has focus keeps its own keys: Enter presses a button, Delete is not "delete the selected operators" (dialogs are portals, but their events reach this handler)
+    if (t.closest("input, textarea, select, button, a[href], [role=combobox], [role=button], [role=tab], [role=menuitem], [role=option], [role=dialog], [role=spinbutton], [role=switch], [role=checkbox]")) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key.toLowerCase();
     const stop = () => { e.preventDefault(); e.stopPropagation(); };

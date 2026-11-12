@@ -2,9 +2,7 @@
 // Each tick delivers the next patch of every graph that still has one.
 import type { Patch, Snapshot } from "../core/model";
 import type { Rejection } from "../core/validate";
-import type { ProjectionDefinition } from "../core/wire-types";
-import type { Correspondence, EvaluateResult, GraphSource, DocumentText, Lineage, Reference, ReverseLineage, SpaceInfo, StreamControls, StreamEvent, TelemetryFeed } from "./types";
-import { NOT_AVAILABLE } from "./types";
+import type { Correspondence, GraphSource, DocumentText, Lineage, Reference, ReverseLineage, SpaceInfo, StreamControls, StreamEvent, TelemetryFeed } from "./types";
 
 export class SimulatedStream implements GraphSource, StreamControls {
   readonly name: string;
@@ -31,7 +29,6 @@ export class SimulatedStream implements GraphSource, StreamControls {
   open(): Promise<SpaceInfo> { return this.inner.open(); }
   snapshot(graph: string): Promise<Snapshot> { return this.inner.snapshot(graph); }
   correspondences(graph: string): Promise<Correspondence[]> { return this.inner.correspondences?.(graph) ?? Promise.resolve([]); }
-  evaluate(_def: ProjectionDefinition): Promise<EvaluateResult> { return Promise.resolve(NOT_AVAILABLE); }
   onRejected(cb: (r: Rejection) => void): () => void { return this.inner.onRejected(cb); }
   meters(graph: string) { return this.inner.meters?.(graph) ?? Promise.resolve(null); }
   references(graph: string): Promise<Reference[]> { return this.inner.references?.(graph) ?? Promise.resolve([]); }
@@ -87,6 +84,8 @@ export class SimulatedStream implements GraphSource, StreamControls {
     this.changed();
   }
 
+  /** The workspace is gone: no more ticks, and the inner source (workers) is released. */
+  dispose(): void { this.stop(); this.listeners.clear(); this.inner.dispose?.(); }
   private stop(): void { if (this.timer) { clearInterval(this.timer); this.timer = null; } }
   private start(): void { this.stop(); this.timer = setInterval(() => this.advance(), Math.max(10, 1000 / this.speed)); }
   private changed(): void { for (const l of this.listeners) l(); }

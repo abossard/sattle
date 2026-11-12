@@ -1,0 +1,3681 @@
+{
+ "kernelDigest": "sha256:92d76214083af520627c6e783fdac6c9347c569a4a6032f0407f274381e234b5",
+ "version": "3",
+ "operators": [
+  {
+   "kind": "Delta",
+   "supported": false,
+   "role": "telemetry",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "kind": "Text",
+     "required": true
+    }
+   ],
+   "slots": [
+    {
+     "name": "key",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "value",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": null,
+   "sink": false,
+   "telemetry": true,
+   "unsupportedReason": "not built: no property in the definitions or the captures is cumulative (sources arrive as gauges or deltas), so it would ship without real data to test against"
+  },
+  {
+   "kind": "Distinct",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per-row multiplicity counts, set semantics over signed rows",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "EmitEntity",
+   "supported": true,
+   "role": "sink",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "mode",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "create",
+      "update"
+     ]
+    }
+   ],
+   "slots": [
+    {
+     "name": "id",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "set",
+     "children": [
+      "SetProperty"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "SetProperty",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "support-counted element layer",
+   "sink": true,
+   "telemetry": false
+  },
+  {
+   "kind": "EmitRelationship",
+   "supported": true,
+   "role": "sink",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "mode",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "create",
+      "update"
+     ]
+    },
+    {
+     "name": "key",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "retype",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "reject",
+      "keepExisting",
+      "takeNew"
+     ]
+    }
+   ],
+   "slots": [
+    {
+     "name": "source",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "target",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "set",
+     "children": [
+      "SetProperty"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "SetProperty",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "support-counted element layer",
+   "sink": true,
+   "telemetry": false
+  },
+  {
+   "kind": "Filter",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "predicate",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "linear: selection vector",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Fixpoint",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "seed",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "maxFacts",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "facts"
+    },
+    {
+     "name": "maxIterations",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "iterations"
+    }
+   ],
+   "slots": [
+    {
+     "name": "relation",
+     "children": [
+      "RowType"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "RowType",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "description",
+         "kind": "Text",
+         "required": false
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "op",
+     "children": [
+      "Operator"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Operator",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "bounded unrolling: distinct(R union step(R)) repeated maxIterations times from distinct(seed); every operator is incremental",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Group",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "key",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "agg",
+     "children": [
+      "Aggregate"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Aggregate",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "fn",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "count",
+          "countDistinct",
+          "sum",
+          "min",
+          "max",
+          "any",
+          "all",
+          "mean",
+          "weightedMean",
+          "last"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per-key accumulators with signed weights; closing windows when keyed by windowStart",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Join",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "left",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "right",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "on",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "bilinear delta over per-side hash indexes on the equality keys; residual predicate on the joined rows",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Lift",
+   "supported": true,
+   "role": "lift",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "edges",
+     "direction": "in",
+     "kind": "graph"
+    },
+    {
+     "name": "map",
+     "direction": "in",
+     "kind": "graph"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "within",
+     "kind": "Integer",
+     "required": true,
+     "default": "86400000000000",
+     "quantity": "duration",
+     "unit": "ns",
+     "literal": "<integer><ms|s|m|h>",
+     "example": "24h"
+    },
+    {
+     "name": "images",
+     "kind": "Text",
+     "required": false,
+     "values": [
+      "reject",
+      "each"
+     ]
+    },
+    {
+     "name": "selfLoops",
+     "kind": "Text",
+     "required": true,
+     "default": "drop",
+     "values": [
+      "drop",
+      "keep"
+     ]
+    }
+   ],
+   "slots": [
+    {
+     "name": "carry",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "*",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ],
+     "value": {
+      "kind": "fieldRef",
+      "roots": [],
+      "offers": "the telemetry properties of the lower relationship type (the edge type of the lift, in the ontology of the edge graph)"
+     }
+    },
+    {
+     "name": "derive",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "*",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ],
+     "value": {
+      "kind": "expr",
+      "roots": [],
+      "offers": "the columns of the windows: the carried and the derived properties"
+     }
+    },
+    {
+     "name": "keep",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "*",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ],
+     "value": {
+      "kind": "fieldRef",
+      "roots": [
+       "src",
+       "dst"
+      ],
+      "offers": "src.p or dst.p: the data properties of the image type (the target type of the mapping relationship)"
+     }
+    },
+    {
+     "name": "when",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ],
+     "value": {
+      "kind": "expr",
+      "roots": [
+       "node",
+       "image"
+      ],
+      "offers": "node.p or image.p: the properties of the mapped node and of its image"
+     }
+    },
+    {
+     "name": "state",
+     "children": [
+      "LiftState"
+     ],
+     "multiplicity": "*",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "LiftState",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "of",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "above",
+         "kind": "Decimal",
+         "required": true,
+         "quantity": "value",
+         "unit": "unit of the thresholded value"
+        },
+        {
+         "name": "enterAfter",
+         "kind": "Integer",
+         "required": true,
+         "quantity": "count",
+         "unit": "windows"
+        },
+        {
+         "name": "high",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "below",
+         "kind": "Decimal",
+         "required": true,
+         "quantity": "value",
+         "unit": "unit of the thresholded value"
+        },
+        {
+         "name": "exitAfter",
+         "kind": "Integer",
+         "required": true,
+         "quantity": "count",
+         "unit": "windows"
+        },
+        {
+         "name": "low",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "initial",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "lowered at check time to Match, Join, Group, Filter, Series, Rollup, Map, Threshold and the emits of the lifted relationship: every strategy of those operators applies, and lineage names every lower element",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Link",
+   "supported": true,
+   "role": "sink",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "left",
+     "children": [
+      "IdOf"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "IdOf",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "right",
+     "children": [
+      "IdOf"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "IdOf",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "confidence",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "identity binding",
+   "sink": true,
+   "telemetry": false
+  },
+  {
+   "kind": "Map",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "assign",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "+",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "linear: shared columns",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Match",
+   "supported": true,
+   "role": "source",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "graph",
+     "direction": "in",
+     "kind": "graph"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "node",
+     "children": [
+      "PatternNode"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "PatternNode",
+       "params": [
+        {
+         "name": "var",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "side",
+         "kind": "Text",
+         "required": false,
+         "values": [
+          "source",
+          "target"
+         ]
+        },
+        {
+         "name": "create",
+         "kind": "Boolean",
+         "required": false
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "edge",
+     "children": [
+      "PatternEdge"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "PatternEdge",
+       "params": [
+        {
+         "name": "var",
+         "kind": "Text",
+         "required": false
+        },
+        {
+         "name": "minHops",
+         "kind": "Integer",
+         "required": false,
+         "quantity": "count",
+         "unit": "hops"
+        },
+        {
+         "name": "maxHops",
+         "kind": "Integer",
+         "required": false,
+         "quantity": "count",
+         "unit": "hops"
+        },
+        {
+         "name": "side",
+         "kind": "Text",
+         "required": false,
+         "values": [
+          "source",
+          "target"
+         ]
+        },
+        {
+         "name": "create",
+         "kind": "Boolean",
+         "required": false
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "bilinear delta against the input graph",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Retain",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "timestampField",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "age",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "duration",
+     "unit": "ns",
+     "literal": "<integer><ms|s|m|h>",
+     "example": "24h"
+    }
+   ],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per-row buffer by event time: a row is withdrawn (negative weight) when the logical frontier passes its time plus the age; a row already older than that on arrival never passes",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Rollup",
+   "supported": true,
+   "role": "telemetry",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "key",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "agg",
+     "children": [
+      "Aggregate"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Aggregate",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "fn",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "count",
+          "countDistinct",
+          "sum",
+          "min",
+          "max",
+          "any",
+          "all",
+          "mean",
+          "weightedMean",
+          "last"
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per (key, window) accumulators",
+   "sink": false,
+   "telemetry": true
+  },
+  {
+   "kind": "Series",
+   "supported": true,
+   "role": "telemetry",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "graph",
+     "direction": "in",
+     "kind": "graph"
+    },
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "within",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "duration",
+     "unit": "ns",
+     "literal": "<integer><ms|s|m|h>",
+     "example": "24h"
+    }
+   ],
+   "slots": [
+    {
+     "name": "read",
+     "children": [
+      "FieldRef"
+     ],
+     "multiplicity": "+",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "FieldRef",
+       "params": [
+        {
+         "name": "path",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ],
+     "value": {
+      "kind": "fieldRef",
+      "roots": [],
+      "offers": "var.property of the pattern variables of the graph the series reads"
+     }
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "bilinear: new rows against seen windows, new windows against all rows",
+   "sink": false,
+   "telemetry": true
+  },
+  {
+   "kind": "Threshold",
+   "supported": true,
+   "role": "telemetry",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "target",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "above",
+     "kind": "Decimal",
+     "required": true,
+     "quantity": "value",
+     "unit": "unit of the thresholded value"
+    },
+    {
+     "name": "enterAfter",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "windows"
+    },
+    {
+     "name": "high",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "below",
+     "kind": "Decimal",
+     "required": true,
+     "quantity": "value",
+     "unit": "unit of the thresholded value"
+    },
+    {
+     "name": "exitAfter",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "windows"
+    },
+    {
+     "name": "low",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "initial",
+     "kind": "Text",
+     "required": true
+    }
+   ],
+   "slots": [
+    {
+     "name": "key",
+     "children": [
+      "Assign"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Assign",
+       "params": [
+        {
+         "name": "target",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "value",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "1",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "aboveBy",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "enterBy",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "belowBy",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "exitBy",
+     "children": [
+      "Expr"
+     ],
+     "multiplicity": "?",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Expr",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per-key state machine over ordered closed windows",
+   "sink": false,
+   "telemetry": true
+  },
+  {
+   "kind": "Traverse",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "graph",
+     "direction": "in",
+     "kind": "graph"
+    },
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "direction",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "out",
+      "in",
+      "either"
+     ]
+    },
+    {
+     "name": "minDepth",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "hops"
+    },
+    {
+     "name": "maxDepth",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "hops"
+    },
+    {
+     "name": "start",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "target",
+     "kind": "Text",
+     "required": true
+    }
+   ],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "per start element breadth-first reach, recomputed only when a visited element or edge changed; emits the difference",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Union",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in0",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "in1",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "conflict",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "requireEqual",
+      "preferFirst",
+      "preferLast",
+      "preserveEvidence"
+     ]
+    }
+   ],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "linear: concatenation of both inputs' signed rows (conflict policy preserveEvidence only)",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Values",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [],
+   "slots": [
+    {
+     "name": "row",
+     "children": [
+      "RowValue"
+     ],
+     "multiplicity": "+",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "RowValue",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "constant rows, emitted once when the graph first evaluates",
+   "sink": false,
+   "telemetry": false
+  },
+  {
+   "kind": "Window",
+   "supported": true,
+   "role": "linear",
+   "container": "Projection",
+   "slot": "op",
+   "ports": [
+    {
+     "name": "in",
+     "direction": "in",
+     "kind": "rows"
+    },
+    {
+     "name": "out",
+     "direction": "out",
+     "kind": "rows"
+    }
+   ],
+   "params": [
+    {
+     "name": "timestampField",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "width",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "duration",
+     "unit": "ns",
+     "literal": "<integer><ms|s|m|h>",
+     "example": "24h"
+    },
+    {
+     "name": "late",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "ignore",
+      "revise",
+      "reject"
+     ]
+    }
+   ],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "strategy": "linear: window assignment",
+   "sink": false,
+   "telemetry": false
+  }
+ ],
+ "ruleClasses": [
+  {
+   "name": "readonly",
+   "params": [],
+   "policies": [],
+   "supported": true,
+   "unsupportedReason": null
+  },
+  {
+   "name": "bijective",
+   "params": [],
+   "policies": [],
+   "supported": true,
+   "unsupportedReason": null
+  },
+  {
+   "name": "lens",
+   "params": [
+    "putput"
+   ],
+   "policies": [
+    "accept",
+    "on create",
+    "on delete"
+   ],
+   "supported": true,
+   "unsupportedReason": null
+  },
+  {
+   "name": "sync",
+   "params": [],
+   "policies": [],
+   "supported": false,
+   "unsupportedReason": "not built: needs the stored correspondence graph and the FWD and BWD translators of Ch. 8, none of which exist"
+  }
+ ],
+ "aggregates": [
+  {
+   "name": "count",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "no argument",
+     "output": "Integer",
+     "requires": null
+    },
+    {
+     "operator": "Rollup",
+     "inputs": "no argument",
+     "output": "Integer",
+     "requires": null
+    }
+   ]
+  },
+  {
+   "name": "countDistinct",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "any data value",
+     "output": "Integer",
+     "requires": null
+    }
+   ]
+  },
+  {
+   "name": "sum",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "numeric data value",
+     "output": "same as the value",
+     "requires": null
+    },
+    {
+     "operator": "Rollup",
+     "inputs": "numeric telemetry value",
+     "output": "same as the value",
+     "requires": "not cumulative"
+    }
+   ]
+  },
+  {
+   "name": "min",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "numeric data value",
+     "output": "same as the value",
+     "requires": null
+    },
+    {
+     "operator": "Rollup",
+     "inputs": "numeric telemetry value",
+     "output": "same as the value",
+     "requires": "not cumulative"
+    }
+   ]
+  },
+  {
+   "name": "max",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "numeric data value",
+     "output": "same as the value",
+     "requires": null
+    },
+    {
+     "operator": "Rollup",
+     "inputs": "numeric telemetry value",
+     "output": "same as the value",
+     "requires": "not cumulative"
+    }
+   ]
+  },
+  {
+   "name": "any",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "Boolean data value",
+     "output": "Boolean",
+     "requires": null
+    }
+   ]
+  },
+  {
+   "name": "all",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "Boolean data value",
+     "output": "Boolean",
+     "requires": null
+    }
+   ]
+  },
+  {
+   "name": "mean",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "numeric data value",
+     "output": "Decimal",
+     "requires": null
+    },
+    {
+     "operator": "Rollup",
+     "inputs": "numeric telemetry value",
+     "output": "Decimal",
+     "requires": "gauge"
+    }
+   ]
+  },
+  {
+   "name": "weightedMean",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "numeric data value and a numeric data weight: weightedMean(value, weight)",
+     "output": "Decimal",
+     "requires": null
+    }
+   ]
+  },
+  {
+   "name": "last",
+   "supported": true,
+   "contexts": [
+    {
+     "operator": "Group",
+     "inputs": "data value (not an element) and an ordering of data Integer, Decimal or Instant: last(value, order)",
+     "output": "same as the value",
+     "requires": null
+    }
+   ]
+  }
+ ],
+ "declarations": [
+  {
+   "slot": "entity",
+   "type": "EntityType",
+   "container": "Module",
+   "params": [
+    {
+     "name": "abstract",
+     "kind": "Boolean",
+     "required": true
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": []
+  },
+  {
+   "slot": "rel",
+   "type": "RelationshipType",
+   "container": "Module",
+   "params": [
+    {
+     "name": "abstract",
+     "kind": "Boolean",
+     "required": true
+    },
+    {
+     "name": "hierarchy",
+     "kind": "Boolean",
+     "required": false
+    },
+    {
+     "name": "kind",
+     "kind": "Text",
+     "required": false
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": []
+  },
+  {
+   "slot": "extend",
+   "type": "Extension",
+   "container": "Module",
+   "params": [
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": []
+  },
+  {
+   "slot": "identity",
+   "type": "IdentityDomain",
+   "container": "Module",
+   "params": [
+    {
+     "name": "canonicalizationVersion",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": [
+    {
+     "name": "component",
+     "children": [
+      "KeyComponent"
+     ],
+     "multiplicity": "+",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "KeyComponent",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "slot": "equivalence",
+   "type": "EquivalencePolicy",
+   "container": "Module",
+   "params": [
+    {
+     "name": "mode",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "assert",
+      "review"
+     ]
+    },
+    {
+     "name": "threshold",
+     "kind": "Decimal",
+     "required": true,
+     "quantity": "ratio",
+     "unit": "fraction from 0 to 1"
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": []
+  },
+  {
+   "slot": "rows",
+   "type": "RowType",
+   "container": "Module",
+   "params": [
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": [
+    {
+     "name": "field",
+     "children": [
+      "Field"
+     ],
+     "multiplicity": "*",
+     "ordered": true,
+     "childTypes": [
+      {
+       "type": "Field",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "optional",
+         "kind": "Boolean",
+         "required": true
+        },
+        {
+         "name": "unit",
+         "kind": "Text",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "slot": "projection",
+   "type": "Projection",
+   "container": "Module",
+   "params": [
+    {
+     "name": "purpose",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "ingestion",
+      "view",
+      "migration",
+      "verification"
+     ]
+    },
+    {
+     "name": "retain",
+     "kind": "Integer",
+     "required": true,
+     "quantity": "count",
+     "unit": "retained inputs per element"
+    },
+    {
+     "name": "forward",
+     "kind": "Boolean",
+     "required": true
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": [
+    {
+     "name": "port",
+     "children": [
+      "Port"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Port",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "direction",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "in",
+          "out"
+         ]
+        },
+        {
+         "name": "kind",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "rows",
+          "graph",
+          "param"
+         ]
+        },
+        {
+         "name": "default",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "op",
+     "children": [
+      "Operator"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Operator",
+       "params": []
+      }
+     ]
+    },
+    {
+     "name": "rule",
+     "children": [
+      "Rule"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Rule",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "class",
+         "kind": "Text",
+         "required": true,
+         "values": [
+          "bijective",
+          "lens",
+          "sync",
+          "readonly"
+         ]
+        },
+        {
+         "name": "putput",
+         "kind": "Boolean",
+         "required": true
+        },
+        {
+         "name": "reason",
+         "kind": "Text",
+         "required": false
+        },
+        {
+         "name": "accept",
+         "kind": "List",
+         "required": false
+        },
+        {
+         "name": "onDelete",
+         "kind": "Text",
+         "required": false,
+         "values": [
+          "remove",
+          "set"
+         ]
+        },
+        {
+         "name": "sourceVar",
+         "kind": "Text",
+         "required": false
+        },
+        {
+         "name": "targetVar",
+         "kind": "Text",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "slot": "space",
+   "type": "GraphSpace",
+   "container": "Module",
+   "params": [
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": [
+    {
+     "name": "graph",
+     "children": [
+      "Graph"
+     ],
+     "multiplicity": "+",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Graph",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "source",
+     "children": [
+      "Source"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Source",
+       "params": [
+        {
+         "name": "name",
+         "kind": "Text",
+         "required": true
+        },
+        {
+         "name": "adapter",
+         "kind": "Text",
+         "required": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "binding",
+     "children": [
+      "Binding"
+     ],
+     "multiplicity": "*",
+     "ordered": false,
+     "childTypes": [
+      {
+       "type": "Binding",
+       "params": [
+        {
+         "name": "value",
+         "kind": "Any",
+         "required": false
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "slot": "constraint",
+   "type": "Constraint",
+   "container": "Module",
+   "params": [
+    {
+     "name": "kind",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "key",
+      "enum",
+      "range",
+      "pattern",
+      "cardinality",
+      "acyclic"
+     ]
+    },
+    {
+     "name": "severity",
+     "kind": "Text",
+     "required": true,
+     "values": [
+      "error",
+      "warning"
+     ]
+    },
+    {
+     "name": "values",
+     "kind": "List",
+     "required": false
+    },
+    {
+     "name": "min",
+     "kind": "Decimal",
+     "required": false,
+     "quantity": "value",
+     "unit": "unit of the constrained property"
+    },
+    {
+     "name": "max",
+     "kind": "Decimal",
+     "required": false,
+     "quantity": "value",
+     "unit": "unit of the constrained property"
+    },
+    {
+     "name": "pattern",
+     "kind": "Text",
+     "required": false
+    },
+    {
+     "name": "side",
+     "kind": "Text",
+     "required": false,
+     "values": [
+      "source",
+      "target"
+     ]
+    },
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "description",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "slots": [],
+   "kinds": [
+    {
+     "kind": "key",
+     "target": "entity",
+     "uses": [
+      "onProperty"
+     ],
+     "text": "constraint key T(p1, p2);"
+    },
+    {
+     "kind": "enum",
+     "target": "entity or relationship property",
+     "uses": [
+      "onProperty",
+      "values"
+     ],
+     "text": "constraint enum T.p in [\"a\", \"b\"];"
+    },
+    {
+     "kind": "range",
+     "target": "entity or relationship property",
+     "uses": [
+      "onProperty",
+      "min",
+      "max"
+     ],
+     "text": "constraint range T.p 0 .. 100;"
+    },
+    {
+     "kind": "pattern",
+     "target": "entity or relationship property",
+     "uses": [
+      "onProperty",
+      "pattern"
+     ],
+     "text": "constraint pattern T.p \"regex\";"
+    },
+    {
+     "kind": "cardinality",
+     "target": "relationship",
+     "uses": [
+      "side",
+      "min",
+      "max"
+     ],
+     "text": "constraint cardinality R per source|target 0 .. 1|*;"
+    },
+    {
+     "kind": "acyclic",
+     "target": "relationship",
+     "uses": [],
+     "text": "constraint acyclic R;"
+    }
+   ]
+  }
+ ],
+ "rowTypes": {
+  "type": "RowType",
+  "fieldSlot": "field",
+  "field": {
+   "type": "Field",
+   "params": [
+    {
+     "name": "name",
+     "kind": "Text",
+     "required": true
+    },
+    {
+     "name": "optional",
+     "kind": "Boolean",
+     "required": true
+    },
+    {
+     "name": "unit",
+     "kind": "Text",
+     "required": false
+    }
+   ],
+   "valueKinds": [
+    "Text",
+    "Integer",
+    "Decimal",
+    "Boolean",
+    "Instant"
+   ]
+  }
+ },
+ "equivalencePolicies": {
+  "type": "EquivalencePolicy",
+  "modes": [
+   "assert",
+   "review"
+  ],
+  "between": "two identity domains (edge between)",
+  "params": [
+   {
+    "name": "mode",
+    "kind": "Text",
+    "required": true,
+    "values": [
+     "assert",
+     "review"
+    ]
+   },
+   {
+    "name": "threshold",
+    "kind": "Decimal",
+    "required": true,
+    "quantity": "ratio",
+    "unit": "fraction from 0 to 1"
+   },
+   {
+    "name": "name",
+    "kind": "Text",
+    "required": true
+   },
+   {
+    "name": "description",
+    "kind": "Text",
+    "required": false
+   }
+  ]
+ },
+ "rules": {
+  "type": "Rule",
+  "params": [
+   {
+    "name": "name",
+    "kind": "Text",
+    "required": true
+   },
+   {
+    "name": "class",
+    "kind": "Text",
+    "required": true,
+    "values": [
+     "bijective",
+     "lens",
+     "sync",
+     "readonly"
+    ]
+   },
+   {
+    "name": "putput",
+    "kind": "Boolean",
+    "required": true
+   },
+   {
+    "name": "reason",
+    "kind": "Text",
+    "required": false
+   },
+   {
+    "name": "accept",
+    "kind": "List",
+    "required": false
+   },
+   {
+    "name": "onDelete",
+    "kind": "Text",
+    "required": false,
+    "values": [
+     "remove",
+     "set"
+    ]
+   },
+   {
+    "name": "sourceVar",
+    "kind": "Text",
+    "required": false
+   },
+   {
+    "name": "targetVar",
+    "kind": "Text",
+    "required": false
+   }
+  ],
+  "slots": [
+   {
+    "name": "createDefault",
+    "children": [
+     "SetProperty"
+    ],
+    "multiplicity": "*",
+    "ordered": false,
+    "childTypes": [
+     {
+      "type": "SetProperty",
+      "params": []
+     }
+    ]
+   },
+   {
+    "name": "deleteSet",
+    "children": [
+     "SetProperty"
+    ],
+    "multiplicity": "*",
+    "ordered": false,
+    "childTypes": [
+     {
+      "type": "SetProperty",
+      "params": []
+     }
+    ]
+   },
+   {
+    "name": "node",
+    "children": [
+     "PatternNode"
+    ],
+    "multiplicity": "*",
+    "ordered": false,
+    "childTypes": [
+     {
+      "type": "PatternNode",
+      "params": [
+       {
+        "name": "var",
+        "kind": "Text",
+        "required": true
+       },
+       {
+        "name": "side",
+        "kind": "Text",
+        "required": false,
+        "values": [
+         "source",
+         "target"
+        ]
+       },
+       {
+        "name": "create",
+        "kind": "Boolean",
+        "required": false
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "edge",
+    "children": [
+     "PatternEdge"
+    ],
+    "multiplicity": "*",
+    "ordered": false,
+    "childTypes": [
+     {
+      "type": "PatternEdge",
+      "params": [
+       {
+        "name": "var",
+        "kind": "Text",
+        "required": false
+       },
+       {
+        "name": "minHops",
+        "kind": "Integer",
+        "required": false,
+        "quantity": "count",
+        "unit": "hops"
+       },
+       {
+        "name": "maxHops",
+        "kind": "Integer",
+        "required": false,
+        "quantity": "count",
+        "unit": "hops"
+       },
+       {
+        "name": "side",
+        "kind": "Text",
+        "required": false,
+        "values": [
+         "source",
+         "target"
+        ]
+       },
+       {
+        "name": "create",
+        "kind": "Boolean",
+        "required": false
+       }
+      ]
+     }
+    ]
+   },
+   {
+    "name": "id",
+    "children": [
+     "IdOf"
+    ],
+    "multiplicity": "?",
+    "ordered": false,
+    "childTypes": [
+     {
+      "type": "IdOf",
+      "params": []
+     }
+    ]
+   },
+   {
+    "name": "equate",
+    "children": [
+     "Expr"
+    ],
+    "multiplicity": "*",
+    "ordered": true,
+    "childTypes": [
+     {
+      "type": "Expr",
+      "params": []
+     }
+    ]
+   },
+   {
+    "name": "keep",
+    "children": [
+     "FieldRef"
+    ],
+    "multiplicity": "*",
+    "ordered": true,
+    "childTypes": [
+     {
+      "type": "FieldRef",
+      "params": [
+       {
+        "name": "path",
+        "kind": "Text",
+        "required": true
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "onDelete": [
+   "remove",
+   "set"
+  ],
+  "policies": [
+   {
+    "text": "accept create, delete, update(p, q)",
+    "meaning": "which view edits are accepted and which properties may change"
+   },
+   {
+    "text": "on create key <identity domain> default { p: expr }",
+    "meaning": "the identity of a created element and the defaults of properties the view does not show"
+   },
+   {
+    "text": "on delete set { p: expr }",
+    "meaning": "deleting retires the source element by setting these properties"
+   },
+   {
+    "text": "on delete remove",
+    "meaning": "deleting removes the source element"
+   }
+  ]
+ },
+ "projectionPorts": [
+  {
+   "kind": "rows",
+   "text": "in name: rows <RowType>;"
+  },
+  {
+   "kind": "graph",
+   "text": "in name: graph <module alias>;"
+  },
+  {
+   "kind": "param",
+   "text": "in name: param <Text|Integer|Decimal|Boolean> [= constant];"
+  }
+ ],
+ "valueRoles": [
+  "ok",
+  "warning",
+  "danger",
+  "unknown",
+  "neutral"
+ ],
+ "valueRoleSlot": {
+  "container": "PropertyType",
+  "slot": "presentation",
+  "type": "ValueRole",
+  "params": [
+   {
+    "name": "value",
+    "kind": "Any",
+    "required": true
+   },
+   {
+    "name": "role",
+    "kind": "Text",
+    "required": true,
+    "values": [
+     "ok",
+     "warning",
+     "danger",
+     "unknown",
+     "neutral"
+    ]
+   }
+  ]
+ },
+ "functions": [
+  {
+   "name": "Equal",
+   "signature": "(a, a) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "NotEqual",
+   "signature": "(a, a) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "LessThan",
+   "signature": "(o, o) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "LessOrEqual",
+   "signature": "(o, o) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "GreaterThan",
+   "signature": "(o, o) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "GreaterOrEqual",
+   "signature": "(o, o) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "And",
+   "signature": "(Boolean, Boolean, ...) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Or",
+   "signature": "(Boolean, Boolean, ...) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Not",
+   "signature": "Boolean -> Boolean",
+   "role": "scalar",
+   "inverse": "Not",
+   "supported": true
+  },
+  {
+   "name": "Add",
+   "signature": "(n, n) -> n",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Subtract",
+   "signature": "(n, n) -> n",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Multiply",
+   "signature": "(n, m) -> n*m",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Divide",
+   "signature": "(n, m) -> Decimal",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Negate",
+   "signature": "n -> n",
+   "role": "scalar",
+   "inverse": "Negate",
+   "supported": true
+  },
+  {
+   "name": "ToDecimal",
+   "signature": "Integer -> Decimal",
+   "role": "scalar",
+   "inverse": "ToInteger",
+   "supported": true
+  },
+  {
+   "name": "Concat",
+   "signature": "(Text, Text, ...) -> Text",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Coalesce",
+   "signature": "(a, ..., a) -> a",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "IsPresent",
+   "signature": "a -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "If",
+   "signature": "(Boolean, a, a) -> a",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Rate",
+   "signature": "n(delta) -> Decimal(gauge)",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "InList",
+   "signature": "(a, List<a>) -> Boolean",
+   "role": "scalar",
+   "inverse": null,
+   "supported": false
+  },
+  {
+   "name": "LowerInvariant",
+   "signature": "Text -> Text",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Trim",
+   "signature": "Text -> Text",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "EntityId",
+   "signature": "Entity -> Text",
+   "role": "scalar",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Exact",
+   "signature": "Text -> Text",
+   "role": "canonicalizer",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "LowerInvariant",
+   "signature": "Text -> Text",
+   "role": "canonicalizer",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "Trim",
+   "signature": "Text -> Text",
+   "role": "canonicalizer",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "IpCanonical",
+   "signature": "Text -> Text",
+   "role": "canonicalizer",
+   "inverse": null,
+   "supported": true
+  },
+  {
+   "name": "UuidLower",
+   "signature": "Text -> Text",
+   "role": "canonicalizer",
+   "inverse": null,
+   "supported": true
+  }
+ ],
+ "valueKinds": [
+  "Text",
+  "Integer",
+  "Decimal",
+  "Boolean",
+  "Instant",
+  "Entity",
+  "List"
+ ],
+ "idScheme": "d:<module>/<slot>:<name>/..., relationship id <source>|<edge>|<target>, unnamed ordered child slot:#n"
+}

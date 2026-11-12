@@ -1,5 +1,5 @@
 // Node positions of a projection graph: layered left to right by data flow, plus what the author moved.
-import type { DefGraph, DefNode } from "../core/projection/defgraph";
+import type { DefGraph, DefNode } from "../core/def-graph";
 
 export interface Pos { x: number; y: number }
 export const NODE_W = 220;

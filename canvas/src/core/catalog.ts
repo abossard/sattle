@@ -4,7 +4,7 @@
 import { Graph } from "./graph";
 import type { Entity, Rel } from "./model";
 import { valueText } from "./model";
-import type { DefEdge, DefGraph, DefLoop, DefNode } from "./projection/defgraph";
+import type { DefEdge, DefGraph, DefLoop, DefNode } from "./def-graph";
 
 export type DirectionClass = "forward" | "readonly" | "bijective" | "lens" | "sync";
 export const DIRECTION_CLASSES: DirectionClass[] = ["forward", "readonly", "bijective", "lens", "sync"];

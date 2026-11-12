@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EngineSource } from "../src/source/engine";
-import { parseCheckResponse, parseCommitResponse, parseSpace, parseWsMessage, batchFromWire, parseMeters } from "../src/source/engine-protocol";
+import { parseDiagnostics, parseSpace, parseWsMessage, batchFromWire, parseMeters } from "../src/source/engine-protocol";
 import type { StreamEvent } from "../src/source/types";
 import type { Rejection } from "../src/core/validate";
 
@@ -21,14 +21,13 @@ describe("protocol parsing", () => {
     expect(r.ok && r.batch.t).toBe(Date.parse("2026-11-10T10:41:00Z") / 1000);
     expect(batchFromWire({ ...tel("nope", 1) }).ok).toBe(false);
   });
-  it("check and commit responses", () => {
-    const rej: unknown[] = [];
-    const c = parseCheckResponse({ ok: false, baseRevision: "10", diagnostics: [{ code: "UnknownField", severity: "error", message: "m", line: 3, column: 4, element: "d:a/b" }], patch: null, affected: { modules: ["a"], graphs: ["g"] } }, (r) => rej.push(r));
-    expect(c).toMatchObject({ ok: false, baseRevision: "10", patch: null, affected: { modules: ["a"], graphs: ["g"] } });
-    expect(c.diagnostics[0]).toEqual({ code: "UnknownField", severity: "error", focus: "d:a/b", message: "m", line: 3, col: 4 });
-    expect(parseCommitResponse(200, { catalogRevision: "11", activation: { graphs: [] } })).toMatchObject({ ok: true, catalogRevision: "11" });
-    expect(parseCommitResponse(409, { error: { code: "StaleRevision", actual: "11" } })).toMatchObject({ ok: false, error: { code: "StaleRevision", actual: "11" } });
-    expect(parseCommitResponse(422, { error: { code: "Invalid", diagnostics: [{ code: "Syntax", message: "x", line: 1, column: 1 }] } }).error!.diagnostics!.length).toBe(1);
+  it.each<[string, unknown, string | undefined]>([["a caption", "Services and what they depend on.", "Services and what they depend on."], ["no description (null)", null, undefined], ["an empty one", "", undefined], ["not text", 3, undefined]])("the description of a graph in /space: %s", (_, description, want) => {
+    const doc = parseSpace({ protocol: "3", space: "s", graphs: [{ id: "g", role: "projection", description }] });
+    expect(doc.graphs[0].description).toBe(want);
+  });
+  it("diagnostics of the engine's checker: position, element and message", () => {
+    expect(parseDiagnostics([{ code: "UnknownField", severity: "error", message: "m", line: 3, column: 4, element: "d:a/b" }])).toEqual([{ code: "UnknownField", severity: "error", focus: "d:a/b", message: "m", line: 3, col: 4 }]);
+    expect(parseDiagnostics(undefined)).toEqual([]);
   });
 });
 
@@ -98,6 +97,7 @@ describe("EngineSource", () => {
       "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1)]) }),
       "GET /graphs/master/patches?after=1": () => ({ body: ndjson([wirePatch(1, 2)]) }),
       "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }),
+      "GET /graphs/master/telemetry": () => ({ body: "" }), // the catch-up after the reconnect reads from the last window
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never, backoff: [1] });
     await src.open();
@@ -166,18 +166,14 @@ describe("EngineSource", () => {
     src.dispose();
   });
 
-  it("definitions: lists modules with text, checks, commits and reports stale and invalid edits", async () => {
+  it("definitions: lists modules with their text", async () => {
     const routes = baseRoutes({
       "GET /definitions": () => ({ body: [{ name: "acme.svc", version: "1.0.0", digest: "sha256:a", revision: "9" }] }),
       "GET /definitions/acme.svc": () => ({ body: "module acme.svc @ 1.0.0;" }),
-      "POST /check": () => ({ body: { ok: true, baseRevision: "10", diagnostics: [], patch: null, affected: { modules: ["acme.svc"], graphs: ["serviceTree"] } } }),
-      "POST /definitions/acme.svc": () => ({ status: 409, body: { error: { code: "StaleRevision", actual: "11" } } }),
     });
     const src = new EngineSource(BASE, { fetch: makeFetch(routes) });
     const d = src.definitions;
     expect(await d.modules()).toEqual([{ module: "acme.svc", version: "1.0.0", digest: "sha256:a", revision: "9", text: "module acme.svc @ 1.0.0;" }]);
-    expect((await d.check("acme.svc", "x")).affected.graphs).toEqual(["serviceTree"]);
-    expect(await d.commit("acme.svc", "x", "10")).toMatchObject({ ok: false, error: { code: "StaleRevision", actual: "11" } });
   });
 
   it("lineage maps the engine record, and 404 is no lineage", async () => {

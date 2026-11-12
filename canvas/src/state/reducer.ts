@@ -12,7 +12,7 @@ const patchGraph = (graphs: GraphSummary[], id: string, f: (g: GraphSummary) => 
 
 export function reduce(s: State, a: Action): State {
   switch (a.type) {
-    case "source/opening": return { ...initialState(), theme: s.theme, view: s.view, sourceId: a.id, generation: s.generation + 1, load: { status: "loading", message: "", ms: 0 } };
+    case "source/opening": return { ...initialState(), ...(a.resync ? { editor: s.editor } : {}), theme: s.theme, view: s.view, sourceId: a.id, generation: s.generation + 1, load: { status: "loading", message: "", ms: 0 } };
     case "source/opened": return {
       ...s, graphs: a.graphs, catalog: a.catalog, activeGraph: a.active, telemetry: a.telemetry, load: { status: "ready", message: "", ms: a.ms },
       filters: Object.fromEntries(a.graphs.map((g) => [g.id, emptyFilter()])),
@@ -22,6 +22,7 @@ export function reduce(s: State, a: Action): State {
     case "feed/patch": case "feed/telemetry": return s;
     case "data/summary": return { ...s, graphs: a.graphs, telemetry: a.telemetry };
     case "data/touched": return s;
+    case "feed/meta": return { ...s, graphs: patchGraph(s.graphs, a.graph, (g) => ({ ...g, version: g.version + 1 })) };
     case "feed/telemetryReset": return { ...s, graphs: patchGraph(s.graphs, a.graph, (g) => ({ ...g, version: g.version + 1 })) };
     case "feed/resync": return { ...s, freshness: "resyncing", announcement: `Resynchronizing: ${a.reason}` };
     case "feed/rejected": return { ...s, rejections: [...s.rejections.slice(-199), { ...a.rejection, at: a.at }], rejectedTotal: s.rejectedTotal + 1 };

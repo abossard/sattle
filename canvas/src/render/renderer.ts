@@ -162,6 +162,9 @@ void main(){
   if((st & 5u) != 0u) w = max(w, 1.4);
   if((st & 1u) != 0u) w = max(w, 2.0);
   if((st & 240u) != 0u) w = max(w, 1.6);
+  uint kind = (aMeta >> 24) & 255u;
+  if(kind == 1u) w = max(w, 1.1);                                  // composition: a little heavier
+  if(kind == 4u) w = min(w, 0.55);                                 // support: thin
   vec2 p; vec2 n; float dist;
   int side = gl_VertexID & 1;
   float sgn = float(side) * 2.0 - 1.0;
@@ -186,6 +189,7 @@ void main(){
   float pad = w + 1.0;
   gl_Position = toClip(p + n * sgn * pad);
   vColor = aColor; vColor.a *= uEdgeAlpha; vDist = dist; vSide = sgn * pad / max(w, 0.0001); vMeta = aMeta;
+  if(kind == 4u) vColor.a *= 0.6;
   vTel = vec2(aT1, (uTel == 1 && aT2 >= uWarnE) ? 1.0 : 0.0);
   if(uTel == 1) vColor.a = max(vColor.a, 0.12 + 0.55 * aT0);
   if((st & 5u) != 0u) vColor.a = max(vColor.a, 0.9);
@@ -200,6 +204,9 @@ out vec4 outColor;
 void main(){
   uint style = vMeta & 255u; uint st = (vMeta >> 8) & 255u;
   if(style == 2u && fract(vDist / 12.0) > 0.58) discard;
+  uint kind = (vMeta >> 24) & 255u;
+  if(kind == 2u){ float q = mod(vDist, 16.0); if(!(q < 9.0 || (q > 11.0 && q < 13.0))) discard; }   // dependency: dash, dot
+  if(kind == 3u && fract(vDist / 6.0) > 0.45) discard;                                              // communication: dotted
   float edge = 1.0 - smoothstep(0.7, 1.0, abs(vSide));
   vec3 rgb = vColor.rgb; float a = vColor.a * edge;
   if(uTel == 1){
@@ -242,10 +249,19 @@ void main(){
   if(len < rpx + L * 1.5){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec2 dir = d / len; vec2 n = vec2(-dir.y, dir.x);
   vec2 tip = b - dir * rpx;
-  vec2 pt;
-  if(gl_VertexID == 0) pt = tip;
-  else if(gl_VertexID == 1) pt = tip - dir * L + n * L * 0.42;
-  else pt = tip - dir * L - n * L * 0.42;
+  uint kind = (aMeta >> 24) & 255u;
+  int v = gl_VertexID;                                  // two triangles per head; the second is collapsed to the tip when the shape needs one
+  vec2 pt = tip;
+  if(kind == 4u){ pt = tip; }                           // support: no head
+  else if(kind == 1u){                                  // composition: a diamond
+    vec2 mid = tip - dir * L * 0.8;
+    if(v == 1) pt = mid + n * L * 0.5; else if(v == 2) pt = mid - n * L * 0.5;
+    else if(v == 3) pt = tip - dir * L * 1.6; else if(v == 4) pt = mid + n * L * 0.5; else if(v == 5) pt = mid - n * L * 0.5;
+  } else if(kind == 2u){                                // dependency: a long narrow spike
+    if(v == 1) pt = tip - dir * L * 1.5 + n * L * 0.2; else if(v == 2) pt = tip - dir * L * 1.5 - n * L * 0.2;
+  } else {                                              // communication and no kind: a triangle
+    if(v == 1) pt = tip - dir * L + n * L * 0.42; else if(v == 2) pt = tip - dir * L - n * L * 0.42;
+  }
   gl_Position = toClip(pt);
   vColor = aColor; vColor.a = max(vColor.a * uEdgeAlpha, 0.35) ; vMeta = aMeta;
 }`;
@@ -506,7 +522,7 @@ export class GraphRenderer {
       gl.uniform1f(this.arrowProg.u.uEdgeAlpha, p.edgeAlpha);
       gl.uniform1f(this.arrowProg.u.uArrowSize, 8);
       gl.bindVertexArray(ib.vao);
-      gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, count);
+      gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
     };
     const drawNodes = (ib: InstanceBuffer, count: number, dim: number) => {
       if (count <= 0) return;

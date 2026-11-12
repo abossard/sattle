@@ -16,7 +16,7 @@ const ontology = {
   entityTypes: [{ id: { value: "NoType" }, properties: [] }, { id: { value: "Group" }, properties: [{ value: "acme.svc.cluster" }, { value: "replicas" }, { value: "acme.svc.namespace" }, { value: "note" }] }],
 };
 const group = (id: string, props: Record<string, string>): Entity => ent(id, "Group", props);
-const namer = (all: Entity[] = []) => makeNamer(ontology as never, () => all);
+const namer = (all: Entity[] = [], labels: Record<string, string> = {}) => makeNamer(ontology as never, () => all, labels);
 
 describe("internal ids are never labels", () => {
   it.each([[HASH, true], ["n:abcdefghijklmnopqrstuvwxyz", true], ["aks-synth", false], ["d:m/projection:p", false], ["e:short", false]])("%s is an internal id: %s", (s, yes) => expect(isInternalId(s)).toBe(yes));
@@ -44,4 +44,14 @@ describe("the name of an element", () => {
     const all = [group(HASH, {}), group(HASH.replace("j", "k"), { name: HASH }), group(HASH.replace("j", "m"), { "acme.svc.cluster": HASH })];
     for (const e of all) expect(isInternalId(namer(all)(e)), namer(all)(e)).toBe(false);
   });
+});
+
+describe("the property the ontology names as the label of a type (engine 3.17)", () => {
+  it.each<[string, Entity, Record<string, string>, string]>([
+    ["is used before any guess", group(HASH, { name: "web", note: "the note", "acme.svc.cluster": "synth" }), { Group: "note" }, "the note"],
+    ["is used when the element has no name", group(HASH, { note: "from the label" }), { Group: "note" }, "from the label"],
+    ["falls back to the usual name when the element has no value for it", group(HASH, { name: "web" }), { Group: "note" }, "web"],
+    ["a label that holds an internal id falls back", group(HASH, { note: HASH, name: "web" }), { Group: "note" }, "web"],
+    ["is the type's own: another type is not affected", ent(HASH, "Other", { name: "other", note: "n" }), { Group: "note" }, "other"],
+  ])("%s", (_, e, labels, want) => expect(namer([], labels)(e)).toBe(want));
 });

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
-// Defects of the code review in the screens (section 3): each test says what should be true and fails today for the reason the review gives.
+// Defects of the code review in the screens (section 3): each test says what should be true; each failed for the reason the review gives until its fix.
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it } from "vitest";
+import { History } from "../../src/app/history";
 import { EditorSession } from "../../src/editor/session";
 import { ent, text, contains } from "../../src/editor/patches";
 import { runtime } from "../../src/state/runtime";
@@ -28,6 +29,9 @@ const seed = () => {
 async function openEditor() {
   const eng = fakeEngine(seed());
   await openApp("tree-review", "data");
+  // the catalog head the Text tab compares against
+  (runtime.ws!.source as unknown as { catalogGraph: string }).catalogGraph = "catalog";
+  runtime.ws!.histories.set("catalog", new History({ version: { tenant: "demo", graph: "catalog", revision: "1" }, entities: [], relationships: [] }));
   runtime.session = await EditorSession.open(eng.svc);
   dispatch({ type: "editor/summary", patch: { status: "ready", message: "", draft: "d1", base: "11", revision: "0", version: 1, module: "m", projection: P, selected: [OP], diagnostics: [] } });
   dispatch({ type: "ui/view", view: "editor" });

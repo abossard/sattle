@@ -1,5 +1,5 @@
 // Defects of the code review (paper/research/07-code-review-findings.md, section 3 and the canvas addendum) that a person can hit and that need no browser:
-// each test states what should be true and fails today for the reason the review gives. Every title names the finding.
+// each test states what should be true; each failed for the reason the review gives until its fix. Every title names the finding.
 import { describe, expect, it } from "vitest";
 import { TelemetryHub } from "../../src/app/telemetry-hub";
 import { buildTree, severityCompare } from "../../src/app/tree-model";

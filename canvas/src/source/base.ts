@@ -1,6 +1,4 @@
 import type { Rejection } from "../core/validate";
-import type { EvaluateResult } from "./types";
-import { NOT_AVAILABLE } from "./types";
 
 /** Shared rejection reporting for source implementations. */
 export class RejectionBus {
@@ -14,4 +12,3 @@ export class RejectionBus {
   }
 }
 
-export const evaluateUnavailable = async (): Promise<EvaluateResult> => NOT_AVAILABLE;

@@ -35,6 +35,8 @@ const headRevision = (): string => { const ws = runtime.ws; const id = ws?.sourc
 const headGraph = (): Graph | null => { const ws = runtime.ws; const id = ws?.source.catalogGraph; return id ? ws!.histories.get(id)!.graph : null; };
 
 async function open(dispatch: Dispatch): Promise<void> {
+  // effects run before the reducer: what is dispatched here, before the first await, would be overwritten by `editor/open` ("opening") that is still to be reduced
+  await Promise.resolve();
   const ws = runtime.ws;
   if (!ws?.source.catalogGraph) { dispatch({ type: "editor/summary", patch: { status: "error", message: "The projection editor needs the engine (it edits the catalog through drafts). Choose the Engine source." } }); return; }
   try {
