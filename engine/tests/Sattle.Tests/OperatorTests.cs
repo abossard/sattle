@@ -538,6 +538,74 @@ public class OperatorTests
         Assert.Contains(new Catalog().Load([new SourceFile("t.fix.sattle", bad)], updatePins: true).Diagnostics, d => d.Message.Contains("the step must produce the relation's columns"));
     }
 
+    /// <summary>T-FIX: a closure by Fixpoint on random directed graphs with cycles equals the transitive closure, also after each retraction of an edge; with a bound below the longest derivation the missing facts are reported (Theorems 6.5 and 6.6, Def. 5.19).</summary>
+    [Theory]
+    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)] [InlineData(6)]
+    public void Fixpoint_on_cyclic_input_reaches_the_least_fixpoint_or_reports_the_bound(int seed)
+    {
+        var rng = new Random(seed);
+        var n = rng.Next(5, 31);
+        var nodes = Enumerable.Range(0, n).Select(i => "v" + i).ToArray();
+        var edges = new HashSet<(string, string)>();
+        var cycle = nodes.OrderBy(_ => rng.Next()).Take(3).ToArray();
+        for (var i = 0; i < 3; i++) edges.Add((cycle[i], cycle[(i + 1) % 3]));
+        while (edges.Count < n + rng.Next(n)) edges.Add((nodes[rng.Next(n)], nodes[rng.Next(n)]));
+        static HashSet<string> Closure(IEnumerable<(string A, string B)> es)
+        {
+            var next = es.ToLookup(x => x.A, x => x.B); var res = new HashSet<string>();
+            foreach (var start in es.Select(x => x.A).Distinct())
+            {
+                var seen = new HashSet<string>(); var todo = new Stack<string>(next[start]);
+                while (todo.Count > 0) { var v = todo.Pop(); if (!seen.Add(v)) continue; res.Add(start + ">" + v); foreach (var w in next[v]) todo.Push(w); }
+            }
+            return res;
+        }
+        Engine Run(int max)
+        {
+            var cat = new Catalog();
+            Assert.DoesNotContain(cat.Load([new SourceFile("t.fix.sattle", FixModule(max))], updatePins: true).Diagnostics, d => d.IsError);
+            var e = new Engine(cat, cat.Spaces.Keys.Single());
+            Put(e, 1, [.. edges.Select(x => (x.Item1, x.Item2, 1L))]);
+            return e;
+        }
+        static void Put(Engine e, long seq, (string, string, long)[] rows)
+        {
+            var rw = new RowWriter(e.RowLayout("edges"), e.Interner);
+            foreach (var (a, b, w) in rows) { rw.Begin(w); rw.Text("src", a); rw.Text("dst", b); }
+            e.Ingest("edges", rw.Build()!, seq);
+        }
+        // a bound at least the node count: the least fixpoint, and no report
+        using (var e = Run(n))
+        {
+            Assert.Equal(Closure(edges).Order(), Pairs(e).Order());
+            Assert.Empty(e.FixpointsAtBound());
+            var seq = 2L;
+            foreach (var cut in edges.OrderBy(_ => rng.Next()).Take(Math.Min(8, edges.Count - 1)).ToList())
+            {
+                Put(e, seq++, [(cut.Item1, cut.Item2, -1)]);
+                edges.Remove(cut);
+                Assert.Equal(Closure(edges).Order(), Pairs(e).Order());          // retraction on a cycle removes what lost its last derivation
+            }
+        }
+        // a bound of one step: part of the closure, and whenever a fact is missing the bound is reported
+        using (var e = Run(1))
+        {
+            var full = Closure(edges); var got = Pairs(e);
+            Assert.Subset(full, got);
+            var reported = e.FixpointsAtBound().ToList();
+            if (!got.SetEquals(full)) Assert.Single(reported, r => r.Fixpoint.Contains("/op:closure", StringComparison.Ordinal) && r.Gained > 0);
+        }
+    }
+
+    [Fact]
+    public void A_fixpoint_body_that_computes_a_value_is_refused()
+    {
+        var bad = FixModule(3)
+            .Replace("let base = edges |> select { a: src, b: dst };", "let base = edges |> select { a: src, b: dst, d: 1 };")
+            .Replace("|> select { a: a, b: y }", "|> select { a: a, b: y, d: d + 1 }");
+        Assert.Contains(new Catalog().Load([new SourceFile("t.fix.sattle", bad)], updatePins: true).Diagnostics, d => d.IsError && d.Message.Contains("(F5)") && d.Message.Contains("'d'"));
+    }
+
     const string ValuesBody = """
         let items = match master (i: base.Item) |> select { g: i.group, k: i.key };
         let labels = values { tk: "g1", label: "L1" }, { tk: "g2", label: "L2" };

@@ -885,8 +885,31 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             {
                 ["ok"] = ok, ["baseRevision"] = Rev(catalogHistory.Count), ["diagnostics"] = diags, ["patch"] = patch,
                 ["affected"] = new JsonObject { ["modules"] = new JsonArray([.. affectedModules.Select(m => (JsonNode)m)]), ["graphs"] = new JsonArray([.. affectedGraphs.Select(m => (JsonNode)m)]) },
+                ["schemas"] = Schemas(cand),
             };
         }
+    }
+
+    /// <summary>The row schema after each operator of the projections of the given modules, as the check typed them (also when the module has errors: the operators that typed are listed). Per projection id, in plan order: the operator's id, name and kind, its window (or null), and its columns with their kind, element type, unit, whether the value is always present, and its role (data, or telemetry with temporality and period).</summary>
+    /// <summary>The row schema after each operator of every projection of a catalog, by projection id.</summary>
+    internal static JsonObject Schemas(Catalog cand)
+    {
+        static JsonNode Column(Col c) => new JsonObject
+        {
+            ["name"] = c.Name,
+            ["kind"] = c.T.Ty.Tag switch { Tag.Ent => "Entity", Tag.Rel => "Relationship", var t => t.ToString() },
+            ["type"] = c.T.Ty.TypeId, ["unit"] = c.T.Ty.IsNumeric && c.T.Ty.Unit != "1" ? c.T.Ty.Unit : null, ["item"] = c.T.Ty.Item?.ToString(),
+            ["required"] = c.T.Req,
+            ["role"] = c.T.Role.IsData ? "data" : "telemetry", ["temporality"] = c.T.Role.Temporality, ["period"] = c.T.Role.IsData ? null : Lexer.DurationText(c.T.Role.Period),
+        };
+        var res = new JsonObject();
+        foreach (var (pid, ops) in cand.OperatorTypes.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+            res[pid] = new JsonArray([.. ops.Select(op => (JsonNode)new JsonObject
+            {
+                ["op"] = op.Id, ["name"] = op.Name, ["kind"] = op.Kind, ["window"] = op.Out.Window == 0 ? null : Lexer.DurationText(op.Out.Window),
+                ["columns"] = new JsonArray([.. op.Out.Cols.Select(Column)]),
+            })]);
+        return res;
     }
 
     /// <summary>A configuration edit: commit the catalog patch, rebuild the plan, replay the retained inputs once in order into fresh state, emit only the final difference per graph (ADR-064 to 071).</summary>

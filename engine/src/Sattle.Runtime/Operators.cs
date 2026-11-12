@@ -937,6 +937,8 @@ sealed class DistinctOp : PhysOp
     readonly Dictionary<Key, long> counts = [];
     readonly int n;
     public DistinctOp(TDistinct t, Layout inL) : base(t) { n = inL.Count; }
+    /// <summary>The number of distinct rows held now (rows of positive count).</summary>
+    public int Held => counts.Values.Count(c => c > 0);
 
     long[] KeyOf(Batch b, int row)
     {

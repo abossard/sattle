@@ -249,6 +249,12 @@ public sealed partial class SpaceHost
                 else
                 {
                     var existing = master.Entity(en.Id) ?? throw Reject("BadEdit", $"{en.Id} is not in the master", g, en.Id);
+                    // the put ends in authored rows through the emit of the master's bijective rule; that emit is a bijection only while one key of its domain names the element: after an alias or a merge two rows give it, and a put cannot say which (Def. 8.4, Theorem 8.2 (c))
+                    if (Engine.Master.Typed.Ops.OfType<TEmitEntity>().FirstOrDefault(x => x.Rule == inv.Rule && x.TypeId == inv.EntityTypeId && !x.Update)?.EntityId is TId tid)
+                    {
+                        var keys = Engine.Identities.Bindings().Where(b => b.Domain.Id == tid.DomainId && b.Id == existing.Id).Select(b => string.Join(",", b.Components)).Order(StringComparer.Ordinal).ToList();
+                        if (keys.Count > 1) throw Reject("AmbiguousKey", $"{existing.Id} has {keys.Count} keys in {tid.DomainName}: {string.Join("; ", keys)}", g, en.Id, rule.Name);
+                    }
                     var view2 = Catalog.OntologyOf(Engine.Master.Typed.OutputModule);
                     var props = existing.Props;
                     if (kind == "delete")

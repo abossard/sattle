@@ -80,6 +80,88 @@ public class LanguageTests
         foreach (var m in printed.Keys) Assert.Equal(printed[m], Printer.Print(cat2.Graph, Path.GetFileNameWithoutExtension(m)));
     }
 
+    /// <summary>T-ROUNDTRIP: the definitions with random legal values in place of their parameters (bounds, retention, thresholds and runs of a state clause, look-backs, time to live, the images policy, the order of assignments), each parsed into a definition graph; then parse(print(G)) = G by module digest, and printing is idempotent (Theorem 5.6, premise RT).</summary>
+    [Theory]
+    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)] [InlineData(6)] [InlineData(7)] [InlineData(8)]
+    public void Parse_of_print_is_the_identity_on_generated_definition_graphs(int seed)
+    {
+        var rng = new Random(seed);
+        string Each(string text, string pattern, Func<System.Text.RegularExpressions.Match, string> to) =>
+            System.Text.RegularExpressions.Regex.Replace(text, pattern, m => rng.Next(2) == 0 ? m.Value : to(m));
+        string Shuffled(System.Text.RegularExpressions.Match m)
+        {
+            var parts = m.Groups[1].Value.Split(", ");
+            return "set { " + string.Join(", ", parts.OrderBy(_ => rng.Next())) + " }";
+        }
+        var sources = Sources().ToDictionary(kv => kv.Key, kv =>
+        {
+            var t = kv.Value;
+            t = Each(t, @"retain \d+;", _ => $"retain {rng.Next(1, 13)};");
+            t = Each(t, @"retain on time for \d+h;", _ => $"retain on time for {rng.Next(1, 73)}h;");
+            t = Each(t, @"above 0\.05 for 3 then ""degraded"" below 0\.02 for 3", _ => $"above 0.{rng.Next(10, 30)} for {rng.Next(1, 7)} then \"degraded\" below 0.0{rng.Next(1, 10)} for {rng.Next(1, 7)}");
+            t = Each(t, @"within (24h|30m)(?! ttl)", _ => $"within {rng.Next(30, 181)}m");
+            t = Each(t, @"ttl 5m", _ => $"ttl {rng.Next(1, 11)}m");
+            t = Each(t, @"images each;", _ => "images reject;");
+            t = Each(t, @"set \{ ([^{}()""]*?) \}", Shuffled);
+            return t;
+        });
+        var (cat, res) = Load(sources);
+        Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
+        Assert.All(new[] { "Lift", "LiftState", "ValueRole" }, k => Assert.Contains(cat.Graph.Entities, e => Ids.Name(e.Type) == k));          // the node kinds the premise names
+        var printed = cat.Modules.Keys.Where(m => m != Ids.KernelModule).ToDictionary(m => m + ".sattle", m => Printer.Print(cat.Graph, m));
+        var (cat2, res2) = Load(printed, updatePins: false);
+        Assert.Empty(res2.Diagnostics);
+        foreach (var m in cat.Modules.Keys) Assert.Equal(cat.Modules[m].Digest, cat2.Modules[m].Digest);
+        foreach (var m in printed.Keys) Assert.Equal(printed[m], Printer.Print(cat2.Graph, Path.GetFileNameWithoutExtension(m)));
+    }
+
+    /// <summary>T-ROUNDTRIP, second set: well-formed definition graphs that the parser does not produce. Each is printed and parsed again; the test states which round-trip, which change, and which are unprintable.</summary>
+    [Theory]
+    [InlineData("a step node renamed", "changes")]                                                          // the printer names the step by its name property, so the id follows the name again
+    [InlineData("a parameter without its value, whose default the parser always writes", "changes")]        // printed as the clause left out, parsed back with its default
+    [InlineData("a lift without its mapping", "unprintable")]
+    public void Graphs_outside_the_naming_scheme_of_the_parser_round_trip_change_or_are_unprintable(string graph, string expected)
+    {
+        var (cat, _) = Load(Sources());
+        const string Module = "acme.svc", Lift = "d:acme.svc/projection:serviceDeps/op:dependsOn";
+        var g = cat.Graph.Clone();
+        switch (graph)
+        {
+            case "a step node renamed":
+                {
+                    const string From = "d:acme.svc/projection:serviceDeps/op:services", To = "d:acme.svc/projection:serviceDeps/op:serviceRows";
+                    var re = new System.Text.RegularExpressions.Regex(System.Text.RegularExpressions.Regex.Escape(From) + "(?=$|[/|#])");
+                    string R(string id) => re.Replace(id, To);
+                    var hit = g.Entities.Where(e => re.IsMatch(e.Id)).Cast<Element>().Concat(g.Rels.Where(r => re.IsMatch(r.Id) || re.IsMatch(r.Source) || re.IsMatch(r.Target))).ToList();
+                    Assert.NotEmpty(hit);
+                    Assert.Null(g.Apply([.. hit.Select(Edit.Remove)]));
+                    Assert.Null(g.Apply([.. hit.Select(x => Edit.Create(x switch { Entity e => e with { Id = R(e.Id) }, Rel r => r with { Id = R(r.Id), Source = R(r.Source), Target = R(r.Target) }, _ => x }))]));
+                    break;
+                }
+            case "a parameter without its value, whose default the parser always writes":
+                {
+                    var lift = g.Entity(Lift)!;
+                    Assert.Equal(Value.Text("drop"), lift.Props.Get(Ids.KProp("selfLoops")));          // the parser writes the default of a clause left out
+                    Assert.Null(g.Apply([new Edit(lift.Key, lift, lift with { Props = Props.Of(lift.Props.Items.Where(kv => kv.Key != Ids.KProp("selfLoops"))) })]));
+                    break;
+                }
+            case "a lift without its mapping":
+                Assert.Null(g.Apply([Edit.Remove(g.OutEdges(Lift).Single(r => Ids.Name(r.Type) == "liftVia"))]));
+                break;
+        }
+        string outcome;
+        try
+        {
+            var text = Printer.Print(g, Module);
+            var again = Sources(); again[Module + ".sattle"] = text;
+            var (cat2, res2) = Load(again);
+            Assert.DoesNotContain(res2.Diagnostics, d => d.IsError);
+            outcome = Catalog.ModuleDigest(g, Module, []) == Catalog.ModuleDigest(cat2.Graph, Module, []) ? "round-trips" : "changes";
+        }
+        catch (UnprintableException) { outcome = "unprintable"; }
+        Assert.Equal(expected, outcome);
+    }
+
     public static IEnumerable<object[]> Negative() =>
     [
         ["unknown field", "acme.svc.sattle", "drops / flows", "drops / nosuch", "UnknownField"],

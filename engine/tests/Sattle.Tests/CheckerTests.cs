@@ -54,6 +54,11 @@ public class CheckerTests
     static string Quiet(string series, string noData, string value = "hits") =>
         $"  let s = match master (i: t.Item) |> series master {series} |> select {{ c: i.k, windowStart: windowStart, v: {value}, noData: noData }}\n    |> threshold v by {{ c: c }} above 3 for 2 then \"on\" below 1 for 2 then \"off\" initial \"off\"{noData} as state;\n  emit entity Out from s identity out(k: c) set {{ k: c, flag: state }};";
 
+    const string LoadType = "entity Load { k: Text; hits?: Integer telemetry delta sum every 60s; }\nidentity load for Load version \"1\" { k: Text by exact; }";
+    /// <summary>Loads per item, rolled up by `keys` and written to the item's Load element.</summary>
+    static string Loaded(string keys) =>
+        $"  let m = match master (i: t.Item);\n  emit entity Load from m identity load(k: i.k) set {{ k: i.k }};\n{Signals} |> rollup by {{ {keys} }} combine {{ v: sum(hits) }};\n  emit update entity Load from s identity load(k: c) set {{ hits: v }};";
+
     static (Catalog Catalog, List<Diagnostic> Errors) Load(SourceFile[] files)
     {
         var catalog = new Catalog();
@@ -81,6 +86,7 @@ public class CheckerTests
         { "a threshold over a series with a time to live that does not say what no data gives", View(Quiet("i.hits within 3m ttl 2m", "")), "Threshold", "what no data gives" },
         { "a no-data clause without a time to live upstream", View(Signals + " |> select { c: i.k, windowStart: windowStart, v: hits }\n    |> threshold v by { c: c } above 3 for 2 then \"on\" below 1 for 2 then \"off\" initial \"off\" nodata ignore as state;\n  emit entity Out from s identity out(k: c) set { k: c, flag: state };"), "Threshold", "needs a series with a time to live" },
         { "a roll-up that names no data without a time to live upstream", View(Signals + " |> rollup by { c: i.g } combine { v: sum(hits) } nodata any\n    |> threshold v by { c: c } above 3 for 2 then \"on\" below 1 for 2 then \"off\" initial \"off\" as state;\n  emit entity Out from s identity out(k: c) set { k: c, flag: state };"), "Rollup", "needs a series with a time to live" },
+        { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded("c: i.k, g: i.g"), LoadType), "B1", "grouped by 'g'" },
         { "a reference to another entity type than the property names", View("  let m = match master (i: t.Item);\n  emit entity Out from m identity out(k: i.k) set { k: i.k, owner: i };"), "Set", "owner expects" },
     };
 
@@ -93,6 +99,7 @@ public class CheckerTests
 
     public static TheoryData<string, SourceFile[]> Accepted => new()
     {
+        { "a telemetry roll-up keyed by the identity of the element it writes", View(Loaded("c: i.k"), LoadType) },
         { "a list of entities and a list of any value", View(Plain, """
             entity Bag { k: Text; members?: List<Entity>; anything?: List<Any>; }
             identity bag for Bag version "1" { k: Text by exact; }

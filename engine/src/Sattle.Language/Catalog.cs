@@ -24,6 +24,8 @@ public sealed class Catalog
     public Dictionary<string, Pos> SourceMap { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, string> FileOf { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, TypedProjection> Projections { get; } = new(StringComparer.Ordinal);
+    /// <summary>Per projection id, the operators that typed, with their output row schemas: also for a projection with errors, whose operators before the error typed.</summary>
+    public Dictionary<string, IReadOnlyList<TOp>> OperatorTypes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, TypedSpace> Spaces { get; } = new(StringComparer.Ordinal);
 
     public Catalog()
@@ -172,6 +174,7 @@ public sealed class Catalog
             foreach (var p in d.Children(mid, "projection"))
             {
                 var (tp, pd) = checker.Check(p);
+                OperatorTypes[p] = [.. checker.Typed.Values];
                 local.AddRange(pd);
                 if (tp is not null) typed[p] = tp;
             }

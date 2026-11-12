@@ -37,6 +37,9 @@ public sealed class ProjectionChecker(Graph defs)
         return set;
     }
 
+    /// <summary>The operators of the projection last checked that typed, by name, with their output row schemas: also when another operator of it did not (an editor shows the columns up to an error).</summary>
+    public IReadOnlyDictionary<string, TOp> Typed { get; private set; } = new Dictionary<string, TOp>();
+
     /// <summary>Checks one projection. With paramValues (the constants of a space binding) a parameter reads as its value; without, as a typed placeholder, which is enough to check the projection on its own.</summary>
     public (TypedProjection? Projection, List<Diagnostic> Diagnostics) Check(string pid, IReadOnlyDictionary<string, Value>? values = null)
     {
@@ -44,7 +47,9 @@ public sealed class ProjectionChecker(Graph defs)
         {
             var ex = LiftExpander.Expand(defs, pid);
             if (ex.Diagnostics.Any(x => x.IsError)) return (null, ex.Diagnostics);
-            var (tp, dg) = new ProjectionChecker(ex.Graph).Check(pid, values);
+            var inner = new ProjectionChecker(ex.Graph);
+            var (tp, dg) = inner.Check(pid, values);
+            Typed = inner.Typed;
             var names = ex.Lifts.Select(l => l.Name).ToList();
             bool Of(string lift, string focusOrName, string root) => focusOrName == root + "/op:" + lift || focusOrName.StartsWith(root + "/op:" + lift + "__", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + "#", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + ".", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + "/", StringComparison.Ordinal);
             var mapped = dg.Select(x => names.FirstOrDefault(n => Of(n, x.Focus, pid)) is { } n ? x with { Message = $"lift {n}: {x.Message}" } : x).ToList();
@@ -65,7 +70,7 @@ public sealed class ProjectionChecker(Graph defs)
             result = Pass(pid, out ops);
             if (demands.Count == before) break;
         }
-        _ = ops;
+        Typed = ops ?? [];
         return (diags.Any(x => x.IsError) ? null : result, [.. diags]);
     }
 
@@ -220,6 +225,9 @@ public sealed class ProjectionChecker(Graph defs)
             }
             Walk(overOp);
             foreach (var t in inner) remove.Add(t.Name);
+            // F5: a body that computes values (a depth counter) leaves the finite domain, and then only the bound ends the iteration (Theorem 6.5)
+            var computed = inner.OfType<TMap>().SelectMany(m => m.Assigns).Where(a => a.Value is not TField and not TLit).Select(a => a.Name).ToList();
+            if (computed.Count > 0) { Err("Fixpoint", fp.Id, $"the step computes {string.Join(", ", computed.Select(c => $"'{c}'"))}; a fixpoint body copies fields or uses literals, so its facts stay in a finite domain (F5)"); continue; }
             if (overOp.Out.Window != 0 || overOp.Out.Cols.Count != fp.Out.Cols.Count || overOp.Out.Cols.Zip(fp.Out.Cols).Any(x => x.First.Name != x.Second.Name || x.First.T.Ty != x.Second.T.Ty || !x.First.T.Role.IsData))
             { Err("Fixpoint", fp.Id, $"the step must produce the relation's columns {fp.Out}, found {overOp.Out}"); continue; }
             var seed = fp.Inputs["seed"];
@@ -787,6 +795,30 @@ public sealed class ProjectionChecker(Graph defs)
         return new TEmitRel(name, op, inputs, new Schema([]), t, update, d.Text(op, "key") ?? "", src, tgt, sets, d.Text(op, "retype") ?? "reject", rule);
     }
 
+    /// <summary>Premise B1 as a checker rule (O6.7): one row per element and window writes a telemetry property. A group or roll-up whose key has a column the identity of the emitted element does not read gives several rows for one element and window: refused.</summary>
+    void TelemetryKeyCheck(List<TOp> ops)
+    {
+        static IEnumerable<string> Fields(TExpr e) => e switch
+        {
+            TField f => [f.Name],
+            TCall c => c.Args.SelectMany(Fields),
+            TId i => i.Comps.SelectMany(x => Fields(x.Value)),
+            _ => [],
+        };
+        var byName = ops.GroupBy(o => o.Name).ToDictionary(g => g.Key, g => g.First());
+        foreach (var (emit, typeId, ids, sets) in ops.OfType<TEmitEntity>().Select(e => ((TOp)e, e.TypeId, new[] { e.EntityId }, e.Sets))
+                     .Concat(ops.OfType<TEmitRel>().Select(e => ((TOp)e, e.TypeId, new[] { e.Source, e.Target }, e.Sets))))
+        {
+            if (!sets.Any(x => x.Telemetry) || !emit.Inputs.TryGetValue("in", out var src) || src.IsPort || !byName.TryGetValue(src.Name, out var up)) continue;
+            var keys = up switch { TGroup g => g.Keys.Select(k => k.Name), TRollup r => r.Keys.Select(k => k.Name), _ => null };
+            if (keys is null) continue;
+            var read = ids.SelectMany(Fields).ToHashSet(StringComparer.Ordinal);
+            var finer = keys.Where(k => k != "windowStart" && !read.Contains(k)).ToList();
+            if (finer.Count > 0)
+                Err("B1", emit.Id, $"the telemetry of {Ids.Name(typeId)} comes from {up.Name}, grouped by {string.Join(", ", finer.Select(k => $"'{k}'"))} besides what its identity reads: several rows would write one window of one element (premise B1)");
+        }
+    }
+
     string RuleClass(string ruleName) => d.Children(projectionId, "rule").Where(r => d.Text(r, "name") == ruleName).Select(r => d.Text(r, "class")).FirstOrDefault() ?? "readonly";
 
     TOp? TypeLink(string op, string name, Dictionary<string, Src> inputs, Schema R, string? rule)
@@ -806,6 +838,7 @@ public sealed class ProjectionChecker(Graph defs)
 
     void EmitterChecks(List<TOp> ops, List<TRule> rules, string pid)
     {
+        TelemetryKeyCheck(ops);
         var creates = ops.OfType<TEmitEntity>().Where(e => !e.Update).ToList();
         var relCreates = ops.OfType<TEmitRel>().Where(e => !e.Update).ToList();
         foreach (var e in ops.OfType<TEmitEntity>().Where(e => e.Update))

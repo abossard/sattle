@@ -224,4 +224,50 @@ public class LensTests
         }
         Assert.True(accepted > 5, $"accepted {accepted}, rejected {rejected}, last {lastMsg}");
     }
+
+    /// <summary>The capability lens of acme.ops with a second key of a capability, its name, and an equivalence of the two: authored rows with one name give one capability, whose identity then has two keys in the domain of the emit.</summary>
+    static SpaceHost WithNamedCapabilities()
+    {
+        var h = NewHost();
+        var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.ops.sattle"));
+        const string Domain = "identity capability for Capability version \"1\" { id: Text by exact; }";
+        const string Rule = "  rule authoredRealizes bijective {";
+        var edited = text
+            .Replace(Domain, Domain + "\nidentity capabilityName for Capability version \"1\" { name: Text by exact; }\nequivalence capabilityIsNamed between capability, capabilityName assert threshold 1.0;")
+            .Replace(Rule, "  rule namedCapabilities readonly \"a capability is the one its name names\" {\n    link capabilityIsNamed from caps\n      left  capability(id: capId)\n      right capabilityName(name: name)\n      confidence 1.0;\n  }\n\n" + Rule);
+        Assert.NotEqual(text, edited);
+        try { h.Commit("acme.ops", edited, h.CatalogRevision); } catch (HostError e) { Assert.Fail(e.Extra["diagnostics"]![0]!.ToJsonString()); }
+        return h;
+    }
+
+    [Fact]
+    public void An_edit_of_an_element_with_two_keys_is_rejected_AmbiguousKey()
+    {
+        using var h = WithNamedCapabilities();
+        void Rows(params (string Id, string Name)[] rows)
+        {
+            var rw = new RowWriter(h.RowLayout("caps"), h.Interner);
+            foreach (var (id, name) in rows) { rw.Begin(); rw.Text("capId", id); rw.Text("name", name); rw.Text("owner", "unassigned"); rw.Text("status", "active"); }
+            h.Ingest("caps", rw.Build()!, 5000 + rows.Length);
+        }
+        string IdOfKey(string key) => h.Engine.Identities.Bindings().Single(b => b.Domain.Name == "capability" && b.Components.SequenceEqual([key])).Id;
+        Rows(("payments", "Payments"), ("billing", "Billing"));
+        // a capability with one key in the domain is accepted
+        var billing = IdOfKey("billing");
+        h.ApplyEdits("capabilities", Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = billing, ["before"] = Ent(billing, "Billing"), ["after"] = null }));
+        Assert.Equal("retired", Status(h, "billing"));
+        // a second row names the capability Payments: its identity has the keys payments and pay
+        Rows(("pay", "Payments"));
+        var pay = IdOfKey("payments");
+        Assert.Equal(pay, IdOfKey("pay"));
+        Assert.Equal([pay], View(h).Entities.Select(e => e.Id));
+        var digest = h.StateDigest(); var heads = (Heads(h, "master"), Heads(h, "capabilities"));
+        var before = Ent(pay, "Payments");
+        var update = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay, ["before"] = before, ["after"] = Ent(pay, "Settlement") }));
+        var delete = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay, ["before"] = before.DeepClone(), ["after"] = null }));
+        Assert.All(new[] { update, delete }, e => Assert.Equal(("AmbiguousKey", pay), (e.Code, e.Extra["element"]!.GetValue<string>())));
+        Assert.Contains("payments", update.Message); Assert.Contains("pay;", update.Message);
+        Assert.Equal(digest, h.StateDigest());                                                   // nothing changed
+        Assert.Equal(heads, (Heads(h, "master"), Heads(h, "capabilities")));
+    }
 }

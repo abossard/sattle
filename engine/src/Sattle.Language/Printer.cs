@@ -334,8 +334,9 @@ public sealed class Printer(Graph g, string module)
         foreach (var st in d.Children(op, "state"))
             sb.Append($"\n{indent}  state {d.Text(st, "target")} of {d.Text(st, "of")} above {Norm.Decimal(d.Dec(st, "above"))} for {d.Int(st, "enterAfter")} then {Q(d.Text(st, "high")!)} below {Norm.Decimal(d.Dec(st, "below"))} for {d.Int(st, "exitAfter")} then {Q(d.Text(st, "low")!)} initial {Q(d.Text(st, "initial")!)}");
         if (d.Text(op, "images") is { } images) sb.Append("\n" + indent + "  images ").Append(images);
-        if (d.Text(op, "selfLoops") != "drop") sb.Append("\n" + indent + "  selfloops ").Append(d.Text(op, "selfLoops"));
-        if (d.Int(op, "within") != LiftDefaults.WithinNs) sb.Append("\n" + indent + "  within ").Append(Lexer.DurationText(d.Int(op, "within")));
+        // a parameter without a value prints as its default left out, and the parser then writes the default
+        if (d.Text(op, "selfLoops") is { } selfLoops && selfLoops != "drop") sb.Append("\n" + indent + "  selfloops ").Append(selfLoops);
+        if (d.Int(op, "within", LiftDefaults.WithinNs) != LiftDefaults.WithinNs) sb.Append("\n" + indent + "  within ").Append(Lexer.DurationText(d.Int(op, "within")));
         sb.Append(";\n");
     }
 

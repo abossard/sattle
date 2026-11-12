@@ -259,4 +259,80 @@ public class DraftTests
         Assert.Equal("draft", JsonNode.Parse(m)!["type"]!.GetValue<string>());
         Assert.False(without.Messages.Reader.TryRead(out _));
     }
+
+    [Fact]
+    public void A_draft_check_returns_the_row_schema_after_each_operator()
+    {
+        var (h, d) = NewDraft(); using var hostGuard = h;
+        var r = h.CheckDraft(d);
+        var ops = r["schemas"]!["d:acme.svc/projection:serviceDeps"]!.AsArray();
+        JsonNode Op(string n) => ops.Single(o => o!["name"]!.GetValue<string>() == n)!;
+        JsonNode Col(JsonNode op, string n) => op["columns"]!.AsArray().Single(c => c!["name"]!.GetValue<string>() == n)!;
+        var s = Col(Op("services"), "s");
+        Assert.Equal("Entity", s["kind"]!.GetValue<string>());
+        Assert.EndsWith("Service", s["type"]!.GetValue<string>());
+        Assert.Equal("data", s["role"]!.GetValue<string>());
+        Assert.Equal(["s", "pods"], Op("backed")["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()));
+        Assert.Equal("Integer", Col(Op("backed"), "pods")["kind"]!.GetValue<string>());
+        var flows = Col(Op("dependsOn"), "flows");
+        Assert.Equal("telemetry", flows["role"]!.GetValue<string>());
+        Assert.NotNull(flows["period"]);
+        Assert.All(ops, o => Assert.StartsWith("d:acme.svc/projection:serviceDeps/op:", o!["op"]!.GetValue<string>()));
+    }
+
+    [Theory]
+    [InlineData("20", false)]
+    [InlineData("1", true)]
+    public void A_preview_with_rows_returns_the_rows_each_operator_holds(string rowLimit, bool truncated)
+    {
+        var (h, d) = NewDraft(); using var hostGuard = h;
+        HostTests.Drive(h);
+        var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "rows"), ["rowLimit"] = rowLimit });
+        var ops = p["graphs"]![0]!["operators"]!.AsArray();
+        var services = ops.Single(o => o!["name"]!.GetValue<string>() == "services")!;
+        var live = h.Engine.Graph("serviceTree").State.Entities.Count(e => Ids.Name(e.Type) == "ServiceNode");
+        Assert.Equal(live.ToString(), services["rows"]!.GetValue<string>());
+        Assert.Equal(services["rows"]!.GetValue<string>(), services["weight"]!.GetValue<string>());       // each service once
+        Assert.Equal(truncated, services["truncated"]!.GetValue<bool>());
+        var sample = services["sample"]!.AsArray();
+        Assert.Equal(Math.Min(live, int.Parse(rowLimit)), sample.Count);
+        Assert.Equal(["s", "s.cluster", "s.name", "s.namespace"], services["columns"]!.AsArray().Select(c => c!.GetValue<string>()));          // the typed column and the properties the plan reads from it
+        Assert.All(sample, x => Assert.False(string.IsNullOrEmpty(x!["cells"]!["s"]!.GetValue<string>())));
+        Assert.All(sample, x => Assert.False(string.IsNullOrEmpty(x!["cells"]!["s.name"]!.GetValue<string>())));
+        Assert.All(ops, o => Assert.StartsWith("d:acme.svc/projection:serviceDeps/op:", o!["op"]!.GetValue<string>()));
+        Assert.Null(h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree") })["graphs"]![0]!["operators"]);
+    }
+
+    /// <summary>T-PREVIEW: with no input between the preview and the commit, the complete preview's output of every graph equals the state the commit's activation produces (Proposition 9.10 (b)).</summary>
+    [Theory]
+    [InlineData("a threshold that never recovers", true)]
+    [InlineData("a lift that keeps self-loops and looks back 2h", false)]          // no self-loop in this world: the outputs stay as they were
+    public void A_complete_preview_equals_the_activation_a_commit_performs(string draft, bool changes)
+    {
+        var (h, d) = NewDraft(); using var hostGuard = h;
+        HostTests.Drive(h);
+        const string Lift = "d:acme.svc/projection:serviceDeps/op:dependsOn";
+        var edits = draft switch
+        {
+            "a threshold that never recovers" => new[] { SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "30" }).Do },
+            _ => [SetProp(h, d, Lift, "selfLoops", new JsonObject { ["kind"] = "text", ["value"] = "keep" }).Do],
+        };
+        var rev = 0L;
+        foreach (var e in edits) Assert.True(h.ApplyDraftPatch(d, e, rev++)["ok"]!.GetValue<bool>());
+        if (draft != "a threshold that never recovers")
+            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Lift, "within", new JsonObject { ["kind"] = "integer", ["value"] = "7200000000000" }).Do, rev++)["ok"]!.GetValue<bool>());
+        else
+            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Health, "below", Dec("0.0")).Do, rev++)["ok"]!.GetValue<bool>());
+        var p = h.Preview(d, new JsonObject { ["include"] = new JsonArray("counts") });
+        Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
+        var previewed = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
+        var windows = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["counts"]!["telemetryWindows"]!.GetValue<string>());
+        var before = h.Engine.Graphs.ToDictionary(g => g.Name, g => g.State.Digest());
+        h.CommitDraft(d, h.CatalogRevision);
+        var after = h.Engine.Graphs.ToDictionary(g => g.Name, g => g.State.Digest());
+        Assert.Equal(after.Keys.Order(), previewed.Keys.Order());
+        Assert.All(after, kv => Assert.Equal(kv.Value, previewed[kv.Key]));
+        Assert.All(h.Engine.Graphs, g => Assert.Equal(windows[g.Name], ((InMemoryTelemetryStore)h.Engine.Telemetry).Dump(g.Key).Count.ToString()));          // and as many telemetry windows
+        Assert.Equal(changes, after.Any(kv => kv.Value != before[kv.Key]));
+    }
 }

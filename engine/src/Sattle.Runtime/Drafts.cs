@@ -132,15 +132,17 @@ public sealed partial class SpaceHost
         var changed = ChangesOf(d, texts);
         var diags = new JsonArray([.. problems.Select(DiagJson)]);
         var ok = problems.Count == 0;
+        JsonNode schemas = ok ? Schemas(Catalog) : new JsonObject();          // unchanged: the head catalog's
         if (ok && changed.Count > 0)
         {
             var r = (JsonObject)CheckTexts(changed);
             foreach (var x in r["diagnostics"]!.AsArray()) diags.Add(x!.DeepClone());
             ok = r["ok"]!.GetValue<bool>();
+            schemas = r["schemas"]!.DeepClone();
         }
         var modules = new JsonObject();
         foreach (var (m, t) in texts) modules[m] = new JsonObject { ["text"] = t, ["changed"] = changed.ContainsKey(m) };
-        return new JsonObject { ["revision"] = Rev(d.Revision), ["ok"] = ok, ["diagnostics"] = diags, ["modules"] = modules };
+        return new JsonObject { ["revision"] = Rev(d.Revision), ["ok"] = ok, ["diagnostics"] = diags, ["modules"] = modules, ["schemas"] = schemas };
     }
 
     public JsonNode CommitDraft(string id, long expectedCatalogRevision)
@@ -298,6 +300,9 @@ public sealed partial class SpaceHost
             if (!retained) throw new HostError("InputsNotRetained", "the retained inputs exceed the cap", 422);
             var sw = Stopwatch.StartNew();
             using var fresh = new Engine(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows }, interner);   // own in-memory stores: the live ones are not touched; the late horizon of the live engine
+            var include = (body["include"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? ["counts", "diff"];
+            var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? fresh.Graphs.Select(g => g.Name).ToHashSet();
+            if (include.Contains("rows")) fresh.TraceGraphs = want;
             long rows = 0; var complete = true;
             foreach (var r in inputs)
             {
@@ -305,8 +310,6 @@ public sealed partial class SpaceHost
                 switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); rows += r.Value; break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
             }
             var exp = new CanvasExport(fresh, cand);
-            var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? fresh.Graphs.Select(g => g.Name).ToHashSet();
-            var include = (body["include"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? ["counts", "diff"];
             var limit = int.TryParse(body["limit"]?.GetValue<string>(), out var lm) ? lm : 5000;
             var mem = (InMemoryTelemetryStore)fresh.Telemetry;
             var graphs = new JsonArray();
@@ -329,6 +332,28 @@ public sealed partial class SpaceHost
                     var ents = snap["extent"]!["entities"]!.AsArray(); var rels = snap["extent"]!["relationships"]!.AsArray();
                     if (ents.Count + rels.Count > limit) { truncated = true; while (ents.Count > limit) ents.RemoveAt(ents.Count - 1); while (rels.Count > Math.Max(0, limit - ents.Count)) rels.RemoveAt(rels.Count - 1); }
                     o["snapshot"] = snap;
+                }
+                if (include.Contains("rows"))
+                {
+                    // the rows each operator holds after the replay: how many, and the first `rowLimit` of them (ordered by their text), with the operator's columns
+                    var rowLimit = int.TryParse(body["rowLimit"]?.GetValue<string>(), out var rl) ? Math.Clamp(rl, 0, 1000) : 20;
+                    var traced = fresh.Traced.GetValueOrDefault(g.Name) ?? [];
+                    o["operators"] = new JsonArray([.. g.Plan.Ops.Select(op =>
+                    {
+                        var held = traced.GetValueOrDefault(op.Name) ?? [];
+                        var names = op.OutLayout.Names;
+                        JsonNode? Cell(object? v) => v switch { null => null, decimal dv => JsonValue.Create(Norm.Decimal(dv)), long lv => JsonValue.Create(lv.ToString(CultureInfo.InvariantCulture)), var x => JsonValue.Create(x.ToString()) };
+                        var sample = held.OrderBy(kv => kv.Key, StringComparer.Ordinal).Take(rowLimit).Select(kv => (JsonNode)new JsonObject
+                        {
+                            ["weight"] = kv.Value.Weight.ToString(CultureInfo.InvariantCulture),
+                            ["cells"] = new JsonObject(names.Select((n, i) => KeyValuePair.Create(n, Cell(kv.Value.Cells[i])))),
+                        });
+                        return (JsonNode)new JsonObject
+                        {
+                            ["op"] = op.Typed.Id, ["name"] = op.Name, ["kind"] = op.Typed.Kind, ["columns"] = new JsonArray([.. names.Select(n => (JsonNode)n)]),
+                            ["rows"] = Rev(held.Count), ["weight"] = Rev(held.Values.Sum(x => x.Weight)), ["sample"] = new JsonArray([.. sample]), ["truncated"] = held.Count > rowLimit,
+                        };
+                    })]);
                 }
                 if (include.Contains("telemetry")) { var tb = exp.TelemetryBatches(g).Take(limit).ToList(); truncated |= tb.Count == limit; o["telemetry"] = new JsonArray([.. tb]); }
                 o["truncated"] = truncated;

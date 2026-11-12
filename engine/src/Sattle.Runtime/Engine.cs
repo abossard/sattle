@@ -214,6 +214,23 @@ public sealed class Engine : IDisposable, IEngineInput
     public IdentityCatalog Identities { get; }
     public ITelemetryStore Telemetry { get; }
     public IReadOnlyList<GraphRuntime> Graphs => graphs;
+
+    /// <summary>Fixpoints whose last unrolled step still derived facts: R(max) differs from R(max - 1), so the result may lack facts that need more steps than the bound (Def. 5.19, Theorem 6.5). Per graph and fixpoint (its definition id), the number of facts the last step added. Computed from the operators' state, nothing extra is kept.</summary>
+    public IEnumerable<(string Graph, string Fixpoint, long Gained)> FixpointsAtBound()
+    {
+        foreach (var g in graphs)
+        {
+            var distinct = g.Plan.Ops.OfType<DistinctOp>().ToList();
+            foreach (var last in distinct.Where(d => !d.Name.Contains('@')))
+            {
+                var steps = distinct.Where(d => d.Typed.Id == last.Typed.Id && d.Name.StartsWith(last.Name + "@", StringComparison.Ordinal) && int.TryParse(d.Name[(last.Name.Length + 1)..], out _)).ToList();
+                if (steps.Count == 0) continue;
+                var prev = steps.MaxBy(d => int.Parse(d.Name[(last.Name.Length + 1)..]))!;
+                var gained = last.Held - prev.Held;
+                if (gained > 0) yield return (g.Name, last.Typed.Id, gained);
+            }
+        }
+    }
     public GraphRuntime Master => graphs.First(g => g.IsMaster);
     public string SpaceName { get; }
     public string Tenant => options.Tenant;
@@ -221,6 +238,32 @@ public sealed class Engine : IDisposable, IEngineInput
     public event Action<CommitEvent>? Committed;
     /// <summary>Diagnostic: bytes allocated per operator, accumulated over all steps (PERF.md method).</summary>
     public bool TrackAllocations { get; set; }
+
+    /// <summary>Graphs whose operator outputs are integrated for inspection (a draft preview, `include: rows`): per graph and operator, the rows the operator holds now with their summed weights. Null: nothing is traced.</summary>
+    public HashSet<string>? TraceGraphs { get; set; }
+    /// <summary>The traced rows, by graph name and operator name: each row by its cells (null absent, decimal, a text or element id, or the raw integer of an Integer, Instant or Boolean) with its weight.</summary>
+    public Dictionary<string, Dictionary<string, Dictionary<string, (long Weight, object?[] Cells)>>> Traced { get; } = [];
+
+    void Trace(GraphRuntime g, PhysOp op, Batch? b)
+    {
+        if (b is null || TraceGraphs is null || !TraceGraphs.Contains(g.Name)) return;
+        if (!Traced.TryGetValue(g.Name, out var byOp)) Traced[g.Name] = byOp = [];
+        if (!byOp.TryGetValue(op.Name, out var rows)) byOp[op.Name] = rows = new(StringComparer.Ordinal);
+        var layout = op.OutLayout;
+        for (var k = 0; k < b.Rows; k++)
+        {
+            var row = b.RowAt(k);
+            var cells = new object?[layout.Count];
+            for (var c = 0; c < layout.Count; c++)
+            {
+                var col = b.Cols[c];
+                cells[c] = !col.Present(row) ? null : col.IsDec ? col.D[row] : layout.Interned?[c] == true ? Interner.Get((int)col.L[row]) : col.L[row];
+            }
+            var key = string.Join("\u001f", cells.Select(x => x switch { null => "\u0000", decimal d => "d" + Norm.Decimal(d), long l => "i" + l.ToString(System.Globalization.CultureInfo.InvariantCulture), var o => "t" + o }));
+            var w = (rows.TryGetValue(key, out var had) ? had.Weight : 0) + b.Weight(row);
+            if (w == 0) rows.Remove(key); else rows[key] = (w, cells);
+        }
+    }
     public Dictionary<string, long> OperatorAllocations { get; } = [];
     /// <summary>Milliseconds per operator, and "(commit)" per graph for the flush, patch apply and store commit, while TrackAllocations is on.</summary>
     public Dictionary<string, double> OperatorMillis { get; } = [];
@@ -400,12 +443,13 @@ public sealed class Engine : IDisposable, IEngineInput
             {
                 var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
                 outputs[op.Name] = op.Run(g.Cx, ep, inputs);
+                Trace(g, op, outputs[op.Name]);
                 OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + GC.GetAllocatedBytesForCurrentThread() - a0;
                 OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
                 var kd = op.GetType().Name; var ks = KindStats.GetValueOrDefault(kd);
                 KindStats[kd] = (ks.Ms + System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds, ks.Bytes + GC.GetAllocatedBytesForCurrentThread() - a0, ks.Calls + 1);
             }
-            else outputs[op.Name] = op.Run(g.Cx, ep, inputs);
+            else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
         }
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
