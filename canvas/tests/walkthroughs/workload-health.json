@@ -10,7 +10,7 @@
     "spec": {
      "module": "acme.workload",
      "name": "workloadHealth2",
-     "description": "Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.\nIts own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.\nA pod also counts the node it runs on; a deployment is unhealthy only when at least half of its pods are (degraded when at least half are degraded or worse). No data counts above healthy and below degraded; a component that nothing measured is Unknown. An observed call carries no failure.",
+     "description": "Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.\nIts own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.\nA pod also counts the node it runs on. A deployment is unhealthy when at least half of its pods are, else degraded when at least half are degraded or worse, else in no data when at least half are in no data or worse, else healthy; a pod with no severity does not count, and a deployment none of whose pods has one is Unknown. No data ranks above healthy and below degraded; a component that nothing measured is Unknown. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.",
      "outputModule": "d:acme.workload",
      "graphName": "workloadHealth2",
      "purpose": "view",
@@ -3766,6 +3766,20 @@
    }
   },
   {
+   "label": "shares.agg silent = sum(if(own >= 1, 1, 0))",
+   "cmd": {
+    "t": "named",
+    "id": "d:acme.workload/projection:workloadHealth2/op:shares",
+    "slot": "agg",
+    "childType": "Aggregate",
+    "name": "silent",
+    "src": "if(own >= 1, 1, 0)",
+    "extra": {
+     "fn": "sum"
+    }
+   }
+  },
+  {
    "label": "shares.agg weak = sum(if(own >= 2, 1, 0))",
    "cmd": {
     "t": "named",
@@ -3807,14 +3821,14 @@
    }
   },
   {
-   "label": "byShare.assign own = if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0))",
+   "label": "byShare.assign own = if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, if(silent * 2 >= n, 1, 0)))",
    "cmd": {
     "t": "named",
     "id": "d:acme.workload/projection:workloadHealth2/op:byShare",
     "slot": "assign",
     "childType": "Assign",
     "name": "own",
-    "src": "if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0))"
+    "src": "if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, if(silent * 2 >= n, 1, 0)))"
    }
   },
   {
