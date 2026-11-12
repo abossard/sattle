@@ -73,8 +73,9 @@ public class LiftTests
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
-        var cluster = Repo.ClusterOf(dir);
-        AssertSame(Run(Files(dir), dir, cluster), Run(Files(dir, handWritten: true), dir, cluster));
+        var lifted = CaptureRuns.Run(dir).Engine;                                                   // the shipped definitions, as `sattle replay` runs them
+        using var hand = CaptureRuns.Gated(() => Run(Files(dir, handWritten: true), dir, Repo.ClusterOf(dir), CaptureRuns.Full));
+        AssertSame(lifted, hand);
     }
 
     [Theory]

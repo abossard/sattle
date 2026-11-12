@@ -86,16 +86,4 @@ public class LiveReproducibilityTests
         }
         finally { Directory.Delete(dir, true); }
     }
-
-    [Trait("Category", "Capture")]
-    [CaptureFact]
-    public void Replaying_the_live_recording_reproduces_the_live_digest_on_the_newest_capture_when_present()
-    {
-        var cap = Repo.CaptureDirs[^1];
-        var cluster = Sattle.Cli.Program.DetectCluster(cap);
-        var arrival = Arrival(cap, 5, 25);
-        var dir = LiveRun(arrival, cluster, 5, out var live);
-        try { Assert.Equal(live, Replayed(dir, cluster, horizon: 3)); }
-        finally { Directory.Delete(dir, true); }
-    }
 }

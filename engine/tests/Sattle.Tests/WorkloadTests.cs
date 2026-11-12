@@ -184,7 +184,7 @@ public class WorkloadTests
     public void On_a_real_capture_the_workload_graphs_build_with_no_dangling_edge(string capture)
     {
         var dir = Path.Combine(Repo.Captures, capture);
-        var r = ReplayTests.Shared(dir, 2000, Repo.ClusterOf(dir));
+        var r = CaptureRuns.Run(dir);
         foreach (var name in new[] { "workloadStructure", "workload" })
         {
             var g = r.Engine.Graph(name).State;

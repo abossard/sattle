@@ -12,23 +12,25 @@ public class BatchInvarianceTests
         return Repo.CaptureDirs;
     }
 
-    /// <summary>One row per (capture, chunk size); a placeholder row when there are no captures (they are gitignored).</summary>
-    public static IEnumerable<object[]> CaptureChunks() => Captures().Count == 0 ? [["", 0]] : Captures().SelectMany(d => new[] { 1, 50, 100000 }.Select(c => new object[] { Path.GetFileName(d), c }));
+    /// <summary>One row per (capture, chunk size 1 or 50), each compared with the run at chunk size 100000; a placeholder row when there are no captures (they are gitignored).</summary>
+    public static IEnumerable<object[]> CaptureChunks() => Captures().Count == 0 ? [["", 0]] : Captures().SelectMany(d => new[] { 1, 50 }.Select(c => new object[] { Path.GetFileName(d), c }));
 
-    /// <summary>Chunk size 1, 50 and 100000 give the same state digest on each capture, with the replay defaults (every window revisable, the cluster of the capture). The chunk size 1 mismatch on the first capture was a merge case: a flow naming a pod before the pod row arrived bound the key to a provisional identity that the later row could not join.</summary>
+    /// <summary>T6 on every capture, with the settings of `sattle replay` (every window revisable, the cluster of the capture): chunk sizes 1 and 50 give the state digest, the graph digests and the integrated output of chunk size 100000, the integrated output of every graph equals its final state, and no identity conflicts. The chunk size 1 mismatch on the first capture was a merge case: a flow naming a pod before the pod row arrived bound the key to a provisional identity that the later row could not join.</summary>
     [Trait("Category", "Capture")]
     [CaptureTheory]
     [MemberData(nameof(CaptureChunks))]
     public void Every_capture_gives_the_same_state_digest_at_chunk_sizes_1_50_and_100000(string capture, int chunk)
     {
         var dir = Path.Combine(Repo.Captures, capture);
-        var cluster = Sattle.Cli.Program.DetectCluster(dir);
-        var reference = ReplayTests.Shared(dir, 100000, cluster, 1_000_000);
-        var r = ReplayTests.Shared(dir, chunk, cluster, 1_000_000);
-        Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
-        Assert.Equal(reference.Engine.Identities.Conflicts, r.Engine.Identities.Conflicts);
-        Assert.Equal(0, r.Engine.Identities.Conflicts);
-        foreach (var g in r.Engine.Graphs) Assert.Equal(reference.Engine.Graph(g.Name).State.Digest(), g.State.Digest());
+        var reference = CaptureRuns.Of(dir, CaptureRuns.Full);
+        var r = CaptureRuns.Of(dir, chunk);
+        Assert.Equal(reference.StateDigest, r.StateDigest);
+        Assert.Equal(0, reference.Conflicts);
+        Assert.Equal(0, r.Conflicts);
+        Assert.Equal(reference.GraphDigests, r.GraphDigests);
+        Assert.Equal(reference.Integrated, r.Integrated);                                           // integrated output equals batch output (Quine invariant)
+        Assert.All(r.IntegratedIsFinal.Concat(reference.IntegratedIsFinal), x => Assert.True(x.Value, $"{x.Key}: the integrated output is not the final graph"));
+        Assert.True(r.MasterEntities > 100);
     }
 
     static string Line(string source, string at, long seq, object payload) =>

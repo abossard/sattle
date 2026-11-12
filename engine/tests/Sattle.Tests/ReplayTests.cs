@@ -27,11 +27,6 @@ public class ReplayTests
         return new Run(engine, stats, export, adapters);
     }
 
-    static string? NewestCapture()
-    {
-        return Repo.CaptureDirs.LastOrDefault();
-    }
-
     /// <summary>The sum of the signed deltas of every patch of a graph, as a delta.</summary>
     static Delta Integrated(Run r, string graph) => r.Export.PatchesOf(graph).Aggregate(new Delta(), (d, p) => d + p.Delta());
 
@@ -94,36 +89,6 @@ public class ReplayTests
             Assert.Equal(Integrated(reference, g.Name), Integrated(r, g.Name));                      // integrated output equals batch output (Quine invariant)
             Assert.Equal(Delta.Chi(g.State), Integrated(r, g.Name));                                  // and equals the final graph
         }
-    }
-
-    /// <summary>One replay per (capture, chunk size, cluster, late horizon) for the whole test run: the capture tests share their replays.</summary>
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int, string, int), Lazy<Run>> Replays = new();
-    public static Run Shared(string dir, int chunk = 2000, string cluster = "synth", int horizon = 3) =>
-        Replays.GetOrAdd((dir, chunk, cluster, horizon), k => new Lazy<Run>(() => Replay(k.Item1, chunk: k.Item2, cluster: k.Item3, o: new EngineOptions { LateHorizonWindows = k.Item4 }))).Value;
-
-    static readonly Lazy<Run?> RealReference = new(() => NewestCapture() is { } d ? Shared(d, 2000, "synth") : null);
-
-    [Trait("Category", "Capture")]
-    [CaptureTheory]
-    [InlineData(50)] [InlineData(777)] [InlineData(100000)]
-    public void Real_capture_state_digest_does_not_depend_on_the_chunk_size_when_present(int chunk)
-    {
-        var dir = NewestCapture();
-        Assert.NotNull(dir);
-        var reference = RealReference.Value!;                                                     // replayed once per run, shared by the chunk sizes
-        var r = Shared(dir, chunk, "synth");
-        Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
-        foreach (var g in r.Engine.Graphs) Assert.Equal(Integrated(reference, g.Name), Integrated(r, g.Name));
-        Assert.True(r.Engine.Master.State.EntityCount > 100);
-    }
-
-    [Trait("Category", "Capture")]
-    [CaptureFact]
-    public void Real_capture_is_deterministic_and_batch_invariant_with_an_unbounded_late_horizon_when_present()
-    {
-        var dir = NewestCapture();
-        Assert.NotNull(dir);
-        Assert.Equal(Shared(dir, 50, "synth", 100_000).Engine.StateDigest(), Shared(dir, 100000, "synth", 100_000).Engine.StateDigest());
     }
 
     // ---- synthetic captures: no real identifiers ----

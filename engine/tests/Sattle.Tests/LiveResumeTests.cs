@@ -32,28 +32,34 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
     static HostOptions Options(long sealEvery) => new() { Cluster = "synth", SealEvery = sealEvery };
 
-    static (string Digest, long Rows) Uninterrupted(IReadOnlyList<string> events)
+    /// <summary>The digest and input rows of the run that was never interrupted, computed once for the class (every case uses the same events).</summary>
+    static readonly Lazy<(string Digest, long Rows)> Uninterrupted = new(() =>
     {
         using var d = new RestartTests.Durable("memory");
         using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
-        LiveInput.Run(h, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
+        LiveInput.Run(h, new FakeSource(Events()), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         return (h.StateDigest(), h.InputRows);
-    }
+    });
 
+    /// <summary>Every durable store kind without seals and with a seal every 30 envelopes, plus seals every 13 and every 7; each case its own generated position.</summary>
     public static IEnumerable<object[]> Cases()
     {
+        var seed = 0;
         foreach (var kind in RestartTests.Stores().Select(x => (string)x[0]))
             foreach (var sealEvery in new[] { 0L, 30L })
-                yield return [kind, sealEvery];
+                yield return [kind, sealEvery, ++seed];
+        yield return ["sqlite", 13L, ++seed];
+        yield return ["memory", 7L, ++seed];
     }
 
+    /// <summary>T-RESTART on the live path: the stand-in source kills the run at a generated position (between flushes, with rows of envelopes pending in the chunk), the run restores from its store, resumes after the last position it saw and ends in the uninterrupted state; restarted again, it is still in that state.</summary>
     [Theory, MemberData(nameof(Cases))]
-    public void A_killed_live_run_resumes_from_its_store_and_ends_in_the_state_of_an_uninterrupted_run(string kind, long sealEvery)
+    public void A_live_run_killed_at_a_generated_position_resumes_from_its_store_to_the_uninterrupted_state(string kind, long sealEvery, int seed)
     {
         var events = Events();
-        var (digest, rows) = Uninterrupted(events);
+        var (digest, rows) = Uninterrupted.Value;
+        var killedAt = new Random(seed).Next(1, events.Count - 1);
         using var d = new RestartTests.Durable(kind);
-        var killedAt = events.Count * 6 / 10 + 7;          // between two idle points: rows of envelopes are pending in the chunk when it dies
         using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
             Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
         d.Close();
@@ -63,8 +69,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var counts = LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         Assert.Equal(events.Count - killedAt, counts.Consumed);                                 // exactly the events after the last one it had seen
         Assert.Equal(0, counts.Duplicates);
-        Assert.Equal(digest, r.StateDigest());
-        Assert.Equal(rows, r.InputRows);
+        Assert.Equal((digest, rows), (r.StateDigest(), r.InputRows));
         // and the resumed run restarts again to the same state
         d.Close();
         using var again = SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery));
@@ -72,31 +77,12 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal($"{{\"n\":{events.Count - 1}}}", again.SourcePosition("eventhub:fake"));
     }
 
-    /// <summary>T-RESTART on the live path: the stand-in source stops the run at a generated position (between flushes, with rows pending), the run resumes from its store and ends in the uninterrupted state.</summary>
-    [Theory]
-    [InlineData("memory", 0L, 1)] [InlineData("sqlite", 0L, 2)] [InlineData("sqlite", 13L, 3)] [InlineData("sqlite", 30L, 4)] [InlineData("memory", 7L, 5)]
-    public void A_live_run_stopped_at_a_generated_position_resumes_to_the_uninterrupted_state(string kind, long sealEvery, int seed)
-    {
-        var events = Events();
-        var (digest, rows) = Uninterrupted(events);
-        var killedAt = new Random(seed).Next(1, events.Count - 1);
-        using var d = new RestartTests.Durable(kind);
-        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
-            Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
-        d.Close();
-        using var r = SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery));
-        var counts = LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
-        Assert.Equal(events.Count - killedAt, counts.Consumed);
-        Assert.Equal(0, counts.Duplicates);
-        Assert.Equal((digest, rows), (r.StateDigest(), r.InputRows));
-    }
-
     [Theory]
     [InlineData("memory", 0L)] [InlineData("sqlite", 30L)]
     public void An_envelope_delivered_again_after_a_resume_is_dropped_by_its_key(string kind, long sealEvery)
     {
         var events = Events();
-        var (digest, rows) = Uninterrupted(events);
+        var (digest, rows) = Uninterrupted.Value;
         using var d = new RestartTests.Durable(kind);
         var killedAt = events.Count / 2;
         using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))

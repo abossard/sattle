@@ -94,28 +94,33 @@ public class RetentionTests
         return Repo.CaptureDirs;
     }
 
-    public static IEnumerable<object[]> CaptureChunks() => CaptureDirs().Any() ? CaptureDirs().SelectMany(d => new[] { 1, 50, 100000 }.Select(c => new object[] { Path.GetFileName(d), c })) : [["", 0]];
+    public static IEnumerable<object[]> CaptureNames() => CaptureDirs().Any() ? CaptureDirs().Select(d => new object[] { Path.GetFileName(d) }) : [[""]];
 
-    /// <summary>On the real captures: with an age that expires the older half of the evidence, what is left is exactly the evidence younger than the age at the frontier, and the digest is the same at chunk sizes 1, 50 and 100000.</summary>
+    /// <summary>On the real captures: with an age that expires the older half of the evidence, what is left is exactly the evidence younger than the age at the frontier, and the digest is the same at chunk sizes 50 and 100000. Chunk size 1 of this definition variant is covered on the estate (`Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_estate`).</summary>
     [Trait("Category", "Capture")]
     [CaptureTheory]
-    [MemberData(nameof(CaptureChunks))]
-    public void Retention_is_batch_invariant_and_bounds_the_master_on_every_capture(string capture, int chunk)
+    [MemberData(nameof(CaptureNames))]
+    public void Retention_is_batch_invariant_and_bounds_the_master_on_every_capture(string capture)
     {
         var dir = Path.Combine(Repo.Captures, capture);
         var cluster = Sattle.Cli.Program.DetectCluster(dir);
-        var unbounded = Shared(Catalog("24h", captures: true), dir, 100000, cluster, capture + "/24h");
-        var universe = Evidence(unbounded.Engine);
+        var unbounded = CaptureRun(Catalog("24h", captures: true), dir, 100000, cluster);
+        var universe = unbounded.Evidence;
         var cut = universe.Select(x => x.Time).Order().ToList()[universe.Count / 2];
         var age = ((unbounded.Frontier - cut) / 1_000_000 + 1) + "ms";
         var cat = Catalog(age, captures: true);
-        var reference = Shared(cat, dir, 2000, cluster, capture + "/" + age); var r = Shared(cat, dir, chunk, cluster, capture + "/" + age);       // a chunk size that is none of the rows, so no row compares a run with itself
-        Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
-        var kept = Evidence(r.Engine);
-        Assert.Equal(universe.Where(x => x.Time + Lexer.DurationNs(age) > r.Frontier).Select(x => x.Id).Order(), kept.Select(x => x.Id).Order());
-        Assert.True(kept.Count > 0 && kept.Count < universe.Count);
+        var reference = CaptureRun(cat, dir, 100000, cluster); var r = CaptureRun(cat, dir, 50, cluster);
+        Assert.Equal(reference.Digest, r.Digest);
+        Assert.Equal(universe.Where(x => x.Time + Lexer.DurationNs(age) > r.Frontier).Select(x => x.Id).Order(), r.Evidence.Select(x => x.Id).Order());
+        Assert.True(r.Evidence.Count > 0 && r.Evidence.Count < universe.Count);
     }
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<(string, int), Lazy<Result>> Cache = new();
-    static Result Shared(Catalog cat, string dir, int chunk, string cluster, string key) => Cache.GetOrAdd((key, chunk), _ => new Lazy<Result>(() => Run(cat, dir, chunk, cluster))).Value;
+    /// <summary>A replay of a real capture, kept as its digest, evidence and frontier; the engine is disposed.</summary>
+    sealed record CaptureResult(string Digest, List<(string Id, string Type, long Time)> Evidence, long Frontier);
+
+    static CaptureResult CaptureRun(Catalog cat, string dir, int chunk, string cluster) => CaptureRuns.Gated(() =>
+    {
+        var r = Run(cat, dir, chunk, cluster);
+        using (r.Engine) return new CaptureResult(r.Engine.StateDigest(), Evidence(r.Engine), r.Frontier);
+    });
 }

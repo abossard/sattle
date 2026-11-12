@@ -122,7 +122,7 @@ public class ReferencesTests
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
-        var run = ReplayTests.Replay(dir, cluster: Repo.ClusterOf(dir), o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+        var run = CaptureRuns.Run(dir);
         foreach (var g in run.Engine.Graphs.Where(g => !g.IsMaster))
             Assert.Empty(run.Export.Unresolved(g));
         var master = run.Export.Unresolved(run.Engine.Master);

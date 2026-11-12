@@ -19,16 +19,22 @@ public class ServeReplayTests
     /// <summary>The digest `sattle replay` ends in, and the digest of a host built the way `sattle serve` builds it, for the same capture.</summary>
     static (string Replayed, string Served) Digests(string dir, string cluster)
     {
-        var o = Program.Options.Parse(["serve", dir, "--cluster", cluster]);
         var r = Program.Options.Parse(["replay", dir, "--cluster", cluster]);
         var cat = Repo.CatalogFor(dir, out var res); Assert.Empty(res.Diagnostics);
         var space = cat.Spaces.Keys.Single();
         var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = Program.LateHorizonFor(r) });
         new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cluster), Program.ReplayOptionsOf(r, cluster)).Run(dir);
+        return (engine.StateDigest(), Served(dir, cluster));
+    }
+
+    /// <summary>The digest of a host built the way `sattle serve` builds it, after it served `dir`.</summary>
+    static string Served(string dir, string cluster)
+    {
+        var o = Program.Options.Parse(["serve", dir, "--cluster", cluster]);
         using var host = new SpaceHost(Repo.DefinitionFilesFor(dir), Program.HostOptionsFor(o, cluster, null));
         new Replay(host, host.Space, host.Adapters, Program.ReplayOptionsOf(o, cluster)).Run(dir);
         host.Finish();
-        return (engine.StateDigest(), host.StateDigest());
+        return host.StateDigest();
     }
 
     [Fact]
@@ -52,8 +58,8 @@ public class ServeReplayTests
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
-        var (replayed, served) = Digests(dir, Repo.ClusterOf(dir));
-        Assert.Equal(replayed, served);
+        var replayed = CaptureRuns.Of(dir, CaptureRuns.Full).StateDigest;                           // the shared run has the settings of `sattle replay`; its chunk size does not change the digest (BatchInvarianceTests)
+        Assert.Equal(replayed, CaptureRuns.Gated(() => Served(dir, Repo.ClusterOf(dir))));
     }
 
     [Fact]
