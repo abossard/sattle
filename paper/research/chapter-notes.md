@@ -1934,3 +1934,19 @@ The whole chapter as it stood before the reader rewrite (2026-11-12). The labels
     - **Related work.** The citations of `SOURCES.md` are corrected: the DBSP link is replaced (G6), the Ousterhout principles cite the book, the complement attribution of G2 is corrected (Ch. 8), the Kubernetes resource version claim is corrected (Ch. 0, 10), and Timely is cited as Naiad (SOSP 2013), not as a 2016 CACM paper ([R01] section 2.4).
     - **Scope.** AI rule generation and verification projections are removed from the design (Ch. 0).
 
+
+## For content-review: chapters ready for reading (2026-11-12)
+
+Messages from the paper session to content-review are paused by the app, so this list stands in for them.
+- Ch. 13 (Performance), Ch. 14 (Evaluation) and Ch. 15 (Related work and limitations): reader rewrite done, not yet read by content-review.
+- Ch. 7, section 7.4: rewritten for the workload model that replaced the health model. Def. 7.12 and Propositions 7.7 and 7.8 are unchanged. A new paragraph lists three ways the prototype differs from Def. 7.12: a severity No data; a deployment rule over the share of pods; one threshold per signal. It argues that 7.7 (a) and (b) carry over and that 7.7 (c) needs one more term (entering or leaving no data). This argument has not been reviewed.
+- Applied after the last message that reached content-review: F11 (Ch. 11) and F12 (Ch. 12); new rows for Proposition 11.9, Theorem 12.1 and Proposition 12.9 in "Statements whose meaning changed".
+
+## For content-review: F13 applied (2026-11-12)
+
+Applied: Ch. 7 items 1 to 8. The model's claims are now Corollary 7.9 (four differences; (a) and (b) hold; (c) does not, with the two kinds of change it misses). It is a new numbered statement: the inventory has 114, and the counts column "With Corollary 7.9" is added. `w(c)` is now `u(c)`, the time-to-live is `T` everywhere, the direction of `Affects` and "a failure travels against a call" are stated, and the share rule's no-data case is stated.
+Also applied: Ch. 9, 10 and 14 count audit events apart from evidence elements, and "evidence" has three stated meanings. Def. 9.7's contribution follows Def. 10.3.
+Ch. 13: H12, z⁻¹ in Theorem 13.1, "guaranteed only", the decision rule for rates, "the loop is 2.8 times faster", the earlier model, and Def. 13.1 renamed "load". Proposition 13.2 is now proved (arithmetic, α > 0): 94 proved and 7 tested, with README and Ch. 0 updated.
+Ch. 14: 14.0, 14.3, 14.4 and 14.10 follow the workload model.
+Ch. 15: row 1a names the six shipped rules a windowed-row typing rule would refuse.
+Not applied: the engineering glosses of F13; the overloaded d, λ and ρ in Ch. 13; 2.25 against 2.5 million; "workload" in the name of the deployment-health graph.

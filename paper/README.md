@@ -46,7 +46,7 @@ flowchart LR
 - **Step by step equals from scratch** (Ch. 6). Proved for every operator of the language, relative to two theorems from the literature, and with it replay determinism and independence of batching under four stated premises.
 - **Bounded change from measurements** (Ch. 7), **laws for editable views** (Ch. 8), **change of definitions and traceable support** (Ch. 9), **loss is never read as deletion** (Ch. 10), **storage laws from five properties of a store** (Ch. 11).
 
-Of the 113 numbered statements, 92 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 8 are properties of the prototype that are tested and not proved. Two were found false as first stated and are being restated (Theorems 5.3 and 7.1). No proof was checked by a machine. The list is in [inventory.md](inventory.md).
+Of the 114 numbered statements, 94 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 7 are properties of the prototype that are tested and not proved. Two were found false as first stated and are being restated (Theorems 5.3 and 7.1). No proof was checked by a machine. The list is in [inventory.md](inventory.md).
 
 ## What was measured
 

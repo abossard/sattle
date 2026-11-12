@@ -21,16 +21,16 @@
 
 ## Counts
 
-| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated | After the reading of Ch. 7 | With 7.4 and 7.7 restated |
-|---|---|---|---|---|---|---|---|
-| proved | 81 | 86 | 94 | 90 | 92 | 90 | 92 |
-| proved, cited | 1 | 2 | 2 | 2 | 2 | 2 | 2 |
-| proved under premises | 0 | 2 | 9 | 9 | 9 | 9 | 9 |
-| restatement pending | 0 | 0 | 0 | 4 | 2 | 4 | 2 |
-| sketch | 19 | 11 | 0 | 0 | 0 | 0 | 0 |
-| tested | 8 | 8 | 8 | 8 | 8 | 8 | 8 |
-| open | 4 | 4 | 0 | 0 | 0 | 0 | 0 |
-| all | 113 | 113 | 113 | 113 | 113 | 113 | 113 |
+| Status | Two revisions ago | Before the gate 1a pass | After the second pass | After the third pass | With 5.5 and 10.3 restated | After the reading of Ch. 7 | With 7.4 and 7.7 restated | With Corollary 7.9 | With Proposition 13.2 proved |
+|---|---|---|---|---|---|---|---|---|---|
+| proved | 81 | 86 | 94 | 90 | 92 | 90 | 92 | 93 | 94 |
+| proved, cited | 1 | 2 | 2 | 2 | 2 | 2 | 2 | 2 | 2 |
+| proved under premises | 0 | 2 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
+| restatement pending | 0 | 0 | 0 | 4 | 2 | 4 | 2 | 2 | 2 |
+| sketch | 19 | 11 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| tested | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 8 | 7 |
+| open | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| all | 113 | 113 | 113 | 113 | 113 | 113 | 113 | 114 | 114 |
 
 The four statements with a pending restatement (5.3, 5.5, 7.1, 10.3) were counted as proved and read only, except 7.1, which has example tests. Theorems 5.5 and 10.3 are restated in their chapters as part D of the third pass proposes, and count as proved again. Theorems 5.3 and 7.1 stay pending until the project chooses between restating them and adding the typing rule for windowed rows. The sentence below still gives the figures after the second pass.
 
@@ -99,7 +99,8 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Theorem 7.4 | bounded change of structure | proved, restated (F6, item 1, applied 2026-11-12) | toggles counted as runs of a state machine, plus the appearance and end of a key's row, bounded by the gap between windows | one example test |
 | Law 7.5 | series follow the element when the graph changes | proved, restated; item 3 ruled | items 1 and 2 from Def. 7.3, 7.9, 3.6; item 3: stored windows combine as monoid values where the combine rule gives one, otherwise equal values or no value with a counted conflict; commutative and associative; a merged value is always the as-if value (Theorem 7.2) | nothing: reading only. The engine differs in four places (D37) |
 | Theorem 7.6 | element view is well defined | proved | from the definitions and the results its status names | nothing: reading only |
-| Proposition 7.7 | roll-up | proved, restated (F6, item 2, applied 2026-11-12) | (a) and (b) proved; (c) restated with the appearance and end of a signal's rows and the hypothesis that graph data derive from measurements only through `Threshold` outputs (true of the shipped definitions); no longer uses Theorem 5.3 | one fixture test, two captures; that the engine's `health` graph equals Def. 7.12 is tested by example only |
+| Proposition 7.7 | roll-up | proved, restated (F6, item 2, applied 2026-11-12) | (a) and (b) proved; (c) restated with the appearance and end of a signal's rows and the hypothesis that graph data derive from measurements only through `Threshold` outputs, which the shipped definitions do not meet (F13, item 1); no longer uses Theorem 5.3 | one fixture test, two captures; that the engine's `health` graph equals Def. 7.12 is tested by example only |
+| Corollary 7.9 | the workload model | proved | Proposition 7.7 (a) and (b) for the four differences of the workload model; (c) shown not to hold, with the two kinds of change that it misses | `WorkloadTests.cs`, five scenarios on the `estate` |
 | Proposition 7.8 | bounded reach | proved | breadth-first reach | example test |
 | Theorem 8.1 | bijective rules | proved | inverse function | **void for GetPut** (the test sends only edits with before equal to after, which are dropped before any lens runs); PutGet on generated edit sequences on one lens stands |
 | Theorem 8.2 | the lens steps | proved | direct verification of GetPut, PutGet, PutPut; counterexample for PutPut | **void for GetPut**, as 8.1; PutGet on generated edit sequences on one lens stands |
@@ -149,7 +150,7 @@ Of the 105 statements counted as proved in one of the three ways, 2 are checked 
 | Proposition 12.10 | resources, tags and caching | proved | from the definitions and the results its status names | example tests (`EtagTests.cs`) |
 | Proposition 12.11 | one digest of a document per version | proved | from the definitions and the results its status names | example tests, one capture |
 | Theorem 13.1 | a join costs in proportion to what it produces | proved, cited | from the definitions and the results its status names | nothing: reading only |
-| Proposition 13.2 | grouping commits lowers the cost per commit | tested | from the definitions and the results its status names | nothing: reading only |
+| Proposition 13.2 | grouping commits lowers the cost per commit | proved (arithmetic, with α > 0; F13 applied) | from the definitions and the results its status names | nothing: reading only |
 | Theorem 13.3 | a chain of stages | proved | from the definitions and the results its status names | nothing: reading only |
 | Theorem 13.4 | budgets of stacked steps add up | proved | from the definitions and the results its status names | nothing: reading only |
 | Claim 13.5 | cost of a read of the hot graph | proved, restated | counts on the layout of 11.9: by handle, at a pinned revision, one-hop scan | nothing: reading only. That the engine has this layout and its constants is benchmark B6 (gate 1c) |
@@ -838,11 +839,61 @@ Compared with the inventory's statements: unchanged in meaning. One proposition 
 *Needs engineering background.*
 10. "subscriber", "fake connection", "media type", "tag" (glossed), "caching", "browser", "focusable group", "screen reader", "Markdown", "a template appends a stable identity as the last key", "summaries at most every 100 ms … so a stream of patches does not overload the page", "a standard checker of accessibility". The ones a mathematician cannot guess: "media type" ("the declared format of a body, such as JSON"), "focusable group" ("one element that the keyboard can reach as a whole"), "screen reader" ("a program that reads the page aloud").
 
+### F13. The workload model of Ch. 7 (7.4), and every chapter changed since F2 to F12 (2026-11-12, paper at the commit of the workload model)
+
+Read as the target reader, and compared with the definition text of the workload model. Ch. 3 to 6 and 8 to 12 were compared word by word with the versions read for F2 to F12: the items of F8 to F12 are applied as proposed, and F7's pod-name inconsistency is resolved (Ch. 1, Ch. 5 and Ch. 10 now agree that a recreated pod merges with its predecessor, stated as a limit). Ch. 13 to 15 are read for the first time after their style pass.
+
+*A. Propositions 7.7 and 7.8 against the workload model.*
+1. **Prop. 7.7 (c): "true of the shipped definitions" is false.** The hypothesis is that graph data derive from measurements only through `Threshold` outputs. In the shipped definitions, the master's `Calls`, `Sends` and `Destination` are created from rows of a `Window` grouped per window (the ingestion rules for observed calls and destinations). The workload model then derives `DependsOn` from those calls (way 5) and so `Affects`, and creates `TalksTo` from the rows of a `Series` and a `Rollup`. So a pair of services that first calls changes `Affects`, and with it states, without a toggle. A window is never withdrawn by retention (Def. 7.13), so each such edge appears once. *Proposed:* drop the parenthetical. In "How the workload model differs", add that (c) needs a further term in the model: one revision chain per pair of components whose first call creates a dependency.
+2. **"`Affects` … never from communication: an observed call is evidence that one part uses another, not that a failure travels along it."** Way 5 turns calls between the pods of two services into `DependsOn` from caller to callee, and `Affects` follows `DependsOn`. So a failure of the callee does reach the caller; it never travels from caller to callee. *Proposed:* "`Affects` is made from dependency and composition; communication edges are not walked. A call is used as evidence that the caller depends on the callee (way 5), so a failure travels against the direction of a call and never along it."
+3. **The direction of `Affects` is not stated.** In the definitions an edge `c → d` of `Affects` means that `d` affects `c` (`workload → service`, `service → deployment`, `caller → callee`, `pool → node`). Def. 7.12 takes `state(c)` over the `d` with `(c, d) ∈ A^{≤D}`, which is right for that direction. Read with the name in its natural sense ("`c` affects `d`"), it is backwards. *Proposed:* say so in 7.4 ("an edge `c → d` of `Affects` means that `d` affects `c`"), or rename the relation.
+4. **The model differs from Def. 7.12 in a fourth point.** A pod's own severity includes its node's own severity through the pod's placement on the node, not through an `Affects` edge, and only the node's own signals count, not its pool or cluster. The list of three differences omits this.
+5. **The share rule counts only pods that have a severity, and it maps no data to healthy.** `n` counts pods with an own severity; pods with none are not counted. A pod in no data (1) is neither "unhealthy" (≥ 3) nor "degraded or worse" (≥ 2). A deployment whose pods are all in no data is therefore `Healthy`, and so is the service above it. "No data ranks between healthy and degraded" holds for every maximum of the model but not across the share rule. Prop. 7.7 (a) still carries over (the share rule does not decrease). *Proposed:* say "of its pods that have a severity", and either state that a deployment of pods in no data is healthy or give the share rule a no-data level ("no data when at least half are in no data or worse").
+6. **Def. 7.12 and the model number severities differently.** Def. 7.12: 0 healthy, 1 degraded, 2 unhealthy. Model: 0 healthy, 1 no data, 2 degraded, 3 unhealthy. "1" means degraded in one and no data in the other. Def. 7.12 also writes the worst severity as `w(c)`, while `w` is the window width throughout Ch. 7 (Def. 7.2, 7.5, Theorem 7.4). *Proposed:* give Def. 7.12 the values 0, 2, 3 (or names), and write the worst severity `sev*(c)`.
+7. **Prop. 7.7 (c) and its parenthetical still name `health` and `Signal`.** The graph is `workload`, and the signal element is `ComponentSignal`.
+8. Prop. 7.8 matches: the definition reads `Affects` outward to depth 0 to 16. Prop. 7.7 (a) and (b) carry over by the argument given, with items 4 and 5 added. The claims for the model sit in an unnumbered paragraph after Prop. 7.8, where a reader looks for a corollary. *Proposed:* "Corollary 7.9 (the workload model)", with (a), (b) and the extra terms of (c).
+
+*B. The typing rule P6 would refuse the shipped definitions.*
+9. P6 (section D) lets no create emit take a windowed row. The shipped definitions do exactly that in at least six rules: `Calls` (observed calls), `Destination` and `Sends` (observed destinations), and `Meter` with `MeterOf` (Azure meters, node meters, pod warnings), all from `Window` grouped per window. The workload model adds `TalksTo`, from `Series` and `Rollup`. The row T-WINDOWED said "the shipped definitions still check"; that is false. The choice between restating Theorems 5.3 and 7.1 and adopting P6 therefore includes this cost. One option is to adopt P6 and rewrite those rules so that presence comes from a `Threshold` (Ch. 11, A2). The other is to restate and count, in Theorem 7.4 and Prop. 7.7, the edits that the appearance of windows causes. Ch. 15 (15.2, row 1a) should name this cost.
+
+*C. Ch. 7, other points.*
+10. Def. 7.16 now writes the time-to-live `T`, but its last bullet and "Three absences" still use `D` ("longer than `D`", "`N·w/D + 1` silences", "`D < within ≤ ρ`"). In this chapter `D` is the depth bound of Def. 7.12.
+11. 7.6, "The shipped definitions do not use fill or a time-to-live yet", is out of date: the workload model reads pod warnings with `fill 0` and every meter with a time-to-live of five minutes (7.4). "Def. 7.6 has no horizon of its own" is out of date too: Def. 7.6 now defines `H`.
+12. Theorem 7.1, proof, last sentences: "By Def. 7.10 a crossing operator emits an edit only at a toggle". Def. 7.10 now says "at a toggle, and when the key's row appears or goes". Since the second sentence of the theorem is marked false, the proof should prove the first sentence only.
+13. Def. 7.14, "A covered window is therefore closed": the premise of coverage added there (a source delivers a window's records before its progress passes the end by `L`) is not the one this needs. Closing is by logical time (Def. 7.6), coverage by progress. It follows only if logical time is never behind progress (third pass, A).
+14. *Engineering background in 7.4:* "service account", "the role that identity holds on a resource", "environment variable", "secrets", "backend", "crash-looping", "cloud identity". The paragraph "Words used in this section" covers the others.
+
+*D. Ch. 9, 10 and 11, new points after the applied items.*
+15. Ch. 9 now says that `AuditEvent` is not an evidence element in the sense of Def. 9.12. But 9.6 ("evidence elements are 14,622 of 15,154"), Ch. 10 ("the three evidence types are 14,622 and 47,598") and Ch. 14 (14.2) still count the 10,487 and 42,244 audit events as evidence elements. *Proposed:* "events kept as elements", or evidence elements 4,135 and 5,354.
+16. Ch. 9 (9.6) lists `DependencyEvidence` among "the evidence elements that exist". It stands for no source event and has no delivery key, so it is not one by Def. 9.12 either. *Evidence* now has three meanings, while 9.6 says two.
+17. Def. 9.7 now says "*contribution* (Def. 10.3): the fragments that one input causes through one rule", and Def. 10.3 "the set of fragments that one record of a source causes". One is per input and rule, the other per record.
+18. Ch. 11, proof of Theorem 11.2: "`r` shifted right by 16 bits". *Proposed:* "`⌊r / 2¹⁶⌋`".
+
+*E. Ch. 13 (first reading after the style pass).*
+19. **H12, "a threshold is linear on closed records"**, contradicts Ch. 6, where `Threshold` is a per-key state machine and not linear. *Proposed:* "a threshold does constant work per closed record and key".
+20. **Theorem 13.1:** the rule `(a ⋈ b)^Δ = Δa ⋈ Δb + I(a) ⋈ Δb + Δa ⋈ I(b)` is right only with `I(a)` and `I(b)` the integrals *before* the step. With the integrals after it, `Δa ⋈ Δb` is counted twice. *Proposed:* write `z⁻¹(I(a))` and `z⁻¹(I(b))`, as Ch. 6 does.
+21. **Prop. 13.2** is arithmetic on a model: it holds for `α > 0`, which should be stated, and it is proved, not tested. "The proposition counts as tested" asks the reader to accept a test that does not exist. *Proposed:* "proved on the model; `α` and `β` are not measured".
+22. **Theorem 13.4:** "if every step meets `q` only at p99, then `d·q` holds only at the quantile `1 − 0.01·d`". The union bound guarantees that quantile; it does not show that a better one fails. *Proposed:* "is guaranteed only at". The example ("meets 4 s only at the 96th percentile") needs the same change.
+23. **Rule of decision (13.5)** gives "supported" for a target of rate and nothing else. Refuted and inconclusive are undefined for rates.
+24. "Speed of evaluation: 17.0 million rows per second, against 47.5 million for a loop written by hand (2.8 times faster)." The loop is the faster one; the sentence reads as if the program were. "The median, p50" names one statistic twice.
+25. 13.7, "The health model of Ch. 7 (7.4) is a stack of four projections", describes the earlier model. The workload model is two graphs.
+26. *One term, one meaning.* Def. 13.1 calls the benchmark load a *workload*. Ch. 7 calls one namespace of an application a workload, and Ch. 14 (14.4) calls the 22 deployments of the deployment health graph "workloads". `d` is the depth of the stack (Def. 13.1, Theorem 13.4), the largest degree (`d_a`, `d_b`, Theorem 13.1) and the degree of a hub (example). `λ` is an arrival rate (Theorem 13.3) and the logical frontier everywhere else. `ρ` is a rate of events (Def. 13.1), a retention (Def. 7.13) and a release (Ch. 9). H6 says 2.25 million relationships and H9 2.5 million (also F11, item 11).
+27. *Engineering background:* "load average" (used to scope every status: "the average number of programs ready to run"), "release build", "interned ids", "a hash … an expected constant number of probes in a table whose load is bounded", "handles", "pushes back" (M1), "harness", "micro-benchmarks".
+
+*F. Ch. 14 (first reading after the style pass).*
+28. 14.3 lists "the health model (Ch. 7)" among the examples, and 14.4 ("What this shows") says "a stack of four projections computes a health model that finds failing services". Both describe the earlier model, which the table labels as replaced.
+29. 14.10 lists "thresholds as data" as open for 2a. The workload model reads its thresholds from rules a person typed in (`SignalRule`, 7.4). "Def. 7.6 stated on logical time" (1a) is unclear, since Def. 7.6 closes windows by logical time already.
+30. 14.0: "Determinism of replay and batch invariance hold on both real recordings at five batch sizes". By 14.5 that is at earlier states. At the last state it is the default size (the authors) and 1, 50 and 100,000 (set B, not repeated).
+31. *Engineering background:* "network policy" (the running example's `intruder`), "frames per second", "ticks", "a warm-up inside the benchmark", "in every category" of tests.
+
+*G. Ch. 15.*
+32. Row 1a "Theorems 5.3 and 7.1 as stated": the column "What it needs" should add that a typing rule for windowed rows refuses six shipped rules unless they change (item 9).
+
 ### G. Tests proposed by the third pass (not yet in the list of 17)
 
 | Id | Name | Generates | Asserts | Backs |
 |---|---|---|---|---|
-| T-WINDOWED | `Data_cannot_be_derived_from_the_existence_of_windows_without_a_threshold` | projections that lead a row of a `Series`, a `Window` or a `Rollup` through `Map`, `Filter`, `Distinct`, `Group` or `Join` into a create emit or a data property | the checker refuses each, naming the operator (rule P6); the shipped definitions still check | Theorems 5.3 and 7.1, if P6 is adopted |
+| T-WINDOWED | `Data_cannot_be_derived_from_the_existence_of_windows_without_a_threshold` | projections that lead a row of a `Series`, a `Window` or a `Rollup` through `Map`, `Filter`, `Distinct`, `Group` or `Join` into a create emit or a data property | the checker refuses each, naming the operator (rule P6); the shipped definitions check only after the six rules of F13, item 9 are rewritten | Theorems 5.3 and 7.1, if P6 is adopted |
 | T-NODATA-NEW-MEMBER | `A_roll_up_key_with_a_new_member_without_a_record_is_not_in_no_data` | a roll-up key with one member long silent and one member that appeared less than the time to live ago and has no record | engine and reference agree, and the key is in no data only if every member is | Def. 7.16, set B's roll-up rule |
 | T-NODATA-RETURN | `A_subject_that_returns_is_not_in_no_data_before_its_time_to_live` | an element with an old record that leaves the structural input and returns | after the return the element is not in no data until the time to live has passed since its return | Def. 7.16 with the proposed `e(k)` |
 | T-AMBKEY | `An_edit_of_an_element_with_two_keys_is_rejected_AmbiguousKey` | a lens over authored rows whose key domain has an equivalence, two rows whose keys are bound to one entity, then an update and a delete of that entity in the view | each edit is rejected `AmbiguousKey` and changes nothing; an element with one key is still accepted | Def. 8.4 and Theorem 8.2 (c), the accepted domain; engine-core builds the check (2026-11-12), not yet committed |

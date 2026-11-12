@@ -134,7 +134,7 @@ The order of a recording is the order in which the capturing programs received t
 | `WarningEvent` elements, `About` edges | 3, 3 | 173, 173 |
 | `Evidence` elements in the health graph of the earlier health model, which the workload model of Ch. 7 replaced | 119 | 124 |
 
-The master graph has 15,154 entities on the first recording and 48,201 on the second. The three evidence types are 14,622 and 47,598 of them (the sum of three rows above). The other 532 and 603 are the resources, pods, services, machines and deployments (456 and 491) and the meters (76 and 112). Evidence elements therefore make up most of the master graph on both recordings.
+The master graph has 15,154 entities on the first recording and 48,201 on the second. The three event types are 14,622 and 47,598 of them (the sum of three rows above); activity events and warnings are evidence elements in the sense of Def. 9.12, and audit events, which have no subject, are not. The other 532 and 603 are the resources, pods, services, machines and deployments (456 and 491) and the meters (76 and 112). Evidence elements therefore make up most of the master graph on both recordings.
 
 **One event, one identity.** An event that arrives through both Azure routes, the interface for past actions and the diagnostic records, is one element: both adapters name it by the same key (correlation, operation, resource, status, event time). Two limits remain, reported by the engine's developers and not checked by the authors. 231 events of the newest recording still get two elements, because the two routes give times that differ by 1 to 100 ms and an identity key cannot express a tolerance. And 55 events between a raw count of the recording and the engine's count are not explained.
 

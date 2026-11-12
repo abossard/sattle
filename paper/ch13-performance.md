@@ -39,13 +39,13 @@ A hypothesis is neither a claim nor a result. 13.6 reports what the prototype me
 
 ## 13.2 Definitions
 
-**Definition 13.1 (workload).** `W = (E, ρ, Σ, f, d)` with
+**Definition 13.1 (load).** Called the *load* here, to keep it apart from the workload of Ch. 7. `W = (E, ρ, Σ, f, d)` with
 - `E`: the size of the estate (entities, relationships, projections);
 - `ρ`: the rate of events per source (pages and changes of the Azure resource list, the Kubernetes watch, flows of the network observer, network logs, measurements);
 - `Σ`: the number of series of measurements and their resolution;
 - `f`: the share of inputs that change graph data;
 - `d`: the depth of the stack, the longest path from the master in the graph space.
-The reference workload is the estimate of Ch. 11 (11.4), in which every input is an assumption.
+The reference load is the estimate of Ch. 11 (11.4), in which every input is an assumption.
 
 **Definition 13.2 (metrics).**
 
@@ -66,7 +66,7 @@ The reference workload is the estimate of Ch. 11 (11.4), in which every input is
 
 A *percentile* p99 is the value below which 99 percent of the measured times lie.
 
-**Definition 13.3 (tier).** A tier is `(scale factor over the reference workload, reference machine, table of targets)`. Tier 1 is the reference workload. Targets exist for tier 1 only.
+**Definition 13.3 (tier).** A tier is `(scale factor over the reference load, reference machine, table of targets)`. Tier 1 is the reference load. Targets exist for tier 1 only.
 
 **Definition 13.4 (reference machine).** One machine of 8 cores and 32 GB per graph space (assumption), and a Cosmos DB account with throughput bought in advance for the log of the master (Ch. 11, 11.5). The exact machine types, regions, throughput and consistency are to be fixed at the first run and written into every result. **No result is valid for this reference without them.** No run so far was on it.
 
@@ -82,7 +82,7 @@ with `cost_op` from Fact 11.1, an identity lookup in constant time in the bindin
 
 **Theorem 13.1 (a join costs in proportion to what it produces).** Let `a` and `b` be indexed by the join key, and let `d_a` and `d_b` be the largest numbers of rows of their integrals that share a key. One step of an incremental join on changes `Δa, Δb` costs `|Δa| + |Δb|` lookups in the indexes plus the number of rows produced, and the number of rows produced is at most `|Δa|·d_b + |Δb|·d_a + |Δa|·|Δb|`.
 
-It is proved relative to the rule of [budiu2023] for bilinear operators, cited in Theorem 6.1: `(a ⋈ b)^Δ = Δa ⋈ Δb + I(a) ⋈ Δb + Δa ⋈ I(b)`.
+It is proved relative to the rule of [budiu2023] for bilinear operators, cited in Theorem 6.1: `(a ⋈ b)^Δ = Δa ⋈ Δb + z⁻¹(I(a)) ⋈ Δb + Δa ⋈ z⁻¹(I(b))`, where `z⁻¹` delays a stream by one position.
 
 *Proof.* Each of the three terms is a join between a change and an indexed set. An index finds the matching rows of the other side with one lookup per row of the change, and listing the matches costs their number. For a row `y` of a change with key `κ`, the number of matches in `I(a)` is `deg_a(κ) ≤ d_a`. Summing gives the stated bounds. ∎
 
@@ -90,7 +90,7 @@ It is proved relative to the rule of [budiu2023] for bilinear operators, cited i
 
 **Proposition 13.2 (grouping commits lowers the cost per commit).** Let a batch of the store with `n` versions cost `C(n) = α + β·n`, where `α` is the cost per batch and `β` the cost per version, for `n ≤ n_max = min(100, ⌊2 MB / size of a version⌋)` (S1, Ch. 11). Then the cost per version `β + α/n` decreases strictly in `n` and is smallest at `n_max`. The first version of a group waits until the group is full or a deadline passes, so the size of a group trades time against cost.
 
-This is arithmetic on a model of cost. `α` and `β` are not measured; the proposition counts as tested.
+*Proof.* With `α > 0`, `β + α/n` decreases strictly in `n`. ∎ This is proved arithmetic on a model of cost; `α` and `β` are not measured, so whether the model fits a store is open.
 
 **Theorem 13.3 (a chain of stages).** Consider stages `1 … m` (acceptance, evaluation, commit, each step of projection) with service rates `μ_i` records per second. With bounded queues that make their producers wait, the sustained rate is at most `min_i μ_i`. With unbounded queues, a stage whose arrival rate `λ_i` exceeds `μ_i` builds a backlog at a rate of at least `λ_i − μ_i`. A projection that processes its inputs one after another has `μ ≤ 1 / s̄`, where `s̄` is its mean service time per record or group.
 
@@ -98,7 +98,7 @@ This is arithmetic on a model of cost. `α` and `β` are not measured; the propo
 
 *Consequence for H1.* 5,000 records per second through one evaluator that works one record at a time needs a mean service time of at most 200 µs per record, the share of commits included. More speed comes from many graphs (one per customer and cluster, Ch. 11), not from inside one projection.
 
-**Theorem 13.4 (budgets of stacked steps add up).** Let `L = X₁ + … + X_d` with `P(X_j > q_j) ≤ ε_j`. Then `P(L > q₁ + … + q_d) ≤ ε₁ + … + ε_d`. Hence, for a stack of `d` steps: if every step meets its budget `q` at the quantile `1 − 0.01/d`, then `d·q` is a budget for the whole stack at p99; and if every step meets `q` only at p99, then `d·q` holds only at the quantile `1 − 0.01·d`.
+**Theorem 13.4 (budgets of stacked steps add up).** Let `L = X₁ + … + X_d` with `P(X_j > q_j) ≤ ε_j`. Then `P(L > q₁ + … + q_d) ≤ ε₁ + … + ε_d`. Hence, for a stack of `d` steps: if every step meets its budget `q` at the quantile `1 − 0.01/d`, then `d·q` is a budget for the whole stack at p99; and if every step meets `q` only at p99, then `d·q` is guaranteed only at the quantile `1 − 0.01·d`.
 
 *Proof.* If `L > Σ q_j`, then at least one `X_j > q_j`, since otherwise the sum would be at most `Σ q_j`. The union bound gives the claim. ∎
 
@@ -130,7 +130,7 @@ All values are hypotheses. "Refuted if" follows the rule of 13.5. The results ar
 | H9 memory | hot graph at most 400 MB for 750,000 entities and 2.5 million relationships, without the ring of measurements and the look-back of `Series` | B9: memory after loading, at scale factors 1, 4 and 16 | above 400 MB at tier 1 |
 | H10 restart | load a seal and process 1 hour of log in at most 60 s | B10: stop and start the engine during B1 | above 60 s |
 | H11 time of a definition edit | grows linearly in the number of retained inputs of the affected projection, with a measured slope | B11: definition edits at 1, 4 and 16 times the retained inputs | growth faster than linear |
-| H12 from measurement to property | p99 at most 1 s from the input that closes a window to the derived commit, for a threshold; the same as a linear step of H4, because a threshold is linear on closed records | B12: a threshold projection over series of latency, with and without hysteresis | p99 above 1 s |
+| H12 from measurement to property | p99 at most 1 s from the input that closes a window to the derived commit, for a threshold; the same as a linear step of H4, because a threshold reads closed records once each, as a step of H4 does (as an operator it keeps state per key, Ch. 6) | B12: a threshold projection over series of latency, with and without hysteresis | p99 above 1 s |
 | H13 delay before version rows | p99 at most 5 s at steady load | B13 | p99 above 5 s |
 | H14 cost of a join against the degree of a hub | time per change grows linearly in the matched degree (Theorem 13.1), with a slope within a factor of 2 over degrees 10 to 100,000 | B14: synthetic hubs and the first ten real projections | slope outside the factor, or faster than linear |
 
@@ -140,9 +140,9 @@ Two comparisons have no target. One would run standard queries of streaming syst
 
 - **The harness is deterministic.** Generators have fixed seeds; inputs come from the recordings where possible; harness and results are kept with the project.
 - **Runs.** A warm-up, then at least 10 independent runs per configuration. Reported: the median, p50, p99, the 95 percent confidence interval of the median across runs, and the variance.
-- **Rule of decision.** A target of time or size is *supported* iff the reported statistic is at or below the target in every run, *refuted* iff the median run is above the target, and *inconclusive* otherwise. A target of rate is supported iff the lower bound of the 95 percent interval is at or above the target.
+- **Rule of decision.** A target of time or size is *supported* iff the reported statistic is at or below the target in every run, *refuted* iff the median run is above the target, and *inconclusive* otherwise. A target of rate is supported iff the lower bound of the 95 percent interval is at or above the target, refuted iff the upper bound is below it, and inconclusive otherwise.
 - **Scope of a status.** The rule says nothing about the machine, and Def. 13.4 names a reference that no run used. A status is therefore stated for a *configuration*: a store, a machine and the load on it. The rule is applied to the runs of one configuration, and the status names it ("supported on SQLite on the laptop under load"). It is the status of the hypothesis itself only where the hypothesis names no store (H5 and H10 name none; H3 and H7 name Cosmos). For an upper bound on time, other load on the machine can only raise times, so a pass under load holds all the more for that configuration, while a failure under load is weak evidence. A `refuted` on the local emulator of Cosmos is reported as such and does not refute the hypothesis for a real account.
-- **What is recorded.** The machine, the build of the engine and the workload actually used.
+- **What is recorded.** The machine, the build of the engine and the load actually used.
 - **Separate causes.** Benchmarks of the hot plane run without a store, so that the store does not enter H4, H6 and H8. B3 must run against a real Cosmos account, because the emulator does not count costs.
 
 ## 13.6 Results
@@ -164,14 +164,14 @@ Two comparisons have no target. One would run standard queries of streaming syst
 | H12 | as H4 | p99 62.3 ms at 5,000 series; 1.5 to 1.7 s per close at 240,000 pairs |
 | H11, H13, H14 | not measured, or not applicable | `Join` is built and its cost not measured; H13 does not apply, because the stores of the prototype write version rows inside the commit |
 
-**Speed of evaluation.** The program that evaluates expressions on many rows at once handles 17.0 million rows per second, against 47.5 million for a loop written by hand for the same computation (2.8 times faster); it uses 1.8 bytes per row. Closing one window takes 29.2 ms at p50 and 62.3 ms at p99.
+**Speed of evaluation.** The program that evaluates expressions on many rows at once handles 17.0 million rows per second, against 47.5 million for a loop written by hand for the same computation (the loop is 2.8 times faster); it uses 1.8 bytes per row. Closing one window takes 29.2 ms at p50 and 62.3 ms at p99.
 
 **What the figures do not say.** Three hypotheses are supported, each for a named configuration: H5 for the engine's part in memory and on SQLite, H8 for the plane in memory at the head, and H10 for a restart from SQLite after a clean stop. H10 is not the defined path in three respects: the stop is clean, the history is one recording repeated, and a seal is valid only for the build that wrote it. H7 has two labels on the emulator and none for a real account. Nothing here says anything about the reference machine of Def. 13.4, about the Cosmos store on a real account, or about a machine without other load. Ch. 14 (14.7) gives the figures of every set.
 
 ## 13.7 What the prototype does differently
 
 - **Method.** The benchmarks time with the program's own clock and memory counters, not with a library of micro-benchmarks, and each figure is one run, except the ten-run sets.
-- **Workload.** The synthetic workload has 1,000 pods, 5,000 pairs of pods and 100 services. The run at the size of the estate has 150,000 pods, 30,000 services, 300,000 Azure resources, 240,000 active pairs of pods, 1 million flow rows per window of 60 s, and 4 windows: one run, not a distribution, no p99.
-- **H4 and H12** were measured by one advance of logical time that closes windows of the master graph and commits the derived graph, not by a stack of three steps. At the size of the estate a close takes 1.5 to 1.7 s, above the target of 1 s; the plan still keeps up with a window of 60 s on one thread. The health model of Ch. 7 (7.4) is a stack of four projections, but its time per step was not measured.
+- **Load.** The synthetic load has 1,000 pods, 5,000 pairs of pods and 100 services. The run at the size of the estate has 150,000 pods, 30,000 services, 300,000 Azure resources, 240,000 active pairs of pods, 1 million flow rows per window of 60 s, and 4 windows: one run, not a distribution, no p99.
+- **H4 and H12** were measured by one advance of logical time that closes windows of the master graph and commits the derived graph, not by a stack of three steps. At the size of the estate a close takes 1.5 to 1.7 s, above the target of 1 s; the plan still keeps up with a window of 60 s on one thread. The health model of Ch. 7 (7.4) was, in its earlier form, a stack of four projections, and its time per step was not measured.
 - **The earlier health model in the last sets of H5 and H10.** The benchmarks load the definitions kept with the project, not the local names of the real cluster that the processing of a recording adds. In the last sets those definitions bind the health model to invented names, so on the real recording the health graphs are almost empty there (3 signals, not 12). The earlier sets ran the whole model and are inside the targets too, so the statuses do not depend on it.
 - **Hot graph.** It differs from the design of Ch. 11 (11.5): adjacency is a linked list per entity, so a removal costs time in proportion to the degree; and the interface takes and returns strings, so a read assembles the element from columns (250 to 410 ns).
