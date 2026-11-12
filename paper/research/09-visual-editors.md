@@ -307,7 +307,7 @@ Parameter sorts in the stand-in are two of the eleven of note 08: an expression 
 ### 9.7 Not done or not verified
 
 - The editors are not in the application. They run on a page of their own over a draft in memory. Three additive changes to the application's editor state connect them (an action that carries a gesture, its effect, and the view); they were handed to the session that owns those files.
-- The replay of the five reference projections through each notation's interface against the engine (section 8) is not built, and the script that replays through the application is unchanged. What stands in for it is the chain of 9.3: the interface of each notation gives the draft the gestures give [T], and the gestures give the original on the engine [T, with an engine].
+- The replay of the five reference projections through each notation's interface is done (9.10). The script that replays through the application is unchanged.
 - Constant rows (`Values`) and the body of a `Fixpoint` cannot be edited in the new notations.
 - No frame times or memory in a browser, no production build, no screen reader pass, no user study. The time estimates of 4.1 remain estimates.
 - Three defects of the existing command code surfaced and were reported to its owner: an author's aggregate `n = count()` is taken for the skeleton's placeholder and removed when another aggregate is added; a pattern edge is given another id and an empty variable where the engine has none; two patches that differ only in the order of property keys are treated as different.
@@ -334,6 +334,47 @@ Parameter sorts in the stand-in are two of the eleven of note 08: an expression 
 | text | one clause shape for every derived statement, parsed and printed | none |
 | provenance | edges from each generated node to the use and the parameter | a map from operator to use, in memory; not per parameter |
 | where it lives | the catalog keeps the use, never the expansion | the same for the author; the engine receives only the expansion |
+
+### 9.10 The five reference projections, built through each notation and checked by the engine
+
+Method. For each reference projection an empty twin is made, and the twin is filled in through the interface of one notation by the actions an author takes there: a row set started from the form or from the palette, each step appended, each read, parameter, reference and entry put in through its row. A projection that the walkthrough builds new (series with threshold, fixpoint closure) is first built by its recorded commands, and that result is what the notation must reach. The edits are sent to a live engine as one patch (the engine built from the working tree, kernel 3.19, the synthetic estate), which checks the draft, prints the canonical text and previews both graphs [T, with an engine]. The same builds run without an engine against what the original says (every step, read, field, reference and entry); the two small ones run with every test run [T].
+
+| projection | notation | accepted | canonical text | preview digest | keys | clicks |
+|---|---|---|---|---|---|---|
+| deployment health | structure | yes | equal | equal (3 entities, 2 relationships) | 1,005 | 124 |
+| | steps | yes | equal | equal | 897 | 232 |
+| | blocks | yes | equal | equal | 889 | 226 |
+| | wires | yes | equal | equal | 897 | 237 |
+| service tree with lift | structure | yes | equal | equal (4, 5) | 787 | 120 |
+| | steps | yes | equal | equal | 707 | 200 |
+| | blocks | yes | equal | equal | 664 | 192 |
+| | wires | yes | equal | equal | 707 | 202 |
+| health roll-up | structure | yes | equal | equal (40, 45) | 1,765 | 280 |
+| | steps | yes | equal | equal | 1,578 | 467 |
+| | blocks | yes | equal | equal | 1,499 | 444 |
+| | wires | yes | equal | equal | 1,578 | 482 |
+| series with threshold | structure | yes | equal | equal (4, 0) | 394 | 66 |
+| | steps | yes | equal | equal | 340 | 120 |
+| | blocks | yes | equal | equal | 330 | 114 |
+| | wires | yes | equal | equal | 340 | 126 |
+| fixpoint closure | structure | yes | equal | equal (0, 26) | 161 | 36 |
+| | steps | yes | equal | equal | 132 | 65 |
+| | blocks | yes | equal | equal | 129 | 62 |
+| | wires | yes | equal | equal | 132 | 68 |
+
+Sums over the five, and the same priced with K = 0.2 s and a click at 1.3 s (section 4.1, with no M): structure 4,112 keys and 626 clicks (1,636 s), steps 3,654 and 1,084 (2,140 s), blocks 3,511 and 1,038 (2,052 s), wires 3,654 and 1,115 (2,180 s). These counts include the typing of names, values and expressions, which the estimate of 4.1 left out because it is the same everywhere; the typing is most of the keys. The order agrees with the estimate: the structure editor is the cheapest because it is reached by keys, and the three that are reached by pointer cost about a third more, close to one another. The blocks need about 4% more changes of the draft than the others, because a new row set is put down under a provisional name and renamed.
+
+What the replay found and what was changed for it:
+
+- An expression printed a decimal literal without its point (`0` for `0.0`), and the printed text typed back became an integer. The engine refused the lift built that way ("If branches differ: Decimal and Integer"). A decimal now prints with its point. A test types every expression of the estate catalog back as the text it prints and finds no change.
+- A sink is named by its position among the sinks (`emit.3`), so a sink made in another order gets another number. The comparison reads sinks by position, as the engine does.
+- A fixpoint refers to a row set by the id of one of its steps, and a lowered row set names its steps by position; the build reads ids by position.
+
+### 9.11 Not done
+
+- The notations do not yet have everything of the node canvas (9.8), so both stay in the editor view.
+- A screen reader pass, frame times in a browser, and a user study are not done.
+- When the workload model replaces the example model, the catalog fixtures are written again and the walkthroughs that name the removed modules move.
 
 ## References
 

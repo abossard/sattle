@@ -1,136 +1,159 @@
 # Ch. 1 Values, canonical form and identity
 
-**Claim.** A value has one canonical encoding and equality is equality of encodings. An entity id is a pure function of an identity key, and a binding never changes once made. Two identities that turn out to denote one entity are merged by an additive record, and the survivor does not depend on the order in which keys arrive.
-**Status.** Built: canonical encoding, digests, identity domains, bindings, merge with an order-independent survivor. Tested on examples and on two real captures: the survivor rule (Proposition 1.8). Not built: split, migration of identity domains (B3, E10), an independent check of the encoder. Deviations D1, D4, D5 (resolved), D6 (resolved by a change of Def. 5.9); Ch. 14, 14.8.
-**Gate.** 1a (theory): canonical form and identity, on which every digest and every determinism statement rests.
-Uses: Ch. 0. Used by: Ch. 3 (graph equality, digests), Ch. 4 (facts), Ch. 11 (seals).
-Sources: [R01] findings 3, 6, 7, 8, 24; [R02] section 4.3 (binding rows) and R10; `ARCHITECTURE.md` "Identity and ontology"; ADR-001, ADR-050, ADR-090, ADR-094.
+**Claim.** Every value has exactly one written form, so two values are equal exactly when their written forms are equal byte for byte. The name of an entity inside the model is computed from a key and from nothing else, and a name once given is never changed. When two names turn out to mean one entity, they are joined by an added record, and which name survives does not depend on the order in which the keys arrived.
+
+Everything later rests on this chapter. A graph is compared with another graph by comparing written forms. A result is called reproducible when its written form is the same in two runs. This needs no earlier chapter except the terms of Ch. 0.
 
 ## 1.1 Values
 
-**Definition 1.1 (value).** The set `𝒱` of graph values is the closed tagged union
+A property of an entity holds a value: a name, a count, a time. Sources write the same value in many ways. One writes `7`, another `7.0`, a third `+007`. Before two values can be compared, each needs one agreed form.
+
+**Definition 1.1 (value).** The set `𝒱` of values is the smallest set built by these eight forms:
 
 `v ::= text(s) | integer(n) | decimal(q) | boolean(b) | instant(i) | null | entity(e) | list(v₁, …, vₘ)`
 
-with `s` a sequence of Unicode scalar values, `n ∈ ℤ`, `q ∈ ℚ` with finite decimal expansion, `b ∈ {true, false}`, `i` an instant on the UTC timeline with nanosecond resolution, `e ∈ 𝓔`, `m ≥ 0`.
+- `s` is a sequence of Unicode characters;
+- `n` is an integer, of any size;
+- `q` is a rational number with a finite decimal expansion;
+- `b` is `true` or `false`;
+- `i` is a point in time, on the UTC time scale, to the nanosecond;
+- `e` is the name of an entity (Def. 1.9);
+- a list has `m ≥ 0` items, in order.
 
-**Definition 1.2 (value kind).** `kind : 𝒱 → {text, integer, decimal, boolean, instant, null, entity, list}`. An ontology declares one kind per property, plus the item kind for lists, a nullability flag and a unit (Ch. 2). Equality of values of different kinds is false. In particular `integer(1)` and `decimal(1)` differ.
+*Example:* `text("api")`, `integer(3)`, `decimal(0.25)`, `instant(2026-11-10T10:57:00Z)`, `list(text("a"), text("b"))`.
 
-**Definition 1.3 (normalization).** The function `norm : 𝒱 → 𝒱` is defined by the following rules. A value is *normal* iff `norm(v) = v`.
+**Definition 1.2 (kind).** The kind of a value is the form it was built with: one of text, integer, decimal, boolean, instant, null, entity, list. Two values of different kinds are never equal.
+*Example:* `integer(1)` and `decimal(1)` are different values. The types of Ch. 2 fix one kind for each property, so this never surprises: a count is always an integer.
 
-| Rule | Kind | Normal form |
-|---|---|---|
-| N1 | integer | decimal numeral `0` or `-?[1-9][0-9]*`. No `+`, no leading zeros, `-0` becomes `0`. Arbitrary precision. |
-| N2 | decimal | `0` or `-?(0\|[1-9][0-9]*)(\.[0-9]*[1-9])?` with `-0` becoming `0`. No exponent, trailing fractional zeros removed. |
-| N3 | instant | `YYYY-MM-DDThh:mm:ss` with optional `.f` of 1 to 9 digits (no trailing zero, omitted when all zero) followed by `Z`. Offsets are converted to UTC. Leap seconds are rejected. |
-| N4 | text | Sequence of Unicode scalar values as given. No normalization form is applied to graph data. Lone surrogates are rejected. |
-| N5 | boolean, null, entity | As given. |
-| N6 | list | Order is significant and preserved. Items are normalized recursively. There is no set kind. |
-| N7 | unit | Values are kept in the unit declared by the property. Canonical form never converts units. Conversion is a projection concern. |
-| N8 | property map | A finite map from `Π` to `𝒱`. Duplicate keys are invalid. Order is canonical (see 1.2). Absence of a key is not `null`. |
+**Definition 1.3 (normal form).** The function `norm : 𝒱 → 𝒱` rewrites a value into its *normal form* by the rules below. A value is *normal* when `norm(v) = v`.
 
-**Rule 1.1 (identifier alphabet, proposed).** `PropertyId` and `TypeId` use the ASCII alphabet `[A-Za-z0-9_.:-]` with length 1 to 200. For such ids, UTF-16 code unit order (used by JCS) equals byte order, so canonical orders agree across encodings. `EntityId` and `RelationshipId` are opaque Unicode strings.
+| Rule | Kind | Normal form | Example |
+|---|---|---|---|
+| N1 | integer | decimal digits, no `+`, no leading zeros, and `-0` is `0` | `+007` becomes `7` |
+| N2 | decimal | as N1 before the point; after it no trailing zeros; no exponent | `1.50` becomes `1.5`, `2.0` becomes `2` |
+| N3 | instant | `YYYY-MM-DDThh:mm:ss`, then a fraction of 1 to 9 digits without trailing zeros if it is not zero, then `Z`. Other time zones are converted to UTC. A leap second is rejected | `12:00:00+01:00` becomes `11:00:00Z` |
+| N4 | text | the characters as given. No character is replaced by a similar one. A broken character code is rejected | `"Café"` stays `"Café"` |
+| N5 | boolean, null, entity | as given | |
+| N6 | list | the items in their order, each in normal form. There is no kind for unordered sets | |
+| N7 | unit | a value stays in the unit that its property declares. Normal form never converts units | 500 in milliseconds stays 500 |
+| N8 | property map | a finite map from property names to values. A name occurs at most once. A missing name is not the same as the value `null` | |
+
+**Rule 1.1 (alphabet of names for types and properties).** The names of types and properties use only the characters `A` to `Z`, `a` to `z`, `0` to `9` and `_ . : -`, and have 1 to 200 characters. With this alphabet every usual way of sorting text gives the same order, which Def. 1.4 needs. Names of entities and relationships are not restricted. This rule is a proposal of this paper.
 
 ## 1.2 Canonical encoding
 
-**Definition 1.4 (canonical encoding).** `tree(v)` is the JSON value `{"kind": κ, "value": x}` where `x` is the normalized string (integer, decimal, instant, text, entity), a JSON boolean, or an array of `tree` of the items (list). `null` has no `value` member. `enc(v)` is the RFC 8785 serialization of `tree(norm(v))` ([rfc8785]): object members sorted by UTF-16 code units recursively, no insignificant whitespace, array order kept, ECMAScript string serialization. Element states, facts and graphs are encoded in the same way (Def. 3.5, Def. 4.5).
+A normal form is still an abstract object. To compare and to fingerprint values they must be written as bytes, in exactly one way.
 
-**Rule 1.2 (no JSON numbers on the wire).** Every integer-typed field of every record (counts, revisions, positions, nanoseconds, weights) is a decimal string in the canonical form of N1. RFC 8785 requires JSON numbers to be expressible as IEEE 754 doubles and recommends strings for larger integers ([rfc8785]). A 2026 Unix time in nanoseconds (about 1.79e18) exceeds 2^53. Consequently canonical encodings contain no JSON numbers, and the ECMAScript number serialization of JCS is never exercised.
+The writing uses **JSON**, a common text format for nested data: objects with named members, arrays, strings. JSON alone does not fix the order of members or the spacing. The **JSON Canonicalization Scheme**, a published standard ([rfc8785]), does: members sorted by name, no optional spaces, one way to write each string.
 
-**Definition 1.5 (digest).** `H` is SHA-256. `digest(x) = "sha256:" + hex(H(enc(x)))`. Collision resistance of `H` is an assumption of the paper, not a result.
+**Definition 1.4 (canonical encoding).** For a value `v`, let `tree(v)` be the JSON object with the member `kind` and, except for `null`, the member `value`: the normal form as a string for integer, decimal, instant, text and entity; a JSON boolean for boolean; an array of the `tree` of the items for a list. The *canonical encoding* `enc(v)` is the byte string that the JSON Canonicalization Scheme gives for `tree(norm(v))`. Property maps, states of elements and whole graphs are encoded in the same way (Ch. 3, Ch. 4).
+*Example:* `enc(integer(+007))` is the 30 bytes `{"kind":"integer","value":"7"}`.
 
-## 1.3 Canonical equality
+**Rule 1.2 (numbers are written as text).** Every whole number in every record, such as a count, a version number or a time in nanoseconds, is written as a string of digits in the form N1, never as a JSON number. The reason: a JSON number is in practice a floating-point number with 53 bits of precision, and a time in nanoseconds is larger than `2^53` ([rfc8785] recommends strings for such numbers). So a canonical encoding contains no JSON numbers at all.
 
-**Definition 1.6 (value equality).** `v ≈ w` iff `norm(v) = norm(w)` as abstract syntax trees. By the rules above this is equality of the denoted mathematical values: integers as integers, decimals as rationals, instants as points of the UTC timeline, texts as code point sequences, lists componentwise.
+**Definition 1.5 (digest).** Let `H` be SHA-256, a standard function that maps any byte string to 256 bits. The *digest* of an object `x` is `digest(x) = "sha256:" + hex(H(enc(x)))`. A digest is a short fingerprint.
 
-**Theorem 1.1 (canonical equality).** For all `v, w ∈ 𝒱`: `v ≈ w` iff `enc(v) = enc(w)` (byte equality). Equality of property maps is insensitive to the order in which members are supplied.
-Status: **proved**.
+**Assumption.** No two different byte strings with the same `H` are ever found (collision resistance). This is an assumption of the paper, shared with most of today's software, and not a result.
 
-*Proof.* (⇒) `v ≈ w` gives `norm(v) = norm(w)`, hence the same `tree`, hence the same JCS output, since JCS is a function on JSON values. (⇐) JCS output determines the JSON value by parsing, so `tree(norm(v)) = tree(norm(w))`. The tree determines `kind` and then `norm(v)`: for each kind the normal-form grammar (N1 to N5) admits exactly one numeral or string per denoted value, and lists are determined by their ordered items by induction. Hence `norm(v) = norm(w)`. For property maps, JCS sorts members (RFC 8785 section 3.2.3) so that two supplied orders of the same map give the same bytes. ∎
+## 1.3 Equality
 
-**Corollary 1.2 (decidability and cost).** Equality of values is decidable in time linear in the sizes of `v` and `w`: compute `enc` and compare.
-Status: **proved** (Theorem 1.1).
+**Definition 1.6 (equality of values).** `v ≈ w` iff `norm(v) = norm(w)`. By the rules N1 to N8 this is equality of what the values denote: integers as integers, decimals as rational numbers, instants as points in time, texts as sequences of characters, lists item by item.
 
-**Corollary 1.3 (digest compatibility).** `v ≈ w` implies `digest(v) = digest(w)`. The converse holds unless `H` has a collision.
-Status: **proved** under the collision-resistance assumption.
+**Theorem 1.1 (canonical equality).** For all values `v` and `w`: `v ≈ w` iff `enc(v) = enc(w)` as byte strings. The encoding of a property map does not depend on the order in which its members were supplied.
+
+*Proof.* (⇒) If `v ≈ w` then `norm(v) = norm(w)`, so the two trees are equal, and the canonicalization scheme is a function of the tree. (⇐) The scheme's output can be parsed back, so equal bytes give equal trees. A tree determines the kind, and then the normal form: for each kind the rules N1 to N5 admit exactly one string per denoted value, and a list is determined by its items in order, by induction on the nesting. So `norm(v) = norm(w)`. For a property map the scheme sorts the members by name, so every order of supply gives the same bytes. ∎
+
+**Corollary 1.2 (cost).** Whether two values are equal can be decided in time proportional to their sizes: write both and compare the bytes.
+
+**Corollary 1.3 (digests).** If `v ≈ w` then `digest(v) = digest(w)`. The converse holds under the assumption on `H`.
+
+*Limits.* The definitions allow integers and decimals of any size and any instant. The prototype is narrower: integers and instants in nanoseconds use 64 bits (years 1678 to 2262), decimals have 28 digits. The prototype's encoder has not been compared with an independent implementation of the scheme.
 
 ## 1.4 Identity
 
-**Definition 1.7 (identity domain).** An identity domain `d` fixes a name and an ordered list of components `(c₁:κ₁, …, cₙ:κₙ)` (component name and value kind). Richer content (normalization options per component, scope, permitted entity types, merge policy) belongs to the typed-graph definition (`IdentityDomain`, `KeyComponent`, `EquivalencePolicy` in Ch. 2, used by `IdOf` in Ch. 5). Only name and components are used here.
+Sources name things in their own ways. Kubernetes knows a pod by cluster, namespace and name. The network observer knows the same pod by an address. Inside the model each entity needs one name that does not change when the pod changes state, when the definitions change, or when time passes.
 
-**Definition 1.8 (identity key, canonical key).** An identity key is `ik = (t, d, c)` with tenant `t`, domain `d` and a tuple `c = (v₁, …, vₙ)` with `kind(vⱼ) = κⱼ`. Its canonical key bytes under canonicalization version `ν` are
+**Definition 1.7 (identity domain).** An identity domain `d` is a name together with an ordered list of components `(c₁:κ₁, …, cₙ:κₙ)`: a name and a kind for each. It says which values identify a kind of thing.
+*Example:* the domain `pod` with the components `(cluster: text, namespace: text, name: text)`.
 
-`ck_ν(ik) = JCS([t, name(d), enc(v₁), …, enc(vₙ)])`.
+**Definition 1.8 (identity key, canonical key).** An identity key is `ik = (t, d, c)`: a customer `t` (the *tenant*), a domain `d`, and a tuple `c = (v₁, …, vₙ)` of values of the kinds that `d` asks for. Its *canonical key* under the rule set `ν` is the byte string
 
-The canonicalization version `ν` names the rule set of 1.1 and 1.2 (this chapter is version `ν₁`). It is **not** a component of the key (finding 8).
+`ck_ν(ik) = canonical JSON of the array [t, name(d), enc(v₁), …, enc(vₙ)]`.
 
-**Definition 1.9 (entity id allocation).** `alloc_ν(ik) = base32(H(ck_ν(ik)))` (lowercase letters and digits `2` to `7`, no padding). An entity id is a value of `alloc` or an id introduced by a binding of Def. 1.10 (alias, migration).
+The rule set `ν` stands for the rules of 1.1 and 1.2; this chapter is rule set `ν₁`. If the rules ever change, there is a new `ν`. The rule set is not a part of the key.
+*Example:* the key `(shop, pod, ("c1", "store", "api-7c9"))` names one pod of the shop of Ch. 0.
 
-**Definition 1.10 (binding set).** A binding set `B` is a finite partial map from pairs `(ν, ck)` to entity ids, together with the component tuple that produced `ck`. It is built only by these three append rules; no rule modifies or deletes an entry.
+**Definition 1.9 (name of an entity).** `alloc_ν(ik) = base32(H(ck_ν(ik)))`: the hash of the canonical key, written with 32 symbols (lowercase letters and the digits 2 to 7). An *entity id* is such a value, or an id that a binding introduces (Def. 1.10).
+*Example:* the pod above gets an id that begins `mz4q2a7k…` (invented here for illustration). Anyone who knows the key can compute it, and nobody has to hand it out.
 
-- **B1 allocate.** If `B(ν, ck_ν(ik))` is undefined, add `(ν, ck_ν(ik)) ↦ alloc_ν(ik)`.
-- **B2 alias.** Given an existing entity `e` and a key `ik` with `B(ν, ck_ν(ik))` undefined, and an evidence record that `ik` denotes `e`, add `(ν, ck_ν(ik)) ↦ e`.
-- **B3 migrate.** For a new version `ν'` and every entry `(ν, ck) ↦ e` with components `c`, add `(ν', ck_{ν'}(t, d, c)) ↦ e`.
+**Definition 1.10 (binding set).** A binding set `B` is a finite partial map from pairs `(ν, ck)` to entity ids. With each entry it stores the components that produced the key. It grows only by three rules, and no rule changes or removes an entry.
 
-`resolve(B, ik)` returns `B(ν, ck_ν(ik))` for the current version `ν` if defined, else rejects. Merge and split of entities are not rules of this chapter (see Theorem 1.7).
+- **Allocate.** If `B` has no entry for `(ν, ck_ν(ik))`, add the entry `(ν, ck_ν(ik)) ↦ alloc_ν(ik)`.
+- **Alias.** Given an entity `e`, a key `ik` without an entry, and a record of evidence that `ik` denotes `e`, add `(ν, ck_ν(ik)) ↦ e`.
+- **Migrate.** For a new rule set `ν'` and every entry `(ν, ck) ↦ e` with components `c`, add `(ν', ck_{ν'}(t, d, c)) ↦ e`.
 
-## 1.5 Identity theorems
+`resolve(B, ik)` is the entry of `B` for the key under the current rule set if there is one, and a rejection otherwise.
+*Example:* the pod is first seen by Kubernetes and gets its id by *allocate*. Later a network record names it by an address, and a rule that knows the address belongs to this pod adds the address key by *alias*, pointing to the same id.
 
-**Theorem 1.4 (allocation is a pure function, shared identity).** If `ik ≈ ik'` (same tenant, domain name and componentwise `≈` values) then `alloc_ν(ik) = alloc_ν(ik')`. Two projections, two graphs or two replays that allocate from equivalent keys obtain the same entity id with no coordination, and concurrent first bindings of the same key write the same entry.
-Status: **proved** (modulo collision resistance of `H`). Realizes ADR-001. Two projections that choose different domains or different components obtain different ids, as ADR-094 intends.
+## 1.5 Theorems on identity
 
-*Proof.* `alloc_ν` is the composition of `ck_ν`, `H` and `base32`, each a function. By Theorem 1.1, `ck_ν` is constant on `≈` classes. Concurrent writers evaluate the same function on the same bytes. ∎
+**Theorem 1.4 (the name is a function of the key).** If two keys are equal (same tenant, same domain name, components equal by `≈`), then `alloc_ν` gives them the same id. Two projections, two graphs or two replays that compute an id from equal keys get the same id without talking to one another, and two writers that bind the same key at the same time write the same entry.
 
-**Theorem 1.5 (timeless binding).** For every binding set `B` built by rules B1 to B3 and every extension `B' ⊇ B` built by further applications of B1 to B3: `B'(ν, ck) = B(ν, ck)` whenever `B(ν, ck)` is defined. The value of `resolve(B, ik)` is a function of `(B, ik)` only. It has no dependence on any entity state, entity type, ontology version, revision or wall-clock time.
-Status: **proved** for B1 to B3. Merge and split semantics are an **obligation** (Theorem 1.7).
+*Proof.* `alloc_ν` is the composition of `ck_ν`, `H` and the base-32 writing, each a function. By Theorem 1.1 the canonical key is the same for equal keys. Two writers evaluate the same function on the same bytes. ∎
 
-*Proof.* Each rule adds an entry for an argument where `B` is undefined, so earlier entries are never changed. The signature of `resolve` takes only `B` and `ik`. ∎
+Keys from different domains, or with different components, get different ids unless `H` collides. That is intended: two domains name different things.
 
-**Theorem 1.6 (canonicalization change keeps ids).** If every binding stores the component tuple that produced its key, then for every new canonicalization version `ν'` the migration B3 computes a new key for every entry, and, unless a new key is already bound to another entity (a conflict, which rejects the migration), for every entry `(ν, ck) ↦ e` the entry `(ν', ck') ↦ e` exists afterwards. No entity id changes. Resolution of an old-version key and of its new-version image return the same `e`.
-Status: **proved** for the mechanical migration. Whether a particular rule change `ν → ν'` should also identify keys that were distinct before is a domain decision recorded as B2 evidence. Experiment **E10** (R02) tests replay across a canonicalization change.
+**Theorem 1.5 (a binding is timeless).** Let `B` be built by the three rules and let `B'` extend it by further uses of the rules. Then every entry of `B` has the same value in `B'`. The value of `resolve(B, ik)` depends on `B` and `ik` only: not on the state of any entity, its type, the version of the definitions, a version of a graph, or the clock.
 
-*Proof.* B3 recomputes `ck_{ν'}` from the stored components, a total computation. It adds an entry unless one exists. If one exists for `ck'` with a different entity, the migration is rejected and reported as a conflict (not silently resolved). Otherwise the new entry maps to the same `e`. ∎
+*Proof.* Each rule adds an entry where `B` had none, so no earlier entry changes. `resolve` reads only `B` and `ik`. ∎
 
-**Theorem 1.7 (merge and split).** Merge of two entities is an additive forwarding record `e₂ → e₁` that requires `e₁ < e₂` in the total order of entity ids (the survivor is the smaller id, [R03] section 5). A record is added only from an id that has none, that is from a current representative, so at most one record leaves an id and `rep` is a function (the rule of Proposition 1.8 forwards a representative to a representative). The representative `rep(e)` follows forwarding records until none applies. Then: (a) forwarding chains are acyclic and finite, (b) `rep` is idempotent, (c) resolution `rep(resolve(B, ik))` is unchanged for every key whose entity is not involved, (d) no binding of `B` is modified. A split is an explicit additive record `splitFrom`, never inferred.
-Status: (a) to (d) **proved**, and (a) to (d) **tested by examples** in the engine (D5). Stability of the survivor choice under concurrent merges in different projections, and the semantics of split, are an **obligation** (Q10 of [R03]; O1.2). The engine tests cover one projection, all orders of three merges and of three keys, one synthetic order case at four chunk sizes and two real captures, not concurrent projections and not generated key orders.
+**Theorem 1.6 (a change of the rules keeps the names).** Suppose every entry stores the components that produced its key. For a new rule set `ν'`, *migrate* computes a new key for every entry. Unless a new key is already bound to another entity, which is a conflict that rejects the migration, the entry `(ν', ck') ↦ e` exists afterwards for every old entry `(ν, ck) ↦ e`. No entity id changes, and the old key and its new image resolve to the same entity.
 
-*Proof.* (a) Each forwarding step strictly decreases the id, so a chain has no repetition and is bounded by the finite set of ids. (b) `rep(e)` is a fixed point by construction. (c) A record `e₂ → e₁` changes `rep` only on entities whose chain passes through `e₂`; `e₂` was a representative, so these are the entities whose representative it was. Without the condition that a record leaves only a representative, an id could carry two records and `rep` would not be defined; the first form of the statement did not say so. (d) The record is appended to a separate forwarding set, and [R03]'s phrase "all keys rebind to the survivor" is read as `rep` applied at resolution, not as rewriting `B`, because Theorem 1.5 requires bindings to be immutable. Historical references resolve through the chain. ∎
+*Proof.* *Migrate* recomputes the key from the stored components, which is always possible. It adds an entry unless one exists. If one exists with another entity, the migration is rejected and the conflict is reported; nothing is resolved silently. Otherwise the new entry maps to the same `e`. ∎
 
-**Proposition 1.8 (order-independent survivor).** Let `K` be a set of identity keys of one identity domain and `L` a set of links, each naming two keys of `K` that denote one entity (all of one entity type). Let `own(k)` be the id that `alloc` assigns to the key `k` on its own (Def. 1.9). Apply the keys and links in any order, binding each key when it is first used and merging when a link joins two identities. Then the representative of every connected class `C` of `K` under `L` is `min { own(k) : k ∈ C }` (ordinal order), whatever the order and whatever the chunking, and no binding is modified.
-Status: **proved** for the rule stated here, by induction with an invariant; read only, checked by no tool. That the engine implements the rule is **tested by examples and on two real captures**, not on generated orders (test T-B3, [inventory.md](inventory.md)). The engine rule (`Identity.cs`, `Bind`): a key that is not yet bound becomes a candidate with its own id even when nothing used it before, and when its own id is smaller than the id of the entity it joins, the entity is forwarded to it; a link that finds the key already bound forwards the larger representative to the smaller one.
+*Limits.* The theorem is about the mechanics. Whether a new rule set should also treat two formerly different keys as one is a decision about the subject matter, recorded as an *alias* with its evidence. A replay across a change of the rule set has not been tried on the prototype.
 
-*Proof.* `own` is a function of the key alone (Theorem 1.4), so it is fixed before any operation. Call a key *seen* once it was used or named by a processed link, and let `~` be the equivalence closure of the processed links on the seen keys. Invariant after every operation: for every seen key `k`, `Rep(k) = min { own(k') : k' seen, k' ~ k }`, and every forwarding record points from a larger id to a smaller one.
-- *Start.* No key is seen, and the invariant holds for none.
-- *First use of a key `k`.* Its class is `{k}` and the rule binds it to `own(k)`, the minimum of a one-element set. No other class changes.
-- *A link between `k₁` and `k₂`.* An endpoint that is not yet seen becomes seen with its own id, as in the previous case. If the two are already in one class nothing changes. Otherwise the classes `C₁` and `C₂` have the representatives `m₁ = min own(C₁)` and `m₂ = min own(C₂)` by the invariant, and `m₁ ≠ m₂` because `own` is injective up to collisions (Theorem 1.4). The rule forwards the larger to the smaller, so the representative of `C₁ ∪ C₂` is `min(m₁, m₂) = min own(C₁ ∪ C₂)`. The new record points from larger to smaller, so chains strictly decrease, are finite and end at the class minimum, which is what `Rep` returns (Theorem 1.7(b)).
-After all keys and links are processed, the seen keys are the keys used and the endpoints of `L`, and `~` is the closure of `L`, in any order. The right-hand side of the invariant is therefore the same for every order, and so is `Rep`. Chunking does not reorder operations (Theorem 6.2(a)), so the same holds after every prefix. Forwarding only adds records, so no binding is modified (Theorem 1.7(d)). ∎
+Sometimes two ids were given to what is in truth one entity: the pod was seen under its address before anyone knew which pod has that address. The two must become one, without changing any binding.
 
-Not covered by the proof: a link between two keys of different entity types (a conflict, counted, the link ignored), keys that never reach the engine (the minimum is over the keys seen), concurrent merges in different projections (O1.2), and the telemetry written under a loser's id before the merge (moved by the engine to the survivor, tested on the captures only).
+**Theorem 1.7 (merge).** A *merge* of two entities is an added *forwarding record* `e₂ → e₁`, allowed only if `e₁ < e₂` in the order of ids as text: the smaller id survives. A record is added only from an id that has none, that is from a current representative, so at most one record leaves any id. The *representative* `rep(e)` is found by following records from `e` until none applies. Then:
 
-## 1.6 Delta to iteration 0.1
+- (a) chains of records have no cycle and are finite;
+- (b) `rep(rep(e)) = rep(e)`;
+- (c) for a key whose entity is not involved in a merge, `rep(resolve(B, ik))` is unchanged by it;
+- (d) no entry of `B` is modified.
 
-- **Finding 3.** Canonical encoding is RFC 8785 plus rules N1 to N8. Fixture digests must be computed, not `sha256:example`.
-- **Finding 8.** `IdentityKey.CanonicalizationVersion` leaves the key. The version is recorded with the binding. Key equality is on `(tenant, domain, components)`.
-- **Finding 24.** All 64-bit-valued wire fields are decimal strings (Rule 1.2). `SchemaWriter.cs` must stop mapping `long` to JSON `integer`.
-- **Findings 6, 7.** The identity catalog needs commands allocate, bind (alias), migrate; merge and split follow Theorem 1.7. Two fixtures are required: two projections resolving one entity, and two domains that intentionally do not.
-- **Finding 30.** `IdentityEvidence.Confidence` stays unspecified. It does not influence any binding in this chapter.
-- **Rule 1.1** (identifier alphabet) is new and proposed.
-- **Gap 3** (identity domains as typed graphs): Def. 1.7 is realized by the `IdentityDomain` node type (Ch. 2) and `IdOf` (Ch. 5).
+The opposite of a merge, a *split*, is an explicit added record as well and is never inferred.
 
-## 1.7 Deviations found by the prototype
+*Proof.* (a) Each step goes to a strictly smaller id, so no id repeats, and there are finitely many ids. (b) `rep(e)` has no record leaving it, by construction. (c) A record `e₂ → e₁` changes `rep` only for entities whose chain passes through `e₂`. Since `e₂` was a representative, these are exactly the entities it represented. Without the condition that a record leaves only a representative, an id could carry two records and `rep` would not be a function. (d) Records are kept in a set of their own. "All keys now point to the survivor" means that `rep` is applied when a key is resolved, not that `B` is rewritten: Theorem 1.5 requires bindings to stay as they are. References from the past resolve through the chain. ∎
 
-Ids refer to Ch. 14 (14.8).
+*Example:* ids `e:b…` and `e:f…` are found to be one pod. The record `e:f… → e:b…` is added. Every key that resolved to `e:f…` now has the representative `e:b…`.
 
-- **D1.** Instants are nanoseconds in a signed 64-bit integer (years 1678 to 2262) and decimals are 28-digit .NET `decimal`, not unbounded (N1 to N3 allow arbitrary precision). The paper should state a bounded range with a typed error, or the engine should use arbitrary precision.
-- **D4.** Bindings are an append-only table written with the master commit, not `Key`, `Identity` and `Evidence` graph nodes. Def. 1.10 is realized, the typed-graph form of Def. 2.12 is not.
-- **D5 (resolved).** A `Link` whose right key is already bound to another identity of the same entity type merges the two identities. The survivor is the smallest id minted for any key of the entity, including keys that nothing had used yet (Proposition 1.8); a survivor that depended on arrival order was the cause of D21 (Ch. 6, 6.7). The loser gets an additive forwarding record, `Rep` follows the chain, and bindings are never modified. The engine remaps what it had emitted under the loser: the master graph gets a patch that moves the loser's relationships to the survivor, the telemetry windows of re-keyed relationships move with them, and derived graphs follow through their deltas. Two identities of different entity types are a conflict and the link is ignored. Tests (`IdentityMergeTests.cs`): forwarding chains over 2, 5 and 12 identities are acyclic and finite, every forwarded id decreases, `Rep` is idempotent; a merge changes resolution only for the involved keys and modifies no binding; the survivor is the same for all six orders of three merges and equals the minimum of the own ids of the keys; different types are a conflict and not a merge. On the two real captures every replay counts 35 and 43 merges and 0 conflicts, at every chunk size (Ch. 14, 14.5). Not kept: what each identity had emitted before a merge; the merge is realized by the remap patch and the forwarding record.
-- **Entity id form** (not numbered in 14.8). Entity ids are `e:` plus 26 base32 characters of SHA-256 over the JCS of `[tenant, domain, component encodings]`: the preimage of Def. 1.9, truncated to 130 bits. The paper should adopt the truncated form or the engine the untruncated one.
-- **D6 (resolved by changing the paper).** Relationship ids are scoped by the output ontology module and not by the graph (Ch. 5, Def. 5.9).
+*Limits.* How a split behaves is not defined further in this paper. Merges that two projections make at the same time have not been studied.
 
-## 1.8 Obligations
+It remains to say which ids are merged, and to show that the outcome does not depend on the order in which the keys and the evidence arrive. That matters for Ch. 6: a result that depended on arrival order would not be reproducible.
 
-| Id | Statement | Discharged by |
-|---|---|---|
-| O1.1 | Encoder conformance: `enc` equals a reference JCS implementation on a generated corpus including numerals in all forms, nanosecond instants, supplementary-plane text and nested lists | property test against an independent encoder, on the contract types |
-| O1.2 | Theorem 1.7: survivor stability under concurrent merges in different projections, Proposition 1.8 on generated key sequences (it has one synthetic order case and two captures), split semantics | Q10 of [R03]: two projections link the same keys in different orders, replay with reordered independent inputs, compare final ids |
-| O1.3 | E10: binding migration across canonicalization versions | experiment E10 in [R02] |
+**Proposition 1.8 (the survivor does not depend on the order).** Let `K` be a set of identity keys of one domain, and `L` a set of *links*, each naming two keys of `K` that denote one entity of one type. Let `own(k)` be the id that *allocate* gives to `k` alone. Process the keys and links in any order by this rule: a key gets its own id when it is first used or first named by a link; a link between two keys forwards the larger of their two representatives to the smaller. Then for every class `C` of keys that the links connect, the representative is `min { own(k) : k ∈ C }`, whatever the order and however the input is cut into batches, and no binding is modified.
+
+*Example:* three keys with own ids `e:c…`, `e:a…`, `e:k…`, and two links joining the first with the second and the second with the third. In every order of arrival the three end with the representative `e:a…`.
+
+*Proof.* `own` depends on the key alone (Theorem 1.4), so it is fixed before anything is processed. Call a key *seen* once it was used or named by a processed link, and let `~` be the equivalence that the processed links generate on the seen keys. The following holds after every step: for every seen key `k`, `rep(k) = min { own(k') : k' seen, k' ~ k }`, and every forwarding record points from a larger id to a smaller one.
+
+- *Start.* No key is seen.
+- *First use of a key `k`.* Its class is `{k}`, and it gets `own(k)`, the minimum of a set of one. No other class changes.
+- *A link between `k₁` and `k₂`.* A key not yet seen becomes seen with its own id, as before. If the two are already in one class, nothing changes. Otherwise their classes `C₁` and `C₂` have the representatives `m₁ = min own(C₁)` and `m₂ = min own(C₂)`, which differ unless `H` collides. The rule forwards the larger to the smaller, so the class `C₁ ∪ C₂` has the representative `min(m₁, m₂) = min own(C₁ ∪ C₂)`. The new record goes from larger to smaller, so chains still decrease and end at the minimum (Theorem 1.7).
+
+When everything is processed, the seen keys are the keys used and named, and `~` is the equivalence generated by `L`, in any order. So the right-hand side is the same for every order, and so is `rep`. Cutting the input into batches does not reorder it (Ch. 6, Theorem 6.2), so the same holds after every initial part of the input. Only records were added, so no binding is modified (Theorem 1.7 (d)). ∎
+
+*Limits.*
+- The proof is about the rule. That the prototype follows the rule is tested by examples and on two recordings of a real cluster, which gave the same result at every batch size (Ch. 14). It is not yet tested on generated orders of arrival.
+- A link between keys of two different types of entity is a conflict: it is counted and ignored.
+- The minimum is over the keys that were seen. A key that never arrives plays no part.
+- Measurements stored under an id that does not survive move to the survivor; how they combine is the subject of Ch. 7.
+
+## 1.6 What the prototype does differently
+
+Three points, so that no claim of this chapter is read into the prototype by silence.
+
+- **Bounded numbers.** As said in 1.3: 64-bit integers and instants, 28-digit decimals.
+- **Shorter ids.** The prototype keeps the first 130 bits of the hash, written as 26 symbols after the prefix `e:`. The chance of a collision is larger than with 256 bits and still negligible for any estate.
+- **Bindings as a table.** The binding set is kept as a table that only grows. Ch. 2 describes a form in which keys, identities and evidence are themselves nodes of a graph; that form is not built.

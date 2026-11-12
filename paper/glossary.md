@@ -145,7 +145,7 @@ The unqualified word "direction" is not used in the paper.
 - **Reconciliation policy**: rule that withdraws a source's contribution for elements of a scope absent from a complete scan. [Ch. 10]
 - **Refactoring**: extract, inline or move rule, a pure function on projection text that returns a draft patch and keeps the output union. [Ch. 5]
 - **Reference** (of a graph): an entity id that a relationship of the graph names as an endpoint and that the graph does not hold; `inOtherGraph` or `absent`, with the identity key the id was minted from. [Ch. 3, Def. 3.14]
-- **Reference machine (ten-run figures)**: by project decision the lab laptop when no other session runs. The Azure reference of Def. 13.4 remains the target for Cosmos figures. [Ch. 13]
+- **Reference machine (ten-run figures)**: by project decision the lab laptop when no other work runs on it. The Azure reference of Def. 13.4 remains the target for Cosmos figures. [Ch. 13]
 - **Reference stub**: in the canvas, the drawing of a reference: a hollow node with a dashed outline for an endpoint that the graph does not hold, with the reason. [Ch. 12]
 - **Relationship**: directed typed edge between two entity ids, with its own id. [Ch. 3]
 - **Release**: a module version identified by its digest, created by a committed catalog revision that changes the module. It can be listed, diffed and restored. [Ch. 9]

@@ -110,7 +110,7 @@ Definitions are graphs (Def. 2.1), so editing a definition is applying patches t
 **Definition 4.11 (undo, redo).** The undo of the last patch `p_n` is the patch `inverse(p_n)` (Def. 4.3), applied to the draft as `p_{n+1}`. The redo of that undo is `inverse(p_{n+1})`. Undo never removes entries of `ξ`. A client keeps a stack of at most 99 inverse patches and clears the redo stack on a new edit; the server keeps no undo state beyond `ξ`.
 
 **Proposition 4.10 (undo is a patch).** (a) If `p_n` produced `D_n` from `D_{n-1}`, then `apply(inverse(p_n), D_n) = D_{n-1}`, so undo at the head restores the previous state exactly. (b) For an earlier patch `p_i` with later patches after it, `inverse(p_i)` applies to `D_n` iff the guards of `inverse(p_i)`, which are the after-states of `p_i`, hold in `D_n`. Otherwise the draft rejects the patch (`GuardFailed`, with the element id) and nothing changes. (c) Redo of an undo returns to the state before the undo, by (a) applied to the undo.
-Status: **proved** from Theorem 4.3 and Def. 3.7 for (a) and (c), by the definition of `apply` for (b). Tested as an example on the engine and the client: `Structural_edits_print_canonically_and_undo_is_an_inverse_patch_not_a_rewind` (`DraftTests.cs`), and in the canvas the tests "applies edits to the draft and the browser copy, undo and redo are inverse patches", "a new edit clears the redo stack", "keeps 99 steps" and "a rejected patch changes nothing and reports the engine's code" (`canvas/tests/editor-session.test.ts`). The tests are examples. There is no generated edit sequence on drafts (O4.3).
+Status: **proved** from Theorem 4.3 and Def. 3.7 for (a) and (c), by the definition of `apply` for (b). Tested as an example on the engine and the client: `Structural_edits_print_canonically_and_undo_is_an_inverse_patch_not_a_rewind`, and in the canvas the tests "applies edits to the draft and the browser copy, undo and redo are inverse patches", "a new edit clears the redo stack", "keeps 99 steps" and "a rejected patch changes nothing and reports the engine's code". The tests are examples. There is no generated edit sequence on drafts (O4.3).
 
 *Proof.* (a) is Theorem 4.3 with `G = D_{n-1}`. (b): `apply` is defined iff every edit's before-state equals the current state (Def. 3.7); the before-states of `inverse(p_i)` are the after-states of `p_i`. (c) is (a) for `p_{n+1}`, and `inverse(inverse(p)) = p` up to the cause field. ∎
 
@@ -119,7 +119,7 @@ Consequence: undo of an old edit after later edits is not guaranteed. It succeed
 **Definition 4.12 (text view and graph view).** Every module has a canonical text `print(M)` (Ch. 5, 5.6). A text edit from `t` to `t'` is the patch `toPatch` of the difference between the facts of the draft's module `M` and the facts of `parse(t')`. Definition ids are path ids (Def. 2.3), so the difference is by id. After every patch the engine returns the canonical text of the touched modules, so text and graph are two presentations of one definition graph. The engine holds the graph, and the browser may keep a copy.
 
 **Proposition 4.11 (two views).** Under premise RT of Theorem 5.6, for a draft whose state `D` is canonical (in `Can`, the image of `parse`): (a) the text view `print(D)` and the graph view `D` determine each other; (b) a text edit to a text `t'` that parses leaves the edited module in the canonical state `parse(t')`, and the inverse of its patch returns the draft to `D` and the text view to `print(D)`. A draft whose state is not canonical has a graph view and may have no text view.
-Status: **proved under the named premise RT** (Theorem 5.6), restated. RT is a property of the printer and the parser, tested on the example modules (`Print_then_parse_reproduces_the_graph_and_printing_is_idempotent`, `LanguageTests.cs`) and wanted on generated graphs (test T-ROUNDTRIP, [inventory.md](inventory.md)). A draft with a missing required slot or reference is reported as `Unprintable` with the element id (`A_wired_filter_without_a_predicate_is_unprintable_and_names_the_filter`, `ProtocolFixTests.cs`): the graph view is a superset of the text view. The first form was conditional on `parse(print(G)) = G` for every well-formed graph, which Theorem 5.6 no longer claims.
+Status: **proved under the named premise RT** (Theorem 5.6), restated. RT is a property of the printer and the parser, tested on the example modules and wanted on generated graphs (test T-ROUNDTRIP, [inventory.md](inventory.md)). A draft with a missing required slot or reference is reported as `Unprintable` with the element id: the graph view is a superset of the text view. The first form was conditional on `parse(print(G)) = G` for every well-formed graph, which Theorem 5.6 no longer claims.
 
 *Proof.* (a) `print(D)` is a function of `D`, and `D = parse(print(D))` by RT, so each view is a function of the other. (b) The text edit is the patch `q = toPatch(z, M)` where `M` is the module's facts in the draft and `z` the difference between the facts of `parse(t')` and `M` (Def. 4.12). By Theorem 4.8(1) applying `q` gives the module the facts of `parse(t')`, which is canonical by definition. By Theorem 4.3 `inverse(q)` applies to the result and gives back `D`, whose text view is `print(D)`. ∎
 
@@ -127,9 +127,9 @@ Status: **proved under the named premise RT** (Theorem 5.6), restated. RT is a p
 
 ## 4.7 Mapping to the contracts
 
-In the contracts of iteration 0.1 a C# type error already prevents mixing patches and signed deltas (`ChangeAlgebra.cs`). The operations map as follows.
+In the contracts of iteration 0.1 a C# type error already prevents mixing patches and signed deltas. The operations map as follows.
 
-| Paper | `ChangeAlgebra.cs` | Note |
+| Paper | contract of iteration 0.1 | Note |
 |---|---|---|
 | `p then q` | `PatchThen` | defined iff Def. 4.2, else `AlgebraRejected` |
 | `inverse(p)` | `PatchInverse` | |
@@ -155,4 +155,4 @@ In the contracts of iteration 0.1 a C# type error already prevents mixing patche
 |---|---|---|
 | O4.1 | Theorems 4.1 to 4.3 and 4.7 to 4.8 hold on the contract types, including relationship edits with retype, dangling endpoints and the ontology slot | property tests on `GraphPatch` and `SignedDelta`; at least 10,000 generated cases per property, reported as properties, not assertion counts (finding 34) |
 | O4.2 | Canonical edit order `(kind, id)` is used by every encoder and digest | conformance test against the Ch. 1 corpus |
-| O4.3 | Proposition 4.10 on generated draft edit sequences (patches, undo, redo, rejected guards) | seeded property tests on `Drafts.cs` in the style of `AlgebraTests.cs` |
+| O4.3 | Proposition 4.10 on generated draft edit sequences (patches, undo, redo, rejected guards) | seeded property tests of draft editing, in the style of the tests of the change algebra |
