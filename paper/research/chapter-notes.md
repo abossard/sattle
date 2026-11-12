@@ -1980,3 +1980,9 @@ Engine-core reports this as built in the working tree on fc88d37, not yet commit
 - Follow-up (same working tree, not yet committed): Law 7.5 (i) now holds for `mean` (sum and count added) and for `last` (greater order wins, a tie goes to the greater value), when a group or roll-up whose rows go only to emits wrote the window. Without such a pair, (ii) applies. Tested in all orders and batchings; a count-weighted case gives (1 + 2 + 4) / 3. The reference does the same. Every 7.6 point on merges is then closed.
 - The seal format is 2 (the pairs are state). An old seal is refused with both versions named, and the journal is replayed (Ch. 11).
 - Workload model (Ch. 7, 7.4 and Corollary 7.9; Ch. 14): a deployment takes the rank that at least half of its measured pods reach, with no data ranked between healthy and degraded. A deployment none of whose pods has a severity is Unknown. This replaces the sentence that a deployment whose pods are all in no data is Healthy.
+
+## For content-review: chapters ready (2026-11-12, after adab686)
+
+- Ch. 0, 1 and 2 now open with a question and with what the reader can state at the end. Ch. 1 and 2 have a running example on the workload model. Their bodies are as rewritten for the reader in the first pass.
+- Still not read by content-review in their final form: Ch. 13, 14 and 15. Ch. 15 has no running example by design, since it is related work and limits.
+- Since F14: Def. 5.9 (identity expressions only in emits and links), 6.6 (grouping through a view), 7.6 (Law 7.5 item 3 as built, with the measured merge rates), 7.4 and Corollary 7.9 (the deployment rank rule), and Def. 11.11 (seal format 2).

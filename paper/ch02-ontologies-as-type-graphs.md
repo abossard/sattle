@@ -1,8 +1,12 @@
 # Ch. 2 Types as graphs
 
-**Claim.** The types of the model (which kinds of entities and relationships exist, which properties they carry, how entities are named, how graphs are computed) are themselves stored as graphs. They are checked against a small fixed vocabulary, the *kernel*, which is the only part built into the program. So a new kind of entity, a new naming rule or a new view is new data, not a new program.
+**Question.** Where do the types of the model live, and what must be built into the program for new kinds of entities and new views to need no new program?
+
+**What you can state at the end.** The types of the model (which kinds of entities and relationships exist, which properties they carry, how entities are named, how graphs are computed) are themselves stored as graphs. They are checked against a small fixed vocabulary, the *kernel*, which is the only part built into the program. So a new kind of entity, a new naming rule or a new view is new data, not a new program.
 
 This chapter uses values, digests and identity domains from Ch. 1. Its definitions point forward to Ch. 3 (what a graph is) and Ch. 4 (changes of a graph); they need only the informal picture of Ch. 0 to be read.
+
+**Running example.** The types of the shop's workload model (Ch. 7, 7.4): components such as `Service`, `Deployment`, `Pod` and `PlatformResource` (a cache, a database server), relationships such as `Contains` (a composition) and `DependsOn` (a dependency), and the property `state` whose values `Healthy`, `Degraded` and `Unhealthy` carry roles for display. The chapter shows that all of them are data in a graph.
 
 ## 2.1 Three levels
 

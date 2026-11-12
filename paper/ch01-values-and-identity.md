@@ -1,8 +1,12 @@
 # Ch. 1 Values, canonical form and identity
 
-**Claim.** Every value has exactly one written form, so two values are equal exactly when their written forms are equal byte for byte. The name of an entity inside the model is computed from a key and from nothing else, and a name once given is never changed. When two names turn out to mean one entity, they are joined by an added record, and which name survives does not depend on the order in which the keys arrived.
+**Question.** When are two values equal, and how does an entity get a name that every source agrees on and that never changes?
+
+**What you can state at the end.** Every value has exactly one written form, so two values are equal exactly when their written forms are equal byte for byte. The name of an entity inside the model is computed from a key and from nothing else, and a name once given is never changed. When two names turn out to mean one entity, they are joined by an added record, and which name survives does not depend on the order in which the keys arrived.
 
 Everything later rests on this chapter. A graph is compared with another graph by comparing written forms. A result is called reproducible when its written form is the same in two runs. This needs no earlier chapter except the terms of Ch. 0.
+
+**Running example.** The shop of Ch. 0 as the workload model of Ch. 7 sees it: a pod of `web` that Kubernetes lists with its uid, and that the network observer names by namespace `shop` and pod name. The chapter gives the pod one name and shows what happens when the two keys meet.
 
 ## 1.1 Values
 

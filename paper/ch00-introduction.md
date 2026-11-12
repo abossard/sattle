@@ -1,6 +1,8 @@
 # Ch. 0 Introduction
 
-**Claim.** A company that runs software in a cloud needs one model of what it runs: what exists, what depends on what, how it is doing, and what changed. No single source of information gives that model, and the sources disagree. This paper defines a model that is built from all of them, that is a graph, and that is reproducible: the same recorded inputs always give the same graph.
+**Question.** Why does a company that runs software in a cloud need a graph built from all its sources, and what must that graph guarantee?
+
+**What you can state at the end.** A company that runs software in a cloud needs one model of what it runs: what exists, what depends on what, how it is doing, and what changed. No single source of information gives that model, and the sources disagree. This paper defines a model that is built from all of them, that is a graph, and that is reproducible: the same recorded inputs always give the same graph.
 
 This chapter states the problem, the idea, the terms, the research plan and the claims. It needs no earlier chapter and no knowledge of cloud systems. Words from that world are explained in one line where they first appear.
 
