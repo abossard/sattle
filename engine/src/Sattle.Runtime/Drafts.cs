@@ -246,6 +246,37 @@ public sealed partial class SpaceHost
         }
     }
 
+    /// <summary>The premises of Proposition 5.7 that the refactored catalog breaks, so the union of the outputs may change: R3 (a sink of the moved part and one of the kept part emit one type, so one key may be held twice or disagree, or one relationship tuple appear under two key rules), R4 (another graph reads the parent graph and a type that moved out of it), R5 (a rule moved between projections with different output ontologies, so relationship ids change).</summary>
+    static List<(string Premise, string Reason)> BrokenPremises(Catalog cand, string kind, string module, JsonNode body)
+    {
+        var res = new List<(string, string)>();
+        string Pid(string name) => $"d:{module}/projection:{name}";
+        static IEnumerable<string> Created(TypedProjection tp) =>
+            tp.Ops.OfType<TEmitEntity>().Where(e => !e.Update).Select(e => e.TypeId).Concat(tp.Ops.OfType<TEmitRel>().Where(e => !e.Update).Select(e => e.TypeId)).Distinct();
+        // where the keys of an entity sink come from: its identity domain, or the type of the element whose id it reuses; two sinks with one key space can emit one key, whatever type each gives it
+        static IEnumerable<string> KeySpaces(TypedProjection tp) => tp.Ops.OfType<TEmitEntity>().Where(e => !e.Update)
+            .Select(e => e.EntityId is TId id ? "domain " + Ids.Name(id.DomainId) : "the ids of " + Ids.Name(e.EntityId.Type.Ty.TypeId ?? "")).Distinct();
+        if (kind == "extract" && cand.Projections.TryGetValue(Pid(body["projection"]!.GetValue<string>()), out var parent) && cand.Projections.TryGetValue(Pid(body["name"]!.GetValue<string>()), out var moved))
+        {
+            foreach (var t in Created(moved).Intersect(Created(parent)).Order(StringComparer.Ordinal))
+                res.Add(("R3", $"the extracted and the kept statements both emit {Ids.Name(t)}: a key emitted by both is held by two graphs, and values or relationship tuples that one graph resolved may disagree"));
+            foreach (var k in KeySpaces(moved).Intersect(KeySpaces(parent)).Order(StringComparer.Ordinal))
+                res.Add(("R3", $"the extracted and the kept statements both take entity keys from {k}: one key emitted by both, as two types or with two values, is one element in one graph and two in two"));
+            foreach (var space in cand.Spaces.Values)
+                foreach (var pg in space.Graphs.Where(g => g.ProjectionId == parent.Id))
+                    foreach (var reader in space.Graphs.Where(g => g.Bindings.Values.Contains(pg.Name)))
+                    {
+                        var tp = reader.Instance ?? cand.Projections[reader.ProjectionId];
+                        var read = tp.Ops.OfType<TMatch>().SelectMany(m => m.Nodes.Select(n => n.TypeId).Concat(m.Edges.Select(e => e.TypeId))).ToHashSet(StringComparer.Ordinal);
+                        foreach (var t in Created(moved).Where(read.Contains).Order(StringComparer.Ordinal))
+                            res.Add(("R4", $"graph {reader.Name} reads {Ids.Name(t)} from graph {pg.Name}, which no longer holds it"));
+                    }
+        }
+        if (kind == "moveRule" && cand.Projections.TryGetValue(Pid(body["from"]!.GetValue<string>()), out var from) && cand.Projections.TryGetValue(Pid(body["to"]!.GetValue<string>()), out var to) && from.OutputModule != to.OutputModule)
+            res.Add(("R5", $"the rule moves from output ontology {from.OutputModule} to {to.OutputModule}: the ids of its relationships change"));
+        return res;
+    }
+
     /// <summary>A refactoring is a pure function on the draft's canonical text; the result is the draft patch that realises it (not applied).</summary>
     public JsonNode Refactor(string id, JsonNode body)
     {
@@ -276,7 +307,10 @@ public sealed partial class SpaceHost
             var patch = catalogExport.Patch(new Patch("catalog", d.Revision, d.Revision + 1, Graph.Diff(d.Graph, cand.Graph)));
             var modules = new JsonObject();
             foreach (var m in edited.Keys.Order()) modules[m] = new JsonObject { ["text"] = Printer.Print(cand.Graph, m) };
-            return new JsonObject { ["patch"] = patch, ["modules"] = modules, ["preserves"] = new JsonObject { ["outputs"] = "union" }, ["diagnostics"] = new JsonArray([.. res.Diagnostics.Select(DiagJson)]) };
+            var premises = BrokenPremises(cand, S("kind"), S("module"), body);
+            var preserves = premises.Count == 0 ? new JsonObject { ["outputs"] = "union" }
+                : new JsonObject { ["outputs"] = "not preserved", ["premises"] = new JsonArray([.. premises.Select(p => (JsonNode)new JsonObject { ["premise"] = p.Premise, ["reason"] = p.Reason })]) };
+            return new JsonObject { ["patch"] = patch, ["modules"] = modules, ["preserves"] = preserves, ["diagnostics"] = new JsonArray([.. res.Diagnostics.Select(DiagJson)]) };
         }
     }
 

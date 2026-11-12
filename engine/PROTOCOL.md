@@ -431,6 +431,15 @@ Additive for a client: no endpoint changed. New in the definition language, the 
 - **`replay`** prints `merges: N in E epoch(s) of T, at most M in one; telemetry windows written under two ids of one class W, of them without a value by a merge conflict C`.
 - No state digest of the shipped definitions changes (estate and both captures as in `engine-build-status.md`): none writes a `mean` or `last` telemetry property.
 
+## Version 3.23: what the proof-pass tests changed
+- **Refactoring answer.** `preserves` is `{ "outputs": "union" }` only when the premises of Proposition 5.7 hold. Otherwise it is `{ "outputs": "not preserved", "premises": [ { "premise": "R3", "reason": "..." } ] }`:
+  - R3: the extracted and the kept statements emit one type, or take entity keys from one identity domain or one element type;
+  - R4: another graph reads a type from the parent graph that moved out of it;
+  - R5: a rule moved across output ontologies. `moveRule` refuses that case already (`CrossModule`).
+  The refactoring is still returned in every case; before, `preserves` always said `union`.
+- **Diagnostic `PutPut`.** A lens rule that declares `putput`, accepts `delete`, and whose view leaves a property of the source out (other than the key the create defaults from) is refused. A delete and a create restore that property by its default, so consecutive edits are not combinable (Ch. 8, the counterexample to PutPut).
+- **A lens without `on create key`.** Its updates are now carried back. The source type is taken from the element the emit reads. Before, an update through such a lens failed with an engine error.
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.

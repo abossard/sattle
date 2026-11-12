@@ -217,7 +217,8 @@ public sealed partial class SpaceHost
                 if (rule.Class != "lens" || policy is null || !(kind == "update" ? policy.Accept.Any(a => a.StartsWith("update(", StringComparison.Ordinal) && updated.Split(',').All(u => a[7..^1].Split(',').Contains(u))) : policy.Accept.Contains(kind)))
                     throw Reject("NotAccepted", $"rule {rule.Name} does not accept {kind}{(updated.Length > 0 ? $"({updated})" : "")}", g, en.Id, rule.Name);
                 // key and id
-                var src = policy.SourceTypeId!;
+                // the type the view's element comes from: the one its create key identifies, else the type of the element the emit reads (a lens that accepts no create has no create key)
+                var src = policy.SourceTypeId ?? sink.EntityId.Type.Ty.TypeId ?? throw Reject("NotEditable", $"rule {rule.Name} names no source type for {TypeLabel(Catalog, en.Type)}", g, en.Id, rule.Name);
                 var view = Catalog.OntologyOf(Engine.Master.Typed.OutputModule);
                 if (kind == "create")
                 {

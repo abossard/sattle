@@ -248,6 +248,16 @@ public static class Worlds
           let st = s |> threshold v by { c: c } above 3 for 2 then "on" below 1 for 2 then "off" initial "off" as state;
           emit entity Signal from st identity signal(k: c) set { k: c, state: state };
         """, 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
+    /// <summary>T-B4 (premise B4 of Theorem 6.2): a threshold over a roll-up by group, whose members change group (a keyed item row is replaced with another group, so the item leaves one key and joins another), with windows that leave the retained range of three minutes (the look-back, the least the engine accepts). Every advance is its own step in the engine and in the reference, so an advance and a structure change never share one; the harness cuts the rows between them every way.</summary>
+    public static readonly World MembersLeave = View("threshold over a roll-up whose members leave", "Series, Rollup, Threshold, structure change", Signal, """
+          let m = match master (i: base.Item);
+          let s = m |> series master i.hits within 3m |> rollup by { c: i.g } combine { v: sum(hits) };
+          let st = s |> threshold v by { c: c } above 2 for 1 then "on" below 1 for 2 then "off" initial "off" as state;
+          emit entity Signal from st identity signal(k: c) set { k: c, state: state };
+        """, 0.3, [
+            new("a", (r, now) => Row(("k", Text(r, "k", 3)), ("g", Text(r, "g", 2)), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),
+            Dense[1], Dense[2],
+        ]) with { RetentionNs = 3 * Minute, Witnesses = ["state=t:on", "state=t:off"] };
     /// <summary>Def. 7.15 and 7.16 on one element: `hits` are filled with 0 where the source of the hits has reported and the item existed, so a covered silence ends a state; an item without a record for three minutes is in no data, which the threshold gives as "silent", and data that return end it.</summary>
     static World Silence(string name, string kind, string series) => View(name, kind, Signal, $$"""
           let m = match master (i: base.Item);
@@ -418,6 +428,7 @@ public static class Worlds
         LinkedLoads,
         LinkedView,
         ShareRule,
+        MembersLeave,
         View("match nodes", "Match, EmitEntity", """
             entity Copy { k: Text; g: Text; n: Integer; }
             identity copy for Copy version "1" { k: Text by exact; }

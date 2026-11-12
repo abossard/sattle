@@ -194,6 +194,7 @@ public sealed class ProjectionChecker(Graph defs)
         }
         EmitterChecks(typed, rules, pid);
         Direction(pid, typed, rules, ports);
+        PutPutCheck(typed, rules);
         var forward = d.Bool(pid, "forward");
         if (forward == (rules.Count > 0)) Err("P3", pid, forward ? "a forward projection must have no rules" : "a projection with no rules must be declared forward");
         if (d.Text(pid, "purpose") == "ingestion" && forward) Err("P3", pid, "an ingestion projection cannot be forward");
@@ -908,6 +909,22 @@ public sealed class ProjectionChecker(Graph defs)
     }
 
     /// <summary>Direction judgment (section 4.3): bijective needs δ = iso, one input stream, every input field recovered.</summary>
+    /// <summary>Rule PutPut (Ch. 8, the counterexample after Theorem 8.2): a lens whose view leaves a property of the source out (a complement) and that accepts `delete` is not very well-behaved: a delete and a create restore the complement by its default, putting the final view alone keeps it. Such a rule cannot declare `putput`.</summary>
+    void PutPutCheck(List<TOp> ops, List<TRule> rules)
+    {
+        foreach (var r in rules.Where(r => r.Class == "lens" && r.PutPut && r.Policy?.Accept.Contains("delete") == true))
+            foreach (var sink in ops.OfType<TEmitEntity>().Where(e => !e.Update && e.Rule == r.Name))
+            {
+                if (sink.EntityId.Type.Ty.TypeId is not { } source) continue;
+                var view = ViewOf(Ids.ModuleOf(source));
+                var shown = sink.Sets.Select(s => s.Value).OfType<TField>().Where(f => f.Name.Contains('.')).Select(f => f.Name[(f.Name.IndexOf('.') + 1)..]).ToHashSet(StringComparer.Ordinal);
+                var keyed = r.Policy!.Defaults.Where(x => x.Value is TField f && f.Name.StartsWith("key.", StringComparison.Ordinal)).Select(x => x.Name).ToHashSet(StringComparer.Ordinal);
+                var complement = view.PropsOf(source).Keys.Select(p => view.Props[p].Name).Where(n => !shown.Contains(n) && !keyed.Contains(n)).Order(StringComparer.Ordinal).ToList();
+                if (complement.Count > 0)
+                    Err("PutPut", sink.Id, $"rule {r.Name} accepts delete and its view leaves {string.Join(", ", complement)} of {view.Types[source].Name} out: a delete and a create restore them by their defaults, so it cannot declare putput");
+            }
+    }
+
     void Direction(string pid, List<TOp> ops, List<TRule> rules, List<TPort> ports)
     {
         var byName = ops.ToDictionary(o => o.Name);

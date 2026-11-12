@@ -146,6 +146,29 @@ public class DifferentialTests
         Assert.Equal("7", LoadOf(restored));
     }
 
+    /// <summary>Review finding (data-driven thresholds): parameters that come from the row are checked at run time. A row whose parameters are no state machine (`above` not greater than `below`, a run of less than one window) is dropped and counted, and the rows of other keys still give their states; the reference drops the same rows (the world agrees under every cut).</summary>
+    [Fact, Trait("Category", "Differential")]
+    public void Row_parameters_that_are_no_state_machine_are_dropped_and_counted()
+    {
+        var w = Worlds.RowParameters;
+        var (dropped, states) = (0L, 0);
+        foreach (var seed in Enumerable.Range(0, 12))
+        {
+            using var e = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+            var seq = 0L;
+            foreach (var input in w.Log(seed, 20))
+                switch (input)
+                {
+                    case Sattle.Reference.AdvanceInput a: e.Advance(a.Frontier, ++seq); break;
+                    case Sattle.Reference.RowInput row: EngineRun.Ingest(e, [row], ++seq); break;
+                }
+            dropped += e.Faults.InvalidParameter;
+            states += e.Graph("view").State.Entities.Count(x => x.Props.Text("d:w.view/prop:state") is not null);
+        }
+        Assert.True(dropped > 0, "no row with parameters that are no state machine");
+        Assert.True(states > 0, "no state from the valid rows");
+    }
+
     static void Agrees(string world, int seeds, int length, bool reordered)
     {
         var report = Differential.Check(Worlds.All.Single(w => w.Name == world), seeds, length, reordered);
