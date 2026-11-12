@@ -55,11 +55,20 @@ public class LiveReproducibilityTests
 
     [Theory]
     [InlineData(1, 0)] [InlineData(2, 6)] [InlineData(3, 40)]
-    public void Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest_on_the_fixtures(int seed, int distance)
+    public void Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest_on_the_estate(int seed, int distance) =>
+        Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest(Repo.Estate, seed, distance);
+
+    [Trait("Category", "Fixtures")]
+    [FixturesTheory]
+    [InlineData(1, 0)] [InlineData(2, 6)] [InlineData(3, 40)]
+    public void Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest_on_the_fixtures(int seed, int distance) =>
+        Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest(Repo.Fixtures, seed, distance);
+
+    static void Replaying_the_live_recording_with_the_live_settings_reproduces_the_live_digest(string capture, int seed, int distance)
     {
-        var arrival = Arrival(Repo.Fixtures, seed, distance);
-        var dir = LiveRun(arrival, Repo.ClusterOf(Repo.Fixtures), seed, out var live);
-        try { Assert.Equal(live, Replayed(dir, Repo.ClusterOf(Repo.Fixtures), horizon: 3)); }
+        var arrival = Arrival(capture, seed, distance);
+        var dir = LiveRun(arrival, Repo.ClusterOf(capture), seed, out var live);
+        try { Assert.Equal(live, Replayed(dir, Repo.ClusterOf(capture), horizon: 3)); }
         finally { Directory.Delete(dir, true); }
     }
 
@@ -67,8 +76,8 @@ public class LiveReproducibilityTests
     public void The_recording_is_read_in_arrival_order_not_in_capture_time_order()
     {
         // Arrival order is part of the input: the recording is one file and is read in file order.
-        var arrival = Arrival(Repo.Fixtures, 3, 40);
-        var dir = LiveRun(arrival, Repo.ClusterOf(Repo.Fixtures), 3, out _);
+        var arrival = Arrival(Repo.Estate, 3, 40);
+        var dir = LiveRun(arrival, Repo.ClusterOf(Repo.Estate), 3, out _);
         try
         {
             string Payload(string line) { using var d = System.Text.Json.JsonDocument.Parse(line); return d.RootElement.GetProperty("payload").GetRawText(); }
@@ -82,8 +91,7 @@ public class LiveReproducibilityTests
     [CaptureFact]
     public void Replaying_the_live_recording_reproduces_the_live_digest_on_the_newest_capture_when_present()
     {
-        var c = Path.Combine(Repo.Root, "lab", "captures");
-        var cap = Directory.EnumerateDirectories(c).Order(StringComparer.Ordinal).Last();
+        var cap = Repo.CaptureDirs[^1];
         var cluster = Sattle.Cli.Program.DetectCluster(cap);
         var arrival = Arrival(cap, 5, 25);
         var dir = LiveRun(arrival, cluster, 5, out var live);

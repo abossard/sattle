@@ -49,7 +49,16 @@ public sealed class Lowering
 
     static Value T(string s) => Value.Text(s);
     void Err(string code, string msg, Pos pos, string focus = "") => diags.Add(new Diagnostic(code, "error", focus, msg, file, pos.Line, pos.Col));
-    string Reg(string id, Pos pos) { map[id] = pos; return id; }
+    /// <summary>Records where an element was declared. A second declaration of the same id would replace the first one or merge with it (two key constraints of one type would be one composite key): it is an error.</summary>
+    string Reg(string id, Pos pos)
+    {
+        if (map.TryGetValue(id, out var first) && first != pos)
+        {
+            var named = id.Split('/').LastOrDefault(s => s.IndexOf(':') is >= 0 and var c && c + 1 < s.Length && s[c + 1] != '#') ?? id;       // a part of an expression has no name: the declaration it belongs to has
+            Err("Duplicate", $"{named.Replace(":", " '", StringComparison.Ordinal)}' is declared twice (first at line {first.Line})", pos, id);
+        }
+        map[id] = pos; return id;
+    }
 
     bool Exists(string id) => b.Nodes.ContainsKey(id) || catalog.Entity(id) is not null;
 
@@ -151,7 +160,13 @@ public sealed class Lowering
         }
         void Members(string owner, List<Member> members)
         {
-            foreach (var m in members) b.Edge(owner, "hasProperty", PropNode(m), ("required", Value.Boolean(!m.Optional)));
+            foreach (var m in members)
+            {
+                if (m.Label) b.Edge(owner, "hasProperty", PropNode(m), ("required", Value.Boolean(!m.Optional)), ("label", Value.Boolean(true)));
+                else b.Edge(owner, "hasProperty", PropNode(m), ("required", Value.Boolean(!m.Optional)));
+                if (m.Label && (m.Type.Kind != "Text" || m.Tele is not null)) Err("Label", $"the label '{m.Name}' must be a Text property of the graph data", m.Pos);
+            }
+            if (members.Where(m => m.Label).Skip(1).FirstOrDefault() is { } second) Err("Label", $"a type has one label: '{second.Name}' is a second one", second.Pos);
         }
         foreach (var d in ast.Decls)
         {
@@ -173,6 +188,7 @@ public sealed class Lowering
                         var p = new List<(string, Value)> { ("name", T(r.Name)), ("abstract", Value.Boolean(r.Abstract)) };
                         if (r.Doc is not null) p.Add(("description", T(r.Doc)));
                         if (r.Hierarchy) p.Add(("hierarchy", Value.Boolean(true)));
+                        if (r.Kind is not null) p.Add(("kind", T(r.Kind)));
                         var id = b.Contain(mid, "rel", seg, "RelationshipType", null, [.. p]); Reg(id, r.Pos);
                         if (r.Super is not null && Resolve(r.Super, "rel") is { } sid) b.Edge(id, "extends", sid);
                         foreach (var s in r.Sources) if (Resolve(s, "entity") is { } x) b.Edge(id, "sourceType", x);
@@ -500,6 +516,7 @@ public sealed class Lowering
         {
             // the fixpoint operator is the first op of the let group, the step chain follows it; the let's own name is the relation inside the step
             if (Count(fs.Step) == 0) throw new LowerError("Fixpoint", "the step of a fixpoint needs at least one operator", fs.Pos);
+            if (pipe.Steps.Count > 0) throw new LowerError("Fixpoint", $"steps after the `max` of a fixpoint are not part of it: bind the fixpoint with its own let and continue from '{l.Name}'", pipe.Steps[0].Pos);
             var n = 1 + Count(fs.Step);
             string Name(int i) => i == n - 1 ? l.Name : $"{l.Name}#{i}";
             var fp = Op(cx, "Fixpoint", Name(0), fs.Pos, ("maxFacts", Value.Integer(1_000_000)), ("maxIterations", Value.Integer(fs.Max)));
@@ -593,20 +610,24 @@ public sealed class Lowering
                 case WindowStep w:
                     op = Op(cx, "Window", name, w.Pos, ("timestampField", T(w.On)), ("width", Value.Integer(w.WidthNs)), ("late", T(w.Late))); break;
                 case SeriesStep sr:
-                    op = Op(cx, "Series", name, sr.Pos, ("within", Value.Integer(sr.WithinNs)));
+                    op = sr.TtlNs is { } ttl ? Op(cx, "Series", name, sr.Pos, ("within", Value.Integer(sr.WithinNs)), ("ttl", Value.Integer(ttl))) : Op(cx, "Series", name, sr.Pos, ("within", Value.Integer(sr.WithinNs)));
                     if (!cx.GraphPorts.TryGetValue(sr.Graph, out var gp)) throw new LowerError("UnknownName", $"'{sr.Graph}' is not a graph port", sr.Pos);
                     b.Edge(gp, "wire", Port(op, "graph"));
                     for (var k = 0; k < sr.Paths.Count; k++)
                     {
-                        var r = b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T(sr.Paths[k])));
+                        var r = sr.Fills?[k] is { } fill ? b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T(sr.Paths[k])), ("fill", Value.Decimal(fill))) : b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T(sr.Paths[k])));
                         Reg(r, sr.Pos);
                     }
                     break;
                 case RollupStep ru:
-                    op = Op(cx, "Rollup", name, ru.Pos); Keys(op, ru.Keys, cx); Aggs(op, ru.Aggs, cx); break;
+                    op = ru.NoDataAny ? Op(cx, "Rollup", name, ru.Pos, ("nodata", T("any"))) : Op(cx, "Rollup", name, ru.Pos); Keys(op, ru.Keys, cx); Aggs(op, ru.Aggs, cx); break;
                 case ThresholdStep th:
-                    op = Op(cx, "Threshold", name, th.Pos, ("target", T(th.As)), ("above", Value.Decimal(th.Above)), ("enterAfter", Value.Integer(th.EnterAfter)), ("high", T(th.High)),
-                        ("below", Value.Decimal(th.Below)), ("exitAfter", Value.Integer(th.ExitAfter)), ("low", T(th.Low)), ("initial", T(th.Initial)));
+                    op = Op(cx, "Threshold", name, th.Pos,
+                    [
+                        ("target", T(th.As)), ("above", Value.Decimal(th.Above)), ("enterAfter", Value.Integer(th.EnterAfter)), ("high", T(th.High)),
+                        ("below", Value.Decimal(th.Below)), ("exitAfter", Value.Integer(th.ExitAfter)), ("low", T(th.Low)), ("initial", T(th.Initial)),
+                        .. th.NoData is { } nd ? new[] { ("nodata", T(nd)) } : [], .. th.NoDataIgnore ? new[] { ("nodataIgnore", Value.Boolean(true)) } : [],
+                    ]);
                     Keys(op, th.Keys, cx); Expr(th.Value, op, "value", 0, cx);
                     foreach (var (e, slot) in new[] { (th.AboveE, "aboveBy"), (th.EnterE, "enterBy"), (th.BelowE, "belowBy"), (th.ExitE, "exitBy") }) if (e is not null) Expr(e, op, slot, 0, cx);
                     break;

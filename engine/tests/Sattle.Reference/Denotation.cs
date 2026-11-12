@@ -27,9 +27,9 @@ public static class Denotation
         TJoin j => Join(j, input("left"), input("right")),
         TWindow w => Window(w, input("in")),
         TGroup g => Group(g, g.Keys, g.Aggs, input("in"), null),
-        TRollup r => Group(r, [.. r.Keys, ("windowStart", new TField("windowStart", new FType(Ty.Instant, true, Role.Data)))], r.Aggs, input("in"), r.PeriodNs),
+        TRollup r => r.NoData ? RollupWithNoData(r, input("in")) : Group(r, WithWindow(r.Keys), r.Aggs, input("in"), r.PeriodNs),
         TRetain r => Retain(r, input("in"), p.Frontier),
-        TSeries s => Series(s, input("in"), p.Graphs[s.GraphPort], p.Frontier),
+        TSeries s => Series(s, input("in"), p.Graphs[s.GraphPort], p.Frontier, ImmutableSortedDictionary<string, long>.Empty, [.. s.Reads.Select(_ => (long?)null)]),
         _ => throw new Undefined($"operator kind {op.Kind}"),
     };
 
@@ -167,7 +167,37 @@ public static class Denotation
     // ---- per-key functions of the integrated input ----
 
     /// <summary>Per key, the aggregates over the rows of the key with weights as multiplicities. A key exists while its rows have a positive total weight. A row with an absent key component belongs to no key. A roll-up key includes the window, and its row carries the window end.</summary>
-    static Relation Group(TOp op, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggs, Relation rows, long? period)
+    static IReadOnlyList<(string Name, TExpr Value)> WithWindow(IReadOnlyList<(string Name, TExpr Value)> keys) => [.. keys, ("windowStart", new TField("windowStart", new FType(Ty.Instant, true, Role.Data)))];
+
+    /// <summary>
+    /// Def. 7.16 for a roll-up: the records of members in no data are not aggregated, and a key is in no data iff every member that has a row is (`nodata any`: one of them).
+    /// A member is a row of the input without its window and values. The key in no data has one record, at the window of the markers, without values.
+    /// </summary>
+    static Relation RollupWithNoData(TRollup r, Relation rows)
+    {
+        bool Marked(ImmutableArray<Value> row) => True(rows.Reader(row)(TThreshold.NoDataColumn));
+        string? KeyOf(ImmutableArray<Value> row) => r.Keys.Select(k => Expressions.Eval(k.Value, rows.Reader(row))).ToImmutableArray() is var vs && vs.All(v => v is not NullValue) ? Canon.Of(vs) : null;
+        string Member(ImmutableArray<Value> row) => Canon.Of([.. r.Members!.Select(c => rows.Reader(row)(c))]);
+        var present = rows.Rows.Where(x => x.Weight > 0 && KeyOf(x.Row) is not null).ToList();
+        var aggregated = Group(r, WithWindow(r.Keys), r.Aggs, rows with { Rows = ZSet.Of(rows.Rows.Where(x => !Marked(x.Row))) }, r.PeriodNs, [(TThreshold.NoDataColumn, Value.Boolean(false))]);
+        var silent =
+            from g in present.GroupBy(x => KeyOf(x.Row)!, StringComparer.Ordinal)
+            let markers = g.Where(x => Marked(x.Row)).ToList()
+            let all = g.Select(x => Member(x.Row)).Distinct(StringComparer.Ordinal).Count()
+            let marked = markers.Select(x => Member(x.Row)).Distinct(StringComparer.Ordinal).Count()
+            where marked > 0 && (r.NoDataAny || marked == all)
+            let read = rows.Reader(markers[0].Row)
+            let start = Instant(read("windowStart"))
+            select Shape(r, r.Keys.Select(k => (k.Name, Expressions.Eval(k.Value, read))).Concat(r.Aggs.Select(a => (a.Target, Value.Null)))
+                .Concat([("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + r.PeriodNs)), (TThreshold.NoDataColumn, Value.Boolean(true))]).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal));
+        var markerRows = silent.ToList();
+        var at = r.Out.Cols.Select((c, i) => (c.Name, i)).ToDictionary(x => x.Name, x => x.i, StringComparer.Ordinal);
+        string Place(ImmutableArray<Value> row) => Canon.Of([.. r.Keys.Select(k => row[at[k.Name]]), row[at["windowStart"]]]);
+        var taken = markerRows.Select(Place).ToHashSet(StringComparer.Ordinal);
+        return new Relation(Names(r), ZSet.Of(aggregated.Rows.Where(x => !taken.Contains(Place(x.Row))).Concat(markerRows.Select(m => (m, 1L)))));
+    }
+
+    static Relation Group(TOp op, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggs, Relation rows, long? period, IReadOnlyList<(string Name, Value Value)>? more = null)
     {
         var members =
             from r in rows.Rows
@@ -179,7 +209,7 @@ public static class Denotation
             from g in members
             where g.Sum(x => x.Weight) > 0
             let named = g.First().Key.Concat(aggs.Select(a => (a.Target, Aggregate(a, [.. g.Select(x => (x.Read, x.Weight))])))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)
-            select (Shape(op, period is { } w ? With(named, [("windowEnd", Value.Instant(Instant(named["windowStart"]) + w))]) : named), 1L);
+            select (Shape(op, With(period is { } w ? With(named, [("windowEnd", Value.Instant(Instant(named["windowStart"]) + w))]) : named, more ?? [])), 1L);
         return new Relation(Names(op), ZSet.Of(result));
     }
 
@@ -233,20 +263,40 @@ public static class Denotation
 
     // ---- telemetry ----
 
-    /// <summary>Def. 6.7: each row with the closed windows of its element in [frontier − within, frontier) that hold every property read.</summary>
-    static Relation Series(TSeries s, Relation rows, GraphFacts g, long? frontier)
+    /// <summary>
+    /// Def. 6.7: each row with the closed windows of its element in [frontier − within, frontier) that hold every property read.
+    /// Def. 7.15: a read with a fill also holds its fill value in every window of the look-back that is covered for the element (it starts at or after `since` of the element and ends at or before `covered` of the read) and has no stored value.
+    /// Def. 7.16: with a time to live, an element whose newest record (or, without one, its `since`) lies more than the time to live before the frontier has one more record, at the newest closed grid window, marked no data and without values.
+    /// </summary>
+    public static Relation Series(TSeries s, Relation rows, GraphFacts g, long? frontier, IReadOnlyDictionary<string, long> since, IReadOnlyList<long?> covered)
     {
-        var result =
-            from r in rows.Rows
-            let element = rows.Reader(r.Row)(s.TargetVar)
-            where element is EntityValue
-            let id = ((EntityValue)element).Id
-            from start in g.Telemetry.Keys.Where(k => k.Element == id).Select(k => k.Start).Distinct()
-            where frontier is null || start >= frontier - s.WithinNs
-            let values = s.Reads.Select(x => (x, Found: g.Telemetry.TryGetValue(new WindowId(id, x.PropId, start), out var v), Value: v)).ToArray()
-            where values.All(v => v.Found)
-            select (Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + s.PeriodNs)),
-                .. values.Select(v => (v.x.OutName, v.x.ValueKind == "Decimal" ? Value.Decimal(v.Value) : Value.Integer((BigInteger)v.Value)))])), r.Weight);
+        long Floor(long t) => t - ((t % s.PeriodNs) + s.PeriodNs) % s.PeriodNs;
+        var result = new List<(ImmutableArray<Value>, long)>();
+        foreach (var r in rows.Rows)
+        {
+            if (rows.Reader(r.Row)(s.TargetVar) is not EntityValue element) continue;
+            var id = element.Id;
+            long? started = since.TryGetValue(id, out var from) ? from : null;
+            decimal? At(int i, long start) =>
+                g.Telemetry.TryGetValue(new WindowId(id, s.Reads[i].PropId, start), out var stored) ? stored
+                : s.Reads[i].Fill is { } fill && started is { } k && start >= k && frontier is { } f && start + s.PeriodNs <= f && covered[i] is { } c && start + s.PeriodNs <= c ? fill
+                : null;
+            IEnumerable<long> Grid(long lo, long hi) { for (var a = Floor(lo + s.PeriodNs - 1); a + s.PeriodNs <= hi; a += s.PeriodNs) yield return a; }
+            var fillable = frontier is { } now && started is { } first && s.Reads.Any(x => x.Fill is not null) ? Grid(Math.Max(now - s.WithinNs, first), now) : [];
+            var records = g.Telemetry.Keys.Where(k => k.Element == id).Select(k => k.Start).Concat(fillable).Distinct()
+                .Where(start => frontier is null || start >= frontier - s.WithinNs).Order()
+                .Select(start => (Start: start, Values: s.Reads.Select((_, i) => At(i, start)).ToArray())).Where(x => x.Values.All(v => v is not null)).ToList();
+            IEnumerable<(string, Value)> Marker(bool noData) => s.TtlNs is null ? [] : [(TThreshold.NoDataColumn, Value.Boolean(noData))];
+            foreach (var rec in records)
+                result.Add((Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(rec.Start)), ("windowEnd", Value.Instant(rec.Start + s.PeriodNs)),
+                    .. s.Reads.Select((x, i) => (x.OutName, x.ValueKind == "Decimal" ? Value.Decimal(rec.Values[i]!.Value) : Value.Integer((BigInteger)rec.Values[i]!.Value))), .. Marker(false)])), r.Weight));
+            long? newest = records.Count > 0 ? records[^1].Start + s.PeriodNs : started;
+            if (s.TtlNs is { } ttl && frontier is { } at && newest is { } e && at - e > ttl)
+            {
+                var start = Floor(at) - s.PeriodNs;
+                result.Add((Shape(s, With(Named(rows, r.Row), [("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + s.PeriodNs)), .. s.Reads.Select(x => (x.OutName, Value.Null)), .. Marker(true)])), r.Weight));
+            }
+        }
         return new Relation(Names(s), ZSet.Of(result));
     }
 
@@ -266,6 +316,9 @@ public static class Denotation
             return vs.Any(v => v is NullValue) || Expressions.Eval(t.Value, rel.Reader(row)) is NullValue ? null : Canon.Of(vs);
         }
         decimal Parameter(TExpr? by, decimal constant, Func<string, Value> read) => by is not null && Expressions.Eval(by, read) is var v && v is not NullValue ? Canon.Number(v) : constant;
+        // parameters given by the row are not checked when the definitions are: a row whose parameters are no state machine (`above` not greater than `below`, a run of less than one window) is no window of the key
+        bool IsMachine(Func<string, Value> read) =>
+            Parameter(t.AboveBy, t.Above, read) > Parameter(t.BelowBy, t.Below, read) && (long)Parameter(t.EnterBy, t.EnterAfter, read) >= 1 && (long)Parameter(t.ExitBy, t.ExitAfter, read) >= 1;
 
         Carried Step(Carried? before, Func<string, Value> read)
         {
@@ -279,8 +332,9 @@ public static class Denotation
             return extends && run >= needed ? new Carried(low ? t.High : t.Low, 0, start) : new Carried(state, run, start);
         }
 
+        bool Silent(Relation rel, ImmutableArray<Value> row) => t.ReadsNoData && True(rel.Reader(row)(TThreshold.NoDataColumn));      // the record of a key in no data: no window of the episode
         ILookup<string, ImmutableArray<Value>> Windows(Relation rel, Func<long, bool> keep) =>
-            rel.Rows.Where(r => r.Weight > 0 && Key(rel, r.Row) is not null && keep(Instant(rel.Reader(r.Row)("windowStart")))).ToLookup(r => Key(rel, r.Row)!, r => r.Row, StringComparer.Ordinal);
+            rel.Rows.Where(r => r.Weight > 0 && !Silent(rel, r.Row) && Key(rel, r.Row) is not null && IsMachine(rel.Reader(r.Row)) && keep(Instant(rel.Reader(r.Row)("windowStart")))).ToLookup(r => Key(rel, r.Row)!, r => r.Row, StringComparer.Ordinal);
         Carried? Fold(Carried? from, Relation rel, IEnumerable<ImmutableArray<Value>> rows)
         {
             var byWindow = rows.GroupBy(row => Instant(rel.Reader(row)("windowStart"))).OrderBy(w => w.Key).ToArray();
@@ -302,6 +356,14 @@ public static class Denotation
             rows.Add((Shape(t, t.Keys.Select(x => (x.Name, Expressions.Eval(x.Value, current.Reader(first)))).Append((t.Target, Value.Text(Fold(afterLeft, current, live[key])!.State)))
                 .ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)), 1L));
         }
-        return (new Relation(Names(t), ZSet.Of(rows)), next.ToImmutable());
+        if (t.NoData is not { } noData) return (new Relation(Names(t), ZSet.Of(rows)), next.ToImmutable());
+        // Def. 7.16: a key in no data gives the declared value. It is an output over the state machine, which goes on as the episode rule says
+        var silent = current.Rows.Where(r => r.Weight > 0 && Silent(current, r.Row))
+            .Select(r => t.Keys.Select(x => (x.Name, Value: Expressions.Eval(x.Value, current.Reader(r.Row)))).ToList()).Where(k => k.All(x => x.Value is not NullValue))
+            .GroupBy(k => Canon.Of([.. k.Select(x => x.Value)]), StringComparer.Ordinal).ToDictionary(k => k.Key, k => k.First(), StringComparer.Ordinal);
+        var at = t.Keys.Select(k => Names(t).IndexOf(k.Name)).ToArray();
+        var spoken = rows.Where(r => !silent.ContainsKey(Canon.Of([.. at.Select(i => r.Item1[i])])));
+        var overlay = silent.Values.Select(k => (Shape(t, k.Append((t.Target, (Value)Value.Text(noData))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)), 1L));
+        return (new Relation(Names(t), ZSet.Of(spoken.Concat(overlay))), next.ToImmutable());
     }
 }

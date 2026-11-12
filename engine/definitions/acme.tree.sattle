@@ -1,13 +1,13 @@
 /// The health tree of the whole estate, derived from the master with no names in the definitions: every element that can have health has exactly one parent, Azure side subscription, resource group, resource, Kubernetes side cluster, namespace, workload, pod, node. Curation, signal rules and roll-up policies are authored data in the master.
 module acme.tree @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
-import sattle.azure @ 1.0.0 sha256:ab18e12c31be70f641e8f97700b2d2ebf9cc8c5fe9c315fa748cbc7821966195 as azure;
-import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+import sattle.infra @ 1.0.0 sha256:b3d8b3b7310f29325a480b4531efb9b4f8d04bd47bccdfdfaa8e18ff213a15a3 as infra;
+import sattle.azure @ 1.0.0 sha256:dbcb3ed609c6539bafb84d01a084cd335c5f303073c8e92bd369b1cd3c4a3ddb as azure;
+import acme.ops     @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
 
 /// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
 entity Element {
-  nodeKey: Text; nodeKind: Text treerole kind; nodeName?: Text;
+  nodeKey: Text; nodeKind: Text treerole kind; nodeName?: Text label;
   /// The worst severity of the element's own signals: 0 healthy, 1 degraded, 2 unhealthy, -1 none (unknown).
   ownSeverity?: Integer;
   ownState?: Text treerole own roles { "Healthy": ok, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
@@ -24,16 +24,16 @@ entity Element {
   rollupMode?: Text treerole mode; rollupShare?: Decimal treerole share;
 }
 /// The hierarchy: the parent contains the child. Every element has exactly one parent, the roots none.
-relationship Contains (Element) -> (Element) hierarchy;
+relationship Contains (Element) -> (Element) hierarchy kind composition;
 /// The edges the roll-up follows: Contains, except below an element whose policy ignores what is below it.
-relationship Rolls (Element) -> (Element);
+relationship Rolls (Element) -> (Element) kind dependency;
 constraint cardinality Contains per target 0 .. 1;
 constraint acyclic Contains;
 identity element for Element version "1" { key: Text by exact; }
 
 /// A single operation or event that supports the state of one element: a warning event on a pod, an Activity Log operation on a resource. It hangs on the element it concerns and is not a child of it.
-entity Evidence { evidenceId: Text; evidenceKind: Text; evidenceTime: Instant; evidenceSummary: Text; evidenceDetail?: Text; }
-relationship EvidenceFor (Evidence) -> (Element);
+entity Evidence { evidenceId: Text; evidenceKind: Text; evidenceTime: Instant; evidenceSummary: Text label; evidenceDetail?: Text; }
+relationship EvidenceFor (Evidence) -> (Element) kind support;
 identity evidence for Evidence version "1" { id: Text by exact; }
 
 /// The tree structure: elements and their parents, from the Azure resource ids and the Kubernetes objects of the master. A cluster that is an Azure resource is one element with the Kubernetes subtree below it.
@@ -114,12 +114,13 @@ projection treeStructure view forward output acme.tree {
 }
 
 /// A signal of an element: a meter of the master read against a rule of the master (authored data). Hysteresis, thresholds and severity come from the rule row, so a new meter or a changed threshold is a record, not a statement.
-entity Signal { signalElement: Text; signalRule: Text; signalSeverity: Integer; signalState: Text roles { "on": warning, "off": ok }; signalAbove?: Decimal; signalBelow?: Decimal; signalMeter?: Text; signalEnterAfter?: Integer; signalExitAfter?: Integer; signalInverted?: Boolean;
+entity Signal { signalElement: Text; signalRule: Text label; signalSeverity: Integer; signalState: Text roles { "on": warning, "off": ok }; signalAbove?: Decimal; signalBelow?: Decimal; signalMeter?: Text; signalEnterAfter?: Integer; signalExitAfter?: Integer; signalInverted?: Boolean;
   /// The current reading of the meter (not negated for an inverted rule), per 60 s window.
   signalValue?: Decimal telemetry gauge max every 60s; }
-relationship Measures (Signal) -> (Element);
+relationship Measures (Signal) -> (Element) kind support;
 identity signal for Signal version "1" { element: Text by exact; rule: Text by exact; }
 
+/// The signals of the estate: each meter of an element read against the authored rules that name it, with its state.
 projection treeSignals view forward output acme.tree {
   in master: graph ops;
   retain 4;

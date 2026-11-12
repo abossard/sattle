@@ -2,19 +2,19 @@
 /// pod-to-pod flow telemetry to service dependencies, services and groups.
 module acme.svc @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
-import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
+import sattle.infra @ 1.0.0 sha256:b3d8b3b7310f29325a480b4531efb9b4f8d04bd47bccdfdfaa8e18ff213a15a3 as infra;
+import acme.ops     @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
 
 entity ServiceNode {
-  cluster: Text; namespace: Text; name: Text; pods?: Integer;
+  cluster: Text; namespace: Text; name: Text label; pods?: Integer;
   flowsOut?: Integer telemetry delta sum every 60s;
 }
 entity ServiceGroup {
-  cluster: Text; namespace: Text; services?: Integer;
+  cluster: Text; namespace: Text label; services?: Integer;
   flowsOut?: Integer telemetry delta sum every 60s;
 }
-relationship Contains (ServiceGroup) -> (ServiceNode);
-relationship DependsOn (ServiceNode) -> (ServiceNode) {
+relationship Contains (ServiceGroup) -> (ServiceNode) kind composition;
+relationship DependsOn (ServiceNode) -> (ServiceNode) kind communication {
   status?: Text;
   flows?: Integer telemetry delta sum every 60s;
   drops?: Integer telemetry delta sum every 60s;
@@ -26,6 +26,7 @@ constraint enum DependsOn.status in ["ok", "degraded"];
 
 identity serviceGroup for ServiceGroup version "1" { cluster: Text by lowerInvariant; namespace: Text by exact; }
 
+/// The service tree: the services of each namespace and who calls whom, lifted from the calls between their pods.
 projection serviceDeps view forward output acme.svc {
   in master: graph ops;
   retain 4;

@@ -7,8 +7,15 @@ public static class Repo
 {
     public static string Root { get; } = FindRoot();
     public static string Definitions => Path.Combine(Root, "engine", "definitions");
-    public static string Fixtures => Path.Combine(Root, "lab", "fixtures");
-    public static string Captures => Path.Combine(Root, "lab", "captures");
+    /// <summary>The folder of the local data (`fixtures`, `captures`): `lab` of the repository, or the folder the environment variable SATTLE_LAB names. With an empty folder the tests run as on a fresh clone, where neither is there.</summary>
+    static string Lab => Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } folder ? folder : Path.Combine(Root, "lab");
+    /// <summary>The scrubbed excerpt of a real capture. Its data files are generated locally and are not in the repository.</summary>
+    public static string Fixtures => Path.Combine(Lab, "fixtures");
+    /// <summary>The synthetic estate: a capture with invented names only, in the repository.</summary>
+    public static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
+    public static string Captures => Path.Combine(Lab, "captures");
+    /// <summary>The real captures, oldest first (`sattle replay latest` takes the last).</summary>
+    public static IReadOnlyList<string> CaptureDirs => Sattle.Cli.Program.Captures(Captures);
 
     /// <summary>The local space binding for the real captures (gitignored, next to them): the tracked `acme.space.sattle` has invented workload arguments, this file has the real ones. Null when it is not there.</summary>
     public static string? Overlay => File.Exists(Path.Combine(Captures, "space-overlay.sattle")) ? Path.Combine(Captures, "space-overlay.sattle") : null;

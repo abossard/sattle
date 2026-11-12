@@ -120,7 +120,7 @@ public class ReferencesTests
     [CaptureFact]
     public void On_the_newest_real_capture_the_health_graphs_have_no_dangling_edge_and_every_master_reference_is_explained()
     {
-        var dir = Directory.Exists(Repo.Captures) ? Directory.EnumerateDirectories(Repo.Captures).Order(StringComparer.Ordinal).LastOrDefault() : null;
+        var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
         var run = ReplayTests.Replay(dir, cluster: Repo.ClusterOf(dir), o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
         foreach (var g in run.Engine.Graphs.Where(g => !g.IsMaster))

@@ -141,7 +141,7 @@ public static class PlanCompiler
                     }
                 case TGroup g: op = new GroupOp(g, inL, cx, LineageCols(tp, t)); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
                 case TSeries s: op = new SeriesOp(s, inL, cx.It); strategies.Add($"{s.Name}: Series, bilinear: new rows against seen windows, new windows against all rows, retraction at the look-back"); break;
-                case TRollup r: op = new RollupOp(r, inL, cx); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
+                case TRollup r: op = new RollupOp(r, inL, cx, SeriesOf(tp, r)); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
                 case TThreshold th: op = new ThresholdOp(th, inL, cx, SeriesOf(tp, th)); strategies.Add($"{th.Name}: Threshold, per-key state machine over ordered closed windows"); break;
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
@@ -264,6 +264,16 @@ public sealed class Engine : IDisposable, IEngineInput
             gr.Head = store.Head(key).Head;
             if (next.Master) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
+        // Def. 7.14: the sources that feed what a filling Series reads are fixed here
+        foreach (var g in graphs)
+            foreach (var series in g.Plan.Ops.OfType<SeriesOp>().Where(s => s.Fills))
+            {
+                var st = (TSeries)series.Typed;
+                // the time to live is at most `within` (the checker), and `within` at most the retention (above): Def. 7.16 asks no more
+                series.Feeding = [.. st.Reads.Select(r => Feeding(g.PortSources[st.GraphPort], r.PropId).ToArray())];
+                if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Length == 0) is { r: not null } unfed)
+                    throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{unfed.r.OutName}', and no source feeds that property: a window cannot be known to be covered (Def. 7.15)");
+            }
         Identities.OnMerge = (loser, survivor) =>
         {
             if (graphs.FirstOrDefault(g => g.IsMaster) is not { } master) return;
@@ -292,6 +302,39 @@ public sealed class Engine : IDisposable, IEngineInput
         _ = gname;
     }
 
+    /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
+    SortedSet<string> Feeding(string graph, string propId)
+    {
+        var found = new SortedSet<string>(StringComparer.Ordinal);
+        if (!byName.TryGetValue(graph, out var g)) return found;
+        var plan = g.Typed; var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Walk(TOp op)
+        {
+            if (!seen.Add(op.Name)) return;
+            if (op is TSeries s) foreach (var read in s.Reads) found.UnionWith(Feeding(g.PortSources[s.GraphPort], read.PropId));
+            foreach (var src in op.Inputs.Values)
+                if (!src.IsPort) Walk(plan.Ops.First(o => o.Name == src.Name));
+                else if (plan.Port(src.Name).Kind == "rows") found.Add(g.PortSources[src.Name]);
+        }
+        foreach (var sink in plan.Ops)
+            if ((sink switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => null })?.Any(x => x.PropId == propId) == true) Walk(sink);
+        return found;
+    }
+
+    public bool WantsProgress => graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills));
+
+    /// <summary>How far each source has reported (Def. 7.14): the greatest `until` of its progress records.</summary>
+    readonly Dictionary<string, long> covered = new(StringComparer.Ordinal);
+
+    /// <summary>The progress of a source (Def. 10.9): it has reported up to `untilNs`, the capture time of an envelope less the allowed lateness. A recorded input like a row: a window that ends at or before it is covered by this source. The graphs step only when a window of a filling Series becomes covered.</summary>
+    public void Progress(string source, long untilNs, long seq)
+    {
+        if (covered.TryGetValue(source, out var had) && untilNs <= had) return;
+        covered[source] = untilNs;
+        if (!graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.CoverageMoved(lambda, covered)))) return;
+        Run(new Epoch { Id = ++epochId, Progress = true }, seq, "progress");
+    }
+
     /// <summary>A source reported lost events at an observed time: the master telemetry window containing it becomes Partial(sourceLoss).</summary>
     public void RecordLoss(long timeNs, long count, string reason = "sourceLoss")
     {
@@ -316,15 +359,17 @@ public sealed class Engine : IDisposable, IEngineInput
         foreach (var g in graphs)
         {
             Epoch ep;
+            var filling = master.Progress && g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills);
+            if (master.Progress && g.IsMaster && !filling) continue;       // the progress of a source concerns the graphs that fill
             if (g.IsMaster)
             {
-                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda };
+                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered };
                 foreach (var (port, b) in master.Rows) ep.Rows[port] = b;
             }
             else
             {
-                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda };
-                var any = master.HasAdvance;
+                ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered };
+                var any = master.HasAdvance || filling;
                 foreach (var (port, from) in g.PortSources)
                     if (results.TryGetValue(from, out var r))
                     {
@@ -420,12 +465,13 @@ public sealed class Engine : IDisposable, IEngineInput
     {
         public Interner Interner = null!; public RuntimeFaults Faults = null!; public IdentityCatalog Identities = null!; public ITelemetryStore Telemetry = null!;
         public long EpochId, Lambda, InputRows; public List<GraphStateRoot> Graphs = [];
+        public Dictionary<string, long> Covered = null!;
     }
 
     /// <summary>The objects that hold this engine's state, for a snapshot. Live objects, not a copy.</summary>
     public StateRoot StateRootOf() => new()
     {
-        Interner = Interner, Faults = Faults, Identities = Identities, Telemetry = Telemetry, EpochId = epochId, Lambda = lambda, InputRows = InputRows,
+        Interner = Interner, Faults = Faults, Identities = Identities, Telemetry = Telemetry, EpochId = epochId, Lambda = lambda, InputRows = InputRows, Covered = covered,
         Graphs = [.. graphs.Select(g => new GraphStateRoot { Name = g.Name, Head = g.Head, TelemetryPosition = g.TelemetryPosition, Skipped = g.Skipped, State = g.State, Out = g.Out, Cx = g.Cx, Ops = [.. g.Plan.Ops] })],
     };
 

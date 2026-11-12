@@ -29,19 +29,25 @@ public class ReplayTests
 
     static string? NewestCapture()
     {
-        var c = Path.Combine(Repo.Root, "lab", "captures");
-        return Directory.Exists(c) ? Directory.EnumerateDirectories(c).Order(StringComparer.Ordinal).LastOrDefault() : null;
+        return Repo.CaptureDirs.LastOrDefault();
     }
 
     /// <summary>The sum of the signed deltas of every patch of a graph, as a delta.</summary>
     static Delta Integrated(Run r, string graph) => r.Export.PatchesOf(graph).Aggregate(new Delta(), (d, p) => d + p.Delta());
 
     [Fact]
-    public void Fixtures_replay_into_a_master_graph_and_a_service_tree()
+    public void The_estate_replays_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Estate);
+
+    [Trait("Category", "Fixtures")]
+    [FixturesFact]
+    public void Fixtures_replay_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Fixtures);
+
+    static void A_capture_replays_into_a_master_graph_and_a_service_tree(string dir)
     {
-        var r = Replay(Path.Combine(Repo.Fixtures));
+        var r = Replay(dir);
         Assert.Equal(0, r.Stats.Rejected);
-        Assert.True(r.Stats.Rows["flows"] > 0 && r.Stats.Rows["pods"] > 0 && r.Stats.Rows["resources"] > 0 && r.Stats.Rows["metrics"] > 0 && r.Stats.Rows["events"] > 0 && r.Stats.Rows["activity"] > 0 && r.Stats.Rows["resourceMetrics"] > 0);
+        string[] sources = ["flows", "pods", "resources", "metrics", "events", "activity", "resourceMetrics"];
+        Assert.All(sources, s => Assert.True(r.Stats.Rows.GetValueOrDefault(s) > 0, $"no rows of source {s}"));
         Assert.True(r.Engine.Master.State.EntityCount > 0);
         Assert.True(r.Engine.Graph("serviceTree").State.EntityCount > 0);
         var cat = Repo.LoadExamples(out _);
@@ -50,9 +56,15 @@ public class ReplayTests
     }
 
     [Fact]
-    public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests()
+    public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_estate() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Estate);
+
+    [Trait("Category", "Fixtures")]
+    [FixturesFact]
+    public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_fixtures() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Fixtures);
+
+    static void T7_replay_is_deterministic_same_inputs_same_patches_and_digests(string dir)
     {
-        var a = Replay(Repo.Fixtures); var b = Replay(Repo.Fixtures);
+        var a = Replay(dir); var b = Replay(dir);
         Assert.Equal(a.Engine.StateDigest(), b.Engine.StateDigest());
         foreach (var g in a.Engine.Graphs)
         {
@@ -64,10 +76,17 @@ public class ReplayTests
 
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
-    public void T6_batch_invariance_chunking_changes_patches_but_not_the_result(int chunk)
+    public void T6_batch_invariance_chunking_changes_patches_but_not_the_result_on_the_estate(int chunk) => T6_batch_invariance_chunking_changes_patches_but_not_the_result(Repo.Estate, chunk);
+
+    [Trait("Category", "Fixtures")]
+    [FixturesTheory]
+    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
+    public void T6_batch_invariance_chunking_changes_patches_but_not_the_result_on_the_fixtures(int chunk) => T6_batch_invariance_chunking_changes_patches_but_not_the_result(Repo.Fixtures, chunk);
+
+    static void T6_batch_invariance_chunking_changes_patches_but_not_the_result(string dir, int chunk)
     {
-        var reference = Replay(Repo.Fixtures, chunk: 2000);
-        var r = Replay(Repo.Fixtures, chunk: chunk);
+        var reference = Replay(dir, chunk: 2000);
+        var r = Replay(dir, chunk: chunk);
         Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
         foreach (var g in r.Engine.Graphs)
         {

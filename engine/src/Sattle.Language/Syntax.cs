@@ -47,7 +47,12 @@ public static class Lexer
                     if (src[j] == '\\' && j + 1 < src.Length)
                     {
                         j++;
-                        switch (src[j]) { case 'n': sb.Append('\n'); break; case 't': sb.Append('\t'); break; case 'r': sb.Append('\r'); break; default: sb.Append(src[j]); break; }
+                        switch (src[j])       // the escapes the printer writes (JSON)
+                        {
+                            case 'n': sb.Append('\n'); break; case 't': sb.Append('\t'); break; case 'r': sb.Append('\r'); break; case 'b': sb.Append('\b'); break; case 'f': sb.Append('\f'); break;
+                            case 'u' when j + 4 < src.Length && int.TryParse(src.AsSpan(j + 1, 4), System.Globalization.NumberStyles.AllowHexSpecifier, System.Globalization.CultureInfo.InvariantCulture, out var code): sb.Append((char)code); j += 4; break;
+                            default: sb.Append(src[j]); break;
+                        }
                     }
                     else sb.Append(src[j]);
                     j++;
@@ -128,12 +133,18 @@ public sealed record Ref(string? Alias, string Name, Pos Pos)
 }
 public sealed record Import(string Module, string Version, string? Digest, string Alias, Pos Pos, Pos DigestPos);
 public sealed record VType(string Kind, string? Item, Ref? Target, Pos Pos);
-public sealed record Member(string Name, string? Was, bool Optional, VType Type, bool Nullable, string? Unit, TeleMod? Tele, string? Doc, Pos Pos, List<(Value Value, string Role)>? Roles = null, string? TreeRole = null);
+
+/// <summary>What a relationship type says about its two ends, declared with `kind` and served with the ontology for a viewer to draw and filter by. The engine reads none of it. `communication`: the source was observed talking to the target. `composition`: one end is a part of the other or is carried by it (which end is the whole is the type's own matter). `dependency`: the source needs the target to work, so a failure of the target reaches the source. `support`: the source is a record about the target (evidence, a measurement, a rule) and no part of the modelled system.</summary>
+public static class RelationshipKinds
+{
+    public static readonly string[] All = ["communication", "composition", "dependency", "support"];
+}
+public sealed record Member(string Name, string? Was, bool Optional, VType Type, bool Nullable, string? Unit, TeleMod? Tele, string? Doc, Pos Pos, List<(Value Value, string Role)>? Roles = null, string? TreeRole = null, bool Label = false);
 public sealed record TeleMod(string Temporality, string Combine, long PeriodNs);
 
 public abstract record Decl(string? Doc, Pos Pos);
 public sealed record EntityDecl(bool Abstract, string Name, string? Was, List<Ref> Supers, List<Member> Members, string? Doc, Pos Pos) : Decl(Doc, Pos);
-public sealed record RelDecl(bool Abstract, string Name, string? Was, Ref? Super, List<Ref> Sources, List<Ref> Targets, List<Member> Members, string? Doc, Pos Pos, bool Hierarchy = false) : Decl(Doc, Pos);
+public sealed record RelDecl(bool Abstract, string Name, string? Was, Ref? Super, List<Ref> Sources, List<Ref> Targets, List<Member> Members, string? Doc, Pos Pos, bool Hierarchy = false, string? Kind = null) : Decl(Doc, Pos);
 public sealed record ExtendDecl(Ref Target, List<Member> Members, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record ConstraintDecl(string? Name, string Kind, Ref Target, string? Prop, string[] Values, decimal? Min, decimal? Max, string? Pattern, string? Side, long CardMin, long CardMax, string[] KeyProps, bool Warning, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record KeyComp(string Name, string Kind, string? Canonicalizer, Pos Pos);
@@ -182,9 +193,11 @@ public sealed record AggDecl(string Target, string Fn, Expr? Value, Expr? Weight
 public sealed record GroupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos) : Step(Pos);
 public sealed record WindowStep(string On, long WidthNs, string Late, Pos Pos) : Step(Pos);
 public sealed record RetainStep(string On, long AgeNs, Pos Pos) : Step(Pos);
-public sealed record SeriesStep(string Graph, List<string> Paths, long WithinNs, Pos Pos) : Step(Pos);
-public sealed record RollupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos) : Step(Pos);
-public sealed record ThresholdStep(Expr Value, List<(string Name, Expr Value)> Keys, decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial, string As, Pos Pos, Expr? AboveE = null, Expr? EnterE = null, Expr? BelowE = null, Expr? ExitE = null) : Step(Pos);
+/// <summary>`Fills[i]`: the fill value of path i, a constant for a covered window without a record (Def. 7.15). `TtlNs`: the time to live after which an element without a record is in no data (Def. 7.16).</summary>
+public sealed record SeriesStep(string Graph, List<string> Paths, long WithinNs, Pos Pos, List<decimal?>? Fills = null, long? TtlNs = null) : Step(Pos);
+/// <summary>`NoDataAny`: the key is in no data when one member is; otherwise when all are (Def. 7.16).</summary>
+public sealed record RollupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos, bool NoDataAny = false) : Step(Pos);
+public sealed record ThresholdStep(Expr Value, List<(string Name, Expr Value)> Keys, decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial, string As, Pos Pos, Expr? AboveE = null, Expr? EnterE = null, Expr? BelowE = null, Expr? ExitE = null, string? NoData = null, bool NoDataIgnore = false) : Step(Pos);
 
 public abstract record Expr(Pos Pos);
 public sealed record LitExpr(Value Value, Pos Pos) : Expr(Pos);
@@ -279,7 +292,8 @@ public sealed class Parser
                     Ref? sup = TrySym(":") ? RefP() : null;
                     Sym("("); var src = RefAlt(); Sym(")"); Sym("->"); Sym("("); var tgt = RefAlt(); Sym(")");
                     var hierarchy = TryWord("hierarchy");
-                    return new RelDecl(abs, name, was, sup, src, tgt, MembersOrSemi(), doc, pos, hierarchy);
+                    var kind = TryWord("kind") ? (Cur.Kind == T.Ident && RelationshipKinds.All.Contains(Cur.Text) ? Next().Text : throw Err("expected a relationship kind: " + string.Join(", ", RelationshipKinds.All))) : null;
+                    return new RelDecl(abs, name, was, sup, src, tgt, MembersOrSemi(), doc, pos, hierarchy, kind);
                 }
             case "extend": { var t = RefP(); return new ExtendDecl(t, Members(), doc, pos); }
             case "constraint": return Constraint(doc, pos);
@@ -317,7 +331,7 @@ public sealed class Parser
     (decimal N, Expr? E) NumOrExpr()
     {
         var save = p;
-        if (IsSym("-") || Cur.Kind is T.Int or T.Dec) { var n = Number(); if (IsWord("for") || IsWord("below") || IsWord("then")) return (n, null); p = save; }
+        if (Cur.Kind is T.Int or T.Dec || (IsSym("-") && p + 1 < toks.Count && toks[p + 1].Kind is T.Int or T.Dec)) { var n = Number(); if (IsWord("for") || IsWord("below") || IsWord("then")) return (n, null); p = save; }
         return (0, Expression());
     }
 
@@ -351,7 +365,7 @@ public sealed class Parser
         {
             var doc = Docs();
             var pos = Cur.Pos; var name = Ident(); var was = TryWord("was") ? Ident() : null; var opt = TrySym("?"); Sym(":");
-            var vt = VTypeP(); var nullable = false; string? unit = null; TeleMod? tele = null; List<(Value, string)>? roles = null; string? treeRole = null;
+            var vt = VTypeP(); var nullable = false; string? unit = null; TeleMod? tele = null; List<(Value, string)>? roles = null; string? treeRole = null; var label = false;
             while (true)
             {
                 if (TryWord("roles"))
@@ -375,6 +389,7 @@ public sealed class Parser
                 else
                 if (TryWord("treerole")) treeRole = Cur.Kind == T.Ident && Cur.Text is "own" or "rolledUp" or "severity" or "kind" or "healthy" or "degraded" or "unhealthy" or "unknown" or "curatedBy" or "critical" or "hidden" or "mode" or "share" ? Next().Text : throw Err("expected own, rolledUp, severity, kind, healthy, degraded, unhealthy, unknown, curatedBy, critical, hidden, mode or share");
                 else if (TryWord("nullable")) nullable = true;
+                else if (TryWord("label")) label = true;
                 else if (TryWord("unit")) unit = Str();
                 else if (TryWord("telemetry"))
                 {
@@ -385,7 +400,7 @@ public sealed class Parser
                 else break;
             }
             Sym(";");
-            l.Add(new Member(name, was, opt, vt, nullable, unit, tele, doc, pos, roles, treeRole));
+            l.Add(new Member(name, was, opt, vt, nullable, unit, tele, doc, pos, roles, treeRole, label));
         }
         Sym("}");
         return l;
@@ -668,20 +683,26 @@ public sealed class Parser
         }
         if (TryWord("series"))
         {
-            var g = Ident(); var paths = new List<string>();
-            do { paths.Add(PathText()); } while (TrySym(","));
+            var g = Ident(); var paths = new List<string>(); var fills = new List<decimal?>();
+            do { paths.Add(PathText()); fills.Add(TryWord("fill") ? Number() : null); } while (TrySym(","));
             Word("within");
             if (Cur.Kind != T.Duration) throw Err("expected a duration");
-            return new SeriesStep(g, paths, Lexer.DurationNs(Next().Text), pos);
+            var within = Lexer.DurationNs(Next().Text);
+            long? ttl = null;
+            if (TryWord("ttl")) { if (Cur.Kind != T.Duration) throw Err("expected a duration"); ttl = Lexer.DurationNs(Next().Text); }
+            return new SeriesStep(g, paths, within, pos, fills, ttl);
         }
-        if (TryWord("rollup")) { Word("by"); var k = Rec(); Word("combine"); return new RollupStep(k, AggList(), pos); }
+        if (TryWord("rollup")) { Word("by"); var k = Rec(); Word("combine"); var aggs = AggList(); var any = TryWord("nodata"); if (any) Word("any"); return new RollupStep(k, aggs, pos, any); }
         if (TryWord("threshold"))
         {
             var v = Expression(); Word("by"); var k = Rec();
             Word("above"); var (above, aboveE) = NumOrExpr(); Word("for"); var (en, enE) = NumOrExpr(); Word("then"); var high = Str();
             Word("below"); var (below, belowE) = NumOrExpr(); Word("for"); var (ex, exE) = NumOrExpr(); Word("then"); var low = Str();
-            Word("initial"); var init = Str(); Word("as"); var asn = Ident();
-            return new ThresholdStep(v, k, above, (long)en, high, below, (long)ex, low, init, asn, pos, aboveE, enE, belowE, exE);
+            Word("initial"); var init = Str();
+            string? noData = null; var ignore = false;
+            if (TryWord("nodata")) { if (TryWord("then")) noData = Str(); else { Word("ignore"); ignore = true; } }
+            Word("as"); var asn = Ident();
+            return new ThresholdStep(v, k, above, (long)en, high, below, (long)ex, low, init, asn, pos, aboveE, enE, belowE, exE, noData, ignore);
         }
         if (TryWord("distinct")) return new DistinctStep(pos);
         if (TryWord("traverse"))

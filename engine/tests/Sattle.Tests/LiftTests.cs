@@ -59,7 +59,8 @@ public class LiftTests
         Assert.Equal(2, lifted.Graph("serviceTree").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"));
     }
 
-    [Fact]
+    [Trait("Category", "Fixtures")]
+    [FixturesFact]
     public void On_lab_fixtures_the_lift_statements_give_the_graphs_and_telemetry_of_the_hand_written_ones()
     {
         var dir = Repo.Fixtures; var cluster = Repo.ClusterOf(dir);
@@ -70,7 +71,7 @@ public class LiftTests
     [CaptureFact]
     public void On_the_newest_real_capture_the_lift_statements_give_the_graphs_and_telemetry_of_the_hand_written_ones()
     {
-        var dir = Directory.Exists(Repo.Captures) ? Directory.EnumerateDirectories(Repo.Captures).Order(StringComparer.Ordinal).LastOrDefault() : null;
+        var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
         var cluster = Repo.ClusterOf(dir);
         AssertSame(Run(Files(dir), dir, cluster), Run(Files(dir, handWritten: true), dir, cluster));

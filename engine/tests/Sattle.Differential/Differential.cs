@@ -64,7 +64,7 @@ public static class Differential
     {
         for (var seed = 0; seed < seeds; seed++)
         {
-            var log = Logs.Generate(world.Sources, world.AdvanceShare, seed, length);
+            var log = world.Log(seed, length);
             if (FirstMismatch(world, log, seed, reordered) is null) continue;
             var small = Shrink(world, log, seed, reordered);
             return $"world '{world.Name}' ({world.Kind}), seed {seed}, {log.Length} inputs shrunk to {small.Length}:\n{Logs.Print(small)}\n{FirstMismatch(world, small, seed, reordered)}";

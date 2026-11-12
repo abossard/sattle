@@ -3,25 +3,25 @@ module sattle.infra @ 1.0.0;
 
 /// ready is the Ready condition of the pod.
 entity Pod     {
-  cluster: Text; namespace: Text; name: Text; phase?: Text; ready?: Boolean;
+  cluster: Text; namespace: Text; name: Text label; phase?: Text; ready?: Boolean;
   warnings?: Integer telemetry delta sum every 60s;
 }
-entity Node    { cluster: Text; name: Text; resourceId?: Text; forwardRate?: Decimal telemetry gauge max every 60s; dropRate?: Decimal telemetry gauge max every 60s; }
-entity Service { cluster: Text; namespace: Text; name: Text; }
-entity Deployment { cluster: Text; namespace: Text; name: Text; replicas?: Integer; }
-relationship Backs (Pod) -> (Service);
-relationship RunsOn (Pod) -> (Node);
+entity Node    { cluster: Text; name: Text label; resourceId?: Text; forwardRate?: Decimal telemetry gauge max every 60s; dropRate?: Decimal telemetry gauge max every 60s; }
+entity Service { cluster: Text; namespace: Text; name: Text label; }
+entity Deployment { cluster: Text; namespace: Text; name: Text label; replicas?: Integer; }
+relationship Backs (Pod) -> (Service) kind composition;
+relationship RunsOn (Pod) -> (Node) kind composition;
 /// The Deployment that owns the pod through its ReplicaSet.
-relationship ControlledBy (Pod) -> (Deployment);
+relationship ControlledBy (Pod) -> (Deployment) kind composition;
 
 /// One Kubernetes warning event occurrence on a pod, kept as evidence. eventId is the event uid and its occurrence count.
-entity WarningEvent { eventId: Text; time: Instant; reason: Text; message?: Text; count: Integer; }
-relationship About (WarningEvent) -> (Pod);
+entity WarningEvent { eventId: Text; time: Instant; reason: Text label; message?: Text; count: Integer; }
+relationship About (WarningEvent) -> (Pod) kind support;
 identity warningEvent for WarningEvent version "1" { id: Text by exact; }
 /// One completed request of the Kubernetes API server (AKS audit, admin categories), kept as evidence.
-entity AuditEvent { eventId: Text; time: Instant; verb: Text; resource: Text; namespace?: Text; name?: Text; user?: Text; code?: Integer; }
+entity AuditEvent { eventId: Text; time: Instant; verb: Text; resource: Text label; namespace?: Text; name?: Text; user?: Text; code?: Integer; }
 identity auditEvent for AuditEvent version "1" { id: Text by exact; }
-relationship Calls (Pod) -> (Pod) {
+relationship Calls (Pod) -> (Pod) kind communication {
   flows?: Integer telemetry delta sum every 60s;
   drops?: Integer telemetry delta sum every 60s;
 }

@@ -12,6 +12,10 @@ public sealed record World(string Name, string Kind, IReadOnlyList<SourceFile> F
     public IReadOnlyList<string> Witnesses { get; init; } = [];
     /// <summary>The telemetry retention of the space (Def. 7.13), for the engine and the reference alike; the default is 48 hours.</summary>
     public long RetentionNs { get; init; } = 48 * 60 * Minute;
+    /// <summary>The sources that report progress in the logs of this world (Def. 10.9), and the share of the inputs that are such reports.</summary>
+    public IReadOnlyList<string> Reporting { get; init; } = [];
+    public double ProgressShare { get; init; }
+    public System.Collections.Immutable.ImmutableArray<Sattle.Reference.Input> Log(int seed, int length) => Logs.Generate(Sources, AdvanceShare, seed, length, (Reporting, ProgressShare));
     static readonly ConcurrentDictionary<string, Catalog> catalogs = new();
     public Catalog Catalog => catalogs.GetOrAdd(Name, _ => EngineRun.Load(Files));
     public override string ToString() => Name;
@@ -200,6 +204,33 @@ public static class Worlds
           let st = s |> threshold v by { c: c } above 3 for 2 then "on" below 1 for 2 then "off" initial "off" as state;
           emit entity Signal from st identity signal(k: c) set { k: c, state: state };
         """, 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
+    /// <summary>Def. 7.15 and 7.16 on one element: `hits` are filled with 0 where the source of the hits has reported and the item existed, so a covered silence ends a state; an item without a record for three minutes is in no data, which the threshold gives as "silent", and data that return end it.</summary>
+    static World Silence(string name, string kind, string series) => View(name, kind, Signal, $$"""
+          let m = match master (i: base.Item);
+          let s = m |> {{series}};
+          let st = s |> threshold v by { c: c } above 3 for 1 then "on" below 1 for 2 then "off" initial "off" nodata then "silent" as state;
+          emit entity Signal from st identity signal(k: c) set { k: c, state: state };
+        """, 0.3, Dense) with { Reporting = ["b"], ProgressShare = 0.15, Witnesses = ["state=t:on", "state=t:off", "state=t:silent"] };
+    public static readonly World Fill = Silence("fill and no data", "Series with fill and ttl, Map, Threshold",
+        "series master i.hits fill 0 within 5m ttl 3m |> select { c: i.k, windowStart: windowStart, v: hits, noData: noData }");
+    public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Threshold",
+        "series master i.hits within 5m ttl 2m |> select { c: i.k, windowStart: windowStart, v: hits, noData: noData }");
+    public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Threshold",
+        "series master i.hits fill 0 within 5m ttl 2m |> rollup by { c: i.g } combine { v: sum(hits) }");
+    public static readonly World RollupAny = Silence("roll-up in no data when one member is", "Series with ttl, Rollup, Threshold",
+        "series master i.hits within 5m ttl 2m |> rollup by { c: i.g } combine { v: sum(hits) } nodata any");
+
+    /// <summary>A threshold whose `above` and `enterAfter` come from the row (the item's `n`), with a constant `below` of 1: an item with n below 2 gives parameters that are no state machine, and a revised item changes the parameters of every window of its key.</summary>
+    public static readonly World RowParameters = View("threshold with parameters of the row", "Series, Map, Threshold", Signal, """
+          let m = match master (i: base.Item);
+          let s = m |> series master i.hits within 3m |> select { c: i.k, windowStart: windowStart, v: hits, hi: i.n, run: i.n - 1 };
+          let st = s |> threshold v by { c: c } above hi for run then "on" below 1 for 2 then "off" initial "off" as state;
+          emit entity Signal from st identity signal(k: c) set { k: c, state: state };
+        """, 0.3,
+        [
+            new("a", (r, now) => Row(("k", Text(r, "k", 2)), ("g", Value.Text("g0")), ("n", Value.Integer(r.Next(4))), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),
+            .. Dense.Skip(1),
+        ]) with { Witnesses = ["state=t:on", "state=t:off"] };
     public static readonly World SharedWindow = View("shared window", "Series, Rollup, EmitEntity", """
         entity Signal { k: Text; v?: Integer telemetry delta sum every 60s; }
         identity signal for Signal version "1" { k: Text by lowerInvariant; }
@@ -316,7 +347,7 @@ public static class Worlds
               let s = m |> series master i.hits within 3m |> rollup by { c: i.g } combine { v: sum(hits) };
               emit entity Signal from s identity signal(k: c) set { k: c, v: v };
             """, 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, TwoKeyRules,
+        Hysteresis, RowParameters, Fill, TimeToLive, RollupAll, RollupAny, TwoKeyRules,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

@@ -41,9 +41,18 @@ public sealed record FType(Ty Ty, bool Req, Role Role, string? Prov = null)
 /// <summary>A column of a row type. Origin identifies the Match variable an entity or relationship column comes from.</summary>
 public sealed record Col(string Name, FType T, string? Origin = null);
 
+/// <summary>Two columns of one row type have the same name. The checker reports it at the operator that would produce them.</summary>
+public sealed class DuplicateColumnException(string name) : Exception($"two columns are named '{name}'");
+
 public sealed class Schema(IReadOnlyList<Col> cols, long window = 0)
 {
-    readonly Dictionary<string, Col> by = cols.ToDictionary(c => c.Name, StringComparer.Ordinal);
+    readonly Dictionary<string, Col> by = ByName(cols);
+    static Dictionary<string, Col> ByName(IReadOnlyList<Col> cols)
+    {
+        var by = new Dictionary<string, Col>(StringComparer.Ordinal);
+        foreach (var c in cols) if (!by.TryAdd(c.Name, c)) throw new DuplicateColumnException(c.Name);
+        return by;
+    }
     public IReadOnlyList<Col> Cols { get; } = cols;
     public long Window { get; } = window;
     public Col? Find(string name) => by.GetValueOrDefault(name);
@@ -84,14 +93,23 @@ public sealed record TGroup(string Name, string Id, IReadOnlyDictionary<string, 
     : TOp(Name, Id, "Group", Inputs, Out);
 public sealed record TRetain(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long AgeNs) : TOp(Name, Id, "Retain", Inputs, Out);
 public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, string Late) : TOp(Name, Id, "Window", Inputs, Out);
-public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind);
-public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar)
+/// <summary>`Fill`: the value a covered window without a stored record has (Def. 7.15), or null.</summary>
+public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
+/// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>
+public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar, long? TtlNs = null)
     : TOp(Name, Id, "Series", Inputs, Out);
-public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs)
+/// <summary>`Members`: the columns of the input that tell the members of a key apart (its graph data columns, without the window). `NoData`: the input carries the `noData` column of a Series with a time to live; the roll-up leaves the records of members in no data out and marks a key whose members are all in no data (`NoDataAny`: one member suffices).</summary>
+public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs, bool NoData = false, bool NoDataAny = false, IReadOnlyList<string>? Members = null)
     : TOp(Name, Id, "Rollup", Inputs, Out);
 public sealed record TThreshold(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Value, IReadOnlyList<(string Name, TExpr Value)> Keys, string Target,
     decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial,
-    TExpr? AboveBy = null, TExpr? EnterBy = null, TExpr? BelowBy = null, TExpr? ExitBy = null) : TOp(Name, Id, "Threshold", Inputs, Out);
+    TExpr? AboveBy = null, TExpr? EnterBy = null, TExpr? BelowBy = null, TExpr? ExitBy = null, string? NoData = null, bool NoDataIgnore = false) : TOp(Name, Id, "Threshold", Inputs, Out)
+{
+    /// <summary>The column a Series with a time to live adds and a Rollup passes on.</summary>
+    public const string NoDataColumn = "noData";
+    /// <summary>The input has the no-data column: the Threshold reads it and declares what no data gives (`NoData`), or ignores it (`NoDataIgnore`).</summary>
+    public bool ReadsNoData => NoData is not null || NoDataIgnore;
+}
 public sealed record TEmitEntity(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TypeId, bool Update, TExpr EntityId, IReadOnlyList<TSet> Sets, string? Rule)
     : TOp(Name, Id, "EmitEntity", Inputs, Out);
 public sealed record TEmitRel(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TypeId, bool Update, string Key, TExpr Source, TExpr Target, IReadOnlyList<TSet> Sets, string Retype, string? Rule)

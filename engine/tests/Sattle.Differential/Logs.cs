@@ -22,7 +22,8 @@ public static class Logs
     /// <summary>A time around the frontier: up to six minutes late, up to two minutes ahead, in steps of 20 s.</summary>
     public static Value Near(Random r, long now) => Value.Instant(now + r.Next(-18, 7) * 20 * Second);
 
-    public static ImmutableArray<Input> Generate(IReadOnlyList<SourceSpec> sources, double advanceShare, int seed, int length)
+    /// <summary>`progress`: the sources that report their progress (Def. 10.9) and the share of the inputs that are such reports. A report lies up to two minutes behind or one minute ahead of the frontier, so a source can lag and catch up; with a share of zero the log has none, and the random choices are those of a log without them.</summary>
+    public static ImmutableArray<Input> Generate(IReadOnlyList<SourceSpec> sources, double advanceShare, int seed, int length, (IReadOnlyList<string> Sources, double Share)? progress = null)
     {
         var r = new Random(seed);
         var log = ImmutableArray.CreateBuilder<Input>();
@@ -31,6 +32,7 @@ public static class Logs
         while (log.Count < length)
         {
             if (r.NextDouble() < advanceShare) { now += r.Next(1, 5) * 30 * Second; log.Add(new AdvanceInput(now)); continue; }
+            if (progress is { Share: > 0 } reports && r.NextDouble() < reports.Share) { log.Add(new ProgressInput(reports.Sources[r.Next(reports.Sources.Count)], now + r.Next(-4, 3) * 30 * Second)); continue; }
             var s = sources[r.Next(sources.Count)];
             var rows = held[s.Name];
             if (s.Key is { } key)
@@ -78,6 +80,7 @@ public static class Logs
     public static string Print(IEnumerable<Input> log) => string.Join("\n", log.Select((x, i) => $"  {i,2}: " + x switch
     {
         AdvanceInput a => $"advance to {(a.Frontier - Origin) / Second:+0;-0}s",
+        ProgressInput p => $"progress of {p.Source} to {(p.Until - Origin) / Second:+0;-0}s",
         RowInput row => $"{row.Source} {(row.Weight > 0 ? "+" : "")}{row.Weight} {{ {string.Join(", ", row.Fields.Where(f => f.Value is not NullValue).Select(f => f.Key + ": " + Show(f.Value)))} }}",
         _ => x.ToString(),
     }));

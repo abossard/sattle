@@ -171,6 +171,25 @@ public class EstateTests
         Assert.True(e.Graph("demoClosure").State.RelCount > baseEdges, $"closure {e.Graph("demoClosure").State.RelCount} against {baseEdges} edges");
     }
 
+    /// <summary>What a viewer needs to name and draw a graph is ontology data: the label of an entity type, the kind of a relationship type, and what the graph is in the words of its projection.</summary>
+    [Fact]
+    public void The_ontology_endpoint_serves_the_label_of_each_entity_type_and_the_kind_of_each_relationship_type_and_the_space_describes_each_graph()
+    {
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Cluster = "synth" });
+        var onto = h.Ontology("health");
+        string? Of(string list, string type, string field, bool id) => onto[list]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1] == type)![field] is { } v ? (id ? v["value"] : v)!.GetValue<string>() : null;
+        Assert.Equal("name", Of("entityTypes", "Component", "label", true)!.Split('.')[^1]);
+        Assert.Equal("summary", Of("entityTypes", "Evidence", "label", true)!.Split('.')[^1]);
+        Assert.Equal(("composition", "dependency", "support"), (Of("relationshipTypes", "Contains", "kind", false), Of("relationshipTypes", "DependsOn", "kind", false), Of("relationshipTypes", "Measures", "kind", false)));
+        var tree = h.Ontology("healthTree");
+        var contains = tree["relationshipTypes"]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1] == "Contains")!;
+        Assert.Equal((true, "composition"), (contains["hierarchy"]!.GetValue<bool>(), contains["kind"]!.GetValue<string>()));      // two fields: a hierarchy is a composition, a composition need not be a hierarchy
+        Assert.Null(h.Ontology("master")["relationshipTypes"]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>() == "NoType")!["kind"]);
+        var graphs = h.SpaceInfo()["graphs"]!.AsArray().Where(g => g!["role"]!.GetValue<string>() != "catalog").ToList();
+        Assert.All(graphs, g => Assert.False(string.IsNullOrWhiteSpace(g!["description"]?.GetValue<string>()), $"graph {g["id"]} has no description"));
+        Assert.StartsWith("The service tree", graphs.Single(g => g!["id"]!.GetValue<string>() == "serviceTree")!["description"]!.GetValue<string>());
+    }
+
     [Fact]
     public void The_ontology_endpoint_of_the_health_graph_serves_value_roles_for_the_state_properties()
     {

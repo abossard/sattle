@@ -3,26 +3,26 @@ module acme.health @ 1.0.0;
 
 /// key is the lowercase component id (the identity), kind is the role in the model (workload, service, node, cluster, loadbalancer, network, eventhub). own is the worst severity of the component's own signals, severity the worst over everything that affects it. 0 healthy, 1 degraded, 2 unhealthy; no value means Unknown.
 entity Component {
-  key: Text; kind: Text; name: Text; azureType?: Text;
+  key: Text; kind: Text; name: Text label; azureType?: Text;
   own?: Integer; severity?: Integer; state?: Text roles { "Healthy": ok, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
   changes?: Integer telemetry delta sum every 60s;
   warnings?: Integer telemetry delta sum every 60s;
 }
 /// One signal of one component. degraded and unhealthy are the two threshold states (on or off), value the measured series.
 entity Signal {
-  component: Text; name: Text;
+  component: Text; name: Text label;
   value?: Decimal telemetry gauge max every 60s;
   degraded?: Text roles { "off": ok, "on": warning }; unhealthy?: Text roles { "off": ok, "on": danger };
 }
 /// One piece of evidence for a component: a single Activity Log operation or Kubernetes warning event, not a count. kind is activity or warning, summary the operation or the reason.
-entity Evidence { eventId: Text; kind: Text; time: Instant; summary: Text; detail?: Text; }
-relationship EvidenceFor (Evidence) -> (Component);
+entity Evidence { eventId: Text; kind: Text; time: Instant; summary: Text label; detail?: Text; }
+relationship EvidenceFor (Evidence) -> (Component) kind support;
 identity evidence for Evidence version "1" { id: Text by exact; }
-relationship Contains (Component) -> (Component);
-relationship DependsOn (Component) -> (Component);
+relationship Contains (Component) -> (Component) kind composition;
+relationship DependsOn (Component) -> (Component) kind dependency;
 /// a is affected by b: the roll-up edge. Contains and DependsOn both produce it, and every component affects itself.
-relationship Affects (Component) -> (Component);
-relationship Measures (Signal) -> (Component);
+relationship Affects (Component) -> (Component) kind dependency;
+relationship Measures (Signal) -> (Component) kind support;
 
 constraint enum Component.state in ["Healthy", "Degraded", "Unhealthy", "Unknown"];
 

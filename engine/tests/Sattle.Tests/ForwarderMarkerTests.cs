@@ -21,11 +21,12 @@ public class ForwarderMarkerTests
 
     static Dictionary<string, object> Meta(string name) => new() { ["uid"] = "u-" + name, ["name"] = name, ["namespace"] = "ns", ["resourceVersion"] = "1" };
     static object Obj(string kind, string name) => new Dictionary<string, object> { ["kind"] = kind, ["metadata"] = Meta(name) };
-    static string Watch(long seq, string at, string kind, string name) => Line("kubernetes-watch", at, seq, new { type = "ADDED", @object = Obj(kind, name) });
-    static string Marker(long seq, string at, string ev, string? path = null, object? extra = null) =>
-        Line("sattle-forwarder", at, seq, new Dictionary<string, object?> { ["at"] = at, ["event"] = ev, ["path"] = path, ["extra"] = extra }.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value));
-    static string ListItem(long seq, string at, string kind, string path, string name) =>
-        Line("kubernetes-list", at, seq, new Dictionary<string, object> { ["metadata"] = Meta(name) }, new { list = new { kind = kind + "List" }, path, relist = "start" });
+    static object? In(string? cluster) => cluster is null ? null : new { cluster };
+    static string Watch(long seq, string at, string kind, string name, string? cluster = null, string type = "ADDED") => Line("kubernetes-watch", at, seq, new { type, @object = Obj(kind, name) }, In(cluster));
+    static string Marker(long seq, string at, string ev, string? path = null, object? extra = null, string? cluster = null) =>
+        Line("sattle-forwarder", at, seq, new Dictionary<string, object?> { ["at"] = at, ["event"] = ev, ["path"] = path, ["extra"] = extra }.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value), In(cluster));
+    static string ListItem(long seq, string at, string kind, string path, string name, string? cluster = null) =>
+        Line("kubernetes-list", at, seq, new Dictionary<string, object> { ["metadata"] = Meta(name) }, new { list = new { kind = kind + "List" }, path, relist = "start", cluster });
 
     static int Count(Engine e, string type) => e.Master.State.Entities.Count(x => Ids.Name(x.Type) == type);
 
@@ -59,6 +60,46 @@ public class ForwarderMarkerTests
         var e = ReplayTests.Replay(Capture(lines), chunk: 1).Engine;
         Assert.Equal(2, Count(e, "Pod"));                                                       // the pod list was cut short
         Assert.Equal(0, Count(e, "Service"));                                                   // an empty complete list of services removes the service
+    }
+
+    /// <summary>A capture of several clusters: a full list is the complete set of one kind of one cluster. An object of another cluster is not in it and stays, with its own cluster.</summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void A_relist_of_one_cluster_leaves_the_objects_of_another_cluster_alone(bool bothRelist)
+    {
+        const string path = "/api/v1/pods";
+        var lines = new List<string>
+        {
+            Watch(1, "2026-01-01T10:00:00.000Z", "Pod", "a", "c1"), Watch(2, "2026-01-01T10:00:00.100Z", "Pod", "gone", "c1"), Watch(3, "2026-01-01T10:00:00.200Z", "Pod", "b", "c2"),
+            Watch(10, "2026-01-01T10:00:00.300Z", "Pod", "later", "c2"), Watch(11, "2026-01-01T10:00:00.400Z", "Pod", "gone2", "c2"),
+            Marker(4, "2026-01-01T10:05:00.000Z", "relist-start", path, cluster: "c1"),
+        };
+        if (bothRelist) lines.Add(Marker(5, "2026-01-01T10:05:00.050Z", "relist-start", path, cluster: "c2"));     // the lists of two clusters overlap in time
+        lines.Add(ListItem(6, "2026-01-01T10:05:00.100Z", "Pod", path, "a", "c1"));
+        if (bothRelist) lines.AddRange([ListItem(7, "2026-01-01T10:05:00.150Z", "Pod", path, "b", "c2"), ListItem(12, "2026-01-01T10:05:00.160Z", "Pod", path, "later", "c2")]);
+        lines.Add(Marker(8, "2026-01-01T10:05:00.300Z", "relist-end", path, cluster: "c1"));
+        if (bothRelist) lines.Add(Marker(9, "2026-01-01T10:05:00.350Z", "relist-end", path, cluster: "c2"));
+        lines.Add(Watch(13, "2026-01-01T10:06:00.000Z", "Pod", "later", "c2", "DELETED"));                          // the adapter still knows the other cluster's object, so its deletion is seen
+        var e = ReplayTests.Replay(Capture(lines), chunk: 1).Engine;
+        var pods = e.Master.State.Entities.Where(x => Ids.Name(x.Type) == "Pod").Select(x => x.Props.Text("d:sattle.infra/prop:cluster") + "/" + x.Props.Text("d:sattle.infra/prop:name")).Order().ToList();
+        Assert.Equal(bothRelist ? ["c1/a", "c2/b"] : ["c1/a", "c2/b", "c2/gone2"], pods);
+    }
+
+    /// <summary>Live input drops an envelope whose key it has seen (at least once delivery). The key of a list record is the object and its version, so an unchanged object has the same key in the next full list: there it still says that the object exists.</summary>
+    [Fact]
+    public void An_unchanged_object_of_a_second_relist_stays_in_a_live_run()
+    {
+        const string path = "/api/v1/pods";
+        string[] first = [Marker(1, "2026-01-01T10:00:00.000Z", "relist-start", path), ListItem(2, "2026-01-01T10:00:00.100Z", "Pod", path, "a"), ListItem(3, "2026-01-01T10:00:00.200Z", "Pod", path, "b"), Marker(4, "2026-01-01T10:00:00.300Z", "relist-end", path)];
+        string[] second = [Marker(5, "2026-01-01T10:05:00.000Z", "relist-start", path), first[1], Marker(6, "2026-01-01T10:05:00.300Z", "relist-end", path)];      // a is unchanged: the same record, the same key; b is gone
+        using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Cluster = "c" });
+        h.StartLive(new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "c", FlushAtEnd = false });
+        var n = 0;
+        foreach (var line in first.Concat(second)) h.LiveEnvelope("fake", line, $"{{\"n\":{n++}}}");
+        Assert.Equal(SpaceHost.LiveResult.Duplicate, h.LiveEnvelope("fake", first[1], $"{{\"n\":{n}}}"));          // outside a relist the same record is a duplicate
+        h.LiveFlush();
+        Assert.Equal(["a"], h.Engine.Master.State.Entities.Where(x => Ids.Name(x.Type) == "Pod").Select(x => x.Props.Text("d:sattle.infra/prop:name")).Order());
     }
 
     [Theory]

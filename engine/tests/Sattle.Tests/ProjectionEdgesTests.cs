@@ -147,6 +147,7 @@ public class ProjectionEdgesTests
             var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json"))).RootElement.GetProperty("graphs");
             var names = manifest.EnumerateObject().Select(x => x.Name).Order().ToList();
             Assert.Equal(Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => g.Name).Append("master").Distinct().Order().ToList(), names);
+            Assert.All(manifest.EnumerateObject(), g => Assert.False(string.IsNullOrWhiteSpace(g.Value.GetProperty("description").GetString()), $"graph {g.Name} has no description"));       // what the graph is, in the words of its projection
             foreach (var g in names.Where(n => !Exempt.ContainsKey(n)))
             {
                 var final = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, $"{g}.final.snapshot.json"))).RootElement.GetProperty("extent");

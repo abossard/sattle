@@ -1,7 +1,7 @@
 /// Azure resource ontology, observed through Azure Resource Graph.
 module sattle.azure @ 1.0.0;
 
-entity AzureResource { resourceId: Text; name: Text; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text;
+entity AzureResource { resourceId: Text; name: Text label; type: Text; location?: Text; resourceGroup?: Text; subscriptionId?: Text; parentId?: Text;
   changes?: Integer telemetry delta sum every 60s;
   cpuPercent?: Decimal telemetry gauge max every 60s;
   memoryPercent?: Decimal telemetry gauge max every 60s;
@@ -12,7 +12,7 @@ entity AzureResource { resourceId: Text; name: Text; type: Text; location?: Text
 }
 
 /// One Activity Log operation, kept as evidence: the event itself, not a count.
-entity ActivityEvent { eventId: Text; time: Instant; operation: Text; status: Text; caller?: Text; }
-relationship Concerns (ActivityEvent) -> (AzureResource);
+entity ActivityEvent { eventId: Text; time: Instant; operation: Text label; status: Text; caller?: Text; }
+relationship Concerns (ActivityEvent) -> (AzureResource) kind support;
 identity activityEvent for ActivityEvent version "1" { id: Text by exact; }
 identity azureResource for AzureResource version "1" { id: Text by lowerInvariant; }

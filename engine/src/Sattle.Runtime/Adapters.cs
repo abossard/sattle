@@ -29,6 +29,13 @@ public interface ISourceAdapter
     void Consume(Envelope e, IRowSink sink);
 }
 
+/// <summary>An adapter for which a record that is delivered again can still say something. Live input drops an envelope whose key it has seen; it asks first whether this delivery counts.</summary>
+public interface IRedelivery
+{
+    /// <summary>True when the record is to be consumed although its key was seen before. Reads the adapter's state, changes nothing.</summary>
+    bool Counts(Envelope e);
+}
+
 public static class AdapterRegistry
 {
     public static IReadOnlyList<ISourceAdapter> Create(string cluster) =>
@@ -68,7 +75,7 @@ public static class RowDef
 }
 
 /// <summary>Kubernetes list and watch records, and Events. Object upserts become signed rows (retract the old row, insert the new one), deletes retract.</summary>
-public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
+public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, IRedelivery
 {
     /// <summary>The cluster of the record being consumed: the cluster the run was given, or the `cluster` of the envelope meta (a capture of several clusters).</summary>
     string cluster = "";
@@ -84,13 +91,20 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
     ];
     public bool Handles(string s) => s is "kubernetes-list" or "kubernetes-watch" or "sattle-forwarder";
 
+    /// <summary>The rows the adapter has emitted, per object. An object is known by its cluster and uid (`Key`); a row ends with the cluster it was written with, so a retraction repeats it whatever record causes it.</summary>
     readonly Dictionary<string, string?[]> pods = [], services = [], nodes = [], deployments = [];
     readonly Dictionary<string, List<string?[]>> slices = [];
     readonly Dictionary<string, long> eventCounts = [];
     public long Events { get; private set; }
 
-    /// <summary>Full lists in progress per API path (between relist-start and relist-end): the uids seen so far.</summary>
+    /// <summary>Full lists in progress per cluster and API path (between relist-start and relist-end): the objects seen so far.</summary>
     readonly Dictionary<string, HashSet<string>> relists = [];
+
+    static string Key(string cluster, string id) => cluster + "\n" + id;
+    string ClusterOf(Envelope e) => e.HasMeta && e.Meta.S("cluster") is { Length: > 0 } mc ? mc : defaultCluster;
+
+    /// <summary>A record of a full list in progress says that its object exists, each time it is delivered: an unchanged object has the same key in every list.</summary>
+    public bool Counts(Envelope e) => e.Source == "kubernetes-list" && e.HasMeta && e.Meta.S("path") is { } path && relists.ContainsKey(Key(ClusterOf(e), path));
 
     /// <summary>The forwarder's own records (lab/CAPTURE-FORMAT.md). A relist is the complete set of one kind: what the engine knows of that kind and the list did not mention is deleted. Loss markers become evidence on the telemetry windows that contain them.</summary>
     void Marker(Envelope e, IRowSink sink)
@@ -99,15 +113,17 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
         var at = p.S("at") is { } t && Norm.TryParseInstant(t, out var ns) ? ns : e.CapturedNs;
         switch (ev)
         {
-            case "relist-start" when path is not null: relists[path] = []; break;
-            case "relist-end" when path is not null && relists.Remove(path, out var seen):
+            case "relist-start" when path is not null: relists[Key(cluster, path)] = []; break;
+            case "relist-end" when path is not null && relists.Remove(Key(cluster, path), out var seen):
+                var mine = Key(cluster, "");
+                List<string> Gone(IEnumerable<string> known) => [.. known.Where(k => k.StartsWith(mine, StringComparison.Ordinal) && !seen.Contains(k))];       // the list is the complete set of this cluster only
                 switch (path[(path.LastIndexOf('/') + 1)..])
                 {
-                    case "pods": foreach (var uid in pods.Keys.Where(u => !seen.Contains(u)).ToList()) Upsert(pods, uid, null, sink, "PodRow", WritePod); break;
-                    case "services": foreach (var uid in services.Keys.Where(u => !seen.Contains(u)).ToList()) Upsert(services, uid, null, sink, "ServiceRow", WriteService); break;
-                    case "nodes": foreach (var uid in nodes.Keys.Where(u => !seen.Contains(u)).ToList()) Upsert(nodes, uid, null, sink, "NodeRow", WriteNode); break;
-                    case "deployments": foreach (var uid in deployments.Keys.Where(u => !seen.Contains(u)).ToList()) Upsert(deployments, uid, null, sink, "DeploymentRow", WriteDeployment); break;
-                    case "endpointslices": foreach (var uid in slices.Keys.Where(u => !seen.Contains(u)).ToList()) RemoveSlice(uid, sink); break;
+                    case "pods": foreach (var k in Gone(pods.Keys)) Upsert(pods, k, null, sink, "PodRow", WritePod); break;
+                    case "services": foreach (var k in Gone(services.Keys)) Upsert(services, k, null, sink, "ServiceRow", WriteService); break;
+                    case "nodes": foreach (var k in Gone(nodes.Keys)) Upsert(nodes, k, null, sink, "NodeRow", WriteNode); break;
+                    case "deployments": foreach (var k in Gone(deployments.Keys)) Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); break;
+                    case "endpointslices": foreach (var k in Gone(slices.Keys)) RemoveSlice(k, sink); break;
                 }
                 break;
             case "dropped": sink.SourceLoss(at, p.P("count") is { ValueKind: JsonValueKind.Number } c ? c.GetInt64() : 0, "forwarderDropped"); break;
@@ -116,15 +132,15 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
         }
     }
 
-    void RemoveSlice(string uid, IRowSink sink)
+    void RemoveSlice(string key, IRowSink sink)
     {
-        if (!slices.Remove(uid, out var prev)) return;
+        if (!slices.Remove(key, out var prev)) return;
         foreach (var r in prev) { var w = sink.Begin("EndpointRow"); w.Begin(-1); Write(w, r); }
     }
 
     public void Consume(Envelope e, IRowSink sink)
     {
-        cluster = e.HasMeta && e.Meta.S("cluster") is { Length: > 0 } mc ? mc : defaultCluster;
+        cluster = ClusterOf(e);
         if (e.Source == "sattle-forwarder") { Marker(e, sink); return; }
         string type; string kind; JsonElement obj;
         if (e.Source == "kubernetes-list")
@@ -141,33 +157,34 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
         }
         var uid = obj.PathS("metadata", "uid"); var ns = obj.PathS("metadata", "namespace") ?? ""; var name = obj.PathS("metadata", "name");
         if (uid is null || name is null) return;
-        if (e.Source == "kubernetes-list" && e.Meta.S("path") is { } listPath && relists.TryGetValue(listPath, out var inList)) inList.Add(uid);
+        var key = Key(cluster, uid);
+        if (e.Source == "kubernetes-list" && e.Meta.S("path") is { } listPath && relists.TryGetValue(Key(cluster, listPath), out var inList)) inList.Add(key);
         var deleted = type == "DELETED";
         switch (kind)
         {
             case "Pod":
-                Upsert(pods, uid, deleted ? null : [uid, ns, name, obj.PathS("status", "phase"), obj.PathS("metadata", "labels", "team"), obj.PathS("spec", "nodeName"), Restarts(obj), ReadyOf(obj), DeploymentOf(obj)], sink, "PodRow",
+                Upsert(pods, key, deleted ? null : [uid, ns, name, obj.PathS("status", "phase"), obj.PathS("metadata", "labels", "team"), obj.PathS("spec", "nodeName"), Restarts(obj), ReadyOf(obj), DeploymentOf(obj), cluster], sink, "PodRow",
                     WritePod);
                 break;
             case "Deployment":
-                Upsert(deployments, uid, deleted ? null : [uid, ns, name, obj.Path("spec", "replicas") is { ValueKind: JsonValueKind.Number } rp ? rp.GetInt64().ToString(CultureInfo.InvariantCulture) : null], sink, "DeploymentRow",
+                Upsert(deployments, key, deleted ? null : [uid, ns, name, obj.Path("spec", "replicas") is { ValueKind: JsonValueKind.Number } rp ? rp.GetInt64().ToString(CultureInfo.InvariantCulture) : null, cluster], sink, "DeploymentRow",
                     WriteDeployment);
                 break;
             case "Service":
-                Upsert(services, uid, deleted ? null : [uid, ns, name], sink, "ServiceRow", WriteService);
+                Upsert(services, key, deleted ? null : [uid, ns, name, cluster], sink, "ServiceRow", WriteService);
                 break;
             case "Node":
-                Upsert(nodes, uid, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID"))], sink, "NodeRow", WriteNode);
+                Upsert(nodes, key, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID")), cluster], sink, "NodeRow", WriteNode);
                 break;
-            case "EndpointSlice": Slice(uid, ns, obj, deleted, sink); break;
+            case "EndpointSlice": Slice(key, ns, obj, deleted, sink); break;
             case "Event": Event(uid, ns, obj, sink); break;
         }
     }
 
-    void WritePod(RowWriter w, string?[] r) { w.Text("cluster", cluster); w.Text("uid", r[0]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("phase", r[3]); w.Text("teamLabel", r[4]); w.Text("nodeName", r[5]); if (r[6] is { } n) w.Int(w.Col("restarts"), long.Parse(n, CultureInfo.InvariantCulture)); else w.Absent(w.Col("restarts")); if (r[7] is { } rd) w.Code(w.Col("ready"), rd == "True" ? 1 : 0); else w.Absent(w.Col("ready")); w.Text("deployment", r[8]); }
-    void WriteDeployment(RowWriter w, string?[] r) { w.Text("cluster", cluster); w.Text("namespace", r[1]); w.Text("name", r[2]); if (r[3] is { } rn) w.Int(w.Col("replicas"), long.Parse(rn, CultureInfo.InvariantCulture)); else w.Absent(w.Col("replicas")); }
-    void WriteService(RowWriter w, string?[] r) { w.Text("cluster", cluster); w.Text("namespace", r[1]); w.Text("name", r[2]); }
-    void WriteNode(RowWriter w, string?[] r) { w.Text("cluster", cluster); w.Text("uid", r[0]); w.Text("name", r[1]); w.Text("resourceId", r[2]); }
+    static void WritePod(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("phase", r[3]); w.Text("teamLabel", r[4]); w.Text("nodeName", r[5]); if (r[6] is { } n) w.Int(w.Col("restarts"), long.Parse(n, CultureInfo.InvariantCulture)); else w.Absent(w.Col("restarts")); if (r[7] is { } rd) w.Code(w.Col("ready"), rd == "True" ? 1 : 0); else w.Absent(w.Col("ready")); w.Text("deployment", r[8]); }
+    static void WriteDeployment(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); if (r[3] is { } rn) w.Int(w.Col("replicas"), long.Parse(rn, CultureInfo.InvariantCulture)); else w.Absent(w.Col("replicas")); }
+    static void WriteService(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("namespace", r[1]); w.Text("name", r[2]); }
+    static void WriteNode(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("name", r[1]); w.Text("resourceId", r[2]); }
 
     /// <summary>The Azure resource id behind a node: the providerID without its azure:// scheme (the identity domain lowercases it).</summary>
     static string? ResourceIdOf(string? providerId) => providerId is not null && providerId.StartsWith("azure://", StringComparison.OrdinalIgnoreCase) ? providerId["azure://".Length..] : null;
@@ -196,16 +213,16 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
         return n.ToString(CultureInfo.InvariantCulture);
     }
 
-    static void Upsert(Dictionary<string, string?[]> state, string uid, string?[]? next, IRowSink sink, string rowType, Action<RowWriter, string?[]> write)
+    static void Upsert(Dictionary<string, string?[]> state, string key, string?[]? next, IRowSink sink, string rowType, Action<RowWriter, string?[]> write)
     {
-        state.TryGetValue(uid, out var prev);
+        state.TryGetValue(key, out var prev);
         if (prev is not null && next is not null && prev.SequenceEqual(next)) return;
         if (prev is not null) { var w = sink.Begin(rowType); w.Begin(-1); write(w, prev); }
-        if (next is not null) { var w = sink.Begin(rowType); w.Begin(1); write(w, next); state[uid] = next; }
-        else state.Remove(uid);
+        if (next is not null) { var w = sink.Begin(rowType); w.Begin(1); write(w, next); state[key] = next; }
+        else state.Remove(key);
     }
 
-    void Slice(string uid, string ns, JsonElement obj, bool deleted, IRowSink sink)
+    void Slice(string key, string ns, JsonElement obj, bool deleted, IRowSink sink)
     {
         var service = obj.PathS("metadata", "labels", "kubernetes.io/service-name");
         var rows = new List<string?[]>();
@@ -214,22 +231,22 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter
             {
                 var podUid = ep.Path("targetRef") is { } tr && tr.S("kind") == "Pod" ? tr.S("uid") : null;
                 if (ep.P("addresses") is { ValueKind: JsonValueKind.Array } addrs)
-                    foreach (var a in addrs.EnumerateArray()) rows.Add([ns, service, a.GetString(), podUid]);
+                    foreach (var a in addrs.EnumerateArray()) rows.Add([ns, service, a.GetString(), podUid, cluster]);
             }
-        slices.TryGetValue(uid, out var prev);
+        slices.TryGetValue(key, out var prev);
         prev ??= [];
         foreach (var r in prev.Where(p => !rows.Any(x => x.SequenceEqual(p)))) { var w = sink.Begin("EndpointRow"); w.Begin(-1); Write(w, r); }
         foreach (var r in rows.Where(x => !prev.Any(p => p.SequenceEqual(x)))) { var w = sink.Begin("EndpointRow"); w.Begin(1); Write(w, r); }
-        if (rows.Count == 0) slices.Remove(uid); else slices[uid] = rows;
+        if (rows.Count == 0) slices.Remove(key); else slices[key] = rows;
     }
-    void Write(RowWriter w, string?[] r) { w.Text("cluster", cluster); w.Text("namespace", r[0]); w.Text("service", r[1]); w.Text("address", r[2]); w.Text("podUid", r[3]); }
+    static void Write(RowWriter w, string?[] r) { w.Text("cluster", r[4]); w.Text("namespace", r[0]); w.Text("service", r[1]); w.Text("address", r[2]); w.Text("podUid", r[3]); }
 
     void Event(string uid, string ns, JsonElement obj, IRowSink sink)
     {
         var count = obj.P("count") is { ValueKind: JsonValueKind.Number } c ? c.GetInt64() : obj.Path("series", "count") is { ValueKind: JsonValueKind.Number } sc ? sc.GetInt64() : 1;
-        var last = eventCounts.GetValueOrDefault(uid);
+        var last = eventCounts.GetValueOrDefault(Key(cluster, uid));
         if (count <= last) return;
-        eventCounts[uid] = count;
+        eventCounts[Key(cluster, uid)] = count;
         var ts = obj.S("lastTimestamp") ?? obj.S("eventTime") ?? obj.PathS("series", "lastObservedTime") ?? obj.S("firstTimestamp") ?? obj.PathS("metadata", "creationTimestamp");
         if (ts is null || !Norm.TryParseInstant(ts, out var ns2)) { sink.Rejected("kubernetes-event", "no parseable timestamp"); return; }
         var inv = obj.P("involvedObject");
@@ -328,7 +345,7 @@ public sealed class PrometheusAdapter(string defaultCluster) : ISourceAdapter
     public string Id => "prometheus.range";
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
-        new("MetricRow", [RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("metric", "Text"), RowDef.F("instance", "Text"), RowDef.F("value", "Decimal")]),
+        new("MetricRow", [RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("metric", "Text"), RowDef.F("series", "Text"), RowDef.F("instance", "Text", true), RowDef.F("value", "Decimal")]),
     ];
     public bool Handles(string s) => s == "prometheus";
     public long Samples { get; private set; }
@@ -339,17 +356,23 @@ public sealed class PrometheusAdapter(string defaultCluster) : ISourceAdapter
         if (metric is null || e.Payload.Path("data", "result") is not { ValueKind: JsonValueKind.Array } result) { sink.Rejected("prometheus", "no metric name or result"); return; }
         foreach (var series in result.EnumerateArray())
         {
-            var instance = series.PathS("metric", "instance");
-            if (instance is null || series.P("values") is not { ValueKind: JsonValueKind.Array } values) continue;
+            if (series.P("values") is not { ValueKind: JsonValueKind.Array } values) continue;
+            var (labels, instance) = (LabelsOf(series), series.PathS("metric", "instance"));       // a query that aggregates `instance` away has series all the same
             foreach (var v in values.EnumerateArray())
             {
                 if (v.GetArrayLength() != 2 || !v[0].TryGetDouble(out var ts) || !decimal.TryParse(v[1].GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var val)) continue; // NaN and gaps are not samples
                 var w = sink.Begin("MetricRow"); w.Begin();
-                w.Instant("time", (long)(ts * 1_000_000_000d)); w.Text("cluster", cluster); w.Text("metric", metric); w.Text("instance", instance); w.Dec(w.Col("value"), val);
+                w.Instant("time", (long)(ts * 1_000_000_000d)); w.Text("cluster", cluster); w.Text("metric", metric); w.Text("series", labels); w.Text("instance", instance); w.Dec(w.Col("value"), val);
                 Samples++;
             }
         }
     }
+
+    /// <summary>The label set of a series in Prometheus text form without the metric name, labels in order: what tells two series of one metric apart.</summary>
+    static string LabelsOf(JsonElement series) => series.P("metric") is { ValueKind: JsonValueKind.Object } m
+        ? string.Join(",", m.EnumerateObject().Where(l => l.Name != "__name__" && l.Value.ValueKind == JsonValueKind.String).OrderBy(l => l.Name, StringComparer.Ordinal)
+            .Select(l => l.Name + "=\"" + l.Value.GetString()!.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal) + "\""))
+        : "";
 }
 
 /// <summary>Authored rows: capabilities and the services that realize them. A capture carries them as envelopes of source `authoring`, in capture-time order like every other record (a later `capability` row with the same capId revises the earlier one, a `capability` row with status `retired` retires it): payload `{ "kind": "capability", "capId", "name", "owner", "status", "parentId"? }` or `{ "kind": "realizes", "capId", "cluster", "namespace", "service" }`.</summary>
@@ -410,6 +433,7 @@ public sealed class AuthoringAdapter : ISourceAdapter
             if (type is null || meter is null || e.Payload.P("above") is not { } ab || e.Payload.P("below") is not { } be || e.Payload.P("enterAfter") is not { } en || e.Payload.P("exitAfter") is not { } ex || e.Payload.P("severity") is not { } sv
                 || !ab.TryGetDecimal(out var above) || !be.TryGetDecimal(out var below) || !en.TryGetInt64(out var enter) || !ex.TryGetInt64(out var exit) || !sv.TryGetInt64(out var sev) || sev is < 1 or > 2)
             { sink.Rejected("authoring", "signalRule row without type, meter, thresholds or a severity of 1 or 2"); return; }
+            if (above <= below || enter < 1 || exit < 1) { sink.Rejected("authoring", "signalRule row whose above is not greater than its below, or with enterAfter or exitAfter below 1"); return; }
             Put(sink, "SignalRuleRow", "signalRule/" + cap, T("ruleId", cap), T("type", type), T("meter", meter), D("above", above), I("enterAfter", enter), D("below", below), I("exitAfter", exit), I("severity", sev),
                 I("invert", e.Payload.P("invert") is { ValueKind: System.Text.Json.JsonValueKind.True } ? 1 : 0));
         }

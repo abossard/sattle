@@ -49,8 +49,7 @@ public class HealthTests
     [CaptureFact(overlay: true)]
     public void On_the_newest_real_capture_the_node_and_its_virtual_machine_are_one_component_and_every_component_has_a_state()
     {
-        var c = Path.Combine(Repo.Root, "lab", "captures");
-        var dir = Directory.Exists(c) ? Directory.EnumerateDirectories(c).Order(StringComparer.Ordinal).LastOrDefault() : null;
+        var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
         var r = ReplayTests.Shared(dir, 2000, Repo.ClusterOf(dir));
         var comps = r.Engine.Graph("health").State.Entities.Where(e => Ids.Name(e.Type) == "Component").ToList();

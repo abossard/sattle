@@ -99,7 +99,7 @@ public static class Palette
     public sealed record Quantity(string Kind, string Unit);
     static readonly Dictionary<string, Quantity> Quantities = new()
     {
-        ["width"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"),
+        ["width"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"), ["ttl"] = new("duration", "ns"), ["fill"] = new("value", "unit of the property read"),
         ["enterAfter"] = new("count", "windows"), ["exitAfter"] = new("count", "windows"),
         ["above"] = new("value", "unit of the thresholded value"), ["below"] = new("value", "unit of the thresholded value"),
         ["maxIterations"] = new("count", "iterations"), ["maxFacts"] = new("count", "facts"),
@@ -196,8 +196,8 @@ public static class Palette
         };
     }
 
-    /// <summary>A catalog patch that creates one operator node with its kernel-fixed ports. from and to are informational.</summary>
-    public static Patch Skeleton(string kind, string container, string name, IReadOnlyDictionary<string, string>? values, long revision)
+    /// <summary>A catalog patch that creates one operator node with its kernel-fixed ports. from and to are informational. `placeholders`: the children the patch creates only so that the operator prints, with their slots. In the graph such a child is like one an author wrote (the aggregate `n = count()` is both), so only this list tells them apart.</summary>
+    public static Patch Skeleton(string kind, string container, string name, IReadOnlyDictionary<string, string>? values, long revision, out IReadOnlyList<(string Id, string Slot)> placeholders)
     {
         if (!KernelTable.IsOperator(kind)) throw new HostError("BadRequest", $"{kind} is not an operator kind", 400);
         var b = new DefBuilder();
@@ -217,27 +217,30 @@ public static class Palette
         }
         var id = b.Contain(container, "op", name, kind, null, [.. props]);
         foreach (var (pn, dir, pk) in KernelTable.OperatorPorts(kind)) b.Contain(id, "port", pn, "Port", null, ("name", Value.Text(pn)), ("direction", Value.Text(dir)), ("kind", Value.Text(pk)));
-        FillRequiredSlots(b, id, kind);
+        placeholders = FillRequiredSlots(b, id, kind);
         var edits = b.Elements().Select(Edit.Create).ToList();
         return new Patch("catalog", revision, revision + 1, edits);
     }
 
     /// <summary>A placeholder for every required slot (multiplicity 1 or +) whose child can be given a default, so a new operator prints at once and its remaining problems are typing diagnostics on known element ids. Slots whose child needs a choice (pattern nodes, identity expressions, fixpoint relations, row values) are left empty and printing names the element.</summary>
-    static void FillRequiredSlots(DefBuilder b, string op, string kind)
+    static List<(string Id, string Slot)> FillRequiredSlots(DefBuilder b, string op, string kind)
     {
-        void Literal(string parent, string slot, Value v) => b.Contain(parent, slot, "#0", "Literal", null, ("value", v));
+        var made = new List<(string, string)>();
+        string Literal(string parent, string slot, Value v) => b.Contain(parent, slot, "#0", "Literal", null, ("value", v));
         foreach (var s in KernelTable.Slots.Where(s => s.Container == kind && s.Mult is "1" or "+"))
             switch (s.Children[0])
             {
-                case "Expr": Literal(op, s.Name, kind is "Filter" or "Join" ? Value.Boolean(true) : Value.Text("")); break;
+                case "Expr": made.Add((Literal(op, s.Name, kind is "Filter" or "Join" ? Value.Boolean(true) : Value.Text("")), s.Name)); break;
                 case "Assign":
                     {
                         var a = b.Contain(op, s.Name, "x", "Assign", s.Ordered ? 0 : null, ("target", Value.Text("x")));
                         Literal(a, "value", Value.Text(""));
+                        made.Add((a, s.Name));
                         break;
                     }
-                case "Aggregate": b.Contain(op, s.Name, "n", "Aggregate", null, ("target", Value.Text("n")), ("fn", Value.Text("count"))); break;
-                case "FieldRef": b.Contain(op, s.Name, "#0", "FieldRef", 0, ("path", Value.Text("x.y"))); break;
+                case "Aggregate": made.Add((b.Contain(op, s.Name, "n", "Aggregate", null, ("target", Value.Text("n")), ("fn", Value.Text("count"))), s.Name)); break;
+                case "FieldRef": made.Add((b.Contain(op, s.Name, "#0", "FieldRef", 0, ("path", Value.Text("x.y"))), s.Name)); break;
             }
+        return made;
     }
 }

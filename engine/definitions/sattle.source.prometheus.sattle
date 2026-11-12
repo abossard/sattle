@@ -1,4 +1,5 @@
 /// Row contract produced by the compiled Prometheus range-query adapter.
 module sattle.source.prometheus @ 1.0.0;
 
-rows MetricRow { time: Instant; cluster: Text; metric: Text; instance: Text; value: Decimal; }
+/// One sample of one series. `series` is the label set that tells the series of a metric apart; `instance` is its `instance` label, absent when the query aggregates it away.
+rows MetricRow { time: Instant; cluster: Text; metric: Text; series: Text; instance?: Text; value: Decimal; }

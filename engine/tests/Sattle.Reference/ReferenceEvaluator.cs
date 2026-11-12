@@ -8,6 +8,8 @@ namespace Sattle.Reference;
 public abstract record Input;
 public sealed record RowInput(string Source, ImmutableSortedDictionary<string, Value> Fields, long Weight) : Input;
 public sealed record AdvanceInput(long Frontier) : Input;
+/// <summary>The progress of a source (Def. 10.9): it has reported up to `Until`, the capture time of an envelope less the allowed lateness.</summary>
+public sealed record ProgressInput(string Source, long Until) : Input;
 
 /// <summary>`TelemetryRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
 public sealed record Settings(string Tenant = "lab", int LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000);
@@ -22,6 +24,7 @@ public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Gr
 /// the identity links ever asserted (bindings are timeless, Theorem 1.5),
 /// the state of a Threshold key after the windows that left its look-back (Def. 7.10, D33),
 /// and, to find what an input added to or took from such an operator, its integrated input after the previous input.
+/// Two more are recorded facts (Def. 7.14): how far each source has reported, and since which advance an element has had a row in the structural input of a Series that fills or has a time to live.
 /// </summary>
 public static class ReferenceEvaluator
 {
@@ -46,11 +49,14 @@ public static class ReferenceEvaluator
         ImmutableSortedDictionary<string, ZSet> Accepted,
         ImmutableSortedDictionary<string, LinkFact> Links,
         ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, Denotation.Carried>> Carried,
+        ImmutableSortedDictionary<string, long> Covered,
+        ImmutableSortedDictionary<string, ImmutableSortedDictionary<string, long>> Since,
         SpaceFacts Facts)
     {
         static readonly ImmutableSortedDictionary<string, ZSet> None = ImmutableSortedDictionary.Create<string, ZSet>(StringComparer.Ordinal);
         public static readonly Position Start = new(None, None, None, ImmutableSortedDictionary.Create<string, LinkFact>(StringComparer.Ordinal),
             ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, Denotation.Carried>>(StringComparer.Ordinal),
+            ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal), ImmutableSortedDictionary.Create<string, ImmutableSortedDictionary<string, long>>(StringComparer.Ordinal),
             new SpaceFacts(ImmutableSortedDictionary.Create<string, GraphFacts>(StringComparer.Ordinal), null));
     }
 
@@ -58,8 +64,29 @@ public static class ReferenceEvaluator
     {
         var sources = input is RowInput row ? before.Sources.SetItem(row.Source, before.Sources.GetValueOrDefault(row.Source, ZSet.Empty).Add(RowOf(catalog, space, row), row.Weight)) : before.Sources;
         var frontier = input is AdvanceInput a && (before.Facts.Frontier is null || a.Frontier > before.Facts.Frontier) ? a.Frontier : before.Facts.Frontier;
-        var at = before with { Sources = sources, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
-        return InDependencyOrder(space).Aggregate(at, (p, g) => Graph(catalog, settings, g, before.Facts.Frontier, p));
+        var covered = input is ProgressInput progress && progress.Until > before.Covered.GetValueOrDefault(progress.Source, long.MinValue) ? before.Covered.SetItem(progress.Source, progress.Until) : before.Covered;
+        var at = before with { Sources = sources, Covered = covered, Facts = new SpaceFacts(before.Facts.Graphs.Clear(), frontier) };
+        return InDependencyOrder(space).Aggregate(at, (p, g) => Graph(catalog, space, settings, g, before.Facts.Frontier, p));
+    }
+
+    /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
+    static ImmutableSortedSet<string> Feeding(Catalog catalog, TypedSpace space, string graphName, string propId)
+    {
+        var graph = space.Graphs.First(g => g.Name == graphName);
+        var plan = PlanOf(catalog, graph);
+        var found = ImmutableSortedSet.CreateBuilder<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        void Walk(TOp op)
+        {
+            if (!seen.Add(op.Name)) return;
+            if (op is TSeries s) foreach (var read in s.Reads) found.UnionWith(Feeding(catalog, space, graph.Bindings[s.GraphPort], read.PropId));
+            foreach (var src in op.Inputs.Values)
+                if (!src.IsPort) Walk(plan.Ops.First(o => o.Name == src.Name));
+                else if (plan.Ports.First(p => p.Name == src.Name).Kind == "rows") found.Add(graph.Bindings[src.Name]);
+        }
+        foreach (var sink in plan.Ops)
+            if ((sink switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => null })?.Any(x => x.PropId == propId) == true) Walk(sink);
+        return found.ToImmutable();
     }
 
     static TypedProjection PlanOf(Catalog catalog, TGraph g) => g.Instance ?? catalog.Projections[g.ProjectionId];
@@ -85,7 +112,7 @@ public static class ReferenceEvaluator
     }
 
     /// <summary>One graph after one input: the operators in plan order, then the materialization of the sinks.</summary>
-    static Position Graph(Catalog catalog, Settings settings, TGraph graph, long? frontierBefore, Position p)
+    static Position Graph(Catalog catalog, TypedSpace space, Settings settings, TGraph graph, long? frontierBefore, Position p)
     {
         var plan = PlanOf(catalog, graph);
         var frontier = p.Facts.Frontier;
@@ -135,6 +162,19 @@ public static class ReferenceEvaluator
                             p.Carried.GetValueOrDefault(slot, ImmutableSortedDictionary.Create<string, Denotation.Carried>(StringComparer.Ordinal)));
                         p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
+                        break;
+                    }
+                case TSeries series when series.TtlNs is not null || series.Reads.Any(r => r.Fill is not null):
+                    {
+                        var rows = In("in");
+                        var since = p.Since.GetValueOrDefault(slot, ImmutableSortedDictionary.Create<string, long>(StringComparer.Ordinal));
+                        if (frontier is { } now && frontier != frontierBefore)      // presence is sampled at an advance: an element with a row keeps its `since` or gets this frontier, one without loses it
+                            since = rows.Rows.Where(r => r.Weight > 0).Select(r => rows.Reader(r.Row)(series.TargetVar)).OfType<EntityValue>().Select(e => e.Id).Distinct(StringComparer.Ordinal)
+                                .ToImmutableSortedDictionary(id => id, id => since.TryGetValue(id, out var kept) ? kept : now, StringComparer.Ordinal);
+                        p = p with { Since = p.Since.SetItem(slot, since) };
+                        long? Covered(TSeriesRead read) =>
+                            Feeding(catalog, space, graph.Bindings[series.GraphPort], read.PropId) is { Count: > 0 } feeding && feeding.All(p.Covered.ContainsKey) ? feeding.Min(s => p.Covered[s]) : null;
+                        outs = outs.SetItem(op.Name, Denotation.Series(series, rows, inputs.Graphs[series.GraphPort], frontier, since, [.. series.Reads.Select(Covered)]));
                         break;
                     }
                 default: outs = outs.SetItem(op.Name, Denotation.Of(op, In, inputs)); break;

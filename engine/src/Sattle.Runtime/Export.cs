@@ -164,6 +164,19 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     }
 
     /// <summary>For an entity type whose properties carry a `treerole`: which property is the own state, the rolled-up state, the severity, the kind and the count of each state, by the names the snapshots key them with. Null when the type has none.</summary>
+    /// <summary>The property a type declares as its label (`name: Text label;`), or the one of its nearest supertype that declares one. Null when none does: a viewer then has no name to show for the type.</summary>
+    string? LabelOf(string typeId)
+    {
+        var d = new DefView(catalog.Graph);
+        for (var level = new List<string> { typeId }; level.Count > 0; level = [.. level.SelectMany(t => d.Targets(t, "extends")).Distinct().OrderBy(x => x, StringComparer.Ordinal)])
+            foreach (var t in level)
+                if (d.Out(t, "hasProperty").Where(r => r.Props.Get(Ids.KProp("label")) is BooleanValue { B: true }).Select(r => r.Target).FirstOrDefault() is { } p) return p;
+        return null;
+    }
+
+    /// <summary>What a graph is, in the words of its projection (the `///` text before the `projection` statement). Null when the projection has none.</summary>
+    public string? DescriptionOf(GraphRuntime g) => new DefView(catalog.Graph).Text(g.Typed.Id, "description");
+
     JsonNode? TreeState(OntologyView view, string typeId)
     {
         var dv = new DefView(catalog.Graph);
@@ -196,11 +209,11 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         {
             ["schemaVersion"] = "1.0", ["reference"] = reference, ["noEntityType"] = Id("NoType"), ["noRelationshipType"] = Id("NoType"),
             ["properties"] = new JsonArray([.. propIds.Select(PropDef)]),
-            ["entityTypes"] = new JsonArray([.. new[] { (JsonNode)new JsonObject { ["id"] = Id("NoType"), ["properties"] = new JsonArray() } }.Concat(types.Where(t => !t.IsRel).OrderBy(t => t.Id, StringComparer.Ordinal).Select(t => (JsonNode)new JsonObject { ["id"] = Id(TypeName(t.Id)), ["properties"] = Names(view.PropsOf(t.Id).Keys), ["treeState"] = TreeState(view, t.Id) }))]),
+            ["entityTypes"] = new JsonArray([.. new[] { (JsonNode)new JsonObject { ["id"] = Id("NoType"), ["properties"] = new JsonArray() } }.Concat(types.Where(t => !t.IsRel).OrderBy(t => t.Id, StringComparer.Ordinal).Select(t => (JsonNode)new JsonObject { ["id"] = Id(TypeName(t.Id)), ["properties"] = Names(view.PropsOf(t.Id).Keys), ["treeState"] = TreeState(view, t.Id), ["label"] = LabelOf(t.Id) is { } label ? Id(PropName(label)) : null }))]),
             ["relationshipTypes"] = new JsonArray([.. new[] { (JsonNode)new JsonObject { ["id"] = Id("NoType"), ["sourceTypes"] = new JsonArray(), ["targetTypes"] = new JsonArray(), ["properties"] = new JsonArray() } }.Concat(types.Where(t => t.IsRel).OrderBy(t => t.Id, StringComparer.Ordinal).Select(t => (JsonNode)new JsonObject
             {
                 ["id"] = Id(TypeName(t.Id)), ["sourceTypes"] = new JsonArray([.. t.Sources.OrderBy(x => x, StringComparer.Ordinal).Select(s => (JsonNode)Id(TypeName(s)))]), ["targetTypes"] = new JsonArray([.. t.Targets.OrderBy(x => x, StringComparer.Ordinal).Select(s => (JsonNode)Id(TypeName(s)))]), ["properties"] = Names(view.PropsOf(t.Id).Keys),
-                ["hierarchy"] = new DefView(catalog.Graph).Bool(t.Id, "hierarchy"),
+                ["hierarchy"] = new DefView(catalog.Graph).Bool(t.Id, "hierarchy"), ["kind"] = new DefView(catalog.Graph).Text(t.Id, "kind"),
             }))]),
         };
     }
@@ -325,7 +338,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
             File.WriteAllLines(Path.Combine(dir, $"{g.Name}.patches.ndjson"), PatchesOf(g.Name).Select(p => Patch(p).ToJsonString()));
             File.WriteAllText(Path.Combine(dir, $"{g.Name}.patches.json"), new JsonArray([.. PatchesOf(g.Name).Select(p => Patch(p))]).ToJsonString());
             File.WriteAllLines(Path.Combine(dir, $"{g.Name}.telemetry.ndjson"), TelemetryBatches(g).Select(b => b.ToJsonString()));
-            var entry = new JsonObject { ["ontology"] = $"{g.Name}.ontology.json", ["snapshot"] = $"{g.Name}.snapshot.json", ["patches"] = $"{g.Name}.patches.json" };
+            var entry = new JsonObject { ["ontology"] = $"{g.Name}.ontology.json", ["snapshot"] = $"{g.Name}.snapshot.json", ["patches"] = $"{g.Name}.patches.json", ["description"] = DescriptionOf(g) };
             // what the live engine serves for the same graph: `GET /lineage` of every element (complete), `GET /lineage/reverse` of every element that is part of something, the rendered document
             Write(Path.Combine(dir, $"{g.Name}.meters.json"), MetersDocument(g)); entry["meters"] = $"{g.Name}.meters.json";
             File.WriteAllLines(Path.Combine(dir, $"{g.Name}.references.ndjson"), Unresolved(g).Select(u => u.ToJson(TypeNameOrNull).ToJsonString())); entry["references"] = $"{g.Name}.references.ndjson";

@@ -9,6 +9,8 @@ public sealed class RuntimeFaults
     public long DivisionByZero;
     /// <summary>Rows without a value in a column an operator requires (the time of a `retain`): they are dropped.</summary>
     public long MissingRequired;
+    /// <summary>Rows that give a Threshold parameters that are no state machine (`above` not greater than `below`, a run of less than one window): they are dropped.</summary>
+    public long InvalidParameter;
     public long Overflow;
 }
 

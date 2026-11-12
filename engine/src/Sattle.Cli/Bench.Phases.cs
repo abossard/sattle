@@ -13,6 +13,8 @@ static partial class Bench
         public long Ticks, Alloc, Calls, IngestRows; public long AdvanceTicks, AdvanceAlloc, Advances;
         public Interner Interner => e.Interner;
         public Layout RowLayout(string source) => e.RowLayout(source);
+        public bool WantsProgress => e.WantsProgress;
+        public void Progress(string source, long untilNs, long seq) => e.Progress(source, untilNs, seq);
         public void Ingest(string source, Batch rows, long seq)
         {
             var a = GC.GetAllocatedBytesForCurrentThread(); var t = Stopwatch.GetTimestamp();

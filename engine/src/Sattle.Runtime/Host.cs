@@ -230,7 +230,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (live is null) throw new InvalidOperationException("the live input has not been started");
             var key = KeyOf(text);
             var env = CaptureReader.Parse(text, "eventhub:" + source, 0);
-            if (env is null || (key is not null && liveKeys.Contains(key)))
+            if (env is null || (key is not null && liveKeys.Contains(key) && !(Adapters.FirstOrDefault(x => x.Handles(env.Source)) is IRedelivery again && again.Counts(env))))
             {
                 Journal(new JsonObject { ["k"] = "p", ["s"] = source, ["p"] = position }.ToJsonString()); sourcePositions[source] = position;
                 return env is null ? LiveResult.Rejected : LiveResult.Duplicate;
@@ -353,6 +353,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             {
                 case "r": { var (src, seq, rows) = BatchCodec.Decode(body, RowLayout, interner); inputs.Add(new InputRecord('r', src, rows, seq, rows.Rows)); break; }
                 case "a": inputs.Add(new InputRecord('a', "", null, r.GetProperty("q").GetInt64(), r.GetProperty("l").GetInt64())); break;
+                case "g": inputs.Add(new InputRecord('g', r.GetProperty("s").GetString()!, null, r.GetProperty("q").GetInt64(), r.GetProperty("u").GetInt64())); break;
                 case "l": inputs.Add(new InputRecord('l', r.GetProperty("r").GetString()!, null, r.GetProperty("n").GetInt64(), r.GetProperty("t").GetInt64())); break;
             }
         }
@@ -387,6 +388,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 {
                     case "r": { var (src, seq, rows) = BatchCodec.Decode(body, RowLayout, interner); Ingest(src, rows, seq); break; }
                     case "a": Advance(r.GetProperty("l").GetInt64(), r.GetProperty("q").GetInt64()); break;
+                    case "g": Progress(r.GetProperty("s").GetString()!, r.GetProperty("u").GetInt64(), r.GetProperty("q").GetInt64()); break;
                     case "l": RecordLoss(r.GetProperty("t").GetInt64(), r.GetProperty("n").GetInt64(), r.GetProperty("r").GetString()!); break;
                     case "f": Finish(); break;
                     case "L": StartLiveCore(ParseReplayOptions(r.GetProperty("o").GetString()!), r.GetProperty("o").GetString()!); break;
@@ -455,6 +457,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             lambdaSeen = Math.Max(lambdaSeen, lambdaNs);
             Tick();
             if (!suppress) MaybeSeal();
+        }
+    }
+    public bool WantsProgress => Engine.WantsProgress;
+    public void Progress(string source, long untilNs, long seq)
+    {
+        lock (Gate)
+        {
+            Journal(new JsonObject { ["k"] = "g", ["s"] = source, ["u"] = untilNs, ["q"] = seq }.ToJsonString());
+            if (retained) inputs.Add(new InputRecord('g', source, null, seq, untilNs));
+            Engine.Progress(source, untilNs, seq); mutations++;
         }
     }
     public void RecordLoss(long timeNs, long count, string reason = "sourceLoss")
@@ -607,7 +619,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 {
                     ["id"] = g.Name, ["role"] = g.IsMaster ? "master" : "projection", ["head"] = Rev(served[g.Name].Head), ["ontology"] = g.Typed.OutputModule,
                     ["inputs"] = new JsonArray([.. g.PortSources.Values.Where(v => Engine.Graphs.Any(x => x.Name == v)).Distinct().Select(v => (JsonNode)v)]),
-                    ["direction"] = dir, ["editable"] = rules.Any(r => r.Class is "lens" or "bijective"), ["document"] = g.Typed.OutputModule == Documents.Module, ["dangling"] = Rev(g.State.Rels.Count(r => g.State.Entity(r.Source) is null || g.State.Entity(r.Target) is null)), ["danglingBy"] = DanglingBy(g), ["descriptor"] = export.Descriptor(g, served[g.Name].Head), ["projection"] = g.Typed.Name,
+                    ["direction"] = dir, ["editable"] = rules.Any(r => r.Class is "lens" or "bijective"), ["document"] = g.Typed.OutputModule == Documents.Module, ["description"] = export.DescriptionOf(g), ["dangling"] = Rev(g.State.Rels.Count(r => g.State.Entity(r.Source) is null || g.State.Entity(r.Target) is null)), ["danglingBy"] = DanglingBy(g), ["descriptor"] = export.Descriptor(g, served[g.Name].Head), ["projection"] = g.Typed.Name,
                 });
             }
             var input = new JsonObject { ["mode"] = Mode, ["logicalTime"] = lambdaSeen == 0 ? null : Norm.Instant(lambdaSeen), ["rows"] = Rev(inputRows) };
@@ -910,7 +922,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             {
                 fresh = new Engine(cand, newSpaceId, EngineOpts(++generation), interner);
                 foreach (var r in inputs)
-                    switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
+                    switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
             }
             catch (Exception e) { spaceId = oldSpace; Journal("{\"k\":\"x\"}"); throw new HostError("ActivationRejected", e.Message, 422); }
 

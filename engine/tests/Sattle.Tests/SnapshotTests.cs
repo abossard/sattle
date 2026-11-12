@@ -20,6 +20,8 @@ public class SnapshotTests
         public void Ingest(string s, Batch rows, long seq) { Entries.Add(BatchCodec.Encode(s, seq, rows, source.Interner)); source.Ingest(s, rows, seq); }
         public void Advance(long l, long seq) { Entries.Add($"{{\"k\":\"a\",\"l\":{l},\"q\":{seq}}}"); source.Advance(l, seq); }
         public void RecordLoss(long t, long n, string reason = "sourceLoss") { Entries.Add(new System.Text.Json.Nodes.JsonObject { ["k"] = "l", ["t"] = t, ["n"] = n, ["r"] = reason }.ToJsonString()); source.RecordLoss(t, n, reason); }
+        public bool WantsProgress => source.WantsProgress;
+        public void Progress(string s, long until, long seq) { Entries.Add(new System.Text.Json.Nodes.JsonObject { ["k"] = "g", ["s"] = s, ["u"] = until, ["q"] = seq }.ToJsonString()); source.Progress(s, until, seq); }
     }
 
     static void Play(Engine e, IEnumerable<string> entries)
@@ -31,13 +33,14 @@ public class SnapshotTests
             {
                 case "r": { var (src, seq, rows) = BatchCodec.Decode(body, e.RowLayout, e.Interner); e.Ingest(src, rows, seq); break; }
                 case "a": e.Advance(r.GetProperty("l").GetInt64(), r.GetProperty("q").GetInt64()); break;
+                case "g": e.Progress(r.GetProperty("s").GetString()!, r.GetProperty("u").GetInt64(), r.GetProperty("q").GetInt64()); break;
                 case "l": e.RecordLoss(r.GetProperty("t").GetInt64(), r.GetProperty("n").GetInt64(), r.GetProperty("r").GetString()!); break;
             }
         }
     }
 
     /// <summary>A store that takes every commit: the engine state is under test here, not the log (the host test covers the log).</summary>
-    sealed class AcceptingStore : IGraphStore
+    internal sealed class AcceptingStore : IGraphStore
     {
         public HeadInfo Head(GraphKey g) => new(0, 0);
         public CommitResult Commit(CommitBatch b) => new CommitResult.Committed(b.ExpectedHead + b.Patches.Count);
@@ -85,10 +88,18 @@ public class SnapshotTests
     static readonly Lazy<(Catalog Cat, string Space, List<string> Tape, string Digest)> Estate = new(() => Record(EstateTests.EstateDir, "synth", estate: true));
     static readonly Lazy<(Catalog Cat, string Space, List<string> Tape, string Digest)> Lab = new(() => Record(Repo.Fixtures, Repo.ClusterOf(Repo.Fixtures), estate: false));
 
-    public static IEnumerable<object[]> Runs() => [["estate", 0.25], ["estate", 0.5], ["estate", 0.9], ["lab", 0.3], ["lab", 0.7]];
+    [Theory]
+    [InlineData(0.25)] [InlineData(0.5)] [InlineData(0.9)]
+    public void A_snapshot_of_the_estate_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(double at) =>
+        A_snapshot_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original("estate", at);
 
-    [Theory, MemberData(nameof(Runs))]
-    public void A_snapshot_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(string which, double at)
+    [Trait("Category", "Fixtures")]
+    [FixturesTheory]
+    [InlineData(0.3)] [InlineData(0.7)]
+    public void A_snapshot_of_the_fixtures_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(double at) =>
+        A_snapshot_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original("lab", at);
+
+    static void A_snapshot_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(string which, double at)
     {
         var (cat, space, tape, fullDigest) = which == "estate" ? Estate.Value : Lab.Value;
         var k = (int)(tape.Count * at);

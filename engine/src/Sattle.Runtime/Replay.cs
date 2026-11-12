@@ -89,16 +89,30 @@ public interface IEngineInput
     void Ingest(string source, Batch rows, long seq);
     void Advance(long lambdaNs, long seq);
     void RecordLoss(long timeNs, long count, string reason = "sourceLoss");
+    /// <summary>The progress of a source (Def. 10.9): it has reported up to `untilNs`. A recorded input.</summary>
+    void Progress(string source, long untilNs, long seq);
+    /// <summary>Whether a graph of the space reads source progress (a Series that fills or has a time to live). Without one the progress of the sources is not recorded, and the inputs are those of a space without it.</summary>
+    bool WantsProgress { get; }
 }
 
 public sealed class Replay : IRowSink
 {
     readonly IEngineInput engine; readonly ReplayOptions opt; readonly IReadOnlyList<ISourceAdapter> adapters;
     readonly Dictionary<string, string> sourceOfRowType = new(StringComparer.Ordinal);
+    /// <summary>The sources of the space an adapter feeds, and how far each source has reported since its progress was last recorded: the capture time of its newest envelope less the lateness.</summary>
+    readonly Dictionary<string, List<string>> sourcesOfAdapter = new(StringComparer.Ordinal);
+    readonly Dictionary<string, long> reported = new(StringComparer.Ordinal);       // a plain dictionary: it is part of the state a live host seals
     readonly Dictionary<string, RowWriter> writers = new(StringComparer.Ordinal);
     string curAdapter = ""; string? current; long seq; long lastLambda = long.MinValue;
     public ReplayStats Stats { get; } = new();
     public event Action<long>? Progress;
+
+    /// <summary>Records the progress the sources made since the last advance, before the next one: coverage is then a function of the envelopes and the advances, not of where a chunk was cut.</summary>
+    void RecordProgress()
+    {
+        foreach (var (source, until) in reported.OrderBy(x => x.Key, StringComparer.Ordinal)) engine.Progress(source, until, ++seq);
+        reported.Clear();
+    }
 
     public long LogicalTime => lastLambda;
     /// <summary>Added to the event times of the rows written from now on (see `RowWriter.InstantOffset`).</summary>
@@ -111,6 +125,7 @@ public sealed class Replay : IRowSink
     {
         this.engine = engine; this.adapters = adapters; opt = options; this.gate = gate ?? new object();
         foreach (var s in space.Sources) sourceOfRowType[s.Adapter + "|" + Ids.Name(s.RowTypeId)] = s.Name;   // the same row type can come from two adapters into two sources
+        foreach (var s in space.Sources) { if (!sourcesOfAdapter.TryGetValue(s.Adapter, out var names)) sourcesOfAdapter[s.Adapter] = names = []; names.Add(s.Name); }
     }
 
     // ---- IRowSink ----
@@ -155,10 +170,12 @@ public sealed class Replay : IRowSink
         Stats.Records[e.Source] = Stats.Records.GetValueOrDefault(e.Source) + 1;
         var adapter = adapters.FirstOrDefault(a => a.Handles(e.Source));
         if (adapter is null) { Stats.Skipped++; return true; }
+        if (engine.WantsProgress && sourcesOfAdapter.TryGetValue(adapter.Id, out var fed))
+            foreach (var source in fed) reported[source] = Math.Max(reported.GetValueOrDefault(source, long.MinValue), e.CapturedNs - opt.LatenessNs);       // every envelope of an adapter is progress of its sources, a marker or a heartbeat without rows as well
         var lambda = e.CapturedNs / opt.AdvanceEveryNs * opt.AdvanceEveryNs - opt.LatenessNs;
         if (lambda > lastLambda)
         {
-            FlushCurrent(); current = null; engine.Advance(lambda, ++seq); Stats.Advances++;
+            FlushCurrent(); current = null; RecordProgress(); engine.Advance(lambda, ++seq); Stats.Advances++;
             lastLambda = lambda;
             Progress?.Invoke(e.CapturedNs);
         }
@@ -195,6 +212,7 @@ public sealed class Replay : IRowSink
         FlushPending();
         if (opt.FlushAtEnd && last != 0)
         {
+            RecordProgress();
             engine.Advance(last / opt.AdvanceEveryNs * opt.AdvanceEveryNs + opt.AdvanceEveryNs + opt.LatenessNs, ++seq);
             Stats.Advances++;
         }

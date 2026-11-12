@@ -1,13 +1,13 @@
 /// Health model of one workload (a namespace of a cluster), stacked on smaller projections: topology, signals, state, and the health view (roll-up by bounded traversal).
 module acme.healthmodel @ 1.0.0;
 
-import sattle.infra  @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
-import sattle.azure  @ 1.0.0 sha256:ab18e12c31be70f641e8f97700b2d2ebf9cc8c5fe9c315fa748cbc7821966195 as azure;
-import acme.ops      @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
-import acme.svc      @ 1.0.0 sha256:6bd5c43dc46b6b6108570b4a873c731d4104355b3ddf5893d9094c76b92e6001 as svc;
-import acme.health   @ 1.0.0 sha256:a8f7320292f1f6651ee61b2ecc61ee2367fb2a32cd5846811ced87e4008e326d as health;
+import sattle.infra  @ 1.0.0 sha256:b3d8b3b7310f29325a480b4531efb9b4f8d04bd47bccdfdfaa8e18ff213a15a3 as infra;
+import sattle.azure  @ 1.0.0 sha256:dbcb3ed609c6539bafb84d01a084cd335c5f303073c8e92bd369b1cd3c4a3ddb as azure;
+import acme.ops      @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
+import acme.svc      @ 1.0.0 sha256:0b06522cfa6a7198b70cd4fc99f764027dff0cc9def650f5e52de86ae1b65781 as svc;
+import acme.health   @ 1.0.0 sha256:1fb5ded222bbe75415e03c138b95cb28e3d4348b4db982d9f5f2f4c7e38eb5d4 as health;
 
-/// Components and edges. The workload, the cluster and the resource groups are parameters of the space binding. Services and the workload come from the service tree, the nodes the workload runs on from the master, Azure resources from Resource Graph. A node and its virtual machine share one component identity, which is the equivalence across the Kubernetes and Azure domains.
+/// The components of one workload and the edges between them. The workload, the cluster and the resource groups are parameters of the space binding. Services and the workload come from the service tree, the nodes the workload runs on from the master, Azure resources from Resource Graph. A node and its virtual machine share one component identity, which is the equivalence across the Kubernetes and Azure domains.
 projection topology view forward output health {
   in master: graph ops;
   in tree: graph svc;
@@ -79,7 +79,7 @@ projection topology view forward output health {
     health.component(id: concat("ns/", clusterLabel, "/", workloadNamespace)) -> health.component(id: r.resourceId);
 }
 
-/// Signals: one Signal entity per component and signal (named by its component id), with two thresholds (degraded, unhealthy) over the closed windows of a series. Thresholds have hysteresis; a signal without data does not exist, so its component stays Unknown.
+/// The signals of the components: one Signal entity per component and signal (named by its component id), with two thresholds (degraded, unhealthy) over the closed windows of a series. Thresholds have hysteresis; a signal without data does not exist, so its component stays Unknown.
 projection signals view forward output health {
   in master: graph ops;
   in tree: graph svc;
@@ -169,7 +169,7 @@ projection signals view forward output health {
   emit update entity health.Signal from nodedrops identity health.signal(component: c, name: "node drop rate") set { value: v };
 }
 
-/// State: the topology and the signals (with a Measures edge to their component), and the worst severity of each component's own signals (0 healthy, 1 degraded, 2 unhealthy). A component without a signal that has data has no own severity.
+/// The components with their own severity: the topology and the signals (with a Measures edge to their component), and the worst severity of each component's own signals (0 healthy, 1 degraded, 2 unhealthy). A component without a signal that has data has no own severity.
 projection state view forward output health {
   in topo: graph health;
   in sigs: graph health;

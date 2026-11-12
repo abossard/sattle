@@ -171,8 +171,10 @@ public sealed partial class SpaceHost
         {
             var values = body["params"]?.AsObject().ToDictionary(kv => kv.Key, kv => kv.Value!.ToString());
             var rev = body["draft"] is { } dn ? GetDraft(dn.GetValue<string>()).Revision : catalogHistory.Count;
-            var p = Palette.Skeleton(body["kind"]!.GetValue<string>(), body["container"]!.GetValue<string>(), body["name"]!.GetValue<string>(), values, rev);
-            return catalogExport.Patch(p);
+            var p = Palette.Skeleton(body["kind"]!.GetValue<string>(), body["container"]!.GetValue<string>(), body["name"]!.GetValue<string>(), values, rev, out var placeholders);
+            var answer = catalogExport.Patch(p);
+            answer["placeholders"] = new JsonArray([.. placeholders.Select(x => (JsonNode)new JsonObject { ["id"] = new JsonObject { ["value"] = x.Id }, ["slot"] = x.Slot })]);
+            return answer;
         }
     }
 
@@ -300,7 +302,7 @@ public sealed partial class SpaceHost
             foreach (var r in inputs)
             {
                 if (rows >= maxRows) { complete = false; break; }
-                switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); rows += r.Value; break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
+                switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); rows += r.Value; break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
             }
             var exp = new CanvasExport(fresh, cand);
             var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? fresh.Graphs.Select(g => g.Name).ToHashSet();

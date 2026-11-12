@@ -52,6 +52,8 @@ static partial class Bench
             var d = Stopwatch.GetTimestamp() - t; AdvTicks += d; Closes.Add(Ms(d));
         }
         public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => e.RecordLoss(timeNs, count, reason);
+        public bool WantsProgress => e.WantsProgress;
+        public void Progress(string source, long untilNs, long seq) => e.Progress(source, untilNs, seq);
     }
 
     sealed class Rig : IDisposable

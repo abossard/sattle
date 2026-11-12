@@ -8,7 +8,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Differential;
 
-/// <summary>How a log is cut into the engine's batches: the positions where a batch ends although the next row has the same source, and whether the rows of a batch are fed in reverse order. Rows of different sources and advances always end a batch.</summary>
+/// <summary>How a log is cut into the engine's batches: the positions where a batch ends although the next row has the same source, and whether the rows of a batch are fed in reverse order. Rows of different sources, advances and progress reports always end a batch.</summary>
 public sealed record Chunking(string Name, Func<int, bool> SplitAfter, bool Reverse = false)
 {
     public static readonly Chunking OneByOne = new("one row per batch", _ => true);
@@ -42,6 +42,7 @@ public static class EngineRun
         foreach (var batch in Batches(log, chunking))
         {
             if (batch[0].Input is AdvanceInput a) engine.Advance(a.Frontier, ++seq);
+            else if (batch[0].Input is ProgressInput p) engine.Progress(p.Source, p.Until, ++seq);
             else Ingest(engine, [.. (chunking.Reverse ? batch.Reverse() : batch).Select(x => (RowInput)x.Input)], ++seq);
             yield return (batch[^1].Index + 1, FactsOf(engine));
         }
@@ -53,7 +54,7 @@ public static class EngineRun
         for (var i = 0; i < log.Count; i++)
         {
             current.Add((i, log[i]));
-            var ends = i == log.Count - 1 || log[i] is AdvanceInput || log[i + 1] is AdvanceInput || ((RowInput)log[i]).Source != ((RowInput)log[i + 1]).Source || chunking.SplitAfter(i);
+            var ends = i == log.Count - 1 || log[i] is not RowInput || log[i + 1] is not RowInput || ((RowInput)log[i]).Source != ((RowInput)log[i + 1]).Source || chunking.SplitAfter(i);
             if (ends) { yield return current.ToImmutable(); current.Clear(); }
         }
     }

@@ -2,8 +2,9 @@
 module acme.treereport @ 1.0.0;
 
 import sattle.doc    @ 1.0.0 sha256:d08f49763c2dd278261b4cadfd33f9c3209421773074c005dbd00fe95466ee4f as doc;
-import acme.tree     @ 1.0.0 sha256:ada1c6be4ccce9e6b243aa4ee4bbc9bdf6c8687c163d0a4826c9710aae7820c5 as tree;
+import acme.tree     @ 1.0.0 sha256:426b59db5f24be52b044337136b2362b4a3deb06023ceae245c5588dc8afbc8e as tree;
 
+/// A report on the health tree as a document: the elements that are not healthy and why.
 projection healthReport view forward output doc {
   in health: graph tree;
   retain 4;

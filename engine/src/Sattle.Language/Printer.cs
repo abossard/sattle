@@ -108,6 +108,7 @@ public sealed class Printer(Graph g, string module)
             if (seg != name) sb.Append(" was ").Append(seg);
             if (r.Props.Get(Ids.KProp("required")) is BooleanValue { B: false }) sb.Append('?');
             sb.Append(": ").Append(VType(r.Target));
+            if (r.Props.Get(Ids.KProp("label")) is BooleanValue { B: true }) sb.Append(" label");
             if (d.Bool(r.Target, "nullable")) sb.Append(" nullable");
             if (d.Text(r.Target, "unit") is { } u) sb.Append(" unit ").Append(Q(u));
             if (d.Text(r.Target, "role") == "telemetry")
@@ -141,6 +142,7 @@ public sealed class Printer(Graph g, string module)
         if (d.Target(id, "extends") is { } s) sb.Append(" : ").Append(Ref(s));
         sb.Append(" (").Append(string.Join(" | ", d.Targets(id, "sourceType").Select(Ref))).Append(") -> (").Append(string.Join(" | ", d.Targets(id, "targetType").Select(Ref))).Append(')');
         if (d.Bool(id, "hierarchy")) sb.Append(" hierarchy");
+        if (d.Text(id, "kind") is { } kind) sb.Append(" kind ").Append(kind);
         Members(id, "");
         sb.Append('\n');
     }
@@ -396,16 +398,17 @@ public sealed class Printer(Graph g, string module)
                 case "Map": sb.Append("select ").Append(Record(d.Children(op, "assign").Select(a => (d.Text(a, "target")!, d.Children(a, "value")[0])))); break;
                 case "Window": sb.Append($"window on {d.Text(op, "timestampField")} width {Lexer.DurationText(d.Int(op, "width"))} late {d.Text(op, "late")}"); break;
                 case "Group": sb.Append("group by ").Append(KeyRecord(op)).Append(" aggregate ").Append(Aggs(op)); break;
-                case "Rollup": sb.Append("rollup by ").Append(KeyRecord(op)).Append(" combine ").Append(Aggs(op)); break;
+                case "Rollup": sb.Append("rollup by ").Append(KeyRecord(op)).Append(" combine ").Append(Aggs(op)).Append(d.Text(op, "nodata") == "any" ? " nodata any" : ""); break;
                 case "Series":
                     {
                         var gp = g.InRels(Ids.Child(op, "port", "graph")).Select(g.Rel).First(r => r is not null && Ids.Name(r!.Type) == "wire")!;
-                        sb.Append("series ").Append(Name(gp.Source)).Append(' ').Append(string.Join(", ", d.Children(op, "read").Select(r => d.Text(r, "path")))).Append(" within ").Append(Lexer.DurationText(d.Int(op, "within")));
+                        sb.Append("series ").Append(Name(gp.Source)).Append(' ').Append(string.Join(", ", d.Children(op, "read").Select(r => d.Text(r, "path") + (d.Prop(r, "fill") is DecimalValue f ? " fill " + Norm.Decimal(f.Q) : "")))).Append(" within ").Append(Lexer.DurationText(d.Int(op, "within")));
+                        if (d.Prop(op, "ttl") is IntegerValue ttl) sb.Append(" ttl ").Append(Lexer.DurationText((long)ttl.N));
                         break;
                     }
                 case "Threshold":
                     sb.Append("threshold ").Append(Expr(d.Children(op, "value")[0], 0)).Append(" by ").Append(KeyRecord(op))
-                        .Append($" above {ThresholdPart(op, "aboveBy", Norm.Decimal(d.Dec(op, "above")))} for {ThresholdPart(op, "enterBy", d.Int(op, "enterAfter").ToString())} then {Q(d.Text(op, "high")!)} below {ThresholdPart(op, "belowBy", Norm.Decimal(d.Dec(op, "below")))} for {ThresholdPart(op, "exitBy", d.Int(op, "exitAfter").ToString())} then {Q(d.Text(op, "low")!)} initial {Q(d.Text(op, "initial")!)} as {d.Text(op, "target")}");
+                        .Append($" above {ThresholdPart(op, "aboveBy", Norm.Decimal(d.Dec(op, "above")))} for {ThresholdPart(op, "enterBy", d.Int(op, "enterAfter").ToString())} then {Q(d.Text(op, "high")!)} below {ThresholdPart(op, "belowBy", Norm.Decimal(d.Dec(op, "below")))} for {ThresholdPart(op, "exitBy", d.Int(op, "exitAfter").ToString())} then {Q(d.Text(op, "low")!)} initial {Q(d.Text(op, "initial")!)}{(d.Text(op, "nodata") is { } nd ? " nodata then " + Q(nd) : d.Bool(op, "nodataIgnore") ? " nodata ignore" : "")} as {d.Text(op, "target")}");
                     break;
                 default: throw new InvalidOperationException($"cannot print operator {d.TypeName(op)}");
             }

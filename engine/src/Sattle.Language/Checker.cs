@@ -73,10 +73,13 @@ public sealed class ProjectionChecker(Graph defs)
         return vk switch
         {
             "Text" => Ty.Text, "Integer" => Ty.Int(unit), "Decimal" => Ty.Dec(unit), "Boolean" => Ty.Boolean, "Instant" => Ty.Instant,
-            "Entity" => Ty.Ent(refersTo), "List" => new Ty(Tag.List, "1", null, itemKindId is null ? null : Enum.Parse<Tag>(Ids.Name(itemKindId))),
+            "Entity" => Ty.Ent(refersTo), "List" => new Ty(Tag.List, "1", null, ItemTag(itemKindId is null ? null : Ids.Name(itemKindId))),
             _ => Ty.Text,
         };
     }
+
+    /// <summary>The kind of the items of a list. A list of `Any`, or of a kind the checker has no tag for, has untyped items.</summary>
+    static Tag? ItemTag(string? kind) => kind switch { null or "Any" => null, "Entity" => Tag.Ent, _ => Enum.TryParse<Tag>(kind, out var t) ? t : null };
 
     Schema RowSchema(string rowTypeId)
     {
@@ -173,7 +176,9 @@ public sealed class ProjectionChecker(Graph defs)
                 if (producerOf.TryGetValue(cp, out var prod))
                     inputs[Ids.Name(cp)] = opByOutPort.TryGetValue(prod, out var pop) ? new Src(false, d.Text(pop, "name") ?? Ids.Name(pop)) : new Src(true, Ids.Name(prod));
             Schema? In(string port) => inputs.ContainsKey(port) && producerOf.TryGetValue(Ids.Child(op, "port", port), out var pp) ? schemas.GetValueOrDefault(pp) : null;
-            var t = TypeOp(op, kind, name, inputs, In, ruleOf.GetValueOrDefault(op), ports);
+            TOp? t;
+            try { t = TypeOp(op, kind, name, inputs, In, ruleOf.GetValueOrDefault(op), ports); }
+            catch (DuplicateColumnException e) { Err("DuplicateColumn", op, $"{name}: {e.Message}"); t = null; }
             if (t is null) continue;
             typed.Add(t); opsByName[name] = t;
             schemas[Ids.Child(op, "port", "out")] = t.Out;
@@ -405,7 +410,11 @@ public sealed class ProjectionChecker(Graph defs)
                     var aggs = Aggs(op, R, true);
                     var inst = new FType(Ty.Instant, true, Role.Data);
                     var cols = kcols.Concat(carry).Concat([new Col("windowStart", inst), new Col("windowEnd", inst)]).Concat(aggs.Select(a => new Col(a.Target, a.Out))).ToList();
-                    return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window);
+                    var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
+                    var any = d.Text(op, "nodata") == "any";
+                    if (any && !marked) Err("Rollup", op, "`nodata any` needs a series with a time to live (`ttl`) upstream");
+                    if (marked) cols.Add(new Col(TThreshold.NoDataColumn, R.Find(TThreshold.NoDataColumn)!.T));
+                    return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, any, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
                 }
             case "Threshold":
                 {
@@ -429,9 +438,14 @@ public sealed class ProjectionChecker(Graph defs)
                     if ((enterBy is null && d.Int(op, "enterAfter") < 1) || (exitBy is null && d.Int(op, "exitAfter") < 1)) Err("Threshold", op, "enterAfter and exitAfter must be at least 1");
                     var (high, low, init) = (d.Text(op, "high") ?? "", d.Text(op, "low") ?? "", d.Text(op, "initial") ?? "");
                     if (init != high && init != low) Err("Threshold", op, "initial must be one of the two states");
+                    var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
+                    var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
+                    if (marked && noData is null && !ignore) Err("Threshold", op, "the series has a time to live: the threshold must say what no data gives (`nodata then \"...\"`) or ignore it (`nodata ignore`)");
+                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a `nodata` clause needs a series with a time to live (`ttl`) upstream, and its `noData` column in the row");
+                    if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
                     var target = d.Text(op, "target") ?? "status";
                     var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
-                    return new TThreshold(name, op, inputs, new Schema(cols, 0), v, keys, target, above, d.Int(op, "enterAfter"), high, below, d.Int(op, "exitAfter"), low, init, aboveBy, enterBy, belowBy, exitBy);
+                    return new TThreshold(name, op, inputs, new Schema(cols, 0), v, keys, target, above, d.Int(op, "enterAfter"), high, below, d.Int(op, "exitAfter"), low, init, aboveBy, enterBy, belowBy, exitBy, noData, ignore);
                 }
             case "EmitEntity": return R is null ? null : TypeEmitEntity(op, name, inputs, R, rule);
             case "EmitRelationship": return R is null ? null : TypeEmitRel(op, name, inputs, R, rule);
@@ -651,11 +665,11 @@ public sealed class ProjectionChecker(Graph defs)
 
     Ty KindOfProp(OntologyView.PropInfo p, OntologyView v)
     {
-        var refers = (string?)null;
+        var refers = d.Target(p.Id, "refersTo");
         return p.ValueKind switch
         {
             "Text" => Ty.Text, "Integer" => Ty.Int(p.Unit ?? "1"), "Decimal" => Ty.Dec(p.Unit ?? "1"), "Boolean" => Ty.Boolean, "Instant" => Ty.Instant,
-            "Entity" => Ty.Ent(refers), "List" => new Ty(Tag.List, "1", null, p.ItemKind is null ? null : Enum.Parse<Tag>(p.ItemKind)), _ => Ty.Text,
+            "Entity" => Ty.Ent(refers), "List" => new Ty(Tag.List, "1", null, ItemTag(p.ItemKind)), _ => Ty.Text,
         };
     }
 
@@ -683,10 +697,18 @@ public sealed class ProjectionChecker(Graph defs)
             if (period != 0 && p.Period != period) { Err("Series", rd, "series reads have different periods"); continue; }
             period = p.Period;
             if (R.Has(pn) || pn is "windowStart" or "windowEnd") { Err("Series", rd, $"name '{pn}' already exists in the row"); continue; }
-            reads.Add(new TSeriesRead(v, hit[0], pn, p.ValueKind));
+            var fill = d.Prop(rd, "fill") is DecimalValue fv ? fv.Q : (decimal?)null;
+            // a fill is a value for a window in which nothing happened: that is a value only where the windows of a property add up (Def. 7.15)
+            if (fill is not null && p.Temporality != "delta") { Err("Series", rd, $"'{pn}' is a {p.Temporality} property: a missing reading of it is not a value, so it takes no fill"); continue; }
+            if (fill is { } whole && p.ValueKind == "Integer" && whole != decimal.Truncate(whole)) { Err("Series", rd, $"the fill of the Integer property '{pn}' must be an integer"); continue; }
+            reads.Add(new TSeriesRead(v, hit[0], pn, p.ValueKind, fill));
         }
         var within = d.Int(op, "within");
         if (period > 0 && within < period) Err("Series", op, "within must be at least the series period");
+        var ttl = d.Prop(op, "ttl") is IntegerValue tv ? (long)tv.N : (long?)null;
+        if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live (`ttl`) on the same series: silence must have a declared outcome");
+        if (ttl is { } life && period > 0 && (life < period || life > within)) Err("Series", op, "the time to live must be at least one window and at most `within`");
+        if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
         if (reads.Count == 0 || target is null) return null;
         var inst = new FType(Ty.Instant, true, Role.Data);
         var cols = new List<Col> { new("windowStart", inst), new("windowEnd", inst) };
@@ -695,7 +717,8 @@ public sealed class ProjectionChecker(Graph defs)
             var p = view.Props[r.PropId];
             cols.Add(new Col(r.OutName, new FType(KindOfProp(p, view), true, Role.Tele(p.Temporality!, p.Period))));
         }
-        return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target);
+        if (ttl is not null) cols.Add(new Col(TThreshold.NoDataColumn, new FType(Ty.Boolean, true, Role.Tele("gauge", period))));
+        return new TSeries(name, op, inputs, R.With(cols, period), gsrc.Name, reads, within, period, target, ttl);
     }
 
     // ---- emits -----------------------------------------------------------------------------------------
@@ -964,7 +987,7 @@ public sealed class ProjectionChecker(Graph defs)
                 {
                     var v = d.Prop(node, "value") ?? Value.Null;
                     var ty = v switch { TextValue => Ty.Text, IntegerValue => Ty.Int(), DecimalValue => Ty.Dec(), BooleanValue => Ty.Boolean, InstantValue => Ty.Instant, _ => Ty.Null };
-                    return new TLit(v, new FType(ty, true, Role.Data));
+                    return new TLit(v, new FType(ty, v is not NullValue, Role.Data));       // `null` is the absent value: it is optional, whatever kind it stands for
                 }
             case "Call": return CallExpr(node, R);
             case "IdOf": return IdExpr(node, R);
@@ -1091,7 +1114,7 @@ public sealed class ProjectionChecker(Graph defs)
                     if (!Arity(3, 3)) break;
                     if (args[0].Type.Ty.Tag != Tag.Boolean) { Err("E-Call", node, "If needs a Boolean condition"); return null; }
                     if (!Types.Comparable(args[1].Type.Ty, args[2].Type.Ty, null)) { Err("E-Call", node, $"If branches differ: {args[1].Type.Ty} and {args[2].Type.Ty}"); return null; }
-                    role = Types.Join("If", [roles[1], roles[2]], out je);
+                    role = Types.Join("If", roles, out je);       // the condition decides the value: a telemetry condition makes a telemetry result
                     if (role is null) { Err("E-Call", node, je!); return null; }
                     return new TCall(fn, args, new FType(args[1].Type.Ty, true, role));
                 }
@@ -1131,10 +1154,11 @@ public sealed class SpaceChecker(Graph defs)
             if (proj is null) { Err("S2", g, "graph has no producing projection"); continue; }
             producedBy[g] = proj;
         }
-        var bindings = d.Children(spaceId, "binding");
+        var allBindings = d.Children(spaceId, "binding");
         foreach (var g in graphIds)
         {
             if (!producedBy.TryGetValue(g, out var proj)) continue;
+            var bindings = allBindings.Where(b => Ids.Name(b).StartsWith(Ids.Name(g) + ".", StringComparison.Ordinal)).ToList();       // a binding is named by its graph and port: two graphs may bind one projection
             if (!projections.TryGetValue(proj, out var tp)) { Err("S2", g, $"projection {Ids.Name(proj)} did not check"); continue; }
             var bind = new Dictionary<string, string>();
             foreach (var b in bindings)

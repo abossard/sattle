@@ -11,6 +11,10 @@ public sealed class Epoch
     public long Lambda;
     public Dictionary<string, Batch> Rows { get; } = [];
     public Dictionary<string, GraphDelta> Graphs { get; } = [];
+    /// <summary>The step was caused by the progress of a source and carries no rows and no advance (Def. 10.9).</summary>
+    public bool Progress;
+    /// <summary>How far each source has reported (Def. 7.14), at this step.</summary>
+    public IReadOnlyDictionary<string, long> Covered = new Dictionary<string, long>();
 }
 
 /// <summary>A committed change of an input graph, as seen by a projection: the patch, the graph after it, and the telemetry windows that changed in the same step.</summary>
@@ -322,7 +326,7 @@ abstract class AggregatingOp : PhysOp
     protected readonly int[] outKeyCol, outAggCol;
     protected readonly long[] keyBuf;
     readonly Interner it;
-    readonly DecimalCodes decimals = new();
+    protected readonly DecimalCodes decimals = new();
     /// <summary>The key code of a cell: its 64-bit code, or the code of its number for a Decimal.</summary>
     protected long KeyCode(Column c, int row) => c.IsDec ? decimals.Code(c.D[row]) : c.L[row];
 
@@ -658,14 +662,42 @@ sealed class RollupOp : AggregatingOp
 {
     readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period; int emptied;
     readonly List<long> slotWindow = [];
-    public RollupOp(TRollup t, Layout inLayout, OpContext cx) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
+
+    // ---- no data (Def. 7.16) ----
+    /// <summary>Per key (without the window) of a roll-up over a Series with a time to live: the marker records of its members by window, its normal rows by window, and the window of the marker record the key has in the output.</summary>
+    sealed class Silence { public long[] Key = []; public readonly SortedDictionary<long, long> Markers = []; public readonly SortedDictionary<long, long> Normal = []; public long? Emitted; }
+    readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly long ttl; readonly bool any; long frontier = long.MinValue;
+
+    /// <summary>`series`: the Series upstream when it has a time to live. A member that is not in no data has a record that ends within the time to live, so the key is in no data iff it has a marker record and no normal row that ends within it (`nodata any`: iff it has a marker record).</summary>
+    public RollupOp(TRollup t, Layout inLayout, OpContext cx, TSeries? series = null) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
     {
         table = new KeyTable(keyExprs.Length + 1, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
         inWs = inLayout.Index("windowStart"); outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd"); period = t.PeriodNs;
+        if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); ttl = series?.TtlNs ?? 0; any = t.NoDataAny; }
     }
+
+    static void Count(SortedDictionary<long, long> counts, long window, long weight)
+    {
+        var n = counts.GetValueOrDefault(window) + weight;
+        if (n == 0) counts.Remove(window); else counts[window] = n;
+    }
+
+    void WriteMarker(BatchBuilder bb, Silence s, long ws, long weight)
+    {
+        var row = bb.Add(weight); var bt = bb.Batch;
+        for (var i = 0; i < outKeyCol.Length; i++) { var kc = bt.Cols[outKeyCol[i]]; if (kc.IsDec) kc.D[row] = decimals.Value(s.Key[i]); else kc.L[row] = s.Key[i]; }
+        bt.Cols[outWs].L[row] = ws; bt.Cols[outWe].L[row] = ws + period;
+        foreach (var a in outAggCol) bt.Cols[a].SetAbsent(row, bt.N);
+        bt.Cols[outNoData].L[row] = 1;
+    }
+
+    bool Suppressed(int slot, int n) => silence is not null && silence.TryGetValue(string.Join(',', table.KeyAt(slot)[..n].ToArray()), out var s) && s.Emitted == table.KeyAt(slot)[n];
+
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
+        if (ep.HasAdvance && ep.Lambda > frontier) frontier = ep.Lambda;
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
+        var quiet = silence is null ? null : new List<Silence>();
         var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
         var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
         var wsCol = b.Cols[inWs].L;
@@ -677,16 +709,41 @@ sealed class RollupOp : AggregatingOp
             for (var i = 0; i < n; i++) { if (keyCols[i].P is not null && !keyCols[i].P![row]) { ok = false; break; } keyBuf[i] = KeyCode(keyCols[i], row); }
             if (!ok) continue;
             keyBuf[n] = wsCol[row];
+            Silence? s = null;
+            if (silence is not null)
+            {
+                var id = string.Join(',', keyBuf[..n]);
+                if (!silence.TryGetValue(id, out s)) silence[id] = s = new Silence { Key = keyBuf[..n] };
+                quiet!.Add(s);
+                if (b.Cols[inNoData].L[row] != 0) { Count(s.Markers, wsCol[row], b.Weight(row)); continue; }       // the record of a member in no data is not aggregated
+                Count(s.Normal, wsCol[row], b.Weight(row));
+            }
             var slot = table.FindOrAdd(keyBuf.AsSpan(0, n + 1));
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
             table.Touch(slot);
         }
         var bb = new BatchBuilder(OutLayout);
+        if (quiet is not null)
+            foreach (var s in quiet.Distinct())
+            {
+                var marked = s.Markers.Where(m => m.Value > 0).Select(m => (long?)m.Key).LastOrDefault();
+                var reporting = !any && s.Normal.Where(x => x.Value > 0).Select(x => (long?)x.Key).LastOrDefault() is { } newest && newest + period >= frontier - ttl;
+                var want = marked is not null && !reporting ? marked : null;
+                if (want != s.Emitted)
+                {
+                    // the marker record takes the place of the key's aggregate at its window: that slot is written again without or with it
+                    foreach (var at in new[] { s.Emitted, want }) if (at is { } ws) { s.Key.CopyTo(keyBuf, 0); keyBuf[n] = ws; table.Touch(table.FindOrAdd(keyBuf.AsSpan(0, n + 1))); }
+                    if (s.Emitted is { } old) WriteMarker(bb, s, old, -1);
+                    if (want is { } now) WriteMarker(bb, s, now, 1);
+                    s.Emitted = want;
+                }
+                if (s.Markers.Count == 0 && s.Normal.Count == 0 && s.Emitted is null) silence!.Remove(string.Join(',', s.Key));
+            }
         foreach (var slot in table.TouchedList)
         {
             var ws = table.KeyAt(slot)[n];
             if (table.Emitted[slot]) WriteRow(bb, table, slot, -1, true, ws, ws + period, outWs, outWe);
-            if (table.Cnt[slot] > 0) { WriteRow(bb, table, slot, 1, false, ws, ws + period, outWs, outWe); Remember(table, slot); table.Emitted[slot] = true; }
+            if (table.Cnt[slot] > 0 && !Suppressed(slot, n)) { WriteRow(bb, table, slot, 1, false, ws, ws + period, outWs, outWe); Remember(table, slot); table.Emitted[slot] = true; }
             else { table.Emitted[slot] = false; emptied++; }
         }
         table.ClearTouched();
@@ -701,8 +758,14 @@ sealed class RollupOp : AggregatingOp
 sealed class ThresholdOp : PhysOp
 {
     /// <summary>Per key with a window in the look-back: those windows, and one carried state: the state machine after the newest window that left the look-back (`State`, `Run`, `Last` its start), so a state never changes because a window grew old (Def. 7.10, D33).</summary>
-    sealed class KeyState { public readonly SortedDictionary<long, decimal> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public decimal Above, Below; public long Enter, Exit; public string State = ""; public long Run; public long Last = long.MinValue; }
-    readonly TThreshold t; readonly VExpr[] keys; readonly VExpr value; readonly int inWs; readonly int[] outKey; readonly int outStatus;
+    sealed class KeyState { public readonly SortedDictionary<long, (decimal V, int P)> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
+        /// <summary>The marker records the key has (Def. 7.16): while there is one, the key is in no data.</summary>
+        public long Silent; }
+    /// <summary>The parameters of one window: the constants of the statement, or what the row of the window gives. Rules are few and windows many, so a window holds an index into `parameters`.</summary>
+    readonly record struct Params(decimal Above, decimal Below, long Enter, long Exit);
+    readonly List<Params> parameters = []; readonly Dictionary<Params, int> parameterIndex = [];
+    int IndexOf(Params p) { if (!parameterIndex.TryGetValue(p, out var i)) { parameterIndex[p] = i = parameters.Count; parameters.Add(p); } return i; }
+    readonly TThreshold t; readonly VExpr[] keys; readonly VExpr value; readonly int inWs; readonly int[] outKey; readonly int outStatus; readonly int inNoData = -1;
     readonly VExpr? aboveBy, enterBy, belowBy, exitBy;
     readonly Dictionary<string, KeyState> states = [];
     readonly long[] buf;
@@ -717,6 +780,7 @@ sealed class ThresholdOp : PhysOp
         keys = [.. t.Keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
         value = ExprCompiler.Compile(t.Value, inLayout, cx.It, cx.Faults);
         inWs = inLayout.Index("windowStart");
+        if (t.ReadsNoData) inNoData = inLayout.Index(TThreshold.NoDataColumn);
         VExpr? P(TExpr? e) => e is null ? null : ExprCompiler.Compile(e, inLayout, cx.It, cx.Faults);
         aboveBy = P(t.AboveBy); enterBy = P(t.EnterBy); belowBy = P(t.BelowBy); exitBy = P(t.ExitBy);
         outKey = [.. t.Keys.Select(k => OutLayout.Index(k.Name))]; outStatus = OutLayout.Index(t.Target);
@@ -724,14 +788,15 @@ sealed class ThresholdOp : PhysOp
     }
 
     /// <summary>One window of the state machine: a run of `Enter` windows at or above `Above` switches to high, a run of `Exit` windows at or below `Below` switches to low; the run restarts at a switch and at a window that does not extend it. A window that starts `within` or more after the one before begins a new episode in `initial`.</summary>
-    void Step(KeyState st, ref string state, ref long run, ref long last, long start, decimal v)
+    void Step(ref string state, ref long run, ref long last, long start, (decimal V, int P) window)
     {
         if (last != long.MinValue && lookBack is { } within && start - last >= within) { state = t.Initial; run = 0; }
         last = start;
+        var p = parameters[window.P];
         var low = state == t.Low;
-        var extends = low ? v >= st.Above : v <= st.Below;
+        var extends = low ? window.V >= p.Above : window.V <= p.Below;
         run = extends ? run + 1 : 0;
-        if (extends && run >= (low ? st.Enter : st.Exit)) { state = low ? t.High : t.Low; run = 0; }
+        if (extends && run >= (low ? p.Enter : p.Exit)) { state = low ? t.High : t.Low; run = 0; }
     }
 
     /// <summary>The frontier from which no accepted window can start less than `within` after the last one of the key.</summary>
@@ -740,7 +805,7 @@ sealed class ThresholdOp : PhysOp
     string Run(KeyState st)
     {
         var state = st.State; var run = st.Run; var last = st.Last;
-        foreach (var (start, v) in st.Windows) Step(st, ref state, ref run, ref last, start, v);
+        foreach (var (start, window) in st.Windows) Step(ref state, ref run, ref last, start, window);
         return state;
     }
 
@@ -751,7 +816,7 @@ sealed class ThresholdOp : PhysOp
         while (idle.Count > 0 && idle.Min is var due && due.At <= frontier)
         {
             idle.Remove(due);
-            if (states.TryGetValue(due.Id, out var gone) && gone.Windows.Count == 0 && DropAt(gone) <= frontier) states.Remove(due.Id);
+            if (states.TryGetValue(due.Id, out var gone) && gone.Windows.Count == 0 && gone.Silent == 0 && DropAt(gone) <= frontier) states.Remove(due.Id);
         }
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var kc = keys.Select(k => k.Eval(b)).ToArray(); var vc = value.Eval(b);
@@ -761,30 +826,38 @@ sealed class ThresholdOp : PhysOp
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
-            var ok = vc.P is null || vc.P[row];
+            var silent = inNoData >= 0 && b.Cols[inNoData].L[row] != 0;       // the record of a key in no data: it has no value and is no window of the episode
+            var ok = silent || vc.P is null || vc.P[row];
             for (var i = 0; i < kc.Length && ok; i++) { if (kc[i].P is not null && !kc[i].P![row]) ok = false; else buf[i] = kc[i].IsDec ? decimals.Code(kc[i].D[row]) : kc[i].L[row]; }
             if (!ok) continue;
-            var id = string.Join(',', buf);
-            if (!states.TryGetValue(id, out var st)) states[id] = st = new KeyState { Id = id, Key = [.. buf], Above = t.Above, Below = t.Below, Enter = t.EnterAfter, Exit = t.ExitAfter, State = t.Initial };
-            if (b.Weight(row) > 0)           // thresholds read from data: the latest row of the key sets them
+            if (silent)
             {
-                if (ac is not null && (ac.P is null || ac.P[row])) st.Above = Num(ac, row);
-                if (bc is not null && (bc.P is null || bc.P[row])) st.Below = Num(bc, row);
-                if (ec is not null && (ec.P is null || ec.P[row])) st.Enter = (long)Num(ec, row);
-                if (xc is not null && (xc.P is null || xc.P[row])) st.Exit = (long)Num(xc, row);
+                if (t.NoData is null) continue;       // `nodata ignore`
+                var sid = string.Join(',', buf);
+                if (!states.TryGetValue(sid, out var quiet)) states[sid] = quiet = new KeyState { Id = sid, Key = [.. buf], State = t.Initial };
+                quiet.Silent += b.Weight(row);
+                if (seen.Add(quiet)) touched.Add(quiet);
+                continue;
             }
-            var ws = b.Cols[inWs].L[row]; var v = vc.IsDec ? vc.D[row] : vc.L[row];
+            // thresholds read from data: each window is read with the parameters of its own row. The checker cannot see them: a row whose parameters are no state machine is dropped and counted
+            var p = new Params(ac is not null && (ac.P is null || ac.P[row]) ? Num(ac, row) : t.Above, bc is not null && (bc.P is null || bc.P[row]) ? Num(bc, row) : t.Below,
+                ec is not null && (ec.P is null || ec.P[row]) ? (long)Num(ec, row) : t.EnterAfter, xc is not null && (xc.P is null || xc.P[row]) ? (long)Num(xc, row) : t.ExitAfter);
+            if (p.Above <= p.Below || p.Enter < 1 || p.Exit < 1) { if (b.Weight(row) > 0) cx.Faults.InvalidParameter++; continue; }
+            var id = string.Join(',', buf);
+            if (!states.TryGetValue(id, out var st)) states[id] = st = new KeyState { Id = id, Key = [.. buf], State = t.Initial };
+            var ws = b.Cols[inWs].L[row]; var window = (V: vc.IsDec ? vc.D[row] : vc.L[row], P: IndexOf(p));
             if (ws < edge) { if (b.Weight(row) > 0) cx.LateDropped++; }     // behind the look-back: a late row is dropped and counted, and the row that withdraws a window because it grew old withdraws nothing here
-            else if (b.Weight(row) > 0) st.Windows[ws] = v;
-            else if (st.Windows.TryGetValue(ws, out var cur) && cur == v) st.Windows.Remove(ws);
+            else if (b.Weight(row) > 0) st.Windows[ws] = window;
+            else if (st.Windows.TryGetValue(ws, out var cur) && cur == window) st.Windows.Remove(ws);
             if (seen.Add(st)) touched.Add(st);
         }
         var bb = new BatchBuilder(OutLayout);
         foreach (var st in touched)
         {
-            while (st.Windows.Count > 0 && st.Windows.First() is var oldest && oldest.Key < edge) { Step(st, ref st.State, ref st.Run, ref st.Last, oldest.Key, oldest.Value); st.Windows.Remove(oldest.Key); }
+            while (st.Windows.Count > 0 && st.Windows.First() is var oldest && oldest.Key < edge) { Step(ref st.State, ref st.Run, ref st.Last, oldest.Key, oldest.Value); st.Windows.Remove(oldest.Key); }
             var next = st.Windows.Count == 0 ? null : Run(st);
             if (next is null) idle.Add((DropAt(st), st.Id));     // no window in the look-back: the row goes; the carried state stays until no late window can continue the episode
+            if (st.Silent > 0) next = t.NoData;                  // no data is an output over the state machine, which goes on as the episode rule says
             if (next == st.Emitted) continue;
             if (st.Emitted is not null) Write(bb, st, st.Emitted, -1, cx);
             if (next is not null) Write(bb, st, next, 1, cx);

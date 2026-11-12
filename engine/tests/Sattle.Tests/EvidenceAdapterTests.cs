@@ -80,6 +80,19 @@ public class EvidenceAdapterTests
         Assert.Single(Of(run.Engine, "Capability"));
     }
 
+    /// <summary>The thresholds of an authored rule reach a Threshold as row values, which the checker cannot see: a rule that is no state machine is rejected where it is authored.</summary>
+    [Theory]
+    [InlineData(5, 1, 1, 1, 1)]
+    [InlineData(1, 1, 1, 1, 0)]         // above not greater than below
+    [InlineData(5, 0, 1, 1, 0)]         // on at the first window whatever its value
+    [InlineData(5, 1, 1, 0, 0)]
+    public void An_authored_rule_is_accepted_only_with_above_over_below_and_runs_of_at_least_one_window(int above, int enterAfter, int below, int exitAfter, int rules)
+    {
+        var run = ReplayTests.Replay(Capture([Line("authoring", "2026-01-01T10:00:00.000Z", 1, new { kind = "signalRule", id = "r1", type = "pod", meter = "warnings", above, enterAfter, below, exitAfter, severity = 1, invert = false })]), chunk: 1);
+        Assert.Equal(rules, Of(run.Engine, "SignalRule").Count());
+        Assert.Equal(1 - rules, run.Stats.Rejected);
+    }
+
     [Fact]
     public void Aks_audit_records_become_audit_events_and_lease_renewals_and_partial_stages_are_left_out()
     {

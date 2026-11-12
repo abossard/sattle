@@ -124,13 +124,17 @@ public static class Program
         return File.Exists(committed) ? committed : null;
     }
 
+    /// <summary>The captures in a captures folder, oldest first: the directories named by their capture time (`20261110T105738Z`). Any other directory there is work in progress of the lab and no capture.</summary>
+    public static IReadOnlyList<string> Captures(string folder) => !Directory.Exists(folder) ? [] :
+        [.. Directory.EnumerateDirectories(folder).Where(d => System.Text.RegularExpressions.Regex.IsMatch(Path.GetFileName(d), @"^\d{8}T\d{6}Z$")).Order(StringComparer.Ordinal)];
+
     internal static string FindCapture(string arg)
     {
         if (arg != "latest") return arg;
         for (var dir = new DirectoryInfo(Directory.GetCurrentDirectory()); dir is not null; dir = dir.Parent)
         {
             var c = Path.Combine(dir.FullName, "lab", "captures");
-            if (Directory.Exists(c)) return Directory.EnumerateDirectories(c).OrderBy(x => x, StringComparer.Ordinal).Last();
+            if (Directory.Exists(c)) return Captures(c).LastOrDefault() ?? throw new ArgumentException($"no capture under {c}");
         }
         throw new ArgumentException("lab/captures not found");
     }
@@ -287,7 +291,7 @@ public static class Program
             foreach (var (rel, f) in top) Console.WriteLine($"  top dependency {idToName.GetValueOrDefault(rel.Source, rel.Source)} -> {idToName.GetValueOrDefault(rel.Target, rel.Target)}: {f:N0} flows, status {rel.Props.Text("d:acme.svc/prop:status") ?? "-"}");
         }
         if (cosmos is not null) foreach (var (kind, (calls, ru)) in cosmos.Charges.OrderBy(x => x.Key)) Console.WriteLine($"cosmos {kind}: {calls:N0} request(s), charge {ru:N1}");
-        Console.WriteLine($"identities: {e.Identities.Minted:N0} minted, {e.Identities.Aliased:N0} aliased, {e.Identities.Merges:N0} merged, {e.Identities.Conflicts:N0} conflict(s); runtime faults: {e.Faults.DivisionByZero} division by zero, {e.Faults.Overflow} overflow or canonicalization failure; late rows dropped {e.Graphs.Sum(g => g.Cx.LateDropped)}, rejected {e.Graphs.Sum(g => g.Cx.LateRejected)}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Rejections)}");
+        Console.WriteLine($"identities: {e.Identities.Minted:N0} minted, {e.Identities.Aliased:N0} aliased, {e.Identities.Merges:N0} merged, {e.Identities.Conflicts:N0} conflict(s); runtime faults: {e.Faults.DivisionByZero} division by zero, {e.Faults.Overflow} overflow or canonicalization failure, {e.Faults.InvalidParameter} row(s) with threshold parameters that are no state machine; late rows dropped {e.Graphs.Sum(g => g.Cx.LateDropped)}, rejected {e.Graphs.Sum(g => g.Cx.LateRejected)}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Rejections)}");
         Console.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.WindowConflicts) + (e.Telemetry is InMemoryTelemetryStore merged ? e.Graphs.Sum(g => merged.MergeConflicts(g.Key)) : 0):N0} telemetry window, {e.Graphs.Sum(g => g.Out.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.PropertyConflicts + g.Out.WindowConflicts + g.Out.Rejections > 0).Select(g => $"; {g.Name} {g.Out.PropertyConflicts}/{g.Out.WindowConflicts}/{g.Out.Rejections}")));
         Console.WriteLine("state digest " + e.StateDigest());
     }

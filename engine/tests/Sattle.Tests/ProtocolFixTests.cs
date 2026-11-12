@@ -70,6 +70,11 @@ public class ProtocolFixTests
         Assert.Equal("1", patch["from"]!["revision"]!["value"]!.GetValue<string>());                     // the draft's revision, not the catalog head
         var ids = patch["edits"]!.AsArray().Where(e => e!["kind"]!.GetValue<string>() == "entity").Select(e => e!["id"]!["value"]!.GetValue<string>()).ToHashSet();
         foreach (var c in children) Assert.Contains(op + "/" + c, ids);
+        // the answer names these children as placeholders, with their slots: nothing in the graph tells the placeholder `n = count()` from one an author wrote
+        var placeholders = patch["placeholders"]!.AsArray().Select(p => p!["id"]!["value"]!.GetValue<string>() + " in " + p["slot"]!.GetValue<string>()).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(children.Where(c => !c.Contains('/')).Select(c => op + "/" + c + " in " + c[..c.IndexOf(':')]).Order(StringComparer.Ordinal).ToList(), placeholders);       // the value of a placeholder assignment belongs to it
+        var applied = h.ApplyDraftPatch(d, patch, 1);                                                 // the answer is still the patch to apply: the list is beside its edits
+        Assert.NotNull(applied);
     }
 
     [Fact]

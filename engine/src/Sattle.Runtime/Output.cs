@@ -13,8 +13,28 @@ sealed class SeriesOp : PhysOp
     readonly Dictionary<int, SortedDictionary<long, decimal?[]>> windows = [];
     long frontier = long.MinValue;
 
+    // ---- fill and time to live (Def. 7.14 to 7.16) ----
+    /// <summary>Per read, the sources that feed the property it reads (a function of the definitions, set at activation).</summary>
+    public string[][] Feeding = [];
+    readonly decimal?[] fills; readonly long? ttl; readonly int outNoData = -1;
+    /// <summary>Since which advance an element has had a row here (presence is sampled at advances), and the window of the no-data record an element has.</summary>
+    readonly Dictionary<int, long> since = []; readonly Dictionary<int, long> marker = [];
+    /// <summary>Per read, the time up to which its windows are covered and closed, as applied to the output so far: min(frontier, coveredUntil).</summary>
+    long[] hi;
+    /// <summary>The Series fills or has a time to live: its output also depends on the progress of its sources and on the frontier.</summary>
+    public bool Fills => ttl is not null || fills.Any(f => f is not null);
+    long Floor(long time) => time - ((time % period) + period) % period;
+
+    long[] HiAt(long f, IReadOnlyDictionary<string, long> covered) =>
+        [.. fills.Select((fill, i) => fill is null || f == long.MinValue || i >= Feeding.Length || Feeding[i].Length == 0 || !Feeding[i].All(covered.ContainsKey) ? long.MinValue : Math.Min(f, Feeding[i].Min(s => covered[s])))];
+
+    /// <summary>True when the progress of a source lets a window become covered that the output does not hold yet.</summary>
+    public bool CoverageMoved(long f, IReadOnlyDictionary<string, long> covered) => Fills && HiAt(f, covered).Zip(hi).Any(x => x.First != long.MinValue && (x.Second == long.MinValue || Floor(x.First) != Floor(x.Second)));
+
     public SeriesOp(TSeries t, Layout inLayout, Interner it) : base(t)
     {
+        fills = [.. t.Reads.Select(r => r.Fill)]; ttl = t.TtlNs; hi = [.. t.Reads.Select(_ => long.MinValue)];
+        if (t.TtlNs is not null) outNoData = OutLayout.Index(TThreshold.NoDataColumn);
         this.t = t; this.inLayout = inLayout;
         elemCol = inLayout.Index(t.TargetVar);
         propHandles = [.. t.Reads.Select(r => it.Intern(r.PropId))];
@@ -30,7 +50,7 @@ sealed class SeriesOp : PhysOp
         return true;
     }
 
-    void WriteRow(BatchBuilder bb, Arr r, long ws, decimal?[] vals, long w)
+    void WriteRow(BatchBuilder bb, Arr r, long ws, decimal?[] vals, long w, bool noData = false)
     {
         var row = bb.Add(w);
         var b = bb.Batch;
@@ -42,14 +62,173 @@ sealed class SeriesOp : PhysOp
         b.Cols[outWs].L[row] = ws; b.Cols[outWe].L[row] = ws + period;
         for (var k = 0; k < outReadCol.Length; k++)
         {
-            if (readIsDec[k]) b.Cols[outReadCol[k]].D[row] = vals[k]!.Value; else b.Cols[outReadCol[k]].L[row] = (long)vals[k]!.Value;
+            if (noData) b.Cols[outReadCol[k]].SetAbsent(row, b.N);
+            else if (readIsDec[k]) b.Cols[outReadCol[k]].D[row] = vals[k]!.Value; else b.Cols[outReadCol[k]].L[row] = (long)vals[k]!.Value;
         }
+        if (outNoData >= 0) b.Cols[outNoData].L[row] = noData ? 1 : 0;
+    }
+
+    /// <summary>The values of the record an element has at a window: stored values, and for a read with a fill the fill value where the window is covered for the element. Null when a read has neither, or the window is outside the look-back.</summary>
+    decimal?[]? Record(int elem, long start, long[] h, long f)
+    {
+        if (f != long.MinValue && start < f - within) return null;
+        var stored = windows.TryGetValue(elem, out var ws) && ws.TryGetValue(start, out var v) ? v : null;
+        var res = new decimal?[fills.Length];
+        for (var i = 0; i < fills.Length; i++)
+        {
+            var x = stored?[i];
+            if (x is null && fills[i] is { } fill && h[i] != long.MinValue && start + period <= h[i] && since.TryGetValue(elem, out var from) && start >= from) x = fill;
+            if (x is null) return null;
+            res[i] = x;
+        }
+        return res;
+    }
+
+    /// <summary>The window starts in [lo, up) at which an element can have a record: its stored windows and the grid windows a fill can hold.</summary>
+    SortedSet<long> Starts(int elem, long lo, long up, long[] h)
+    {
+        var set = new SortedSet<long>();
+        if (windows.TryGetValue(elem, out var ws)) foreach (var a in ws.Keys) if (a >= lo && a < up) set.Add(a);
+        var top = h.Max();
+        if (top != long.MinValue && since.TryGetValue(elem, out var from))
+            for (var a = Floor(Math.Max(lo, from) + period - 1); a < up && a + period <= top; a += period) set.Add(a);
+        return set;
+    }
+
+    /// <summary>Def. 7.16: no record that ends within the time to live, and an older record or a `since` that is older than it.</summary>
+    bool InNoData(int elem)
+    {
+        var life = ttl!.Value;
+        for (var a = Floor(frontier - life - 1); a + period <= frontier; a += period) if (Record(elem, a, hi, frontier) is not null) return false;
+        if (windows.TryGetValue(elem, out var ws)) foreach (var a in ws.Keys) if (Record(elem, a, hi, frontier) is not null) return true;
+        return since.TryGetValue(elem, out var from) && from < frontier - life;
+    }
+
+    void UpdateMarker(BatchBuilder bb, int elem)
+    {
+        var list = arrangement.GetValueOrDefault(elem);
+        long? want = list is { Count: > 0 } && frontier != long.MinValue && InNoData(elem) ? Floor(frontier) - period : null;
+        long? old = marker.TryGetValue(elem, out var m) ? m : null;
+        if (old == want) return;
+        if (old is { } was && list is not null) foreach (var r in list) WriteRow(bb, r, was, [], -r.Weight, true);
+        if (want is { } now) { foreach (var r in list!) WriteRow(bb, r, now, [], r.Weight, true); marker[elem] = now; } else marker.Remove(elem);
+    }
+
+    static bool Same(decimal?[]? a, decimal?[]? b) => a is null ? b is null : b is not null && a.AsSpan().SequenceEqual(b);
+
+    /// <summary>The Series with a fill or a time to live. Every change of the output is the difference between the record an element had at a window and the one it has now: after a structural row, a stored window, an advance, or the progress of a source.</summary>
+    Batch? RunFilled(Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var bb = new BatchBuilder(OutLayout);
+        var touched = new HashSet<int>();
+        var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
+        var rows = In(inputs, "in");
+        if (rows is not null)
+            for (var k = 0; k < rows.Rows; k++)
+            {
+                var i = rows.RowAt(k);
+                var c = (int)rows.Cols[elemCol].L[i];
+                var l = new long[inLayout.Count]; var d = new decimal[inLayout.Count]; var p = new bool[inLayout.Count];
+                for (var col = 0; col < inLayout.Count; col++)
+                {
+                    p[col] = rows.Cols[col].Present(i);
+                    if (inLayout.IsDec[col]) d[col] = rows.Cols[col].D[i]; else l[col] = rows.Cols[col].L[i];
+                }
+                var w = rows.Weight(i);
+                if (!arrangement.TryGetValue(c, out var list)) arrangement[c] = list = [];
+                var ex = list.FindIndex(a => SameRow(a, l, d, p));
+                if (ex >= 0) { var nw = list[ex].Weight + w; if (nw == 0) list.RemoveAt(ex); else list[ex] = list[ex] with { Weight = nw }; }
+                else if (w != 0) list.Add(new Arr(l, d, p, w));
+                var row = new Arr(l, d, p, w);
+                foreach (var a in Starts(c, edge, long.MaxValue, hi)) if (Record(c, a, hi, frontier) is { } vals) WriteRow(bb, row, a, vals, w);
+                if (marker.TryGetValue(c, out var m)) WriteRow(bb, row, m, [], w, true);
+                touched.Add(c);
+            }
+        var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
+        if (gd is not null && gd.Telemetry.Count > 0)
+        {
+            var byWindow = new Dictionary<(int, long), List<WindowChange>>();
+            foreach (var ch in gd.Telemetry)
+            {
+                if (Array.IndexOf(propHandles, ch.Key.Prop) < 0) continue;
+                if (!byWindow.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var l)) byWindow[(ch.Key.Element, ch.Key.WindowStart)] = l = [];
+                l.Add(ch);
+            }
+            foreach (var ((elem, wstart), changes) in byWindow)
+            {
+                if (frontier != long.MinValue && wstart < frontier - within) continue;
+                var before = Record(elem, wstart, hi, frontier);
+                if (!windows.TryGetValue(elem, out var ws)) windows[elem] = ws = [];
+                var stored = ws.TryGetValue(wstart, out var cur) ? (decimal?[])cur.Clone() : new decimal?[propHandles.Length];
+                foreach (var ch in changes) stored[Array.IndexOf(propHandles, ch.Key.Prop)] = ch.New;
+                if (stored.All(x => !x.HasValue)) ws.Remove(wstart); else ws[wstart] = stored;
+                var after = Record(elem, wstart, hi, frontier);
+                touched.Add(elem);
+                if (Same(before, after) || !arrangement.TryGetValue(elem, out var list)) continue;
+                foreach (var r in list)
+                {
+                    if (before is not null) WriteRow(bb, r, wstart, before, -r.Weight);
+                    if (after is not null) WriteRow(bb, r, wstart, after, r.Weight);
+                }
+            }
+        }
+        var advanced = ep.HasAdvance && ep.Lambda > frontier;
+        if (advanced)
+        {
+            var edgeAfter = ep.Lambda - within;
+            // the records that leave the look-back
+            foreach (var (elem, list) in arrangement)
+                foreach (var a in Starts(elem, edge, edgeAfter, hi))
+                    if (Record(elem, a, hi, frontier) is { } vals) foreach (var r in list) WriteRow(bb, r, a, vals, -r.Weight);
+            foreach (var (elem, ws) in windows.ToList())
+            {
+                foreach (var a in ws.Keys.Where(x => x < edgeAfter).ToList()) ws.Remove(a);
+                if (ws.Count == 0) windows.Remove(elem);
+            }
+            // presence is sampled at the advance (Def. 7.14)
+            foreach (var elem in since.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) since.Remove(elem);
+            foreach (var (elem, list) in arrangement) if (list.Count > 0) since.TryAdd(elem, ep.Lambda);
+            frontier = ep.Lambda;
+        }
+        var reach = HiAt(frontier, ep.Covered);
+        var moved = reach.Zip(hi).Any(x => x.First != x.Second);
+        if (moved)
+        {
+            // the windows that became covered: for some read the end of the window lies in (old reach, new reach]
+            var lowest = fills.Select((f, i) => (f, i)).Where(x => x.f is not null).Select(x => hi[x.i]).DefaultIfEmpty(long.MinValue).Min();
+            var top = reach.Max();
+            if (top != long.MinValue)
+                foreach (var (elem, list) in arrangement)
+                {
+                    if (list.Count == 0 || !since.TryGetValue(elem, out var from)) continue;
+                    var lo = Math.Max(frontier - within, from);
+                    if (lowest != long.MinValue) lo = Math.Max(lo, lowest - period + 1);
+                    for (var a = Floor(lo + period - 1); a + period <= top; a += period)
+                    {
+                        var before = Record(elem, a, hi, frontier); var after = Record(elem, a, reach, frontier);
+                        if (Same(before, after)) continue;
+                        foreach (var r in list)
+                        {
+                            if (before is not null) WriteRow(bb, r, a, before, -r.Weight);
+                            if (after is not null) WriteRow(bb, r, a, after, r.Weight);
+                        }
+                    }
+                }
+            hi = reach;
+        }
+        if (ttl is not null)
+        {
+            foreach (var elem in advanced || moved ? [.. arrangement.Keys] : touched.ToList()) UpdateMarker(bb, elem);
+            foreach (var elem in marker.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) marker.Remove(elem);
+        }
+        return bb.Build();
     }
 
     static bool Complete(decimal?[] v) => v.All(x => x.HasValue);
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
+        if (Fills) return RunFilled(ep, inputs);
         var bb = new BatchBuilder(OutLayout);
         var rows = In(inputs, "in");
         // step A: changed structural rows against the windows seen before this step

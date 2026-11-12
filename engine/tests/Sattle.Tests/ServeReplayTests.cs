@@ -38,7 +38,8 @@ public class ServeReplayTests
         Assert.Equal(replayed, served);
     }
 
-    [Fact]
+    [Trait("Category", "Fixtures")]
+    [FixturesFact]
     public void Serving_lab_fixtures_gives_the_state_digest_of_replaying_them()
     {
         var (replayed, served) = Digests(Repo.Fixtures, Repo.ClusterOf(Repo.Fixtures));
@@ -49,7 +50,7 @@ public class ServeReplayTests
     [CaptureFact]
     public void Serving_the_newest_real_capture_gives_the_state_digest_of_replaying_it()
     {
-        var dir = Directory.Exists(Repo.Captures) ? Directory.EnumerateDirectories(Repo.Captures).Order(StringComparer.Ordinal).LastOrDefault() : null;
+        var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
         var (replayed, served) = Digests(dir, Repo.ClusterOf(dir));
         Assert.Equal(replayed, served);

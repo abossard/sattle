@@ -4,16 +4,16 @@ module acme.space @ 1.0.0;
 import sattle.source.k8s    @ 1.0.0 sha256:5fc3f38bf41ae5c4a8c19d97c4b3466511848691e9206d4588c6f621646024f6 as k8s;
 import sattle.source.hubble @ 1.0.0 sha256:dd668ede69fd7bc43b2c03925028479b402ba451cfc7307eac7131ae85f9a946 as hubble;
 import sattle.source.azure   @ 1.0.0 sha256:24e6bf16e7736afd31149cbfb868e295523ff70d90745ca607cd598093515ba5 as azsrc;
-import sattle.source.prometheus @ 1.0.0 sha256:af43adc2a32148340789bc10a096ae77de47e1e81d52487263888016136fab55 as prom;
-import acme.ops             @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
-import acme.svc             @ 1.0.0 sha256:6bd5c43dc46b6b6108570b4a873c731d4104355b3ddf5893d9094c76b92e6001 as svc;
-import acme.healthmodel @ 1.0.0 sha256:5703b11f1e609865a7524ee6d8fa4afcc030c6be00c58dcb88e2c47039f6df59 as hm;
-import acme.deployhealth @ 1.0.0 sha256:25c34a32a59786533d70b5da1b7b382f99ae7e60a4e8885de9da77035d0fc05c as dh;
-import acme.report @ 1.0.0 sha256:d4338414047e6cae7136722c5c108e7d228d7a2c23b79baea375c21c96e0ad0d as rpt;
-import acme.treereport @ 1.0.0 sha256:2983df8d59126750f172617abbd0ebe544b1779a29d3b4e06d86f8c869d443e0 as trep;
-import acme.treehealth @ 1.0.0 sha256:e982b70b01a671cae144ae7eaaab7a1ca8ae7abab23660b308d0101580eb2706 as th;
-import acme.tree @ 1.0.0 sha256:ada1c6be4ccce9e6b243aa4ee4bbc9bdf6c8687c163d0a4826c9710aae7820c5 as tr;
-import acme.biz             @ 1.0.0 sha256:ef8460f28fcf01aa44f66de3f7bddb42c8da90c50d02d3ed3f2d733ce4936254 as biz;
+import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
+import acme.ops             @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
+import acme.svc             @ 1.0.0 sha256:0b06522cfa6a7198b70cd4fc99f764027dff0cc9def650f5e52de86ae1b65781 as svc;
+import acme.healthmodel @ 1.0.0 sha256:3b52044206c704e20534cfe1e47b752e6261cdbfa95754da1cd1914fed395594 as hm;
+import acme.deployhealth @ 1.0.0 sha256:16882518a66111d8f97275aee93688cb7f27c015d9b323f841dd2ab1fd8f1aae as dh;
+import acme.report @ 1.0.0 sha256:37d2a7d13ecc7c783ecaed4fa88b870ff0be59996a625c24a069544918189bb2 as rpt;
+import acme.treereport @ 1.0.0 sha256:c86aa8d580c96a490d24f895a3a238a7bd3346f709ea909276fc17027b38d725 as trep;
+import acme.treehealth @ 1.0.0 sha256:78f188aa804280cd67910a3b79ecc472613f4d994542f3428ad2e7b3fe65a83c as th;
+import acme.tree @ 1.0.0 sha256:426b59db5f24be52b044337136b2362b4a3deb06023ceae245c5588dc8afbc8e as tr;
+import acme.biz             @ 1.0.0 sha256:dfbc994182654fbc3d3b24d571338268b04c09cf3e81f8a0e9dc301e0fd7df71 as biz;
 
 space operations {
   source pods      adapter "kubernetes.list-watch" rows k8s.PodRow;

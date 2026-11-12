@@ -73,7 +73,7 @@ public static class KernelTable
     [
         T("!Declaration | name:T description:T?"), T("!Operator | name:T"), T("!Expr |"),
         T("Module | name:T description:T?"), T("Release | version:T digest:T revision:T status:T"),
-        T("EntityType : Declaration | abstract:B"), T("RelationshipType : Declaration | abstract:B hierarchy:B?"),
+        T("EntityType : Declaration | abstract:B"), T("RelationshipType : Declaration | abstract:B hierarchy:B? kind:T?"),
         T("PropertyType : Declaration | nullable:B unit:T? role:T temporality:T? combine:T? period:I? treeRole:T?"), T("ValueRole | value:Any role:T"),
         T("Extension : Declaration |"),
         T("Constraint : Declaration | kind:T severity:T values:L? min:D? max:D? pattern:T? side:T?"),
@@ -87,12 +87,12 @@ public static class KernelTable
         T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I late:T"), T("Retain : Operator | timestampField:T age:I"),
         T("Fixpoint : Operator | maxFacts:I maxIterations:I"), T("Values : Operator |"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
-        T("Series : Operator | within:I"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
-        T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T"),
+        T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator | nodata:T?"), T("Delta : Operator | target:T"),
+        T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B?"),
         T("Lift : Operator | within:I images:T? selfLoops:T"),
         T("LiftState | target:T of:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
-        T("FieldRef : Expr | path:T"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
+        T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
         T("Assign | target:T"), T("Aggregate | target:T fn:T"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
         T("Function | name:T signature:T role:T inverse:T?"),
         T("GraphSpace : Declaration |"), T("Graph | name:T"), T("Source | name:T adapter:T"), T("Binding | value:Any?"),
@@ -118,7 +118,7 @@ public static class KernelTable
         E("contains : * -> * | slot:T ordinal:I?"), E("imports : Module -> Release | alias:T"), E("releaseOf : Release -> Module"),
         E("supersedes : Release -> Release"), E("extends : EntityType RelationshipType -> EntityType RelationshipType"),
         E("extendsType : Extension -> EntityType RelationshipType"),
-        E("hasProperty : EntityType RelationshipType Extension -> PropertyType | required:B"),
+        E("hasProperty : EntityType RelationshipType Extension -> PropertyType | required:B label:B?"),
         E("sourceType : RelationshipType -> EntityType"), E("targetType : RelationshipType -> EntityType"),
         E("valueKind : PropertyType Field KeyComponent Port -> ValueKind"), E("itemKind : PropertyType Field -> ValueKind"),
         E("refersTo : PropertyType Field -> EntityType"), E("constrains : Constraint -> EntityType RelationshipType"),
@@ -353,5 +353,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:5470d105efa32d95dabed98df408abf30c79bfa72bd8eb424c0a959e7e520bb8";
+    public const string CompiledDigest = "sha256:df107fbdf074b95e5bfca837afbc1bf3948b05ebf45f9288c40c3940abe920a1";
 }

@@ -9,8 +9,7 @@ public class BatchInvarianceTests
 {
     static IReadOnlyList<string> Captures()
     {
-        var c = Path.Combine(Repo.Root, "lab", "captures");
-        return Directory.Exists(c) ? [.. Directory.EnumerateDirectories(c).Order(StringComparer.Ordinal)] : [];
+        return Repo.CaptureDirs;
     }
 
     /// <summary>One row per (capture, chunk size); a placeholder row when there are no captures (they are gitignored).</summary>
@@ -22,7 +21,7 @@ public class BatchInvarianceTests
     [MemberData(nameof(CaptureChunks))]
     public void Every_capture_gives_the_same_state_digest_at_chunk_sizes_1_50_and_100000(string capture, int chunk)
     {
-        var dir = Path.Combine(Repo.Root, "lab", "captures", capture);
+        var dir = Path.Combine(Repo.Captures, capture);
         var cluster = Sattle.Cli.Program.DetectCluster(dir);
         var reference = ReplayTests.Shared(dir, 100000, cluster, 1_000_000);
         var r = ReplayTests.Shared(dir, chunk, cluster, 1_000_000);

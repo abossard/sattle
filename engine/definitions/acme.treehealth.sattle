@@ -1,10 +1,10 @@
 /// The health of the estate: the tree of acme.tree with the own state of each element (from its signals), its rolled-up state (by the element's policy: worst by default, share of the monitored elements below it, or ignore) and the counts of the monitored elements below it per state.
 module acme.treehealth @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:34a45e53639c852d432b9046b48991f90d7d0fc70b33654d167cec443cabdeec as infra;
-import sattle.azure @ 1.0.0 sha256:ab18e12c31be70f641e8f97700b2d2ebf9cc8c5fe9c315fa748cbc7821966195 as azure;
-import acme.ops     @ 1.0.0 sha256:44d70a3832be115ec461f82c8dbcd510426e23cae66299b695106cc87f27899c as ops;
-import acme.tree    @ 1.0.0 sha256:ada1c6be4ccce9e6b243aa4ee4bbc9bdf6c8687c163d0a4826c9710aae7820c5 as tree;
+import sattle.infra @ 1.0.0 sha256:b3d8b3b7310f29325a480b4531efb9b4f8d04bd47bccdfdfaa8e18ff213a15a3 as infra;
+import sattle.azure @ 1.0.0 sha256:dbcb3ed609c6539bafb84d01a084cd335c5f303073c8e92bd369b1cd3c4a3ddb as azure;
+import acme.ops     @ 1.0.0 sha256:5a0cdef3852bd862df3ae3ffc75d109f7793d81c63da9b4aafb1a9a30cdc16a9 as ops;
+import acme.tree    @ 1.0.0 sha256:426b59db5f24be52b044337136b2362b4a3deb06023ceae245c5588dc8afbc8e as tree;
 
 /// The roll-up policy of every element, and the edges the roll-up follows: an element whose policy is ignore does not roll up what is below it.
 projection treeRollup view forward output tree {
@@ -30,6 +30,7 @@ projection treeRollup view forward output tree {
   emit relationship tree.Rolls from followed key rolls: p -> c;
 }
 
+/// The health tree: every element of the estate under its parent, with its own state and the state rolled up from what is below it.
 projection healthTree view forward output tree {
   in structure: graph tree;
   in rollup: graph tree;
