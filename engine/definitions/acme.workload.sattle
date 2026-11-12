@@ -1,6 +1,6 @@
 /// The workload model: what one workload is made of, what it talks to and what it depends on, across Kubernetes and Azure, and its health.
 /// Three kinds of edges are kept apart by their declared kind: what the flows show (communication), what a part belongs to or runs on (composition), and what a part needs to work (dependency, each derived with its evidence).
-/// Health rolls up along dependency and from part to whole along composition; an observed call alone carries no failure.
+/// Health rolls up along dependency and from part to whole along composition. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.
 module acme.workload @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
@@ -51,7 +51,7 @@ relationship TalksTo (WorkloadService) -> (WorkloadService | PlatformResource) k
 relationship DependsOn (WorkloadService) -> (WorkloadService | PlatformResource) kind dependency;
 /// A gateway that sends requests to a service needs it (API Management and its backend).
 relationship Exposes (PlatformResource) -> (WorkloadService) kind dependency;
-/// The roll-up edge: the source is affected by the target. Dependency and composition produce it, communication does not.
+/// The roll-up edge, read from source to target: the source is affected by the target, so a failure of the target makes the source worse (a workload is affected by its services, a service by its deployments and by what it depends on). Dependency and composition produce it; the communication edge TalksTo does not.
 relationship Affects (Component) -> (Component) kind dependency;
 relationship EvidenceFor (DependencyEvidence) -> (WorkloadService) kind support;
 relationship Measures (ComponentSignal) -> (Component) kind support;
@@ -291,7 +291,7 @@ projection workloadStructure view forward output acme.workload {
 
 /// Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.
 /// Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.
-/// A pod also counts the node it runs on; a deployment is unhealthy only when at least half of its pods are (degraded when at least half are degraded or worse). No data counts above healthy and below degraded; a component that nothing measured is Unknown. An observed call carries no failure.
+/// A pod also counts the node it runs on. A deployment is unhealthy when at least half of its pods are, else degraded when at least half are degraded or worse, else in no data when at least half are in no data or worse, else healthy; a pod with no severity does not count, and a deployment none of whose pods has one is Unknown. No data ranks above healthy and below degraded; a component that nothing measured is Unknown. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.
 projection workloadHealth view forward output acme.workload {
   in master: graph ops;
   in structure: graph acme.workload;
@@ -357,8 +357,9 @@ projection workloadHealth view forward output acme.workload {
   let ownByKey = podCandidates |> group by { k: k } aggregate { own: max(own) };
   let deployed = match structure (d: WorkloadDeployment)-[:Contains]->(p: WorkloadPod) |> select { dk: d.key, pk2: p.key };
   let podsOfDeployment = join deployed, ownByKey on pk2 == k;
-  let shares = podsOfDeployment |> group by { dk: dk } aggregate { n: count(), bad: sum(if(own >= 3, 1, 0)), weak: sum(if(own >= 2, 1, 0)) };
-  let byShare = shares |> select { k: dk, own: if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, 0)) };
+  // the share rule keeps the rank of no data: 3 when at least half of the pods are at 3, else 2 when at least half are at 2 or worse, else 1 when at least half are at 1 or worse, else 0; only pods with a severity count
+  let shares = podsOfDeployment |> group by { dk: dk } aggregate { n: count(), bad: sum(if(own >= 3, 1, 0)), weak: sum(if(own >= 2, 1, 0)), silent: sum(if(own >= 1, 1, 0)) };
+  let byShare = shares |> select { k: dk, own: if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, if(silent * 2 >= n, 1, 0))) };
   let allOwn = union ownByKey, byShare;
   let owns = allOwn |> group by { k: k } aggregate { own: max(own) };
 

@@ -26,6 +26,27 @@ public class RestartSmokeTests
         using (var fromJournal = SpaceHost.OpenDurable(store, null, Options with { UseSeal = false })) { Assert.False(fromJournal.RestoredFromSeal); Assert.Equal(digest, fromJournal.StateDigest()); Assert.Equal(seq, fromJournal.Seq); }
     }
 
+    /// <summary>A seal of the previous format (before telemetry pairs and per-own support) is refused with both versions named, and the journal is replayed to the same state.</summary>
+    [Fact]
+    public void A_seal_of_another_format_is_refused_with_both_versions_named()
+    {
+        var store = new InMemoryGraphStore();
+        string digest;
+        using (var h = SpaceHost.OpenDurable(store, Files, Options))
+        {
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+            h.Finish(); h.Seal();
+            digest = h.StateDigest();
+        }
+        var j = (IJournalStore)store; var seal = j.SealLatest()!;
+        var meta = System.Text.Json.Nodes.JsonNode.Parse(seal.Meta)!.AsObject(); meta.Remove("format");          // what a build before format 2 wrote
+        j.SealPut(seal.Position, meta.ToJsonString(), seal.Data);
+        using var restarted = SpaceHost.OpenDurable(store, null, Options);
+        Assert.False(restarted.RestoredFromSeal);
+        Assert.Contains($"seal format 1, this build reads seal format {SpaceHost.SealFormat}", restarted.SealRefusal);
+        Assert.Equal(digest, restarted.StateDigest());
+    }
+
     [Fact]
     public void A_live_run_killed_and_restarted_from_its_store_ends_where_an_uninterrupted_one_does()
     {

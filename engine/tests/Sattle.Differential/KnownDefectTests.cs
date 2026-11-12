@@ -171,4 +171,12 @@ public class KnownDefectTests
         Assert.Empty(ByReference(w, log, "master"));
         Same([], EngineRun.Final(w.Catalog, log, Chunking.Largest).Graphs["master"].Lines(), log);
     }
+
+    /// <summary>D37, Law 7.5 item 3 "rows after the link": a window of a merged pod that a group by its uid and a group by its name both write is their sum, as if every row had been written under the survivor. The engine meets the two writes under premise B1 and leaves the window without a value when they differ.</summary>
+    [Fact]
+    public void Two_groups_by_two_keys_of_one_class_combine_in_one_telemetry_window()
+    {
+        var report = Differential.Check(Worlds.LinkedLoads, 12, 18, reordered: false);
+        Assert.True(report is null, report);
+    }
 }

@@ -150,11 +150,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             host.journalPos = 1;
             return host;
         }
+        string? refusal = null;
         if (options.UseSeal && !options.VerifyJournal && j.SealLatest() is { } seal)
         {
             var fromSeal = TryRestoreFromSeal(j, store, options, seal, out var rejected);
             if (fromSeal is not null) return fromSeal;
-            Console.Error.WriteLine($"the seal at journal entry {seal.Position} was not used: {rejected}; replaying the whole journal");
+            refusal = $"the seal at journal entry {seal.Position} was not used: {rejected}; replaying the whole journal";
+            Console.Error.WriteLine(refusal);
         }
         var entries = j.JournalRead().ToList();
         var h = JsonNode.Parse(entries[0])!;
@@ -162,7 +164,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var restored = new SpaceHost(hfiles, options with { Durable = store, Resume = true, Tenant = h["tenant"]!.GetValue<string>(), LateHorizonWindows = h["lateHorizon"]?.GetValue<int>() ?? 3, Cluster = h["cluster"]!.GetValue<string>(), SpaceName = h["space"]!.GetValue<string>(), Mode = h["mode"]!.GetValue<string>() });
         restored.journalPos = entries.Count; restored.replayPos = 1; restored.inputsInJournal = false;
         if (options.VerifyJournal && j.SealLatest() is { } check) { restored.verifyAt = check.Position; restored.verifyDigest = JsonNode.Parse(check.Meta)!["digest"]!.GetValue<string>(); }
-        restored.Recover(entries.Skip(1)); restored.Restored = true; restored.TailReplayed = entries.Count - 1;
+        restored.Recover(entries.Skip(1)); restored.Restored = true; restored.TailReplayed = entries.Count - 1; restored.SealRefusal = refusal;
         return restored;
     }
 
@@ -284,6 +286,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
+    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    public const int SealFormat = 2;
+    /// <summary>Why the latest seal was not used at the last start, if it was not.</summary>
+    public string? SealRefusal { get; private set; }
+
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && !recovering && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>
@@ -296,7 +303,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var data = StateSnapshot.Save(StateRootOf());
             var meta = new JsonObject
             {
-                ["position"] = journalPos, ["build"] = BuildId, ["kernel"] = Kernel.CompiledDigest, ["digest"] = Engine.StateDigest(), ["catalogDigest"] = Catalog.Graph.Digest(), ["generation"] = generation,
+                ["position"] = journalPos, ["format"] = SealFormat, ["build"] = BuildId, ["kernel"] = Kernel.CompiledDigest, ["digest"] = Engine.StateDigest(), ["catalogDigest"] = Catalog.Graph.Digest(), ["generation"] = generation,
                 ["tenant"] = options.Tenant, ["lateHorizon"] = options.LateHorizonWindows, ["cluster"] = options.Cluster, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
                 ["live"] = liveOptions,
                 ["sources"] = new JsonArray([.. sources.Values.Select(f => (JsonNode)new JsonObject { ["p"] = f.Path, ["t"] = f.Text })]),
@@ -314,6 +321,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         try
         {
             var m = JsonNode.Parse(seal.Meta)!;
+            var format = m["format"]?.GetValue<int>() ?? 1;
+            if (format != SealFormat) { rejected = $"seal format {format}, this build reads seal format {SealFormat}"; return null; }
             if (m["build"]!.GetValue<string>() != BuildId || m["kernel"]!.GetValue<string>() != Kernel.CompiledDigest) { rejected = "written by another build"; return null; }
             var files = m["sources"]!.AsArray().Select(f => new SourceFile(f!["p"]!.GetValue<string>(), f["t"]!.GetValue<string>())).ToList();
             host = new SpaceHost(files, options with { Durable = store, Resume = true, Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = m["lateHorizon"]?.GetValue<int>() ?? 3, Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>(), Mode = m["mode"]!.GetValue<string>(), StartGeneration = m["generation"]!.GetValue<int>() });

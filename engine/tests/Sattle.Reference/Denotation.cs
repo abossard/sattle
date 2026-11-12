@@ -10,7 +10,8 @@ public sealed record PlanInputs(
     IReadOnlyDictionary<string, Relation> Rows,
     IReadOnlyDictionary<string, GraphFacts> Graphs,
     Func<string, string, string, bool> IsSubtype,   // (graph port, type, of)
-    long? Frontier);
+    long? Frontier,
+    IReadOnlySet<string>? WithPairs = null);        // aggregates read only by sinks: they carry the pair of a mean or a last (Law 7.5 item 3 (i))
 
 /// <summary>The batch semantics of the operator kinds (Def. 6.3, 6.7): each a function from the relations of its in-ports to the relation of its out-port. No state, no order of arrival.</summary>
 public static class Denotation
@@ -26,8 +27,8 @@ public static class Denotation
         TDistinct d => new Relation(Names(d), ZSet.Of(input("in").Rows.Where(r => r.Weight > 0).Select(r => (r.Row, 1L)))),
         TJoin j => Join(j, input("left"), input("right")),
         TWindow w => Window(w, input("in")),
-        TGroup g => Group(g, g.Keys, g.Aggs, input("in"), null),
-        TRollup r => r.NoData ? RollupWithNoData(r, input("in")) : Group(r, WithWindow(r.Keys), r.Aggs, input("in"), r.PeriodNs),
+        TGroup g => Group(g, g.Keys, g.Aggs, input("in"), null, pairs: p.WithPairs?.Contains(g.Name) == true),
+        TRollup r => r.NoData ? RollupWithNoData(r, input("in")) : Group(r, WithWindow(r.Keys), r.Aggs, input("in"), r.PeriodNs, pairs: p.WithPairs?.Contains(r.Name) == true),
         TRetain r => Retain(r, input("in"), p.Frontier),
         TSeries s => Series(s, input("in"), p.Graphs[s.GraphPort], p.Frontier, ImmutableSortedDictionary<string, long>.Empty, [.. s.Reads.Select(_ => (long?)null)], ImmutableSortedSet<long>.Empty),
         _ => throw new Undefined($"operator kind {op.Kind}"),
@@ -197,8 +198,31 @@ public static class Denotation
         return new Relation(Names(r), ZSet.Of(aggregated.Rows.Where(x => !taken.Contains(Place(x.Row))).Concat(markerRows.Select(m => (m, 1L)))));
     }
 
-    static Relation Group(TOp op, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggs, Relation rows, long? period, IReadOnlyList<(string Name, Value Value)>? more = null)
+    /// <summary>The columns that carry the pair of an aggregate, as the engine names them: sum and count of a `mean`, the order of a `last` with an order that is no text.</summary>
+    public static string[] PairNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Weight?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
+
+    /// <summary>The pair of an aggregate over its rows: the sum and count of a mean, the order of the row a last takes.</summary>
+    static IEnumerable<(string Name, Value Value)> PairOf(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)
     {
+        var valued = a.Value is null ? [] : rows.Select(r => (Value: Expressions.Eval(a.Value, r.Read), r.Read, r.Weight)).Where(r => r.Value is not NullValue).ToImmutableArray();
+        static decimal Number(Value v) => v is InstantValue t ? t.Ns : Canon.Number(v);
+        if (a.Fn == "mean")
+        {
+            var n = valued.Sum(r => r.Weight);
+            yield return (a.Target + "#sum", n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value))));
+            yield return (a.Target + "#count", n == 0 ? Value.Null : Value.Integer(n));
+        }
+        else if (PairNames(a).Length > 0)
+        {
+            var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Weight!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
+                .GroupBy(r => Canon.Of([r.Order, r.Value])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
+            yield return (a.Target + "#order", ordered.Length == 0 ? Value.Null : Value.Decimal(Number(ordered.Aggregate((x, y) => Canon.Compare(y.Order, x.Order) is var c && (c > 0 || c == 0 && Canon.Compare(y.Value, x.Value) > 0) ? y : x).Order)));
+        }
+    }
+
+    static Relation Group(TOp op, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggs, Relation rows, long? period, IReadOnlyList<(string Name, Value Value)>? more = null, bool pairs = false)
+    {
+        var extra = pairs ? aggs.SelectMany(PairNames).ToArray() : [];
         var members =
             from r in rows.Rows
             let read = rows.Reader(r.Row)
@@ -209,8 +233,9 @@ public static class Denotation
             from g in members
             where g.Sum(x => x.Weight) > 0
             let named = g.First().Key.Concat(aggs.Select(a => (a.Target, Aggregate(a, [.. g.Select(x => (x.Read, x.Weight))])))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)
-            select (Shape(op, With(period is { } w ? With(named, [("windowEnd", Value.Instant(Instant(named["windowStart"]) + w))]) : named, more ?? [])), 1L);
-        return new Relation(Names(op), ZSet.Of(result));
+            let pairValues = extra.Length == 0 ? [] : aggs.SelectMany(a => PairOf(a, [.. g.Select(x => (x.Read, x.Weight))])).ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal)
+            select (Shape(op, With(period is { } w ? With(named, [("windowEnd", Value.Instant(Instant(named["windowStart"]) + w))]) : named, more ?? [])).AddRange(extra.Select(n => pairValues[n])), 1L);
+        return new Relation([.. Names(op), .. extra], ZSet.Of(result));
     }
 
     public static Value Aggregate(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)

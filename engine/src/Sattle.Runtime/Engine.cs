@@ -114,6 +114,9 @@ public static class PlanCompiler
                 return new VId(dom, [.. id.Comps.Select(c => Compile(c.Value))], cat, cx.It, cx.Faults);
             }
             PhysOp op;
+            // an aggregate whose rows go only to sinks carries the pair of a mean or a last next to it (Law 7.5 item 3 (i)); other readers see the declared columns alone
+            var readers = tp.Ops.Where(o => o.Inputs.Values.Any(s => !s.IsPort && s.Name == t.Name)).ToList();
+            var withCompanions = readers.Count > 0 && readers.All(o => o is TEmitEntity or TEmitRel);
             switch (t)
             {
                 case TMatch m:
@@ -135,13 +138,13 @@ public static class PlanCompiler
                 case TGroup g when g.ClosesWindows:
                     {
                         var win = WindowOf(tp, g);
-                        op = new WindowedGroupOp(g, win.WidthNs, win.Late, inL, cx);
+                        op = new WindowedGroupOp(g, win.WidthNs, win.Late, inL, cx, withCompanions);
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, late policy {win.Late}");
                         break;
                     }
-                case TGroup g: op = new GroupOp(g, inL, cx, LineageCols(tp, t)); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
+                case TGroup g: op = new GroupOp(g, inL, cx, LineageCols(tp, t), withCompanions); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
                 case TSeries s: op = new SeriesOp(s, inL, cx.It); strategies.Add($"{s.Name}: Series, bilinear: new rows against seen windows, new windows against all rows, retraction at the look-back"); break;
-                case TRollup r: op = new RollupOp(r, inL, cx); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
+                case TRollup r: op = new RollupOp(r, inL, cx, withCompanions); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
                 case TThreshold th: op = new ThresholdOp(th, inL, cx, SeriesOf(tp, th)); strategies.Add($"{th.Name}: Threshold, per-key state machine over ordered closed windows"); break;
                 case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
@@ -326,7 +329,10 @@ public sealed class Engine : IDisposable, IEngineInput
             if (graphs.FirstOrDefault(g => g.IsMaster) is not { } master) return;
             var properties = catalog.OntologyOf(master.Typed.OutputModule).Props;
             foreach (var (from, to) in master.Out.Remap(loser, survivor))
+            {
+                master.Out.MoveTelemetry(Telemetry, master.Key, from, to);
                 Telemetry.MoveElement(master.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null);
+            }
         };
     }
 
@@ -402,7 +408,22 @@ public sealed class Engine : IDisposable, IEngineInput
         Run(ep, seq, "advance");
     }
 
+    /// <summary>Epochs in which two identities merged, and the most merges one epoch had (Law 7.5 item 3 combines their telemetry at the sink).</summary>
+    public long EpochsWithMerge { get; private set; }
+    public long MostMergesInOneEpoch { get; private set; }
+
     void Run(Epoch master, long seq, string cause)
+    {
+        var mergesBefore = Identities.Merges;
+        try { RunEpoch(master, seq, cause); }
+        finally
+        {
+            var merged = Identities.Merges - mergesBefore;
+            if (merged > 0) { EpochsWithMerge++; MostMergesInOneEpoch = Math.Max(MostMergesInOneEpoch, merged); }
+        }
+    }
+
+    void RunEpoch(Epoch master, long seq, string cause)
     {
         var results = new Dictionary<string, GraphResult>();
         foreach (var g in graphs)
@@ -496,7 +517,11 @@ public sealed class Engine : IDisposable, IEngineInput
             sb.Append(g.Name).Append('=').Append(g.State.Digest()).Append('\n');
             if (Telemetry is InMemoryTelemetryStore mem)
                 foreach (var (e, p, ws, v) in mem.Dump(g.Key).OrderBy(x => Interner.Get(x.Element), StringComparer.Ordinal).ThenBy(x => Interner.Get(x.Prop), StringComparer.Ordinal).ThenBy(x => x.Ws))
-                    sb.Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v)).Append('\n');
+                {
+                    sb.Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
+                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
+                    sb.Append('\n');
+                }
         }
         return Digests.Of(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()))));
     }

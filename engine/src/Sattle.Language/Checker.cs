@@ -773,7 +773,7 @@ public sealed class ProjectionChecker(Graph defs)
         var t = d.Target(op, "ofType");
         if (t is null || !outView.Types.TryGetValue(t, out var ti) || ti.IsRel) { Err("P1", op, "emitted entity type is not in the output ontology"); return null; }
         if (ti.Abstract) { Err("P1", op, $"cannot emit abstract type {ti.Name}"); return null; }
-        var id = Ex(Child(op, "id"), R);
+        var id = IdentityEx(Child(op, "id"), R);
         if (id is null) return null;
         if (id.Type.Ty.Tag != Tag.Ent || !id.Type.Role.IsData) { Err("EmitEntity", op, $"entity id must be an entity reference (data), found {id.Type}"); return null; }
         var update = d.Text(op, "mode") == "update";
@@ -786,7 +786,7 @@ public sealed class ProjectionChecker(Graph defs)
         var t = d.Target(op, "ofType");
         if (t is null || !outView.Types.TryGetValue(t, out var ti) || !ti.IsRel) { Err("P1", op, "emitted relationship type is not in the output ontology"); return null; }
         if (ti.Abstract) { Err("P1", op, $"cannot emit abstract type {ti.Name}"); return null; }
-        var src = Ex(Child(op, "source"), R); var tgt = Ex(Child(op, "target"), R);
+        var src = IdentityEx(Child(op, "source"), R); var tgt = IdentityEx(Child(op, "target"), R);
         if (src is null || tgt is null) return null;
         foreach (var (e, side) in new[] { (src, "source"), (tgt, "target") })
             if (e.Type.Ty.Tag != Tag.Ent || !e.Type.Role.IsData) { Err("EmitRelationship", op, $"relationship {side} must be an entity reference (data), found {e.Type}"); return null; }
@@ -826,7 +826,7 @@ public sealed class ProjectionChecker(Graph defs)
         var pol = d.Target(op, "policy");
         if (pol is null) { Err("Link", op, "link has no equivalence policy"); return null; }
         var between = d.Out(pol, "between").OrderBy(r => r.Props.Get(Ids.KProp("ordinal")) is IntegerValue i ? i.N : 0).Select(r => r.Target).ToList();
-        var l = Ex(Child(op, "left"), R) as TId; var r = Ex(Child(op, "right"), R) as TId;
+        var l = IdentityEx(Child(op, "left"), R) as TId; var r = IdentityEx(Child(op, "right"), R) as TId;
         if (l is null || r is null) { Err("Link", op, "link sides must be identity expressions"); return null; }
         if (between.Count != 2 || l.DomainId != between[0] || r.DomainId != between[1]) { Err("Link", op, "link sides must use the two domains of the policy in order"); return null; }
         var conf = Ex(Child(op, "confidence"), R);
@@ -1033,7 +1033,18 @@ public sealed class ProjectionChecker(Graph defs)
         }
     }
 
+    /// <summary>Rule IdOf-in-sinks: an identity expression stands only where an element is named (the identity and endpoints of an emit, the two sides of a link). Elsewhere a row would carry an identity that a later merge leaves stale in operator state, and Law 7.5 item 3 would no longer hold; a view reads identities through `match`, whose rows a merge updates.</summary>
+    bool identityAllowed;
+    TExpr? IdentityEx(string node, Schema R) { var was = identityAllowed; identityAllowed = true; try { return Ex(node, R); } finally { identityAllowed = was; } }
+
     TExpr? IdExpr(string node, Schema R)
+    {
+        if (!identityAllowed) { Err("IdentityOutsideSink", node, "an identity expression stands only in the identity or the endpoints of an emit and in a link (rule IdOf-in-sinks): a row that carries an identity into another operator would keep it after a merge. To group, join or filter by an element, emit it and read it through a `match` on a view of the graph"); return null; }
+        var was = identityAllowed; identityAllowed = false;          // its components are plain values
+        try { return IdExprIn(node, R); } finally { identityAllowed = was; }
+    }
+
+    TExpr? IdExprIn(string node, Schema R)
     {
         var dom = d.Target(node, "domain");
         if (dom is null) { Err("E-Id", node, "identity expression has no domain"); return null; }

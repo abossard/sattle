@@ -497,7 +497,8 @@ public sealed class SqliteGraphStore : IGraphStore, IJournalStore
 // ---- telemetry port --------------------------------------------------------------------------------------
 
 /// <summary>One telemetry sample or closed-window aggregate: element and property handles are interned by the engine. Deleted samples retract a window (the engine's window retention and revision, an extension of Append).</summary>
-public readonly record struct Sample(int Element, int Prop, long WindowStart, long WidthNs, decimal Value, long InputId, bool Deleted = false);
+/// <summary>`AuxA`, `AuxB`: the pair a window of a `mean` or `last` property carries next to its value (Law 7.5 item 3 (i)): for `mean` the sum and the count it is the quotient of, for `last` the order value of the row it took (B unused). Null for every other window.</summary>
+public readonly record struct Sample(int Element, int Prop, long WindowStart, long WidthNs, decimal Value, long InputId, bool Deleted = false, decimal? AuxA = null, decimal? AuxB = null);
 public readonly record struct WindowKey(int Element, int Prop, long WindowStart);
 public sealed record WindowChange(WindowKey Key, decimal? Old, decimal? New);
 public readonly record struct SeriesPoint(long WindowStart, decimal Value);
@@ -518,6 +519,8 @@ public interface ITelemetryStore
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
     /// <summary>An element changed its id (two identities merged): its windows move to the new id. Where the new id already has the window, the two values combine as if every row had been written under the survivor from the start (Law 7.5): by the property's combine rule for `sum`, `min` and `max` (`combineOf` gives the rule of a property); under any other rule equal values are one value and different values are a conflict, so the window has no value. Each moved window is a window change (removed under the old id, set or removed under the new one) so derived graphs follow.</summary>
     void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null);
+    /// <summary>The pair a window carries next to its value (`Sample.AuxA`, `AuxB`), if any.</summary>
+    (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key);
     /// <summary>Retention (Def. 7.13): a closed window [a, b) is kept while b is after the logical frontier minus the declared age. A window that is dropped here is not a retraction: no change is recorded, and what was derived from it stays.</summary>
     void Retain(GraphKey g, long frontierNs, long ageNs);
     /// <summary>The instant before which the windows of the graph are no longer kept; null before the first advance.</summary>
@@ -535,6 +538,8 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         public long? RetainedFrom;
         /// <summary>Windows that a merge left without a value because their two values could not be combined (Law 7.5). "No value" is absorbing over merges: the window of a third id does not bring a value back. A later write of the window (the rows as they are aggregated now) ends it.</summary>
         public readonly HashSet<WindowKey> NoValue = [];
+        /// <summary>The pairs of the windows that carry one (`mean`: sum and count, `last`: order); absent for every other window.</summary>
+        public readonly Dictionary<WindowKey, (decimal A, decimal B)> Aux = [];
         public long MergeConflicts;
         public readonly Dictionary<long, (string Reason, long Count)> Partials = [];
     }
@@ -552,6 +557,9 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 var key = (s.Element, s.Prop);
                 if (!p.Series.TryGetValue(key, out var ser)) { p.Series[key] = ser = []; p.Width[key] = s.WidthNs; }
                 var had = ser.TryGetValue(s.WindowStart, out var old);
+                var wk = new WindowKey(s.Element, s.Prop, s.WindowStart);
+                if (s.Deleted) p.Aux.Remove(wk);
+                else if (s.AuxA is { } aa) p.Aux[wk] = (aa, s.AuxB ?? 0); else p.Aux.Remove(wk);
                 if (s.Deleted)
                 {
                     if (!had) continue;
@@ -628,6 +636,19 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         }
     }
 
+    public (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key) { lock (gate) return Get(g).Aux.TryGetValue(key, out var a) ? a : null; }
+
+    /// <summary>Two windows of one property under two ids of a class, as value and optional pair: their combination as if every row had been written under one id (Law 7.5 item 3). `sum`, `min`, `max` in their monoid; `mean` with sum and count by adding both and dividing; `last` with its order by the greater order, a tie by the greater value; otherwise equal values are that value and different ones none.</summary>
+    public static (decimal Value, (decimal A, decimal B)? Aux)? Combine(string? rule, decimal v1, (decimal A, decimal B)? a1, decimal v2, (decimal A, decimal B)? a2) => rule switch
+    {
+        "sum" => (v1 + v2, null),
+        "min" => (Math.Min(v1, v2), null),
+        "max" => (Math.Max(v1, v2), null),
+        "mean" when a1 is { } p1 && a2 is { } p2 && p1.B + p2.B != 0 => ((p1.A + p2.A) / (p1.B + p2.B), (p1.A + p2.A, p1.B + p2.B)),
+        "last" when a1 is { } o1 && a2 is { } o2 => o1.A > o2.A || o1.A == o2.A && v1 >= v2 ? (v1, a1) : (v2, a2),
+        _ => v1 == v2 && a1 == a2 ? (v1, a1) : null,
+    };
+
     public void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null)
     {
         lock (gate)
@@ -642,16 +663,15 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                     p.Log.Add(new WindowChange(new WindowKey(from, key.Item2, ws), value, null));
                     var had = target.TryGetValue(ws, out var old);
                     var at = new WindowKey(to, key.Item2, ws);
-                    decimal? combined = p.NoValue.Contains(at) ? null : !had ? value : combineOf?.Invoke(key.Item2) switch
-                    {
-                        "sum" => old.Value + value,
-                        "min" => Math.Min(old.Value, value),
-                        "max" => Math.Max(old.Value, value),
-                        _ => old.Value == value ? value : null,          // two values and no rule that makes one of them: a conflict, the window has no value
-                    };
-                    if (combined is { } v) target[ws] = (v, input);
-                    else { target.Remove(ws); if (p.NoValue.Add(at)) p.MergeConflicts++; }
-                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old.Value : null, combined));
+                    var fromKey = new WindowKey(from, key.Item2, ws);
+                    (decimal A, decimal B)? auxFrom = p.Aux.TryGetValue(fromKey, out var af) ? af : null, auxTo = p.Aux.TryGetValue(at, out var at2) ? at2 : null;
+                    p.Aux.Remove(fromKey);
+                    // two values and no rule that makes one of them: a conflict, the window has no value
+                    var combined = p.NoValue.Contains(at) ? null : !had ? (value, auxFrom) : Combine(combineOf?.Invoke(key.Item2), old.Value, auxTo, value, auxFrom);
+                    if (combined is { } c) { target[ws] = (c.Value, input); if (c.Aux is { } ca) p.Aux[at] = ca; else p.Aux.Remove(at); }
+                    else { target.Remove(ws); p.Aux.Remove(at); if (p.NoValue.Add(at)) p.MergeConflicts++; }
+                    var v = combined?.Value;
+                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old.Value : null, v));
                 }
                 p.Series.Remove(key); p.Width.Remove(key);
             }
@@ -675,7 +695,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             foreach (var (key, ser) in p.Series)
             {
                 var width = p.Width.GetValueOrDefault(key);
-                while (ser.Count > 0 && ser.Keys[0] + width <= from) ser.RemoveAt(0);
+                while (ser.Count > 0 && ser.Keys[0] + width <= from) { p.Aux.Remove(new WindowKey(key.Item1, key.Item2, ser.Keys[0])); ser.RemoveAt(0); }
             }
             foreach (var key in p.Series.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) { p.Series.Remove(key); p.Width.Remove(key); }
         }

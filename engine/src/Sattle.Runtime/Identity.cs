@@ -87,6 +87,15 @@ public sealed class IdentityCatalog(string tenant, Interner it)
 
     public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var h) ? Rep(h) : null;
 
+    readonly Dictionary<Key, int> own = [];
+    /// <summary>The id allocated for the key itself, whatever it is bound or forwarded to: a pure function of tenant, domain and components (Def. 1.9). The telemetry sink tells rows written under two ids of one class apart by it (Law 7.5 item 3); computed once per key.</summary>
+    public int OwnOf(IdDomain d, ReadOnlySpan<long> canon)
+    {
+        var k = K(d, canon);
+        if (!own.TryGetValue(k, out var h)) own[k] = h = it.Intern(Mint(d, canon).Id);
+        return h;
+    }
+
     /// <summary>Rule B2 (alias): binds an unbound key to an existing identity. A key already bound to another identity of the same entity type means late evidence that two identities denote one entity: they merge (forwarding record, survivor the smaller id). Identities of different entity types are a conflict and the link is ignored.</summary>
     public BindOutcome Bind(IdDomain d, ReadOnlySpan<long> canon, int entity, IdDomain? left = null)
     {
@@ -152,6 +161,9 @@ sealed class VId : VExpr
     readonly IdDomain dom; readonly VExpr[] comps; readonly IdentityCatalog cat; readonly Interner it; readonly RuntimeFaults faults;
     readonly Dictionary<int, int>[] caches;
     readonly long[] buf;
+    /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.OwnOf`).</summary>
+    public bool TrackOwn { get; set; }
+    public Column? Owns { get; private set; }
     public VId(IdDomain dom, VExpr[] comps, IdentityCatalog cat, Interner it, RuntimeFaults faults)
     {
         this.dom = dom; this.comps = comps; this.cat = cat; this.it = it; this.faults = faults;
@@ -162,6 +174,7 @@ sealed class VId : VExpr
     {
         var cols = comps.Select(c => c.Eval(b)).ToArray();
         var n = b.N; var o = Scratch(n);
+        if (TrackOwn) { Owns ??= new Column(false); Owns.Ensure(n); Owns.P = null; }
         for (var r = 0; r < b.Rows; r++)        // only the selected rows: resolving a key mints and records an identity
         {
             var i = b.RowAt(r);
@@ -181,6 +194,7 @@ sealed class VId : VExpr
             }
             if (!ok) { Absent(o, i, n); continue; }
             o.L[i] = cat.Resolve(dom, buf);
+            if (TrackOwn) Owns!.L[i] = cat.OwnOf(dom, buf);
         }
         return o;
     }

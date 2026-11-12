@@ -162,6 +162,8 @@ sealed class KeyTable
     public Dictionary<long, long>?[][]? Dist;
     public SortedDictionary<long, long>?[][]? ExtL; public SortedDictionary<decimal, long>?[][]? ExtD; public SortedDictionary<(decimal Ord, decimal Val), long>?[][]? LastM; public bool[] LastAbs;
     public readonly List<int> TouchedList = [];
+    /// <summary>The pairs last emitted per (slot, aggregate), for the companion columns of `mean` and `last` (Law 7.5 item 3 (i)); null when the operator has none.</summary>
+    public Dictionary<long, (decimal A, decimal B)>? LastAux;
 
     public KeyTable(int k, int nL, int nD, int nDist, int nExtL, int nExtD, int nAgg, int nLast, int initialCapacity = 64)
     {
@@ -348,8 +350,24 @@ abstract class AggregatingOp : PhysOp
         return best;
     }
 
-    protected AggregatingOp(TOp t, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggSpecs, Layout inLayout, OpContext cx, string[] outKeyNames, bool telemetryInput) : base(t)
+    /// <summary>Companion columns, when the operator feeds only sinks: per `mean` its sum and count (`{target}#sum`, `{target}#count`), per `last` with a numeric order its order (`{target}#order`). A sink that writes the aggregate to a telemetry property stores the pair, so two windows of one class combine as one (Law 7.5 item 3 (i)).</summary>
+    readonly (int Agg, int ColA, int ColB)[] companions = [];
+
+    /// <summary>The names of the companion columns an aggregate has, if any.</summary>
+    public static string[] CompanionNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Weight?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
+
+    protected AggregatingOp(TOp t, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggSpecs, Layout inLayout, OpContext cx, string[] outKeyNames, bool telemetryInput, bool withCompanions = false) : base(t)
     {
+        if (withCompanions)
+        {
+            var extra = aggSpecs.SelectMany(CompanionNames).ToArray();
+            if (extra.Length > 0)
+            {
+                var baseL = Layout.Of(t.Out);
+                OutLayout = new Layout([.. baseL.Names, .. extra], [.. baseL.IsDec, .. extra.Select(n => !n.EndsWith("#count", StringComparison.Ordinal))], [.. baseL.Interned ?? new bool[baseL.Count], .. extra.Select(_ => false)]);
+                companions = [.. aggSpecs.Select((a, i) => (a, i)).Where(x => CompanionNames(x.a).Length > 0).Select(x => (x.i, OutLayout.Index(CompanionNames(x.a)[0]), x.a.Fn == "mean" ? OutLayout.Index(CompanionNames(x.a)[1]) : -1))];
+            }
+        }
         keyExprs = [.. keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
         var list = new List<AggSpec>(); int l = 0, d = 0, dist = 0, last = 0; bool hasExtL = false, hasExtD = false;
         foreach (var a in aggSpecs)
@@ -498,6 +516,13 @@ abstract class AggregatingOp : PhysOp
         for (var i = 0; i < outKeyCol.Length; i++) { var kc = bt.Cols[outKeyCol[i]]; if (kc.IsDec) kc.D[row] = decimals.Value(key[i]); else kc.L[row] = key[i]; }
         if (windowStart is { } ws && wsCol >= 0) bt.Cols[wsCol].L[row] = ws;
         if (windowEnd is { } we && weCol >= 0) bt.Cols[weCol].L[row] = we;
+        foreach (var (a, ca, cb) in companions)
+        {
+            var absent = last ? t.LastAbs[slot * aggs.Length + a] : AggAbsent(t, slot, a);
+            if (absent) { bt.Cols[ca].SetAbsent(row, bt.N); if (cb >= 0) bt.Cols[cb].SetAbsent(row, bt.N); continue; }
+            var (pa, pb) = last ? t.LastAux![(long)slot * aggs.Length + a] : AuxOf(t, slot, a);
+            bt.Cols[ca].D[row] = pa; if (cb >= 0) bt.Cols[cb].L[row] = (long)pb;
+        }
         for (var a = 0; a < aggs.Length; a++)
         {
             var col = bt.Cols[outAggCol[a]];
@@ -508,9 +533,16 @@ abstract class AggregatingOp : PhysOp
     }
 
     /// <summary>Remember the values just emitted so a later change can retract exactly them.</summary>
+    /// <summary>The pair of a `mean` (sum, count) or a `last` (order, unused) of one slot now.</summary>
+    (decimal A, decimal B) AuxOf(KeyTable t, int slot, int a) => aggs[a].Kind == AggKind.Mean
+        ? (t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index], t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2])
+        : (LastOf(t.LastM![slot]![aggs[a].Index2]!, aggs[a]).Ord, 0);
+
     protected void Remember(KeyTable t, int slot)
     {
         t.LastCnt[slot] = t.Cnt[slot];
+        foreach (var (a, _, _) in companions)
+            if (!AggAbsent(t, slot, a)) (t.LastAux ??= [])[(long)slot * aggs.Length + a] = AuxOf(t, slot, a);
         for (var a = 0; a < aggs.Length; a++)
         {
             if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.WMean or AggKind.AnyAll or AggKind.Last) t.LastAbs[slot * aggs.Length + a] = AggAbsent(t, slot, a);
@@ -525,7 +557,7 @@ abstract class AggregatingOp : PhysOp
 sealed class GroupOp : AggregatingOp
 {
     readonly KeyTable table; readonly (string Role, int Col, bool IsRel, string Port)[] members; int emptied;
-    public GroupOp(TGroup t, Layout inLayout, OpContext cx, (string, int, bool, string)[]? members = null) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], false)
+    public GroupOp(TGroup t, Layout inLayout, OpContext cx, (string, int, bool, string)[]? members = null, bool withCompanions = false) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], false, withCompanions)
     {
         this.members = members ?? [];
         table = new KeyTable(keyExprs.Length, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
@@ -572,8 +604,8 @@ sealed class WindowedGroupOp : AggregatingOp
     readonly List<(W Win, long Ws)> revised = [];
     readonly string name;
 
-    public WindowedGroupOp(TGroup t, long width, string late, Layout inLayout, OpContext cx)
-        : base(t, t.Keys.Where(k => !(k.Name == "windowStart")).ToList(), t.Aggs, inLayout, cx, [.. t.Keys.Where(k => k.Name != "windowStart").Select(k => k.Name)], false)
+    public WindowedGroupOp(TGroup t, long width, string late, Layout inLayout, OpContext cx, bool withCompanions = false)
+        : base(t, t.Keys.Where(k => !(k.Name == "windowStart")).ToList(), t.Aggs, inLayout, cx, [.. t.Keys.Where(k => k.Name != "windowStart").Select(k => k.Name)], false, withCompanions)
     {
         this.width = width; this.late = late; name = t.Name;
         nKeys = keyExprs.Length;
@@ -671,7 +703,7 @@ sealed class RollupOp : AggregatingOp
     readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly bool any; readonly int[] memberCols = [];
 
     /// <summary>The key of a roll-up over a Series with a time to live is in no data iff every member that has a row has a marker record (`nodata any`: iff one has).</summary>
-    public RollupOp(TRollup t, Layout inLayout, OpContext cx) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true)
+    public RollupOp(TRollup t, Layout inLayout, OpContext cx, bool withCompanions = false) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true, withCompanions)
     {
         table = new KeyTable(keyExprs.Length + 1, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
         inWs = inLayout.Index("windowStart"); outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd"); period = t.PeriodNs;

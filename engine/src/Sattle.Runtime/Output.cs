@@ -328,6 +328,9 @@ sealed class SeriesOp : PhysOp
 /// <summary>Collects emitted contributions with their weights, resolves them to element states per flush (support counting: an element exists while some create row supports it), and holds the telemetry samples of the step.</summary>
 public sealed record LineageSource(string Role, int Handle, bool IsRel, string GraphPort);
 /// <summary>A conflict of Def. 6.4 (D34) that holds in a graph: fragments that disagree. `Kind` is `property` (the property is absent), `element` (creates that disagree on type or endpoints: the element is absent), `uniqueness` (several relationships on one source, target and type: `Element` is the one that is present) or `window` (several values for one telemetry window: it has no value). `Values` are the disagreeing values as canonical text, sorted.</summary>
+/// <summary>A telemetry value and the pair it may carry: for a `mean` its sum and count, for a `last` its order (Law 7.5 item 3 (i)); null for every other value.</summary>
+public readonly record struct TVal(decimal V, (decimal A, decimal B)? Aux = null);
+
 public sealed record Conflict(string Kind, string Element, string? Property, long? WindowStart, IReadOnlyList<string> Values)
 {
     public string Text => $"{Kind} {Element} {Property} {WindowStart}: {string.Join(" | ", Values)}";
@@ -388,7 +391,7 @@ public sealed class OutputBuilder(Interner it)
     /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (entity layers merge, relationships with the loser as an endpoint get the id of the survivor's endpoints). The old elements resolve to nothing and are removed by the next flush.</summary>
     public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor)
     {
-        var moved = new List<(int From, int To)>();
+        var moved = new List<(int From, int To)> { (loser, survivor) };          // the entity's own telemetry follows it, whether or not this graph emitted it
         var lid = it.Get(loser); var sid = it.Get(survivor);
         if (elems.TryGetValue(loser, out var ls) && !ls.IsRel)
         {
@@ -414,7 +417,7 @@ public sealed class OutputBuilder(Interner it)
         }
         // telemetry of a re-keyed relationship that has not reached the store yet follows it
         foreach (var (from, to) in moved)
-            for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from) tele[i] = (tele[i].Key with { Element = to }, tele[i].Value, tele[i].Weight, tele[i].Period);
+            for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from) tele[i] = tele[i] with { Key = tele[i].Key with { Element = to } };
         Merged++;
         return moved;
     }
@@ -427,7 +430,7 @@ public sealed class OutputBuilder(Interner it)
     readonly Dictionary<string, HashSet<int>> relsAt = [];
     readonly List<int> touched = [];
     readonly HashSet<int> touchedSet = [];
-    readonly List<(WindowKey Key, decimal Value, long Weight, long Period)> tele = [];
+    readonly List<(WindowKey Key, TVal Value, long Weight, long Period, long Own)> tele = [];
     public long Rejections { get; private set; }
     /// <summary>Properties that fragments with different values assign (counted each time such an element is resolved): they are absent from the element.</summary>
     public long PropertyConflicts { get; private set; }
@@ -473,7 +476,12 @@ public sealed class OutputBuilder(Interner it)
         if (touchedSet.Add(elem)) touched.Add(elem);
     }
 
-    public void Telemetry(WindowKey key, decimal value, long weight, long period) => tele.Add((key, value, weight, period));
+    /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
+    public void Telemetry(WindowKey key, TVal value, long weight, long period, long own, string? combine)
+    {
+        tele.Add((key, value, weight, period, own));
+        combineOf.TryAdd(key.Prop, combine);
+    }
 
     Element? Resolve(int elem, ElemState st)
     {
@@ -560,29 +568,112 @@ public sealed class OutputBuilder(Interner it)
     }
 
     /// <summary>Windows that more than one row writes, or one row with a weight other than one: the rows that support them, value to weight. A window written by exactly one row (premise B1, the normal case) is not here: the store holds its value and that is its whole support.</summary>
-    readonly Dictionary<WindowKey, Dictionary<decimal, long>> sharedWindows = [];
+    readonly Dictionary<WindowKey, Dictionary<TVal, long>> sharedWindows = [];
     /// <summary>Windows that rows with different values write at the same time (premise B1 broken): such a window has no value (D34).</summary>
     public long WindowConflicts { get; private set; }
+
+    /// <summary>Law 7.5 item 3: rows written under two ids of one class are two contributions to a window, not two writes of one (premise B1). Per (element, property) the one own id that has written it, while there is one; once a second own id writes it (or a merge brings one), its windows keep their support per own id in `byOwn`.</summary>
+    readonly Dictionary<(int Elem, int Prop), long> soleOwn = [];
+    readonly HashSet<(int Elem, int Prop)> multiOwn = [];
+    readonly Dictionary<WindowKey, Dictionary<long, Dictionary<TVal, long>>> byOwn = [];
+    readonly Dictionary<int, string?> combineOf = [];
+    /// <summary>Windows that two ids of one class write with different values under a rule that does not combine them (a mean stored as one number, a last without its order): such a window has no value.</summary>
+    public long MergeConflicts { get; private set; }
+    /// <summary>Windows written under more than one own id: the measure of how often Law 7.5 item 3 combines.</summary>
+    public long WindowsOfTwoIds => byOwn.Count(w => w.Value.Count > 1);
+
+    static TVal? StoredOf(ITelemetryStore store, GraphKey g, WindowKey key) => store.ReadWindow(g, [key.Element], [key.Prop], key.WindowStart, key.WindowStart + 1)[0].Points is { Count: 1 } p ? new TVal(p[0].Value, store.AuxOf(g, key)) : null;
+
+    /// <summary>The support of each window of (element, property) by value, all written under `own`: what `sharedWindows` holds, else the stored value as one row.</summary>
+    IEnumerable<(WindowKey Key, Dictionary<TVal, long> Support)> SupportsOf(ITelemetryStore store, GraphKey g, int elem, int prop)
+    {
+        var keys = new HashSet<WindowKey>(sharedWindows.Keys.Where(k => k.Element == elem && k.Prop == prop));
+        foreach (var pt in store.ReadWindow(g, [elem], [prop], long.MinValue, long.MaxValue)[0].Points) keys.Add(new WindowKey(elem, prop, pt.WindowStart));
+        foreach (var k in keys.OrderBy(k => k.WindowStart))
+            yield return (k, sharedWindows.TryGetValue(k, out var s) ? s : StoredOf(store, g, k) is { } v ? new() { [v] = 1 } : []);
+    }
+
+    /// <summary>(element, property) gets a second own id: its windows so far were all written under `sole`.</summary>
+    void BecomeMulti(ITelemetryStore store, GraphKey g, (int Elem, int Prop) ep, long sole)
+    {
+        foreach (var (k, support) in SupportsOf(store, g, ep.Elem, ep.Prop).ToList())
+        {
+            sharedWindows.Remove(k);
+            if (support.Count > 0) byOwn[k] = new() { [sole] = support };
+        }
+        multiOwn.Add(ep); soleOwn.Remove(ep);
+    }
+
+    /// <summary>Before the store moves the windows of a merged element (`MoveElement`), the support of its windows follows it: under one own id when only one ever wrote the pair, else per own id.</summary>
+    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to)
+    {
+        var props = soleOwn.Keys.Concat(multiOwn).Where(ep => ep.Elem == from).Select(ep => ep.Prop).Distinct().ToList();
+        foreach (var p in props)
+        {
+            (int, int) f = (from, p), t = (to, p);
+            var fromSupports = multiOwn.Contains(f)
+                ? byOwn.Where(w => w.Key.Element == from && w.Key.Prop == p).Select(w => (w.Key, w.Value)).ToList()
+                : [.. SupportsOf(store, g, from, p).Where(x => x.Support.Count > 0).Select(x => (x.Key, new Dictionary<long, Dictionary<TVal, long>> { [soleOwn[f]] = x.Support }))];
+            foreach (var (k, _) in fromSupports) { byOwn.Remove(k); sharedWindows.Remove(k); }
+            if (!multiOwn.Contains(f) && !multiOwn.Contains(t) && (!soleOwn.TryGetValue(t, out var st) || st == soleOwn[f]))
+            {
+                // one own id on both sides: plain supports, re-keyed
+                soleOwn[t] = soleOwn[f];
+                foreach (var (k, owns) in fromSupports)
+                {
+                    var support = owns.Values.Single(); var nk = k with { Element = to };
+                    if (sharedWindows.TryGetValue(nk, out var there) || StoredOf(store, g, nk) is { } _) { var into = there ?? (StoredOf(store, g, nk) is { } sv ? new() { [sv] = 1 } : []); foreach (var (v, w) in support) into[v] = into.GetValueOrDefault(v) + w; sharedWindows[nk] = into; }
+                    else if (!(support.Count == 1 && support.Values.First() == 1)) sharedWindows[nk] = support;
+                }
+            }
+            else
+            {
+                if (!multiOwn.Contains(t)) { if (soleOwn.TryGetValue(t, out var sole)) BecomeMulti(store, g, t, sole); else multiOwn.Add(t); }
+                foreach (var (k, owns) in fromSupports)
+                {
+                    var nk = k with { Element = to };
+                    if (!byOwn.TryGetValue(nk, out var into)) byOwn[nk] = into = [];
+                    foreach (var (o, support) in owns)
+                    {
+                        if (!into.TryGetValue(o, out var sup)) into[o] = sup = [];
+                        foreach (var (v, w) in support) { var n = sup.GetValueOrDefault(v) + w; if (n == 0) sup.Remove(v); else sup[v] = n; }
+                    }
+                }
+            }
+            soleOwn.Remove(f); multiOwn.Remove(f);
+        }
+    }
 
     /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left.</summary>
     public List<Sample> FlushTelemetry(ITelemetryStore store, GraphKey g, long inputId, long widthNs)
     {
         var res = new List<Sample>();
-        var step = new Dictionary<WindowKey, (Dictionary<decimal, long> Net, long Period)>();
+        var step = new Dictionary<WindowKey, (Dictionary<(long Own, TVal Value), long> Net, long Period)>();
         var order = new List<WindowKey>();
-        foreach (var (key, value, weight, period) in tele)
+        foreach (var (key, value, weight, period, own) in tele)
         {
+            var ep = (key.Element, key.Prop);
+            if (!multiOwn.Contains(ep))
+            {
+                if (!soleOwn.TryGetValue(ep, out var sole)) soleOwn[ep] = own;
+                else if (sole != own) BecomeMulti(store, g, ep, sole);
+            }
             if (!step.TryGetValue(key, out var cur)) { step[key] = cur = ([], period); order.Add(key); }
-            var n = cur.Net.GetValueOrDefault(value) + weight;
-            if (n == 0) cur.Net.Remove(value); else cur.Net[value] = n;
+            var n = cur.Net.GetValueOrDefault((own, value)) + weight;
+            if (n == 0) cur.Net.Remove((own, value)); else cur.Net[(own, value)] = n;
         }
         foreach (var key in order)
         {
-            var (net, per) = step[key];
+            var (byRow, per) = step[key];
+            if (byRow.Count == 0) continue;
+            TVal? Stored() => StoredOf(store, g, key);
+            void Set(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B));
+            void Delete(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, Deleted: true));
+            if (multiOwn.Contains((key.Element, key.Prop))) { FlushOfTwoIds(key, byRow, Stored(), Set, Delete); continue; }
+            var net = new Dictionary<TVal, long>();
+            foreach (var ((_, v), w) in byRow) net[v] = net.GetValueOrDefault(v) + w;
+            foreach (var v in net.Where(x => x.Value == 0).Select(x => x.Key).ToList()) net.Remove(v);
             if (net.Count == 0) continue;
-            decimal? Stored() => store.ReadWindow(g, [key.Element], [key.Prop], key.WindowStart, key.WindowStart + 1)[0].Points is { Count: 1 } p ? p[0].Value : null;
-            void Set(decimal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v, inputId));
-            void Delete(decimal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v, inputId, Deleted: true));
             var shared = sharedWindows.TryGetValue(key, out var support);
             // one row out and one row in: the revision of a window that one row writes
             if (!shared && net.Count == 2 && net.Values.Sum() == 0 && net.Values.Max() == 1) { Set(net.First(x => x.Value == 1).Key); continue; }
@@ -591,7 +682,7 @@ public sealed class OutputBuilder(Interner it)
             foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; }
             var values = support.Where(x => x.Value > 0).Select(x => x.Key).ToList();
             if (values.Count > 1) WindowConflicts++;
-            Note($"window {key.Element} {key.Prop} {key.WindowStart}", values.Count > 1 ? new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.Order().Select(Norm.Decimal)]) : null);
+            Note($"window {key.Element} {key.Prop} {key.WindowStart}", values.Count > 1 ? new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]) : null);
             if (values.Count != 1) { if (stored is { } gone) Delete(gone); }
             else if (values[0] != stored) Set(values[0]);
             // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)
@@ -600,16 +691,56 @@ public sealed class OutputBuilder(Interner it)
         tele.Clear();
         return res;
     }
+
+    /// <summary>A window that rows under more than one own id write: under each own id premise B1 (one value, or none and a conflict); across them the property's rule, `sum`, `min` and `max` in their monoid, any other rule only equal values. A window without a value under one id has none (Law 7.5 item 3).</summary>
+    void FlushOfTwoIds(WindowKey key, Dictionary<(long Own, TVal Value), long> byRow, TVal? stored, Action<TVal> set, Action<TVal> delete)
+    {
+        if (!byOwn.TryGetValue(key, out var owns)) byOwn[key] = owns = [];
+        foreach (var ((o, v), w) in byRow)
+        {
+            if (!owns.TryGetValue(o, out var sup)) owns[o] = sup = [];
+            var n = sup.GetValueOrDefault(v) + w; if (n == 0) sup.Remove(v); else sup[v] = n;
+        }
+        foreach (var o in owns.Where(x => x.Value.Count == 0).Select(x => x.Key).ToList()) owns.Remove(o);
+        if (owns.Count == 0) byOwn.Remove(key);
+        var perOwn = owns.OrderBy(x => x.Key).Select(x => x.Value.Where(v => v.Value > 0).Select(v => v.Key).ToList()).Where(vs => vs.Count > 0).ToList();
+        TVal? value = null; Conflict? conflict = null;
+        var subject = $"window {key.Element} {key.Prop} {key.WindowStart}";
+        if (perOwn.FirstOrDefault(vs => vs.Count > 1) is { } broken) { WindowConflicts++; conflict = new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. broken.OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]); }
+        else if (perOwn.Count > 0)
+        {
+            var values = perOwn.Select(vs => vs[0]).ToList();
+            // the values of the own ids, combined pairwise in their order: every rule is commutative and associative, and "no value" absorbs
+            var rule = combineOf.GetValueOrDefault(key.Prop);
+            value = values[0];
+            foreach (var next in values.Skip(1))
+                value = value is { } acc && InMemoryTelemetryStore.Combine(rule, acc.V, acc.Aux, next.V, next.Aux) is { } c ? new TVal(c.Value, c.Aux) : null;
+            if (value is null) { MergeConflicts++; conflict = new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.Distinct().OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]); }
+        }
+        Note(subject, conflict);
+        if (value is { } v1) { if (v1 != stored) set(v1); }
+        else if (stored is { } gone) delete(gone);
+    }
 }
 
 abstract class SinkOp : PhysOp
 {
     protected SinkOp(TOp t) : base(t) { }
+
+    /// <summary>Per set: the companion columns of the aggregate it writes, if its value is one read directly (`{name}#sum` and `#count` of a mean, `#order` of a last), else -1.</summary>
+    protected static (int A, int B)[] PairColumns(IReadOnlyList<TSet> sets, Layout inLayout) => [.. sets.Select(s =>
+        !s.Telemetry || s.Value is not TField f ? (-1, -1)
+        : inLayout.Has(f.Name + "#sum") ? (inLayout.Index(f.Name + "#sum"), inLayout.Index(f.Name + "#count"))
+        : inLayout.Has(f.Name + "#order") ? (inLayout.Index(f.Name + "#order"), -1) : (-1, -1))];
+
+    protected static TVal ValueOf(Column col, int row, Batch b, (int A, int B) pair) =>
+        new(col.IsDec ? col.D[row] : col.L[row], pair.A >= 0 && b.Cols[pair.A].Present(row) ? (b.Cols[pair.A].D[row], pair.B >= 0 ? b.Cols[pair.B].L[row] : 0) : null);
 }
 
 /// <summary>Emit entity: contributions per row; graph-data properties into the element state, telemetry properties into the telemetry plane at the row's window.</summary>
 sealed class EmitEntityOp : SinkOp
 {
+    readonly (int A, int B)[] pairs;
     readonly TEmitEntity t; readonly int sink; readonly VExpr id; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
     readonly (string Role, int Col, bool IsRel, string Port)[] lineage; readonly (string Group, int[] KeyCols)? groupRef;
     public EmitEntityOp(TEmitEntity t, int sink, Layout inLayout, OpContext cx, Func<TExpr, VExpr> compile, (string, int, bool, string)[] lineage, (string, int[])? groupRef = null) : base(t)
@@ -617,11 +748,14 @@ sealed class EmitEntityOp : SinkOp
         this.t = t; this.sink = sink; it = cx.It; id = compile(t.EntityId); this.lineage = lineage; this.groupRef = groupRef;
         sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
+        if (id is VId v && t.Sets.Any(s => s.Telemetry)) v.TrackOwn = true;
+        pairs = PairColumns(t.Sets, inLayout);
     }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var idc = id.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        var owns = (id as VId)?.Owns;
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -634,8 +768,7 @@ sealed class EmitEntityOp : SinkOp
                 if (!col.Present(row)) continue;
                 if (set.Telemetry)
                 {
-                    var v = col.IsDec ? col.D[row] : col.L[row];
-                    cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), v, w, set.Period);
+                    cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
                 }
                 else props.Add(KeyValuePair.Create(set.PropId, ToValue(col, row, set.Value.Type.Ty)));
             }
@@ -651,6 +784,7 @@ sealed class EmitEntityOp : SinkOp
 
 sealed class EmitRelOp : SinkOp
 {
+    readonly (int A, int B)[] pairs;
     readonly TEmitRel t; readonly int sink; readonly VExpr src, tgt; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
     readonly Dictionary<(int, int), int> relIds = [];
     readonly (string Role, int Col, bool IsRel, string Port)[] lineage; readonly (string Group, int[] KeyCols)? groupRef;
@@ -659,12 +793,15 @@ sealed class EmitRelOp : SinkOp
         this.t = t; this.sink = sink; it = cx.It; src = compile(t.Source); tgt = compile(t.Target); this.lineage = lineage; this.groupRef = groupRef;
         sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
+        if (t.Sets.Any(s => s.Telemetry)) foreach (var e in new[] { src, tgt }.OfType<VId>()) e.TrackOwn = true;
+        pairs = PairColumns(t.Sets, inLayout);
         cx.Out.RegisterRelSink(sink, (s, d) => IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, s, d));
     }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var sc = src.Eval(b); var tc = tgt.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        var (so, to) = ((src as VId)?.Owns, (tgt as VId)?.Owns);
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -677,7 +814,8 @@ sealed class EmitRelOp : SinkOp
             {
                 var set = sets[i].Set; var col = cols[i];
                 if (!col.Present(row)) continue;
-                if (set.Telemetry) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), col.IsDec ? col.D[row] : col.L[row], w, set.Period);
+                if (set.Telemetry) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
+                    ((so is null ? s : so.L[row]) << 32) | (uint)(to is null ? d : to.L[row]), set.Combine);          // a relationship is written under the own ids of its two endpoints
                 else props.Add(KeyValuePair.Create(set.PropId, Codec.ToValue(col, row, set.Value.Type.Ty, it)));
             }
             if (t.Update && props.Count == 0) continue;

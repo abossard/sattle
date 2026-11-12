@@ -120,6 +120,39 @@ public class WorkloadTests
         }
     }
 
+    /// <summary>The share rule keeps the rank of no data (content review): the web deployment's pods are given as values in place of their signals, and the estate runs to the minute before the first scenario, when everything else is healthy. A pod without a severity does not count; a deployment none of whose pods has one is Unknown.</summary>
+    [Theory]
+    [InlineData("all three pods in no data", "1,1,1", "No data", "No data")]
+    [InlineData("one of three pods in no data", "0,0,1", "Healthy", "Healthy")]
+    [InlineData("half in no data, half unhealthy", "1,3", "Unhealthy", "Unhealthy")]
+    [InlineData("half in no data, half degraded", "1,2", "Degraded", "Degraded")]
+    [InlineData("two of three degraded, one unhealthy", "2,2,3", "Degraded", "Degraded")]
+    [InlineData("no pod measured", "", "Unknown", "Healthy")]
+    public void A_deployment_takes_the_rank_that_at_least_half_of_its_measured_pods_reach(string pods, string severities, string deployment, string service)
+    {
+        const string Key = "deploy/synth/shop/web";
+        var rows = severities.Length == 0 ? "values { dk: \"none\", pk2: \"none\", k: \"none\", own: 0 }"
+            : "values " + string.Join(", ", severities.Split(',').Select((sev, i) => $"{{ dk: \"{Key}\", pk2: \"pod{i}\", k: \"pod{i}\", own: {sev} }}"));
+        var files = Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => !f.Path.EndsWith("acme.workload.sattle", StringComparison.Ordinal) ? f : f with
+        {
+            Text = f.Text.Contains("  let podsOfDeployment = join deployed, ownByKey on pk2 == k;", StringComparison.Ordinal)
+                ? f.Text.Replace("  let podsOfDeployment = join deployed, ownByKey on pk2 == k;", $"  let podsOfDeployment = {rows};\n  let unusedPods = join deployed, ownByKey on pk2 == k;")
+                : throw new InvalidOperationException("the statement of the pods of a deployment changed"),
+        }).ToList();
+        var cat = new Sattle.Language.Catalog();
+        var res = cat.Load(files, updatePins: true);
+        Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
+        var space = cat.Spaces.Keys.Single();
+        using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
+        {
+            ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(210).ToUnixTimeMilliseconds() * 1_000_000,
+        }).Run(EstateTests.EstateDir);
+        var states = States(engine);
+        Assert.Equal((deployment, service), (states["deployment:web"], states["service:web"]));
+        _ = pods;
+    }
+
     [Fact]
     public void An_observed_call_carries_no_failure_API_Management_needs_api_and_not_the_other_way()
     {

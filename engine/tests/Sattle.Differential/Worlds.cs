@@ -190,6 +190,48 @@ public static class Worlds
     static readonly SourceSpec Pods = new("pods", (r, _) => { var i = r.Next(4); return Row(("uid", Value.Text("u" + i)), ("name", Value.Text(PodNames[i])), ("g", Text(r, "g", 2))); }, f => ((TextValue)f["uid"]).S);
     static readonly SourceSpec Flows = new("flows", (r, _) => Row(("src", Value.Text(PodNames[r.Next(4)].ToLowerInvariant())), ("dst", Value.Text(PodNames[r.Next(4)]))));
 
+    /// <summary>Law 7.5 item 3, "rows after the link" (D37): the load of a pod summed per window once by its uid and once by its name, both writing one telemetry property. A link merges the two identities before, between or after the rows; the window is the sum of both groups, as if every row had been written under the survivor.</summary>
+    /// <summary>T-B3: a view groups the calls of each pod by the pod it matches. A link in the master merges two identities of one pod; the view's group re-keys through the master's patch, so its count is that of one group over both keys (Theorem 6.1 under identity, the stated way to group by an identity under rule IdOf-in-sinks).</summary>
+    public static readonly World LinkedView = new("a view grouped by a pod that a link merges", "Link, Match, Group, EmitEntity in a view", [
+        new SourceFile("w.sattle", Linked[..Linked.IndexOf("space s {", StringComparison.Ordinal)]),
+        new SourceFile("w.view.sattle", """
+            module w.view @ 1.0.0;
+            import w @ 1.0.0 sha256:… as base;
+            entity Caller { calls: Integer; }
+            projection v view forward output w.view {
+              in master: graph base;
+              let calls = match master (p: base.Pod)-[:base.Calls]->(q: base.Pod) |> group by { p: p } aggregate { c: count() };
+              emit entity Caller from calls identity p set { calls: c };
+            }
+            space s {
+              source pods adapter "sattle.authoring" rows base.PodRow;
+              source flows adapter "sattle.authoring" rows base.FlowRow;
+              master graph master = base.ingest(pods: pods, flows: flows);
+              graph view = v(master: master);
+            }
+            """)], [Pods, Flows]) { Witnesses = ["d:w.view/prop:calls="] };
+
+    public static readonly World LinkedLoads = LinkedLoadsUnder("delta sum");
+
+    /// <summary>The world of `LinkedLoads` with the load property declared `{kind} telemetry {rule} every 60s` (a temporality and a combine rule), each group aggregating `aggregate`.</summary>
+    public static World LinkedLoadsUnder(string rule, string aggregate = "sum(n)", string kind = "Integer") => new(rule == "delta sum" && aggregate == "sum(n)" ? "two groups by two keys of one class, one telemetry property" : $"two groups by two keys of one class, one telemetry property ({rule}, {aggregate})", "Link, Window, Group, EmitEntity telemetry", [new SourceFile("w.sattle", Linked
+        .Replace("entity Pod { uid?: Text; name?: Text; g?: Text; }", $"entity Pod {{ uid?: Text; name?: Text; g?: Text; load?: {kind} telemetry {rule} every 60s; }}")
+        .Replace("rows FlowRow { src: Text; dst: Text; }", "rows FlowRow { src: Text; dst: Text; }\nrows LoadRow { uid?: Text; name?: Text; n: Integer; t: Instant; }")
+        .Replace("  in flows: rows FlowRow;", "  in flows: rows FlowRow;\n  in loads: rows LoadRow;")
+        .Replace("emit relationship Calls from flows key calls: podName(name: src) -> podName(name: dst);", """
+            emit relationship Calls from flows key calls: podName(name: src) -> podName(name: dst);
+                let loadWindows = loads |> window on t width 60s late revise;
+                let byUid = loadWindows |> where isPresent(uid) |> group by { uid: uid, windowStart: windowStart } aggregate { c: AGGREGATE };
+                emit update entity Pod from byUid identity podUid(uid: uid) set { load: c };
+                let byName = loadWindows |> where isPresent(name) |> group by { name: name, windowStart: windowStart } aggregate { c: AGGREGATE };
+                emit update entity Pod from byName identity podName(name: name) set { load: c };
+            """)
+        .Replace("  source flows adapter \"sattle.authoring\" rows FlowRow;", "  source flows adapter \"sattle.authoring\" rows FlowRow;\n  source loads adapter \"sattle.authoring\" rows LoadRow;")
+        .Replace("master graph master = ingest(pods: pods, flows: flows);", "master graph master = ingest(pods: pods, flows: flows, loads: loads);")
+        .Replace("AGGREGATE", aggregate))],
+        [Pods, Flows, new("loads", (r, now) => { var i = r.Next(4); var byUid = r.Next(2) == 0; return Row(("uid", byUid ? Value.Text("u" + i) : Value.Null), ("name", byUid ? Value.Null : Value.Text(PodNames[i])), ("n", Value.Integer(r.Next(1, 4))), ("t", Near(r, now))); })], AdvanceShare: 0.2)
+    { Witnesses = ["prop:load"] };
+
     // ---- worlds of the known-defect tests (their inputs are written out, not generated) ----
 
     const string OneEntity = """
@@ -313,6 +355,17 @@ public static class Worlds
         }
         """)], [BagEdges, BagEdges with { Name = "more" }]) { Witnesses = ["rel "] };
 
+    /// <summary>The share rule of acme.workload (a deployment by the share of its pods, no data ranked between healthy and degraded), with the statements of the model: pods are rows of `a` (key `k`, deployment `g`, severity `n` capped at 3), retracted and changed by the log.</summary>
+    public static readonly World ShareRule = Rows("share rule of a deployment", "Map, Group, Map, EmitEntity",
+        """
+            let podsOfDeployment = a |> select { dk: g, pk2: k, own: if(n > 3, 3, n) };
+            let shares = podsOfDeployment |> group by { dk: dk } aggregate { n: count(), bad: sum(if(own >= 3, 1, 0)), weak: sum(if(own >= 2, 1, 0)), silent: sum(if(own >= 1, 1, 0)) };
+            let byShare = shares |> select { k: dk, own: if(bad * 2 >= n, 3, if(weak * 2 >= n, 2, if(silent * 2 >= n, 1, 0))) };
+        """, """
+        entity Deployment { k: Text; own: Integer; }
+        identity deployment for Deployment version "1" { k: Text by exact; }
+        """, tail: "    emit entity Deployment from byShare identity deployment(k: k) set { k: k, own: own };") with { Witnesses = ["prop:own=n:0", "prop:own=n:1", "prop:own=n:2", "prop:own=n:3"] };
+
     public static readonly IReadOnlyList<World> All =
     [
         Rows("filter", "Filter", "    let x = a |> where n > 2 and g != \"g1\";"),
@@ -362,6 +415,9 @@ public static class Worlds
         new("fixpoint max 2", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(2))], [BagEdges]),
         new World("fixpoint max 8", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(8))], [BagEdges]) with { Witnesses = ["Pair"] },
         new World("link", "Link, EmitRelationship", [new SourceFile("w.sattle", Linked)], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
+        LinkedLoads,
+        LinkedView,
+        ShareRule,
         View("match nodes", "Match, EmitEntity", """
             entity Copy { k: Text; g: Text; n: Integer; }
             identity copy for Copy version "1" { k: Text by exact; }
