@@ -287,7 +287,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
     /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). A seal of another format is refused with both versions named, and the journal is replayed.</summary>
-    public const int SealFormat = 2;
+    public const int SealFormat = 3;
     /// <summary>Why the latest seal was not used at the last start, if it was not.</summary>
     public string? SealRefusal { get; private set; }
 

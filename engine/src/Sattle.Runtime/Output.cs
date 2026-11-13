@@ -393,27 +393,35 @@ public sealed class OutputBuilder(Interner it)
     {
         var moved = new List<(int From, int To)> { (loser, survivor) };          // the entity's own telemetry follows it, whether or not this graph emitted it
         var lid = it.Get(loser); var sid = it.Get(survivor);
-        if (elems.TryGetValue(loser, out var ls) && !ls.IsRel)
+        if (kinds[loser] == Entity && (ByElement.First([loser]) >= 0 || dirty.Has(loser)))
         {
-            foreach (var c in ls.Contribs.ToList()) Contribute(survivor, false, c.Sink, c.Update, c.Type, null, null, c.Props, c.Weight);
-            ls.Contribs.Clear();
-            MoveSupport(loser, survivor);
-            if (touchedSet.Add(loser)) touched.Add(loser);
-        }
-        var atLoser = relsAt.TryGetValue(lid, out var at) ? at.ToList() : [];
-        foreach (var (elem, st) in atLoser.Where(elems.ContainsKey).Select(e => (e, elems[e])).Where(x => x.Item2.IsRel && x.Item2.Contribs.Any(c => c.Source == lid || c.Target == lid)).ToList())
-        {
-            foreach (var c in st.Contribs.Where(c => c.Source == lid || c.Target == lid).ToList())
+            foreach (var (code, w) in RowsOf(loser))
             {
-                st.Contribs.Remove(c);
-                var ns = c.Source == lid ? sid : c.Source; var nt = c.Target == lid ? sid : c.Target;
-                var idOf = relSinks[c.Sink];
+                AddFragment(loser, code, -w, null, null);
+                if (!kinds.Has(survivor)) kinds[survivor] = Entity;
+                AddFragment(survivor, code, w, null, null);                                     // an entity's fragment names no endpoint, so it is the same fragment under the survivor
+                Touch(survivor);
+            }
+            MoveSupport(loser, survivor);
+            Touch(loser);
+        }
+        var atLoser = new List<int>();
+        for (var r = ByEnd.First([loser]); r >= 0; r = ByEnd.Next(r)) atLoser.Add(r);
+        foreach (var elem in atLoser.Order().Select(r => (int)ends.Get(r, 1)).ToList())
+        {
+            var at = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
+            if (kinds[elem] != Relationship || at.Count == 0) continue;
+            foreach (var (code, w, f) in at)
+            {
+                AddFragment(elem, code, -w, f.Source, f.Target);
+                var ns = f.Source == lid ? sid : f.Source; var nt = f.Target == lid ? sid : f.Target;
+                var idOf = relSinks[f.Sink];
                 var ne = it.Intern(idOf(ns!, nt!));
-                Contribute(ne, true, c.Sink, c.Update, c.Type, ns, nt, c.Props, c.Weight);
+                Contribute(ne, true, f.Sink, f.Update, f.Type, ns, nt, f.Props, w);
                 if (Lineage.TryGetValue(elem, out var li)) Lineage[ne] = li;
                 if (ne != elem && !moved.Contains((elem, ne))) { moved.Add((elem, ne)); MoveSupport(elem, ne); }
             }
-            if (touchedSet.Add(elem)) touched.Add(elem);
+            Touch(elem);
         }
         // telemetry of a re-keyed relationship that has not reached the store yet follows it
         foreach (var (from, to) in moved)
@@ -423,13 +431,76 @@ public sealed class OutputBuilder(Interner it)
     }
     public long Merged { get; private set; }
 
-    sealed record Contribution(int Sink, bool Update, string Type, string? Source, string? Target, Props Props, long Weight);
-    sealed class ElemState { public bool IsRel; public readonly List<Contribution> Contribs = []; }
-    readonly Dictionary<int, ElemState> elems = [];
-    /// <summary>The relationship elements that ever had an identity as an endpoint, so a merge visits those and not every element (entries go stale, Remap checks the contributions).</summary>
-    readonly Dictionary<string, HashSet<int>> relsAt = [];
+    /// <summary>What one emit says about an element: its sink, create or update, type, endpoints and properties.</summary>
+    readonly record struct Fragment(int Sink, bool Update, string Type, string? Source, string? Target, Props Props);
+
+    /// <summary>The sink table: per (element, fragment) the summed weight of the rows that contribute the fragment; a row at weight zero is gone. Each fragment is kept once, as bytes, in `fragments`.</summary>
+    readonly Table contributions = new([4, 4], keyColumns: 2, arrangedPrefix: 1);
+    readonly CodeDictionary fragments = new();
+    readonly StrTable fragmentKeys = new();
+    Arrangement ByElement => contributions.ByPrefix!;
+    /// <summary>Per element handle: entity or relationship, from its first fragment.</summary>
+    readonly Segments<byte> kinds = new();
+    const byte Entity = 1, Relationship = 2;
+    /// <summary>(endpoint, relationship) while a fragment of the relationship names the endpoint, so a merge visits those and not every element.</summary>
+    readonly Table ends = new([4, 4], keyColumns: 2, arrangedPrefix: 1);
+    Arrangement ByEnd => ends.ByPrefix!;
+    /// <summary>The elements touched since the last flush, in the order they were first touched, and the same as a bitmap.</summary>
     readonly List<int> touched = [];
-    readonly HashSet<int> touchedSet = [];
+    readonly Segments<byte> dirty = new();
+    readonly List<byte> buffer = [];
+
+    void Touch(int elem) { if (!dirty.Has(elem)) { dirty[elem] = 1; touched.Add(elem); } }
+
+    static void Varint(List<byte> o, ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
+    static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
+
+    int FragmentOf(int sink, bool update, string type, string? source, string? target, Props props)
+    {
+        buffer.Clear();
+        Varint(buffer, (ulong)sink); buffer.Add(update ? (byte)1 : (byte)0); Varint(buffer, (ulong)fragmentKeys.Intern(type));
+        Varint(buffer, source is null ? 0UL : (ulong)it.Intern(source) + 1); Varint(buffer, target is null ? 0UL : (ulong)it.Intern(target) + 1);
+        buffer.AddRange(PropCodec.Encode(props, fragmentKeys));
+        return fragments.Code(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer));
+    }
+
+    Fragment Decode(int code)
+    {
+        var (b, p) = fragments.Slice(code);
+        var sink = (int)ReadVarint(b, ref p); var update = b[p++] == 1; var type = fragmentKeys.Get((int)ReadVarint(b, ref p));
+        var s = (int)ReadVarint(b, ref p); var t = (int)ReadVarint(b, ref p);
+        return new(sink, update, type, s == 0 ? null : it.Get(s - 1), t == 0 ? null : it.Get(t - 1), PropCodec.Decode(b, p, fragmentKeys));
+    }
+
+    /// <summary>The endpoints a fragment names (null for an entity's).</summary>
+    (string? Source, string? Target) EndsOf(int code)
+    {
+        var (b, p) = fragments.Slice(code);
+        ReadVarint(b, ref p); p++; ReadVarint(b, ref p);
+        var s = (int)ReadVarint(b, ref p); var t = (int)ReadVarint(b, ref p);
+        return (s == 0 ? null : it.Get(s - 1), t == 0 ? null : it.Get(t - 1));
+    }
+
+    /// <summary>Adds `w` to the weight of a fragment of an element, and keeps the endpoint index: an endpoint is in it while some fragment of the relationship names it.</summary>
+    void AddFragment(int elem, int code, long w, string? source, string? target)
+    {
+        if (w == 0) return;
+        var isNew = contributions.Find([elem, code]) < 0;
+        if (isNew)
+            foreach (var end in new[] { source, target })
+                if (end is not null && ends.Find([it.Intern(end), elem]) < 0) ends.Add([it.Intern(end), elem], 1);
+        if (contributions.Add([elem, code], w) >= 0 || isNew) return;
+        foreach (var end in new[] { source, target }.Distinct())
+            if (end is not null && !RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == end || e.Target == end))) ends.Add([it.Intern(end), elem], -1);
+    }
+
+    /// <summary>The fragments of an element with their weights, as fragment codes.</summary>
+    List<(int Code, long Weight)> RowsOf(int elem)
+    {
+        var res = new List<(int, long)>();
+        for (var r = ByElement.First([elem]); r >= 0; r = ByElement.Next(r)) res.Add(((int)contributions.Get(r, 1), contributions.Weight(r)));
+        return res;
+    }
     readonly List<(WindowKey Key, TVal Value, long Weight, long Period, long Own)> tele = [];
     public long Rejections { get; private set; }
     /// <summary>Properties that fragments with different values assign (counted each time such an element is resolved): they are absent from the element.</summary>
@@ -461,19 +532,9 @@ public sealed class OutputBuilder(Interner it)
 
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight)
     {
-        if (!elems.TryGetValue(elem, out var st)) elems[elem] = st = new ElemState { IsRel = isRel };
-        var i = st.Contribs.FindIndex(c => c.Sink == sink && c.Update == update && c.Type == type && c.Source == source && c.Target == target && c.Props.Equals(props));
-        if (i >= 0)
-        {
-            var nw = st.Contribs[i].Weight + weight;
-            if (nw == 0) st.Contribs.RemoveAt(i); else st.Contribs[i] = st.Contribs[i] with { Weight = nw };
-        }
-        else if (weight != 0)                // a retraction may arrive before the insertion it cancels: the weights add up in any order
-        {
-            st.Contribs.Add(new Contribution(sink, update, type, source, target, props, weight));
-            if (isRel) foreach (var end in new[] { source, target }) if (end is not null) { if (!relsAt.TryGetValue(end, out var set)) relsAt[end] = set = []; set.Add(elem); }
-        }
-        if (touchedSet.Add(elem)) touched.Add(elem);
+        if (!kinds.Has(elem)) kinds[elem] = isRel ? Relationship : Entity;
+        AddFragment(elem, FragmentOf(sink, update, type, source, target, props), weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
+        Touch(elem);
     }
 
     /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
@@ -483,9 +544,10 @@ public sealed class OutputBuilder(Interner it)
         combineOf.TryAdd(key.Prop, combine);
     }
 
-    Element? Resolve(int elem, ElemState st)
+    Element? Resolve(int elem)
     {
-        var creates = st.Contribs.Where(c => !c.Update && c.Weight > 0).OrderBy(c => c.Sink).ToList();
+        var all = RowsOf(elem).Select(x => (F: Decode(x.Code), x.Weight)).ToList();
+        var creates = all.Where(c => !c.F.Update && c.Weight > 0).Select(c => c.F).OrderBy(c => c.Sink).ToList();
         var id = it.Get(elem);
         if (conflicts.Count > 0)
         {
@@ -502,7 +564,7 @@ public sealed class OutputBuilder(Interner it)
         }
         // Def. 6.4 (D34): the state is a function of the positive fragments, whatever their sink or order. A property with more than one value is absent and counted.
         var values = new Dictionary<string, Value>(StringComparer.Ordinal); HashSet<string>? conflicting = null;
-        foreach (var c in st.Contribs) if (c.Weight > 0) foreach (var (k, v) in c.Props.Items)
+        foreach (var (c, w) in all) if (w > 0) foreach (var (k, v) in c.Props.Items)
             if (!values.TryAdd(k, v) && !values[k].Equals(v)) (conflicting ??= []).Add(k);
         if (conflicting is not null)
         {
@@ -510,11 +572,11 @@ public sealed class OutputBuilder(Interner it)
             foreach (var k in conflicting)
             {
                 values.Remove(k);
-                Note($"property {id} {k}", new Conflict("property", id, k, null, [.. st.Contribs.Where(c => c.Weight > 0).SelectMany(c => c.Props.Items).Where(x => x.Key == k).Select(x => Canonical(x.Value)).Distinct().Order(StringComparer.Ordinal)]));
+                Note($"property {id} {k}", new Conflict("property", id, k, null, [.. all.Where(c => c.Weight > 0).SelectMany(c => c.F.Props.Items).Where(x => x.Key == k).Select(x => Canonical(x.Value)).Distinct().Order(StringComparer.Ordinal)]));
             }
         }
         var props = Props.Of(values);
-        return st.IsRel ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
+        return kinds[elem] == Relationship ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
     }
 
     /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
@@ -529,12 +591,11 @@ public sealed class OutputBuilder(Interner it)
         var affected = new HashSet<(string, string, string)>();
         foreach (var elem in touched)
         {
-            var st = elems[elem];
-            var after = Resolve(elem, st);
+            var isRel = kinds[elem] == Relationship;
+            var after = Resolve(elem);
             var id = it.Get(elem);
-            want[st.IsRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;
-            if (after is null && st.Contribs.Count == 0 && !contestedBy.ContainsKey(id)) elems.Remove(elem);
-            if (!st.IsRel) continue;
+            want[isRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;
+            if (!isRel) continue;
             if (contestedBy.Remove(id, out var old)) { contested[old].Remove(id); affected.Add(old); }
             if (after is not Rel r) continue;
             var tuple = (r.Source, r.Target, r.Type);
@@ -547,7 +608,8 @@ public sealed class OutputBuilder(Interner it)
             foreach (var claimant in holder is null ? [id] : new[] { id, holder }) { set.Add(claimant); contestedBy[claimant] = tuple; }
             affected.Add(tuple);
         }
-        touched.Clear(); touchedSet.Clear();
+        foreach (var e in touched) dirty.Clear(e);
+        touched.Clear();
         foreach (var tuple in affected)
         {
             var set = contested[tuple];
@@ -555,7 +617,7 @@ public sealed class OutputBuilder(Interner it)
             var winner = set.Order(StringComparer.Ordinal).FirstOrDefault();
             Note($"uniqueness {tuple.Item1} {tuple.Item2} {tuple.Item3}", set.Count > 1 ? new Conflict("uniqueness", winner!, null, null, [.. set.Order(StringComparer.Ordinal)]) : null);
             foreach (var claimant in set)
-                want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && elems.TryGetValue(h, out var st) ? Resolve(h, st) : null;
+                want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && kinds.Has(h) ? Resolve(h) : null;
             if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }
         }
         var edits = new List<Edit>();

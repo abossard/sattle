@@ -90,7 +90,7 @@ sealed class IdPool
     }
 }
 
-sealed class StrTable
+public sealed class StrTable
 {
     readonly Dictionary<string, int> map = new(StringComparer.Ordinal);
     List<string> list = [];
@@ -101,7 +101,7 @@ sealed class StrTable
 }
 
 /// <summary>Compact binary form of property maps (sorted by key), so an element costs bytes instead of an object graph.</summary>
-static class PropCodec
+public static class PropCodec
 {
     static void Varint(List<byte> o, ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
     static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }

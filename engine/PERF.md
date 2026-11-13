@@ -260,6 +260,28 @@ Steady-state run at 100,000 master nodes: `bench estate --look-back 30m --window
 - Window close p50 5,402 ms before, 4,538 ms after (load-dependent).
 - State digests of the estate, `lab/fixtures` and both captures at chunk sizes 1, 50 and 100,000: all 12 unchanged.
 
+## Core steps 1 and 2: the table structures, and the sink table in place of the contribution objects (2026-11-13)
+Three numbers per step:
+- the census at 100,000 nodes (the run of "S1 step (a)", live bytes after a forced compacting collection, per master entity of 162,501);
+- `sattle replay` of the newest capture at chunk 1 (wall time, and bytes allocated by the operators with `--trace-alloc`), the committed build and this one alternating, two runs each;
+- lines of runtime code added and removed.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| Before (committed engine, c9c43ab to 2cd0c9a) | 8,588 MB (52,849 B) | 30.7 s and 30.3 s, 38.5 GB | |
+| Step 1: segments, code dictionary, table, arrangement (not used by the engine yet) | unchanged | unchanged | +385, -0 |
+| Step 2: the sink table | 8,173 MB (50,295 B), -415 MB | 31.4 s and 32.2 s, 38.6 GB | +108, -46 |
+
+- The chunk-1 runs alternated at a load average of 35 to 60 (the machine was shared): step 2 is about 1.3 s slower (4 %), operator time 12.1 s before and 12.5 s after. A row is found by walking the fragments of its element, and a retracted relationship fragment checks whether the element still names the endpoint.
+- Step 2's census rows. The contribution objects (`elems` 494 MB, `relsAt` 123 MB, `touchedSet` 17 MB, `touched` 3.5 MB, together 637 MB) became 220 MB:
+  - `fragments` 106 MB: each fragment once, as bytes, with its text in UTF-8;
+  - `contributions` 61 MB: the table of element, fragment and weight, found through its arrangement by element (no index of its own);
+  - `ends` 34 MB: relationships by endpoint, for merges, a row only while a fragment names the endpoint;
+  - `kinds` and `dirty` 8.5 MB each, `touched` 3.5 MB.
+- Against the design's budget for the sink table (about 16 B per contribution, 27 MB for 1.66 million): 61 MB is about 37 B per contribution (weight 8 B, element and fragment 8 B, the arrangement's next and previous rows 8 B, its index, and the last segment of each table only partly used). The fragments are the properties of every element a second time beside the graph's own copy; the graph layout step (5) removes that copy, and the dictionaries (step 6) the text.
+- Allocation at chunk 1 does not change: the emit operators still build a property map per row (3.1 GB of the 38.6 GB), and the fragment is encoded from it. Writing the fragment straight from the columns belongs to step 3.
+- The 12 state digests are unchanged. `Sattle.Differential` every category 312 of 312; the seal, restart, live-resume, process-kill and structure tests 63 of 63; the default run 265 of 265 and 680 passed, 2 skipped. All in the tree.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
