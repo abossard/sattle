@@ -33,6 +33,49 @@ public class SealTests
         h.Advance(t + 5 * Min, 9_000_001);
     }
 
+    /// <summary>Six flows between two pods at a given minute, with the given verdicts.</summary>
+    static void Flows(SpaceHost h, int minute, long seq, params string[] verdicts)
+    {
+        var w = new RowWriter(h.RowLayout("flows"), h.Interner);
+        var t = new DateTimeOffset(2026, 1, 1, 10, minute, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() * 1_000_000L;
+        for (var i = 0; i < verdicts.Length; i++)
+        {
+            w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("cluster", "synth"); w.Text("verdict", verdicts[i]);
+            w.Text("srcNamespace", "shop"); w.Text("srcPod", "web-7d4-1"); w.Text("dstNamespace", "shop"); w.Text("dstPod", "api-5c9-1");
+        }
+        h.Ingest("flows", w.Build()!, seq);
+        h.Advance(t + 5 * Min, seq + 1);
+    }
+
+    /// <summary>Code review 2, defect 2: a host restored from a seal goes on like one that never restarted, also after a definition commit that names a text no input had sent yet. A compiled plan holds the numbers of the texts it names; the restart compiles the plans against the seal's text table. Before, it compiled them first, and the committed text had another number once the seal was loaded: the filter on it matched nothing.</summary>
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void A_host_restored_from_a_seal_continues_like_one_that_was_not_restarted(bool afterCommit)
+    {
+        var edited = Files.First(f => f.Path.EndsWith("acme.ops.sattle", StringComparison.Ordinal)).Text.Replace("if(verdict == \"DROPPED\"", "if(verdict == \"REDIRECTED\"");
+        (string Digest, string Space) Run(bool restart)
+        {
+            using var d = new RestartTests.Durable("memory");
+            var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0));
+            try
+            {
+                Feed(h);
+                if (afterCommit) h.Commit("acme.ops", edited, h.CatalogRevision);
+                Flows(h, 20, 9_000_000, "REDIRECTED", "REDIRECTED", "FORWARDED", "DROPPED");
+                if (restart)
+                {
+                    h.Seal(); h.Dispose(); d.Close();
+                    h = RestartTests.Reopen(d.Open(), Options(0));
+                    Assert.True(h.Restart!.FromSeal, h.Restart.SealRefusal);
+                }
+                Flows(h, 40, 9_000_002, "REDIRECTED", "REDIRECTED", "REDIRECTED", "FORWARDED", "DROPPED");
+                return (h.StateDigest(), Space(h));
+            }
+            finally { h.Dispose(); }
+        }
+        Assert.Equal(Run(restart: false), Run(restart: true));
+    }
+
     /// <summary>Code review 2, defects 3 and 27: after a restart from a seal the inputs are not in memory, and a preview and a definition commit read them back from the journal. A live run journals its envelopes, not rows: they are run through the adapters again. Before, a preview was refused, and a commit on a live space rebuilt every graph from nothing (the master went to 0 entities).</summary>
     [Theory]
     [InlineData(false)] [InlineData(true)]

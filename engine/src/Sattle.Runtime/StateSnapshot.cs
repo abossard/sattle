@@ -337,9 +337,27 @@ public static class StateSnapshot
     }
 
     /// <summary>Loads a snapshot into `root`, an object of the same shape that was built from the same definitions: the objects of the fresh engine are reused wherever the snapshot has an object at the same place, so their compiled parts stay.</summary>
-    public static void Load(byte[] data, object root)
+    public static void Load(byte[] data, object root) => Load(Open(data), root);
+
+    /// <summary>A snapshot read once. Its text table is there before the state is loaded: an engine that will take the state compiles its plans against these numbers, because a plan holds the numbers of the texts it names.</summary>
+    public sealed class Opened
     {
-        var rd = new Reader(data); var recs = rd.Records;
+        internal object Records = null!;
+        /// <summary>The texts of the snapshot's text table, by number; empty when it has none.</summary>
+        public IReadOnlyList<string> Texts { get; internal set; } = [];
+    }
+
+    public static Opened Open(byte[] data)
+    {
+        var recs = new Reader(data).Records;
+        var tables = recs.Where(r => r.Kind == KInterner).ToList();
+        if (tables.Count > 1) throw new InvalidDataException($"the snapshot holds {tables.Count} text tables, one is expected");
+        return new Opened { Records = recs, Texts = tables.Count == 1 ? tables[0].Strings! : [] };
+    }
+
+    public static void Load(Opened snapshot, object root)
+    {
+        var recs = (Rec[])snapshot.Records;
         var made = new object?[recs.Length];
 
         void Bind(int id, object existing)

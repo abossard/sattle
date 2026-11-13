@@ -177,11 +177,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options) : this(files, options, LoadDefinitions(files)) { }
 
-    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0) { }
+    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0, null) { }
 
-    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IGraphStore? durable, Phase phase, int generation)
+    /// <summary>`texts`: the text table of the seal this host will take its state from. The plans are compiled against it, so a text they name has the number it had when the seal was taken.</summary>
+    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IGraphStore? durable, Phase phase, int generation, IReadOnlyList<string>? texts)
     {
         this.options = options;
+        if (texts is not null) interner.ReplaceAll(texts);
         this.durable = durable; journal = durable as IJournalStore; this.phase = phase; this.generation = generation;
         var cat = loaded.Catalog; var fixedText = loaded.FixedText;
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) sources[m.Name] = (m.File, fixedText.TryGetValue(m.File, out var ft) ? ft : files.First(f => f.Path == m.File).Text);
@@ -295,7 +297,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         if (j.JournalCount == 0)
         {
             var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
-            var host = new SpaceHost(given, options, LoadDefinitions(given), store, Phase.Running, 0);
+            var host = new SpaceHost(given, options, LoadDefinitions(given), store, Phase.Running, 0, null);
             j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, host.Mode, [.. host.sources.Values.Select(f => new SourceFile(f.Path, f.Text))]).Text(host.interner));
             host.journalPos = 1;
             return host;
@@ -310,7 +312,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
-        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files), store, Phase.Replaying, 0);
+        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files), store, Phase.Replaying, 0, null);
         restored.journalPos = 1;
         var check = options.VerifyJournal ? j.SealLatest() : null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -440,13 +442,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (format != SealFormat) { rejected = $"seal format {format}, this build reads seal format {SealFormat}"; return null; }
             if (m["build"]!.GetValue<string>() != BuildId || m["kernel"]!.GetValue<string>() != Kernel.CompiledDigest) { rejected = "written by another build"; return null; }
             var files = Entry.ParseFiles(m["sources"]!);
-            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files), store, Phase.Replaying, m["generation"]!.GetValue<int>());
-            if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             var sw = System.Diagnostics.Stopwatch.StartNew();
+            var snapshot = StateSnapshot.Open(seal.Data);
+            var loadMs = sw.ElapsedMilliseconds;
+            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
+            if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             if (m["live"]?.GetValue<string>() is { } liveJson) host.Apply(new Entry.LiveStart(Entry.ParseOptions(liveJson)));
             var root = host.StateRootOf();
-            StateSnapshot.Load(seal.Data, root);
-            var loadMs = sw.ElapsedMilliseconds;
+            sw.Restart();
+            StateSnapshot.Load(snapshot, root);
+            loadMs += sw.ElapsedMilliseconds;
             host.Engine.AdoptState(root.Engine);
             host.Seq = root.Seq; host.lambdaSeen = root.LambdaSeen; host.inputRows = root.InputRows; host.generation = root.Generation;
             if (host.Engine.StateDigest() != m["digest"]!.GetValue<string>()) { rejected = "the restored state digest differs from the sealed one"; host.Dispose(); return null; }
