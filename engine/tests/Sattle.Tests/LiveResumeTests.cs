@@ -63,8 +63,8 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
             Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
         d.Close();
-        using var r = SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery));
-        Assert.True(r.Restored);
+        using var r = RestartTests.Reopen(d.Open(), Options(sealEvery));
+        Assert.NotNull(r.Restart);
         Assert.Equal($"{{\"n\":{killedAt - 1}}}", r.SourcePosition("eventhub:fake"));
         var counts = LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         Assert.Equal(events.Count - killedAt, counts.Consumed);                                 // exactly the events after the last one it had seen
@@ -72,7 +72,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal((digest, rows), (r.StateDigest(), r.InputRows));
         // and the resumed run restarts again to the same state
         d.Close();
-        using var again = SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery));
+        using var again = RestartTests.Reopen(d.Open(), Options(sealEvery));
         Assert.Equal(digest, again.StateDigest());
         Assert.Equal($"{{\"n\":{events.Count - 1}}}", again.SourcePosition("eventhub:fake"));
     }
@@ -88,7 +88,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
             Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
         d.Close();
-        using var r = SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery));
+        using var r = RestartTests.Reopen(d.Open(), Options(sealEvery));
         var counts = LiveInput.Run(r, new FakeSource(events, redeliver: 9), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         Assert.Equal(9, counts.Duplicates);
         Assert.Equal(events.Count - killedAt, counts.Consumed);
@@ -109,7 +109,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             Assert.Equal(events.Count - 1, counts.Consumed);
         }
         d.Close();
-        using var r = SpaceHost.OpenDurable(d.Open(), null, Options(0));
+        using var r = RestartTests.Reopen(d.Open(), Options(0));
         Assert.Equal($"{{\"n\":{events.Count - 1}}}", r.SourcePosition("eventhub:fake"));
         var again = LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         Assert.Equal(new LiveCounts(0, 0, 0), again);

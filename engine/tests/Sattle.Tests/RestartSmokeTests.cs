@@ -22,8 +22,8 @@ public class RestartSmokeTests
             h.Finish(); h.Seal();
             digest = h.StateDigest(); seq = h.Seq;
         }
-        using (var fromSeal = SpaceHost.OpenDurable(store, null, Options)) { Assert.True(fromSeal.RestoredFromSeal); Assert.Equal(digest, fromSeal.StateDigest()); Assert.Equal(seq, fromSeal.Seq); }
-        using (var fromJournal = SpaceHost.OpenDurable(store, null, Options with { UseSeal = false })) { Assert.False(fromJournal.RestoredFromSeal); Assert.Equal(digest, fromJournal.StateDigest()); Assert.Equal(seq, fromJournal.Seq); }
+        using (var fromSeal = SpaceHost.OpenDurable(store, null, Options)) { Assert.True(fromSeal.Restart!.FromSeal); Assert.Equal(digest, fromSeal.StateDigest()); Assert.Equal(seq, fromSeal.Seq); }
+        using (var fromJournal = SpaceHost.OpenDurable(store, null, Options with { UseSeal = false })) { Assert.False(fromJournal.Restart!.FromSeal); Assert.Equal(digest, fromJournal.StateDigest()); Assert.Equal(seq, fromJournal.Seq); }
     }
 
     /// <summary>A seal of the previous format (before telemetry pairs and per-own support) is refused with both versions named, and the journal is replayed to the same state.</summary>
@@ -42,8 +42,8 @@ public class RestartSmokeTests
         var meta = System.Text.Json.Nodes.JsonNode.Parse(seal.Meta)!.AsObject(); meta.Remove("format");          // what a build before format 2 wrote
         j.SealPut(seal.Position, meta.ToJsonString(), seal.Data);
         using var restarted = SpaceHost.OpenDurable(store, null, Options);
-        Assert.False(restarted.RestoredFromSeal);
-        Assert.Contains($"seal format 1, this build reads seal format {SpaceHost.SealFormat}", restarted.SealRefusal);
+        Assert.False(restarted.Restart!.FromSeal);
+        Assert.Contains($"seal format 1, this build reads seal format {SpaceHost.SealFormat}", restarted.Restart!.SealRefusal);
         Assert.Equal(digest, restarted.StateDigest());
     }
 
@@ -55,9 +55,10 @@ public class RestartSmokeTests
         string whole;
         using (var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Files, Options)) { LiveInput.Run(h, new LiveResumeTests.FakeSource(events), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)); whole = h.StateDigest(); }
         var store = new InMemoryGraphStore(); var killed = events.Count / 2 + 1;
-        using (var h = SpaceHost.OpenDurable(store, Files, Options with { SealEvery = 10 }))
+        using (var h = SpaceHost.OpenDurable(store, Files, Options with { SealEvery = 3 }))       // the fixture has 12 envelopes: a seal every 10 entries was never taken before the kill
             Assert.Throws<LiveResumeTests.Crash>(() => LiveInput.Run(h, new LiveResumeTests.FakeSource(events, crashAt: killed), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
-        using var r = SpaceHost.OpenDurable(store, null, Options with { SealEvery = 10 });
+        using var r = RestartTests.Reopen(store, Options with { SealEvery = 3 });
+        Assert.True(r.Restart!.FromSeal, "the run took a seal before it was killed, and the restart did not use it");
         var counts = LiveInput.Run(r, new LiveResumeTests.FakeSource(events), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         Assert.Equal(events.Count - killed, counts.Consumed);
         Assert.Equal(whole, r.StateDigest());
@@ -81,17 +82,17 @@ public class RestartSmokeTests
         {
             using var s1 = new SqliteGraphStore(path);
             using var fromSeal = SpaceHost.OpenDurable(s1, null, Options);
-            Assert.True(fromSeal.RestoredFromSeal);
-            Assert.True(fromSeal.SealedRevisions > 0);
-            Assert.Equal(fromSeal.Engine.Graphs.Sum(g => g.Head), fromSeal.SealedRevisions + fromSeal.Recomputed);        // the heads are the sealed revisions plus those the tail recomputed
-            Assert.True(fromSeal.Recomputed < fromSeal.Engine.Graphs.Sum(g => g.Head));
+            Assert.True(fromSeal.Restart!.FromSeal);
+            Assert.True(fromSeal.Restart!.SealedRevisions > 0);
+            Assert.Equal(fromSeal.Engine.Graphs.Sum(g => g.Head), fromSeal.Restart!.SealedRevisions + fromSeal.Restart!.Recomputed);        // the heads are the sealed revisions plus those the tail recomputed
+            Assert.True(fromSeal.Restart!.Recomputed < fromSeal.Engine.Graphs.Sum(g => g.Head));
             var text = fromSeal.RestoreSummary();
             Assert.Contains("loaded from the seal at journal entry", text); Assert.Contains("were not recomputed", text); Assert.Contains("entries before the seal were not read", text);
             Assert.DoesNotContain("reproduced and equal", text);
             using var s2 = new SqliteGraphStore(path);
             using var verified = SpaceHost.OpenDurable(s2, null, Options with { VerifyJournal = true });
-            Assert.False(verified.RestoredFromSeal); Assert.True(verified.SealChecked);
-            Assert.Equal(verified.Engine.Graphs.Sum(g => g.Head), verified.Recomputed);                                     // everything recomputed
+            Assert.False(verified.Restart!.FromSeal); Assert.True(verified.Restart!.SealChecked);
+            Assert.Equal(verified.Engine.Graphs.Sum(g => g.Head), verified.Restart!.Recomputed);                                     // everything recomputed
             Assert.Equal(digest, verified.StateDigest());
             Assert.Contains("replayed all", verified.RestoreSummary()); Assert.Contains("equals the seal's digest", verified.RestoreSummary());
         }
@@ -109,7 +110,7 @@ public class RestartSmokeTests
                 c.Open();
                 using var cmd = c.CreateCommand(); cmd.CommandText = "DELETE FROM journal WHERE n = (SELECT MIN(n) FROM journal WHERE n > 2 AND body LIKE '{\"k\":\"r\"%')"; Assert.Equal(1, cmd.ExecuteNonQuery());
             }
-            using (var s1 = new SqliteGraphStore(path)) using (var seal = SpaceHost.OpenDurable(s1, null, Options)) Assert.True(seal.RestoredFromSeal);          // the seal and the tail are intact: it starts, and says it did not read the earlier entries
+            using (var s1 = new SqliteGraphStore(path)) using (var seal = SpaceHost.OpenDurable(s1, null, Options)) Assert.True(seal.Restart!.FromSeal);          // the seal and the tail are intact: it starts, and says it did not read the earlier entries
             using var s2 = new SqliteGraphStore(path);
             Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(s2, null, Options with { VerifyJournal = true }));
         }

@@ -40,6 +40,15 @@ public class RestartTests
         }
     }
 
+    /// <summary>Opens a space again on its store, as a restart does, and checks that the latest seal was used if the store has one. A restart that falls back to replaying the whole journal gives the same state, so only this tells the two apart (code review 2: the restart tests passed with the seal restore forced to refuse).</summary>
+    public static SpaceHost Reopen(IGraphStore store, HostOptions options)
+    {
+        var h = SpaceHost.OpenDurable(store, null, options);
+        Assert.NotNull(h.Restart);
+        Assert.True(((IJournalStore)store).SealLatest() is not null == h.Restart!.FromSeal, $"the store {(h.Restart.FromSeal ? "has no seal" : "has a seal that was not used: " + h.Restart.SealRefusal)}");
+        return h;
+    }
+
     static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
 
     static string Space(SpaceHost h) => h.SpaceInfo().ToJsonString();
@@ -53,16 +62,16 @@ public class RestartTests
         {
             Feed(h); h.Finish();
             digest = h.StateDigest(); space = Space(h); seq = h.Seq;
-            Assert.False(h.Restored);
+            Assert.Null(h.Restart);
         }
         d.Close();
         using var r = SpaceHost.OpenDurable(d.Open(), null, Options);
-        Assert.True(r.Restored);
+        Assert.NotNull(r.Restart);
         Assert.Equal(digest, r.StateDigest());
         Assert.Equal(space, Space(r));
         Assert.Equal(seq, r.Seq);
         Assert.True(r.Done);
-        Assert.True(r.Verified > 0);
+        Assert.True(r.Restart!.Verified > 0);
         Assert.All(r.Engine.Graphs, g => Assert.Equal(r.Head(g.Name), g.Head));
     }
 

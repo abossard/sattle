@@ -44,13 +44,13 @@ public class LiveCrashTests
             h.LiveStep = s => { if (s == "journaled") journaled++; if (s == step && journaled - 1 == k) throw new Killed(); };
             Assert.Throws<Killed>(() => LiveInput.Run(h, new LiveResumeTests.FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1), received: _ => { if (++got - 1 == k && step == "received") throw new Killed(); }));
         }
-        using var r = SpaceHost.OpenDurable(store, null, Options);
+        using var r = RestartTests.Reopen(store, Options);
         LiveInput.Run(r, new LiveResumeTests.FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
         Assert.Equal(Whole.Value, r.StateDigest());
         Assert.Equal(events, recording.Lines);                                                     // every envelope once, in order
         Assert.Equal(events.Count, r.LiveEnvelopeTexts().Count);
         // a second kill-free restart changes nothing
-        using var again = SpaceHost.OpenDurable(store, null, Options);
+        using var again = RestartTests.Reopen(store, Options);
         LiveInput.Run(again, new LiveResumeTests.FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
         Assert.Equal(Whole.Value, again.StateDigest());
         Assert.Equal(events, recording.Lines);
@@ -62,7 +62,7 @@ public class LiveCrashTests
         var events = Events.Value; var store = new InMemoryGraphStore(); var recording = new ListRecording();
         using (var h = SpaceHost.OpenDurable(store, Files, Options)) LiveInput.Run(h, new LiveResumeTests.FakeSource(events.Take(30).ToList()), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
         recording.Lines.RemoveRange(25, 5);                                                         // the file lost its last five lines
-        using var r = SpaceHost.OpenDurable(store, null, Options);
+        using var r = RestartTests.Reopen(store, Options);
         LiveInput.Run(r, new LiveResumeTests.FakeSource(events.Take(30).ToList()), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
         Assert.Equal(events.Take(30), recording.Lines);
     }

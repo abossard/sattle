@@ -47,8 +47,8 @@ public class SealTests
         }
         d.Close();
         using var r = SpaceHost.OpenDurable(d.Open(), null, Options(25));
-        Assert.True(r.RestoredFromSeal, "the seal was not used");
-        Assert.True(r.TailReplayed <= 25 + 2 && r.TailReplayed < entries / 2, $"{r.TailReplayed} entries replayed of {entries}");
+        Assert.True(r.Restart!.FromSeal, "the seal was not used");
+        Assert.True(r.Restart!.EntriesReplayed <= 25 + 2 && r.Restart!.EntriesReplayed < entries / 2, $"{r.Restart!.EntriesReplayed} entries replayed of {entries}");
         Assert.Equal(digest, r.StateDigest());
         Assert.Equal(space, Space(r));
         Assert.Equal(seq, r.Seq);
@@ -70,8 +70,8 @@ public class SealTests
             d.Close();
         }
         string a, b;
-        using (var s = SpaceHost.OpenDurable(sealedStore.Open(), null, Options(25))) { Assert.True(s.RestoredFromSeal); MoreInput(s); a = s.StateDigest(); }
-        using (var p = SpaceHost.OpenDurable(plainStore.Open(), null, Options(0))) { Assert.False(p.RestoredFromSeal); MoreInput(p); b = p.StateDigest(); }
+        using (var s = SpaceHost.OpenDurable(sealedStore.Open(), null, Options(25))) { Assert.True(s.Restart!.FromSeal); MoreInput(s); a = s.StateDigest(); }
+        using (var p = SpaceHost.OpenDurable(plainStore.Open(), null, Options(0))) { Assert.False(p.Restart!.FromSeal); MoreInput(p); b = p.StateDigest(); }
         Assert.Equal(b, a);
         sealedStore.Close();
         using var again = SpaceHost.OpenDurable(sealedStore.Open(), null, Options(25));          // and what was journaled after the restore restarts again
@@ -93,19 +93,19 @@ public class SealTests
         meta["digest"] = "sha256:" + new string('0', 64);
         ((IJournalStore)store).SealPut(seal.Position + 1, meta.ToJsonString(), seal.Data);
         d.Close();
-        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.RestoredFromSeal); Assert.True(r.Restored); Assert.Equal(digest, r.StateDigest()); }
+        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.Restart!.FromSeal); Assert.NotNull(r.Restart); Assert.Equal(digest, r.StateDigest()); }
         d.Close();
         // 2: a seal written by another build
         store = d.Open(); meta["digest"] = sealedDigest; meta["build"] = Guid.NewGuid().ToString();      // the true digest: only the build differs
         ((IJournalStore)store).SealPut(seal.Position + 2, meta.ToJsonString(), seal.Data);
         d.Close();
-        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.RestoredFromSeal); Assert.Equal(digest, r.StateDigest()); }
+        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.Restart!.FromSeal); Assert.Equal(digest, r.StateDigest()); }
         d.Close();
         // 3: damaged bytes
         store = d.Open();
         ((IJournalStore)store).SealPut(seal.Position + 3, seal.Meta, [.. seal.Data.Take(seal.Data.Length / 2)]);
         d.Close();
-        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.RestoredFromSeal); Assert.Equal(digest, r.StateDigest()); }
+        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.Restart!.FromSeal); Assert.Equal(digest, r.StateDigest()); }
     }
 
     [Theory]

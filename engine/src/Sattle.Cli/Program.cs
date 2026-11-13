@@ -20,7 +20,7 @@ public static class Program
         sattle check  [--defs DIR] [--update-pins] [--print MODULE] [--plan]
         sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR] [--projections sattle|kql]
-        sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--verify-journal] [--retain-patches N] [--retain-events N]
+        sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
         sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from checkpoint|latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
@@ -345,7 +345,7 @@ public static class Program
 
     /// <summary>The options `serve` builds its host with.</summary>
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IGraphStore? durable) =>
-        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), Durable = durable, SealEvery = long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000 };
+        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000 };
 
     static int Serve(Options o, string capture, string cluster)
     {
@@ -356,7 +356,7 @@ public static class Program
         var hopts = HostOptionsFor(o, cluster, durable);
         var host = durable is null ? new SpaceHost(files!, hopts) : SpaceHost.OpenDurable(durable, files, hopts);
         host.DefinitionsDir = files is null ? null : FindDefinitions(o); host.WriteDefinitions = o.Flags.Contains("write-definitions");
-        if (host.Restored) Console.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
+        if (host.Restart is not null) Console.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
         return Server.Run(host, o, capture, host.Cluster, files ?? []);
     }
 }

@@ -33,14 +33,8 @@ public sealed record HostOptions
     public string? SpaceName { get; init; }
     public long InputRowCap { get; init; } = 40_000_000;
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
-    public string Mode { get; set; } = "replay";
-    /// <summary>A durable store (SQLite or Cosmos) that also keeps the journal: the space survives a restart and is rebuilt from it alone.</summary>
-    public IGraphStore? Durable { get; init; }
-    /// <summary>The durable store already has a journal: replay it into this host before serving.</summary>
-    public bool Resume { get; init; }
     /// <summary>Journal entries between two seals (a seal is a snapshot of the whole state; a restart loads the latest one and replays only the entries after it). 0 takes none.</summary>
     public long SealEvery { get; init; }
-    public int StartGeneration { get; init; }
     /// <summary>Use the latest seal when there is one (default). Off: the journal is replayed from its first entry (to measure what a seal saves).</summary>
     public bool UseSeal { get; init; } = true;
     /// <summary>Replay the whole journal from its first entry and check everything that can be checked: every recomputed commit against the stored log, and the state at the position of the latest seal against that seal's digest. A seal is not used (it is only checked). Slower, and it reads the entries a seal lets a restart skip.</summary>
@@ -62,6 +56,12 @@ public sealed class Subscription
 sealed class Served { public List<Patch> History = []; public long Dropped; public long Offset; public long Head => Dropped + History.Count; public long FirstWindow = long.MinValue; }
 sealed record InputRecord(char Kind, string Source, Batch? Rows, long Seq, long Value);
 
+/// <summary>Where a host is in its life. `Replaying`: it reads its journal back; nothing is written to the journal, no seal is taken, and each commit the engine makes is compared with the stored one. `Running`: what enters is written to the journal first. `Finished`: as `Running`, and the recorded input has ended.</summary>
+public enum Phase { Replaying, Running, Finished }
+
+/// <summary>What opening a space did on a store that already had its journal: whether a seal was loaded and at which entry, how many entries were replayed after it, how many revisions came from the seal and how many were recomputed and compared with the stored log, whether the state at the seal's entry was checked (`VerifyJournal`), why a seal was not used, and the times.</summary>
+public sealed record Restart(bool FromSeal, long SealPosition, long EntriesReplayed, long SealedRevisions, long Recomputed, long Verified, bool SealChecked, string? SealRefusal, long SealLoadMilliseconds, long TailMilliseconds);
+
 /// <summary>The running space as a service: catalog and engine under one lock, served history per graph, definition edits with re-activation, subscriptions. The HTTP layer is a thin skin over this class.</summary>
 public sealed partial class SpaceHost : IEngineInput, IDisposable
 {
@@ -74,9 +74,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly List<InputRecord> inputs = [];
     readonly List<Subscription> subs = [];
     long inputRows; bool retained = true;
-    IJournalStore? journal; bool recovering; int generation; long journalPos, lastSealPosition, replayPos; bool inputsInJournal; long verifyAt; string? verifyDigest; readonly List<DurableView> views = []; long sealedRevisions, entriesReplayed;
+    readonly IGraphStore? durable; readonly IJournalStore? journal; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition, replayPos; bool inputsInJournal; readonly List<DurableView> views = [];
     // live input: the envelopes themselves are journaled (the adapters rebuild their state from them), with the position of the source they came from
-    Replay? live; string? liveOptions; bool suppress;
+    Replay? live; string? liveOptions;
     readonly Dictionary<string, string> sourcePositions = new(StringComparer.Ordinal);
     readonly Queue<string> liveKeyOrder = []; readonly HashSet<string> liveKeys = new(StringComparer.Ordinal);
     const int LiveKeyWindow = 20_000;
@@ -93,10 +93,15 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public Engine Engine { get; private set; } = null!;
     public TypedSpace Space => Catalog.Spaces[spaceId];
     public IReadOnlyList<ISourceAdapter> Adapters { get; private set; } = [];
-    public string Mode { get => options.Mode; set => options.Mode = value; }
+    /// <summary>"live" once a live input was started, else "replay".</summary>
+    public string Mode => live is null ? "replay" : "live";
+    public Phase Phase => phase;
+    /// <summary>What opening this space did, when its store already had a journal; null for a space that was started new.</summary>
+    public Restart? Restart { get; private set; }
     /// <summary>The late horizon the space runs with (a restart takes it from the store).</summary>
     public int? LateHorizonWindows => options.LateHorizonWindows;
-    public bool Done { get; set; }
+    /// <summary>The recorded input has ended.</summary>
+    public bool Done => phase == Phase.Finished;
     public long InputRows => inputRows;
     public long CatalogRevision => catalogHistory.Count;
     public Interner Interner => interner;
@@ -117,10 +122,12 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options) : this(files, options, LoadDefinitions(files)) { }
 
-    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded)
+    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0) { }
+
+    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IGraphStore? durable, Phase phase, int generation)
     {
         this.options = options;
-        journal = options.Durable as IJournalStore; recovering = options.Resume; generation = options.StartGeneration;
+        this.durable = durable; journal = durable as IJournalStore; this.phase = phase; this.generation = generation;
         var cat = loaded.Catalog; var fixedText = loaded.FixedText;
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) sources[m.Name] = (m.File, fixedText.TryGetValue(m.File, out var ft) ? ft : files.First(f => f.Path == m.File).Text);
         spaceId = options.SpaceName is { } sn ? cat.Spaces.Keys.First(k => Ids.Name(k) == sn) : cat.Spaces.Keys.First();
@@ -134,11 +141,74 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         HookEngine();
     }
 
-    EngineOptions EngineOpts(int gen) => new() { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows, StoreFactory = options.Durable is null ? options.StoreFactory : _ => { var v = new DurableView(options.Durable, gen, () => recovering); views.Add(v); return v; } };
+    EngineOptions EngineOpts(int gen) => new() { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows, StoreFactory = durable is null ? options.StoreFactory : _ => { var v = new DurableView(durable, gen, () => phase == Phase.Replaying); views.Add(v); return v; } };
 
     Engine NewEngine(Catalog cat) => new(cat, spaceId, EngineOpts(generation), interner);
 
-    void Journal(Entry entry) { if (journal is not null && !recovering && !suppress) { journal.JournalAppend(entry.Text(interner)); journalPos++; } }
+    /// <summary>Writes an entry to the journal, unless the journal is being read back.</summary>
+    void Append(Entry entry) { if (journal is not null && phase != Phase.Replaying) { journal.JournalAppend(entry.Text(interner)); journalPos++; } }
+
+    /// <summary>The one way an input enters: the entry is written to the journal, then applied. `journaled` runs between the two. A restart applies the entries it reads without writing them.</summary>
+    void Accept(Entry entry, Action? journaled = null)
+    {
+        lock (Gate)
+        {
+            Append(entry);
+            journaled?.Invoke();
+            Apply(entry);
+            MaybeSeal();
+        }
+    }
+
+    /// <summary>The phase after an entry.</summary>
+    static Phase Next(Phase phase, Entry entry) => entry is Entry.Finish && phase == Phase.Running ? Phase.Finished : phase;
+
+    /// <summary>What an entry does to the space. A definition commit is not applied here: its checks come before its entry is written (`CommitTexts`).</summary>
+    void Apply(Entry entry)
+    {
+        switch (entry)
+        {
+            case Entry.Rows r: Feed(new InputRecord('r', r.Source, r.Batch, r.Seq, r.Batch.Rows)); break;
+            case Entry.Advance a: Feed(new InputRecord('a', "", null, a.Seq, a.Lambda)); break;
+            case Entry.Progress g: Feed(new InputRecord('g', g.Source, null, g.Seq, g.Until)); break;
+            case Entry.Loss l: Feed(new InputRecord('l', l.Reason, null, l.Count, l.Time)); break;
+            case Entry.Finish: phase = Next(phase, entry); mutations++; Publish(new JsonObject { ["type"] = "end" }, null); break;
+            case Entry.LiveStart start: live = new Replay(new Derived(this), Space, Adapters, start.Options, Gate); liveOptions = Entry.OptionsText(start.Options); break;
+            case Entry.Envelope e: LiveApply(e.Source, e.Body, e.After); break;
+            case Entry.Skipped p: sourcePositions[p.Source] = p.After; break;
+            case Entry.Flush: live!.FlushPending(); break;
+            case Entry.SequenceStep: Seq++; break;
+            case Entry.CommitRefused: break;
+            default: throw new InvalidOperationException("the entry " + entry.GetType().Name + " cannot be applied here");
+        }
+    }
+
+    /// <summary>An engine input reaches the engine: counted, kept for a later re-activation while the inputs fit, and applied. The rows an envelope gives come here directly; they are no journal entries, the envelope is.</summary>
+    void Feed(InputRecord r)
+    {
+        mutations++;
+        if (r.Kind == 'r') inputRows += r.Value;
+        if (retained) { inputs.Add(r); if (inputRows > options.InputRowCap) { retained = false; inputs.Clear(); } }
+        switch (r.Kind)
+        {
+            case 'r': Engine.Ingest(r.Source, r.Rows!, r.Seq); Tick(); break;
+            case 'a': Engine.Advance(r.Value, r.Seq); lambdaSeen = Math.Max(lambdaSeen, r.Value); Tick(); break;
+            case 'g': Engine.Progress(r.Source, r.Value, r.Seq); break;
+            case 'l': Engine.RecordLoss(r.Value, r.Seq, r.Source); break;
+        }
+    }
+
+    /// <summary>What the live input writes its rows to: the engine, through `Feed`.</summary>
+    sealed class Derived(SpaceHost host) : IEngineInput
+    {
+        public Interner Interner => host.interner;
+        public Layout RowLayout(string source) => host.RowLayout(source);
+        public bool WantsProgress => host.WantsProgress;
+        public void Ingest(string source, Batch rows, long seq) => host.Feed(new InputRecord('r', source, rows, seq, rows.Rows));
+        public void Advance(long lambdaNs, long seq) => host.Feed(new InputRecord('a', "", null, seq, lambdaNs));
+        public void Progress(string source, long untilNs, long seq) => host.Feed(new InputRecord('g', source, null, seq, untilNs));
+        public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => host.Feed(new InputRecord('l', reason, null, count, timeNs));
+    }
 
     /// <summary>Opens a space on a durable store. A store without a journal starts a new one (the initial definitions are its first entry); a store with a journal is replayed, and the definitions come from the journal, not from disk. Replaying recomputes every commit and compares it with the stored one.</summary>
     public static SpaceHost OpenDurable(IGraphStore store, IReadOnlyList<SourceFile>? files, HostOptions options)
@@ -146,8 +216,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var j = store as IJournalStore ?? throw new ArgumentException("the store does not keep a journal");
         if (j.JournalCount == 0)
         {
-            var host = new SpaceHost(files ?? throw new ArgumentException("definitions are needed to start a new journal"), options with { Durable = store, Resume = false });
-            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, options.Mode, [.. host.sources.Values.Select(f => new SourceFile(f.Path, f.Text))]).Text(host.interner));
+            var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
+            var host = new SpaceHost(given, options, LoadDefinitions(given), store, Phase.Running, 0);
+            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, host.Mode, [.. host.sources.Values.Select(f => new SourceFile(f.Path, f.Text))]).Text(host.interner));
             host.journalPos = 1;
             return host;
         }
@@ -161,37 +232,25 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
-        var restored = new SpaceHost(h.Files, options with { Durable = store, Resume = true, Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space, Mode = h.Mode });
+        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files), store, Phase.Replaying, 0);
         restored.journalPos = entries.Count; restored.replayPos = 1; restored.inputsInJournal = false;
-        if (options.VerifyJournal && j.SealLatest() is { } check) { restored.verifyAt = check.Position; restored.verifyDigest = JsonNode.Parse(check.Meta)!["digest"]!.GetValue<string>(); }
-        restored.Recover(entries.Skip(1)); restored.Restored = true; restored.TailReplayed = entries.Count - 1; restored.SealRefusal = refusal;
+        var check = options.VerifyJournal ? j.SealLatest() : null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        var (recomputed, verified, sealChecked) = restored.Recover(entries.Skip(1), Phase.Running, check?.Position ?? 0, check is null ? null : JsonNode.Parse(check.Meta)!["digest"]!.GetValue<string>());
+        restored.Restart = new Restart(false, check?.Position ?? 0, entries.Count - 1, 0, recomputed, verified, sealChecked, refusal, 0, sw.ElapsedMilliseconds);
         return restored;
     }
 
-    /// <summary>True when this host was restored from a seal; the number of journal entries replayed after it; why a seal was refused, when it was.</summary>
-    public bool RestoredFromSeal { get; private set; }
-    public long TailReplayed { get; private set; }
+    /// <summary>The journal entry of the latest seal, taken or loaded.</summary>
     public long SealPosition => lastSealPosition;
-    public long SealLoadMilliseconds { get; private set; }
-    public long TailMilliseconds { get; private set; }
     public int SealsTaken { get; private set; }
     public long LastSealBytes { get; private set; }
     public long SealMilliseconds { get; private set; }
 
     // ---- live input ----
 
-    void StartLiveCore(ReplayOptions o) { live = new Replay(this, Space, Adapters, o, Gate); liveOptions = Entry.OptionsText(o); }
-
     /// <summary>Starts the live input of this space: envelopes handed to `LiveEnvelope` go through the adapters of the host. A host restored from a journal that has a live input has it already.</summary>
-    public void StartLive(ReplayOptions o)
-    {
-        lock (Gate)
-        {
-            if (live is not null) return;
-            Journal(new Entry.LiveStart(o));
-            StartLiveCore(o);
-        }
-    }
+    public void StartLive(ReplayOptions o) { lock (Gate) { if (live is null) Accept(new Entry.LiveStart(o)); } }
 
     public bool LiveStarted => live is not null;
 
@@ -228,38 +287,25 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var env = CaptureReader.Parse(text, "eventhub:" + source, 0);
             if (env is null || (key is not null && liveKeys.Contains(key) && !(Adapters.FirstOrDefault(x => x.Handles(env.Source)) is IRedelivery again && again.Counts(env))))
             {
-                Journal(new Entry.Skipped(source, position)); sourcePositions[source] = position;
+                Accept(new Entry.Skipped(source, position));
                 return env is null ? LiveResult.Rejected : LiveResult.Duplicate;
             }
-            Journal(new Entry.Envelope(source, text, position));
-            LiveStep?.Invoke("journaled");
-            record?.Invoke(text);                       // after the journal, before the engine: the recording never has an envelope the journal lacks, and a journaled one it lacks is added at the next start
-            LiveStep?.Invoke("recorded");
-            LiveApply(source, text, position);
+            // the recording is written after the journal and before the engine: it never has an envelope the journal lacks, and a journaled one it lacks is added at the next start
+            Accept(new Entry.Envelope(source, text, position), () => { LiveStep?.Invoke("journaled"); record?.Invoke(text); LiveStep?.Invoke("recorded"); });
             LiveStep?.Invoke("processed");
-            MaybeSeal();
             return LiveResult.Consumed;
         }
     }
 
     /// <summary>Sends the pending chunk to the engine. The flush is journaled, so a restart cuts the chunks where the live run did and the revisions are the same.</summary>
-    public void LiveFlush()
-    {
-        lock (Gate)
-        {
-            if (live is null || live.PendingRows == 0) return;
-            Journal(new Entry.Flush());
-            suppress = true; try { live.FlushPending(); } finally { suppress = false; }
-            MaybeSeal();
-        }
-    }
+    public void LiveFlush() { lock (Gate) { if (live is not null && live.PendingRows > 0) Accept(new Entry.Flush()); } }
 
     void LiveApply(string source, string text, string position)
     {
         var env = CaptureReader.Parse(text, "eventhub:" + source, 0)!;
         if (KeyOf(text) is { } key && liveKeys.Add(key)) { liveKeyOrder.Enqueue(key); if (liveKeyOrder.Count > LiveKeyWindow) liveKeys.Remove(liveKeyOrder.Dequeue()); }
         sourcePositions[source] = position;
-        suppress = true; try { live!.Process(env, pace: false); } finally { suppress = false; }
+        live!.Process(env, pace: false);
     }
 
     // ---- seals ----
@@ -282,17 +328,14 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). A seal of another format is refused with both versions named, and the journal is replayed.</summary>
     public const int SealFormat = 3;
-    /// <summary>Why the latest seal was not used at the last start, if it was not.</summary>
-    public string? SealRefusal { get; private set; }
-
-    void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && !recovering && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
+    void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>
     public void Seal()
     {
         lock (Gate)
         {
-            if (journal is null || recovering) return;
+            if (journal is null || phase == Phase.Replaying) return;
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var data = StateSnapshot.Save(StateRootOf());
             var meta = new JsonObject
@@ -319,21 +362,23 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (format != SealFormat) { rejected = $"seal format {format}, this build reads seal format {SealFormat}"; return null; }
             if (m["build"]!.GetValue<string>() != BuildId || m["kernel"]!.GetValue<string>() != Kernel.CompiledDigest) { rejected = "written by another build"; return null; }
             var files = Entry.ParseFiles(m["sources"]!);
-            host = new SpaceHost(files, options with { Durable = store, Resume = true, Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>(), Mode = m["mode"]!.GetValue<string>(), StartGeneration = m["generation"]!.GetValue<int>() });
+            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files), store, Phase.Replaying, m["generation"]!.GetValue<int>());
             if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            if (m["live"]?.GetValue<string>() is { } liveJson) host.StartLiveCore(Entry.ParseOptions(liveJson));
+            if (m["live"]?.GetValue<string>() is { } liveJson) host.Apply(new Entry.LiveStart(Entry.ParseOptions(liveJson)));
             var root = host.StateRootOf();
             StateSnapshot.Load(seal.Data, root);
-            host.SealLoadMilliseconds = sw.ElapsedMilliseconds;
+            var loadMs = sw.ElapsedMilliseconds;
             host.Engine.AdoptState(root.Engine);
-            host.Seq = root.Seq; host.lambdaSeen = root.LambdaSeen; host.inputRows = root.InputRows; host.Done = root.Done; host.generation = root.Generation;
+            host.Seq = root.Seq; host.lambdaSeen = root.LambdaSeen; host.inputRows = root.InputRows; host.generation = root.Generation;
             if (host.Engine.StateDigest() != m["digest"]!.GetValue<string>()) { rejected = "the restored state digest differs from the sealed one"; host.Dispose(); return null; }
-            host.sealedRevisions = host.Engine.Graphs.Sum(g => g.Head);
-            host.retained = false; host.inputsInJournal = true; host.journalPos = seal.Position; host.lastSealPosition = seal.Position; host.replayPos = seal.Position;
+            var sealedRevisions = host.Engine.Graphs.Sum(g => g.Head);
+            host.retained = false; host.inputsInJournal = true; host.lastSealPosition = seal.Position; host.replayPos = seal.Position;
             var tail = j.JournalRead(seal.Position).ToList();
             host.journalPos = seal.Position + tail.Count;
-            sw.Restart(); host.Recover(tail); host.TailMilliseconds = sw.ElapsedMilliseconds; host.Restored = true; host.RestoredFromSeal = true; host.TailReplayed = tail.Count;
+            sw.Restart();
+            var (recomputed, verified, _) = host.Recover(tail, root.Done ? Phase.Finished : Phase.Running, 0, null);
+            host.Restart = new Restart(true, seal.Position, tail.Count, sealedRevisions, recomputed, verified, false, null, loadMs, sw.ElapsedMilliseconds);
             return host;
         }
         catch (Exception e) when (e is InvalidDataException or System.Text.Json.JsonException or KeyNotFoundException or InvalidCastException or ArgumentException or IOException or TypeLoadException or NullReferenceException)
@@ -347,7 +392,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         if (journal is null) throw new HostError("InputsNotRetained", "the retained inputs are not available", 422);
         inputs.Clear(); retained = true;
-        var upTo = recovering ? replayPos : journalPos; var n = 0L;
+        var upTo = phase == Phase.Replaying ? replayPos : journalPos; var n = 0L;
         foreach (var body in journal.JournalRead(0))
         {
             if (++n > upTo) break;
@@ -362,65 +407,45 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         inputsInJournal = false;
     }
 
-    public long Verified { get; private set; }
-    /// <summary>Revisions recomputed from the journal and compared with the stored commit log (those loaded from a seal are not among them).</summary>
-    public long Recomputed { get; private set; }
-    public long SealedRevisions => sealedRevisions;
-    public long EntriesReplayed => entriesReplayed;
-    /// <summary>With `VerifyJournal`: the state at the latest seal's position was recomputed and equals the seal's digest.</summary>
-    public bool SealChecked { get; private set; }
-
     /// <summary>What a restart loaded and what it recomputed, in words.</summary>
-    public string RestoreSummary() => RestoredFromSeal
-        ? $"loaded from the seal at journal entry {lastSealPosition}: state digest and catalog digest checked against the seal; {sealedRevisions:N0} revisions of {Engine.Graphs.Count} graphs came from the seal and were not recomputed; replayed the {entriesReplayed:N0} entries after it and recomputed {Recomputed:N0} revisions, each compared with the stored log; the {lastSealPosition:N0} entries before the seal were not read (--verify-journal replays and checks them)"
-        : $"replayed all {entriesReplayed + 1:N0} journal entries and recomputed {Recomputed:N0} revisions of {Engine.Graphs.Count} graphs, each compared with the stored log" + (SealChecked ? $"; the state at the seal (entry {verifyAt}) equals the seal's digest" : "");
-    public bool Restored { get; private set; }
+    public string RestoreSummary() => Restart is not { } r ? "started new" : r.FromSeal
+        ? $"loaded from the seal at journal entry {r.SealPosition}: state digest and catalog digest checked against the seal; {r.SealedRevisions:N0} revisions of {Engine.Graphs.Count} graphs came from the seal and were not recomputed; replayed the {r.EntriesReplayed:N0} entries after it and recomputed {r.Recomputed:N0} revisions, each compared with the stored log; the {r.SealPosition:N0} entries before the seal were not read (--verify-journal replays and checks them)"
+        : $"replayed all {r.EntriesReplayed + 1:N0} journal entries and recomputed {r.Recomputed:N0} revisions of {Engine.Graphs.Count} graphs, each compared with the stored log" + (r.SealChecked ? $"; the state at the seal (entry {r.SealPosition}) equals the seal's digest" : "");
     public string Cluster => options.Cluster;
 
-    void Recover(IEnumerable<string> entries)
+    /// <summary>Applies the entries read back from the journal, then leaves `Replaying` for `then` (or `Finished`, if the entries end the input). With `verifyDigest`: the state after entry `verifyAt` must have that digest. Returns the revisions recomputed and compared with the stored log, the sum of the heads, and whether the digest was checked.</summary>
+    (long Recomputed, long Verified, bool SealChecked) Recover(IEnumerable<string> entries, Phase then, long verifyAt, string? verifyDigest)
     {
+        var sealChecked = false;
         try
         {
             var all = entries.ToList();
             for (var i = 0; i < all.Count; i++)
             {
-                var body = all[i]; replayPos++; entriesReplayed++;
-                switch (Entry.Parse(body, RowLayout, interner))
+                replayPos++;
+                var entry = Entry.Parse(all[i], RowLayout, interner);
+                if (entry is Entry.Commit c)
                 {
-                    case Entry.Rows r: Ingest(r.Source, r.Batch, r.Seq); break;
-                    case Entry.Advance a: Advance(a.Lambda, a.Seq); break;
-                    case Entry.Progress g: Progress(g.Source, g.Until, g.Seq); break;
-                    case Entry.Loss l: RecordLoss(l.Time, l.Count, l.Reason); break;
-                    case Entry.Finish: Finish(); break;
-                    case Entry.LiveStart start: StartLiveCore(start.Options); break;
-                    case Entry.Envelope e: LiveApply(e.Source, e.Body, e.After); break;
-                    case Entry.Skipped p: sourcePositions[p.Source] = p.After; break;
-                    case Entry.Flush: suppress = true; try { live!.FlushPending(); } finally { suppress = false; } break;
-                    case Entry.SequenceStep: lock (Gate) { Seq++; } break;
-                    case Entry.Commit c:
-                        {
-                            var failedBefore = i + 1 < all.Count && Entry.KindOf(all[i + 1]) == 'x';   // the attempt was refused in the live run too and consumed its generation
-                            try { CommitTexts(c.Texts, c.Expected); }
-                            catch (HostError e) when (failedBefore) { _ = e; }
-                            break;
-                        }
-                    case Entry.CommitRefused: break;
-                    case Entry.Header: throw new InvalidOperationException("a second header in the journal");
+                    var failedBefore = i + 1 < all.Count && Entry.KindOf(all[i + 1]) == 'x';   // the attempt was refused in the live run too and consumed its generation
+                    try { CommitTexts(c.Texts, c.Expected); }
+                    catch (HostError e) when (failedBefore) { _ = e; }
                 }
+                else Apply(entry);
+                then = Next(then, entry);
                 if (verifyDigest is not null && replayPos == verifyAt)
                 {
                     var now = Engine.StateDigest();
                     if (now != verifyDigest) throw new InvalidOperationException($"the journal up to entry {verifyAt} reproduces state {now}, the seal at that entry says {verifyDigest}");
-                    SealChecked = true;
+                    sealChecked = true;
                 }
             }
         }
-        finally { recovering = false; }
-        var view = new DurableView(options.Durable!, generation, () => false);
+        finally { phase = then; }
+        var view = new DurableView(durable!, generation, () => false);
         foreach (var g in Engine.Graphs)
             if (view.Head(new GraphKey(options.Tenant, g.Name)).Head is var stored && stored != g.Head)
                 throw new InvalidOperationException($"the store has revision {stored} of {g.Name}, the journal reproduces {g.Head}");
-        Verified = Engine.Graphs.Sum(g => g.Head); Recomputed = views.Sum(v => v.Verified);
+        return (views.Sum(v => v.Verified), Engine.Graphs.Sum(g => g.Head), sealChecked);
     }
 
     void Rebuild()
@@ -435,50 +460,12 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     // ---- engine input ----
     public Layout RowLayout(string source) => Engine.RowLayout(source);
 
-    public void Ingest(string source, Batch rows, long seq)
-    {
-        lock (Gate)
-        {
-            Journal(new Entry.Rows(source, seq, rows));
-            inputRows += rows.Rows; mutations++;
-            if (retained) { inputs.Add(new InputRecord('r', source, rows, seq, rows.Rows)); if (inputRows > options.InputRowCap) { retained = false; inputs.Clear(); } }
-            Engine.Ingest(source, rows, seq);
-            Tick();
-            if (!suppress) MaybeSeal();
-        }
-    }
-    public void Advance(long lambdaNs, long seq)
-    {
-        lock (Gate)
-        {
-            Journal(new Entry.Advance(lambdaNs, seq));
-            if (retained) inputs.Add(new InputRecord('a', "", null, seq, lambdaNs));
-            Engine.Advance(lambdaNs, seq); mutations++;
-            lambdaSeen = Math.Max(lambdaSeen, lambdaNs);
-            Tick();
-            if (!suppress) MaybeSeal();
-        }
-    }
+    public void Ingest(string source, Batch rows, long seq) => Accept(new Entry.Rows(source, seq, rows));
+    public void Advance(long lambdaNs, long seq) => Accept(new Entry.Advance(lambdaNs, seq));
     public bool WantsProgress => Engine.WantsProgress;
-    public void Progress(string source, long untilNs, long seq)
-    {
-        lock (Gate)
-        {
-            Journal(new Entry.Progress(source, untilNs, seq));
-            if (retained) inputs.Add(new InputRecord('g', source, null, seq, untilNs));
-            Engine.Progress(source, untilNs, seq); mutations++;
-        }
-    }
-    public void RecordLoss(long timeNs, long count, string reason = "sourceLoss")
-    {
-        lock (Gate)
-        {
-            Journal(new Entry.Loss(timeNs, count, reason));
-            if (retained) inputs.Add(new InputRecord('l', reason, null, count, timeNs) { });
-            Engine.RecordLoss(timeNs, count, reason); mutations++;
-        }
-    }
-    public void Finish() { lock (Gate) { Journal(new Entry.Finish()); Done = true; mutations++; Publish(new JsonObject { ["type"] = "end" }, null); } }
+    public void Progress(string source, long untilNs, long seq) => Accept(new Entry.Progress(source, untilNs, seq));
+    public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => Accept(new Entry.Loss(timeNs, count, reason));
+    public void Finish() => Accept(new Entry.Finish());
 
     void Tick()
     {
@@ -553,7 +540,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     void Publish(JsonNode msg, string? graph, bool telemetry = false)
     {
         var kind = msg["type"]!.GetValue<string>();
-        if (kind == "draft") Journal(new Entry.SequenceStep());   // drafts are not stored; the sequence number they consumed is
+        if (kind == "draft") Append(new Entry.SequenceStep());   // drafts are not stored; the sequence number they consumed is
         if (kind != "time") { msg["seq"] = (++Seq).ToString(CultureInfo.InvariantCulture); }
         var text = msg.ToJsonString();
         if (kind != "time") { ring.Add((Seq, graph, kind, text)); if (options.RetainEvents > 0 && ring.Count > options.RetainEvents + options.RetainEvents / 10) ring.RemoveRange(0, ring.Count - options.RetainEvents); }
@@ -938,7 +925,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (!retained) throw new HostError("InputsNotRetained", "the retained inputs exceed the cap; re-activation needs a restart", 422);
 
             var sw = Stopwatch.StartNew(); mutations++;
-            Journal(new Entry.Commit(expectedRevision, texts));
+            Append(new Entry.Commit(expectedRevision, texts));
             var oldSpace = spaceId; spaceId = newSpaceId;
             Engine fresh;
             try
@@ -947,7 +934,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 foreach (var r in inputs)
                     switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
             }
-            catch (Exception e) { spaceId = oldSpace; Journal(new Entry.CommitRefused()); throw new HostError("ActivationRejected", e.Message, 422); }
+            catch (Exception e) { spaceId = oldSpace; Append(new Entry.CommitRefused()); throw new HostError("ActivationRejected", e.Message, 422); }
 
             // final difference per graph, numbered after the served head
             var changed = new List<(string Id, long From, long To, int Edits)>();
@@ -971,7 +958,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             Engine = fresh; Catalog = cand;
             foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             foreach (var (m, t) in texts) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
-            if (WriteDefinitions && DefinitionsDir is not null && !recovering) foreach (var e in sources.Values) if (File.Exists(e.Path)) File.WriteAllText(e.Path, e.Text);
+            if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying) foreach (var e in sources.Values) if (File.Exists(e.Path)) File.WriteAllText(e.Path, e.Text);
             if (catPatch.Edits.Length > 0) catalogHistory.Add(catPatch); else catalogHistory.Add(new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, []));
             Rebuild();
             foreach (var (g, p) in newPatches) { served[g].History.Add(p); Trim(served[g]); }

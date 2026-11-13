@@ -51,7 +51,7 @@ public class ProcessKillTests
             var entries = new SqliteGraphStore(path).Let(s => { using (s) return s.JournalRead().ToList(); });
             Assert.True(entries.Count > 1, $"the killed process journaled {entries.Count} entries");
             (string Digest, long Seq, string Space) restarted, fresh;
-            using (var h = SpaceHost.OpenDurable(new SqliteGraphStore(path), null, Options)) { Assert.True(h.Restored); restarted = Of(h); }
+            using (var h = RestartTests.Reopen(new SqliteGraphStore(path), Options)) { Assert.True(sealEvery > 0 || !h.Restart!.FromSeal, "serve --no-seal took a seal"); restarted = Of(h); }
             var memory = new InMemoryGraphStore();
             foreach (var e in entries) ((IJournalStore)memory).JournalAppend(e);
             using (var h = SpaceHost.OpenDurable(memory, null, Options with { UseSeal = false })) fresh = Of(h);

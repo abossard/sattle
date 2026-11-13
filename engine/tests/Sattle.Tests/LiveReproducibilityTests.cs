@@ -30,7 +30,7 @@ public class LiveReproducibilityTests
         Directory.CreateDirectory(Path.Combine(dir, "live"));
         File.WriteAllLines(Path.Combine(dir, "live", "stream.ndjson"), arrival);
         var files = Catalog.ReadDirectory(Repo.Definitions);
-        using var host = new SpaceHost(files, new HostOptions { Cluster = cluster }) { Mode = "live" };
+        using var host = new SpaceHost(files, new HostOptions { Cluster = cluster });
         var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = cluster });
         var rnd = new Random(seed);
         foreach (var text in arrival)

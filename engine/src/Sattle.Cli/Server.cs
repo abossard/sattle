@@ -68,12 +68,11 @@ public static class Server
             try
             {
                 if (o.Flags.Contains("live")) Live.Run(host, o, cluster);
-                else if (host.Restored) { if (!host.Done) { host.Finish(); Console.WriteLine("the journal ends before the end of its input: the capture is not resumed, the space is closed"); } }
+                else if (host.Restart is not null) { if (!host.Done) { host.Finish(); Console.WriteLine("the journal ends before the end of its input: the capture is not resumed, the space is closed"); } }
                 else
                 {
                     var ropts = Program.ReplayOptionsOf(o, cluster);
                     var replay = new Replay(host, host.Space, host.Adapters, ropts, host.Gate);     // request handlers intern under the same lock
-                    host.Mode = "replay";
                     var stats = replay.Run(capture);
                     host.Finish();
                     Console.WriteLine($"replay finished: {stats.Records.Values.Sum():N0} records, state digest {host.StateDigest()}");

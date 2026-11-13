@@ -65,7 +65,6 @@ static class Live
         Directory.CreateDirectory(Path.Combine(outDir, "live"));
         var recordPath = Path.Combine(outDir, "live", "stream.ndjson");
         var seconds = long.TryParse(o.Get("seconds"), out var sv) ? sv : o.Duration("seconds", 0) / 1_000_000_000;
-        host.Mode = "live";
         FileRecording? rec = null; var started = DateTimeOffset.UtcNow;
         host.LiveStatus = () => new JsonObject
         {

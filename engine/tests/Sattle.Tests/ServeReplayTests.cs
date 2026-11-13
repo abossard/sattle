@@ -103,7 +103,7 @@ public class ServeReplayTests
             }
             using var g2 = new SqliteGraphStore(store);
             using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Cluster = "synth", VerifyJournal = true });
-            Assert.True(again.Restored);
+            Assert.NotNull(again.Restart);
             Assert.Equal(horizon, again.LateHorizonWindows);
             Assert.Equal(digest, again.StateDigest());
         }

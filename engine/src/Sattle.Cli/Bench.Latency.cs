@@ -321,7 +321,8 @@ static partial class Bench
             using var host = SpaceHost.OpenDurable(store, null, restartOpts);
             var t = sw.Elapsed.TotalSeconds; secs.Add(t);
             digest ??= host.StateDigest(); if (digest != host.StateDigest()) throw new InvalidOperationException("restart digests differ");
-            Console.WriteLine($"restart {run + 1}: {t:F1} s ({(host.RestoredFromSeal ? $"seal at entry {host.SealPosition}, {host.TailReplayed:N0} entries replayed after it" : "journal replayed from the start")}{(host.RestoredFromSeal ? $", state loaded in {host.SealLoadMilliseconds} ms, tail replayed in {host.TailMilliseconds} ms" : "")}), {host.Recomputed:N0} revisions recomputed and compared with the stored log ({host.SealedRevisions:N0} came from the seal), sequence {host.Seq}, digest {host.StateDigest()[..19]}; load {LoadAvg()}");
+            var r = host.Restart!;
+            Console.WriteLine($"restart {run + 1}: {t:F1} s ({(r.FromSeal ? $"seal at entry {r.SealPosition}, {r.EntriesReplayed:N0} entries replayed after it" : "journal replayed from the start")}{(r.FromSeal ? $", state loaded in {r.SealLoadMilliseconds} ms, tail replayed in {r.TailMilliseconds} ms" : "")}), {r.Recomputed:N0} revisions recomputed and compared with the stored log ({r.SealedRevisions:N0} came from the seal), sequence {host.Seq}, digest {host.StateDigest()[..19]}; load {LoadAvg()}");
         }
         Console.WriteLine($"H10 restart from the store (journal replay with verification of every commit), history of {hours} h: {Spread(secs, "s")}  (target at most 60 s)");
         if (cosmos is not null) { using var drop = CosmosGraphStore.Open(cosmos, dbName, true); }

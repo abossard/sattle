@@ -359,7 +359,7 @@ public class HealthTreeTests
             }
             using var g2 = new SqliteGraphStore(store);
             using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Cluster = Cluster, VerifyJournal = true });
-            Assert.True(again.Restored);
+            Assert.NotNull(again.Restart);
             Assert.Equal(digest, again.StateDigest());
             Assert.Equal(unhealthy, again.Engine.Graph("healthTree").State.Entities.Count(x => Ids.Name(x.Type) == "Element" && P(x, "rolledState") == "Unhealthy"));
         }
