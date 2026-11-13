@@ -435,16 +435,20 @@ public sealed class OutputBuilder(Interner it)
     readonly record struct Fragment(int Sink, bool Update, string Type, string? Source, string? Target, Props Props);
 
     /// <summary>The sink table: per (element, fragment) the summed weight of the rows that contribute the fragment; a row at weight zero is gone. Each fragment is kept once, as bytes, in `fragments`.</summary>
-    readonly Table contributions = new([4, 4], keyColumns: 2, arrangedPrefix: 1);
+    readonly Table contributions = new([4, 4], keyColumns: 2);
     readonly CodeDictionary fragments = new();
     readonly StrTable fragmentKeys = new();
-    Arrangement ByElement => contributions.ByPrefix!;
+    Arrangement? byElement;
+    /// <summary>The contributions of one element: every row of it is wanted when the element is resolved.</summary>
+    Arrangement ByElement => byElement ??= contributions.Arrange(0);
     /// <summary>Per element handle: entity or relationship, from its first fragment.</summary>
     readonly Segments<byte> kinds = new();
     const byte Entity = 1, Relationship = 2;
     /// <summary>(endpoint, relationship) while a fragment of the relationship names the endpoint, so a merge visits those and not every element.</summary>
-    readonly Table ends = new([4, 4], keyColumns: 2, arrangedPrefix: 1);
-    Arrangement ByEnd => ends.ByPrefix!;
+    readonly Table ends = new([4, 4], keyColumns: 2);
+    Arrangement? byEnd;
+    /// <summary>The relationships at one endpoint: every one of them is wanted when the endpoint merges.</summary>
+    Arrangement ByEnd => byEnd ??= ends.Arrange(0);
     /// <summary>The elements touched since the last flush, in the order they were first touched, and the same as a bitmap.</summary>
     readonly List<int> touched = [];
     readonly Segments<byte> dirty = new();

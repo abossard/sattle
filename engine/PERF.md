@@ -298,6 +298,18 @@ The three operators share one container (`KeyTable`), so the step is one change 
 - Operator time at chunk 1 is 9.3 to 9.6 s against 9.1 to 9.2 s. Allocation does not change: the windowed Group still allocates 11.7 GB at chunk 1, because every call builds a new output batch of 64 rows per column whether or not it writes a row. That is the next thing to remove, in the operators, not in their state.
 - Proofs: the 12 state digests unchanged; `Sattle.Differential` every category 312 of 312; the seal, restart, live-resume, process-kill, operator and grouping tests 164 of 164; the default run 265 of 265 and 680 passed, 2 skipped. All in the tree, on the state of 3b (3a had the same proofs on its own state).
 
+## Results table, step 1: every table has one index on its whole key (2026-11-13)
+Code review 2 measured what the table's second way to find a row cost: a row was found by walking the rows that share its first key column, so 8,000 relationships at one node took 4.95 s against 0.03 s at distinct nodes. Now a row is always found through one index on its whole key, and an arrangement by some key columns serves only the callers that want every row of one value. The hash of the index mixes all bits of a key (60,000 keys that are multiples of 65,536: 32.5 s before, as fast as sequential keys now).
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| Before (core step 3 and the host rewrite) | 6,978 MB (42,941 B) | 24.6, 23.6 and 23.7 s for the build before the core steps | |
+| One index per table | 7,064 MB (43,470 B), +86 MB | 23.4, 25.6 and 23.5 s (load 45 to 55); 39.3 GB against 39.1 GB | +51, −56 |
+
+- The price, as expected: about 8 bytes per row for the index a table did not have. The sink's contributions 61 to 84 MB, its endpoint table 34 to 36 MB, Rollup 352 to 369 MB, Group 283 to 301 MB.
+- The state digests equal those of the build before this step at every chunk size. The digests of the two recordings changed earlier, with the definitions change of 79a3cce (a present but empty text counts as missing, as in KQL); the estate and `lab/fixtures` kept theirs.
+- Proofs: `Sattle.Differential` every category 312 of 312; the seal, restart, snapshot, operator, grouping, lineage and structure groups 238 of 238; the default run 265 of 265 and 701 passed, 2 skipped. Seal format 4.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

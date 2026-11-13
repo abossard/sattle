@@ -171,6 +171,8 @@ sealed class KeyTable
     readonly Table? decimals;
     /// <summary>(slot, aggregate, order and value as numbers, their digits): the rows of a `last`.</summary>
     readonly Table? lasts;
+    /// <summary>The entries of one aggregate of one key's row, in each of the three tables.</summary>
+    readonly Arrangement? longsOf, decimalsOf, lastsOf;
 
     /// <summary>`nIndex`: one more than the greatest index an aggregate's multiset is filed under.</summary>
     public KeyTable(int k, int nL, int nD, int nIndex, bool longs, bool decimals, bool lasts)
@@ -179,9 +181,9 @@ sealed class KeyTable
         cnt = k; accL = cnt + 1; accD = accL + nL; emitted = accD + 2 * nD;
         rows = new Table([.. Enumerable.Repeat(8, emitted), 4], keyColumns: k);
         key = new long[k];
-        if (longs) this.longs = new Table([4, 4, 8], keyColumns: 3, arrangedPrefix: 2);
-        if (decimals) this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4, arrangedPrefix: 2);
-        if (lasts) this.lasts = new Table([4, 4, 8, 8, 8, 8, 8, 8, 8, 8], keyColumns: 6, arrangedPrefix: 2);
+        if (longs) { this.longs = new Table([4, 4, 8], keyColumns: 3); longsOf = this.longs.Arrange(0, 1); }
+        if (decimals) { this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4); decimalsOf = this.decimals.Arrange(0, 1); }
+        if (lasts) { this.lasts = new Table([4, 4, 8, 8, 8, 8, 8, 8, 8, 8], keyColumns: 6); lastsOf = this.lasts.Arrange(0, 1); }
     }
 
     public int Count => rows.Count;
@@ -240,9 +242,9 @@ sealed class KeyTable
     public bool ExtremeL(int slot, int a, bool desc, out long v)
     {
         v = 0; var any = false;
-        for (var r = longs!.ByPrefix!.First([slot, a]); r >= 0; r = longs.ByPrefix.Next(r))
+        for (var r = longsOf!.First([slot, a]); r >= 0; r = longsOf.Next(r))
         {
-            var x = longs.Get(r, 2);
+            var x = longs!.Get(r, 2);
             if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
         }
         return any;
@@ -250,9 +252,9 @@ sealed class KeyTable
     public bool ExtremeD(int slot, int a, bool desc, out decimal v)
     {
         v = 0; var any = false;
-        for (var r = decimals!.ByPrefix!.First([slot, a]); r >= 0; r = decimals.ByPrefix.Next(r))
+        for (var r = decimalsOf!.First([slot, a]); r >= 0; r = decimalsOf.Next(r))
         {
-            var x = Unpack(decimals.Get(r, 4), decimals.Get(r, 5));
+            var x = Unpack(decimals!.Get(r, 4), decimals!.Get(r, 5));
             if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
         }
         return any;
@@ -261,8 +263,8 @@ sealed class KeyTable
     public List<(decimal Ord, decimal Val)> LastRows(int slot, int a)
     {
         var res = new List<(decimal, decimal)>();
-        for (var r = lasts!.ByPrefix!.First([slot, a]); r >= 0; r = lasts.ByPrefix.Next(r))
-            res.Add((Unpack(lasts.Get(r, 6), lasts.Get(r, 7)), Unpack(lasts.Get(r, 8), lasts.Get(r, 9))));
+        for (var r = lastsOf!.First([slot, a]); r >= 0; r = lastsOf.Next(r))
+            res.Add((Unpack(lasts!.Get(r, 6), lasts!.Get(r, 7)), Unpack(lasts!.Get(r, 8), lasts!.Get(r, 9))));
         return res;
     }
 
@@ -273,7 +275,7 @@ sealed class KeyTable
         for (var i = 0; i < nL; i++) if (L(s, i) != 0) return false;
         for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
         for (var a = 0; a < nIndex; a++)
-            if (longs?.ByPrefix!.First([s, a]) >= 0 || decimals?.ByPrefix!.First([s, a]) >= 0 || lasts?.ByPrefix!.First([s, a]) >= 0) return false;
+            if (longsOf?.First([s, a]) >= 0 || decimalsOf?.First([s, a]) >= 0 || lastsOf?.First([s, a]) >= 0) return false;
         return true;
     }
 

@@ -413,8 +413,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
-    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). A seal of another format is refused with both versions named, and the journal is replayed.</summary>
-    public const int SealFormat = 3;
+    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    public const int SealFormat = 4;
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>

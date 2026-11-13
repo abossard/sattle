@@ -64,7 +64,7 @@ public sealed class CodeDictionary
 {
     const int Page = 1 << 16;
     readonly List<byte[]> pages = [new byte[Page]];
-    int used;
+    int filling, used;     // the page that takes the next short value, and how much of it is used
     readonly Segments<long> start = new();        // page << 32 | offset
     readonly Segments<int> length = new();
     int[] index = new int[64]; int mask = 63;
@@ -99,12 +99,12 @@ public sealed class CodeDictionary
     {
         if (TryFind(v, out var code)) return code;
         code = Count++;
-        if (v.Length > Page) { pages.Add(v.ToArray()); start[code] = (long)(pages.Count - 1) << 32; pages.Add(new byte[Page]); used = 0; }
+        if (v.Length > Page) { pages.Add(v.ToArray()); start[code] = (long)(pages.Count - 1) << 32; }       // a long value is a page of its own; the page being filled stays the one it was
         else
         {
-            if (used + v.Length > Page) { pages.Add(new byte[Page]); used = 0; }
-            v.CopyTo(pages[^1].AsSpan(used));
-            start[code] = (long)(pages.Count - 1) << 32 | (uint)used;
+            if (used + v.Length > Page) { pages.Add(new byte[Page]); filling = pages.Count - 1; used = 0; }
+            v.CopyTo(pages[filling].AsSpan(used));
+            start[code] = (long)filling << 32 | (uint)used;
             used += v.Length;
         }
         length[code] = v.Length;
@@ -135,7 +135,7 @@ public sealed class CodeDictionary
     public long Footprint() => pages.Sum(p => (long)p.Length) + start.Footprint + length.Footprint + index.Length * 4L;
 }
 
-/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row, and an open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. Arrangements index the rows by a subset of the columns (several rows per value).</summary>
+/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row, and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. One shape: a row is always found through the index on its whole key. An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
 public sealed class Table
 {
     readonly int keys;
@@ -148,22 +148,17 @@ public sealed class Table
     int[] index = new int[64]; int mask = 63;
     readonly List<Arrangement> arrangements = [];
 
-    /// <summary>`widths` are 4 or 8 bytes per column; the first `keyColumns` columns identify a row. With `arrangedPrefix` above zero the table is arranged by its first `arrangedPrefix` columns and keeps no index of its own: a row is found by walking the rows of its prefix value (a rule of the table, for tables whose prefix values have few rows each).</summary>
-    public Table(ReadOnlySpan<int> widths, int keyColumns, int arrangedPrefix = 0)
+    /// <summary>`widths` are 4 or 8 bytes per column; the first `keyColumns` columns identify a row.</summary>
+    public Table(ReadOnlySpan<int> widths, int keyColumns)
     {
         keys = keyColumns;
-        if (arrangedPrefix < 0 || arrangedPrefix > keyColumns) throw new ArgumentException($"arranged prefix {arrangedPrefix} of {keyColumns} key columns");
         wide = new bool[widths.Length]; narrowCols = new Segments<int>[widths.Length]; wideCols = new Segments<long>[widths.Length];
         for (var c = 0; c < widths.Length; c++)
         {
             wide[c] = widths[c] switch { 4 => false, 8 => true, _ => throw new ArgumentException($"column width {widths[c]}: 4 or 8") };
             if (wide[c]) wideCols[c] = new(); else narrowCols[c] = new();
         }
-        if (arrangedPrefix > 0) { ByPrefix = Arrange([.. Enumerable.Range(0, arrangedPrefix)]); index = []; mask = -1; }
     }
-
-    /// <summary>The arrangement by the key prefix that finds the rows, when the table has one instead of its own index.</summary>
-    public Arrangement? ByPrefix { get; }
 
     public int Columns => wide.Length;
     /// <summary>Rows with a nonzero weight.</summary>
@@ -172,7 +167,8 @@ public sealed class Table
     public int RowLimit => rows;
 
     public long Get(int row, int col) => wide[col] ? wideCols[col]![row] : narrowCols[col]![row];
-    public long Weight(int row) => row < rows ? weight[row] : 0;
+    /// <summary>The weight of a row; 0 for a row that is not there (also for the -1 a `Find` or an `Add` gives).</summary>
+    public long Weight(int row) => row >= 0 && row < rows ? weight[row] : 0;
     public bool Live(int row) => Weight(row) != 0;
 
     /// <summary>Sets a column that is not part of the key.</summary>
@@ -184,19 +180,17 @@ public sealed class Table
 
     void Put(int row, int col, long v) { if (wide[col]) wideCols[col]![row] = v; else narrowCols[col]![row] = checked((int)v); }
 
-    internal ulong HashOf(int row, ReadOnlySpan<int> cols)
+    /// <summary>One step of the hash of a key: every bit of `x` reaches every bit of the result (keys that differ only in their high bits, like multiples of 65,536, must not share the low bits the index uses).</summary>
+    internal static ulong Mix(ulong h, long x)
     {
-        var h = 14695981039346656037UL;
-        foreach (var c in cols) { h ^= (ulong)Get(row, c); h *= 1099511628211UL; h ^= h >> 29; }
-        return h;
+        var z = h + (ulong)x + 0x9E3779B97F4A7C15UL;
+        z = (z ^ z >> 30) * 0xBF58476D1CE4E5B9UL; z = (z ^ z >> 27) * 0x94D049BB133111EBUL;
+        return z ^ z >> 31;
     }
 
-    static ulong HashOf(ReadOnlySpan<long> key)
-    {
-        var h = 14695981039346656037UL;
-        foreach (var x in key) { h ^= (ulong)x; h *= 1099511628211UL; h ^= h >> 29; }
-        return h;
-    }
+    internal ulong HashOf(int row, ReadOnlySpan<int> cols) { var h = 0UL; foreach (var c in cols) h = Mix(h, Get(row, c)); return h; }
+
+    internal static ulong HashOf(ReadOnlySpan<long> key) { var h = 0UL; foreach (var x in key) h = Mix(h, x); return h; }
 
     internal bool Equal(int row, ReadOnlySpan<int> cols, ReadOnlySpan<long> key)
     {
@@ -210,11 +204,6 @@ public sealed class Table
     /// <summary>The row of `key`, or -1.</summary>
     public int Find(ReadOnlySpan<long> key)
     {
-        if (ByPrefix is { } a)
-        {
-            for (var r = a.First(key[..a.Width]); r >= 0; r = a.Next(r)) if (Equal(r, KeyCols, key)) return r;
-            return -1;
-        }
         for (var h = (int)(HashOf(key) & (ulong)mask); index[h] != 0; h = (h + 1) & mask)
             if (Equal(index[h] - 1, KeyCols, key)) return index[h] - 1;
         return -1;
@@ -231,7 +220,7 @@ public sealed class Table
             for (var c = 0; c < keys; c++) Put(row, c, key[c]);
             weight[row] = w;
             Count++;
-            if (ByPrefix is null) { if (Count * 2 > index.Length) Rehash(); else Place(row); }
+            if (Count * 2 > index.Length) Rehash(); else Place(row);
             foreach (var a in arrangements) a.Link(row);
             return row;
         }
@@ -244,7 +233,7 @@ public sealed class Table
     void Remove(int row)
     {
         foreach (var a in arrangements) a.Unlink(row);
-        if (ByPrefix is null) Unplace(row);
+        Unplace(row);
         weight[row] = 0;
         for (var c = 0; c < wide.Length; c++) if (wide[c]) wideCols[c]!.Clear(row); else narrowCols[c]!.Clear(row);
         freeRows[free++] = row;
@@ -285,9 +274,10 @@ public sealed class Table
     /// <summary>The live rows, in no particular order.</summary>
     public IEnumerable<int> Rows() { for (var r = 0; r < rows; r++) if (weight[r] != 0) yield return r; }
 
-    /// <summary>An index of the rows by the values of `cols`, kept up to date as rows come and go.</summary>
+    /// <summary>A second way into the rows, by the values of some key columns, kept up to date as rows come and go. Only key columns: a column that `Set` writes can change under an arrangement, which would then keep the row under the value it had.</summary>
     public Arrangement Arrange(params int[] cols)
     {
+        if (cols.Length == 0 || cols.Any(c => c < 0 || c >= keys)) throw new ArgumentException($"an arrangement is by key columns (the first {keys}); got {string.Join(", ", cols)}");
         var a = new Arrangement(this, cols);
         arrangements.Add(a);
         foreach (var r in Rows()) a.Link(r);
@@ -315,21 +305,20 @@ public sealed class Arrangement
 
     int Slot(ReadOnlySpan<long> value)
     {
-        var h = 14695981039346656037UL;
-        foreach (var x in value) { h ^= (ulong)x; h *= 1099511628211UL; h ^= h >> 29; }
-        for (var s = (int)(h & (ulong)mask); index[s] != 0; s = (s + 1) & mask)
+        for (var s = (int)(Table.HashOf(value) & (ulong)mask); index[s] != 0; s = (s + 1) & mask)
             if (t.Equal(index[s] - 1, cols, value)) return s;
         return -1;
     }
 
-    /// <summary>The rows whose columns hold `value`.</summary>
-    public IEnumerable<int> Rows(long[] value)
+    /// <summary>The rows whose columns hold `value`, as they are now: the caller may add and remove rows while it goes through them.</summary>
+    public List<int> Rows(ReadOnlySpan<long> value)
     {
-        var s = Slot(value);
-        if (s < 0) yield break;
-        for (var r = index[s] - 1; r >= 0; r = next[r] - 1) yield return r;
+        var rows = new List<int>();
+        for (var r = First(value); r >= 0; r = Next(r)) rows.Add(r);
+        return rows;
     }
 
+    /// <summary>The first row with `value` and the one after a row, -1 at the end: a walk without a list, for a caller that does not change the table while it walks.</summary>
     public int First(ReadOnlySpan<long> value) { var s = Slot(value); return s < 0 ? -1 : index[s] - 1; }
     public int Next(int row) => next[row] - 1;
 

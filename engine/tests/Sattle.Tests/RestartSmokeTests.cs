@@ -26,9 +26,10 @@ public class RestartSmokeTests
         using (var fromJournal = SpaceHost.OpenDurable(store, null, Options with { UseSeal = false })) { Assert.False(fromJournal.Restart!.FromSeal); Assert.Equal(digest, fromJournal.StateDigest()); Assert.Equal(seq, fromJournal.Seq); }
     }
 
-    /// <summary>A seal of the previous format (before telemetry pairs and per-own support) is refused with both versions named, and the journal is replayed to the same state.</summary>
-    [Fact]
-    public void A_seal_of_another_format_is_refused_with_both_versions_named()
+    /// <summary>A seal of another format is refused with both versions named, and the journal is replayed to the same state: a seal that records no format (written before format 2), the format before this build's, and one after it.</summary>
+    [Theory]
+    [InlineData(null)] [InlineData(-1)] [InlineData(1)]
+    public void A_seal_of_another_format_is_refused_with_both_versions_named(int? offset)
     {
         var store = new InMemoryGraphStore();
         string digest;
@@ -39,11 +40,12 @@ public class RestartSmokeTests
             digest = h.StateDigest();
         }
         var j = (IJournalStore)store; var seal = j.SealLatest()!;
-        var meta = System.Text.Json.Nodes.JsonNode.Parse(seal.Meta)!.AsObject(); meta.Remove("format");          // what a build before format 2 wrote
+        var meta = System.Text.Json.Nodes.JsonNode.Parse(seal.Meta)!.AsObject();
+        if (offset is { } by) meta["format"] = SpaceHost.SealFormat + by; else meta.Remove("format");          // no format: what a build before format 2 wrote
         j.SealPut(seal.Position, meta.ToJsonString(), seal.Data);
         using var restarted = SpaceHost.OpenDurable(store, null, Options);
         Assert.False(restarted.Restart!.FromSeal);
-        Assert.Contains($"seal format 1, this build reads seal format {SpaceHost.SealFormat}", restarted.Restart!.SealRefusal);
+        Assert.Contains($"seal format {(offset is { } o ? SpaceHost.SealFormat + o : 1)}, this build reads seal format {SpaceHost.SealFormat}", restarted.Restart!.SealRefusal);
         Assert.Equal(digest, restarted.StateDigest());
     }
 
