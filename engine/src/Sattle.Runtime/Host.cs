@@ -54,7 +54,61 @@ public sealed class Subscription
 }
 
 sealed class Served { public List<Patch> History = []; public long Dropped; public long Offset; public long Head => Dropped + History.Count; public long FirstWindow = long.MinValue; }
-sealed record InputRecord(char Kind, string Source, Batch? Rows, long Seq, long Value);
+/// <summary>What an engine takes, as a value: a batch of rows, an advance of logical time, the progress of a source, a loss. A journal entry of these kinds is one; an envelope of a live source gives several.</summary>
+public abstract record EngineInput
+{
+    public sealed record Rows(string Source, Batch Batch, long Seq) : EngineInput;
+    public sealed record Advance(long Lambda, long Seq) : EngineInput;
+    public sealed record Progress(string Source, long Until, long Seq) : EngineInput;
+    public sealed record Loss(long Time, long Count, string Reason) : EngineInput;
+
+    public long RowCount => this is Rows r ? r.Batch.Rows : 0;
+
+    public void ApplyTo(IEngineInput engine)
+    {
+        switch (this)
+        {
+            case Rows r: engine.Ingest(r.Source, r.Batch, r.Seq); break;
+            case Advance a: engine.Advance(a.Lambda, a.Seq); break;
+            case Progress g: engine.Progress(g.Source, g.Until, g.Seq); break;
+            case Loss l: engine.RecordLoss(l.Time, l.Count, l.Reason); break;
+        }
+    }
+
+    /// <summary>The engine inputs that journal entries stand for, in order. Rows, advances, progress and losses are inputs themselves. The envelopes of a live input are run again through `adapters` (a fresh set) with the options the live input was started with, and cut into batches where the recorded flushes cut them: what the live run did, done again. `layoutOf` and `interner` are those the rows are built with.</summary>
+    public static IEnumerable<EngineInput> Derive(IEnumerable<Entry> entries, TypedSpace space, IReadOnlyList<ISourceAdapter> adapters, Func<string, Layout> layoutOf, Interner interner, bool wantsProgress)
+    {
+        var collected = new Collector(layoutOf, interner, wantsProgress); Replay? live = null;
+        foreach (var entry in entries)
+        {
+            switch (entry)
+            {
+                case Entry.Rows r: yield return new Rows(r.Source, r.Batch, r.Seq); break;
+                case Entry.Advance a: yield return new Advance(a.Lambda, a.Seq); break;
+                case Entry.Progress g: yield return new Progress(g.Source, g.Until, g.Seq); break;
+                case Entry.Loss l: yield return new Loss(l.Time, l.Count, l.Reason); break;
+                case Entry.LiveStart start: live = new Replay(collected, space, adapters, start.Options); break;
+                case Entry.Envelope e: live!.Process(CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!, pace: false); break;
+                case Entry.Flush: live!.FlushPending(); break;
+            }
+            foreach (var input in collected.Take()) yield return input;
+        }
+    }
+
+    /// <summary>An engine input that keeps what it is given.</summary>
+    sealed class Collector(Func<string, Layout> layoutOf, Interner interner, bool wantsProgress) : IEngineInput
+    {
+        List<EngineInput> got = [];
+        public List<EngineInput> Take() { var taken = got; got = []; return taken; }
+        public Interner Interner => interner;
+        public Layout RowLayout(string source) => layoutOf(source);
+        public bool WantsProgress => wantsProgress;
+        public void Ingest(string source, Batch rows, long seq) => got.Add(new Rows(source, rows, seq));
+        public void Advance(long lambdaNs, long seq) => got.Add(new Advance(lambdaNs, seq));
+        public void Progress(string source, long untilNs, long seq) => got.Add(new Progress(source, untilNs, seq));
+        public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => got.Add(new Loss(timeNs, count, reason));
+    }
+}
 
 /// <summary>Where a host is in its life. `Replaying`: it reads its journal back; nothing is written to the journal, no seal is taken, and each commit the engine makes is compared with the stored one. `Running`: what enters is written to the journal first. `Finished`: as `Running`, and the recorded input has ended.</summary>
 public enum Phase { Replaying, Running, Finished }
@@ -71,10 +125,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly Dictionary<string, (string Path, string Text)> sources = new(StringComparer.Ordinal);
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
-    readonly List<InputRecord> inputs = [];
+    /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
+    List<EngineInput>? kept = [];
     readonly List<Subscription> subs = [];
-    long inputRows; bool retained = true;
-    readonly IGraphStore? durable; readonly IJournalStore? journal; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition, replayPos; bool inputsInJournal; readonly List<DurableView> views = [];
+    long inputRows, fed;
+    readonly IGraphStore? durable; readonly IJournalStore? journal; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition; readonly List<DurableView> views = [];
     // live input: the envelopes themselves are journaled (the adapters rebuild their state from them), with the position of the source they came from
     Replay? live; string? liveOptions;
     readonly Dictionary<string, string> sourcePositions = new(StringComparer.Ordinal);
@@ -168,10 +223,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         switch (entry)
         {
-            case Entry.Rows r: Feed(new InputRecord('r', r.Source, r.Batch, r.Seq, r.Batch.Rows)); break;
-            case Entry.Advance a: Feed(new InputRecord('a', "", null, a.Seq, a.Lambda)); break;
-            case Entry.Progress g: Feed(new InputRecord('g', g.Source, null, g.Seq, g.Until)); break;
-            case Entry.Loss l: Feed(new InputRecord('l', l.Reason, null, l.Count, l.Time)); break;
+            case Entry.Rows r: Feed(new EngineInput.Rows(r.Source, r.Batch, r.Seq)); break;
+            case Entry.Advance a: Feed(new EngineInput.Advance(a.Lambda, a.Seq)); break;
+            case Entry.Progress g: Feed(new EngineInput.Progress(g.Source, g.Until, g.Seq)); break;
+            case Entry.Loss l: Feed(new EngineInput.Loss(l.Time, l.Count, l.Reason)); break;
             case Entry.Finish: phase = Next(phase, entry); mutations++; Publish(new JsonObject { ["type"] = "end" }, null); break;
             case Entry.LiveStart start: live = new Replay(new Derived(this), Space, Adapters, start.Options, Gate); liveOptions = Entry.OptionsText(start.Options); break;
             case Entry.Envelope e: LiveApply(e.Source, e.Body, e.After); break;
@@ -184,18 +239,41 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>An engine input reaches the engine: counted, kept for a later re-activation while the inputs fit, and applied. The rows an envelope gives come here directly; they are no journal entries, the envelope is.</summary>
-    void Feed(InputRecord r)
+    void Feed(EngineInput input)
     {
-        mutations++;
-        if (r.Kind == 'r') inputRows += r.Value;
-        if (retained) { inputs.Add(r); if (inputRows > options.InputRowCap) { retained = false; inputs.Clear(); } }
-        switch (r.Kind)
+        mutations++; fed++;
+        inputRows += input.RowCount;
+        if (kept is not null) { kept.Add(input); if (inputRows > options.InputRowCap) kept = null; }
+        input.ApplyTo(Engine);
+        if (input is EngineInput.Advance a) lambdaSeen = Math.Max(lambdaSeen, a.Lambda);
+        if (input is EngineInput.Rows or EngineInput.Advance) Tick();
+    }
+
+    /// <summary>The engine inputs so far, in order: what a definition is activated on again. From memory while they are there, else from the journal.</summary>
+    IEnumerable<EngineInput> Inputs()
+    {
+        if (kept is not null) return kept;
+        if (journal is null) throw new HostError("InputsNotRetained", "the inputs of this space are beyond the row cap and it has no journal to read them from; activating a changed definition needs a restart", 422);
+        var entries = journal.JournalRead(0).Take((int)Math.Min(journalPos, int.MaxValue)).Skip(1).Select(text => Entry.Parse(text, RowLayout, interner));
+        return EngineInput.Derive(entries, Space, AdapterRegistry.Create(options.Cluster), RowLayout, interner, WantsProgress);
+    }
+
+    /// <summary>A fresh engine for a candidate catalog, given every input so far, or as many as hold `rowLimit` rows. `prepare` runs on the engine before its first input. Used by a definition commit and by a preview.</summary>
+    (Engine Engine, long Rows, bool Complete) Reactivate(Catalog candidate, string space, EngineOptions engineOptions, long rowLimit = long.MaxValue, Action<Engine>? prepare = null)
+    {
+        var fresh = new Engine(candidate, space, engineOptions, interner);
+        try
         {
-            case 'r': Engine.Ingest(r.Source, r.Rows!, r.Seq); Tick(); break;
-            case 'a': Engine.Advance(r.Value, r.Seq); lambdaSeen = Math.Max(lambdaSeen, r.Value); Tick(); break;
-            case 'g': Engine.Progress(r.Source, r.Value, r.Seq); break;
-            case 'l': Engine.RecordLoss(r.Value, r.Seq, r.Source); break;
+            prepare?.Invoke(fresh);
+            long rows = 0;
+            foreach (var input in Inputs())
+            {
+                if (rows >= rowLimit) return (fresh, rows, false);
+                input.ApplyTo(fresh); rows += input.RowCount;
+            }
+            return (fresh, rows, true);
         }
+        catch { fresh.Dispose(); throw; }
     }
 
     /// <summary>What the live input writes its rows to: the engine, through `Feed`.</summary>
@@ -204,10 +282,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         public Interner Interner => host.interner;
         public Layout RowLayout(string source) => host.RowLayout(source);
         public bool WantsProgress => host.WantsProgress;
-        public void Ingest(string source, Batch rows, long seq) => host.Feed(new InputRecord('r', source, rows, seq, rows.Rows));
-        public void Advance(long lambdaNs, long seq) => host.Feed(new InputRecord('a', "", null, seq, lambdaNs));
-        public void Progress(string source, long untilNs, long seq) => host.Feed(new InputRecord('g', source, null, seq, untilNs));
-        public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => host.Feed(new InputRecord('l', reason, null, count, timeNs));
+        public void Ingest(string source, Batch rows, long seq) => host.Feed(new EngineInput.Rows(source, rows, seq));
+        public void Advance(long lambdaNs, long seq) => host.Feed(new EngineInput.Advance(lambdaNs, seq));
+        public void Progress(string source, long untilNs, long seq) => host.Feed(new EngineInput.Progress(source, untilNs, seq));
+        public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => host.Feed(new EngineInput.Loss(timeNs, count, reason));
     }
 
     /// <summary>Opens a space on a durable store. A store without a journal starts a new one (the initial definitions are its first entry); a store with a journal is replayed, and the definitions come from the journal, not from disk. Replaying recomputes every commit and compares it with the stored one.</summary>
@@ -233,7 +311,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
         var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files), store, Phase.Replaying, 0);
-        restored.journalPos = entries.Count; restored.replayPos = 1; restored.inputsInJournal = false;
+        restored.journalPos = 1;
         var check = options.VerifyJournal ? j.SealLatest() : null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
         var (recomputed, verified, sealChecked) = restored.Recover(entries.Skip(1), Phase.Running, check?.Position ?? 0, check is null ? null : JsonNode.Parse(check.Meta)!["digest"]!.GetValue<string>());
@@ -373,9 +451,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             host.Seq = root.Seq; host.lambdaSeen = root.LambdaSeen; host.inputRows = root.InputRows; host.generation = root.Generation;
             if (host.Engine.StateDigest() != m["digest"]!.GetValue<string>()) { rejected = "the restored state digest differs from the sealed one"; host.Dispose(); return null; }
             var sealedRevisions = host.Engine.Graphs.Sum(g => g.Head);
-            host.retained = false; host.inputsInJournal = true; host.lastSealPosition = seal.Position; host.replayPos = seal.Position;
+            host.kept = null; host.lastSealPosition = seal.Position; host.journalPos = seal.Position;
             var tail = j.JournalRead(seal.Position).ToList();
-            host.journalPos = seal.Position + tail.Count;
             sw.Restart();
             var (recomputed, verified, _) = host.Recover(tail, root.Done ? Phase.Finished : Phase.Running, 0, null);
             host.Restart = new Restart(true, seal.Position, tail.Count, sealedRevisions, recomputed, verified, false, null, loadMs, sw.ElapsedMilliseconds);
@@ -385,26 +462,6 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             rejected = e.GetType().Name + ": " + e.Message; host?.Dispose(); return null;
         }
-    }
-
-    /// <summary>After a restore from a seal the retained input rows (needed to re-activate a changed definition) are not in memory: read them back from the journal, up to the entry being replayed.</summary>
-    void LoadInputsFromJournal()
-    {
-        if (journal is null) throw new HostError("InputsNotRetained", "the retained inputs are not available", 422);
-        inputs.Clear(); retained = true;
-        var upTo = phase == Phase.Replaying ? replayPos : journalPos; var n = 0L;
-        foreach (var body in journal.JournalRead(0))
-        {
-            if (++n > upTo) break;
-            switch (Entry.Parse(body, RowLayout, interner))
-            {
-                case Entry.Rows r: inputs.Add(new InputRecord('r', r.Source, r.Batch, r.Seq, r.Batch.Rows)); break;
-                case Entry.Advance a: inputs.Add(new InputRecord('a', "", null, a.Seq, a.Lambda)); break;
-                case Entry.Progress g: inputs.Add(new InputRecord('g', g.Source, null, g.Seq, g.Until)); break;
-                case Entry.Loss l: inputs.Add(new InputRecord('l', l.Reason, null, l.Count, l.Time)); break;
-            }
-        }
-        inputsInJournal = false;
     }
 
     /// <summary>What a restart loaded and what it recomputed, in words.</summary>
@@ -422,7 +479,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var all = entries.ToList();
             for (var i = 0; i < all.Count; i++)
             {
-                replayPos++;
+                journalPos++;
                 var entry = Entry.Parse(all[i], RowLayout, interner);
                 if (entry is Entry.Commit c)
                 {
@@ -432,7 +489,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 }
                 else Apply(entry);
                 then = Next(then, entry);
-                if (verifyDigest is not null && replayPos == verifyAt)
+                if (verifyDigest is not null && journalPos == verifyAt)
                 {
                     var now = Engine.StateDigest();
                     if (now != verifyDigest) throw new InvalidOperationException($"the journal up to entry {verifyAt} reproduces state {now}, the seal at that entry says {verifyDigest}");
@@ -921,19 +978,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (bad.Count > 0) throw new HostError("ActivationRejected", string.Join("; ", bad.Select(b => b.Message)), 422);
             if (Graph.Diff(Catalog.Graph, cand.Graph).Count == 0)
                 return new JsonObject { ["catalogRevision"] = Rev(catalogHistory.Count), ["activation"] = new JsonObject { ["graphs"] = new JsonArray(), ["replayedRows"] = "0", ["milliseconds"] = "0" } }; // no change, no revision
-            if (!retained && inputsInJournal) LoadInputsFromJournal();
-            if (!retained) throw new HostError("InputsNotRetained", "the retained inputs exceed the cap; re-activation needs a restart", 422);
+            Inputs();                                   // refused here, before anything is journaled, when the inputs are not to be had
 
             var sw = Stopwatch.StartNew(); mutations++;
             Append(new Entry.Commit(expectedRevision, texts));
             var oldSpace = spaceId; spaceId = newSpaceId;
             Engine fresh;
-            try
-            {
-                fresh = new Engine(cand, newSpaceId, EngineOpts(++generation), interner);
-                foreach (var r in inputs)
-                    switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
-            }
+            try { fresh = Reactivate(cand, newSpaceId, EngineOpts(++generation)).Engine; }
             catch (Exception e) { spaceId = oldSpace; Append(new Entry.CommitRefused()); throw new HostError("ActivationRejected", e.Message, 422); }
 
             // final difference per graph, numbered after the served head

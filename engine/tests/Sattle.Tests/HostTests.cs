@@ -70,11 +70,13 @@ public class HostTests
     [Theory]
     [InlineData("paren", 50, false)] [InlineData("if", 50, false)]
     [InlineData("paren", 101, true)] [InlineData("paren", 600, true)] [InlineData("if", 450, true)] [InlineData("paren", 20000, true)] [InlineData("if", 20000, true)]
+    [InlineData("row", 50, false)] [InlineData("row", 150, true)] [InlineData("row", 20000, true)]              // a row of operators nests one level each: 20,000 of them overflowed the stack in a later pass
     public void A_text_nested_deeper_than_the_limit_is_a_diagnostic_and_never_a_stack_overflow(string shape, int depth, bool refused)
     {
         using var h = NewHost();
         var nested = shape == "paren"
             ? new string('(', depth) + "workloadNamespace" + new string(')', depth)
+            : shape == "row" ? "workloadNamespace" + string.Concat(Enumerable.Repeat(" ++ \"x\"", depth))
             : string.Concat(Enumerable.Repeat("if(true, ", depth)) + "workloadNamespace" + string.Concat(Enumerable.Repeat(", \"x\")", depth));
         var text = Text("acme.workload");
         var changed = text.Replace("when image.namespace == workloadNamespace", "when image.namespace == " + nested);

@@ -151,7 +151,7 @@ public sealed partial class SpaceHost
                     if (before.TryGetValue(k, out var old)) { w.Begin(-1); WriteRow(w, old); }
                     w.Begin(1); WriteRow(w, row);
                 }
-                Ingest(inv.Source, w.Build()!, 1_000_000 + inputs.Count);
+                Ingest(inv.Source, w.Build()!, 1_000_000 + fed);
             }
             var rev = new JsonObject();
             foreach (var b in bases) rev[b] = Rev(served[b].Head);

@@ -33,6 +33,36 @@ public class SealTests
         h.Advance(t + 5 * Min, 9_000_001);
     }
 
+    /// <summary>Code review 2, defects 3 and 27: after a restart from a seal the inputs are not in memory, and a preview and a definition commit read them back from the journal. A live run journals its envelopes, not rows: they are run through the adapters again. Before, a preview was refused, and a commit on a live space rebuilt every graph from nothing (the master went to 0 entities).</summary>
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void After_a_restart_from_a_seal_a_preview_and_a_definition_commit_see_every_input_so_far(bool live)
+    {
+        using var d = new RestartTests.Durable("memory");
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(30)))
+        {
+            if (!live) Feed(h);
+            else
+            {
+                var events = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
+                var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
+                Assert.Throws<LiveResumeTests.Crash>(() => Sattle.Cli.LiveInput.Run(h, new LiveResumeTests.FakeSource(events, crashAt: events.Count / 2), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
+            }
+        }
+        d.Close();
+        using var r = RestartTests.Reopen(d.Open(), Options(30));
+        Assert.True(r.Restart!.FromSeal, r.Restart.SealRefusal);
+        var master = r.Engine.Master.State.Digest();
+        Assert.True(r.Engine.Master.State.EntityCount > 0);
+        var draft = r.CreateDraft(null)["draft"]!.GetValue<string>();
+        var preview = r.Preview(draft, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("master") });
+        Assert.True(preview["scope"]!["complete"]!.GetValue<bool>());
+        Assert.Equal(master, preview["graphs"]![0]!["digest"]!.GetValue<string>());                // the draft changes nothing: the preview rebuilds the master as it is
+        var edited = Files.First(f => f.Path.EndsWith("acme.deployhealth.sattle", StringComparison.Ordinal)).Text.Replace("param Integer = 0", "param Integer = 1");
+        r.Commit("acme.deployhealth", edited, r.CatalogRevision);                                  // a parameter of a view: the master must not change
+        Assert.Equal(master, r.Engine.Master.State.Digest());
+    }
+
     [Theory, MemberData(nameof(Stores))]
     public void A_restart_from_a_seal_replays_only_the_tail_and_gives_the_same_space(string kind)
     {

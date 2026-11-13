@@ -33,6 +33,31 @@ public class DraftTests
     }
     static JsonNode Dec(string v) => new JsonObject { ["kind"] = "decimal", ["value"] = v };
 
+    /// <summary>Code review 2, defect 7: a draft patch that the check cannot read is refused and not recorded, so the draft stays usable. Before, the patch was recorded first: an Integer beyond 64 bits answered 500, and so did every later check, preview and commit of that draft. Also the gap of defect 1: a patch that builds an expression in a circle is refused by name instead of overflowing the stack.</summary>
+    [Theory]
+    [InlineData("an integer beyond 64 bits")] [InlineData("an expression that contains itself")]
+    public void A_draft_patch_that_cannot_be_checked_is_refused_and_leaves_the_draft_as_it_was(string what)
+    {
+        var (h, d) = NewDraft(); using var hostGuard = h;
+        JsonNode patch;
+        if (what == "an integer beyond 64 bits") patch = SetProp(h, d, "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status", "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
+        else
+        {
+            // a `contains` edge from a call back to itself, with the slot of one of its own arguments
+            var rels = h.DraftSnapshot(d)["extent"]!["relationships"]!.AsArray();
+            var arg = rels.First(r => r!["type"]!["value"]!.GetValue<string>() == "contains" && r["id"]!["value"]!.GetValue<string>().Contains("acme.svc") && r["properties"]!.AsArray().Any(p => p!["property"]!["value"]!.GetValue<string>() == "slot" && p["value"]!["value"]!.GetValue<string>() == "arg"))!;
+            var loop = arg.DeepClone(); var call = arg["source"]!["value"]!.GetValue<string>();
+            loop["id"] = new JsonObject { ["value"] = arg["id"]!["value"]!.GetValue<string>() + "-loop" }; loop["target"] = new JsonObject { ["value"] = call };
+            patch = new JsonObject { ["edits"] = new JsonArray(new JsonObject { ["kind"] = "relationship", ["id"] = loop["id"]!["value"]!.GetValue<string>(), ["after"] = loop }) };
+        }
+        var failure = Record.Exception(() => h.ApplyDraftPatch(d, patch, 0));
+        Assert.True(failure is null or HostError, $"{failure?.GetType().Name}: {failure?.Message}");
+        Assert.Equal(failure is null ? "1" : "0", h.DraftInfo(d)["revision"]!.GetValue<string>());
+        var check = h.CheckDraft(d);                                                   // the draft still answers
+        if (failure is null) Assert.False(check["ok"]!.GetValue<bool>());            // accepted and recorded: then it is a diagnostic of the draft
+        else Assert.True(check["ok"]!.GetValue<bool>());
+    }
+
     [Fact]
     public void The_palette_is_derived_from_the_kernel_and_marks_what_the_engine_cannot_run()
     {

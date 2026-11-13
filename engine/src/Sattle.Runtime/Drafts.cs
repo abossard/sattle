@@ -110,7 +110,15 @@ public sealed partial class SpaceHost
             catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException or NullReferenceException) { throw new HostError("BadPatch", "the patch cannot be applied: " + e.Message, 422); }
             if (err is not null) throw new HostError("GuardFailed", err, 409, new JsonObject { ["element"] = err.Split(' ').Skip(1).FirstOrDefault()?.TrimEnd(':') });
             d.Patches.Add(p);
-            var res = CheckDraftLocked(d);
+            JsonObject res;
+            try { res = CheckDraftLocked(d); }
+            catch (Exception e) when (e is not HostError)
+            {
+                // a patch the check cannot even read (a number beyond what a definition can hold, for example) is not recorded: the draft stays as it was
+                d.Patches.RemoveAt(d.Patches.Count - 1);
+                d.Graph.Apply([.. p.Edits.Reverse().Select(x => new Edit(x.Key, x.After, x.Before))]);
+                throw new HostError("BadPatch", $"the patch cannot be checked ({e.GetType().Name}: {e.Message}); the draft is unchanged", 422);
+            }
             Publish(new JsonObject { ["type"] = "draft", ["draft"] = id, ["revision"] = Rev(d.Revision), ["ok"] = res["ok"]!.DeepClone(), ["diagnostics"] = res["diagnostics"]!.DeepClone() }, null);
             return res;
         }
@@ -331,18 +339,16 @@ public sealed partial class SpaceHost
             if (bad.Count > 0) throw new HostError("ActivationRejected", string.Join("; ", bad.Select(b => b.Message)), 422);
             var maxRows = long.TryParse(body["scope"]?["maxRows"]?.GetValue<string>(), out var mr) ? mr : 500_000;
             if (maxRows > 5_000_000) throw new HostError("ScopeTooLarge", "maxRows is capped at 5,000,000", 422);
-            if (!retained) throw new HostError("InputsNotRetained", "the retained inputs exceed the cap", 422);
             var sw = Stopwatch.StartNew();
-            using var fresh = new Engine(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows }, interner);   // own in-memory stores: the live ones are not touched; the late horizon of the live engine
             var include = (body["include"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? ["counts", "diff"];
-            var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? fresh.Graphs.Select(g => g.Name).ToHashSet();
-            if (include.Contains("rows")) fresh.TraceGraphs = want;
-            long rows = 0; var complete = true;
-            foreach (var r in inputs)
+            HashSet<string> want = [];
+            // own in-memory stores: the live ones are not touched; the late horizon of the live engine
+            var (activated, rows, complete) = Reactivate(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows }, maxRows, e =>
             {
-                if (rows >= maxRows) { complete = false; break; }
-                switch (r.Kind) { case 'r': fresh.Ingest(r.Source, r.Rows!, r.Seq); rows += r.Value; break; case 'a': fresh.Advance(r.Value, r.Seq); break; case 'g': fresh.Progress(r.Source, r.Value, r.Seq); break; case 'l': fresh.RecordLoss(r.Value, r.Seq, r.Source.Length == 0 ? "sourceLoss" : r.Source); break; }
-            }
+                want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? e.Graphs.Select(g => g.Name).ToHashSet();
+                if (include.Contains("rows")) e.TraceGraphs = want;
+            });
+            using var fresh = activated;
             var exp = new CanvasExport(fresh, cand);
             var limit = int.TryParse(body["limit"]?.GetValue<string>(), out var lm) ? lm : 5000;
             var mem = (InMemoryTelemetryStore)fresh.Telemetry;

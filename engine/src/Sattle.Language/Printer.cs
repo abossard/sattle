@@ -509,7 +509,17 @@ public sealed class Printer(Graph g, string module)
     // ---- expressions ----
     // precedence: or 1, and 2, not 3, compare 4, sum 5, product 6, unary 7, primary 8
 
+    int depth;
+
+    /// <summary>The text of an expression. A graph that did not come from text (a draft patch) may nest deeper than the parser accepts, or in a circle: it is refused here by name, before the recursion runs out of stack.</summary>
     string Expr(string node, int min)
+    {
+        if (depth >= Parser.MaxNesting) throw new UnprintableException(node, $"an expression nested deeper than {Parser.MaxNesting} levels");
+        depth++;
+        try { return ExprBody(node, min); } finally { depth--; }
+    }
+
+    string ExprBody(string node, int min)
     {
         string Wrap(int prec, string text) => prec < min ? "(" + text + ")" : text;
         switch (d.TypeName(node))

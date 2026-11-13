@@ -217,7 +217,7 @@ public sealed class Parser
 
     public static ModuleAst Parse(string source) => new Parser(Lexer.Lex(source)).File();
 
-    /// <summary>The deepest nesting of expressions and pipelines a text may have. Texts written by people nest a handful of levels; without a limit a text of a few hundred nested brackets overflows the stack, which ends the process.</summary>
+    /// <summary>The deepest nesting of expressions and pipelines a text may have, and the deepest expression tree it may give (a row of operators such as `a + b + c` nests one level per operator). Texts written by people nest a handful of levels; without a limit a text of a few hundred nested brackets, or of a few thousand operators in a row, overflows the stack here or in a later pass, which ends the process.</summary>
     public const int MaxNesting = 100;
     int depth;
     void Enter() { if (++depth > MaxNesting) throw new SyntaxError($"nested deeper than {MaxNesting} levels", Cur.Pos); }
@@ -775,7 +775,28 @@ public sealed class Parser
     }
 
     // ---- expressions ----
-    public Expr Expression() { Enter(); try { return Disj(); } finally { depth--; } }
+    public Expr Expression()
+    {
+        Enter();
+        Expr e; var pos = Cur.Pos;
+        try { e = Disj(); } finally { depth--; }
+        if (depth == 0 && DepthOf(e) > MaxNesting) throw new SyntaxError($"an expression nested deeper than {MaxNesting} levels (a row of operators nests one level each)", pos);
+        return e;
+    }
+
+    /// <summary>The depth of an expression tree, counted without recursion.</summary>
+    public static int DepthOf(Expr root)
+    {
+        var deepest = 0; var open = new Stack<(Expr Node, int Depth)>(); open.Push((root, 1));
+        while (open.Count > 0)
+        {
+            var (node, at) = open.Pop();
+            deepest = Math.Max(deepest, at);
+            if (node is CallExpr call) foreach (var a in call.Args) open.Push((a, at + 1));
+            else if (node is IdExpr id) foreach (var c in id.Components) open.Push((c.Value, at + 1));
+        }
+        return deepest;
+    }
     Expr Disj() { var l = Conj(); if (!IsWord("or")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("or")) args.Add(Conj()); return new CallExpr("Or", args, pos); }
     Expr Conj() { var l = Neg(); if (!IsWord("and")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("and")) args.Add(Neg()); return new CallExpr("And", args, pos); }
     Expr Neg() { var pos = Cur.Pos; if (TryWord("not")) return new CallExpr("Not", [Cmp()], pos); return Cmp(); }
