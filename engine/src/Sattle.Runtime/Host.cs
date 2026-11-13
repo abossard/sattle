@@ -31,6 +31,8 @@ public sealed record HostOptions
     /// <summary>The late horizon a journal header or a seal recorded: the number, none where it recorded none, 3 where the record is older than the field.</summary>
     internal static int? StoredLateHorizon(JsonNode record) => record.AsObject().TryGetPropertyValue("lateHorizon", out var stored) ? stored?.GetValue<int>() : 3;
     public string? SpaceName { get; init; }
+    /// <summary>Reads the projections that are written in another language than a module's text, in definition files of their own (KQL). Every catalog the host builds uses it: at the start, for a definition commit, for a draft, and at a restart. Without one, a definition file that is no module text is an error of the load.</summary>
+    public IProjectionSource? Projections { get; init; }
     public long InputRowCap { get; init; } = 40_000_000;
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     /// <summary>Journal entries between two seals (a seal is a snapshot of the whole state; a restart loads the latest one and replays only the entries after it). 0 takes none.</summary>
@@ -123,6 +125,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly HostOptions options;
     readonly Interner interner = new();
     readonly Dictionary<string, (string Path, string Text)> sources = new(StringComparer.Ordinal);
+    /// <summary>The definition files that are no module text (projections in KQL), as they were given. They go wherever the module texts go: into every catalog, the journal header and a seal.</summary>
+    readonly List<SourceFile> others = [];
+    /// <summary>Every definition file of the space: the module texts as they are now, and the other files.</summary>
+    List<SourceFile> DefinitionFiles() => [.. sources.Values.Select(f => new SourceFile(f.Path, f.Text)), .. others];
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
     /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
@@ -167,15 +173,15 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>A loaded and checked catalog with the source text after pin repair. Hosts never mutate a catalog (a commit builds a new one), so one instance can seed many hosts.</summary>
     public sealed record LoadedDefinitions(Catalog Catalog, IReadOnlyDictionary<string, string> FixedText);
 
-    public static LoadedDefinitions LoadDefinitions(IReadOnlyList<SourceFile> files)
+    public static LoadedDefinitions LoadDefinitions(IReadOnlyList<SourceFile> files, IProjectionSource? projections = null)
     {
-        var cat = new Catalog();
+        var cat = new Catalog(projections);
         var res = cat.Load(files, updatePins: true);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
         return new LoadedDefinitions(cat, Catalog.ApplyPinFixes(files, res.PinFixes));
     }
 
-    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options) : this(files, options, LoadDefinitions(files)) { }
+    public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options) : this(files, options, LoadDefinitions(files, options.Projections)) { }
 
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0, null) { }
 
@@ -187,6 +193,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         this.durable = durable; this.phase = phase; this.generation = generation;
         var cat = loaded.Catalog; var fixedText = loaded.FixedText;
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) sources[m.Name] = (m.File, fixedText.TryGetValue(m.File, out var ft) ? ft : files.First(f => f.Path == m.File).Text);
+        others.AddRange(files.Where(f => !sources.Values.Any(m => m.Path == f.Path)));
         spaceId = options.SpaceName is { } sn ? cat.Spaces.Keys.First(k => Ids.Name(k) == sn) : cat.Spaces.Keys.First();
         Catalog = cat;
         Adapters = AdapterRegistry.Create(options.Cluster);
@@ -297,8 +304,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         if (j.JournalCount == 0)
         {
             var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
-            var host = new SpaceHost(given, options, LoadDefinitions(given), store, Phase.Running, 0, null);
-            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, host.Mode, [.. host.sources.Values.Select(f => new SourceFile(f.Path, f.Text))]).Text(host.interner));
+            var host = new SpaceHost(given, options, LoadDefinitions(given, options.Projections), store, Phase.Running, 0, null);
+            j.JournalAppend(new Entry.Header(options.Tenant, options.LateHorizonWindows, options.Cluster, host.Space.Name, host.Mode, host.DefinitionFiles()).Text(host.interner));
             host.journalPos = 1;
             return host;
         }
@@ -312,7 +319,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
         var entries = j.JournalRead().ToList();
         var h = (Entry.Header)Entry.Parse(entries[0], _ => throw new InvalidDataException("the journal does not start with its header"), new Interner());
-        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files), store, Phase.Replaying, 0, null);
+        var restored = new SpaceHost(h.Files, options with { Tenant = h.Tenant, LateHorizonWindows = h.LateHorizon, Cluster = h.Cluster, SpaceName = h.Space }, LoadDefinitions(h.Files, options.Projections), store, Phase.Replaying, 0, null);
         restored.journalPos = 1;
         var check = options.VerifyJournal ? j.SealLatest() : null;
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -423,7 +430,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 ["position"] = journalPos, ["format"] = SealFormat, ["build"] = BuildId, ["kernel"] = Kernel.CompiledDigest, ["digest"] = Engine.StateDigest(), ["catalogDigest"] = Catalog.Graph.Digest(), ["generation"] = generation,
                 ["tenant"] = options.Tenant, ["lateHorizon"] = options.LateHorizonWindows, ["cluster"] = options.Cluster, ["space"] = Space.Name, ["mode"] = Mode, ["seq"] = Seq,
                 ["live"] = liveOptions,
-                ["sources"] = Entry.FilesText(sources.Values.Select(f => new SourceFile(f.Path, f.Text))),
+                ["sources"] = Entry.FilesText(DefinitionFiles()),
                 ["heads"] = new JsonObject(Engine.Graphs.Select(g => KeyValuePair.Create(g.Name, (JsonNode?)g.Head))),
             }.ToJsonString();
             journal.SealPut(journalPos, meta, data);
@@ -445,7 +452,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var sw = System.Diagnostics.Stopwatch.StartNew();
             var snapshot = StateSnapshot.Open(seal.Data);
             var loadMs = sw.ElapsedMilliseconds;
-            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
+            host = new SpaceHost(files, options with { Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>() }, LoadDefinitions(files, options.Projections), store, Phase.Replaying, m["generation"]!.GetValue<int>(), snapshot.Texts);
             if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             if (m["live"]?.GetValue<string>() is { } liveJson) host.Apply(new Entry.LiveStart(Entry.ParseOptions(liveJson)));
             var root = host.StateRootOf();
@@ -879,8 +886,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     Catalog Candidate(IReadOnlyDictionary<string, string> texts, out LoadResult res, out Dictionary<string, string> fixedTexts)
     {
         var all = WithImportVersions(texts);
-        var files = SourceList(all).Select(f => new SourceFile(f.Path, f.Text)).ToList();
-        var cat = new Catalog();
+        List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. others];
+        var cat = new Catalog(options.Projections);
         res = cat.Load(files, updatePins: true);
         fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes);
         foreach (var kv in all.Where(kv => !texts.ContainsKey(kv.Key)))      // dependents whose import version was rewritten

@@ -33,6 +33,40 @@ public class SealTests
         h.Advance(t + 5 * Min, 9_000_001);
     }
 
+    /// <summary>Rewrite 1, step 6: projections written in KQL are definition files of the space like the module texts. A host that is given them and a source that reads them keeps them through a definition commit of another module and through a restart, from the journal alone and from a seal: the catalog after it is the catalog before it. A host that is given them without a source refuses to start, by the name of the file.</summary>
+    [Theory]
+    [InlineData(0)] [InlineData(25)]
+    public void Projections_in_KQL_stay_with_the_space_through_a_definition_commit_and_a_restart(long sealEvery)
+    {
+        List<SourceFile> files = [.. Catalog.ReadDirectory(Repo.Definitions), .. Sattle.Kql.KqlFiles.ReadDirectory(Repo.Definitions)];
+        Assert.Contains(files, f => f.Path.EndsWith(".kql", StringComparison.Ordinal));
+        var options = Options(sealEvery) with { Projections = new Sattle.Kql.KqlSource() };
+        string plainCatalog, plainState;
+        using (var plain = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions), Options(0))) { Feed(plain); plainCatalog = plain.Catalog.Graph.Digest(); plainState = plain.StateDigest(); }
+        using var d = new RestartTests.Durable("memory");
+        string catalog, state;
+        var edited = files.First(f => f.Path.EndsWith("acme.deployhealth.sattle", StringComparison.Ordinal)).Text.Replace("param Integer = 0", "param Integer = 1");
+        using (var h = SpaceHost.OpenDurable(d.Open(), files, options))
+        {
+            Feed(h);
+            Assert.NotEqual(plainCatalog, h.Catalog.Graph.Digest());                               // the projections came from the .kql files
+            Assert.Equal(plainState, h.StateDigest());                                             // and give the state of today's text
+            var svc = h.Catalog.Modules["acme.svc"].Digest;
+            h.Commit("acme.deployhealth", edited, h.CatalogRevision);
+            Assert.Equal(svc, h.Catalog.Modules["acme.svc"].Digest);                               // another module's commit keeps them
+            catalog = h.Catalog.Graph.Digest(); state = h.StateDigest();
+        }
+        d.Close();
+        using (var r = RestartTests.Reopen(d.Open(), options))
+        {
+            Assert.Equal(sealEvery > 0, r.Restart!.FromSeal);
+            Assert.Equal((catalog, state), (r.Catalog.Graph.Digest(), r.StateDigest()));
+        }
+        d.Close();
+        Assert.Contains("no module read", Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery) with { UseSeal = false })).Message);      // the same store, opened without a source
+        Assert.Contains("no module read", Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, Options(0))).Message);
+    }
+
     /// <summary>Six flows between two pods at a given minute, with the given verdicts.</summary>
     static void Flows(SpaceHost h, int minute, long seq, params string[] verdicts)
     {

@@ -250,15 +250,16 @@ public static class Program
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
+        IProjectionSource? projections = null;
         if (o.Get("projections") is { } front && front != "sattle")
         {
             if (front != "kql") return Fail($"--projections {front}: sattle or kql");
-            if (serve) return Fail("--projections kql is for replay only: serve writes definition edits back to the .sattle files");
-            var put = Sattle.Kql.KqlFiles.Of(files, Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o)));
-            if (!put.Ok) { Print(put.Diagnostics); return 1; }
-            files = put.Files;
+            if (serve) return Fail("--projections kql is for replay only: a draft of serve prints a module as .sattle text, and would write a projection in KQL into it");
+            // the .kql files of the definitions folder are definition files like the module texts, and the catalog reads them itself
+            files = [.. files, .. Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o))];
+            projections = new Sattle.Kql.KqlSource();
         }
-        var cat = new Catalog();
+        var cat = new Catalog(projections);
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
