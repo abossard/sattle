@@ -323,6 +323,21 @@ Code review 2 found two defects in the values a sink keeps (what a rule says abo
 - The state digests equal those of step 1 at every chunk size (estate, `lab/fixtures`, both recordings; 12 of 12).
 - Proofs: `A_sink_cancels_a_contribution_with_its_retraction_written_at_another_decimal_scale` (5 cases) and `Rows_that_differ_only_in_decimal_scale_leave_nothing_when_they_are_retracted` (plain, distinct and join, in one chunk and row by row; all 6 fail on step 1); `Values_are_kept_once_while_they_are_held_and_gone_when_released` against a model. `Sattle.Differential` every category 312 of 312; the default run 715 passed, 2 skipped; the KQL tests 138 of 138. Seal format 4 (a seal of another build is refused by its build id).
 
+## Results table, step 3: the results of a projection in three modules (2026-11-13)
+What a projection contributes to its graph was one class with 23 public members and four public dictionaries that the lineage reader and the census read. It is now three modules that each own their state: which elements exist (`ElementLayer`), where they come from (`LineageLayer`, asked through `Of(element)`), and which rows support each telemetry window (`WindowSupport`). `OutputBuilder` stays as the one thing an operator holds, with 13 members that pass on. The code moved as it was; the state kept is the same.
+
+One behaviour changes (code review 2, defect 22, the part in the results): on a merge of two identities the lineage of the id that lost moves to the survivor, as its rows do. Before, an entity that a link forwarded to another id had no lineage: 1 pod in 5 on the estate.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| Values compared as values, counted (step 2) | 7,025 MB (43,230 B) | 24.9, 24.4 and 24.1 s (the build before the core steps in the same minutes 23.6 s); 39.2 GB | |
+| Three modules | 7,025 MB (43,230 B), every census row as before | 36.8, 35.3 and 38.2 s on a busier machine (the build before the core steps in the same minutes 36.2 s); 39.2 GB | +626, −532 |
+
+- The census names the rows by module now (`graph.sink.elements.contributions`, `graph.sink.lineage.supports`, `graph.sink.windows.soleOwn`).
+- The state digests equal those of step 2 at every chunk size (estate, `lab/fixtures`, both recordings; 12 of 12).
+- Proofs: `An_entity_that_a_link_forwards_to_another_id_keeps_its_lineage` (2 cases) and `Every_pod_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id`, all three failing before. `Sattle.Differential` every category 314 of 314; the default run 716 passed, 2 skipped; the KQL tests 138 of 138. Seal format 4.
+- Left as it is, for a later step: the lineage is kept as text rows in dictionaries (supports 196 MB, last-row records 194 MB, group members 39 MB, group references 19 MB at 100,000 nodes), and the last-row record and the group reference of an element are not removed when the element goes (found in X2). Behind `Of(element)` both can change without touching a caller.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

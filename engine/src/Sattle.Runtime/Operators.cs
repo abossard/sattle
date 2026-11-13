@@ -523,7 +523,7 @@ sealed class GroupOp : AggregatingOp
             var slot = table.FindOrAdd(keyBuf.AsSpan(0, keyCols.Length));
             if (table.Touch(slot) && table.Emitted(slot)) WriteRow(bb, table, slot, -1, null, null, -1, -1);
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
-            if (members.Length > 0) cx.Out.AddMember(Name, string.Join(',', keyBuf.AsSpan(0, keyCols.Length).ToArray()), members, b, row, b.Weight(row));
+            if (members.Length > 0) cx.Out.Lineage.Member(Name, string.Join(',', keyBuf.AsSpan(0, keyCols.Length).ToArray()), members, b, row, b.Weight(row));
         }
         foreach (var slot in table.TouchedList)
         {

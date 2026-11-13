@@ -120,6 +120,22 @@ public class DifferentialTests
         Assert.Single(digests);
     }
 
+    /// <summary>Code review 2, defect 22: an entity that a link forwards to another id keeps its lineage, since what was known about the id that lost is then known about the survivor. Before, the survivor of a merge had no lineage.</summary>
+    [Theory, Trait("Category", "Differential")]
+    [InlineData(false)] [InlineData(true)]
+    public void An_entity_that_a_link_forwards_to_another_id_keeps_its_lineage(bool rowByRow)
+    {
+        var w = Worlds.All.Single(x => x.Name == "link");
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+        var rows = new[] { ("u0", "Web"), ("u1", "api"), ("u2", "DB"), ("u3", "cache") }
+            .Select(p => new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text(p.Item1)), ("name", Value.Text(p.Item2)), ("g", Value.Text("g0"))), 1)).ToList();
+        if (rowByRow) { var seq = 0L; foreach (var r in rows) EngineRun.Ingest(engine, [r], ++seq); } else EngineRun.Ingest(engine, [.. rows], 1);
+        Assert.NotEmpty(engine.Identities.Forwarding);
+        Assert.NotEmpty(engine.Master.State.Entities);
+        var lineage = new LineageReader(engine);
+        Assert.All(engine.Master.State.Entities, e => Assert.Equal("observed", lineage.Forward("master", e.Id)["rule"]?.GetValue<string>()));
+    }
+
     /// <summary>The support of windows written under two ids of one class is engine state: a snapshot taken after the merge restores it, and both engines continue to the same state (premise S1 for the new state).</summary>
     [Fact, Trait("Category", "Differential")]
     public void A_snapshot_keeps_the_windows_written_under_two_ids()
@@ -131,7 +147,7 @@ public class DifferentialTests
         using var original = new Engine(w.Catalog, space);
         EngineRun.Ingest(original, [Load("u0", null, 1, 10)], 1); EngineRun.Ingest(original, [Load(null, "Web", 2, 20)], 2); EngineRun.Ingest(original, [link], 3);
         original.Advance(Logs.Origin + 90 * Logs.Second, 4);
-        Assert.Equal(1, original.Graphs.Sum(g => g.Out.WindowsOfTwoIds));
+        Assert.Equal(1, original.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds));
         var snapshot = StateSnapshot.Save(original.StateRootOf());
         using var restored = new Engine(w.Catalog, space);
         var root = restored.StateRootOf(); StateSnapshot.Load(snapshot, root); restored.AdoptState(root);

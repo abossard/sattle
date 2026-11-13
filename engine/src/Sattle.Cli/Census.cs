@@ -138,7 +138,7 @@ static class Census
             }
             else roots.Add((n, "-", v));
         }
-        foreach (var g in e.Graphs) foreach (var (n, v) in Expand("graph.sink", g.Out)) roots.Add((n, g.Name, v));
+        foreach (var g in e.Graphs) foreach (var (m, layer) in Expand("graph.sink", g.Out)) foreach (var (n, v) in Expand(m, layer!)) roots.Add((n, g.Name, v));     // the sink is three modules: one row per structure of each
         foreach (var g in e.Graphs) foreach (var op in g.Plan.Ops) roots.Add(("op:" + op.GetType().Name, g.Name, op));
         foreach (var (l, r) in extra) roots.Add((l, "-", r));
         roots.Add(("engine.rest", "-", e));

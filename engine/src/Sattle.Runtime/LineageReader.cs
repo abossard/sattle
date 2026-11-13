@@ -3,7 +3,7 @@ using Sattle.Core;
 
 namespace Sattle.Runtime;
 
-/// <summary>Lineage of the elements of a space: which elements of the graph below an element is made of (forward), and which elements of the graphs above a lower element is part of (reverse). Both read the rows that hold an element up (`OutputBuilder.Supports`), so a lifted edge names every lower edge it stands for and a lifted node every lower node, not the last row. An element emitted from an aggregate (`Group`, `Rollup`) has only the elements its group key names. Used by the host for the routes and by `replay --out` for the static files, so both give the same answers.</summary>
+/// <summary>Lineage of the elements of a space: which elements of the graph below an element is made of (forward), and which elements of the graphs above a lower element is part of (reverse). Both read the rows that hold an element up (`LineageLayer`), so a lifted edge names every lower edge it stands for and a lifted node every lower node, not the last row. An element emitted from an aggregate (`Group`, `Rollup`) has only the elements its group key names. Used by the host for the routes and by `replay --out` for the static files, so both give the same answers.</summary>
 public sealed class LineageReader(Engine engine)
 {
     public const int DefaultLimit = 100;
@@ -19,26 +19,13 @@ public sealed class LineageReader(Engine engine)
     string UpstreamName(GraphRuntime rt, string port) => rt.PortSources.GetValueOrDefault(port) ?? port;
 
     /// <summary>The input elements of one emitted element: the complete set when its rows are known, else the group-key elements of its last row.</summary>
-    (List<Source> Sources, bool Complete, long Contributions) SourcesOf(GraphRuntime rt, int h)
+    (List<Source> Sources, bool Complete, long Contributions) SourcesOf(GraphRuntime rt, ElementLineage? l)
     {
-        Dictionary<string, long>? rows = null;
-        if (rt.Out.GroupRefs.TryGetValue(h, out var gref) && rt.Out.GroupMembers.TryGetValue(gref.Group, out var byKey) && byKey.TryGetValue(gref.Key, out var members)) rows = members;
-        else if (rt.Out.Supports.TryGetValue(h, out var sup)) rows = sup;
-        if (rows is not null)
-        {
-            var set = new HashSet<Source>();
-            foreach (var key in rows.Keys)
-                foreach (var part in key.Split('\u001e', StringSplitOptions.RemoveEmptyEntries))
-                {
-                    var f = part.Split('\u001f');
-                    set.Add(new Source(f[0], f[1] == "r", UpstreamName(rt, f[2]), It.Get(int.Parse(f[3]))));
-                }
-            return ([.. set.OrderBy(s => s.Role, StringComparer.Ordinal).ThenBy(s => s.Element, StringComparer.Ordinal)], true, rows.Values.Sum());
-        }
-        var info = rt.Out.Lineage.GetValueOrDefault(h);
-        if (info is null) return ([], false, 0);
-        var list = info.Sources.Select(s => new Source(s.Role, s.IsRel, UpstreamName(rt, s.GraphPort), It.Get(s.Handle))).ToList();
-        return (list, info.Total == 0 ? rt.IsMaster : list.Count > 0, list.Count);
+        if (l is null) return ([], false, 0);
+        var list = l.Sources.Select(s => new Source(s.Role, s.IsRel, UpstreamName(rt, s.GraphPort), It.Get(s.Handle)));
+        if (l.FromRows) return ([.. list.Distinct().OrderBy(s => s.Role, StringComparer.Ordinal).ThenBy(s => s.Element, StringComparer.Ordinal)], true, l.Contributions);
+        var last = list.ToList();
+        return (last, l.Total == 0 ? rt.IsMaster : last.Count > 0, last.Count);
     }
 
     static JsonNode SourceJson(Source s) => new JsonObject { ["graph"] = s.Graph, ["element"] = s.Element, ["kind"] = s.IsRel ? "relationship" : "entity", ["role"] = s.Role };
@@ -50,7 +37,8 @@ public sealed class LineageReader(Engine engine)
     {
         var isRel = element.StartsWith("r:", StringComparison.Ordinal);
         if (rt.State.Get(isRel ? ElementKey.Rel(element) : ElementKey.Entity(element)) is null || !It.TryFind(element, out var h)) throw new HostError("UnknownElement", $"{element} is not in {rt.Name}", 404);
-        var info = rt.Out.Lineage.GetValueOrDefault(h);
+        var l = rt.Out.Lineage.Of(h);
+        var info = l?.Sink is null ? null : l;
         var typed = rt.Typed;
         var ops = new List<string>(); var inputRows = new List<string>();
         if (info is not null)
@@ -67,7 +55,7 @@ public sealed class LineageReader(Engine engine)
             }
             Walk(cur);
         }
-        var (all, complete, contributions) = SourcesOf(rt, h);
+        var (all, complete, contributions) = SourcesOf(rt, l);
         var page = all.Where(s => after is null || string.CompareOrdinal(Cursor(s), after) > 0).Take(Math.Max(limit, 1) + 1).ToList();
         var more = page.Count > Math.Max(limit, 1);
         if (more) page.RemoveAt(page.Count - 1);
@@ -92,17 +80,18 @@ public sealed class LineageReader(Engine engine)
     /// <summary>For every graph, the elements of the other graphs that name one of its elements as a source: graph, element id, then the parts.</summary>
     (Dictionary<string, Dictionary<string, List<Part>>> ByGraph, Dictionary<string, HashSet<string>> Incomplete) ReverseIndex()
     {
-        var version = engine.Graphs.Sum(g => g.Head) * 1_000_003 + engine.Graphs.Sum(g => (long)g.Out.Supports.Count + g.Out.Lineage.Count + g.Out.GroupRefs.Count + g.Out.GroupMembers.Sum(m => m.Value.Count));
+        var version = engine.Graphs.Sum(g => g.Head) * 1_000_003 + engine.Graphs.Sum(g => g.Out.Lineage.Size);
         if (reverse.Version == version) return (reverse.ByGraph, reverse.Incomplete);
         var by = new Dictionary<string, Dictionary<string, List<Part>>>(StringComparer.Ordinal);
         var incomplete = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         foreach (var rt in engine.Graphs)
         {
-            foreach (var (h, info) in rt.Out.Lineage)
+            foreach (var h in rt.Out.Lineage.Elements)
             {
+                var info = rt.Out.Lineage.Of(h)!;
                 var elem = It.Get(h); var isRel = elem.StartsWith("r:", StringComparison.Ordinal);
                 if (rt.State.Get(isRel ? ElementKey.Rel(elem) : ElementKey.Entity(elem)) is null) continue;
-                var (sources, complete, _) = SourcesOf(rt, h);
+                var (sources, complete, _) = SourcesOf(rt, info);
                 foreach (var s in sources)
                 {
                     if (!by.TryGetValue(s.Graph, out var byElem)) by[s.Graph] = byElem = new Dictionary<string, List<Part>>(StringComparer.Ordinal);

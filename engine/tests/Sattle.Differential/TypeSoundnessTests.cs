@@ -133,7 +133,7 @@ public class TypeSoundnessTests
                     batch.Add((Sattle.Reference.RowInput)log[j]);
                     if (j == log.Length - 1 || log[j + 1] is not Sattle.Reference.RowInput || cut.SplitAfter(j)) { EngineRun.Ingest(e, [.. batch], ++seq); batch.Clear(); }
                 }
-                var faults = e.Faults.DivisionByZero + e.Faults.Overflow + e.Graphs.Sum(g => g.Out.PropertyConflicts + g.Out.ElementConflicts);
+                var faults = e.Faults.DivisionByZero + e.Faults.Overflow + e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.ElementConflicts);
                 if (e.Faults.DivisionByZero + e.Faults.Overflow > 0) withFaults++;
                 var view = catalog.OntologyOf(e.Master.Typed.OutputModule);
                 var bad = Conformance.Check(e.Master.State, view).Where(d => d.IsError).ToList();

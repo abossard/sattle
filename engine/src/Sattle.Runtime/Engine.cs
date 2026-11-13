@@ -475,7 +475,7 @@ public sealed class Engine : IDisposable, IEngineInput
         }
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
-        var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id, 0);
+        var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);
         Patch? patch = null;
         if (edits.Count > 0)
         {

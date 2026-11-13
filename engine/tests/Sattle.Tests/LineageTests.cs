@@ -101,6 +101,17 @@ public class LineageTests
         Assert.Equal("0", h.LineageReverse("capabilities", lifted)["count"]!.GetValue<string>());     // nothing is built on the capability edge
     }
 
+    /// <summary>Code review 2, defect 22: on the estate every pod of the master has a lineage, also the pods whose first id a link forwarded to the id of their name. Before, 1 pod in 5 had none.</summary>
+    [Fact]
+    public void Every_pod_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id()
+    {
+        var h = OnEstate.Value;
+        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");
+        var pods = h.Engine.Master.State.Entities.Where(x => Ids.Name(x.Type) == "Pod").ToList();
+        var without = pods.Count(p => h.Lineage("master", p.Id)["rule"] is null);
+        Assert.True(pods.Count > 0 && without == 0, $"{without} of {pods.Count} pods have no lineage");
+    }
+
     [Fact]
     public void An_unknown_element_is_a_404_for_both_directions()
     {
