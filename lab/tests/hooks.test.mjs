@@ -89,6 +89,7 @@ for (const missing of ['SATTLE_AKS_RG', 'SATTLE_AKS_NAME'])
 const RULE = (rg) => `/subscriptions/s/resourceGroups/${rg}/providers/Microsoft.EventHub/namespaces/n/authorizationRules/r`;
 for (const [what, answers, env, ok] of [
   ['the lab group does not exist yet', NOTHING_THERE, {}, true],
+  ['the lookup of the lab group fails (expired login)', [['diagnostic-settings subscription show', '']], { FAIL_ON: 'group exists', FAIL_MODE: 'auth' }, false],
   ['the lab group belongs to this azd environment', [['group exists', 'true'], ['group show', 'sattle'], ['diagnostic-settings subscription show', RULE('rg-sattle-lab')]], {}, true],
   ['the lab group belongs to another azd environment', [['group exists', 'true'], ['group show', 'other-env'], ['diagnostic-settings subscription show', '']], {}, false],
   ['the lab group exists and azd did not create it', [['group exists', 'true'], ['group show', ''], ['diagnostic-settings subscription show', '']], {}, false],

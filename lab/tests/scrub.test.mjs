@@ -100,7 +100,7 @@ const CAPTURE = {
     env('eventhub:sattle-activity', 'eventhub:sattle-activity/1/0', {
       records: [{
         time: '2026-01-01T00:00:00Z', resourceId: CLUSTER_ID.toUpperCase().replace('/SUBSCRIPTIONS/', '/SUBSCRIPTIONS/'), operationName: 'MICROSOFT.CONTAINERSERVICE/MANAGEDCLUSTERS/WRITE', category: 'Administrative', callerIpAddress: REAL.callerIp,
-        identity: { authorization: { scope: CLUSTER_ID, evidence: { role: `Contributor (${REAL.rg})`, roleAssignmentScope: `/subscriptions/${REAL.sub}/resourcegroups/${REAL.rg}`, roleAssignmentId: REAL.roleAssignmentId, roleDefinitionId: '68828df1bfbe559d872979f2a1a92cbf', principalId: REAL.principalHex } }, claims: { rh: REAL.claimRh, xms_ftd: REAL.claimFtd, xms_tcdt: REAL.claimTcdt, appid: 'aaaaaaaa-0000-4000-8000-000000000002' } },
+        identity: { authorization: { scope: CLUSTER_ID, evidence: { role: `Contributor (${REAL.rg})`, roleAssignmentScope: `/subscriptions/${REAL.sub}/resourcegroups/${REAL.rg}`, roleAssignmentId: REAL.roleAssignmentId, roleDefinitionId: 'abcdef0123456789abcdef0123456789', principalId: REAL.principalHex } }, claims: { rh: REAL.claimRh, xms_ftd: REAL.claimFtd, xms_tcdt: REAL.claimTcdt, appid: 'aaaaaaaa-0000-4000-8000-000000000002' } },
         // Activity Log writes ids into job ids with `:2D` for a dash, `:2E` for a dot and `:2F` for a slash
         jobId: `ResourceLongOperationJob-GRL-${REAL.rg.toUpperCase().replaceAll('-', ':2D')}-MICROSOFT:2ECONTAINERSERVICE:2FMANAGEDCLUSTERS:2F${REAL.cluster.toUpperCase().replaceAll('-', ':2D')}-SWEDENCENTRAL-00639`,
         properties: { entity: CLUSTER_ID, message: 'Microsoft.ContainerService/managedClusters/write' },

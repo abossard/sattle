@@ -26,8 +26,10 @@ principal="${AZURE_PRINCIPAL_ID:-}"
 lab_rg="${SATTLE_LAB_RG:-rg-sattle-lab}"
 env_name="${AZURE_ENV_NAME:?missing AZURE_ENV_NAME (azd sets it for hooks)}"
 lower() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
-if [ "$(lookup "whether resource group $lab_rg exists" az group exists -n "$lab_rg")" = true ]; then
-  owner=$(az group show -n "$lab_rg" --query 'tags."azd-env-name"' -o tsv) || owner=""
+# assigned first: a lookup that fails inside `[ ]` would not stop the hook (set -e does not see it there)
+exists=$(lookup "whether resource group $lab_rg exists" az group exists -n "$lab_rg")
+if [ "$exists" = true ]; then
+  owner=$(az group show -n "$lab_rg" --query 'tags."azd-env-name"' -o tsv) || { echo "preprovision: reading the tags of resource group $lab_rg failed" >&2; exit 1; }
   if [ "$owner" != "$env_name" ]; then
     echo "preprovision: resource group $lab_rg exists and was not created by this azd environment ($env_name)." >&2
     echo "azd down deletes the lab's group. Choose another one: azd env set SATTLE_LAB_RG <new group name>" >&2
