@@ -42,8 +42,14 @@ public sealed class Catalog
         Modules[Ids.KernelModule] = new ModuleInfo(Ids.KernelModule, Kernel.Version, Kernel.CompiledDigest, kernelRelease, "<kernel>", new ModuleAst(Ids.KernelModule, Kernel.Version, null, [], [], default));
     }
 
-    public static List<SourceFile> ReadDirectory(string dir) =>
-        [.. Directory.EnumerateFiles(dir, "*.sattle").Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
+    public static List<SourceFile> ReadDirectory(string dir)
+    {
+        List<SourceFile> files = [.. Directory.EnumerateFiles(dir, "*.sattle").Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
+        return AfterRead?.Invoke(files, dir) ?? files;
+    }
+
+    /// <summary>A step applied to what `ReadDirectory` read, given the files and the folder. A seam for test runs, until the catalog reads projections written in KQL itself: the test assemblies set it when `SATTLE_PROJECTIONS=kql`, so every test reads its projections from the `.kql` files. Nothing in the engine or the CLI sets it; null changes nothing.</summary>
+    public static Func<List<SourceFile>, string, List<SourceFile>>? AfterRead { get; set; }
 
     /// <summary>Digest of a module release (section 2.9): sha256 of the canonical JSON of the sorted facts of the contains-closure, the edges leaving it and the import triples.</summary>
     public static string ModuleDigest(Graph g, string module, IEnumerable<(string Module, string Version, string Digest)> imports)

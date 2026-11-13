@@ -6,6 +6,7 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
     <ProjectReference Include="../Sattle.Reference/Sattle.Reference.csproj" />
     <ProjectReference Include="../../src/Sattle.Runtime/Sattle.Runtime.csproj" />
+    <ProjectReference Include="../../src/Sattle.Kql/Sattle.Kql.csproj" />
   </ItemGroup>
   <ItemGroup><Using Include="Xunit" /></ItemGroup>
 </Project>
