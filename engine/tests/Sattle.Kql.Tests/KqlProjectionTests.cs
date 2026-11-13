@@ -20,7 +20,7 @@ public class KqlProjectionTests
     [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "the whole projection")]
     [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "the whole projection")]
     [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "the whole projection")]
-    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its edit rules, which come in a later stage")]
+    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its editable views, which come in the second part of the edit stage")]
     [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "the whole projection")]
     [InlineData("acme.workload.workloadHealth.kql", "workload", "the whole projection")]
     [InlineData("acme.treereport.healthReport.kql", "healthReport", "the whole projection")]
@@ -28,7 +28,7 @@ public class KqlProjectionTests
     [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
     [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
     [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
-    [InlineData("acme.ops.ingest.kql", "master", "without its rules: the readonly ones are comments, the editable ones come in a later stage")]
+    [InlineData("acme.ops.ingest.kql", "master", "the whole projection")]
     public void A_projection_in_KQL_gives_the_state_of_its_text_on_the_estate(string kql, string graph, string compared) => SameState(Data(Estate), kql, graph, compared);
 
     [Trait("Category", "Capture")]
@@ -36,7 +36,7 @@ public class KqlProjectionTests
     [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "the whole projection")]
     [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "the whole projection")]
     [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "the whole projection")]
-    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its edit rules, which come in a later stage")]
+    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its editable views, which come in the second part of the edit stage")]
     [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "the whole projection")]
     [InlineData("acme.workload.workloadHealth.kql", "workload", "the whole projection")]
     [InlineData("acme.treereport.healthReport.kql", "healthReport", "the whole projection")]
@@ -44,7 +44,7 @@ public class KqlProjectionTests
     [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
     [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
     [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
-    [InlineData("acme.ops.ingest.kql", "master", "without its rules: the readonly ones are comments, the editable ones come in a later stage")]
+    [InlineData("acme.ops.ingest.kql", "master", "the whole projection")]
     public void A_projection_in_KQL_gives_the_state_of_its_text_on_every_recorded_capture(string kql, string graph, string compared)
     {
         foreach (var dir in CaptureDirs) SameState(Data(dir), kql, graph, compared);
@@ -93,7 +93,9 @@ public class KqlProjectionTests
     [InlineData("nodes ServiceNode on service = services | mv-expand x = pack_array(name, cluster)", "not in the KQL profile")]
     [InlineData("nodes ServiceNode on service = union services, (services | project service)", "project each to")]
     [InlineData("nodes ServiceNode on service = graph(\"master\") | graph-match (a)-[p*1..3]->(b) where labels(a) has \"Pod\" and all(p, labels(p) has \"Calls\") project service = a.id, hops = p", "project the two ends")]
-    [InlineData("nodes ServiceNode on service with (edit = \"create, delete\") = services", "later stage")]
+    [InlineData("nodes ServiceNode on service with (edit = \"create, delete\") = services", "second part of the edit stage")]
+    [InlineData("nodes ServiceNode on service with (description = \"the services\") = services", "name it with rule")]
+    [InlineData("nodes ServiceNode on service with (rule = \"a\", edit = \"readonly\") = services;\nextend nodes ServiceNode on service with (rule = \"a\", edit = \"bijective\") = services | project service, name", "different settings")]
     [InlineData("nodes ServiceNode on service = services | project service, name", "sets every required property")]
     [InlineData("extend nodes ServiceGroup on service = services | project service", "no step makes ServiceGroup")]
     [InlineData("edges DependsOn from service to service = services | project service;\nedges DependsOn from service to service = services | project service", "two steps make DependsOn edges")]

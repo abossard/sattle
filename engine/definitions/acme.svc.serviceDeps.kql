@@ -10,26 +10,28 @@ let backing = graph("master")
 // a call between two pods is a call between the services they back; a pod that backs two services counts for both
 let calls = graph("master")
     | graph-match (a)-[c]->(b) where labels(c) has "Calls"
-      project call = c.id, srcPod = a.id, dstPod = b.id
-    | join kind=inner (backing | project srcPod = pod, src = service) on srcPod
-    | join kind=inner (backing | project dstPod = pod, dst = service) on dstPod
+      project call = c.id, fromPod = a.id, toPod = b.id
+    | join kind=inner (backing | project fromPod = pod, src = service) on fromPod
+    | join kind=inner (backing | project toPod = pod, dst = service) on toPod
     | where src != dst
-    | join kind=inner (services | project src = service, cluster, namespace) on src;
+    | project call, fromPod, toPod, src, dst;
+// the flows of each pair of services per window; the cluster and namespace of the source service ride along for the groups
 let flows = calls
+    | join kind=inner (services | project src = service, cluster, namespace) on src
     | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call
-    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, cluster, namespace, windowStart;
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, cluster, namespace, windowStart
+    | project src, dst, cluster, namespace, windowStart, flows, drops, dropRatio = iff(flows > 0, drops / flows, 0.0);
 
 nodes ServiceNode on service = services;
-extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;
-nodes ServiceGroup on group = services
-    | summarize services = count() by cluster, namespace
-    | extend group = identity("serviceGroup", cluster, namespace);
-edges Contains from group to service = services | project service, group = identity("serviceGroup", cluster, namespace);
-edges DependsOn from src to dst = calls | distinct src, dst;
+extend nodes ServiceNode on service = backing | summarize pods = count() by service;
+// a group exists while some service of its namespace does: one row per service makes it, and the count is added on top
+nodes ServiceGroup on group = services | project group = identity("serviceGroup", cluster, namespace), cluster, namespace;
+extend nodes ServiceGroup on group = services | summarize services = count() by cluster, namespace | project group = identity("serviceGroup", cluster, namespace), services;
+edges Contains from group to service = services | project group = identity("serviceGroup", cluster, namespace), service;
+edges DependsOn from src to dst = calls;
+extend edges DependsOn from src to dst = flows | project src, dst, windowStart, flows, drops, dropRatio, flowRate = rate(flows);
 extend edges DependsOn from src to dst = flows
-    | project src, dst, windowStart, flows, drops, dropRatio = iff(flows > 0, drops / flows, 0.0), flowRate = rate(flows);
-extend edges DependsOn from src to dst = flows
-    | project src, dst, windowStart, value = iff(flows > 0, drops / flows, 0.0), above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3
+    | project src, dst, windowStart, value = dropRatio, above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3
     | invoke hysteresis("degraded", "ok", "ok")
     | project src, dst, status = state;
 extend nodes ServiceNode on src = flows | summarize flowsOut = sum(flows) by src, windowStart;

@@ -41,7 +41,7 @@ sealed class Rel
 sealed class Refused(string message, SyntaxNode at) : Exception(message) { public SyntaxNode At { get; } = at; }
 
 sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, IReadOnlyDictionary<string, string> rows, string file, string text, string graphName, string outModule,
-    List<StepHeader> steps, KustoCode code, List<Diagnostic> diags, string sinks)
+    List<StepHeader> steps, KustoCode code, List<Diagnostic> diags)
 {
     readonly DefBuilder b = new();
     readonly string mid = Ids.Module(module);
@@ -63,9 +63,46 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     static FieldX F(string path) => new(path);
     static string P(string op, string port) => Ids.Child(op, "port", port);
 
+    /// <summary>The rules of the projection, from the steps' settings: name, class and description.</summary>
+    readonly Dictionary<string, (string Class, string? Description)> rules = new(StringComparer.Ordinal);
+    readonly Dictionary<string, int> ruleSinks = new(StringComparer.Ordinal);
+
+    /// <summary>A step in a rule (`with (rule = "name")`) is governed by it, and its operator is named after it; the class (`edit`) and the `description`
+    /// belong to the rule and may be given on any one of its steps.</summary>
+    void Rules()
+    {
+        var named = new List<(string Rule, string? Edit, string? Description, StepHeader Step)>();
+        foreach (var h in steps)
+        {
+            var settings = h.Settings(out _);
+            settings.TryGetValue("edit", out var edit); settings.TryGetValue("description", out var description);
+            if (edit is not null and not ("readonly" or "bijective")) diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", "a rule is readonly or bijective in this stage; editable views (lenses) come in the second part of the edit stage"));
+            else if (settings.TryGetValue("rule", out var rule)) named.Add((rule, edit, description, h));
+            else if (edit is not null || description is not null) diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", "edit and description belong to a rule: name it with rule = \"...\""));
+        }
+        foreach (var g in named.GroupBy(n => n.Rule))
+        {
+            var edits = g.Select(n => n.Edit).OfType<string>().Distinct().ToList();
+            var descriptions = g.Select(n => n.Description).OfType<string>().Distinct().ToList();
+            var at = g.First().Step.Pos;
+            if (edits.Count > 1 || descriptions.Count > 1) diags.Add(KqlFrontEnd.At(text, file, at, "Profile", $"the steps of rule {g.Key} give it different settings"));
+            rules[g.Key] = (edits.FirstOrDefault() ?? "readonly", descriptions.FirstOrDefault());
+        }
+    }
+
+    string SinkName(StepHeader h) => h.Settings(out _).TryGetValue("rule", out var rule) ? $"{rule}.{ruleSinks[rule] = ruleSinks.GetValueOrDefault(rule) + 1}" : $"emit.{++emits}";
+
+    void Govern(StepHeader h, string sink)
+    {
+        if (h.Settings(out _).TryGetValue("rule", out var rule)) b.Edge(Ids.Child(pid, "rule", rule), "governs", sink);
+    }
+
     public KqlResult Run()
     {
-        pid = b.Contain(mid, "projection", graphName, "Projection", null, ("name", T(graphName)), ("purpose", T("view")), ("retain", Value.Integer(0)), ("forward", Value.Boolean(true)));
+        Rules();
+        pid = b.Contain(mid, "projection", graphName, "Projection", null, ("name", T(graphName)), ("purpose", T("view")), ("retain", Value.Integer(0)), ("forward", Value.Boolean(rules.Count == 0)));
+        foreach (var (name, (cls, desc)) in rules)
+            b.Contain(pid, "rule", name, "Rule", null, [("name", T(name)), ("class", T(cls)), ("putput", Value.Boolean(false)), .. desc is null ? Array.Empty<(string, Value)>() : [("reason", T(desc))]]);
         b.Edge(pid, "outputOntology", Ids.Module(outModule));
         foreach (var se in ((QueryBlock)code.Syntax).Statements)
         {
@@ -132,7 +169,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     string Op(string kind, params (string, Value)[] props)
     {
         var n = opNo[prefix] = opNo.GetValueOrDefault(prefix) + 1;
-        return OpNamed(kind, $"{prefix}__{n}", props);
+        return OpNamed(kind, $"{prefix}_{n}", props);
     }
 
     string OpNamed(string kind, string name, params (string, Value)[] props)
@@ -148,22 +185,35 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     void Step(StepHeader h, Expression query)
     {
-        prefix = "step" + (steps.IndexOf(h) + 1);
-        var r = Tab(query);
-        if (h.Kind == "link") { Link(h, r, query); return; }
+        prefix = h.Kind == "edges" ? h.Key(out _) : char.ToLowerInvariant(h.Type[0]) + h.Type[1..];
+        // a step's last `project` or `extend` is the step's own expressions over the rows before it, as today's text writes them in its emits:
+        // the step reads those rows, and every element they hold is its lineage
+        Rel r; List<(string Name, X Value)> cols;
+        if (query is PipeExpression { Operator: ProjectOperator or ExtendOperator } last)
+        {
+            r = Tab(last.Expression);
+            cols = Fuse(r, last.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)last.Operator).Expressions.Select(x => x.Element)], last.Operator is ExtendOperator);
+        }
+        else
+        {
+            r = Tab(query);
+            cols = [.. r.Visible.Select(c => (c, r.Idents.TryGetValue(c, out var id) ? (X)id : F(c)))];
+        }
+        if (h.Kind == "link") { Link(h, r, cols, query); return; }
         var key = h.Key(out var refusal);
         if (refusal is not null) throw new Refused(refusal, query);
         var view = View(outModule);
         var type = TypeNamed(view, h.Type, h.Kind == "edges", outModule);
         if (type.Count != 1) throw new Refused($"{h.Type} is {(type.Count == 0 ? "not a" : "more than one")} {(h.Kind == "edges" ? "relationship" : "entity")} type of {outModule}", query);
         var ends = h.Kind == "nodes" ? new[] { (h.Id!, "id") } : [(h.Src!, "source"), (h.Dst!, "target")];
-        var sets = new List<(string Col, string Prop)>();
-        foreach (var c in r.Visible.Where(c => !ends.Any(e => e.Item1 == c) && c is not ("windowStart" or "windowEnd")))
+        var sets = new List<(string Col, X Value, string Prop)>();
+        foreach (var (c, x) in cols.Where(c => !ends.Any(e => e.Item1 == c.Name) && c.Name is not ("windowStart" or "windowEnd")))
         {
-            if (r.Idents.ContainsKey(c)) throw new Refused($"'{c}' is an identity: it names a node or an end of an edge, not a property", query);
+            if (x is IdX) throw new Refused($"'{c}' is an identity: it names a node or an end of an edge, not a property", query);
             var props = view.PropsOf(type[0]).Keys.Where(k => view.Props[k].Name == c).ToList();
-            if (props.Count != 1) throw new Refused($"{h.Type} has no property '{c}': project it away", query);
-            sets.Add((c, props[0]));
+            if (props.Count == 1) { sets.Add((c, x, props[0])); continue; }
+            if (x is FieldX { Path: var path } && !path.Contains('.') && r.Types.ContainsKey(path)) continue;     // an element: lineage, not a property
+            throw new Refused($"{h.Type} has no property '{c}': project it away", query);
         }
         // `nodes` and `edges` make elements; `extend nodes` and `extend edges` add properties to elements another step makes
         var what = h.Kind == "nodes" ? h.Type : $"{h.Type} edges with the key '{key}'";
@@ -174,16 +224,45 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (!h.Extend && h.Kind == "edges" && steps.Count(o => !o.Extend && o.Kind == "edges" && o.Type == h.Type && o.Key(out _) == key) > 1)
             throw new Refused($"two steps make {what}: give one its own key with (key = \"...\"), or write extend edges", query);
         var mode = ("mode", T(h.Extend ? "update" : "create"));
-        var sink = OpNamed(h.Kind == "nodes" ? "EmitEntity" : "EmitRelationship", $"{sinks}.{++emits}", h.Kind == "nodes" ? [mode] : [mode, ("key", T(key)), ("retype", T("reject"))]);
+        var sink = OpNamed(h.Kind == "nodes" ? "EmitEntity" : "EmitRelationship", SinkName(h), h.Kind == "nodes" ? [mode] : [mode, ("key", T(key)), ("retype", T("reject"))]);
+        Govern(h, sink);
         b.Edge(sink, "ofType", type[0]);
         Wire(r.Port, sink, "in");
-        foreach (var (col, slot) in ends) Write(Ref(r, col, query), sink, slot, 0);
-        foreach (var (c, prop) in sets)
+        foreach (var (col, slot) in ends) Write(End(cols, col, query), sink, slot, 0);
+        foreach (var (c, x, prop) in sets)
         {
             var set = b.Contain(sink, "set", c, "SetProperty");
             b.Edge(set, "property", prop);
-            Write(F(c), set, "value", 0);
+            Write(x, set, "value", 0);
         }
+    }
+
+    static X End(List<(string Name, X Value)> cols, string col, SyntaxNode at) =>
+        cols.FirstOrDefault(c => c.Name == col) is { Value: { } x } ? x : throw new Refused($"the rows have no column '{col}'", at);
+
+    /// <summary>The columns of a `project` (or `extend`, which keeps the others) as expressions over the rows before it, with no operator of their own.</summary>
+    List<(string Name, X Value)> Fuse(Rel r, IReadOnlyList<Expression> items, bool keepAll)
+    {
+        if (r.Long is { Props.Length: > 1 }) throw new Refused("summarize the telemetry rows of several properties by their window before projecting them: summarize v = sumif(value, property == \"p\") by ..., windowStart", items[0]);
+        var res = new List<(string Name, X Value)>();
+        void Put(string name, X x) { var i = res.FindIndex(c => c.Name == name); if (i >= 0) res[i] = (name, x); else res.Add((name, x)); }
+        if (keepAll) foreach (var c in r.Visible) Put(c, r.Idents.TryGetValue(c, out var id) ? id : F(c));
+        foreach (var it in items)
+        {
+            var (name, e) = it switch
+            {
+                SimpleNamedExpression sn => (sn.Name.SimpleName, sn.Expression),
+                NameReference n => (n.SimpleName, (Expression)n),
+                _ => throw new Refused("name the column: name = expression", it),
+            };
+            Put(name, e switch
+            {
+                NameReference nr when r.Idents.TryGetValue(nr.SimpleName, out var id) => id,
+                FunctionCallExpression { Name.SimpleName: "identity" } ic => Identity(ic, r),
+                _ => Scalar(e, r),
+            });
+        }
+        return res;
     }
 
     readonly HashSet<string> pathVars = new(StringComparer.Ordinal);
@@ -197,7 +276,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     }
 
     /// <summary>`link P from a to b with (confidence = c) = q`: the identities in the columns a and b name the same thing, as the equivalence policy P allows.</summary>
-    void Link(StepHeader h, Rel r, Expression query)
+    void Link(StepHeader h, Rel r, List<(string Name, X Value)> cols, Expression query)
     {
         var settings = h.Settings(out var refusal);
         if (refusal is not null) throw new Refused(refusal, query);
@@ -206,19 +285,17 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             throw new Refused("a link says how sure it is: with (confidence = 1.0)", query);
         var pol = KqlFrontEnd.Closure(catalog, module).Select(m => Ids.Child(Ids.Module(m), "equivalence", h.Type)).Where(id => catalog.Entity(id) is not null).ToList();
         if (pol.Count != 1) throw new Refused($"'{h.Type}' is no equivalence policy of {module}: a link needs one that says which two identity domains may name the same thing", query);
-        if (!r.Idents.TryGetValue(h.Src!, out var left) || !r.Idents.TryGetValue(h.Dst!, out var right))
+        if (cols.FirstOrDefault(c => c.Name == h.Src).Value is not IdX left || cols.FirstOrDefault(c => c.Name == h.Dst).Value is not IdX right)
             throw new Refused("a link joins two identities: project both with identity(...)", query);
-        if (r.Visible.Any(v => v != h.Src && v != h.Dst)) throw new Refused("a link has no properties: project only the two identities", query);
-        var sink = OpNamed("Link", $"{sinks}.{++emits}");
+        if (cols.Any(c => c.Name != h.Src && c.Name != h.Dst && !(c.Value is FieldX { Path: var p } && r.Types.ContainsKey(p)))) throw new Refused("a link has no properties: project only the two identities", query);
+        var sink = OpNamed("Link", SinkName(h));
+        Govern(h, sink);
         b.Edge(sink, "policy", pol[0]);
         Wire(r.Port, sink, "in");
         Write(left, sink, "left", 0);
         Write(right, sink, "right", 0);
         Write(new LitX(Value.Decimal(confidence)), sink, "confidence", 0);
     }
-
-    X Ref(Rel r, string col, SyntaxNode at) =>
-        r.Idents.TryGetValue(col, out var id) ? id : r.Cols.Contains(col) ? F(col) : throw new Refused($"the rows have no column '{col}'", at);
 
     // ---- tables ----
 
@@ -245,6 +322,12 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     Rel Pipe(PipeExpression p)
     {
+        // `... | project ..., value = v, above = ... | invoke hysteresis(...)`: the projection is the threshold's own expressions, so the threshold reads the author's column
+        if (p.Operator is InvokeOperator { Function: FunctionCallExpression { Name.SimpleName: "hysteresis" } } hy && p.Expression is PipeExpression { Operator: ProjectOperator or ExtendOperator } pj)
+        {
+            var inner = Tab(pj.Expression);
+            return Hysteresis(inner, Fuse(inner, pj.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)pj.Operator).Expressions.Select(x => x.Element)], pj.Operator is ExtendOperator), hy);
+        }
         if (p.Operator is GraphMatchOperator gm) return GraphMatch(gm, p.Expression);
         var input = Tab(p.Expression);
         return p.Operator switch
@@ -259,7 +342,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             JoinOperator j => Join(input, j),
             UnionOperator u => Union(input, u),
             InvokeOperator { Function: FunctionCallExpression f } when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, input, [.. f.ArgumentList.Expressions.Select(x => x.Element)], f),
-            InvokeOperator i => Hysteresis(input, i),
+            InvokeOperator i => Hysteresis(input, [.. input.Visible.Select(c => (c, input.Idents.TryGetValue(c, out var id) ? (X)id : F(c)))], i),
             var op => throw new Refused(Refusal(op), op),
         };
     }
@@ -748,15 +831,25 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     static readonly string[] ThresholdCols = ["windowStart", "windowEnd", "value", "above", "enterAfter", "below", "exitAfter", "noData"];
 
     /// <summary>`invoke hysteresis(high, low, initial[, nodata])` over windowed rows with the columns value, above, enterAfter, below, exitAfter: a Threshold keyed by every other column.</summary>
-    Rel Hysteresis(Rel r, InvokeOperator i)
+    Rel Hysteresis(Rel r, List<(string Name, X Value)> cols, InvokeOperator i)
     {
         if (i.Function is not FunctionCallExpression { Name.SimpleName: "hysteresis" } f) throw new Refused("the one function a projection invokes is hysteresis(...)", i);
         var args = f.ArgumentList.Expressions.Select(a => Const(a.Element) as string ?? throw new Refused("hysteresis takes the states as text", a.Element)).ToList();
         if (args.Count is < 3 or > 4) throw new Refused("hysteresis(high, low, initial[, nodata])", f);
         if (!r.Windowed) throw new Refused("hysteresis reads telemetry windows", i);
-        foreach (var c in ThresholdCols[2..7]) if (!r.Cols.Contains(c)) throw new Refused($"hysteresis reads the column '{c}'", i);
-        var keys = r.Cols.Where(c => !ThresholdCols.Contains(c)).ToList();
-        decimal Dec(string c) => r.Lits.TryGetValue(c, out var v) ? v switch { DecimalValue d => d.Q, IntegerValue n => (decimal)n.N, _ => 0 } : 0;
+        X Col(string c) => cols.FirstOrDefault(x => x.Name == c).Value ?? throw new Refused($"hysteresis reads the column '{c}'", i);
+        foreach (var c in ThresholdCols[2..7]) _ = Col(c);
+        var keys = new List<(string Name, X Value)>(); var next = new Rel { Port = "" };
+        foreach (var (name, x) in cols.Where(c => !ThresholdCols.Contains(c.Name)))
+        {
+            if (x is IdX id)
+            {
+                for (var k = 0; k < id.Parts.Length; k++) keys.Add(($"{name}__{k + 1}", id.Parts[k].Value));
+                next.Idents[name] = new IdX(id.Domain, [.. id.Parts.Select((p, k) => (p.Component, (X)F($"{name}__{k + 1}")))]);
+            }
+            else { keys.Add((name, x)); if (x is FieldX { Path: var path } && !path.Contains('.') && r.Types.TryGetValue(path, out var t)) next.Types[name] = t; }
+        }
+        decimal Dec(string c) => Col(c) is LitX { V: var v } ? v switch { DecimalValue d => d.Q, IntegerValue n => (decimal)n.N, _ => 0 } : 0;
         var props = new List<(string, Value)>
         {
             ("target", T("state")), ("above", Value.Decimal(Dec("above"))), ("enterAfter", Value.Integer((long)Dec("enterAfter"))), ("high", T(args[0])),
@@ -764,14 +857,13 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         };
         if (args.Count == 4) props.Add(("nodata", T(args[3])));
         var op = Op("Threshold", [.. props]);
-        foreach (var k in keys) Write(F(k), b.Contain(op, "key", k, "Assign", null, ("target", T(k))), "value", 0);
-        Write(F("value"), op, "value", 0);
+        foreach (var (k, x) in keys) Write(x, b.Contain(op, "key", k, "Assign", null, ("target", T(k))), "value", 0);
+        Write(Col("value"), op, "value", 0);
         foreach (var (c, slot) in new[] { ("above", "aboveBy"), ("enterAfter", "enterBy"), ("below", "belowBy"), ("exitAfter", "exitBy") })
-            if (!r.Lits.ContainsKey(c)) Write(F(c), op, slot, 0);
+            if (Col(c) is not LitX) Write(Col(c), op, slot, 0);
         Wire(r.Port, op, "in");
-        var next = new Rel { Port = P(op, "out"), Cols = [.. keys, "state"] };
-        foreach (var k in keys) if (r.Types.TryGetValue(k, out var t)) next.Types[k] = t;
-        foreach (var (k, v) in r.Idents) next.Idents[k] = v;
+        next.Port = P(op, "out");
+        next.Cols = [.. keys.Select(k => k.Name), "state"];
         return next;
     }
 

@@ -24,8 +24,7 @@ public static class KqlFrontEnd
     /// <param name="module">the module the projection belongs to</param>
     /// <param name="inputs">the graphs the text may read, `graph("name")`, and the ontology module of each</param>
     /// <param name="rows">the tables of rows the text may read by name, and the row type of each</param>
-    /// <param name="sinks">the name of the steps' operators, numbered: `emit`, or the rule that governs them</param>
-    public static KqlResult Lower(string text, Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, string file = "<kql>", IReadOnlyDictionary<string, string>? rows = null, string sinks = "emit")
+    public static KqlResult Lower(string text, Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, string file = "<kql>", IReadOnlyDictionary<string, string>? rows = null)
     {
         rows ??= new Dictionary<string, string>();
         var diags = new List<Diagnostic>();
@@ -48,7 +47,7 @@ public static class KqlFrontEnd
         foreach (var d in code.GetDiagnostics().Where(d => d.Severity == "Error"))
             diags.Add(At(text, file, d.Start, "Kusto", d.Message));
         if (diags.Count > 0) return new("", new DefBuilder(), diags);
-        return new Lowerer(catalog, module, inputs, rows, file, text, heads[0].Groups["name"].Value, heads[0].Groups["out"].Value, steps, code, diags, sinks).Run();
+        return new Lowerer(catalog, module, inputs, rows, file, text, heads[0].Groups["name"].Value, heads[0].Groups["out"].Value, steps, code, diags).Run();
     }
 
     static void Overwrite(char[] chars, int at, int length, string with)
@@ -124,13 +123,13 @@ sealed record StepHeader(bool Extend, string Kind, string Type, string? Id, stri
     {
         refusal = null; var settings = new Dictionary<string, string>(StringComparer.Ordinal);
         var allowed = Kind switch { "edges" => "key", "link" => "confidence", _ => null };
+        var common = new[] { "rule", "edit", "description" };
         foreach (Match m in Regex.Matches(With ?? "", @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)"))
         {
             var (name, value) = (m.Groups[1].Value, m.Groups[2].Value.Trim().Trim('"', '\''));
-            if (name == allowed) settings[name] = value;
-            else refusal ??= name is "edit" or "createKey" or "createDefaults" or "deleteSets" ? "editable views come in a later stage of the KQL front end: this stage refuses with (edit = ...)"
-                : allowed is null ? $"'{name}' is not a setting of a node step: a node step has none"
-                : $"'{name}' is not a setting of {(Kind == "link" ? "a link" : "an edge step")}: the one setting is {allowed} = ...";
+            if (name == allowed || common.Contains(name)) settings[name] = value;
+            else refusal ??= name is "createKey" or "createDefaults" or "deleteSets" or "onDelete" ? "editable views (lenses) come in the second part of the edit stage"
+                : $"'{name}' is not a setting of {(Kind == "link" ? "a link" : Kind == "edges" ? "an edge step" : "a node step")}: its settings are {string.Join(", ", allowed is null ? common : [allowed, .. common])}";
         }
         return settings;
     }

@@ -2,9 +2,9 @@
 // it rolls up, by its policy; with the signals and the evidence (warning events, Azure operations) of each element.
 graph healthTree : acme.tree;
 
-let els = graph("structure") | graph-match (e) where labels(e) has "Element" project e = e.id, ekey = e.nodeKey, ekind = e.nodeKind, ename = e.nodeName;
+let els = graph("structure") | graph-match (e) where labels(e) has "Element" project element = e.id, ekey = e.nodeKey, ekind = e.nodeKind, ename = e.nodeName;
 let stateOf = (sev:long) { case(sev == 2, "Unhealthy", sev == 1, "Degraded", sev == 0, "Healthy", "Unknown") };
-nodes Element on e = els | project e, nodeKey = ekey, nodeKind = ekind, nodeName = ename;
+nodes Element on element = els | project element, nodeKey = ekey, nodeKind = ekind, nodeName = ename;
 edges Contains from p to c = graph("structure")
     | graph-match (p)-[k]->(c) where labels(p) has "Element" and labels(k) has "Contains" and labels(c) has "Element" project p = p.id, c = c.id;
 
@@ -62,12 +62,15 @@ edges Measures from s to el = signalEntities | project s, el = identity("element
 
 // the evidence: warning events of pods and operations on Azure resources
 let warnings = graph("master")
-    | graph-match (w)-[a]->(p) where labels(w) has "WarningEvent" and labels(a) has "About" and labels(p) has "Pod"
-      project eid = w.eventId, etime = w.['time'], esummary = w.reason, edetail = w.message, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), ekind = "warning";
+    | graph-match (w)-[k]->(p) where labels(w) has "WarningEvent" and labels(k) has "About" and labels(p) has "Pod"
+      project event = w.id, pod = p.id, eid = w.eventId, etime = w.['time'], esummary = w.reason, edetail = w.message,
+              ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), ekind = "warning";
 let operations = graph("master")
-    | graph-match (a)-[c]->(r) where labels(a) has "ActivityEvent" and labels(c) has "Concerns" and labels(r) has "AzureResource"
-      project eid = a.eventId, etime = a.['time'], esummary = a.operation, edetail = a.status, ekey = tolower(r.resourceId), ekind = "activity";
-nodes Evidence on ev = union warnings, operations
+    | graph-match (a)-[k]->(r) where labels(a) has "ActivityEvent" and labels(k) has "Concerns" and labels(r) has "AzureResource"
+      project operation = a.id, resource = r.id, eid = a.eventId, etime = a.['time'], esummary = a.operation, edetail = a.status, ekey = tolower(r.resourceId), ekind = "activity";
+nodes Evidence on ev = warnings
+    | project ev = identity("evidence", eid), evidenceId = eid, evidenceKind = ekind, evidenceTime = etime, evidenceSummary = esummary, evidenceDetail = edetail;
+nodes Evidence on ev = operations
     | project ev = identity("evidence", eid), evidenceId = eid, evidenceKind = ekind, evidenceTime = etime, evidenceSummary = esummary, evidenceDetail = edetail;
 edges EvidenceFor from ev to el with (key = "evidenceWarning") = warnings | project ev = identity("evidence", eid), el = identity("element", ekey);
 edges EvidenceFor from ev to el with (key = "evidenceActivity") = operations | project ev = identity("evidence", eid), el = identity("element", ekey);

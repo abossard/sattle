@@ -119,8 +119,7 @@ let byConfig = viaConfigResource | join kind=inner (preferred) on $left.tkey == 
 
 // the evidence: one element per dependency and way it was found, and an edge to the service it is for
 let serviceKeys = services | project s, skey2 = svcKey(cluster, namespace, name);
-let evidenceOf = (F:(src:string, target:string, how:string, detail:string, one:long)) { F | where src != target | summarize arg_max(one, detail) by src, target, how | project src, target, how, detail };
-let asEvidence = (E:(src:string, target:string, how:string, detail:string)) { E | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail };
+let evidenceOf = (F:(src:string, target:string, how:string, detail:string, one:long)) { F | where src != target | summarize arg_max(one, detail) by src, target, how };
 let evidenceFor = (E:(src:string, target:string, how:string)) { E | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s };
 let evidenceEndpoint = byEndpoint | invoke evidenceOf();
 let evidenceName = byName | invoke evidenceOf();
@@ -128,7 +127,12 @@ let evidenceIdentity = byIdentity | invoke evidenceOf();
 let evidenceConfig = byConfig | invoke evidenceOf();
 let evidenceConfigService = viaConfigService | invoke evidenceOf();
 let evidenceCalls = called | invoke evidenceOf();
-nodes DependencyEvidence on e = union evidenceEndpoint, evidenceName, evidenceIdentity, evidenceConfig, evidenceConfigService, evidenceCalls | invoke asEvidence();
+nodes DependencyEvidence on e = evidenceEndpoint | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on e = evidenceName | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on e = evidenceIdentity | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on e = evidenceConfig | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on e = evidenceConfigService | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on e = evidenceCalls | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
 edges EvidenceFor from e to s with (key = "evidenceForEndpoint") = evidenceEndpoint | invoke evidenceFor();
 edges EvidenceFor from e to s with (key = "evidenceForName") = evidenceName | invoke evidenceFor();
 edges EvidenceFor from e to s with (key = "evidenceForIdentity") = evidenceIdentity | invoke evidenceFor();
@@ -203,13 +207,14 @@ edges TalksTo from s to t with (key = "talksToService") = talkRows
 // a call between pods is a call between the services of the workload they back
 // a call between pods is a call between the services of the workload they back, with the flows of the calls
 let podCalls = graph("master")
-    | graph-match (a)-[k]->(b) where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" project k = k.id, a = a.id, b = b.id
-    | join kind=inner (backsHere | project a = p, src = s) on a
-    | join kind=inner (backsHere | project b = p, dst = s) on b
-    | where src != dst;
-edges TalksTo from src to dst with (key = "talks") = podCalls | distinct src, dst;
+    | graph-match (a)-[k]->(b) where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" project call = k.id, fromPod = a.id, toPod = b.id
+    | join kind=inner (backsHere | project fromPod = p, src = s) on fromPod
+    | join kind=inner (backsHere | project toPod = p, dst = s) on toPod
+    | where src != dst
+    | project call, fromPod, toPod, src, dst;
+edges TalksTo from src to dst with (key = "talks") = podCalls;
 extend edges TalksTo from src to dst with (key = "talks") = podCalls
-    | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project k = id, windowStart, property, value) on k
+    | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call
     | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, windowStart;
 
 // ---- the roll-up edges: a component is affected by what it contains and by what it depends on ----

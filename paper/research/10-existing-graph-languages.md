@@ -389,7 +389,7 @@ Stage 1 built the KQL front end and tested it on the six projections. A front en
 
 ### The size
 
-- The front end is about 1,010 lines of our code: 110 that read the text and build the description of the graphs and tables Kusto checks against, 840 that translate into operators, and 60 that put the result in place of today's text so the engine loads it. The library adds 28 lines written in KQL. Parsing and type checking are Kusto.Language's.
+- The front end is about 1,080 lines of our code: 110 that read the text and build the description of the graphs and tables Kusto checks against, 920 that translate into operators, and 50 that put the result in place of today's text so the engine loads it. The library adds 28 lines written in KQL. Parsing and type checking are Kusto.Language's.
 - The twelve projections take 641 lines of KQL against 964 lines today. The master graph shrinks most, from 307 lines to 75, because today's text repeats a block per source and per metric.
 
 | Projection | Lines today | Lines in KQL |
@@ -405,12 +405,12 @@ Stage 1 built the KQL front end and tested it on the six projections. A front en
 | estate tree: roll-up | 20 | 15 |
 | health tree | 60 | 62 |
 | health report | 25 | 17 |
-| master graph (without its rules) | 307 | 75 |
+| master graph | 307 | 75 |
 
 ### What the front end accepts
 
 Sixty-seven constructs, every one plain KQL except the eleven additions below.
-- **Statements (11):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings `key` and `confidence`.
+- **Statements (11):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings of a step (`key`, `confidence`, `rule`, `edit`, `description`).
 - **Table operators (17):** a table of rows from a source, read by its name; `graph-match` (patterns of nodes and edges, `labels(x) has "T"`, `where`, `project`); paths of several edges `-[p*0..16]->` with `all(p, labels(p) has "T")`; `where`, and `where time > ago(24h)` for keeping rows for a span of the data's time; `project`, `extend`, `distinct`; `summarize`, and `summarize ... by ..., windowStart = bin(time, 60s)` for windows of the rows' own time; `join kind=inner`, `union`, `datatable`; `invoke` of a table function, `invoke hysteresis`; a join with `telemetry` and a join with `telemetry_filled`.
 - **Aggregations (10):** `count`, `countif`, `sum`, `min`, `max`, `avg`, `arg_max`, and over telemetry `sumif`, `minif`, `maxif`.
 - **Functions (14):** `iff`, `case`, `coalesce`, `strcat`, `tolower`, `not`, `isnotnull`, `isnull`, `toreal`, `rate`, `identity`, `labels`, `all`, and value functions of one's own.
@@ -434,8 +434,9 @@ The engine keeps every result up to date as data changes, and gives the same res
 | `now()`, `ago()` anywhere but `where time > ago(span)` | in a projection now() and ago() mean the data's time, the newest input time, never the wall clock; they are accepted only where the engine keeps the result up to date: where time > ago(24h), and the look-back of telemetry |
 | the edges of a path in `project` | the edges of a path are not kept: every path would be listed, which is not kept up to date; project the two ends |
 | `nodes on id labels col` | a step names its type ...: the engine writes one type per step, so a type taken from a column needs one step per type |
-| `with (edit = ...)` | editable views come in a later stage of the KQL front end: this stage refuses with (edit = ...) |
-| another setting in `with` | 'x' is not a setting of a step: the one setting is key = "name" |
+| `edit` other than readonly or bijective, and the settings of an editable view | a rule is readonly or bijective in this stage; editable views (lenses) come in the second part of the edit stage |
+| another setting in `with` | 'x' is not a setting of an edge step: its settings are key, rule, edit, description |
+| `edit` or `description` without `rule` | edit and description belong to a rule: name it with rule = "..." |
 | `union` of tables with different columns | the tables of a union have the same columns: project each to ... |
 | a step that makes a type but leaves out a required property | a step that makes T sets every required property, and p is not set: set it, or write extend nodes to add properties to nodes another step makes |
 | `extend nodes` when no step makes the type | no step makes T: extend nodes adds properties to nodes another step of this projection makes |
@@ -450,7 +451,7 @@ The engine keeps every result up to date as data changes, and gives the same res
 2. **`nodes`** makes nodes from the rows of a query, the text form of a Kusto graph model's step that adds nodes: `nodes ServiceNode on service = services;`
 3. **`edges`** makes edges in the same way: `edges DependsOn from src to dst = calls | distinct src, dst;`
 4. **`extend nodes` and `extend edges`** add properties to what another step makes, so the text shows which steps make elements and which only add to them (in a Kusto graph model every step makes them): `extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;`
-5. **`with (key = "...")`** names the key of an edge, which is part of its identity, so several steps can write one type: `edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;`
+5. **`with (...)`, the settings of a step:** `key` names the key of an edge, which is part of its identity, so several steps can write one type; `rule`, `edit` and `description` say which rule a step belongs to and how what it makes may be edited; `confidence` belongs to a link: `edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;`
 6. **`identity(domain, ...)`** gives the identity of a node that is in no input graph, from its keys; KQL has no identities: `project group = identity("serviceGroup", cluster, namespace)`
 7. **`telemetry(graph, lookback)`** is the telemetry of a graph as a table, one row per element, property and window; KQL has no telemetry of a graph: `join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call`
 8. **`telemetry_filled(graph, lookback, timeToLive, fill)`** gives silence a declared outcome: an empty window takes the fill, and an element silent for the time to live is in "no data": `telemetry_filled("master", 30m, 5m, 0.0)`
@@ -470,13 +471,22 @@ Of the nine additions in section 5, the step whose type comes from a column (`no
 6. When `arg_max` has ties, the engine decides which row wins. Kusto returns any of the tied rows.
 7. A `union` needs the same columns. Kusto fills missing columns with nulls.
 
-### Rules of the master graph
+### Rules, and what an element is made of
 
-The master graph is made by an ingestion projection, and the engine requires such a projection to have rules (a readonly rule says that what it makes cannot be edited through a view; an editable rule says how an edit goes back to the authored rows). Rules have no form in KQL before the edit stage, and comments carry no meaning. So until then the master graph in KQL has one readonly rule over all its steps, put in by the front end and named "steps"; today's text has 23 readonly rules with a description each and 5 editable ones. The state is the same.
+A rule groups steps and says whether what they make may be edited through a view: readonly, or bijective (an edit goes back to the rows it came from, one for one). In KQL a step names its rule in its `with (...)`: `rule = "observedPods"`, with `edit = "readonly"` (the default) or `"bijective"` and a `description` the canvas shows, given once for the rule. The master graph states its 28 rules this way, as today's text does, so the front end adds no rule of its own. "An ingestion projection must have rules" stays a requirement of the engine worth dropping when today's text is retired.
 
-Open for the edit stage:
-- Where a step's description and an editable view are written. A first thought is a setting in the step's `with (...)`; it is judged then.
-- "An ingestion projection must have rules" is a requirement of the engine worth dropping when today's text is retired: it is what forces a rule onto the master graph here.
+Lineage, the list of elements an element is made of, comes from the rows of the step that makes it: every column there that holds an element. The KQL texts keep those columns, under names chosen for a reader (`service`, `pod`, `call`, `capability`); for every element of the service tree, the capabilities, the health tree and the workload structure, the KQL text names the same elements as today's text. A threshold reads the column its author named, so the list of meters shows `dropRatio`, and the operators carry the names of the `let` or of the step they come from.
+
+### The edit stage
+
+A step says how what it makes may be edited in its own `with (...)`, the same place as `key`; there is no block of steps.
+- **First part, built:** `rule`, `edit = "readonly" | "bijective"` and `description`, as described above.
+- **Second part, the editable views (lenses):** which edits a view accepts, the key and the defaults of a created element, and what deleting does. Written as small expressions inside strings, these would be a private syntax of ours; before it is built, two real examples are written out, looking for a form in plain KQL, such as a second query on the step or `let` values the settings name.
+- **Steps that share a rule:** `rule = "name"` on each of them. In the master graph the rule for authored capabilities makes both the capability nodes and their `PartOf` edges, and many readonly rules group several steps.
+
+### A declared function, restated in a projection
+
+Today's lift drops a service that realizes two capabilities, because the ontology declares that a service realizes at most one. The capabilities projection in KQL writes that out as a filter: it keeps a service only when it realizes exactly one capability. Open: such a declaration is a constraint the ontology should enforce once, at the master graph, so that no projection has to restate it.
 
 ### Rules the engine adds
 
