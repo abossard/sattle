@@ -397,23 +397,23 @@ public sealed class OutputBuilder(Interner it)
         {
             foreach (var (code, w) in RowsOf(loser))
             {
-                AddFragment(loser, code, -w, null, null);
+                var fragment = values.Bytes(code).ToArray();                                    // an entity's fragment names no endpoint, so it is the same fragment under the survivor
+                AddFragment(loser, fragment, -w, null, null);
                 if (!kinds.Has(survivor)) kinds[survivor] = Entity;
-                AddFragment(survivor, code, w, null, null);                                     // an entity's fragment names no endpoint, so it is the same fragment under the survivor
+                AddFragment(survivor, fragment, w, null, null);
                 Touch(survivor);
             }
             MoveSupport(loser, survivor);
             Touch(loser);
         }
-        var atLoser = new List<int>();
-        for (var r = ByEnd.First([loser]); r >= 0; r = ByEnd.Next(r)) atLoser.Add(r);
-        foreach (var elem in atLoser.Order().Select(r => (int)ends.Get(r, 1)).ToList())
+        // the relationships at the loser, by their numbers: the order they were first named in, whatever rows they have now
+        foreach (var elem in ByEnd.Rows([loser]).Select(r => (int)ends.Get(r, 1)).Order().ToList())
         {
             var at = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
             if (kinds[elem] != Relationship || at.Count == 0) continue;
             foreach (var (code, w, f) in at)
             {
-                AddFragment(elem, code, -w, f.Source, f.Target);
+                AddFragment(elem, values.Bytes(code).ToArray(), -w, f.Source, f.Target);
                 var ns = f.Source == lid ? sid : f.Source; var nt = f.Target == lid ? sid : f.Target;
                 var idOf = relSinks[f.Sink];
                 var ne = it.Intern(idOf(ns!, nt!));
@@ -434,10 +434,9 @@ public sealed class OutputBuilder(Interner it)
     /// <summary>What one emit says about an element: its sink, create or update, type, endpoints and properties.</summary>
     readonly record struct Fragment(int Sink, bool Update, string Type, string? Source, string? Target, Props Props);
 
-    /// <summary>The sink table: per (element, fragment) the summed weight of the rows that contribute the fragment; a row at weight zero is gone. Each fragment is kept once, as bytes, in `fragments`.</summary>
+    /// <summary>The sink table: per (element, fragment) the summed weight of the rows that contribute the fragment; a row at weight zero is gone. Each fragment is kept once in `values`, in a canonical form (equal fragments have equal bytes: a number without its scale, every text and name as the engine's number for it), and only while a row holds it.</summary>
     readonly Table contributions = new([4, 4], keyColumns: 2);
-    readonly CodeDictionary fragments = new();
-    readonly StrTable fragmentKeys = new();
+    readonly Values values = new();
     Arrangement? byElement;
     /// <summary>The contributions of one element: every row of it is wanted when the element is resolved.</summary>
     Arrangement ByElement => byElement ??= contributions.Arrange(0);
@@ -459,43 +458,96 @@ public sealed class OutputBuilder(Interner it)
     static void Varint(List<byte> o, ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
     static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
 
-    int FragmentOf(int sink, bool update, string type, string? source, string? target, Props props)
+    /// <summary>What the sink holds now: rows of contributions, stored fragments and their bytes. Nothing for elements that came and went.</summary>
+    public (int Contributions, int Fragments, long FragmentBytes) Held => (contributions.Count, values.Count, values.HeldBytes);
+
+    static ulong Zig(long v) => (ulong)((v << 1) ^ (v >> 63));
+    static long Unzig(ulong v) => (long)(v >> 1) ^ -(long)(v & 1);
+    void Number(long v) { Span<byte> b = stackalloc byte[8]; BitConverter.TryWriteBytes(b, v); foreach (var x in b) buffer.Add(x); }
+    static long ReadNumber(byte[] b, ref int p) { var v = BitConverter.ToInt64(b, p); p += 8; return v; }
+
+    /// <summary>A value in its canonical form: equal values give equal bytes. A decimal is written by its number (2.5 and 2.50 are one), a text and an entity id as the engine's number for it.</summary>
+    void WriteCanonical(Value v)
+    {
+        switch (v)
+        {
+            case NullValue: buffer.Add(0); break;
+            case TextValue t: buffer.Add(1); Varint(buffer, (ulong)it.Intern(t.S)); break;
+            case IntegerValue i when i.N >= long.MinValue && i.N <= long.MaxValue: buffer.Add(2); Varint(buffer, Zig((long)i.N)); break;
+            case IntegerValue i: { buffer.Add(3); var big = i.N.ToByteArray(); Varint(buffer, (ulong)big.Length); buffer.AddRange(big); break; }
+            case DecimalValue d: { buffer.Add(4); var (lo, hi) = DecimalKey.Of(d.Q); Number(lo); Number(hi); break; }
+            case BooleanValue b: buffer.Add(b.B ? (byte)6 : (byte)5); break;
+            case InstantValue n: buffer.Add(7); Varint(buffer, Zig(n.Ns)); break;
+            case EntityValue e: buffer.Add(8); Varint(buffer, (ulong)it.Intern(e.Id)); break;
+            case ListValue l: buffer.Add(9); Varint(buffer, (ulong)l.Items.Length); foreach (var x in l.Items) WriteCanonical(x); break;
+            default: throw new InvalidOperationException($"a {v.Kind} value has no canonical form");
+        }
+    }
+
+    Value ReadValue(byte[] b, ref int p)
+    {
+        switch (b[p++])
+        {
+            case 0: return Value.Null;
+            case 1: return Value.Text(it.Get((int)ReadVarint(b, ref p)));
+            case 2: return Value.Integer(Unzig(ReadVarint(b, ref p)));
+            case 3: { var n = (int)ReadVarint(b, ref p); var big = new System.Numerics.BigInteger(b.AsSpan(p, n)); p += n; return Value.Integer(big); }
+            case 4: { var lo = ReadNumber(b, ref p); var hi = ReadNumber(b, ref p); return Value.Decimal(new decimal([(int)(lo >> 32), (int)lo, (int)(hi >> 32), (int)hi])); }
+            case 5: return Value.Boolean(false);
+            case 6: return Value.Boolean(true);
+            case 7: return Value.Instant(Unzig(ReadVarint(b, ref p)));
+            case 8: return Value.Entity(it.Get((int)ReadVarint(b, ref p)));
+            default: { var n = (int)ReadVarint(b, ref p); var items = new Value[n]; for (var i = 0; i < n; i++) items[i] = ReadValue(b, ref p); return Value.List(items); }
+        }
+    }
+
+    /// <summary>Writes a fragment into `buffer` in its canonical form: sink, create or update, type, endpoints, then each property by its name's number.</summary>
+    ReadOnlySpan<byte> CanonicalFragment(int sink, bool update, string type, string? source, string? target, Props props)
     {
         buffer.Clear();
-        Varint(buffer, (ulong)sink); buffer.Add(update ? (byte)1 : (byte)0); Varint(buffer, (ulong)fragmentKeys.Intern(type));
+        Varint(buffer, (ulong)sink); buffer.Add(update ? (byte)1 : (byte)0); Varint(buffer, (ulong)it.Intern(type));
         Varint(buffer, source is null ? 0UL : (ulong)it.Intern(source) + 1); Varint(buffer, target is null ? 0UL : (ulong)it.Intern(target) + 1);
-        buffer.AddRange(PropCodec.Encode(props, fragmentKeys));
-        return fragments.Code(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer));
+        Varint(buffer, (ulong)props.Count);
+        foreach (var (k, v) in props.Items) { Varint(buffer, (ulong)it.Intern(k)); WriteCanonical(v); }
+        return System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer);
     }
 
     Fragment Decode(int code)
     {
-        var (b, p) = fragments.Slice(code);
-        var sink = (int)ReadVarint(b, ref p); var update = b[p++] == 1; var type = fragmentKeys.Get((int)ReadVarint(b, ref p));
+        var (b, p) = values.Slice(code);
+        var sink = (int)ReadVarint(b, ref p); var update = b[p++] == 1; var type = it.Get((int)ReadVarint(b, ref p));
         var s = (int)ReadVarint(b, ref p); var t = (int)ReadVarint(b, ref p);
-        return new(sink, update, type, s == 0 ? null : it.Get(s - 1), t == 0 ? null : it.Get(t - 1), PropCodec.Decode(b, p, fragmentKeys));
+        var n = (int)ReadVarint(b, ref p); var props = new KeyValuePair<string, Value>[n];
+        for (var i = 0; i < n; i++) { var key = it.Get((int)ReadVarint(b, ref p)); props[i] = KeyValuePair.Create(key, ReadValue(b, ref p)); }
+        return new(sink, update, type, s == 0 ? null : it.Get(s - 1), t == 0 ? null : it.Get(t - 1), Props.Of(props));
     }
 
     /// <summary>The endpoints a fragment names (null for an entity's).</summary>
     (string? Source, string? Target) EndsOf(int code)
     {
-        var (b, p) = fragments.Slice(code);
+        var (b, p) = values.Slice(code);
         ReadVarint(b, ref p); p++; ReadVarint(b, ref p);
         var s = (int)ReadVarint(b, ref p); var t = (int)ReadVarint(b, ref p);
         return (s == 0 ? null : it.Get(s - 1), t == 0 ? null : it.Get(t - 1));
     }
 
-    /// <summary>Adds `w` to the weight of a fragment of an element, and keeps the endpoint index: an endpoint is in it while some fragment of the relationship names it.</summary>
-    void AddFragment(int elem, int code, long w, string? source, string? target)
+    /// <summary>Adds `w` to the weight of a fragment of an element. A new row holds its fragment, a row that goes releases it. The endpoint index follows: an endpoint is in it while some fragment of the relationship names it.</summary>
+    void AddFragment(int elem, ReadOnlySpan<byte> fragment, long w, string? source, string? target)
     {
         if (w == 0) return;
-        var isNew = contributions.Find([elem, code]) < 0;
-        if (isNew)
+        var code = values.Find(fragment);
+        if (code < 0 || contributions.Find([elem, code]) < 0)
+        {
+            code = values.Hold(fragment);
             foreach (var end in new[] { source, target })
                 if (end is not null && ends.Find([it.Intern(end), elem]) < 0) ends.Add([it.Intern(end), elem], 1);
-        if (contributions.Add([elem, code], w) >= 0 || isNew) return;
+            contributions.Add([elem, code], w);
+            return;
+        }
+        if (contributions.Add([elem, code], w) >= 0) return;
         foreach (var end in new[] { source, target }.Distinct())
             if (end is not null && !RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == end || e.Target == end))) ends.Add([it.Intern(end), elem], -1);
+        values.Release(code);
     }
 
     /// <summary>The fragments of an element with their weights, as fragment codes.</summary>
@@ -537,7 +589,7 @@ public sealed class OutputBuilder(Interner it)
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight)
     {
         if (!kinds.Has(elem)) kinds[elem] = isRel ? Relationship : Entity;
-        AddFragment(elem, FragmentOf(sink, update, type, source, target, props), weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
+        AddFragment(elem, CanonicalFragment(sink, update, type, source, target, props), weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
         Touch(elem);
     }
 

@@ -1,8 +1,9 @@
+using Sattle.Core;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>The four structures of the core (core step 1): segments, the code dictionary, the table and its arrangements, each against a model built on `Dictionary` under generated operations. Inserting, retracting, a weight of zero removing the row and the reuse of its number; iteration order is not compared.</summary>
+/// <summary>The four structures of the core (core step 1): segments, the stored values, the table and its arrangements, each against a model built on `Dictionary` under generated operations. Inserting, retracting, a weight of zero removing the row and the reuse of its number; iteration order is not compared.</summary>
 public class StructureTests
 {
     [Theory]
@@ -25,22 +26,37 @@ public class StructureTests
         Assert.Equal(64, s.Capacity);
     }
 
+    /// <summary>Values are kept once and counted: a value has one code while it is held, a released value is gone and its code may name another, and when nothing is held nothing is kept. Against a model that counts uses per value, under generated holds and releases, with values longer than a page among them.</summary>
     [Theory]
-    [InlineData(1, 1_000)] [InlineData(2, 50_000)]
-    public void The_code_dictionary_gives_one_dense_code_per_value_in_order_of_first_appearance(int seed, int values)
+    [InlineData(1, 50)] [InlineData(2, 2_000)] [InlineData(3, 20_000)]
+    public void Values_are_kept_once_while_they_are_held_and_gone_when_released(int seed, int distinct)
     {
         var rnd = new Random(seed);
-        var d = new CodeDictionary(); var model = new Dictionary<string, int>(StringComparer.Ordinal);
-        string Value() => rnd.Next(1_000) == 0 ? new string('x', 70_000 + rnd.Next(10)) : "ü-" + rnd.Next(values) + (rnd.Next(2) == 0 ? "-日本" : "");
-        for (var step = 0; step < 3 * values; step++)
+        var values = new Values(); var model = new Dictionary<string, (int Code, int Uses)>(StringComparer.Ordinal);
+        byte[] Bytes(string v) => System.Text.Encoding.UTF8.GetBytes(v);
+        string Value() => rnd.Next(2_000) == 0 ? new string('x', 70_000 + rnd.Next(10)) : "ü-" + rnd.Next(distinct) + (rnd.Next(2) == 0 ? "-日本" : "");
+        for (var step = 0; step < 6 * distinct; step++)
         {
-            var v = Value();
-            if (!model.TryGetValue(v, out var expected)) model[v] = expected = model.Count;
-            Assert.Equal(expected, d.Code(v));
+            if (model.Count > 0 && rnd.Next(5) < 2)
+            {
+                var (v, held) = model.ElementAt(rnd.Next(model.Count));
+                values.Release(held.Code);
+                if (held.Uses == 1) model.Remove(v); else model[v] = (held.Code, held.Uses - 1);
+            }
+            else
+            {
+                var v = Value(); var code = values.Hold(Bytes(v));
+                if (model.TryGetValue(v, out var held)) { Assert.Equal(held.Code, code); model[v] = (code, held.Uses + 1); }
+                else { Assert.DoesNotContain(model.Values, x => x.Code == code); model[v] = (code, 1); }        // a new value never takes the code of one that is held
+            }
         }
-        Assert.Equal(model.Count, d.Count);
-        foreach (var (v, c) in model) { Assert.Equal(v, d.Text(c)); Assert.True(d.TryFind(System.Text.Encoding.UTF8.GetBytes(v), out var f)); Assert.Equal(c, f); }
-        Assert.False(d.TryFind("not a value"u8, out _));
+        Assert.Equal(model.Count, values.Count);
+        Assert.Equal(model.Keys.Sum(v => (long)Bytes(v).Length), values.HeldBytes);
+        foreach (var (v, held) in model) { Assert.Equal(held.Code, values.Find(Bytes(v))); Assert.True(values.Bytes(held.Code).SequenceEqual(Bytes(v))); }
+        Assert.Equal(-1, values.Find("not a value"u8));
+        foreach (var (_, held) in model) for (var i = 0; i < held.Uses; i++) values.Release(held.Code);
+        Assert.Equal((0, 0L), (values.Count, values.HeldBytes));
+        Assert.True(values.Footprint() < 200_000, $"{values.Footprint():N0} bytes kept when nothing is held");
     }
 
     /// <summary>Two key columns (one 4 bytes, one 8) and two value columns; small key spaces so rows come and go and their numbers are reused. An arrangement by the first key column, made before the rows and made after them, gives the rows of each value.</summary>
@@ -123,11 +139,13 @@ public class StructureTests
     [Fact]
     public void A_value_longer_than_a_page_costs_its_own_bytes_and_no_page_beside_them()
     {
-        var d = new CodeDictionary(); var before = d.Footprint();
-        var v = new byte[70_000];
-        for (var i = 0; i < 100; i++) { v[0] = (byte)i; Assert.Equal(i, d.Code(v)); }
-        Assert.Equal(100, d.Code("short"u8));
-        for (var i = 0; i < 100; i++) { v[0] = (byte)i; Assert.Equal(i, d.Code(v)); }
+        var d = new Values(); var before = d.Footprint();
+        var v = new byte[70_000]; var codes = new List<int>();
+        for (var i = 0; i < 100; i++) { v[0] = (byte)i; codes.Add(d.Hold(v)); }
+        Assert.Equal(100, codes.Distinct().Count());
+        var small = d.Hold("short"u8);
+        for (var i = 0; i < 100; i++) { v[0] = (byte)i; Assert.Equal(codes[i], d.Find(v)); }
+        Assert.True(d.Bytes(small).SequenceEqual("short"u8));
         Assert.True(d.Footprint() - before < 100 * 80_000, $"{(d.Footprint() - before) / 100:N0} bytes per value of 70,000 bytes");
     }
 
@@ -139,13 +157,61 @@ public class StructureTests
         {
             var it = new Interner(); var sink = new OutputBuilder(it);
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            for (var i = 0; i < n; i++) sink.Contribute(it.Intern("r:" + i), true, 0, false, "T", hub ? "e:hub" : "s:" + i, "e:" + i, Sattle.Core.Props.Empty, 1);
-            for (var i = 0; i < n; i++) sink.Contribute(it.Intern("r:" + i), true, 0, false, "T", hub ? "e:hub" : "s:" + i, "e:" + i, Sattle.Core.Props.Empty, -1);
+            for (var i = 0; i < n; i++) sink.Contribute(it.Intern("r:" + i), true, 0, false, "T", hub ? "e:hub" : "s:" + i, "e:" + i, Props.Empty, 1);
+            for (var i = 0; i < n; i++) sink.Contribute(it.Intern("r:" + i), true, 0, false, "T", hub ? "e:hub" : "s:" + i, "e:" + i, Props.Empty, -1);
             return sw.Elapsed.TotalSeconds;
         }
         Seconds(1_000, true);
         var spread = Seconds(8_000, false); var one = Seconds(8_000, true);
         Assert.True(one < 20 * Math.Max(spread, 0.05), $"{spread:F2} s at distinct endpoints, {one:F2} s at one endpoint");
+    }
+
+    /// <summary>Code review 2, defect 20: what a sink keeps about an element is compared as a value, so a number retracted at another scale (2.5 and 2.50) cancels what it was added with. Before, the two were two entries, one at +1 and one at -1, and the element stayed.</summary>
+    [Theory]
+    [InlineData("2.5", "2.50")] [InlineData("0", "0.000")] [InlineData("-1.10", "-1.1")] [InlineData("100", "100.0000000000")] [InlineData("0.0000000000000000000000000001", "0.0000000000000000000000000001")]
+    public void A_sink_cancels_a_contribution_with_its_retraction_written_at_another_decimal_scale(string added, string retracted)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var it = new Interner(); var sink = new OutputBuilder(it); var g = new Graph(); var e = it.Intern("e:x");
+        sink.Contribute(e, false, 0, false, "T", null, null, Props.Of(("d", Value.Decimal(decimal.Parse(added, inv)))), 1); g.Apply(sink.Flush(g));
+        Assert.NotNull(g.Entity("e:x"));
+        Assert.Equal((1, 1), (sink.Held.Contributions, sink.Held.Fragments));
+        sink.Contribute(e, false, 0, false, "T", null, null, Props.Of(("d", Value.Decimal(decimal.Parse(retracted, inv)))), -1); g.Apply(sink.Flush(g));
+        Assert.Null(g.Entity("e:x"));
+        Assert.Equal((0, 0, 0L), sink.Held);
+    }
+
+    /// <summary>Code review 2: a sink keeps a value only while a row uses it. One element whose property takes 20,000 values in turn holds one value at the end, and 20,000 elements that came and went hold nothing. Before, every value ever written stayed.</summary>
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void A_sink_holds_a_value_only_while_a_row_uses_it(bool manyElements)
+    {
+        var it = new Interner(); var sink = new OutputBuilder(it); var g = new Graph();
+        Props P(int i) => Props.Of(("n", Value.Integer(i)), ("t", Value.Text("event " + i)));
+        if (manyElements)
+        {
+            foreach (var w in new long[] { 1, -1 })
+            {
+                for (var i = 0; i < 20_000; i++) sink.Contribute(it.Intern("e:" + i), false, 0, false, "T", null, null, P(i), w);
+                g.Apply(sink.Flush(g));
+                Assert.Equal(w > 0 ? (20_000, 20_000) : (0, 0), (sink.Held.Contributions, sink.Held.Fragments));
+            }
+            Assert.Equal(0, g.EntityCount);
+            Assert.Equal(0L, sink.Held.FragmentBytes);
+        }
+        else
+        {
+            var e = it.Intern("e:x");
+            for (var v = 0; v < 20_000; v++)
+            {
+                if (v > 0) sink.Contribute(e, false, 0, false, "T", null, null, P(v - 1), -1);
+                sink.Contribute(e, false, 0, false, "T", null, null, P(v), 1);
+                Assert.Null(g.Apply(sink.Flush(g)));
+            }
+            Assert.Equal((1, 1), (sink.Held.Contributions, sink.Held.Fragments));
+            Assert.InRange(sink.Held.FragmentBytes, 1, 64);
+            Assert.Equal(new IntegerValue(19_999), g.Entity("e:x")!.Props.Get("n"));
+        }
     }
 
     /// <summary>Code review 2: a row that is not there has weight 0, also the -1 a `Find` gives.</summary>

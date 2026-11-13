@@ -310,6 +310,19 @@ Code review 2 measured what the table's second way to find a row cost: a row was
 - The state digests equal those of the build before this step at every chunk size. The digests of the two recordings changed earlier, with the definitions change of 79a3cce (a present but empty text counts as missing, as in KQL); the estate and `lab/fixtures` kept theirs.
 - Proofs: `Sattle.Differential` every category 312 of 312; the seal, restart, snapshot, operator, grouping, lineage and structure groups 238 of 238; the default run 265 of 265 and 701 passed, 2 skipped. Seal format 4.
 
+## Results table, step 2: what a sink keeps about an element is compared as a value and freed when no row uses it (2026-11-13)
+Code review 2 found two defects in the values a sink keeps (what a rule says about an element: its type, endpoints and properties). They were compared byte by byte with a number's scale among the bytes, so 2.5 retracted as 2.50 cancelled nothing and the element stayed (defect 20). And a value was never freed: every value a property ever had stayed in memory. Now a value is written in one form (a number without its scale, every text and name as the engine's number for it), each table row counts as one use of its value, and a value no row uses is gone; when more bytes are free than in use, the rest are copied together. A sink whose elements all went holds nothing.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| One index per table (step 1) | 7,064 MB (43,470 B) | 23.4, 25.6 and 23.5 s; 39.3 GB | |
+| Values compared as values, counted | 7,025 MB (43,230 B), −39 MB | 24.9, 24.4 and 24.1 s (load 18 to 20; the build before the core steps in the same minutes 23.6 s); 39.2 GB | +153, −57 |
+
+- The sink's values 106 to 67 MB: a text is now 1 to 4 bytes where it was its UTF-8 bytes, and the second table of property names is gone. The contributions (84 MB) and the endpoint table (36 MB) are unchanged.
+- What the census cannot show, since it measures one steady state: on a long run where properties keep changing, the old store grew without bound. `A_sink_holds_a_value_only_while_a_row_uses_it`: one element whose property takes 20,000 values holds one value at the end; 20,000 elements that came and went hold none.
+- The state digests equal those of step 1 at every chunk size (estate, `lab/fixtures`, both recordings; 12 of 12).
+- Proofs: `A_sink_cancels_a_contribution_with_its_retraction_written_at_another_decimal_scale` (5 cases) and `Rows_that_differ_only_in_decimal_scale_leave_nothing_when_they_are_retracted` (plain, distinct and join, in one chunk and row by row; all 6 fail on step 1); `Values_are_kept_once_while_they_are_held_and_gone_when_released` against a model. `Sattle.Differential` every category 312 of 312; the default run 715 passed, 2 skipped; the KQL tests 138 of 138. Seal format 4 (a seal of another build is refused by its build id).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

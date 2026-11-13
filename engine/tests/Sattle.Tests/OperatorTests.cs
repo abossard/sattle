@@ -230,6 +230,29 @@ public class OperatorTests
         Assert.Equal(cat.Modules["t.rows"].Digest, again.Modules["t.rows"].Digest);
     }
 
+    /// <summary>Code review 2, defect 20: two rows that write one number at two scales (1.5 and 1.50) are rows with the same value in every step and in the results. When both are retracted, in one chunk or one row at a time, nothing is left of them. Before, the results kept 1.5 at +1 and 1.50 at -1 for ever.</summary>
+    [Theory]
+    [InlineData("select", false)] [InlineData("select", true)]
+    [InlineData("distinct", false)] [InlineData("distinct", true)]
+    [InlineData("join", false)] [InlineData("join", true)]
+    public void Rows_that_differ_only_in_decimal_scale_leave_nothing_when_they_are_retracted(string shape, bool oneChunk)
+    {
+        var body = "let items = match master (i: base.Item) |> select { g: i.group, w: i.weight };\n" + shape switch
+        {
+            "distinct" => "let d = items |> distinct;\nemit entity Summary from d identity summary(group: g) set { group: g, heaviest: w };",
+            "join" => "let tags = match master (t: base.Tag) |> select { tk: t.key };\nlet j = join items, tags on g == tk;\nemit entity Summary from j identity summary(group: g) set { group: g, heaviest: w };",
+            _ => "emit entity Summary from items identity summary(group: g) set { group: g, heaviest: w };",
+        };
+        using var e = Mini(Summary, body);
+        Tags(e, 1, ("g1", "L", 1));
+        // a1 comes at 1.5 and goes at 1.50; a2 comes at 1.50 and goes at 1.5
+        (string, string, long, decimal?, long)[] log = [("a1", "g1", 1, 1.5m, 1), ("a2", "g1", 1, 1.50m, 1), ("a1", "g1", 1, 1.50m, -1), ("a2", "g1", 1, 1.5m, -1)];
+        if (oneChunk) { Items(e, 2, log[..2]); Assert.Equal(new DecimalValue(1.5m), Summaries(e, "Summary", "group", "heaviest")["g1"]); Items(e, 3, log[2..]); }
+        else { var seq = 1L; foreach (var row in log) Items(e, ++seq, row); }
+        Assert.DoesNotContain(e.Graph("master").State.Entities, x => Ids.Name(x.Type) == "Item");
+        Assert.Empty(Summaries(e, "Summary", "group", "heaviest"));
+    }
+
     const string Labelled = "entity Summary { group: Text; label?: Text; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
 
     static void Tags(Engine e, long seq, params (string Key, string Label, long W)[] rows)
