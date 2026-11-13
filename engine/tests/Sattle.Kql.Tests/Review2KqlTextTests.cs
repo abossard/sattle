@@ -80,6 +80,24 @@ public class Review2KqlTextTests
             "accepted without a message, and no rule tree: " + string.Join(" | ", low.Diagnostics.Select(d => d.Message)));
     }
 
+    /// <summary>HEAD: every call writes the body of the function again: 12 doublings give 2^12 additions.</summary>
+    [Theory]
+    [InlineData(6)]
+    [InlineData(10)]
+    [InlineData(14)]
+    [InlineData(18)]
+    public void Functions_that_call_the_one_before_twice_do_not_double_the_operators_with_every_line(int n)
+    {
+        KqlResult Chain(int m) => LowerSvc(GraphLine + Services + "let f0 = (x:long) { x + x };\n" + string.Concat(Enumerable.Range(1, m).Select(k => $"let f{k} = (x:long) {{ f{k - 1}(x) + f{k - 1}(x) }};\n"))
+            + "nodes ServiceNode on service = services;\n"
+            + $"extend nodes ServiceNode on service = services | summarize n = count() by service | project service, pods = f{m}(n);\n");
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var low = Chain(n);
+        // what each added line costs, beyond the text that has the step with f0 alone
+        var facts = low.Facts.Elements().Count() - Chain(0).Facts.Elements().Count();
+        Assert.True(!low.Ok || facts < 40 * n, $"n = {n}: {facts} facts more than with f0 alone, {watch.Elapsed.TotalSeconds:F1} s, from {n + 3} lines");
+    }
+
     /// <summary>HEAD: a file named after a module of one part reads name[(module.Length + 1)..] of a name that is only the module.</summary>
     [Fact]
     public void A_KQL_file_of_a_module_named_in_one_part_gets_a_diagnostic_not_an_exception()

@@ -327,7 +327,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (query is PipeExpression { Operator: ProjectOperator or ExtendOperator } last)
         {
             r = Tab(last.Expression);
-            cols = Fuse(r, last.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)last.Operator).Expressions.Select(x => x.Element)], last.Operator is ExtendOperator);
+            (r, cols) = Fuse(r, last.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)last.Operator).Expressions.Select(x => x.Element)], last.Operator is ExtendOperator);
         }
         else
         {
@@ -389,11 +389,15 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         cols.FirstOrDefault(c => c.Name == col) is { Value: { } x } ? x : throw new Refused($"the rows have no column '{col}'", at);
 
     /// <summary>The columns of a `project` (or `extend`, which keeps the others) as expressions over the rows before it, with no operator of their own.</summary>
-    List<(string Name, X Value)> Fuse(Rel r, IReadOnlyList<Expression> items, bool keepAll)
+    /// <summary>The columns of a step's last `project` or `extend` as the sink's own expressions, and the rows the sink reads (with computed columns when a call repeats).</summary>
+    (Rel Rows, List<(string Name, X Value)> Cols) Fuse(Rel r, IReadOnlyList<Expression> items, bool keepAll)
     {
         if (r.Long is { Props.Length: > 1 }) throw new Refused("summarize the telemetry rows of several properties by their window before projecting them: summarize v = sumif(value, property == \"p\") by ..., windowStart", items[0]);
         var res = new List<(string Name, X Value)>();
         void Put(string name, X x) { var i = res.FindIndex(c => c.Name == name); if (i >= 0) res[i] = (name, x); else res.Add((name, x)); }
+        IEnumerable<X> Build()
+        {
+        res.Clear();
         if (keepAll) foreach (var c in r.Visible) Put(c, r.Idents.TryGetValue(c, out var id) ? id : F(c));
         foreach (var it in items)
         {
@@ -410,8 +414,74 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 _ => Scalar(e, r),
             });
         }
-        return res;
+        return res.Select(c => c.Value);
+        }
+        var rows = Shared(r, Build);
+        return (rows, res);
     }
+
+    /// <summary>A call of one of the text's value functions that an expression makes more than once with the same arguments: written once, as a column the
+    /// expression reads. Without it `f(x) + f(x)` would write f's body twice, and a chain of such functions twice as often at every level.</summary>
+    sealed class Calls
+    {
+        public bool Writing;
+        public readonly Dictionary<string, string> Columns = [];
+        public readonly List<(string Name, X Value)> Order = [];
+        public readonly HashSet<string> Seen = [];
+    }
+
+    sealed class Repeated : Exception;
+
+    // collects the computed columns of one expression while it is written: set and restored in Shared only
+    Calls? repeats;
+
+    /// <summary>Writes the expressions `build` makes over `r`: once as they are, and again with each repeated call as a computed column of the rows they read.</summary>
+    Rel Shared(Rel r, Func<IEnumerable<X>> build)
+    {
+        var saved = repeats;
+        try
+        {
+            repeats = new Calls();
+            try { _ = build().ToList(); return r; }
+            catch (Repeated) { }
+            repeats = new Calls { Writing = true };
+            var finals = build().ToList();
+            // a computed column is carried only while a later column or the expressions themselves read it
+            var order = repeats.Order; var own = order.Select(o => o.Name).ToHashSet(StringComparer.Ordinal);
+            var needed = new HashSet<string>[order.Count]; var acc = finals.SelectMany(Refs).ToHashSet(StringComparer.Ordinal);
+            for (var k = order.Count - 1; k >= 0; k--) { needed[k] = [.. acc]; acc.UnionWith(Refs(order[k].Value)); }
+            var given = r.Cols.ToList();
+            for (var k = 0; k < order.Count; k++)
+            {
+                var op = Op("Map"); var n = 0;
+                var keep = given.Concat(r.Cols.Where(c => own.Contains(c) && needed[k].Contains(c))).Distinct().ToList();
+                foreach (var c in keep) Write(F(c), b.Contain(op, "assign", c, "Assign", n++, ("target", T(c))), "value", 0);
+                Write(order[k].Value, b.Contain(op, "assign", order[k].Name, "Assign", n, ("target", T(order[k].Name))), "value", 0);
+                Wire(r.Port, op, "in");
+                r = r.Next(P(op, "out"));
+                r.Cols = [.. keep, order[k].Name];
+            }
+            return r;
+        }
+        finally { repeats = saved; }
+    }
+
+    static IEnumerable<string> Refs(X x) => x switch
+    {
+        FieldX f => [f.Path.Split('.')[0]],
+        CallX c => c.Args.SelectMany(Refs),
+        IdX i => i.Parts.SelectMany(p => Refs(p.Value)),
+        _ => [],
+    };
+
+    static string KeyOf(X x) => x switch
+    {
+        FieldX f => "f:" + f.Path,
+        LitX l => "l:" + l.V,
+        CallX c => c.Fn + "(" + string.Join(",", c.Args.Select(KeyOf)) + ")",
+        IdX i => "id:" + i.Domain + "(" + string.Join(",", i.Parts.Select(p => p.Component + "=" + KeyOf(p.Value))) + ")",
+        _ => x.ToString() ?? "",
+    };
 
 
     /// <summary>The types of a name: the module's own type when it declares one, else every type of that name it sees.</summary>
@@ -471,7 +541,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (p.Operator is InvokeOperator { Function: FunctionCallExpression { Name.SimpleName: "hysteresis" } } hy && p.Expression is PipeExpression { Operator: ProjectOperator or ExtendOperator } pj)
         {
             var inner = Tab(pj.Expression);
-            return At(hy, () => Hysteresis(inner, Fuse(inner, pj.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)pj.Operator).Expressions.Select(x => x.Element)], pj.Operator is ExtendOperator), hy));
+            return At(hy, () => { var (rows, cols) = Fuse(inner, pj.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)pj.Operator).Expressions.Select(x => x.Element)], pj.Operator is ExtendOperator); return Hysteresis(rows, cols, hy); });
         }
         if (p.Operator is GraphMatchOperator gm) return At(gm, () => GraphMatch(gm, p.Expression));
         var input = Tab(p.Expression);
@@ -676,7 +746,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     Rel Filter(Rel r, IReadOnlyList<Expression> conds)
     {
-        var x = conds.Select(c => Scalar(c, r)).Aggregate((a, z) => new CallX("And", a, z));
+        X x = null!;
+        r = Shared(r, () => [x = conds.Select(c => Scalar(c, r)).Aggregate((a, z) => new CallX("And", a, z))]);
         var op = Op("Filter");
         Write(x, op, "predicate", 0);
         Wire(r.Port, op, "in");
@@ -689,6 +760,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (r.Long is { Props.Length: > 1 }) throw new Refused("summarize the telemetry rows of several properties by their window before projecting them: summarize v = sumif(value, property == \"p\") by ..., windowStart", items[0]);
         var assigns = new List<(string Name, X Value)>();
         var next = new Rel { Port = "", Windowed = false };
+        var input = r;
         void Put(string name, X x, string? type)
         {
             var i = assigns.FindIndex(a => a.Name == name);
@@ -705,6 +777,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             }
             else { Put(to, F(from), r.Types.GetValueOrDefault(from)); if (r.Kinds.TryGetValue(from, out var kind)) next.Kinds[to] = kind; }
         }
+        IEnumerable<X> Build()
+        {
+        assigns.Clear(); next = new Rel { Port = "", Windowed = false };
         if (keepAll) { foreach (var c in r.Cols.Where(c => !Rel.Hidden(c))) Carry(c, c); foreach (var c in r.Idents.Keys) Carry(c, c); }
         foreach (var it in items)
         {
@@ -726,6 +801,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             Put(name, x, x is FieldX f && !f.Path.Contains('.') ? r.Types.GetValueOrDefault(f.Path) : null);
             if (x is FieldX fk && r.Kinds.TryGetValue(fk.Path, out var kind)) next.Kinds[name] = kind;
         }
+        return assigns.Select(a => a.Value);
+        }
+        r = Shared(input, Build);
         var op = Op("Map");
         for (var k = 0; k < assigns.Count; k++)
             Write(assigns[k].Value, b.Contain(op, "assign", assigns[k].Name, "Assign", k, ("target", T(assigns[k].Name))), "value", 0);
@@ -1134,7 +1212,14 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         {
             var ps = mine.Parameters.Parameters.Select(p => p.Element.NameAndType.Name.ReferencedSymbol!).ToList();
             if (ps.Count != a.Count || mine.Body.Expression is null || mine.Body.Statements.Count > 0) throw new Refused($"{f.Name.SimpleName} takes {ps.Count} values and is one expression", f);
-            return Scalar(mine.Body.Expression, r, ps.Zip(a).ToDictionary(x => x.First, x => x.Second));
+            var key = f.Name.SimpleName + "(" + string.Join(",", a.Select(KeyOf)) + ")";
+            if (repeats is { Writing: false } && !repeats.Seen.Add(key)) throw new Repeated();
+            if (repeats is { Writing: true } && repeats.Columns.TryGetValue(key, out var col)) return F(col);
+            var body = Scalar(mine.Body.Expression, r, ps.Zip(a).ToDictionary(x => x.First, x => x.Second));
+            if (repeats is not { Writing: true }) return body;
+            var name = $"{f.Name.SimpleName}__call{repeats.Order.Count + 1}";
+            repeats.Order.Add((name, body)); repeats.Columns[key] = name;
+            return F(name);
         }
         X Nest(string fn) => a.Count < 2 ? throw new Refused($"{f.Name.SimpleName} takes two or more values", f) : a.SkipLast(1).Reverse().Aggregate(a[^1], (acc, x) => new CallX(fn, x, acc));
         X One(string fn) => a.Count == 1 ? new CallX(fn, a[0]) : throw new Refused($"{f.Name.SimpleName} takes one value", f);
