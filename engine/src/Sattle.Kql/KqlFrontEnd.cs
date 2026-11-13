@@ -81,7 +81,7 @@ public static class KqlFrontEnd
         {
             string? G(string n) => m.Groups[n].Success ? m.Groups[n].Value : null;
             Overwrite(chars, m.Index, m.Length, $"let __s{steps.Count} =");
-            var h = new StepHeader(m.Groups["ext"].Success, m.Groups["kind"].Value, m.Groups["type"].Value, G("id"), G("src"), G("dst"), SettingsOf(m.Groups["with"]), m.Index, m.Index + m.Length);
+            var h = new StepHeader(m.Groups["ext"].Success, m.Groups["kind"].Value, m.Groups["type"].Value, G("id"), G("src"), G("dst"), SettingsOf(m.Groups["with"]), m.Index, m.Index + m.Length) { WithGroup = m.Groups["with"] };
             foreach (var st in h.With.Where(st => !h.Allows(st.Name))) faults.Add(st.Start, st.End, "Profile", h.Refusal(st.Name));
             steps.Add(h);
         }
@@ -91,7 +91,17 @@ public static class KqlFrontEnd
             faults.Add(m.Index + m.Length - m.Value.TrimStart().Length, text.IndexOf('\n', m.Index) is var nl && nl >= 0 ? nl : text.Length, "Profile",
                 "this line starts like a statement of a projection and is none: graph name : ontology;  input name : ontology;  nodes T on id = ...;  edges T from a to b = ...;  link P from a to b = ...;");
         var (graphs, rows, lines) = Inputs(text, chars, catalog, module, faults);
+        // every setting reads as name = value, and a rule or a key is a name
+        foreach (var g in steps.Select(s => (s.WithGroup, s.With)).Append((head?.Groups["with"], graphSettings)))
+            if (g.Item1 is { Success: true } w)
+            {
+                var left = Regex.Replace(w.Value, @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)", m => new string(' ', m.Length));
+                if (left.Trim(' ', '\t', '\r', '\n', ',').Length > 0) faults.Add(w.Index, w.Index + w.Length, "Profile", "settings are name = value, separated by commas; a value with a comma is quoted: accept = \"create, delete\"");
+            }
+        foreach (var st in steps.SelectMany(s => s.With).Where(st => st.Name is "rule" or "key" && !Regex.IsMatch(st.Value, @"^[A-Za-z_]\w*$")))
+            faults.Add(st.Start, st.End, "Profile", $"a {st.Name} is a name of letters, digits and _: '{st.Value}' is not");
         var code = KustoCode.ParseAndAnalyze(new string(chars) + "\nprint 0", Schema(catalog, graphs, rows));
+        if (code.Syntax is not QueryBlock) { faults.Add(0, text.IndexOf('\n') is var nl && nl > 0 ? nl : text.Length, "Profile", "a projection is a query: a line that begins with a dot is a command"); code = KustoCode.ParseAndAnalyze("print 0", Schema(catalog, graphs, rows)); }
         foreach (var d in code.GetDiagnostics().Where(d => d.Severity == "Error"))
             faults.Add(d.Start, d.End, "Kusto", d.Message);
         return new KqlText(text, head, graphSettings, description, history, graphs, rows, lines, steps, code, faults);
@@ -218,6 +228,9 @@ sealed record StepHeader(bool Extend, string Kind, string Type, string? Id, stri
 
     /// <summary>The key of an edge step: its setting, else the type name with a lower-case first letter.</summary>
     public string Key => Get("key") ?? char.ToLowerInvariant(Type[0]) + Type[1..];
+
+    /// <summary>The text inside `with (...)` as the reading found it, to check that it reads whole.</summary>
+    public Group? WithGroup { get; init; }
 }
 
 /// <summary>A setting in `with (...)`: its name, its value, and the place of `name = value`.</summary>

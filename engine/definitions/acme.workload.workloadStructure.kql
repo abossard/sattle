@@ -33,7 +33,7 @@ let hosted = graph("master")
 nodes WorkloadNode on node = hosted
     | project node, key = strcat("node/", node.cluster, "/", node.name), ['kind'] = "node", name = node.name, cluster = node.cluster, pool = node.pool;
 edges HostedOn from pod to node with (key = "runsOn") = hosted | project pod, node;
-let pooled = hosted | where isnotnull(node.pool) | project node, cluster = node.cluster, pool = coalesce(node.pool, ""), one = 1;
+let pooled = hosted | where isnotempty(node.pool) | project node, cluster = node.cluster, pool = coalesce(node.pool, ""), one = 1;
 nodes NodePool on nodePool = pooled
     | project nodePool = identity("nodePool", cluster, pool), key = strcat("pool/", cluster, "/", pool), ['kind'] = "pool", name = pool, cluster;
 edges MemberOf from node to nodePool with (key = "nodeInPool") = pooled | project node, nodePool = identity("nodePool", cluster, pool);
@@ -56,11 +56,11 @@ let suffixes = datatable(stype:string, suffix:string) [
 let resources = graph("master") | graph-match (azureResource) where labels(azureResource) has "AzureResource" project azureResource, rkey = tolower(azureResource.resourceId), rtype = tolower(azureResource.type);
 let named = resources | join kind=inner (suffixes) on $left.rtype == $right.stype | project azureResource, rkey, host = strcat(tolower(azureResource.name), suffix);
 let endpoints = graph("master")
-    | graph-match (endpoint) where labels(endpoint) has "AzureResource" and endpoint.type == "microsoft.network/privateendpoints" and isnotnull(endpoint.linkedId) and isnotnull(endpoint.address)
+    | graph-match (endpoint) where labels(endpoint) has "AzureResource" and endpoint.type == "microsoft.network/privateendpoints" and isnotempty(endpoint.linkedId) and isnotempty(endpoint.address)
       project endpoint, peAddress = coalesce(endpoint.address, ""), linked = tolower(coalesce(endpoint.linkedId, "")), vnet = tolower(coalesce(endpoint.parentId, ""));
 
 // assignment Service that stands for assignment azureResource: an ExternalName Service and the azureResource its name is
-let externals = services | where isnotnull(externalName) | project service, ext = tolower(coalesce(externalName, ""));
+let externals = services | where isnotempty(externalName) | project service, ext = tolower(coalesce(externalName, ""));
 let backed = externals | join kind=inner (named) on $left.ext == $right.host;
 edges BackedBy from service to azureResource = backed | project service, azureResource;
 
@@ -80,13 +80,13 @@ let viaName = sent | join kind=inner (named) on $left.dhost == $right.host
     | project pod, destination, azureResource, src, tkey = rkey, how = "dnsName", detail = strcat("pod ", pod.name, " sends flows to ", host);
 let accounts = graph("master")
     | graph-match (pod)-[ra]->(serviceAccount), (pod)-[b]->(service)
-      where labels(pod) has "Pod" and labels(ra) has "RunsAs" and labels(serviceAccount) has "ServiceAccount" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace and isnotnull(serviceAccount.clientId)
+      where labels(pod) has "Pod" and labels(ra) has "RunsAs" and labels(serviceAccount) has "ServiceAccount" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace and isnotempty(serviceAccount.clientId)
       project serviceAccount, src = svcKey(service.cluster, service.namespace, service.name), account = serviceAccount.name, client = tolower(coalesce(serviceAccount.clientId, ""));
 let identities = graph("master")
-    | graph-match (managedIdentity) where labels(managedIdentity) has "AzureResource" and managedIdentity.type == "microsoft.managedidentity/userassignedidentities" and isnotnull(managedIdentity.clientId)
+    | graph-match (managedIdentity) where labels(managedIdentity) has "AzureResource" and managedIdentity.type == "microsoft.managedidentity/userassignedidentities" and isnotempty(managedIdentity.clientId)
       project managedIdentity, identityName = managedIdentity.name, iclient = tolower(coalesce(managedIdentity.clientId, "")), iprincipal = tolower(coalesce(managedIdentity.principalId, ""));
 let assignments = graph("master")
-    | graph-match (assignment) where labels(assignment) has "AzureResource" and assignment.type == "microsoft.authorization/roleassignments" and isnotnull(assignment.scope)
+    | graph-match (assignment) where labels(assignment) has "AzureResource" and assignment.type == "microsoft.authorization/roleassignments" and isnotempty(assignment.scope)
       project assignment, aprincipal = tolower(coalesce(assignment.principalId, "")), scope = tolower(coalesce(assignment.scope, ""));
 let viaIdentity = accounts
     | join kind=inner (identities) on $left.client == $right.iclient
@@ -166,9 +166,9 @@ edges ConnectedThrough from endpoint to network with (key = "throughNetwork") = 
 
 // assignment gateway whose backend is the address of assignment Service sends it requests: the gateway needs the Service
 let backends = graph("master")
-    | graph-match (backendResource) where labels(backendResource) has "AzureResource" and backendResource.type == "microsoft.apimanagement/service/backends" and isnotnull(backendResource.address) and isnotnull(backendResource.parentId)
+    | graph-match (backendResource) where labels(backendResource) has "AzureResource" and backendResource.type == "microsoft.apimanagement/service/backends" and isnotempty(backendResource.address) and isnotempty(backendResource.parentId)
       project baddress = coalesce(backendResource.address, ""), gateway = tolower(coalesce(backendResource.parentId, "")), backend = backendResource.name;
-let addressed = services | where isnotnull(address) | project service, saddress = coalesce(address, ""), skey4 = svcKey(cluster, namespace, name);
+let addressed = services | where isnotempty(address) | project service, saddress = coalesce(address, ""), skey4 = svcKey(cluster, namespace, name);
 let gateways = backends
     | join kind=inner (addressed) on $left.baddress == $right.saddress
     | join kind=inner (resources) on $left.gateway == $right.rkey;

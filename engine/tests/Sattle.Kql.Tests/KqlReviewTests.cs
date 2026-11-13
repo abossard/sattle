@@ -30,6 +30,35 @@ public class KqlReviewTests
         return $"{Ids.Name(type)} {(cut >= 0 ? id[(cut + 1)..] : id)} {string.Join(", ", props.Items.Select(kv => Ids.Name(kv.Key) + "=" + kv.Value))}";
     })];
 
+    /// <summary>Text typed in an editor is answered with diagnostics, never with an exception.</summary>
+    [Theory]
+    [InlineData("let __s = 1;\nnodes ServiceNode on service = services;\n")]                           // FormatException, Lowerer.Run
+    [InlineData("let __s7 = services;\nnodes ServiceNode on service = services;\n")]                   // ArgumentOutOfRangeException, Lowerer.Run
+    [InlineData("nodes ServiceNode on service = services | where real(1.5) > 1.0;\n")]                // FormatException, Lowerer.Lit
+    [InlineData("nodes ServiceNode on service = services | where decimal(1.5) > 1.0;\n")]             // FormatException, Lowerer.Lit
+    [InlineData("nodes ServiceNode on service = services | where real(nan) > 1.0;\n")]                // FormatException, Lowerer.Lit
+    [InlineData("nodes ServiceNode on service = services | where 1e30 > 1.0;\n")]                     // OverflowException, Lowerer.Lit
+    public void Text_the_front_end_cannot_lower_gives_a_diagnostic_not_an_exception(string rest)
+    {
+        var thrown = Record.Exception(() => Lower(rest));
+        Assert.True(thrown is null, $"{thrown?.GetType().Name}: {thrown?.Message}");
+    }
+
+    /// <summary>Kusto: `summarize n = arg_max(a, b) by k` has the columns k, n (the greatest a) and b. The front end writes n as b of the row with the greatest a, and no column b.</summary>
+    [Fact]
+    public void A_named_arg_max_names_the_greatest_order_as_in_Kusto_or_is_refused()
+    {
+        var low = Lower("nodes ServiceNode on service = services | summarize n = arg_max(name, cluster) by service | project service, name = n, cluster = n, namespace = n;\n");
+        if (!low.Ok) return;
+        Assert.Contains(Facts(low), f => f.StartsWith("FieldRef ", StringComparison.Ordinal) && f.Contains("/agg:n/value:#0 ", StringComparison.Ordinal) && f.Contains("S = name ", StringComparison.Ordinal));
+    }
+
+    /// <summary>A query statement that is no step writes nothing. The author who forgot the step header gets a projection without that step and no message.</summary>
+    [Theory]
+    [InlineData("services | where name == \"a\";\nnodes ServiceNode on service = services;\n")]
+    [InlineData("print 1;\nnodes ServiceNode on service = services;\n")]
+    public void A_statement_that_writes_nothing_is_refused(string rest) => Assert.False(Lower(rest).Ok);
+
     /// <summary>Kusto binds a name in a function body where the function is declared. The front end resolves it where the function is called: a column of the calling rows captures a let of the same name.</summary>
     [Fact]
     public void A_let_read_in_a_scalar_function_is_the_let_not_a_column_of_the_calling_rows()
@@ -49,6 +78,33 @@ public class KqlReviewTests
             + "nodes ServiceNode on service = services | where name == \"other\" | invoke f() | project service, name, cluster, namespace;\n");
         if (!low.Ok) return;
         Assert.Contains(Facts(low), f => f.StartsWith("Literal ", StringComparison.Ordinal) && f.Contains("S = top ", StringComparison.Ordinal));
+    }
+
+    /// <summary>To Kusto identity(...) is text, so a union of two identity columns checks. The front end keeps the first table's identity domain for the rows of every table.</summary>
+    [Theory]
+    [InlineData("let b2 = services | project g = identity(\"podName\", cluster, namespace, name), cluster, namespace;\nnodes ServiceGroup on g = union a, b2;\n")]
+    [InlineData("let b2 = services | project g = name, cluster, namespace;\nnodes ServiceGroup on g = union a, b2;\n")]
+    public void The_tables_of_a_union_agree_on_what_an_identity_column_is(string rest) =>
+        Assert.False(Lower("let a = services | project g = identity(\"serviceGroup\", cluster, namespace), cluster, namespace;\n" + rest).Ok);
+
+    /// <summary>Kusto: both labels hold. The front end takes the last one, so this pattern reads every Pod.</summary>
+    [Fact]
+    public void Two_labels_on_one_node_both_hold_or_are_refused()
+    {
+        var low = KqlFrontEnd.Lower("graph serviceDeps : acme.svc;\ninput master : acme.ops;\nnodes ServiceNode on service = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" and labels(s) has \"Pod\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n",
+            Catalog.Value, "acme.svc");
+        Assert.False(low.Ok);
+    }
+
+    /// <summary>Kusto.Language gives 0 as the value of a hexadecimal literal and of an integer beyond 64 bits, without an error; the front end writes that 0.</summary>
+    [Theory]
+    [InlineData("0x10", "N = 16 ")]
+    [InlineData("99999999999999999999", "N = 99999999999999999999 ")]
+    public void An_integer_literal_keeps_its_value_or_is_refused(string literal, string value)
+    {
+        var low = Lower($"nodes ServiceNode on service = services | where {literal} > 1;\n");
+        if (!low.Ok) return;
+        Assert.Contains(Facts(low), f => f.StartsWith("Literal ", StringComparison.Ordinal) && f.Contains("/predicate:#0/arg:#0 ", StringComparison.Ordinal) && f.Contains(value, StringComparison.Ordinal));
     }
 
     /// <summary>Kusto binds a call to a let of the author over the library function of the same name. The front end recognises rate, telemetry, hysteresis and identity by name and writes the engine's meaning.</summary>

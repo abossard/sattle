@@ -5,7 +5,7 @@ module acme.workload @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:8247458215d96d0c55fda5bd14140e0d0a25db4236aea2f2749a873ceda9393d as ops;
+import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
 
 /// A part of the workload or of what carries it. key names it across graphs; own is the worst severity of its own signals (0 healthy, 1 no data, 2 degraded, 3 unhealthy); severity and state are rolled up.
 abstract entity Component {
@@ -87,7 +87,7 @@ projection workloadStructure view forward output acme.workload {
   emit entity WorkloadNode from hosted identity n
     set { key: concat("node/", n.cluster, "/", n.name), kind: "node", name: n.name, cluster: n.cluster, pool: n.pool };
   emit relationship HostedOn from hosted key runsOn: p -> n;
-  let pooled = hosted |> where isPresent(n.pool) |> select { n: n, cluster: n.cluster, pool: coalesce(n.pool, ""), one: 1 };
+  let pooled = hosted |> where (isPresent(n.pool) and coalesce(n.pool, "") != "") |> select { n: n, cluster: n.cluster, pool: coalesce(n.pool, ""), one: 1 };
   emit entity NodePool from pooled identity nodePool(cluster: cluster, pool: pool)
     set { key: concat("pool/", cluster, "/", pool), kind: "pool", name: pool, cluster: cluster };
   emit relationship MemberOf from pooled key nodeInPool: n -> nodePool(cluster: cluster, pool: pool);
@@ -106,11 +106,11 @@ projection workloadStructure view forward output acme.workload {
   let resources = match master (r: azure.AzureResource) |> select { r: r, rkey: lowerInvariant(r.resourceId), rtype: lowerInvariant(r.type) };
   let typed = join resources, suffixes on rtype == stype;
   let named = typed |> select { r: r, rkey: rkey, host: concat(lowerInvariant(r.name), suffix) };
-  let endpoints = match master (pe: azure.AzureResource) |> where pe.type == "microsoft.network/privateendpoints" and isPresent(pe.linkedId) and isPresent(pe.address)
+  let endpoints = match master (pe: azure.AzureResource) |> where pe.type == "microsoft.network/privateendpoints" and (isPresent(pe.linkedId) and coalesce(pe.linkedId, "") != "") and (isPresent(pe.address) and coalesce(pe.address, "") != "")
     |> select { pe: pe, peAddress: coalesce(pe.address, ""), linked: lowerInvariant(coalesce(pe.linkedId, "")), vnet: lowerInvariant(coalesce(pe.parentId, "")) };
 
   // a Service that stands for a resource: an ExternalName Service and the resource its name is
-  let externals = services |> where isPresent(s.externalName) |> select { s: s, ext: lowerInvariant(coalesce(s.externalName, "")) };
+  let externals = services |> where (isPresent(s.externalName) and coalesce(s.externalName, "") != "") |> select { s: s, ext: lowerInvariant(coalesce(s.externalName, "")) };
   let backed = join externals, named on ext == host;
   emit relationship BackedBy from backed key backedBy: s -> r;
 
@@ -131,11 +131,11 @@ projection workloadStructure view forward output acme.workload {
   let sentToName = join sent, named on dhost == host;
   let viaName = sentToName |> select { p: p, dst: dst, r: r, src: src, tkey: rkey, how: "dnsName", detail: concat("pod ", p.name, " sends flows to ", host) };
   // 3. the workload identity of the pod's service account has a role on the resource
-  let accounts = match master (p: infra.Pod)-[:infra.RunsAs]->(sa: infra.ServiceAccount), (p)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace and isPresent(sa.clientId)
+  let accounts = match master (p: infra.Pod)-[:infra.RunsAs]->(sa: infra.ServiceAccount), (p)-[:infra.Backs]->(s: infra.Service) |> where s.namespace == workloadNamespace and (isPresent(sa.clientId) and coalesce(sa.clientId, "") != "")
     |> select { sa: sa, src: concat("svc/", s.cluster, "/", s.namespace, "/", s.name), account: sa.name, client: lowerInvariant(coalesce(sa.clientId, "")) };
-  let identities = match master (i: azure.AzureResource) |> where i.type == "microsoft.managedidentity/userassignedidentities" and isPresent(i.clientId)
+  let identities = match master (i: azure.AzureResource) |> where i.type == "microsoft.managedidentity/userassignedidentities" and (isPresent(i.clientId) and coalesce(i.clientId, "") != "")
     |> select { i: i, identityName: i.name, iclient: lowerInvariant(coalesce(i.clientId, "")), iprincipal: lowerInvariant(coalesce(i.principalId, "")) };
-  let assignments = match master (a: azure.AzureResource) |> where a.type == "microsoft.authorization/roleassignments" and isPresent(a.scope)
+  let assignments = match master (a: azure.AzureResource) |> where a.type == "microsoft.authorization/roleassignments" and (isPresent(a.scope) and coalesce(a.scope, "") != "")
     |> select { a: a, aprincipal: lowerInvariant(coalesce(a.principalId, "")), scope: lowerInvariant(coalesce(a.scope, "")) };
   let asIdentity = join accounts, identities on client == iclient;
   let withRole = join asIdentity, assignments on iprincipal == aprincipal;
@@ -239,9 +239,9 @@ projection workloadStructure view forward output acme.workload {
   emit relationship ConnectedThrough from networks key throughNetwork: pe -> net;
 
   // 6. a gateway whose backend is the address of a Service sends it requests: the gateway needs the Service
-  let backends = match master (b: azure.AzureResource) |> where b.type == "microsoft.apimanagement/service/backends" and isPresent(b.address) and isPresent(b.parentId)
+  let backends = match master (b: azure.AzureResource) |> where b.type == "microsoft.apimanagement/service/backends" and (isPresent(b.address) and coalesce(b.address, "") != "") and (isPresent(b.parentId) and coalesce(b.parentId, "") != "")
     |> select { baddress: coalesce(b.address, ""), gateway: lowerInvariant(coalesce(b.parentId, "")), backend: b.name };
-  let addressed = services |> where isPresent(s.address) |> select { s: s, saddress: coalesce(s.address, ""), skey4: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
+  let addressed = services |> where (isPresent(s.address) and coalesce(s.address, "") != "") |> select { s: s, saddress: coalesce(s.address, ""), skey4: concat("svc/", s.cluster, "/", s.namespace, "/", s.name) };
   let backendServices = join backends, addressed on baddress == saddress;
   let gateways = join backendServices, resources on gateway == rkey;
   emit entity PlatformResource from gateways identity r

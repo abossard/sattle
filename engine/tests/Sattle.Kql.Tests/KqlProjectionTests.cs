@@ -153,6 +153,22 @@ public class KqlProjectionTests
         return ports.SelectMany(p => g.OutRels(p).Select(g.Rel).OfType<Rel>().Where(r => Ids.Name(r.Type) != "wire")).Concat<Element>([g.Entity(pid)!, .. ports.Select(p => g.Entity(p)!)]).ToDictionary(e => e.Key.ToString()!);
     }
 
+    /// <summary>A table function is written out once per distinct call: two equal calls share its operators.</summary>
+    [Theory]
+    [InlineData("services | invoke busy()", 1)]
+    [InlineData("union (services | invoke busy()), (services | invoke busy())", 1)]
+    [InlineData("union (services | invoke busy()), (services | where cluster != \"x\" | invoke busy())", 3)]
+    public void Equal_calls_of_a_table_function_share_its_operators(string query, int filters)
+    {
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
+            + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
+            + "let busy = (T:(service:string, cluster:string, namespace:string, name:string)) { T | where name != \"idle\" };\n"
+            + $"nodes ServiceNode on service = {query};\n";
+        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
+        Assert.True(low.Ok, string.Join("\n", low.Diagnostics));
+        Assert.Equal(filters, low.Facts.Elements().OfType<Entity>().Count(e => Ids.Name(e.Type) == "Filter"));
+    }
+
     /// <summary>A let may take the name of the table it reads (Kusto binds the name inside to the table), and is never read into itself.</summary>
     [Fact]
     public void A_let_may_take_the_name_of_the_table_it_reads()

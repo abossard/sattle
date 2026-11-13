@@ -43,11 +43,11 @@ nodes Node on n with (rule = "observedNodes", description = "observed by the Kub
 
 // ---- observed by Hubble: calls between pods, and flows to addresses that are no pod ----
 edges Calls from src to dst with (rule = "observedCalls", description = "observed by Hubble, telemetry per 60 s window") = flows
-    | where isnotnull(srcNamespace) and isnotnull(srcPod) and isnotnull(dstNamespace) and isnotnull(dstPod)
+    | where isnotempty(srcNamespace) and isnotempty(srcPod) and isnotempty(dstNamespace) and isnotempty(dstPod)
     | summarize flows = count(), drops = countif(verdict == "DROPPED") by cluster, srcNamespace, srcPod, dstNamespace, dstPod, windowStart = bin(['time'], 60s)
     | project src = identity("podName", cluster, srcNamespace, srcPod), dst = identity("podName", cluster, dstNamespace, dstPod), windowStart, flows, drops;
 let sent = flows
-    | where isnotnull(srcNamespace) and isnotnull(srcPod) and isnull(dstPod) and isnotnull(dstAddress)
+    | where isnotempty(srcNamespace) and isnotempty(srcPod) and isempty(dstPod) and isnotempty(dstAddress)
     | summarize flows = count(), drops = countif(verdict == "DROPPED"), arg_max(['time'], dstName) by cluster, srcNamespace, srcPod, address = coalesce(dstAddress, ""), windowStart = bin(['time'], 60s);
 nodes Destination on dest with (rule = "observedDestinations", description = "observed by Hubble: flows of a pod to an address that is no pod, telemetry per 60 s window") = sent | project dest = identity("destination", cluster, address), windowStart, cluster, address, hostName = dstName;
 edges Sends from src to dest with (rule = "observedDestinations") = sent | project src = identity("podName", cluster, srcNamespace, srcPod), dest = identity("destination", cluster, address), windowStart, flows, drops;
@@ -69,7 +69,7 @@ extend nodes AzureResource on r with (rule = "observedActivity", description = "
     | project r = identity("azureResource", resourceId), windowStart, changes;
 let operations = allOperations | project eventId, ['time'], resourceId = tolower(resourceId), operation = tolower(operation), status | distinct * | where ['time'] > ago(24h);
 nodes ActivityEvent on e with (rule = "observedActivityEvents", description = "Activity Log operations as evidence, from the management API and the diagnostic setting; kept for 24 hours of logical time") = operations | project e = identity("activityEvent", eventId), eventId, ['time'], operation, status;
-extend nodes ActivityEvent on e with (rule = "observedActivityEvents") = allOperations | where isnotnull(caller) | project eventId, ['time'], caller | distinct * | where ['time'] > ago(24h)
+extend nodes ActivityEvent on e with (rule = "observedActivityEvents") = allOperations | where isnotempty(caller) | project eventId, ['time'], caller | distinct * | where ['time'] > ago(24h)
     | project e = identity("activityEvent", eventId), caller;
 edges Concerns from e to r with (rule = "observedActivityEvents") = operations | project e = identity("activityEvent", eventId), r = identity("azureResource", resourceId);
 // lease renewals are noise and are left out
@@ -87,7 +87,7 @@ extend nodes AzureResource on r with (rule = "observedAvailability", description
 extend nodes AzureResource on r with (rule = "observedServerErrors", description = "Azure Monitor Event Hubs server errors, mean per 60 s window") = azureMeans | where metric == "ServerErrors" | project r = identity("azureResource", resourceId), windowStart, serverErrors = mean;
 // the node agents' metrics, whose instance is the node: per window the mean of each series, added over the series of the node
 let nodeMeans = metrics
-    | where isnotnull(instance) and (metric == "cilium_endpoint_state" or metric == "cilium_forward_rate" or metric == "cilium_drop_rate" or metric == "hubble_flows_rate")
+    | where isnotempty(instance) and (metric == "cilium_endpoint_state" or metric == "cilium_forward_rate" or metric == "cilium_drop_rate" or metric == "hubble_flows_rate")
     | summarize n = count(), total = sum(value) by cluster, instance = coalesce(instance, ""), metric, series, windowStart = bin(['time'], 60s)
     | project cluster, instance, metric, series, windowStart, mean = total / n
     | summarize mean = sum(mean) by cluster, instance, metric, windowStart;

@@ -118,7 +118,7 @@ projection ingest ingestion output acme.ops {
 
   rule observedCalls readonly "observed by Hubble, telemetry per 60 s window" {
     let known = flows
-      |> where isPresent(srcNamespace) and isPresent(srcPod) and isPresent(dstNamespace) and isPresent(dstPod);
+      |> where (isPresent(srcNamespace) and coalesce(srcNamespace, "") != "") and (isPresent(srcPod) and coalesce(srcPod, "") != "") and (isPresent(dstNamespace) and coalesce(dstNamespace, "") != "") and (isPresent(dstPod) and coalesce(dstPod, "") != "");
     let windowed = known |> window on time width 60s late revise;
     let pairs = windowed
       |> group by { cluster: cluster, srcNamespace: srcNamespace, srcPod: srcPod,
@@ -132,7 +132,7 @@ projection ingest ingestion output acme.ops {
 
   rule observedDestinations readonly "observed by Hubble: flows of a pod to an address that is no pod, telemetry per 60 s window" {
     let outside = flows
-      |> where isPresent(srcNamespace) and isPresent(srcPod) and not isPresent(dstPod) and isPresent(dstAddress);
+      |> where (isPresent(srcNamespace) and coalesce(srcNamespace, "") != "") and (isPresent(srcPod) and coalesce(srcPod, "") != "") and not (isPresent(dstPod) and coalesce(dstPod, "") != "") and (isPresent(dstAddress) and coalesce(dstAddress, "") != "");
     let outsideWindows = outside |> window on time width 60s late revise;
     let sent = outsideWindows
       |> group by { cluster: cluster, srcNamespace: srcNamespace, srcPod: srcPod, address: coalesce(dstAddress, ""), windowStart: windowStart }
@@ -191,7 +191,7 @@ projection ingest ingestion output acme.ops {
       |> distinct
       |> retain on time for 24h;
     // only the management API names the caller
-    let callers = allOperations |> where isPresent(caller) |> select { eventId: eventId, time: time, caller: caller } |> distinct |> retain on time for 24h;
+    let callers = allOperations |> where (isPresent(caller) and coalesce(caller, "") != "") |> select { eventId: eventId, time: time, caller: caller } |> distinct |> retain on time for 24h;
     emit entity azure.ActivityEvent from operations
       identity azure.activityEvent(id: eventId)
       set { eventId: eventId, time: time, operation: operation, status: status };
@@ -231,7 +231,7 @@ projection ingest ingestion output acme.ops {
   }
 
   rule observedMetrics readonly "Prometheus node forward rate: per 60 s window the mean of each series, added over the series of the node" {
-    let nodeMetrics = metrics |> where metric == "cilium_forward_rate" and isPresent(instance);
+    let nodeMetrics = metrics |> where metric == "cilium_forward_rate" and (isPresent(instance) and coalesce(instance, "") != "");
     let metricWindows = nodeMetrics |> window on time width 60s late revise;
     let sums = metricWindows
       |> group by { cluster: cluster, instance: coalesce(instance, ""), series: series, windowStart: windowStart }
@@ -257,7 +257,7 @@ projection ingest ingestion output acme.ops {
   }
 
   rule observedNodeDrops readonly "Prometheus node drop rate: per 60 s window the mean of each series, added over the series of the node" {
-    let dropRows = metrics |> where metric == "cilium_drop_rate" and isPresent(instance);
+    let dropRows = metrics |> where metric == "cilium_drop_rate" and (isPresent(instance) and coalesce(instance, "") != "");
     let dropWindows = dropRows |> window on time width 60s late revise;
     let dropSums = dropWindows
       |> group by { cluster: cluster, instance: coalesce(instance, ""), series: series, windowStart: windowStart }
@@ -354,7 +354,7 @@ projection ingest ingestion output acme.ops {
 
   rule observedNodeMeters readonly "the Prometheus metrics of the node agents, whose `instance` is the node: per 60 s window the mean of each series, added over the series of the node. The `instance` of another exporter's series is that exporter and no node." {
     let agentMetrics = metrics
-      |> where isPresent(instance) and (metric == "cilium_endpoint_state" or metric == "cilium_forward_rate" or metric == "cilium_drop_rate" or metric == "hubble_flows_rate");
+      |> where (isPresent(instance) and coalesce(instance, "") != "") and (metric == "cilium_endpoint_state" or metric == "cilium_forward_rate" or metric == "cilium_drop_rate" or metric == "hubble_flows_rate");
     let promWindows = agentMetrics |> window on time width 60s late revise;
     let promSums = promWindows
       |> group by { cluster: cluster, instance: coalesce(instance, ""), metric: metric, series: series, windowStart: windowStart }

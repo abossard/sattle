@@ -154,12 +154,12 @@ public static class KqlAuthoring
 
     static JsonArray Statements(KqlText t, KqlResult? low)
     {
-        var lets = Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is not FunctionDeclaration && !l.Name.SimpleName.StartsWith("__s", StringComparison.Ordinal)).Select(l => l.Name.SimpleName).ToHashSet(StringComparer.Ordinal);
+        var lets = Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is not FunctionDeclaration && !t.Steps.Any(s => s.Pos == l.TextStart)).Select(l => l.Name.SimpleName).ToHashSet(StringComparer.Ordinal);
         var functions = Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is FunctionDeclaration).Select(l => l.Name.SimpleName).ToHashSet(StringComparer.Ordinal);
         var a = new JsonArray();
         foreach (var l in Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is not FunctionDeclaration))
         {
-            var step = l.Name.SimpleName.StartsWith("__s", StringComparison.Ordinal) ? t.Steps[int.Parse(l.Name.SimpleName[3..], System.Globalization.CultureInfo.InvariantCulture)] : null;
+            var step = t.Steps.FirstOrDefault(s => s.Pos == l.TextStart);
             var q = l.Expression; var place = step is null ? (l.TextStart, l.End) : (step.Pos, q.End);
             var names = q.GetDescendants<SyntaxNode>(n => n is NameReference or FunctionCallExpression).Prepend(q).ToList();
             JsonArray Read(Func<SyntaxNode, string?> name) => [.. names.Select(name).OfType<string>().Distinct().Order(StringComparer.Ordinal).Select(n => (JsonNode)n)];
@@ -293,7 +293,7 @@ public static class KqlAuthoring
             return (h.Kind switch { "edges" => new[] { "key" }, "link" => ["confidence"], _ => [] }).Concat(["rule", "description", "accept", "update", "onCreate", "onDelete"]).Select(s => (s, "setting"));
         // the columns of a step's query after on, from and to
         if (Regex.IsMatch(line, @"^\s*(?:extend\s+)?(?:nodes|edges|link)\s+\w+\s+(?:on|from|.*\bto)\s+$")
-            && Top(t.Code).OfType<LetStatement>().FirstOrDefault(l => t.Steps.FindIndex(s => s.Pos <= start && start <= s.HeadEnd) is var k && k >= 0 && l.Name.SimpleName == $"__s{k}") is { Expression.ResultType: TableSymbol ts })
+            && Top(t.Code).OfType<LetStatement>().FirstOrDefault(l => t.Steps.FirstOrDefault(s => s.Pos <= start && start <= s.HeadEnd) is { } h && h.Pos == l.TextStart) is { Expression.ResultType: TableSymbol ts })
             return ts.Columns.Select(c => (c.Name, "column"));
         return [];
     }

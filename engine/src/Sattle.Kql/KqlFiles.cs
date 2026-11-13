@@ -31,10 +31,11 @@ public sealed record KqlFiles(List<SourceFile> Files, IReadOnlyList<Diagnostic> 
             if (res.Diagnostics.Any(d => d.IsError)) return new(result, [.. res.Diagnostics.Where(d => d.IsError)], facts, places);
         }
         Diagnostic Err(SourceFile f, string message) => new("KqlFile", "error", "", message, f.Path, 1, 1);
-        foreach (var byModule in kql.GroupBy(f => Path.GetFileNameWithoutExtension(f.Path) is var n && n.LastIndexOf('.') is > 0 and var dot ? n[..dot] : n))
+        foreach (var f in kql.Where(f => Path.GetFileNameWithoutExtension(f.Path).LastIndexOf('.') <= 0)) diags.Add(Err(f, "a projection in KQL is named module.projection.kql"));
+        foreach (var byModule in kql.Where(f => Path.GetFileNameWithoutExtension(f.Path).LastIndexOf('.') > 0).GroupBy(f => Path.GetFileNameWithoutExtension(f.Path) is var n && n.LastIndexOf('.') is > 0 and var dot ? n[..dot] : n))
         {
             var module = byModule.Key; var mid = Ids.Module(module);
-            var at = result.FindIndex(f => Regex.IsMatch(f.Text, $@"(?m)^module\s+{Regex.Escape(module)}\s+@"));
+            var at = result.FindIndex(f => Regex.IsMatch(f.Text, $@"(?m)^module\s+{Regex.Escape(module)}\s*[@;]"));
             if (at < 0) { diags.AddRange(byModule.Select(f => Err(f, $"there is no module {module}: a projection in KQL is named module.projection.kql"))); continue; }
             var g = cat.Graph.Clone(); var ok = true;
             foreach (var f in byModule)

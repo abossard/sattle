@@ -3,8 +3,8 @@ module acme.treehealth @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:8247458215d96d0c55fda5bd14140e0d0a25db4236aea2f2749a873ceda9393d as ops;
-import acme.tree    @ 1.0.0 sha256:7c000bb14826c4d771e54b43e9e4d824389a83c00c25660cb1bf1215c6e27773 as tree;
+import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
+import acme.tree    @ 1.0.0 sha256:8c8378fbea8b8939747a199335dfbb86fa9583b4964373a91dc38b755aa8f572 as tree;
 
 /// The roll-up policy of every element, and the edges the roll-up follows: an element whose policy is ignore does not roll up what is below it.
 projection treeRollup view forward output tree {

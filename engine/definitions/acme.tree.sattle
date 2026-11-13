@@ -3,7 +3,7 @@ module acme.tree @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:8247458215d96d0c55fda5bd14140e0d0a25db4236aea2f2749a873ceda9393d as ops;
+import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
 
 /// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
 entity Element {
@@ -43,7 +43,7 @@ projection treeStructure view forward output acme.tree {
 
   // ---- Azure side
   let resources = match master (r: azure.AzureResource)
-    |> where isPresent(r.subscriptionId) and isPresent(r.resourceGroup)
+    |> where (isPresent(r.subscriptionId) and coalesce(r.subscriptionId, "") != "") and (isPresent(r.resourceGroup) and coalesce(r.resourceGroup, "") != "")
     |> select { key: lowerInvariant(r.resourceId), label: r.name, kind: if(r.type == "microsoft.containerservice/managedclusters", "cluster", "resource"),
                 sub: lowerInvariant(r.subscriptionId), rg: lowerInvariant(r.resourceGroup) };
   let subscriptions = resources |> group by { sub: sub } aggregate { n: count() }
@@ -59,8 +59,8 @@ projection treeStructure view forward output acme.tree {
   let labels = union labelPods, labelNodes;
   let allLabels = union labels, labelDeployments |> distinct;
   let fallbackClusters = allLabels |> select { label: label, ckey: concat("cluster/", label), rank: 1 };
-  let nodeMachines = match master (n: infra.Node) |> where isPresent(n.resourceId) |> select { nlabel: n.cluster, vm: lowerInvariant(n.resourceId) };
-  let machineParents = match master (r: azure.AzureResource) |> where isPresent(r.parentId) |> select { vm2: lowerInvariant(r.resourceId), aks: lowerInvariant(r.parentId) };
+  let nodeMachines = match master (n: infra.Node) |> where (isPresent(n.resourceId) and coalesce(n.resourceId, "") != "") |> select { nlabel: n.cluster, vm: lowerInvariant(n.resourceId) };
+  let machineParents = match master (r: azure.AzureResource) |> where (isPresent(r.parentId) and coalesce(r.parentId, "") != "") |> select { vm2: lowerInvariant(r.resourceId), aks: lowerInvariant(r.parentId) };
   let machines = join nodeMachines, machineParents on vm == vm2;
   let mappedClusters = machines |> select { label: nlabel, ckey: aks, rank: 2 };
   let candidates = union fallbackClusters, mappedClusters;

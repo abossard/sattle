@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Collections.Immutable;
 using System.Globalization;
 using Kusto.Language;
@@ -52,6 +53,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     readonly Dictionary<Symbol, LetStatement> letSyntax = [];
     readonly Dictionary<Symbol, FunctionDeclaration> functions = [];
     readonly Dictionary<Symbol, Rel> lets = [];
+    /// <summary>A table function written out once per distinct call: the function, the table it reads and the values it is given. Equal calls share it.</summary>
+    readonly Dictionary<(FunctionDeclaration Fn, string Input, string Values), Rel> written = [];
     readonly Dictionary<string, string> ports = new(StringComparer.Ordinal);
     readonly HashSet<string> parms = new(StringComparer.Ordinal);
     readonly Dictionary<string, OntologyView> views = new(StringComparer.Ordinal);
@@ -229,7 +232,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         // every input is a port, read or not, so the space can give it a graph or a source
         foreach (var g in inputs.Keys) GraphPort(g, code.Syntax);
         foreach (var r in rows.Keys) RowsPort(r);
-        foreach (var se in ((QueryBlock)code.Syntax).Statements)
+        var statements = ((QueryBlock)code.Syntax).Statements; var last = statements[^1].Element;
+        foreach (var se in statements)
         {
             try
             {
@@ -237,18 +241,19 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 {
                     case QueryParametersStatement q: Params(q); break;
                     case LetStatement { Expression: FunctionDeclaration fd } l: functions[l.Name.ReferencedSymbol!] = fd; break;
-                    case LetStatement l when l.Name.SimpleName.StartsWith("__s", StringComparison.Ordinal):
-                        var h = steps[int.Parse(l.Name.SimpleName[3..], CultureInfo.InvariantCulture)];
+                    case LetStatement l when steps.FirstOrDefault(x => x.Pos == l.TextStart) is { } h:
                         In(Scope.Top with { Prefix = h.Kind == "edges" ? h.Key : char.ToLowerInvariant(h.Type[0]) + h.Type[1..] }, () => { Step(h, l.Expression); return 0; });
                         break;
                     case LetStatement l: letSyntax[l.Name.ReferencedSymbol!] = l; break;
-                    case ExpressionStatement: break;     // the closing `print 0`
+                    case ExpressionStatement when ReferenceEquals(se.Element, last): break;     // the closing `print 0`
+                    case ExpressionStatement es: throw new Refused("a statement of a projection is a let or a step; this one writes nothing: make it a step, nodes T on id = ...", es);
                     default: throw new Refused("only lets, query parameters and steps belong in a projection", se.Element);
                 }
             }
             catch (Refused r) { faults.Add(r.At, "Profile", r.Message); }
         }
-        WriteRules();
+        try { WriteRules(); }
+        catch (Refused r) { faults.Add(r.At, "Profile", r.Message); }
         return new KqlResult(pid, b, faults.List) { DiagnosticPlaces = faults.Places, OperatorPlaces = places, OperatorCalls = calls, Shapes = shapes };
     }
 
@@ -503,16 +508,28 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var values = ImmutableDictionary<Symbol, object?>.Empty;
         for (var k = 0; k < args.Count; k++)
         {
-            if (!(args[k].IsConstant || args[k].IsLiteral || args[k] is NameReference { ReferencedSymbol: { } a } && scope.Values.ContainsKey(a))) throw new Refused("the values a table function takes are constants", args[k]);
+            // a value is written out where the function is called: a literal, or a value of the calling function; never a query parameter or the clock
+            if (args[k] is NameReference { ReferencedSymbol: { } a } ? !scope.Values.ContainsKey(a) : Const(args[k]) is null && !Regex.IsMatch(args[k].ToString().Trim(), @"^\w+\(\s*null\s*\)$"))
+                throw new Refused("the values a table function takes are written out: a literal, or a value the calling function was given", args[k]);
             values = values.SetItem(ps[k + 1], Const(args[k]));
         }
         // the body reads its parameters and the names of the text, never the caller's: a new scope, not the caller's extended
-        return In(Scope.Top with { Tables = ImmutableDictionary<Symbol, Rel>.Empty.Add(ps[0], input), Values = values, Prefix = scope.Prefix, Call = scope.Call ?? (at.TextStart, at.End) },
+        var key = (fd, input.Port, string.Join("\u0001", ps.Skip(1).Select(p => $"{values[p]?.GetType().Name}:{values[p]}")));
+        if (written.TryGetValue(key, out var done)) return done.Next(done.Port);
+        var r = In(Scope.Top with { Tables = ImmutableDictionary<Symbol, Rel>.Empty.Add(ps[0], input), Values = values, Prefix = scope.Prefix, Call = scope.Call ?? (at.TextStart, at.End) },
             () => Tab(fd.Body.Expression));
+        written[key] = r;
+        return r.Next(r.Port);
     }
 
     /// <summary>The value of a constant: a literal, or a parameter of the table function being written out.</summary>
-    object? Const(Expression e) => e is NameReference { ReferencedSymbol: { } s } && scope.Values.TryGetValue(s, out var v) ? v : e.IsConstant ? e.ConstantValue : e.LiteralValue;
+    object? Const(Expression e) => e switch
+    {
+        NameReference { ReferencedSymbol: { } s } when scope.Values.TryGetValue(s, out var v) => v,
+        ParenthesizedExpression p => Const(p.Expression),
+        PrefixUnaryExpression { Operator.Text: "-" } u => Const(u.Expression) switch { long l => -l, int i => -i, double d => -d, decimal m => -m, _ => null },
+        _ => e.IsConstant ? e.ConstantValue : e.LiteralValue,
+    };
 
     static Value FromObject(object? o, SyntaxNode at) => o switch
     {
@@ -536,6 +553,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     Rel GraphMatch(GraphMatchOperator gm, Expression graph)
     {
+        if (gm.Parameters.Count > 0) throw new Refused("graph-match takes no options here: a pattern matches each element once", gm);
         var paths = new HashSet<string>(StringComparer.Ordinal);
         var port = GraphPort(graph);
         var view = View(inputs[((FunctionCallExpression)graph).ArgumentList.Expressions[0].Element.LiteralValue!.ToString()!]);
@@ -558,11 +576,13 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                     // a path of several edges: reachability from the node before it to the node after it, which no other edge may touch
                     if (path is not null || i + 2 < els.Count) throw new Refused("a pattern has at most one path of several edges, and it ends the pattern: (a)-[p*1..16]->(b)", ed);
                     if (range.RangeStart?.LiteralValue is not long min || range.RangeEnd?.LiteralValue is not long max) throw new Refused("a path has fixed bounds: -[p*1..16]->", ed);
+                    if (min > 1) throw new Refused("a path starts at 0 or 1 edges: the engine keeps what is within reach, not paths of an exact length", ed);
                     path = (v2, NameOf(els[i - 1]), NameOf(els[i + 1]), fwd, min, max, ed);
                     paths.Add(v2);
                     i++;
                     continue;
                 }
+                if (NameOf(els[i - 1]) == NameOf(els[i + 1])) throw new Refused("an edge from a node to itself is not kept apart from the others of its type: match (a)-[e]->(b) and filter a == b", ed);
                 edges.Add((v2, fwd ? NameOf(els[i - 1]) : NameOf(els[i + 1]), fwd ? NameOf(els[i + 1]) : NameOf(els[i - 1]), ed));
             }
         }
@@ -576,6 +596,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 var isEdge = edges.Any(e => e.Var == v.SimpleName);
                 var hits = TypeNamed(view, tname, isEdge, inputs[((FunctionCallExpression)graph).ArgumentList.Expressions[0].Element.LiteralValue!.ToString()!]);
                 if (hits.Count != 1) throw new Refused($"'{tname}' is {(hits.Count == 0 ? "no" : "more than one")} {(isEdge ? "relationship" : "entity")} type of the graph", c);
+                if (types.ContainsKey(v.SimpleName)) throw new Refused($"'{v.SimpleName}' has one type: test labels({v.SimpleName}) has \"T\" once, with the most specific type", c);
                 types[v.SimpleName] = hits[0];
             }
             else if (c is FunctionCallExpression { Name.SimpleName: "all" } all && path is { } pa && all.ArgumentList.Expressions.Select(x => x.Element).ToList() is [NameReference pv, BinaryExpression { Operator.Text: "has", Left: FunctionCallExpression { Name.SimpleName: "labels" }, Right.LiteralValue: string ptype }] && pv.SimpleName == pa.Var)
@@ -822,7 +843,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             "countif" => (target, "sum", new CallX("If", A(0), new LitX(Value.Integer(1)), new LitX(Value.Integer(0))), null),
             "sum" or "min" or "max" => (target, fn, A(0), null),
             "avg" => (target, "mean", A(0), null),
-            "arg_max" when !telemetry && args.Count == 2 => (target, "last", A(1), A(0)),
+            "arg_max" => throw new Refused("write arg_max without a name: summarize arg_max(order, a, b) by k gives the columns order, a and b of one row", call),
             "dcount" or "dcountif" => throw new Refused("dcount is an estimate that may vary between runs: write distinct ... | summarize n = count()", call),
             "count_distinct" or "count_distinctif" => throw new Refused("count_distinct is a preview function: write distinct ... | summarize n = count()", call),
             "take_any" or "take_anyif" or "any" => throw new Refused("take_any picks an arbitrary value: write min, max or arg_max", call),
@@ -1022,6 +1043,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         for (var k = 1; k < parts.Count; k++)
         {
             if (!parts[k].Visible.ToHashSet().SetEquals(cols)) throw new Refused($"the tables of a union have the same columns: project each to {string.Join(", ", cols)}", u);
+            foreach (var c in cols)
+                if (parts[0].Idents.GetValueOrDefault(c)?.Domain != parts[k].Idents.GetValueOrDefault(c)?.Domain)
+                    throw new Refused($"the tables of a union agree on what '{c}' is: an identity of one domain in every table, or a value in every table", u);
             if (!parts[k].Visible.SequenceEqual(cols)) parts[k] = Rename(parts[k], [.. cols.Select(c => (c, c))]);
         }
         var acc = parts[0];
@@ -1038,6 +1062,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     {
         var names = d.Schema.Columns.Select(c => c.Element.Name.SimpleName).ToList();
         var vals = d.Values.Select(v => v.Element).ToList();
+        if (names.Count == 0 || vals.Count == 0) throw new Refused("a datatable has at least one column and one row", d);
         if (vals.Count % names.Count != 0) throw new Refused("a datatable row has a value per column", d);
         var op = Op("Values");
         for (var r = 0; r < vals.Count / names.Count; r++)
@@ -1076,7 +1101,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 return new LitX(Lit(u.Expression) switch { IntegerValue i => Value.Integer(-i.N), DecimalValue d => Value.Decimal(-d.Q), var v => v });
             case PrefixUnaryExpression { Operator.Text: "-" } u: return new CallX("Negate", Scalar(u.Expression, r, args));
             case InExpression { Operator.Text: "in" } ie:
-                return ie.Right.Expressions.Select(x => (X)new CallX("Equal", Scalar(ie.Left, r, args), Scalar(x.Element, r, args))).Aggregate((x, z) => new CallX("Or", x, z));
+                return ie.Right.Expressions.Select(x => (X)new CallX("Equal", Text(ie.Left, r, args), Text(x.Element, r, args))).Aggregate((x, z) => new CallX("Or", x, z));
             case BinaryExpression be:
                 {
                     var fn = be.Operator.Text switch
@@ -1085,12 +1110,20 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                         "and" => "And", "or" => "Or", "+" => "Add", "-" => "Subtract", "*" => "Multiply", "/" => "Divide",
                         var o => throw new Refused($"the operator '{o}' is not in the profile", be),
                     };
-                    return new CallX(fn, Scalar(be.Left, r, args), Scalar(be.Right, r, args));
+                    return fn is "And" or "Or" or "Add" or "Subtract" or "Multiply" or "Divide" ? new CallX(fn, Scalar(be.Left, r, args), Scalar(be.Right, r, args))
+                        : new CallX(fn, Text(be.Left, r, args), Text(be.Right, r, args));
                 }
             case FunctionCallExpression f: return Call(f, r, args);
             default: throw new Refused($"'{Short(e)}' is not an expression of the profile", e);
         }
     }
+
+    static bool IsText(FunctionCallExpression f, int k) => f.ArgumentList.Expressions.Count > k && f.ArgumentList.Expressions[k].Element.ResultType == ScalarTypes.String;
+
+    /// <summary>A value as a test reads it: in Kusto a text is never null, so a missing text is compared as the empty text. Element columns are ids, not text.</summary>
+    X Text(Expression e, Rel r, IReadOnlyDictionary<Symbol, X>? args) =>
+        Scalar(e, r, args) is var x && e.ResultType == ScalarTypes.String && x is not LitX && !(x is FieldX { Path: var p } && !p.Contains('.') && r.Types.ContainsKey(p))
+            ? new CallX("Coalesce", x, new LitX(T(""))) : x;
 
     X Call(FunctionCallExpression f, Rel r, IReadOnlyDictionary<Symbol, X>? args)
     {
@@ -1115,8 +1148,17 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             case "strcat": return Nest("Concat");
             case "tolower": return One("LowerInvariant");
             case "not": return One("Not");
+            // in Kusto a text is never null: a missing text is the empty text
+            case "isnotnull" when IsText(f, 0): return new LitX(Value.Boolean(true));
+            case "isnull" when IsText(f, 0): return new LitX(Value.Boolean(false));
             case "isnotnull": return One("IsPresent");
             case "isnull": return new CallX("Not", One("IsPresent"));
+            // present and not empty: the engine reads the presence, so a key tested with isnotempty is known to be there
+            case "isnotempty" when IsText(f, 0): return new CallX("And", One("IsPresent"), new CallX("NotEqual", new CallX("Coalesce", a[0], new LitX(T(""))), new LitX(T(""))));
+            case "isempty" when IsText(f, 0): return new CallX("Not", new CallX("And", One("IsPresent"), new CallX("NotEqual", new CallX("Coalesce", a[0], new LitX(T(""))), new LitX(T("")))));
+            // of a value that is not text, empty means missing, as in Kusto
+            case "isnotempty": return One("IsPresent");
+            case "isempty": return new CallX("Not", One("IsPresent"));
             case "toreal" or "todouble" or "todecimal":
                 // the engine converts an Integer; a value that is already Decimal is itself (in KQL every telemetry value is real)
                 return a is [FieldX { Path: var path }] && r.Kinds.GetValueOrDefault(path) == "Decimal" ? a[0] : One("ToDecimal");
@@ -1126,13 +1168,24 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         }
     }
 
+    /// <summary>An integer as written: Kusto gives 0 for a hexadecimal literal and for one beyond 64 bits.</summary>
+    static Value Integer(Expression e)
+    {
+        var t = e.ToString().Trim();
+        if (t.StartsWith("0x", StringComparison.OrdinalIgnoreCase)) return long.TryParse(t[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var h) ? Value.Integer(h) : throw new Refused($"{t} is no 64-bit integer", e);
+        if (t.All(char.IsAsciiDigit) && !long.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out _)) throw new Refused($"{t} is no 64-bit integer", e);
+        return Value.Integer(Convert.ToInt64(e.LiteralValue, CultureInfo.InvariantCulture));
+    }
+
     static Value Lit(Expression e) => e.LiteralValue switch
     {
         null => Value.Null,
         string s => Value.Text(s),
         bool v => Value.Boolean(v),
-        long or int => Value.Integer(Convert.ToInt64(e.LiteralValue, CultureInfo.InvariantCulture)),
-        double or decimal => Value.Decimal(decimal.Parse(e.ToString().Trim(), NumberStyles.Float, CultureInfo.InvariantCulture)),
+        long or int => Integer(e),
+        double d when double.IsFinite(d) && Math.Abs(d) < 7.9e28 => Value.Decimal(decimal.Parse(d.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture)),
+        decimal m => Value.Decimal(m),
+        double => throw new Refused($"{e.ToString().Trim()} is no number the engine keeps exactly", e),
         var v => throw new Refused($"a constant of type {v.GetType().Name} is not in the profile", e),
     };
 

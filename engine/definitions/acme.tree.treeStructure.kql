@@ -7,7 +7,7 @@ graph treeStructure : acme.tree with (
 input master : acme.ops;
 
 let resources = graph("master")
-    | graph-match (r) where labels(r) has "AzureResource" and isnotnull(r.subscriptionId) and isnotnull(r.resourceGroup)
+    | graph-match (r) where labels(r) has "AzureResource" and isnotempty(r.subscriptionId) and isnotempty(r.resourceGroup)
       project key = tolower(r.resourceId), label = r.name, ['kind'] = iff(r.type == "microsoft.containerservice/managedclusters", "cluster", "resource"),
               sub = tolower(r.subscriptionId), rg = tolower(r.resourceGroup);
 let subscriptions = resources | summarize n = count() by sub | project key = strcat("sub/", sub), label = sub, ['kind'] = "subscription", parent = "", rank = 0;
@@ -20,8 +20,8 @@ let allLabels = union (graph("master") | graph-match (p) where labels(p) has "Po
                       (graph("master") | graph-match (d) where labels(d) has "Deployment" project label = d.cluster)
     | distinct *;
 let machines = graph("master")
-    | graph-match (n) where labels(n) has "Node" and isnotnull(n.resourceId) project nlabel = n.cluster, vm = tolower(n.resourceId)
-    | join kind=inner (graph("master") | graph-match (r) where labels(r) has "AzureResource" and isnotnull(r.parentId) project vm2 = tolower(r.resourceId), aks = tolower(r.parentId)) on $left.vm == $right.vm2;
+    | graph-match (n) where labels(n) has "Node" and isnotempty(n.resourceId) project nlabel = n.cluster, vm = tolower(n.resourceId)
+    | join kind=inner (graph("master") | graph-match (r) where labels(r) has "AzureResource" and isnotempty(r.parentId) project vm2 = tolower(r.resourceId), aks = tolower(r.parentId)) on $left.vm == $right.vm2;
 let clusterKeys = union (allLabels | project label, ckey = strcat("cluster/", label), rank = 1), (machines | project label = nlabel, ckey = aks, rank = 2)
     | summarize arg_max(rank, ckey) by label
     | project label, ckey;
