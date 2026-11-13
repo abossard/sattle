@@ -201,11 +201,12 @@ What is missing, each named once:
 - **Operators a case may need that are not yet checked.** `arg_min`, `make_set`, `min()` in `summarize`, undirected patterns, `union` of two pattern results. Each case's reference projection is the test: if it does not compile, the case waits or is rewritten.
 - **The game shell.** Letters, training pages, hints, the progress file, the timeline strip of green and red revisions. Static pages in the canvas, no server state.
 
-Order of work, if Andre wants it built:
+Order of work, decided by Andre on 13 November 2026: planned, built only after the full KQL implementation is ready.
 
+0. **Prerequisite: the full KQL implementation.** Ready means: every projection is written in KQL and the old `.sattle` projection text is retired; `serve` and drafts take KQL; the KQL editors of note 11 work in the canvas; and the operators the cases need compile and are proven (`arg_min`, `make_set`, `min()` in `summarize`, undirected patterns, `union` of two pattern results). Nothing of the game starts before.
 1. The puzzle source and the per-graph digest line, then cases 0 to 6 as folders that `replay` runs. A command-line game with letters as Markdown.
 2. The live phase on the command line: replay the change script and print the first revision where the digests differ.
-3. The canvas shell, once `serve` takes KQL and the editor of note 11 exists.
+3. The canvas shell, on the KQL editor of step 0.
 
 ## 8. Open questions
 
