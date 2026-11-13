@@ -33,14 +33,15 @@ sealed class Faults(string text, string file)
 
 /// <summary>A KQL text as Kusto reads it: the graph line, the inputs and the steps, and the text Kusto checks, in which the graph line and the input lines
 /// are blank and each step is a let of the same length, so positions are those of the text.</summary>
-sealed record KqlText(string Text, Match? Head, string? Description, long History, Dictionary<string, string> Graphs, Dictionary<string, string> Rows,
+sealed record KqlText(string Text, Match? Head, IReadOnlyList<Setting> GraphSettings, string? Description, long History, Dictionary<string, string> Graphs, Dictionary<string, string> Rows,
     List<(string Name, string Type, int Start, int End)> InputLines, List<StepHeader> Steps, KustoCode Code, Faults Faults);
 
 public static class KqlFrontEnd
 {
     const string With = @"(?:\s+with\s*\((?<with>(?:[^()""]|""[^""]*"")*)\))?";
-    static readonly Regex Header = new(@"(?m)^[ \t]*graph[ \t]+(?<name>\w+)[ \t]*:[ \t]*(?<out>[\w.]+)" + With + @"\s*;");
+    internal static readonly Regex Header = new(@"(?m)^[ \t]*graph[ \t]+(?<name>\w+)[ \t]*:[ \t]*(?<out>[\w.]+)" + With + @"\s*;");
     static readonly Regex Input = new(@"(?m)^[ \t]*input[ \t]+(?<name>\w+)[ \t]*:[ \t]*(?<type>[\w.]+)[ \t]*;");
+    static readonly Regex LooksLike = new(@"(?m)^[ \t]*(?:graph[ \t]+\w|input[ \t]+\w|(?:extend[ \t]+)?(?:nodes|edges|link)[ \t]+\w+[ \t]+\w)");
     static readonly Regex Untyped = new(@"(?m)^[ \t]*(?:extend[ \t]+)?(?:nodes[ \t]+on|edges[ \t]+from|link[ \t]+from)\b");
     static readonly Regex Step = new(@"(?m)^[ \t]*(?<ext>extend[ \t]+)?(?<kind>nodes|edges|link)[ \t]+(?<type>\w+)\s+(?:on\s+(?<id>\w+)|from\s+(?<src>\w+)\s+to\s+(?<dst>\w+))" + With + @"\s*=");
 
@@ -64,14 +65,15 @@ public static class KqlFrontEnd
         var heads = Header.Matches(text);
         if (heads.Count != 1) faults.Add(heads.Count > 1 ? heads[1].Index : 0, heads.Count > 1 ? heads[1].Index + heads[1].Length : 0, "Graph", "the text names its graph once: graph <name> : <ontology>;");
         var head = heads.Count > 0 ? heads[0] : null; string? description = null; long history = 0;
+        var graphSettings = head is null ? [] : SettingsOf(head.Groups["with"]);
         // the graph line and the input lines become blanks, the step statements lets of the same length, so Kusto checks their queries and positions stay those of the text
         var chars = text.ToCharArray();
         if (head is not null)
         {
-            foreach (var (name, value) in SettingsOf(head.Groups["with"].Value))
+            foreach (var (name, value, start, end) in graphSettings)
                 if (name == "description") description = value;
                 else if (name == "history" && long.TryParse(value, out var h) && h >= 0) history = h;
-                else faults.Add(head.Index, head.Index + head.Length, "Graph", name == "history" ? "history is a whole number: how many inputs the graph keeps per element" : $"'{name}' is not a setting of the graph line: its settings are description and history");
+                else faults.Add(start, end, "Graph", name == "history" ? "history is a whole number: how many inputs the graph keeps per element" : $"'{name}' is not a setting of the graph line: its settings are description and history");
             Overwrite(chars, head.Index, head.Length, "");
         }
         var steps = new List<StepHeader>();
@@ -79,14 +81,20 @@ public static class KqlFrontEnd
         {
             string? G(string n) => m.Groups[n].Success ? m.Groups[n].Value : null;
             Overwrite(chars, m.Index, m.Length, $"let __s{steps.Count} =");
-            steps.Add(new StepHeader(m.Groups["ext"].Success, m.Groups["kind"].Value, m.Groups["type"].Value, G("id"), G("src"), G("dst"), G("with"), m.Index, m.Index + m.Length,
-                m.Groups["with"].Success ? m.Groups["with"].Index : -1));
+            var h = new StepHeader(m.Groups["ext"].Success, m.Groups["kind"].Value, m.Groups["type"].Value, G("id"), G("src"), G("dst"), SettingsOf(m.Groups["with"]), m.Index, m.Index + m.Length);
+            foreach (var st in h.With.Where(st => !h.Allows(st.Name))) faults.Add(st.Start, st.End, "Profile", h.Refusal(st.Name));
+            steps.Add(h);
         }
+        // a line that starts like a statement of a projection and is none: reported, never dropped
+        var read = steps.Select(s => s.Pos).Concat(heads.Select(x => x.Index)).Concat(Input.Matches(text).Select(x => x.Index)).Concat(Untyped.Matches(text).Select(x => x.Index)).ToHashSet();
+        foreach (Match m in LooksLike.Matches(text).Where(x => !read.Contains(x.Index)))
+            faults.Add(m.Index + m.Length - m.Value.TrimStart().Length, text.IndexOf('\n', m.Index) is var nl && nl >= 0 ? nl : text.Length, "Profile",
+                "this line starts like a statement of a projection and is none: graph name : ontology;  input name : ontology;  nodes T on id = ...;  edges T from a to b = ...;  link P from a to b = ...;");
         var (graphs, rows, lines) = Inputs(text, chars, catalog, module, faults);
         var code = KustoCode.ParseAndAnalyze(new string(chars) + "\nprint 0", Schema(catalog, graphs, rows));
         foreach (var d in code.GetDiagnostics().Where(d => d.Severity == "Error"))
             faults.Add(d.Start, d.End, "Kusto", d.Message);
-        return new KqlText(text, head, description, history, graphs, rows, lines, steps, code, faults);
+        return new KqlText(text, head, graphSettings, description, history, graphs, rows, lines, steps, code, faults);
     }
 
     /// <summary>The graphs and tables the text reads: `input name : ontology;` for a graph, `input name : RowType;` for a table of rows. A graph the text reads
@@ -121,10 +129,11 @@ public static class KqlFrontEnd
         return (graphs, rows, lines);
     }
 
-    /// <summary>The settings in `with (name = value, ...)`; a line break in a quoted value, with the spaces around it, is one line break.</summary>
-    internal static IEnumerable<(string Name, string Value)> SettingsOf(string? with) =>
-        Regex.Matches(with ?? "", @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)")
-            .Select(m => (m.Groups[1].Value, Regex.Replace(m.Groups[2].Value.Trim().Trim('"', '\''), @"[ \t]*\r?\n[ \t]*", "\n")));
+    /// <summary>The settings in `with (name = value, ...)`, read once, each with its place; a line break in a quoted value, with the spaces around it, is one line break.</summary>
+    static IReadOnlyList<Setting> SettingsOf(Group with) => with.Success
+        ? [.. Regex.Matches(with.Value, @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)").Select(m => new Setting(m.Groups[1].Value,
+            Regex.Replace(m.Groups[2].Value.Trim().Trim('"', '\''), @"[ \t]*\r?\n[ \t]*", "\n"), with.Index + m.Index, with.Index + m.Index + m.Value.TrimEnd().Length))]
+        : [];
 
     static void Overwrite(char[] chars, int at, int length, string with)
     {
@@ -192,24 +201,24 @@ public static class KqlFrontEnd
 }
 
 /// <summary>A step: `nodes T on id = q` and `edges T from a to b = q` make elements, `extend nodes ...` and `extend edges ...` add properties to elements another step makes.
-/// `Pos` and `HeadEnd` are the place of the step's head, up to its `=`; `WithAt` is where the text inside `with (...)` begins, -1 without one.</summary>
-sealed record StepHeader(bool Extend, string Kind, string Type, string? Id, string? Src, string? Dst, string? With, int Pos, int HeadEnd, int WithAt)
+/// `Pos` and `HeadEnd` are the place of the step's head, up to its `=`; `With` are its settings, read once.</summary>
+sealed record StepHeader(bool Extend, string Kind, string Type, string? Id, string? Src, string? Dst, IReadOnlyList<Setting> With, int Pos, int HeadEnd)
 {
-    /// <summary>The settings in `with (...)`: `key` of an edge step, `confidence` of a link; editable views come in a later stage.</summary>
-    public Dictionary<string, string> Settings(out string? refusal)
-    {
-        refusal = null; var settings = new Dictionary<string, string>(StringComparer.Ordinal);
-        var allowed = Kind switch { "edges" => "key", "link" => "confidence", _ => null };
-        var common = new[] { "rule", "description", "accept", "update", "onCreate", "onDelete" };
-        foreach (var (name, value) in KqlFrontEnd.SettingsOf(With))
-        {
-            if (name == allowed || common.Contains(name)) settings[name] = value;
-            else refusal ??= name == "edit" ? "say what may be edited with accept = \"create, delete\" and update = \"property, ...\"; whether an edit goes back one for one or by the step's rules follows from what the step reads"
-                : $"'{name}' is not a setting of {(Kind == "link" ? "a link" : Kind == "edges" ? "an edge step" : "a node step")}: its settings are {string.Join(", ", allowed is null ? common : [allowed, .. common])}";
-        }
-        return settings;
-    }
+    static readonly string[] Common = ["rule", "description", "accept", "update", "onCreate", "onDelete"];
+    string? Own => Kind switch { "edges" => "key", "link" => "confidence", _ => null };
+
+    /// <summary>The value of a setting, absent when the step does not give it.</summary>
+    public string? Get(string name) => With.FirstOrDefault(s => s.Name == name)?.Value;
+
+    public bool Allows(string name) => name == Own || Common.Contains(name);
+
+    public string Refusal(string name) => name == "edit"
+        ? "say what may be edited with accept = \"create, delete\" and update = \"property, ...\"; whether an edit goes back one for one or by the step's rules follows from what the step reads"
+        : $"'{name}' is not a setting of {(Kind == "link" ? "a link" : Kind == "edges" ? "an edge step" : "a node step")}: its settings are {string.Join(", ", Own is null ? Common : [Own, .. Common])}";
 
     /// <summary>The key of an edge step: its setting, else the type name with a lower-case first letter.</summary>
-    public string Key(out string? refusal) => Settings(out refusal).GetValueOrDefault("key") ?? char.ToLowerInvariant(Type[0]) + Type[1..];
+    public string Key => Get("key") ?? char.ToLowerInvariant(Type[0]) + Type[1..];
 }
+
+/// <summary>A setting in `with (...)`: its name, its value, and the place of `name = value`.</summary>
+sealed record Setting(string Name, string Value, int Start, int End);

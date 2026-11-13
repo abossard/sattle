@@ -42,7 +42,9 @@ public class KqlAuthoringTests
         var text = File.ReadAllText(Path.Combine(Definitions, kql)); var projection = kql[..^4];
         var outline = KqlAuthoring.Analyse(Defs.Value.Catalog, projection, text);
         Assert.Empty(outline["diagnostics"]!.AsArray());
-        var places = KqlFiles.Of(Defs.Value.Files, [new SourceFile(Path.Combine(Definitions, kql), text)], Defs.Value.Catalog).Places;
+        var path = Path.Combine(Definitions, kql); var cat = new Catalog(new KqlSource());
+        Assert.DoesNotContain(cat.Load([.. Defs.Value.Files, new SourceFile(path, text)], updatePins: true).Diagnostics, d => d.IsError);
+        var places = cat.FileOf.Where(kv => kv.Value == path && kv.Key.Contains("/op:", StringComparison.Ordinal)).ToDictionary();
         var shown = new SortedSet<string>(StringComparer.Ordinal);
         void Walk(JsonNode? n)
         {

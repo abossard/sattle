@@ -523,6 +523,15 @@ KQL's own functions with a table parameter, `let f = (T:(a:string, ...), p:strin
 
 `lift` carries every telemetry property the lifted and the lower relationship share, without naming it. In the workload structure, `lift talks` gives the edges `flows` and `drops` over 24 hours, though the text names neither. The KQL text says it as a step of its own.
 
+### Retiring today's projection text (planned, not run)
+The twelve KQL texts state everything a projection statement states. One change will retire today's statements:
+- It deletes the twelve projection statements from the modules; a module text keeps its ontology, its imports and its space.
+- It removes the test switch and the step that printed KQL facts as module text, so the plain test run is the KQL run.
+- The 93 engine tests that fail with the switch on test today's projection text. Each goes one of three ways, decided test by test in that change:
+  - **Deleted with the syntax they test:** the lift statement (21 tests), the projection grammar among the language tests (19), the refactorings of a projection statement (7) and the operator palette of today's text (10). In KQL the lift, the grammar and the palette are KQL itself, and a refactoring is a text edit.
+  - **Rewritten on the KQL text:** what an edit of a projection does to the running graphs. That is the drafts (11), the roll-up and its time (9), the workload model (6), lineage (3), the protocol fixes (3), the host (2 and 1) and the health tree (1). The behaviour they check stays; only the text they edit changes.
+  - **Kept as they are:** every test of the ontology text, which already passes with the switch on.
+
 ### What could not be checked
 
 - Whether each KQL text gives the same tables in Kusto itself. Nothing was run on a Kusto cluster; the seven differences above are where results would differ.

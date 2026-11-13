@@ -30,19 +30,20 @@ public static class KqlAuthoring
         for (var k = 0; k < list.Count; k++) diags.Add(Diag(text, list[k], at[k], list[k].Code == "Kusto" ? "kusto" : "profile"));
         if (files is not null && low is { Ok: true })
         {
-            var put = KqlFiles.Of(files, [new SourceFile(Path.Combine(Path.GetDirectoryName(files[0].Path) ?? "", file), text)], catalog);
-            if (put.Ok)
-                foreach (var d in new Catalog().Load(put.Files, updatePins: true).Diagnostics.Where(d => put.Places.Keys.Any(op => Within(d.Focus, op))))
-                {
-                    var op = put.Places.Keys.Where(o => Within(d.Focus, o)).MaxBy(o => o.Length)!;
-                    diags.Add(Diag(text, d, (put.Places[op].Start, put.Places[op].End), "engine"));
-                }
+            // the engine's checker reads the text as the catalog loads it; an error on one of this text's operators is placed on that operator
+            var path = Path.Combine(Path.GetDirectoryName(files[0].Path) ?? "", file);
+            var ops = low.OperatorPlaces;
+            foreach (var d in new Catalog(new KqlSource()).Load([.. files.Where(f => f.Path != path), new SourceFile(path, text)], updatePins: true).Diagnostics.Where(d => ops.Keys.Any(op => Within(d.Focus, op))))
+            {
+                var op = ops.Keys.Where(o => Within(d.Focus, o)).MaxBy(o => o.Length)!;
+                diags.Add(Diag(text, d, ops[op], "engine"));
+            }
         }
         return new JsonObject
         {
             ["digest"] = Digest(text), ["depth"] = files is null ? "fast" : "full", ["diagnostics"] = diags,
             ["graph"] = t.Head is { } h ? new JsonObject { ["name"] = h.Groups["name"].Value, ["ontology"] = h.Groups["out"].Value, ["place"] = P(Lead(text, h.Index), h.Index + h.Length),
-                ["settings"] = Settings(h.Groups["with"].Success ? h.Groups["with"].Value : null, h.Groups["with"].Index) } : null,
+                ["settings"] = Settings(t.GraphSettings) } : null,
             ["inputs"] = Inputs(t),
             ["parameters"] = Parameters(t.Code),
             ["functions"] = Functions(t.Code),
@@ -116,9 +117,8 @@ public static class KqlAuthoring
         return new JsonObject { ["start"] = at.Start, ["end"] = at.End, ["line"] = line, ["column"] = col, ["severity"] = d.Severity, ["source"] = source, ["code"] = d.Code, ["message"] = d.Message };
     }
 
-    static JsonArray Settings(string? with, int at) =>
-        [.. Regex.Matches(with ?? "", @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)").Select(m => (JsonNode)new JsonObject
-            { ["name"] = m.Groups[1].Value, ["value"] = KqlFrontEnd.SettingsOf(m.Value).First().Value, ["place"] = P(at + m.Index, at + m.Index + m.Value.TrimEnd().Length) })];
+    static JsonArray Settings(IReadOnlyList<Setting> with) =>
+        [.. with.Select(st => (JsonNode)new JsonObject { ["name"] = st.Name, ["value"] = st.Value, ["place"] = P(st.Start, st.End) })];
 
     static JsonArray Inputs(KqlText t)
     {
@@ -167,7 +167,7 @@ public static class KqlAuthoring
             {
                 ["kind"] = step is null ? "let" : (step.Extend ? "extend " : "") + step.Kind,
                 ["name"] = step is null ? l.Name.SimpleName : null, ["type"] = step?.Type, ["on"] = step?.Id, ["from"] = step?.Src, ["to"] = step?.Dst,
-                ["settings"] = Settings(step?.With, step?.WithAt ?? 0),
+                ["settings"] = Settings(step?.With ?? []),
                 ["place"] = P(Lead(t.Text, place.Item1), place.Item2), ["query"] = P(q),
                 ["reads"] = new JsonObject
                 {
@@ -288,7 +288,7 @@ public static class KqlAuthoring
         }
         if (Regex.IsMatch(line, @"property\s*(?:==\s*""|in\s*\((?:""[^""]*""\s*,\s*)*"")$")) return view.Props.Values.Where(p => p.Temporality is not null).Select(p => p.Name).Distinct().Order(StringComparer.Ordinal).Select(n => (n, "telemetry"));
         if (Regex.IsMatch(line, @"\b(?:onCreate|onDelete)\s*=\s*""$")) return Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is FunctionDeclaration).Select(l => (l.Name.SimpleName, "function"));
-        if (Regex.IsMatch(line, @"\brule\s*=\s*""$")) return t.Steps.Select(s => s.Settings(out _).GetValueOrDefault("rule")).OfType<string>().Distinct().Select(r => (r, "rule"));
+        if (Regex.IsMatch(line, @"\brule\s*=\s*""$")) return t.Steps.Select(s => s.Get("rule")).OfType<string>().Distinct().Select(r => (r, "rule"));
         if (Regex.IsMatch(line, @"\bwith\s*\((?:[^()]*,)?\s*$") && t.Steps.FirstOrDefault(s => s.Pos <= start && start <= s.HeadEnd) is { } h)
             return (h.Kind switch { "edges" => new[] { "key" }, "link" => ["confidence"], _ => [] }).Concat(["rule", "description", "accept", "update", "onCreate", "onDelete"]).Select(s => (s, "setting"));
         // the columns of a step's query after on, from and to

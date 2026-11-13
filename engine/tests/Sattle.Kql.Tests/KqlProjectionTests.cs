@@ -103,6 +103,7 @@ public class KqlProjectionTests
     [InlineData("extend nodes ServiceGroup on service = services | project service", "no step makes ServiceGroup")]
     [InlineData("edges DependsOn from service to service = services | project service;\nedges DependsOn from service to service = services | project service", "two steps make DependsOn edges")]
     [InlineData("nodes on service labels name = services", "one step per type")]
+    [InlineData("nodes ServiceNode service = services", "starts like a statement of a projection and is none")]
     public void The_profile_refuses_what_the_engine_cannot_keep_up_to_date_and_says_what_to_write(string step, string says)
     {
         var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
@@ -128,26 +129,17 @@ public class KqlProjectionTests
         Assert.Contains(low.Diagnostics, d => d.Message.Contains(says, StringComparison.Ordinal));
     }
 
-    /// <summary>The catalog of the definitions with one projection in KQL in place of today's text, as `sattle replay --projections kql` loads it.
-    /// Asserts that the catalog holds exactly the operators the front end wrote, and that the KQL text states what today's text states of the projection:
-    /// its purpose, history, description and inputs, so the module's statement of it can go; and that the operator places are keyed by the loaded operators' ids.</summary>
+    /// <summary>The catalog of the definitions with one projection in KQL in place of today's text, as the catalog loads it with a KQL source.
+    /// Asserts that each operator of the projection has its place in the `.kql` file, and that the KQL text states what today's text states of the projection:
+    /// its purpose, history, description and inputs, so the module's statement of it can go.</summary>
     static Catalog WithKql(Recorded data, string kql)
     {
         var path = Path.Combine(Definitions, kql);
-        var put = KqlFiles.Of(data.Files, [new SourceFile(path, File.ReadAllText(path))], data.Catalog);
-        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
-        var (pid, facts) = put.Facts.Single();
-        var mid = Ids.Module(Ids.ModuleOf(pid));
-        var loaded = Load(put.Files);
-        bool Under(string id) => id == pid || id.StartsWith(pid + "/", StringComparison.Ordinal);
-        var mine = facts.ToDictionary(e => e.Key.ToString());
-        var theirs = loaded.Graph.Elements().Where(e => e is Entity en ? Under(en.Id) : e is Rel r && (Under(r.Source) || r.Source == mid && r.Target == pid)).ToDictionary(e => e.Key.ToString());
-        var missing = mine.Keys.Where(k => !theirs.TryGetValue(k, out var t) || !Equals(t, mine[k])).ToList();
-        var extra = theirs.Keys.Where(k => !mine.ContainsKey(k)).ToList();
-        Assert.True(missing.Count == 0 && extra.Count == 0, $"the printed text loads other facts: {missing.Count} missing or changed, {extra.Count} extra\n"
-            + string.Join("\n", missing.Take(5).Select(k => $"  - {mine[k]}\n    {(theirs.TryGetValue(k, out var t) ? t : null)}")) + "\n" + string.Join("\n", extra.Take(5).Select(k => $"  + {theirs[k]}")));
-        // the places the editors read are keyed by the ids the loaded catalog gives the operators
-        Assert.Equal(new DefView(loaded.Graph).Children(pid, "op").Order(StringComparer.Ordinal), put.Places.Keys.Order(StringComparer.Ordinal));
+        var loaded = Load([.. data.Files, new SourceFile(path, File.ReadAllText(path))], new KqlSource());
+        var pid = Ids.Child(Ids.Module(kql[..kql[..^4].LastIndexOf('.')]), "projection", kql[..^4][(kql[..^4].LastIndexOf('.') + 1)..]);
+        var ops = new DefView(loaded.Graph).Children(pid, "op").ToList();
+        Assert.NotEmpty(ops);
+        Assert.All(ops, op => Assert.Equal(path, loaded.FileOf.GetValueOrDefault(op)));
         var (stated, today) = (Stated(loaded.Graph, pid), Stated(data.Catalog.Graph, pid));
         Assert.True(stated.Count == today.Count && stated.All(kv => today.TryGetValue(kv.Key, out var t) && Equals(t, kv.Value)),
             $"the KQL text states other things of the projection than today's text:\n  {string.Join("\n  ", stated.Values.Where(e => !today.ContainsValue(e)))}\n  today: {string.Join("\n  ", today.Values.Where(e => !stated.ContainsValue(e)))}");
@@ -172,14 +164,24 @@ public class KqlProjectionTests
         Assert.True(low.Ok, string.Join("\n", low.Diagnostics));
     }
 
-    /// <summary>A KQL file is named after its module and projection: `module.projection.kql`.</summary>
-    [Theory]
-    [InlineData("acme.svc.noSuchProjection.kql", "the graph line names serviceDeps, the file name noSuchProjection")]
-    [InlineData("acme.nowhere.serviceDeps.kql", "there is no module acme.nowhere")]
-    public void A_KQL_file_is_named_after_its_module_and_projection(string file, string says)
+    /// <summary>A KQL file is named after its module and projection, `module.projection.kql`, and its graph line names the same projection.</summary>
+    [Fact]
+    public void A_KQL_file_is_named_after_its_module_and_projection()
     {
-        var put = KqlFiles.Of(Data(Estate).Files, [new SourceFile(Path.Combine(Definitions, file), "graph serviceDeps : acme.svc;\n")], Data(Estate).Catalog);
-        Assert.Contains(put.Diagnostics, d => d.IsError && d.Message.Contains(says, StringComparison.Ordinal));
+        var path = Path.Combine(Definitions, "acme.svc.noSuchProjection.kql");
+        var res = new Catalog(new KqlSource()).Load([.. Data(Estate).Files, new SourceFile(path, "graph serviceDeps : acme.svc;\n")], updatePins: true);
+        Assert.Contains(res.Diagnostics, d => d.IsError && d.File == path && d.Message.Contains("the graph line names serviceDeps, the file name noSuchProjection", StringComparison.Ordinal));
+    }
+
+    /// <summary>A KQL file that no module reads is an error with its name: its module is missing, or no source reads KQL.</summary>
+    [Theory]
+    [InlineData("acme.nowhere.serviceDeps.kql", true)]
+    [InlineData("acme.svc.serviceDeps.kql", false)]
+    public void A_KQL_file_no_module_reads_is_an_error(string file, bool withSource)
+    {
+        var path = Path.Combine(Definitions, file);
+        var res = new Catalog(withSource ? new KqlSource() : null).Load([.. Data(Estate).Files, new SourceFile(path, File.ReadAllText(Path.Combine(Definitions, "acme.svc.serviceDeps.kql")))], updatePins: true);
+        Assert.Contains(res.Diagnostics, d => d.IsError && d.Code == "UnreadFile" && d.File == path);
     }
 
     /// <summary>A projection the module's text does not declare is made from its KQL text alone; a graph named after an ontology the module imports
@@ -189,11 +191,54 @@ public class KqlProjectionTests
     {
         var text = "graph serviceNames : acme.svc with (description = \"The services of each namespace, by name.\", history = 2);\n"
             + "nodes ServiceNode on service = graph(\"ops\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
-        var put = KqlFiles.Of(Data(Estate).Files, [new SourceFile(Path.Combine(Definitions, "acme.svc.serviceNames.kql"), text)], Data(Estate).Catalog);
-        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
-        var g = Load(put.Files).Graph; var d = new DefView(g); var pid = Ids.Child(Ids.Module("acme.svc"), "projection", "serviceNames");
+        var g = Load([.. Data(Estate).Files, new SourceFile(Path.Combine(Definitions, "acme.svc.serviceNames.kql"), text)], new KqlSource()).Graph;
+        var d = new DefView(g); var pid = Ids.Child(Ids.Module("acme.svc"), "projection", "serviceNames");
         Assert.Equal(("view", 2L, "The services of each namespace, by name."), (d.Text(pid, "purpose"), d.Int(pid, "retain"), d.Text(pid, "description")));
         Assert.Equal("acme.ops", Ids.ModuleOf(d.Target(Ids.Child(pid, "port", "ops"), "expects")!));
+    }
+
+    const string RowsModule = """
+        module t.rows @ 1.0.0;
+        entity Stat { name: Text; n: Integer; }
+        identity stat for Stat version "1" { name: Text by exact; }
+        rows ItemRow { key: Text; group: Text; score: Integer; }
+        projection ingest ingestion output t.rows {
+          in a: rows ItemRow;
+          rule observed readonly "test" {
+            let c = a |> group by { k: key } aggregate { n: count() };
+            emit entity Stat from c identity stat(name: k) set { name: k, n: n };
+          }
+        }
+        space s {
+          source a adapter "sattle.authoring" rows ItemRow;
+          master graph master = ingest(a: a);
+        }
+        """;
+
+    /// <summary>A projection in KQL takes the place of the module's projection of the same id, and the space of the same module still binds it.</summary>
+    [Fact]
+    public void A_projection_in_KQL_replaces_the_one_its_module_declares_and_its_space_still_binds_it()
+    {
+        var kql = "graph ingest : t.rows;\ninput a : ItemRow;\n"
+            + "nodes Stat on stat with (rule = \"observed\", description = \"test\") = a | summarize n = count() by name = group | project stat = identity(\"stat\", name), name, n;\n";
+        var cat = Load([new SourceFile("t.rows.sattle", RowsModule), new SourceFile("t.rows.ingest.kql", kql)], new KqlSource());
+        var pid = Ids.Child(Ids.Module("t.rows"), "projection", "ingest");
+        Assert.Single(cat.Spaces);
+        Assert.All(new DefView(cat.Graph).Children(pid, "op"), op => Assert.Equal("t.rows.ingest.kql", cat.FileOf[op]));
+    }
+
+    /// <summary>What the engine's checker refuses in a projection written in KQL is reported in the `.kql` file, at the step it is about.</summary>
+    [Fact]
+    public void A_checker_error_in_a_KQL_projection_is_placed_in_the_KQL_file()
+    {
+        var path = Path.Combine(Definitions, "acme.svc.serviceDeps.kql");
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
+            + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
+            + "nodes ServiceNode on service = services | project service, name = strcat(name, 5), cluster, namespace;\n";
+        var res = new Catalog(new KqlSource()).Load([.. Data(Estate).Files, new SourceFile(path, text)], updatePins: true);
+        var mine = res.Diagnostics.Where(d => d.IsError && Ids.ModuleOf(d.Focus) == "acme.svc").ToList();
+        Assert.NotEmpty(mine);
+        Assert.All(mine, d => Assert.Equal((path, 4), (d.File, d.Line)));
     }
 
     /// <summary>A recording to replay, the definitions `sattle replay` reads for it (for a real capture the local space overlay or its arguments file) and their catalog.</summary>
@@ -222,9 +267,9 @@ public class KqlProjectionTests
         public CaptureTheoryAttribute() { Skip = CaptureDirs.Count > 0 ? null : "no capture under lab/captures (the captures are not in the repository)"; }
     }
 
-    static Catalog Load(List<SourceFile> files)
+    static Catalog Load(List<SourceFile> files, IProjectionSource? projections = null)
     {
-        var cat = new Catalog();
+        var cat = new Catalog(projections);
         var res = cat.Load(files, updatePins: true);
         Assert.True(!res.Diagnostics.Any(x => x.IsError), string.Join("\n", res.Diagnostics.Where(x => x.IsError)));
         return cat;

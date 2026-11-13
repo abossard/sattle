@@ -8,6 +8,17 @@ public sealed record SourceFile(string Path, string Text);
 public sealed record ModuleInfo(string Name, string Version, string Digest, string ReleaseId, string File, ModuleAst Ast);
 public sealed record PinFix(string File, Pos DigestPos, string Module, string Expected, string? Found);
 
+/// <summary>Projections written in another language than a module's text, in files of their own beside it.</summary>
+public interface IProjectionSource
+{
+    /// <summary>The projections of `module` in `files` (every definition file that is not a module text), read against `catalog`,
+    /// which holds the module's own text and everything it imports.</summary>
+    ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files);
+}
+
+/// <summary>The facts of a module's projections, by projection id; the file and position each element comes from; and what is wrong.</summary>
+public sealed record ProjectionFacts(IReadOnlyDictionary<string, IReadOnlyList<Element>> Projections, IReadOnlyDictionary<string, (string File, Pos Pos)> Places, IReadOnlyList<Diagnostic> Diagnostics);
+
 public sealed class LoadResult(List<Diagnostic> diagnostics, List<PinFix> pinFixes)
 {
     public List<Diagnostic> Diagnostics { get; } = diagnostics;
@@ -28,8 +39,12 @@ public sealed class Catalog
     public Dictionary<string, IReadOnlyList<TOp>> OperatorTypes { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, TypedSpace> Spaces { get; } = new(StringComparer.Ordinal);
 
-    public Catalog()
+    readonly IProjectionSource? projections;
+
+    /// <param name="projections">projections written in files of their own: each takes the place of the module's projection of the same id, or is added to the module</param>
+    public Catalog(IProjectionSource? projections = null)
     {
+        this.projections = projections;
         var kernelRelease = $"d:{Ids.KernelModule}@{Kernel.Version}";
         var edits = Kernel.Graph.Elements().Select(Edit.Create).ToList();
         edits.Add(Edit.Create(new Entity(kernelRelease, Ids.KEntity("Release"), Props.Of(
@@ -92,7 +107,10 @@ public sealed class Catalog
     {
         var diags = new List<Diagnostic>(); var fixes = new List<PinFix>();
         var parsed = new List<(SourceFile File, ModuleAst Ast)>();
-        foreach (var f in files)
+        // a definition file that is not a module text is read by the projection source, if there is one
+        var others = files.Where(f => !f.Path.EndsWith(".sattle", StringComparison.Ordinal)).ToList();
+        var read = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var f in files.Where(f => f.Path.EndsWith(".sattle", StringComparison.Ordinal)))
         {
             try { parsed.Add((f, Parser.Parse(f.Text))); }
             catch (SyntaxError e) { diags.Add(new Diagnostic("Syntax", "error", "", e.Message, f.Path, e.Pos.Line, e.Pos.Col)); }
@@ -123,13 +141,18 @@ public sealed class Catalog
             var (file, ast) = byName[m];
             if (Modules.ContainsKey(m)) continue;
             var before = diags.Count;
-            LoadModule(file, ast, diags, fixes, updatePins);
+            LoadModule(file, ast, diags, fixes, updatePins, others, read);
             if (diags.Skip(before).Any(x => x.IsError)) { /* module not committed; dependents report UnknownImport */ }
         }
+        diags.AddRange(Unread(others, read));
         return new LoadResult([.. diags.Select(Locate)], fixes);
     }
 
-    void LoadModule(SourceFile file, ModuleAst ast, List<Diagnostic> diags, List<PinFix> fixes, bool updatePins)
+    /// <summary>A definition file that is not a module text and that no module read: an error with its name, never ignored.</summary>
+    static IEnumerable<Diagnostic> Unread(IEnumerable<SourceFile> others, IReadOnlySet<string> read) =>
+        others.Where(f => !read.Contains(f.Path)).Select(f => new Diagnostic("UnreadFile", "error", "", $"no module read {Path.GetFileName(f.Path)}: its module is missing or did not load, or nothing reads files of its kind", f.Path, 1, 1));
+
+    void LoadModule(SourceFile file, ModuleAst ast, List<Diagnostic> diags, List<PinFix> fixes, bool updatePins, IReadOnlyList<SourceFile> others, HashSet<string> read)
     {
         var mid = Ids.Module(ast.Name);
         var local = new List<Diagnostic>();
@@ -154,17 +177,35 @@ public sealed class Catalog
         }
 
         var work = Graph.Clone();
-        var facts = low.Builder.Elements().Select(Edit.Create).ToList();
-        var err = work.Apply(facts);
+        var elements = low.Builder.Elements().ToList();
+        var err = work.Apply([.. elements.Select(Edit.Create)]);
         if (err is not null) { local.Add(new Diagnostic("Internal", "error", mid, err)); diags.AddRange(local); return; }
+        // projections in files of their own, read against the module's text: each replaces what the module's projection of the same id owns
+        if (projections is not null && others.Count > 0)
+        {
+            var other = projections.Lower(work, ast.Name, others);
+            read.UnionWith(other.Places.Values.Select(p => p.File).Concat(other.Diagnostics.Select(x => x.File).OfType<string>()));
+            local.AddRange(other.Diagnostics);
+            if (other.Diagnostics.Any(x => x.IsError)) { diags.AddRange(local); return; }
+            bool Under(string id) => other.Projections.Keys.Any(p => id == p || id.StartsWith(p + "/", StringComparison.Ordinal));
+            // owned: the elements under it, the rels from them, and the rel that contains it; a rel from outside (a space's producedBy, bindsPort) stays
+            elements = [.. elements.Where(e => e is Entity en ? !Under(en.Id) : e is Rel r && !Under(r.Source) && !(Ids.Name(r.Type) == "contains" && other.Projections.ContainsKey(r.Target))),
+                .. other.Projections.Values.SelectMany(f => f)];
+            foreach (var id in SourceMap.Keys.Where(Under).ToList()) { SourceMap.Remove(id); FileOf.Remove(id); }
+            foreach (var (id, (f, pos)) in other.Places) { SourceMap[id] = pos; FileOf[id] = f; }
+            work = Graph.Clone();
+            err = work.Apply([.. elements.Select(Edit.Create)]);
+            if (err is not null) { local.Add(new Diagnostic("Internal", "error", mid, err)); diags.AddRange(local); return; }
+        }
+        var facts = elements.Select(Edit.Create).ToList();
 
         // structural conformance conforms(D, K), kernel constraints, reference closure (K4)
         var kview = KernelView();
-        var inModule = new HashSet<string>(low.Builder.Nodes.Keys, StringComparer.Ordinal);
+        var inModule = new HashSet<string>(elements.OfType<Entity>().Select(e => e.Id), StringComparer.Ordinal);
         local.AddRange(Conformance.Check(work, kview).Where(x => inModule.Contains(x.Focus) || Ids.ModuleOf(x.Focus) == ast.Name));
         local.AddRange(KernelChecks.Run(work).Where(x => Ids.ModuleOf(x.Focus) == ast.Name));
         var closure = ProjectionChecker.Closure(work, ast.Name);
-        foreach (var r in low.Builder.Elements().OfType<Rel>().Where(r => Ids.Name(r.Type) != "contains"))
+        foreach (var r in elements.OfType<Rel>().Where(r => Ids.Name(r.Type) != "contains"))
         {
             var tm = Ids.ModuleOf(r.Target);
             if (!closure.Contains(tm)) local.Add(new Diagnostic("K4", "error", r.Source, $"reference to {r.Target} leaves the import closure of {ast.Name}"));
