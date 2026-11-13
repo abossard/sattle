@@ -305,7 +305,7 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     }
 }
 
-/// <summary>Hubble flows, including lost-event records (which mark telemetry windows partial, Def. 7.7).</summary>
+/// <summary>Hubble flows, including lost-event records (which mark telemetry windows partial, Def. 7.7). A row is one observed flow of a connection, written from the caller to the callee whichever way the packet went.</summary>
 public sealed class HubbleAdapter(string cluster) : ISourceAdapter
 {
     public string Id => "hubble.observe";
@@ -341,7 +341,10 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
         if (time is null || !Norm.TryParseInstant(time, out var tns)) { sink.Rejected("hubble", "flow without a parseable time"); return; }
         var verdict = flow.S("verdict");
         if (verdict is null) { sink.Rejected("hubble", "flow without verdict"); return; }
-        var src = flow.P("source"); var dst = flow.P("destination");
+        // Hubble reports the answer of a connection as a flow of its own, from the callee back to the caller, marked `is_reply`. A row runs in the direction of the connection, from the caller to the callee, so the ends of an answer change places. A flow without the mark (a dropped one) is taken as it is.
+        var reply = flow.P("is_reply") is { ValueKind: JsonValueKind.True };
+        var (from, to) = reply ? ("destination", "source") : ("source", "destination");
+        var src = flow.P(from); var dst = flow.P(to);
         var w = sink.Begin("FlowRow");
         if (cTime < 0) { cTime = w.Col("time"); cCluster = w.Col("cluster"); cVerdict = w.Col("verdict"); cSn = w.Col("srcNamespace"); cSp = w.Col("srcPod"); cDn = w.Col("dstNamespace"); cDp = w.Col("dstPod"); cDa = w.Col("dstAddress"); cDnm = w.Col("dstName"); }
         w.Begin();
@@ -351,8 +354,8 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
         w.Text(cSn, J.NullIfEmpty(src?.S("namespace"))); w.Text(cSp, J.NullIfEmpty(src?.S("pod_name")));
         w.Text(cDn, J.NullIfEmpty(dst?.S("namespace"))); w.Text(cDp, J.NullIfEmpty(dst?.S("pod_name")));
         // the address a flow went to, and the first name Hubble resolved for it: what a flow to a destination outside the cluster says about it
-        w.Text(cDa, J.NullIfEmpty(flow.PathS("IP", "destination")));
-        w.Text(cDnm, flow.P("destination_names") is { ValueKind: JsonValueKind.Array } names && names.GetArrayLength() > 0 ? KubernetesAdapter.HostOf(names[0].GetString()) : null);
+        w.Text(cDa, J.NullIfEmpty(flow.PathS("IP", to)));
+        w.Text(cDnm, flow.P(to + "_names") is { ValueKind: JsonValueKind.Array } names && names.GetArrayLength() > 0 ? KubernetesAdapter.HostOf(names[0].GetString()) : null);
         Flows++;
     }
 }

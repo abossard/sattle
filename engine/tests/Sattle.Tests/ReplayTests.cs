@@ -136,6 +136,21 @@ public class ReplayTests
         Assert.Equal(1, r.Engine.Master.Head);
     }
 
+    /// <summary>Code review 2, defect 4: Hubble reports the answer of a connection as a flow from the callee back to the caller, marked `is_reply`. The adapter writes it from the caller to the callee, so a call and its answer are one `Calls` relationship. Before, the answer made a second relationship in the other direction. A flow that is no answer, or carries no mark, keeps its ends.</summary>
+    [Theory]
+    [InlineData("true", 1)] [InlineData("false", 2)] [InlineData(null, 2)]
+    public void The_answer_of_a_connection_counts_on_the_call_and_makes_no_call_back(string? isReply, int relationships)
+    {
+        const string at = "2026-11-10T10:00:20.000Z";
+        var back = Flow(at, "b-1", "a-1");
+        if (isReply is not null) back = back.Replace("\"verdict\":", $"\"is_reply\":{isReply},\"verdict\":");
+        var r = Replay(Capture(Flow("2026-11-10T10:00:10.000Z", "a-1", "b-1"), back));
+        var oneWay = Replay(Capture(Flow("2026-11-10T10:00:10.000Z", "a-1", "b-1"), Flow(at, "a-1", "b-1")));
+        Assert.Equal(relationships, r.Engine.Master.State.RelCount);
+        Assert.Equal(relationships == 1, oneWay.Engine.Master.State.SameAs(r.Engine.Master.State));          // the same relationship as two flows from a to b
+        Assert.Equal(relationships == 1, oneWay.Engine.StateDigest() == r.Engine.StateDigest());            // and the same telemetry: both flows count on it
+    }
+
     /// <summary>Hubble writes the count of lost events as a JSON string (a uint64); a number is read the same way.</summary>
     [Theory]
     [InlineData(false)]

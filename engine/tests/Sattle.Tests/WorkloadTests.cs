@@ -35,6 +35,34 @@ public class WorkloadTests
     static HashSet<string> Edges(Graph g, string type) =>
         [.. g.Rels.Where(r => Ids.Name(r.Type) == type).Select(r => NameOf(g, r.Source) + " -> " + NameOf(g, r.Target))];
 
+    /// <summary>Code review 2, defect 4, on the workload model: the answer api gave to web is no dependency of api on web. Scenario A (the cache is overloaded and only web uses it) leaves api healthy. Before, the answer made api depend on web and api became Degraded.</summary>
+    [Fact]
+    public void A_service_does_not_depend_on_its_caller_through_the_answer_it_gave()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-workload-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(EstateTests.EstateDir, "*.ndjson", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(dir, Path.GetRelativePath(EstateTests.EstateDir, f)); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.Copy(f, target);
+            }
+            // what Hubble writes for the answer of api to web: the ends are those of the packet, is_reply says it is the answer
+            File.WriteAllLines(Path.Combine(dir, "hubble", "replies.ndjson"), ["""{"v":1,"source":"hubble","capturedAt":"2026-01-01T10:00:20.000Z","seq":1,"key":"extra","meta":null,"payload":{"flow":{"time":"2026-01-01T10:00:20.000Z","uuid":"reply-0","verdict":"FORWARDED","is_reply":true,"source":{"namespace":"shop","cluster_name":"synth","pod_name":"api-5c9-1"},"destination":{"namespace":"shop","cluster_name":"synth","pod_name":"web-7d4-1"}},"node_name":"node-a","time":"2026-01-01T10:00:20.000Z"}}"""]);
+            var cat = Repo.LoadExamples(out _);
+            var space = cat.Spaces.Keys.Single();
+            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
+            {
+                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(390).ToUnixTimeMilliseconds() * 1_000_000,
+            }).Run(dir);
+            Assert.DoesNotContain("api -> web", Edges(engine.Graph("workloadStructure").State, "DependsOn"));
+            Assert.Contains("web -> api", Edges(engine.Graph("workloadStructure").State, "DependsOn"));
+            Assert.Equal("Healthy", States(engine)["service:api"]);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
     // ---- what the workload is made of ----
 
     [Theory]
