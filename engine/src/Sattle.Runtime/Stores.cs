@@ -38,11 +38,16 @@ public sealed record AdjacencyPage(IReadOnlyList<AdjEntry> Entries, string? Cont
 public sealed record CommittedPatch(Patch Patch, Frontier Frontier);
 public sealed record SealInfo(long Revision, string Digest, int Count, Frontier Frontier);
 
-/// <summary>The six-operation storage port of research 02 section 3.2 (Head, Commit, Read, ScanAdjacency, Follow, Seal and OpenSnapshot). Synchronous in this slice: the in-memory and SQLite stores need no awaiting.</summary>
+/// <summary>What an engine needs of a store: the head of a graph, and to commit patches after it. Synchronous in this slice: the in-memory and SQLite stores need no awaiting.</summary>
 public interface IGraphStore : IDisposable
 {
     HeadInfo Head(GraphKey g);
     CommitResult Commit(CommitBatch batch);
+}
+
+/// <summary>A store that keeps what it committed: with `Head` and `Commit` the six operations of research 02 section 3.2 (Read, ScanAdjacency, Follow, Seal and OpenSnapshot).</summary>
+public interface IGraphHistory : IGraphStore
+{
     IReadOnlyList<ReadResult> Read(GraphKey g, long revision, IReadOnlyList<ElementKey> keys);
     AdjacencyPage ScanAdjacency(GraphKey g, long revision, string endpoint, Direction dir, string? type, int pageSize, string? continuation);
     /// <summary>Committed patches after a revision, in order. Throws GapException when the store no longer has them.</summary>
@@ -50,6 +55,9 @@ public interface IGraphStore : IDisposable
     SealInfo Seal(GraphKey g, long revision);
     IEnumerable<Element> OpenSnapshot(GraphKey g, long revision);
 }
+
+/// <summary>A store a space can be restarted from: it keeps the journal of the space and the history of its graphs, which a restart compares its recomputed commits with.</summary>
+public interface IDurableStore : IGraphHistory, IJournalStore;
 
 public sealed class GapException(long lastAvailable) : Exception($"history before revision {lastAvailable} is not available") { public long LastAvailable { get; } = lastAvailable; }
 
@@ -143,7 +151,7 @@ public static class ElementJson
 }
 
 /// <summary>In-memory implementation of the port: per graph a commit list, revision-interval element versions and adjacency versions.</summary>
-public sealed class InMemoryGraphStore : IGraphStore, IJournalStore
+public sealed class InMemoryGraphStore : IDurableStore
 {
     readonly InMemoryJournal journal = new();
     public long JournalCount => journal.JournalCount;
@@ -281,7 +289,7 @@ public sealed class InMemoryGraphStore : IGraphStore, IJournalStore
 }
 
 /// <summary>SQLite implementation: the local schema of research 02 section 4.7. One BEGIN IMMEDIATE transaction per commit batch; open-interval uniqueness by partial unique indexes.</summary>
-public sealed class SqliteGraphStore : IGraphStore, IJournalStore
+public sealed class SqliteGraphStore : IDurableStore
 {
     readonly SqliteConnection db;
     readonly object gate = new();

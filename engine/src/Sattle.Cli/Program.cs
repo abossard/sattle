@@ -344,7 +344,7 @@ public static class Program
     // ---- serve ----
 
     /// <summary>The options `serve` builds its host with.</summary>
-    public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IGraphStore? durable) =>
+    public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
         new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000 };
 
     static int Serve(Options o, string capture, string cluster)
@@ -352,7 +352,7 @@ public static class Program
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
         var spec = o.Get("store");
-        IGraphStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
+        IDurableStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
         var hopts = HostOptionsFor(o, cluster, durable);
         var host = durable is null ? new SpaceHost(files!, hopts) : SpaceHost.OpenDurable(durable, files, hopts);
         host.DefinitionsDir = files is null ? null : FindDefinitions(o); host.WriteDefinitions = o.Flags.Contains("write-definitions");

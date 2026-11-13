@@ -13,7 +13,7 @@ public class RestartTests
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
     static HostOptions Options => new() { Cluster = "synth" };
 
-    public static IEnumerable<object[]> Stores() => StoreConformanceTests.CosmosEndpoint is null ? [["memory"], ["headOnly"], ["sqlite"]] : [["memory"], ["headOnly"], ["sqlite"], ["cosmos"]];
+    public static IEnumerable<object[]> Stores() => StoreConformanceTests.CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
 
     /// <summary>A store that can be closed and opened again, like a process restart: the memory store is the same object, the others reopen their file or database.</summary>
     public sealed class Durable(string kind) : IDisposable
@@ -21,16 +21,14 @@ public class RestartTests
         readonly string path = Path.Combine(Path.GetTempPath(), "sattle-restart-" + Guid.NewGuid().ToString("N") + ".db");
         readonly string database = "r" + Guid.NewGuid().ToString("N")[..12];
         readonly InMemoryGraphStore memory = new();
-        readonly HeadOnlyGraphStore headOnly = new();
-        IGraphStore? open;
-        public IGraphStore Open() => open = kind switch
+        IDurableStore? open;
+        public IDurableStore Open() => open = kind switch
         {
             "memory" => memory,
-            "headOnly" => headOnly,
             "cosmos" => Sattle.Cli.CosmosGraphStore.Open(StoreConformanceTests.CosmosEndpoint!, database, false),
             _ => new SqliteGraphStore(path),
         };
-        public void Close() { if (kind is not ("memory" or "headOnly")) open?.Dispose(); open = null; }
+        public void Close() { if (kind != "memory") open?.Dispose(); open = null; }
         public string Path_ => path;
         public void Dispose()
         {
@@ -41,11 +39,11 @@ public class RestartTests
     }
 
     /// <summary>Opens a space again on its store, as a restart does, and checks that the latest seal was used if the store has one. A restart that falls back to replaying the whole journal gives the same state, so only this tells the two apart (code review 2: the restart tests passed with the seal restore forced to refuse).</summary>
-    public static SpaceHost Reopen(IGraphStore store, HostOptions options)
+    public static SpaceHost Reopen(IDurableStore store, HostOptions options)
     {
         var h = SpaceHost.OpenDurable(store, null, options);
         Assert.NotNull(h.Restart);
-        Assert.True(((IJournalStore)store).SealLatest() is not null == h.Restart!.FromSeal, $"the store {(h.Restart.FromSeal ? "has no seal" : "has a seal that was not used: " + h.Restart.SealRefusal)}");
+        Assert.True(store.SealLatest() is not null == h.Restart!.FromSeal, $"the store {(h.Restart.FromSeal ? "has no seal" : "has a seal that was not used: " + h.Restart.SealRefusal)}");
         return h;
     }
 

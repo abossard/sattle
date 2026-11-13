@@ -9,16 +9,28 @@ public class StoreConformanceTests
 {
     /// <summary>The Cosmos store joins when SATTLE_COSMOS_EMULATOR names a Cosmos DB emulator endpoint (docker run -p 8081:8081 mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview --protocol http).</summary>
     public static string? CosmosEndpoint => Environment.GetEnvironmentVariable("SATTLE_COSMOS_EMULATOR");
-    public static IEnumerable<object[]> Stores() => CosmosEndpoint is null ? [["memory"], ["headOnly"], ["sqlite"]] : [["memory"], ["headOnly"], ["sqlite"], ["cosmos"]];
+    public static IEnumerable<object[]> Stores() => CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
     static readonly GraphKey G = new("t", "g");
 
-    static IGraphStore Make(string kind)
+    static IGraphHistory Make(string kind)
     {
         if (kind == "memory") return new InMemoryGraphStore();
-        if (kind == "headOnly") return new HeadOnlyGraphStore();          // its declared limit: history over the last commits up to 4,096 edits
         if (kind == "cosmos") return Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, "t" + Guid.NewGuid().ToString("N")[..12], dropOnDispose: true);
         var path = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N") + ".db");
         return new SqliteGraphStore(path);
+    }
+
+    /// <summary>The default store keeps head numbers only: it takes every commit and counts on from the head the commit names (an engine that took its state from a snapshot goes on at its head), and a graph it has not seen is at 0.</summary>
+    [Theory]
+    [InlineData(0, 1)] [InlineData(0, 3)] [InlineData(41, 2)]
+    public void The_default_store_counts_on_from_the_head_a_commit_names(long from, int patches)
+    {
+        using var s = new HeadOnlyGraphStore();
+        Assert.Equal(0, s.Head(G).Head);
+        var batch = new CommitBatch(G, from, [.. Enumerable.Range(0, patches).Select(i => new Patch("g", from + i, from + i + 1, [Edit.Create(new Entity($"e{i}", "T1", Props.Empty))]))], [.. Enumerable.Range(0, patches).Select(_ => Frontier.Empty)], []);
+        Assert.Equal(new CommitResult.Committed(from + patches), s.Commit(batch));
+        Assert.Equal(from + patches, s.Head(G).Head);
+        Assert.Equal(0, s.Head(new GraphKey("t", "other")).Head);
     }
 
     static Entity E(string id, string type = "T1", string? p = null) => new(id, type, p is null ? Props.Empty : Props.Of(("p", Value.Text(p))));
@@ -196,12 +208,11 @@ public class StoreConformanceTests
         readonly string path = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N") + ".db");
         readonly string database = "t" + Guid.NewGuid().ToString("N")[..12];
         readonly InMemoryGraphStore memory = new();
-        readonly HeadOnlyGraphStore headOnly = new();
-        readonly List<IGraphStore> opened = [];
-        public IGraphStore Open() { IGraphStore s = kind switch { "memory" => memory, "headOnly" => headOnly, "cosmos" => Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
+        readonly List<IDurableStore> opened = [];
+        public IDurableStore Open() { IDurableStore s = kind switch { "memory" => memory, "cosmos" => Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, false), _ => new SqliteGraphStore(path) }; opened.Add(s); return s; }
         public void Dispose()
         {
-            foreach (var s in opened) if (kind is not ("memory" or "headOnly")) s.Dispose();
+            foreach (var s in opened) if (kind != "memory") s.Dispose();
             if (kind == "cosmos") { using var _ = Sattle.Cli.CosmosGraphStore.Open(CosmosEndpoint!, database, true); }
             else foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f);
         }

@@ -129,7 +129,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     List<EngineInput>? kept = [];
     readonly List<Subscription> subs = [];
     long inputRows, fed;
-    readonly IGraphStore? durable; readonly IJournalStore? journal; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition; readonly List<DurableView> views = [];
+    readonly IDurableStore? durable; IJournalStore? journal => durable; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition; readonly List<DurableView> views = [];
     // live input: the envelopes themselves are journaled (the adapters rebuild their state from them), with the position of the source they came from
     Replay? live; string? liveOptions;
     readonly Dictionary<string, string> sourcePositions = new(StringComparer.Ordinal);
@@ -180,11 +180,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0, null) { }
 
     /// <summary>`texts`: the text table of the seal this host will take its state from. The plans are compiled against it, so a text they name has the number it had when the seal was taken.</summary>
-    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IGraphStore? durable, Phase phase, int generation, IReadOnlyList<string>? texts)
+    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IDurableStore? durable, Phase phase, int generation, IReadOnlyList<string>? texts)
     {
         this.options = options;
         if (texts is not null) interner.ReplaceAll(texts);
-        this.durable = durable; journal = durable as IJournalStore; this.phase = phase; this.generation = generation;
+        this.durable = durable; this.phase = phase; this.generation = generation;
         var cat = loaded.Catalog; var fixedText = loaded.FixedText;
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) sources[m.Name] = (m.File, fixedText.TryGetValue(m.File, out var ft) ? ft : files.First(f => f.Path == m.File).Text);
         spaceId = options.SpaceName is { } sn ? cat.Spaces.Keys.First(k => Ids.Name(k) == sn) : cat.Spaces.Keys.First();
@@ -291,9 +291,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>Opens a space on a durable store. A store without a journal starts a new one (the initial definitions are its first entry); a store with a journal is replayed, and the definitions come from the journal, not from disk. Replaying recomputes every commit and compares it with the stored one.</summary>
-    public static SpaceHost OpenDurable(IGraphStore store, IReadOnlyList<SourceFile>? files, HostOptions options)
+    public static SpaceHost OpenDurable(IDurableStore store, IReadOnlyList<SourceFile>? files, HostOptions options)
     {
-        var j = store as IJournalStore ?? throw new ArgumentException("the store does not keep a journal");
+        IJournalStore j = store;
         if (j.JournalCount == 0)
         {
             var given = files ?? throw new ArgumentException("definitions are needed to start a new journal");
@@ -432,7 +432,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>Loads the latest seal into a host built from the definitions the seal names, checks the state digest and the catalog digest against the seal, and replays the journal after it. Null (and a reason) when the seal cannot be used: another build wrote it, the definitions no longer give the same catalog, a digest differs. The journal is the truth; a refused seal costs time, not correctness.</summary>
-    static SpaceHost? TryRestoreFromSeal(IJournalStore j, IGraphStore store, HostOptions options, SealRecord seal, out string? rejected)
+    static SpaceHost? TryRestoreFromSeal(IJournalStore j, IDurableStore store, HostOptions options, SealRecord seal, out string? rejected)
     {
         rejected = null; SpaceHost? host = null;
         try

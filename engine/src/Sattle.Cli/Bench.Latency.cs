@@ -121,11 +121,6 @@ static partial class Bench
     {
         public HeadInfo Head(GraphKey g) => s.Head(g);
         public CommitResult Commit(CommitBatch b) => s.Commit(b);
-        public IReadOnlyList<ReadResult> Read(GraphKey g, long r, IReadOnlyList<ElementKey> k) => s.Read(g, r, k);
-        public AdjacencyPage ScanAdjacency(GraphKey g, long r, string e, Direction d, string? t, int n, string? c) => s.ScanAdjacency(g, r, e, d, t, n, c);
-        public IEnumerable<CommittedPatch> Follow(GraphKey g, long a) => s.Follow(g, a);
-        public SealInfo Seal(GraphKey g, long r) => s.Seal(g, r);
-        public IEnumerable<Element> OpenSnapshot(GraphKey g, long r) => s.OpenSnapshot(g, r);
         public void Dispose() { }
     }
 
@@ -144,7 +139,7 @@ static partial class Bench
         var endpoint = o.Get("cosmos"); var runs = int.TryParse(o.Get("runs"), out var rn) ? rn : Runs;
         Console.WriteLine($"# B7 durable reads: {entities:N0} entities, {hubs} hubs with {fan} outgoing relationships, per run {point:N0} point reads and {scans} one-hop scans of {fan} neighbours, {runs} runs");
         Environment();
-        var stores = new List<(string, Func<IGraphStore>)> { ("memory", () => new InMemoryGraphStore()), ("sqlite", () => new SqliteGraphStore(Path.Combine(Path.GetTempPath(), "sattle-b7-" + Guid.NewGuid().ToString("N") + ".db"))) };
+        var stores = new List<(string, Func<IGraphHistory>)> { ("memory", () => new InMemoryGraphStore()), ("sqlite", () => new SqliteGraphStore(Path.Combine(Path.GetTempPath(), "sattle-b7-" + Guid.NewGuid().ToString("N") + ".db"))) };
         if (endpoint is not null) stores.Add(("cosmos-emulator", () => CosmosGraphStore.Open(endpoint, "sattle-b7", true)));
         foreach (var (name, make) in stores)
         {
@@ -279,7 +274,7 @@ static partial class Bench
         var opts = new Sattle.Runtime.HostOptions { Cluster = cluster, SealEvery = sealEvery };
         var restartOpts = opts with { UseSeal = !o.Flags.Contains("no-seal") };
         var cosmos = o.Get("cosmos"); var dbName = "b10" + Guid.NewGuid().ToString("N")[..10];
-        IGraphStore Open() => cosmos is null ? new SqliteGraphStore(path) : CosmosGraphStore.Open(cosmos, dbName, false);
+        IDurableStore Open() => cosmos is null ? new SqliteGraphStore(path) : CosmosGraphStore.Open(cosmos, dbName, false);
         Console.WriteLine($"# B10 cold start by restart: capture {Path.GetFileName(capture.TrimEnd('/'))} repeated to {hours} h of logical time, {(cosmos is null ? "SQLite" : "Cosmos emulator")} journal and log, {runs} restarts");
         Environment();
         if (cosmos is not null || !File.Exists(path))
@@ -304,13 +299,13 @@ static partial class Bench
                 replay.FlushPending();
                 if (pass == 0) { first = pf; last = pl; span = last - first; }
                 var logical = (pl + offset - first) / 1e9;
-                Console.WriteLine($"pass {pass + 1}: logical span {logical / 3600:F2} h, {host.InputRows:N0} rows, journal {((IJournalStore)store).JournalCount:N0} entries, late rows dropped {host.Engine.Graphs.Sum(g => g.Cx.LateDropped):N0} (rows older than the late horizon inside their own pass are dropped in every pass alike), master {host.Engine.Master.State.EntityCount:N0} entities and {host.Engine.Master.State.RelCount:N0} relationships, of them evidence kept by `retain` ({string.Join(", ", host.Engine.Master.State.Entities.Where(x => Sattle.Core.Ids.Name(x.Type) is "ActivityEvent" or "WarningEvent" or "AuditEvent").GroupBy(x => Sattle.Core.Ids.Name(x.Type)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count():N0}"))}; they age out as the passes move the frontier), wall {wall.Elapsed.TotalSeconds:F0} s");
+                Console.WriteLine($"pass {pass + 1}: logical span {logical / 3600:F2} h, {host.InputRows:N0} rows, journal {store.JournalCount:N0} entries, late rows dropped {host.Engine.Graphs.Sum(g => g.Cx.LateDropped):N0} (rows older than the late horizon inside their own pass are dropped in every pass alike), master {host.Engine.Master.State.EntityCount:N0} entities and {host.Engine.Master.State.RelCount:N0} relationships, of them evidence kept by `retain` ({string.Join(", ", host.Engine.Master.State.Entities.Where(x => Sattle.Core.Ids.Name(x.Type) is "ActivityEvent" or "WarningEvent" or "AuditEvent").GroupBy(x => Sattle.Core.Ids.Name(x.Type)).OrderBy(g => g.Key).Select(g => $"{g.Key} {g.Count():N0}"))}; they age out as the passes move the frontier), wall {wall.Elapsed.TotalSeconds:F0} s");
                 if (logical >= hours * 3600) break;
             }
             host.Finish();
             if (sealEvery > 0) Console.WriteLine($"seals: {host.SealsTaken} taken, {host.SealMilliseconds / Math.Max(1, host.SealsTaken)} ms each on average, the last {host.LastSealBytes / 1e6:F1} MB (compressed)");
             var revs = host.Engine.Graphs.Sum(g => g.Head);
-            Console.WriteLine($"built: {revs:N0} revisions in {host.Engine.Graphs.Count} graphs, journal {((IJournalStore)store).JournalCount:N0} entries, state digest {host.StateDigest()}{(cosmos is null ? $", store file {new FileInfo(path).Length / 1e6:F0} MB" : "")}");
+            Console.WriteLine($"built: {revs:N0} revisions in {host.Engine.Graphs.Count} graphs, journal {store.JournalCount:N0} entries, state digest {host.StateDigest()}{(cosmos is null ? $", store file {new FileInfo(path).Length / 1e6:F0} MB" : "")}");
         }
         var secs = new List<double>(); string? digest = null;
         for (var run = 0; run < runs; run++)

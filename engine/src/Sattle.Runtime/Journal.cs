@@ -176,7 +176,7 @@ public static class BatchCodec
 }
 
 /// <summary>The view of a durable store that one engine generation sees. Graph names of generation 0 are the plain names; a definition commit builds a fresh engine whose logs start empty under `name@generation`. While the journal is replayed (`recovering`), the engine starts from head 0 and each commit it makes is compared with the stored commit at that revision: equal means the commit already happened (nothing is written), different means the log and the recomputation diverge (refused). Past the stored head a commit is written as usual.</summary>
-public sealed class DurableView(IGraphStore inner, int generation, Func<bool> recovering) : IGraphStore
+public sealed class DurableView(IGraphHistory inner, int generation, Func<bool> recovering) : IGraphStore
 {
     sealed record StoredLog(long Base, List<CommittedPatch> Patches);
     readonly Dictionary<string, StoredLog> stored = new(StringComparer.Ordinal);
@@ -210,11 +210,6 @@ public sealed class DurableView(IGraphStore inner, int generation, Func<bool> re
         return inner.Commit(b with { Graph = key });
     }
 
-    public IReadOnlyList<ReadResult> Read(GraphKey g, long revision, IReadOnlyList<ElementKey> keys) => inner.Read(Map(g), revision, keys);
-    public AdjacencyPage ScanAdjacency(GraphKey g, long revision, string endpoint, Direction dir, string? type, int pageSize, string? continuation) => inner.ScanAdjacency(Map(g), revision, endpoint, dir, type, pageSize, continuation);
-    public IEnumerable<CommittedPatch> Follow(GraphKey g, long after) => inner.Follow(Map(g), after);
-    public SealInfo Seal(GraphKey g, long revision) => inner.Seal(Map(g), revision);
-    public IEnumerable<Element> OpenSnapshot(GraphKey g, long revision) => inner.OpenSnapshot(Map(g), revision);
     public void Dispose() { }   // the host owns the durable store
 }
 
