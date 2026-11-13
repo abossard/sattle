@@ -13,15 +13,80 @@ This repository is research in progress. It holds a white paper, a working engin
 
 *The graph space on a synthetic estate. The master graph (top left) and its projections, each with its own nodes and edges.*
 
+## Getting started
+
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and Node.js 22 or newer. Every step runs on the synthetic estate that ships with the repository, an invented Kubernetes and Azure workload. No cloud account is needed.
+
+### 1. Look at the graphs
+
+```bash
+npm --prefix canvas install
+```
+
+```bash
+npm --prefix canvas run dev
+```
+
+- Open http://localhost:5173. The canvas shows the estate from files the engine wrote earlier.
+- In **Data graph**, pick a graph in the "Graph" box, in this order: `master` (everything the platform reported), `serviceTree` (services and their calls), `capabilities`, `workloadStructure` (what the workload is made of and depends on), `workload` (its health and which part is to blame).
+- Click a node. The same entity is highlighted in every graph, so you can follow it from raw data up to its health.
+- Drag the timeline under the graph to replay how the graph changed, revision by revision.
+- **Graph space** shows all graphs and which ones are built from which.
+
+### 2. Run the engine
+
+```bash
+dotnet build engine/src/Sattle.Cli -c Release
+```
+
+```bash
+dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --port 5080
+```
+
+- Keep the canvas running and open http://localhost:5173/#source=engine. The same graphs, now computed and pushed by the engine.
+
+### 3. Read how a graph is defined
+
+Projections are written in KQL, the query language of Azure Data Explorer and Log Analytics. Read them in this order:
+
+1. [`acme.svc.serviceDeps.kql`](engine/definitions/acme.svc.serviceDeps.kql): calls between pods become dependencies between services.
+2. [`acme.workload.workloadStructure.kql`](engine/definitions/acme.workload.workloadStructure.kql): what a workload is made of and what each part depends on, with evidence.
+3. [`acme.workload.workloadHealth.kql`](engine/definitions/acme.workload.workloadHealth.kql): health from signals, rolled up to the workload.
+
+### 4. Change a projection and see the effect
+
+```bash
+dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --projections kql
+```
+
+- It prints the elements of each graph and a state digest. The digest ends in `7bd6`, the same as without `--projections kql`: the KQL projections give exactly the graphs of the original definitions.
+- Change a rule in one of the `.kql` files and run it again. The counts and the digest show what changed. An error names the line in the `.kql` file.
+- The **Projection editor** tab edits projections as graphs. It still writes the older `.sattle` text; a KQL version is being designed.
+
+### 5. Learn why it works
+
+- [paper/README.md](paper/README.md), then chapters [0](paper/ch00-introduction.md) (the problem), [3](paper/ch03-graphs-and-revisions.md) (graphs and revisions), [5](paper/ch05-projection-language.md) (projections) and [7](paper/ch07-telemetry-plane.md) (telemetry and health). The [glossary](paper/glossary.md) explains every term.
+- [Research note 10](paper/research/10-existing-graph-languages.md): why projections are written in KQL.
+
+### 6. Run the tests
+
+```bash
+dotnet test engine/Sattle.slnx
+```
+
+```bash
+npm --prefix canvas test
+```
+
 ## Contents
 
+- [Getting started](#getting-started)
 - [The idea in one picture](#the-idea-in-one-picture)
 - [Portfolio](#portfolio)
 - [The white paper](#the-white-paper)
 - [The engine](#the-engine)
 - [The canvas](#the-canvas)
 - [The lab](#the-lab)
-- [Run it](#run-it)
 - [Status](#status)
 - [Earlier iteration](#earlier-iteration)
 
@@ -199,38 +264,6 @@ An `azd` project that added capture to an existing AKS cluster and removed it ag
 - Capture format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md). Live forwarder to Event Hubs: [`eh-forward.mjs`](lab/capture/eh-forward.mjs).
 - Captures and the fixtures derived from them are not in the repository. [`build.sh`](lab/fixtures/build.sh) builds scrubbed fixtures from a capture with [`scrub.mjs`](lab/fixtures/scrub.mjs).
 - What the repository does carry is the synthetic estate, written by a [generator](engine/tests/Sattle.Tests/fixtures/build-estate.py). The default canvas view and the public tests use it.
-
-## Run it
-
-Look at the synthetic estate without an engine:
-
-```bash
-npm --prefix canvas install
-```
-
-```bash
-npm --prefix canvas run dev
-```
-
-Serve the synthetic estate from the engine and edit projections against it:
-
-```bash
-dotnet build engine/Sattle.slnx -c Release
-```
-
-```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --port 5080
-```
-
-Run the tests:
-
-```bash
-dotnet test engine/Sattle.slnx
-```
-
-```bash
-npm --prefix canvas test
-```
 
 ## Status
 
