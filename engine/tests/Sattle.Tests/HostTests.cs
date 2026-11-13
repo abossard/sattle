@@ -66,6 +66,24 @@ public class HostTests
         Assert.True(g.SameAs(h.Catalog.Graph));
     }
 
+    /// <summary>Code review 2, defect 1: a text nested deeper than the parser's limit is answered with a `Syntax` diagnostic. Before, 600 nested parentheses or 450 nested `if(` overflowed the stack, which ends the process. A text nested up to the limit is parsed as before.</summary>
+    [Theory]
+    [InlineData("paren", 50, false)] [InlineData("if", 50, false)]
+    [InlineData("paren", 101, true)] [InlineData("paren", 600, true)] [InlineData("if", 450, true)] [InlineData("paren", 20000, true)] [InlineData("if", 20000, true)]
+    public void A_text_nested_deeper_than_the_limit_is_a_diagnostic_and_never_a_stack_overflow(string shape, int depth, bool refused)
+    {
+        using var h = NewHost();
+        var nested = shape == "paren"
+            ? new string('(', depth) + "workloadNamespace" + new string(')', depth)
+            : string.Concat(Enumerable.Repeat("if(true, ", depth)) + "workloadNamespace" + string.Concat(Enumerable.Repeat(", \"x\")", depth));
+        var text = Text("acme.workload");
+        var changed = text.Replace("when image.namespace == workloadNamespace", "when image.namespace == " + nested);
+        Assert.NotEqual(text, changed);
+        var answer = h.Check("acme.workload", changed);
+        Assert.Equal(!refused, answer["ok"]!.GetValue<bool>());
+        if (refused) Assert.Contains(answer["diagnostics"]!.AsArray(), d => d!["code"]!.GetValue<string>() == "Syntax" && d["message"]!.GetValue<string>().Contains($"nested deeper than {Parser.MaxNesting} levels"));
+    }
+
     [Fact]
     public void Check_reports_typed_diagnostics_with_positions_and_the_patch_without_changing_state()
     {

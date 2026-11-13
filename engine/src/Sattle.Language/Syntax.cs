@@ -217,6 +217,11 @@ public sealed class Parser
 
     public static ModuleAst Parse(string source) => new Parser(Lexer.Lex(source)).File();
 
+    /// <summary>The deepest nesting of expressions and pipelines a text may have. Texts written by people nest a handful of levels; without a limit a text of a few hundred nested brackets overflows the stack, which ends the process.</summary>
+    public const int MaxNesting = 100;
+    int depth;
+    void Enter() { if (++depth > MaxNesting) throw new SyntaxError($"nested deeper than {MaxNesting} levels", Cur.Pos); }
+
     Token Cur => toks[p];
     Token Peek(int n = 1) => toks[Math.Min(p + n, toks.Count - 1)];
     bool IsSym(string s) => Cur.Kind == T.Sym && Cur.Text == s;
@@ -600,7 +605,9 @@ public sealed class Parser
     }
     List<(string Name, Expr Value)> Rec() => RecordP().Select(x => (x.Item1, x.Item2)).ToList();
 
-    Pipeline Pipe()
+    Pipeline Pipe() { Enter(); try { return PipeBody(); } finally { depth--; } }
+
+    Pipeline PipeBody()
     {
         var pos = Cur.Pos;
         PipeSource src;
@@ -768,7 +775,7 @@ public sealed class Parser
     }
 
     // ---- expressions ----
-    public Expr Expression() => Disj();
+    public Expr Expression() { Enter(); try { return Disj(); } finally { depth--; } }
     Expr Disj() { var l = Conj(); if (!IsWord("or")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("or")) args.Add(Conj()); return new CallExpr("Or", args, pos); }
     Expr Conj() { var l = Neg(); if (!IsWord("and")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("and")) args.Add(Neg()); return new CallExpr("And", args, pos); }
     Expr Neg() { var pos = Cur.Pos; if (TryWord("not")) return new CallExpr("Not", [Cmp()], pos); return Cmp(); }
