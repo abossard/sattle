@@ -144,6 +144,71 @@ public class RestartTests
         Assert.Contains("journal reproduces", e.Message);
     }
 
+    /// <summary>Every kind of journal entry has one stored form, the one journals have always had, and reads back to an entry with that form.</summary>
+    [Theory]
+    [InlineData("advance", """{"k":"a","l":120000000000,"q":7}""")]
+    [InlineData("progress", """{"k":"g","s":"flows","u":120000000000,"q":8}""")]
+    [InlineData("loss", """{"k":"l","t":120000000000,"n":5,"r":"sourceLoss"}""")]
+    [InlineData("finish", """{"k":"f"}""")]
+    [InlineData("liveStart", """{"k":"L","o":"{\u0022c\u0022:40,\u0022a\u0022:60000000000,\u0022l\u0022:60000000000,\u0022f\u0022:false,\u0022k\u0022:\u0022synth\u0022}"}""")]
+    [InlineData("envelope", """{"k":"e","s":"hub","t":"{}","p":"{\u0022n\u0022:3}"}""")]
+    [InlineData("skipped", """{"k":"p","s":"hub","p":"{\u0022n\u0022:4}"}""")]
+    [InlineData("flush", """{"k":"F"}""")]
+    [InlineData("sequenceStep", """{"k":"s"}""")]
+    [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;"}}""")]
+    [InlineData("commitRefused", """{"k":"x"}""")]
+    [InlineData("header", """{"k":"h","tenant":"lab","lateHorizon":null,"cluster":"synth","space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
+    public void A_journal_entry_has_the_stored_form_it_always_had_and_reads_back(string kind, string stored)
+    {
+        Entry entry = kind switch
+        {
+            "advance" => new Entry.Advance(2 * Min, 7),
+            "progress" => new Entry.Progress("flows", 2 * Min, 8),
+            "loss" => new Entry.Loss(2 * Min, 5, "sourceLoss"),
+            "finish" => new Entry.Finish(),
+            "liveStart" => new Entry.LiveStart(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = false, Cluster = "synth" }),
+            "envelope" => new Entry.Envelope("hub", "{}", "{\"n\":3}"),
+            "skipped" => new Entry.Skipped("hub", "{\"n\":4}"),
+            "flush" => new Entry.Flush(),
+            "sequenceStep" => new Entry.SequenceStep(),
+            "commit" => new Entry.Commit(12, new Dictionary<string, string> { ["acme.svc"] = "module acme.svc @ 1.0.0;" }),
+            "commitRefused" => new Entry.CommitRefused(),
+            _ => new Entry.Header("lab", null, "synth", "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
+        };
+        var it = new Interner();
+        Assert.Equal(stored, entry.Text(it));
+        var back = Entry.Parse(stored, _ => throw new InvalidOperationException("no rows here"), it);
+        Assert.Equal(entry.GetType(), back.GetType());
+        Assert.Equal(stored, back.Text(it));
+    }
+
+    /// <summary>The journal a served space writes (rows, advances, progress, a definition commit, a live input with a flush and a skipped envelope, the end) reads back entry by entry to the text that was stored.</summary>
+    [Fact]
+    public void Every_entry_of_a_written_journal_reads_back_to_its_stored_text()
+    {
+        using var d = new Durable("memory");
+        var kinds = new HashSet<char>();
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
+        {
+            Feed(h);
+            var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.sattle"));
+            h.Commit("acme.deployhealth", text.Replace("param Integer = 0", "param Integer = 1"), h.CatalogRevision);
+            h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false });
+            var envelope = File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First();
+            h.LiveEnvelope("hub", envelope, "{\"n\":0}");
+            h.LiveEnvelope("hub", envelope, "{\"n\":1}");                 // the same key again: skipped
+            h.LiveFlush();
+            h.Finish();
+            var journal = (IJournalStore)d.Open();
+            foreach (var stored in journal.JournalRead())
+            {
+                kinds.Add(Entry.KindOf(stored));
+                Assert.Equal(stored, Entry.Parse(stored, h.RowLayout, h.Interner).Text(h.Interner));
+            }
+        }
+        Assert.Equal("FLacefghpr", new string([.. kinds.Order()]));                 // every kind but a draft's sequence step and a refused commit, which the theory above covers
+    }
+
     [Fact]
     public void The_journal_codec_round_trips_text_numbers_booleans_presence_and_weights()
     {

@@ -21,6 +21,94 @@ public interface IJournalStore
 
 public sealed record SealRecord(long Position, string Meta, byte[] Data);
 
+/// <summary>One entry of the journal, as a value. The journal is the ordered list of these, and everything that enters a space is one of them. `Text` is the stored form and `Parse` reads it back; the stored form of every kind is the one journals have always had.</summary>
+public abstract record Entry
+{
+    /// <summary>The first entry: what the space was started with.</summary>
+    public sealed record Header(string Tenant, int? LateHorizon, string Cluster, string Space, string Mode, IReadOnlyList<SourceFile> Files) : Entry;
+    /// <summary>A batch of source rows.</summary>
+    public sealed record Rows(string Source, long Seq, Batch Batch) : Entry;
+    /// <summary>Logical time moves on to `Lambda`.</summary>
+    public sealed record Advance(long Lambda, long Seq) : Entry;
+    /// <summary>A source has reported everything up to `Until`.</summary>
+    public sealed record Progress(string Source, long Until, long Seq) : Entry;
+    /// <summary>A source lost `Count` records at `Time`.</summary>
+    public sealed record Loss(long Time, long Count, string Reason) : Entry;
+    /// <summary>The input has ended.</summary>
+    public sealed record Finish : Entry;
+    /// <summary>A live input starts, with the options its envelopes are read with.</summary>
+    public sealed record LiveStart(ReplayOptions Options) : Entry;
+    /// <summary>One envelope of a live source, and the position of the source after it.</summary>
+    public sealed record Envelope(string Source, string Body, string After) : Entry;
+    /// <summary>An envelope of a live source that was not consumed (a duplicate, or not an envelope): only the position of the source after it.</summary>
+    public sealed record Skipped(string Source, string After) : Entry;
+    /// <summary>The pending rows of the live input go to the engine here.</summary>
+    public sealed record Flush : Entry;
+    /// <summary>An event that is not stored used a sequence number (a draft event).</summary>
+    public sealed record SequenceStep : Entry;
+    /// <summary>A definition commit: the new text of each module, against the catalog revision it expects.</summary>
+    public sealed record Commit(long Expected, IReadOnlyDictionary<string, string> Texts) : Entry;
+    /// <summary>The definition commit before this entry was refused when it was activated.</summary>
+    public sealed record CommitRefused : Entry;
+
+    /// <summary>The options of a live input as stored (in a `LiveStart` and in a seal).</summary>
+    public static string OptionsText(ReplayOptions o) => new JsonObject { ["c"] = o.ChunkRows, ["a"] = o.AdvanceEveryNs, ["l"] = o.LatenessNs, ["f"] = o.FlushAtEnd, ["k"] = o.Cluster }.ToJsonString();
+    public static ReplayOptions ParseOptions(string text) { var n = JsonNode.Parse(text)!; return new ReplayOptions { ChunkRows = n["c"]!.GetValue<int>(), AdvanceEveryNs = n["a"]!.GetValue<long>(), LatenessNs = n["l"]!.GetValue<long>(), FlushAtEnd = n["f"]!.GetValue<bool>(), Cluster = n["k"]!.GetValue<string>() }; }
+
+    static JsonArray FilesJson(IEnumerable<SourceFile> files) => new([.. files.Select(f => (JsonNode)new JsonObject { ["p"] = f.Path, ["t"] = f.Text })]);
+    /// <summary>Definition files as a header and a seal store them.</summary>
+    public static JsonArray FilesText(IEnumerable<SourceFile> files) => FilesJson(files);
+    public static List<SourceFile> ParseFiles(JsonNode files) => [.. files.AsArray().Select(f => new SourceFile(f!["p"]!.GetValue<string>(), f["t"]!.GetValue<string>()))];
+
+    /// <summary>The stored form. Rows carry their texts, so the interner that numbered them is needed.</summary>
+    public string Text(Interner it) => this switch
+    {
+        Header h => new JsonObject { ["k"] = "h", ["tenant"] = h.Tenant, ["lateHorizon"] = h.LateHorizon, ["cluster"] = h.Cluster, ["space"] = h.Space, ["mode"] = h.Mode, ["generation"] = 0, ["files"] = FilesJson(h.Files) }.ToJsonString(),
+        Rows r => BatchCodec.Encode(r.Source, r.Seq, r.Batch, it),
+        Advance a => $"{{\"k\":\"a\",\"l\":{a.Lambda.ToString(CultureInfo.InvariantCulture)},\"q\":{a.Seq.ToString(CultureInfo.InvariantCulture)}}}",
+        Progress g => new JsonObject { ["k"] = "g", ["s"] = g.Source, ["u"] = g.Until, ["q"] = g.Seq }.ToJsonString(),
+        Loss l => new JsonObject { ["k"] = "l", ["t"] = l.Time, ["n"] = l.Count, ["r"] = l.Reason }.ToJsonString(),
+        Finish => "{\"k\":\"f\"}",
+        LiveStart s => new JsonObject { ["k"] = "L", ["o"] = OptionsText(s.Options) }.ToJsonString(),
+        Envelope e => new JsonObject { ["k"] = "e", ["s"] = e.Source, ["t"] = e.Body, ["p"] = e.After }.ToJsonString(),
+        Skipped p => new JsonObject { ["k"] = "p", ["s"] = p.Source, ["p"] = p.After }.ToJsonString(),
+        Flush => "{\"k\":\"F\"}",
+        SequenceStep => "{\"k\":\"s\"}",
+        Commit c => new JsonObject { ["k"] = "c", ["e"] = c.Expected, ["t"] = new JsonObject(c.Texts.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))) }.ToJsonString(),
+        CommitRefused => "{\"k\":\"x\"}",
+        _ => throw new InvalidOperationException("unknown entry " + GetType().Name),
+    };
+
+    /// <summary>The kind letter of a stored entry, without reading the rest of it.</summary>
+    public static char KindOf(string text) => text.StartsWith("{\"k\":\"", StringComparison.Ordinal) && text.Length > 6 ? text[6] : throw new InvalidDataException("no journal entry: " + text[..Math.Min(40, text.Length)]);
+
+    /// <summary>Reads a stored entry. Rows are read with the layout their source has now, and their texts get their numbers from `it`.</summary>
+    public static Entry Parse(string text, Func<string, Layout> layoutOf, Interner it)
+    {
+        var kind = KindOf(text);
+        if (kind == 'r') { var (source, seq, rows) = BatchCodec.Decode(text, layoutOf, it); return new Rows(source, seq, rows); }
+        using var d = JsonDocument.Parse(text); var r = d.RootElement;
+        string S(string name) => r.GetProperty(name).GetString()!;
+        long N(string name) => r.GetProperty(name).GetInt64();
+        return kind switch
+        {
+            'h' => new Header(S("tenant"), HostOptions.StoredLateHorizon(JsonNode.Parse(text)!), S("cluster"), S("space"), S("mode"), ParseFiles(JsonNode.Parse(text)!["files"]!)),
+            'a' => new Advance(N("l"), N("q")),
+            'g' => new Progress(S("s"), N("u"), N("q")),
+            'l' => new Loss(N("t"), N("n"), S("r")),
+            'f' => new Finish(),
+            'L' => new LiveStart(ParseOptions(S("o"))),
+            'e' => new Envelope(S("s"), S("t"), S("p")),
+            'p' => new Skipped(S("s"), S("p")),
+            'F' => new Flush(),
+            's' => new SequenceStep(),
+            'c' => new Commit(N("e"), r.GetProperty("t").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetString()!)),
+            'x' => new CommitRefused(),
+            _ => throw new InvalidDataException("unknown journal entry " + text[..Math.Min(40, text.Length)]),
+        };
+    }
+}
+
 /// <summary>A row batch as JSON, independent of the process: interned columns carry their strings, other columns their numbers. Weights and presence are written only when they are not the default.</summary>
 public static class BatchCodec
 {
