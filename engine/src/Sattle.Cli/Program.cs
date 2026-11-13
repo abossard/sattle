@@ -19,7 +19,7 @@ public static class Program
     const string Usage = """
         sattle check  [--defs DIR] [--update-pins] [--print MODULE] [--plan]
         sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
-                              [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
+                              [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR] [--projections sattle|kql]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
         sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from checkpoint|latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
@@ -243,8 +243,17 @@ public static class Program
         var capture = live || resumeOnly ? "" : FindCapture(o.Positional[0]);
         if (!live && !resumeOnly && !Directory.Exists(capture)) return Fail($"capture directory {capture} does not exist");
         if (resumeOnly) return Serve(o, "", o.Get("cluster") ?? "lab");
+        var files = ReadDefinitions(o);
+        if (o.Get("projections") is { } front && front != "sattle")
+        {
+            if (front != "kql") return Fail($"--projections {front}: sattle or kql");
+            if (serve) return Fail("--projections kql is for replay only: serve writes definition edits back to the .sattle files");
+            var put = Sattle.Kql.KqlFiles.Of(files, Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o)));
+            if (!put.Ok) { Print(put.Diagnostics); return 1; }
+            files = put.Files;
+        }
         var cat = new Catalog();
-        var load = cat.Load(ReadDefinitions(o), updatePins: true);
+        var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
         string cluster;
