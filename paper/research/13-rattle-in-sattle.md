@@ -204,9 +204,12 @@ What is missing, each named once:
 Order of work, decided by Andre on 13 November 2026: planned, built only after the full KQL implementation is ready.
 
 0. **Prerequisite: the full KQL implementation.** Ready means: every projection is written in KQL and the old `.sattle` projection text is retired; `serve` and drafts take KQL; the KQL editors of note 11 work in the canvas; and the operators the cases need compile and are proven (`arg_min`, `make_set`, `min()` in `summarize`, undirected patterns, `union` of two pattern results). Nothing of the game starts before.
-1. The puzzle source and the per-graph digest line, then cases 0 to 6 as folders that `replay` runs. A command-line game with letters as Markdown.
-2. The live phase on the command line: replay the change script and print the first revision where the digests differ.
-3. The canvas shell, on the KQL editor of step 0.
+Andre, 14 November 2026: the game is 100% visual and easy to use. The player works in the canvas; the visual editor is the preferred way to write a projection, KQL text is the fallback. No command-line game. Work starts on its own once step 0 is done.
+
+1. The puzzle source and the per-graph digest, cases 0 to 6 as case folders.
+2. The game in the canvas: the letter, the input graph, the visual KQL editor with the text beside it, the verdict and the first wrong element, hints, badges.
+3. The live phase in the canvas: the change script plays, the timeline shows each revision green or red, a click on the first red one shows the wrong element.
+4. Cases 7 to 16.
 
 ## 8. Open questions
 
