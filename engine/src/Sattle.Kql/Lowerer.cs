@@ -627,8 +627,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var paths = new HashSet<string>(StringComparer.Ordinal);
         var port = GraphPort(graph);
         var view = View(inputs[((FunctionCallExpression)graph).ArgumentList.Expressions[0].Element.LiteralValue!.ToString()!]);
-        var nodes = new List<string>(); var edges = new List<(string Var, string From, string To, GraphMatchPatternEdge At)>();
-        (string Var, string Start, string Target, bool Out, long Min, long Max, GraphMatchPatternEdge At)? path = null;
+        // an edge written -[e]- matches both directions: Both is set, From and To are as written
+        var nodes = new List<string>(); var edges = new List<(string Var, string From, string To, bool Both, GraphMatchPatternEdge At)>();
+        (string Var, string Start, string Target, string Direction, long Min, long Max, GraphMatchPatternEdge At)? path = null;
         static string NameOf(GraphMatchPatternNotation n) => (n as GraphMatchPatternNode)?.Name?.SimpleName ?? throw new Refused("name every node of a pattern: (x)", n);
         foreach (var pat in gm.Patterns)
         {
@@ -640,20 +641,20 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 var v2 = ed.Name?.SimpleName ?? throw new Refused("name every edge of a pattern: -[e]->", ed);
                 var (first, last) = (ed.FirstToken.Text, ed.LastToken.Text);
                 var fwd = !first.StartsWith('<') && last.EndsWith('>'); var back = first.StartsWith('<') && !last.EndsWith('>');
-                if (fwd == back) throw new Refused("an edge of a pattern has one direction: -[e]-> or <-[e]-", ed);
+                if (fwd && back) throw new Refused("an edge of a pattern has one direction or none: -[e]->, <-[e]- or -[e]-", ed);
                 if (ed.Range is { } range)
                 {
                     // a path of several edges: reachability from the node before it to the node after it, which no other edge may touch
                     if (path is not null || i + 2 < els.Count) throw new Refused("a pattern has at most one path of several edges, and it ends the pattern: (a)-[p*1..16]->(b)", ed);
                     if (range.RangeStart?.LiteralValue is not long min || range.RangeEnd?.LiteralValue is not long max) throw new Refused("a path has fixed bounds: -[p*1..16]->", ed);
                     if (min > 1) throw new Refused("a path starts at 0 or 1 edges: the engine keeps what is within reach, not paths of an exact length", ed);
-                    path = (v2, NameOf(els[i - 1]), NameOf(els[i + 1]), fwd, min, max, ed);
+                    path = (v2, NameOf(els[i - 1]), NameOf(els[i + 1]), fwd ? "out" : back ? "in" : "either", min, max, ed);
                     paths.Add(v2);
                     i++;
                     continue;
                 }
                 if (NameOf(els[i - 1]) == NameOf(els[i + 1])) throw new Refused("an edge from a node to itself is not kept apart from the others of its type: match (a)-[e]->(b) and filter a == b", ed);
-                edges.Add((v2, fwd ? NameOf(els[i - 1]) : NameOf(els[i + 1]), fwd ? NameOf(els[i + 1]) : NameOf(els[i - 1]), ed));
+                edges.Add((v2, back ? NameOf(els[i + 1]) : NameOf(els[i - 1]), back ? NameOf(els[i - 1]) : NameOf(els[i + 1]), !fwd && !back, ed));
             }
         }
         var types = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -688,37 +689,57 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         foreach (var v in nodes.Where(v => !types.ContainsKey(v)))
         {
             // a node without a label takes the declared end type of an edge it touches
-            var ends = edges.SelectMany(e => new[] { (e.From == v, view.Types[types[e.Var]].Sources), (e.To == v, view.Types[types[e.Var]].Targets) }).Where(x => x.Item1).SelectMany(x => x.Item2).Distinct().ToList();
+            var ends = edges.SelectMany(e => new[] { (e.From == v || e.Both && e.To == v, view.Types[types[e.Var]].Sources), (e.To == v || e.Both && e.From == v, view.Types[types[e.Var]].Targets) }).Where(x => x.Item1).SelectMany(x => x.Item2).Distinct().ToList();
             if (ends.Count != 1) throw new Refused($"give the node '{v}' its type: where labels({v}) has \"T\"", gm);
             types[v] = ends[0];
         }
-        var op = Op("Match");
-        Wire(port, op, "graph");
-        foreach (var v in nodes) b.Edge(b.Contain(op, "node", v, "PatternNode", null, ("var", T(v))), "ofType", types[v]);
-        foreach (var e in edges)
+        // one match per direction of the edges written without one, where the types of their ends allow it; the union of their results, each read and projected on its own
+        var both = edges.Where(e => e.Both).ToList();
+        if (both.Count > 4) throw new Refused("a pattern has at most four edges without a direction", both[4].At);
+        bool Fits(string node, IEnumerable<string> ends) => ends.Any(t => view.IsSubtype(types[node], t) || view.IsSubtype(t, types[node]));
+        Rel? acc = null;
+        for (var mask = 0; mask < 1 << both.Count; mask++)
         {
-            var id = b.Contain(op, "edge", e.Var, "PatternEdge", null, ("var", T(e.Var)));
-            b.Edge(id, "ofType", types[e.Var]);
-            b.Edge(id, "from", Ids.Child(op, "node", e.From));
-            b.Edge(id, "to", Ids.Child(op, "node", e.To));
+            var oriented = edges.Select(e => e.Both && (mask >> both.IndexOf(e) & 1) == 1 ? e with { From = e.To, To = e.From } : e).ToList();
+            if (!oriented.Where(e => e.Both).All(e => Fits(e.From, view.Types[types[e.Var]].Sources) && Fits(e.To, view.Types[types[e.Var]].Targets))) continue;
+            var one = Matched(oriented);
+            if (acc is null) { acc = one; continue; }
+            var u = Op("Union", ("conflict", T("preserveEvidence")));
+            Wire(acc.Port, u, "in0"); Wire(one.Port, u, "in1");
+            acc = acc.Next(P(u, "out"));
         }
-        var r = new Rel { Port = P(op, "out") };
-        foreach (var v in nodes.Concat(edges.Select(e => e.Var))) { r.Cols.Add(v); r.Types[v] = types[v]; }
-        if (path is { } tp)
+        return acc ?? throw new Refused("no direction of the edges written without one fits the types of their ends", both[0].At);
+
+        Rel Matched(List<(string Var, string From, string To, bool Both, GraphMatchPatternEdge At)> oriented)
         {
-            var tr = Op("Traverse", ("direction", T(tp.Out ? "out" : "in")), ("minDepth", Value.Integer(tp.Min)), ("maxDepth", Value.Integer(tp.Max)), ("start", T(tp.Start)), ("target", T(tp.Target)));
-            Wire(port, tr, "graph");
-            b.Edge(tr, "ofType", types[tp.Var]);
-            Wire(r.Port, tr, "in");
-            r = r.Next(P(tr, "out"));
-            r.Cols.Add(tp.Target); r.Types[tp.Target] = types[tp.Start];
+            var op = Op("Match");
+            Wire(port, op, "graph");
+            foreach (var v in nodes) b.Edge(b.Contain(op, "node", v, "PatternNode", null, ("var", T(v))), "ofType", types[v]);
+            foreach (var e in oriented)
+            {
+                var id = b.Contain(op, "edge", e.Var, "PatternEdge", null, ("var", T(e.Var)));
+                b.Edge(id, "ofType", types[e.Var]);
+                b.Edge(id, "from", Ids.Child(op, "node", e.From));
+                b.Edge(id, "to", Ids.Child(op, "node", e.To));
+            }
+            var r = new Rel { Port = P(op, "out") };
+            foreach (var v in nodes.Concat(edges.Select(e => e.Var))) { r.Cols.Add(v); r.Types[v] = types[v]; }
+            if (path is { } tp)
+            {
+                var tr = Op("Traverse", ("direction", T(tp.Direction)), ("minDepth", Value.Integer(tp.Min)), ("maxDepth", Value.Integer(tp.Max)), ("start", T(tp.Start)), ("target", T(tp.Target)));
+                Wire(port, tr, "graph");
+                b.Edge(tr, "ofType", types[tp.Var]);
+                Wire(r.Port, tr, "in");
+                r = r.Next(P(tr, "out"));
+                r.Cols.Add(tp.Target); r.Types[tp.Target] = types[tp.Start];
+            }
+            // the condition and the projection read the path variables only to be refused: the edges of a path are not kept
+            return In(scope with { Paths = [.. paths] }, () =>
+            {
+                var m = rest.Count > 0 ? Filter(r, rest) : r;
+                return gm.ProjectClause is { } pc ? Project(m, [.. pc.Expressions.Select(x => x.Element)], false) : m;
+            });
         }
-        // the condition and the projection read the path variables only to be refused: the edges of a path are not kept
-        return In(scope with { Paths = [.. paths] }, () =>
-        {
-            var m = rest.Count > 0 ? Filter(r, rest) : r;
-            return gm.ProjectClause is { } pc ? Project(m, [.. pc.Expressions.Select(x => x.Element)], false) : m;
-        });
     }
 
     /// <summary>`where t > ago(span)`: rows stay while their time is within the span before the newest input time, the data's time.</summary>
@@ -868,11 +889,23 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var aggs = new List<(string Target, string Fn, X? Value, X? Weight)>();
         foreach (var it in s.Aggregates.Select(x => x.Element))
         {
-            // arg_max(order, a, b): the values of the row with the greatest order, and that order
-            if (!telemetry && it is FunctionCallExpression { Name.SimpleName: "arg_max" } am && am.ArgumentList.Expressions.Select(a => a.Element).ToList() is [NameReference order, .. var values] && values.All(v => v is NameReference))
+            // arg_max(order, a, b): the values of the row with the greatest order, and that order (named n in n = arg_max(...)); * is every other column
+            var (named0, am) = it switch
             {
-                aggs.Add((order.SimpleName, "last", Scalar(order, r), Scalar(order, r))); next.Cols.Add(order.SimpleName);
-                foreach (NameReference v in values) { aggs.Add((v.SimpleName, "last", Scalar(v, r), Scalar(order, r))); next.Cols.Add(v.SimpleName); }
+                FunctionCallExpression { Name.SimpleName: "arg_max" } f => (null, f),
+                SimpleNamedExpression { Expression: FunctionCallExpression { Name.SimpleName: "arg_max" } f } n => (n.Name.SimpleName, f),
+                _ => (null, null),
+            };
+            if (!telemetry && am is not null && am.ArgumentList.Expressions.Select(a => a.Element).ToList() is [NameReference order, .. var values] && values.All(v => v is NameReference or StarExpression))
+            {
+                var first = named0 ?? order.SimpleName;
+                List<(string Name, X Value)> cols = values.Any(v => v is StarExpression)
+                    ? [.. r.Visible.Where(c => c != order.SimpleName && !next.Visible.Contains(c) && c != first).Select(c => (c, (X)F(c)))]
+                    : [.. values.Select(v => (((NameReference)v).SimpleName, Scalar(v, r)))];
+                foreach (var (c, _) in cols.Where(c => r.Types.ContainsKey(c.Name) || r.Idents.ContainsKey(c.Name)))
+                    throw new Refused($"arg_max gives values, and '{c}' is an element: project its properties or its id first", am);
+                aggs.Add((first, "last", Scalar(order, r), Scalar(order, r))); next.Cols.Add(first);
+                foreach (var (c, x) in cols) { aggs.Add((c, "last", x, Scalar(order, r))); next.Cols.Add(c); }
                 continue;
             }
             if (it is not SimpleNamedExpression { Expression: FunctionCallExpression call } named) throw new Refused("name each aggregate: n = count()", it);
@@ -921,7 +954,6 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             "countif" => (target, "sum", new CallX("If", A(0), new LitX(Value.Integer(1)), new LitX(Value.Integer(0))), null),
             "sum" or "min" or "max" => (target, fn, A(0), null),
             "avg" => (target, "mean", A(0), null),
-            "arg_max" => throw new Refused("write arg_max without a name: summarize arg_max(order, a, b) by k gives the columns order, a and b of one row", call),
             "dcount" or "dcountif" => throw new Refused("dcount is an estimate that may vary between runs: write distinct ... | summarize n = count()", call),
             "count_distinct" or "count_distinctif" => throw new Refused("count_distinct is a preview function: write distinct ... | summarize n = count()", call),
             "take_any" or "take_anyif" or "any" => throw new Refused("take_any picks an arbitrary value: write min, max or arg_max", call),
