@@ -28,6 +28,7 @@ public class KqlProjectionTests
     [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
     [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
     [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
+    [InlineData("acme.ops.ingest.kql", "master", "without its rules: the readonly ones are comments, the editable ones come in a later stage")]
     public void A_projection_in_KQL_gives_the_state_of_its_text_on_the_estate(string kql, string graph, string compared) => SameState(Data(Estate), kql, graph, compared);
 
     [Trait("Category", "Capture")]
@@ -43,6 +44,7 @@ public class KqlProjectionTests
     [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
     [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
     [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
+    [InlineData("acme.ops.ingest.kql", "master", "without its rules: the readonly ones are comments, the editable ones come in a later stage")]
     public void A_projection_in_KQL_gives_the_state_of_its_text_on_every_recorded_capture(string kql, string graph, string compared)
     {
         foreach (var dir in CaptureDirs) SameState(Data(dir), kql, graph, compared);
@@ -72,8 +74,8 @@ public class KqlProjectionTests
     [InlineData("nodes ServiceNode on service = services | summarize n = take_any(name) by service", "min, max or arg_max")]
     [InlineData("nodes ServiceNode on service = services | join (services) on service", "join kind=inner")]
     [InlineData("nodes ServiceNode on service = services | join kind=leftouter (services) on service", "write union and summarize")]
-    [InlineData("nodes ServiceNode on service = services | extend t = now()", "the windows of the telemetry")]
-    [InlineData("nodes ServiceNode on service = services | extend t = ago(1h)", "the windows of the telemetry")]
+    [InlineData("nodes ServiceNode on service = services | extend t = now()", "never the wall clock")]
+    [InlineData("nodes ServiceNode on service = services | extend t = ago(1h)", "never the wall clock")]
     [InlineData("nodes ServiceNode on service = services | mv-expand x = pack_array(name, cluster)", "not in the KQL profile")]
     [InlineData("nodes ServiceNode on service = union services, (services | project service)", "project each to")]
     [InlineData("nodes ServiceNode on service = graph(\"master\") | graph-match (a)-[p*1..3]->(b) where labels(a) has \"Pod\" and all(p, labels(p) has \"Calls\") project service = a.id, hops = p", "project the two ends")]
@@ -103,7 +105,7 @@ public class KqlProjectionTests
         var mid = Ids.Module(Ids.ModuleOf(pid));
         var loaded = Load(put.Files);
         bool Under(string id) => id == pid || id.StartsWith(pid + "/", StringComparison.Ordinal);
-        var mine = facts.Elements().ToDictionary(e => e.Key.ToString());
+        var mine = facts.ToDictionary(e => e.Key.ToString());
         var theirs = loaded.Graph.Elements().Where(e => e is Entity en ? Under(en.Id) : e is Rel r && (Under(r.Source) || r.Source == mid && r.Target == pid)).ToDictionary(e => e.Key.ToString());
         var missing = mine.Keys.Where(k => !theirs.TryGetValue(k, out var t) || !Equals(t, mine[k])).ToList();
         var extra = theirs.Keys.Where(k => !mine.ContainsKey(k)).ToList();
@@ -127,7 +129,7 @@ public class KqlProjectionTests
     sealed record Recorded(string Dir, string Cluster, List<SourceFile> Files, Catalog Catalog)
     {
         /// <summary>Today's text replayed once for every graph a test compares.</summary>
-        public Lazy<Engine> Today { get; } = new(() => Run(new Recorded(Dir, Cluster, Files, Catalog), Catalog, ["serviceTree", "deploymentHealth", "deploymentReport", "capabilities", "workloadStructure", "workload", "healthReport", "treeStructure", "treeSignals", "treeRollup", "healthTree"]));
+        public Lazy<Engine> Today { get; } = new(() => Run(new Recorded(Dir, Cluster, Files, Catalog), Catalog, ["serviceTree", "deploymentHealth", "deploymentReport", "capabilities", "workloadStructure", "workload", "healthReport", "treeStructure", "treeSignals", "treeRollup", "healthTree", "master"]));
     }
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Recorded>> Loaded = new();
 

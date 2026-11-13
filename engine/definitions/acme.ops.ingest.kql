@@ -1,0 +1,96 @@
+// The master graph: what the adapters observe (Kubernetes, Hubble, Azure Resource Graph, the Activity Log, Azure Monitor,
+// Prometheus, VNet flow logs) and what people author (capabilities, signal rules, roll-up policies, curations).
+// The inputs are tables of rows, one per source; a window of telemetry is 60 seconds of the rows' own time.
+graph ingest : acme.ops;
+
+// ---- observed by the Kubernetes adapter ----
+nodes Pod on pod = pods | project pod = identity("podUid", cluster, uid), cluster, namespace, name, phase, team = teamLabel, ready, serviceAccount;
+edges RunsAs from pod to account = pods | project pod = identity("podUid", cluster, uid), account = identity("serviceAccountName", cluster, namespace, serviceAccount);
+edges ControlledBy from pod to owner = pods | project pod = identity("podUid", cluster, uid), owner = identity("deploymentName", cluster, namespace, deployment);
+edges RunsOn from pod to host = pods | project pod = identity("podUid", cluster, uid), host = identity("nodeName", cluster, nodeName);
+// a pod's uid and its name are two keys of the same pod
+link podUidIsPodName from byUid to byName with (confidence = 1.0) = pods
+    | project byUid = identity("podUid", cluster, uid), byName = identity("podName", cluster, namespace, name);
+nodes Deployment on d = deployments | project d = identity("deploymentName", cluster, namespace, name), cluster, namespace, name, replicas;
+nodes HostReference on h = hostRefs | project h = identity("hostReference", cluster, namespace, deployment, variable), cluster, namespace, deployment, variable, host;
+edges Configures from h to d = hostRefs
+    | project h = identity("hostReference", cluster, namespace, deployment, variable), d = identity("deploymentName", cluster, namespace, deployment);
+nodes ServiceAccount on a = accounts | project a = identity("serviceAccountName", cluster, namespace, name), cluster, namespace, name, clientId;
+nodes Service on s = services | project s = identity("serviceName", cluster, namespace, name), cluster, namespace, name, externalName, address;
+edges Backs from pod to s = endpoints | project pod = identity("podUid", cluster, podUid), s = identity("serviceName", cluster, namespace, service);
+nodes Node on n = nodes | project n = identity("nodeName", cluster, name), cluster, name, resourceId, pool;
+
+// ---- observed by Hubble: calls between pods, and flows to addresses that are no pod ----
+edges Calls from src to dst = flows
+    | where isnotnull(srcNamespace) and isnotnull(srcPod) and isnotnull(dstNamespace) and isnotnull(dstPod)
+    | summarize flows = count(), drops = countif(verdict == "DROPPED") by cluster, srcNamespace, srcPod, dstNamespace, dstPod, windowStart = bin(['time'], 60s)
+    | project src = identity("podName", cluster, srcNamespace, srcPod), dst = identity("podName", cluster, dstNamespace, dstPod), windowStart, flows, drops;
+let sent = flows
+    | where isnotnull(srcNamespace) and isnotnull(srcPod) and isnull(dstPod) and isnotnull(dstAddress)
+    | summarize flows = count(), drops = countif(verdict == "DROPPED"), arg_max(['time'], dstName) by cluster, srcNamespace, srcPod, address = coalesce(dstAddress, ""), windowStart = bin(['time'], 60s);
+nodes Destination on dest = sent | project dest = identity("destination", cluster, address), windowStart, cluster, address, hostName = dstName;
+edges Sends from src to dest = sent | project src = identity("podName", cluster, srcNamespace, srcPod), dest = identity("destination", cluster, address), windowStart, flows, drops;
+
+// ---- Kubernetes warning events on pods: a count per window, a meter of the pod, and evidence kept for 24 hours ----
+let podWarnings = events | where ['kind'] == "Pod" and ['type'] == "Warning" | summarize warnings = sum(['count']) by cluster, namespace, name, windowStart = bin(['time'], 60s);
+extend nodes Pod on pod = podWarnings | project pod = identity("podName", cluster, namespace, name), windowStart, warnings;
+let warningRows = events | where ['kind'] == "Pod" and ['type'] == "Warning" | where ['time'] > ago(24h);
+nodes WarningEvent on w = warningRows | project w = identity("warningEvent", eventId), eventId, ['time'], reason, message, ['count'];
+edges About from w to pod = warningRows | project w = identity("warningEvent", eventId), pod = identity("podName", cluster, namespace, name);
+
+// ---- observed by Azure Resource Graph, the Activity Log and the AKS audit log ----
+nodes AzureResource on r = resources
+    | project r = identity("azureResource", id), resourceId = id, name, ['type'], location, resourceGroup, subscriptionId, parentId, address, linkedId, clientId, principalId, scope;
+let allOperations = union activity, diagActivity;
+extend nodes AzureResource on r = allOperations
+    | project eventId, ['time'], resourceId = tolower(resourceId), status | distinct * | where status == "Succeeded"
+    | summarize changes = count() by resourceId, windowStart = bin(['time'], 60s)
+    | project r = identity("azureResource", resourceId), windowStart, changes;
+let operations = allOperations | project eventId, ['time'], resourceId = tolower(resourceId), operation = tolower(operation), status | distinct * | where ['time'] > ago(24h);
+nodes ActivityEvent on e = operations | project e = identity("activityEvent", eventId), eventId, ['time'], operation, status;
+extend nodes ActivityEvent on e = allOperations | where isnotnull(caller) | project eventId, ['time'], caller | distinct * | where ['time'] > ago(24h)
+    | project e = identity("activityEvent", eventId), caller;
+edges Concerns from e to r = operations | project e = identity("activityEvent", eventId), r = identity("azureResource", resourceId);
+// lease renewals are noise and are left out
+nodes AuditEvent on a = audit | where resource != "leases" | where ['time'] > ago(24h)
+    | project a = identity("auditEvent", eventId), eventId, ['time'], verb, resource, namespace, name, user, code;
+
+// ---- metrics: Azure Monitor per resource, Prometheus per node, VNet flow logs per network; per window ----
+// the mean of each series per window, by resource and metric
+let azureMeans = resourceMetrics
+    | summarize n = count(), total = sum(value) by resourceId = tolower(resourceId), metric, windowStart = bin(['time'], 60s)
+    | project resourceId, metric, windowStart, mean = total / n;
+extend nodes AzureResource on r = azureMeans | where metric == "node_cpu_usage_percentage" | project r = identity("azureResource", resourceId), windowStart, cpuPercent = mean;
+extend nodes AzureResource on r = azureMeans | where metric == "node_memory_working_set_percentage" | project r = identity("azureResource", resourceId), windowStart, memoryPercent = mean;
+extend nodes AzureResource on r = azureMeans | where metric == "VipAvailability" | project r = identity("azureResource", resourceId), windowStart, vipAvailability = mean;
+extend nodes AzureResource on r = azureMeans | where metric == "ServerErrors" | project r = identity("azureResource", resourceId), windowStart, serverErrors = mean;
+// the node agents' metrics, whose instance is the node: per window the mean of each series, added over the series of the node
+let nodeMeans = metrics
+    | where isnotnull(instance) and (metric == "cilium_endpoint_state" or metric == "cilium_forward_rate" or metric == "cilium_drop_rate" or metric == "hubble_flows_rate")
+    | summarize n = count(), total = sum(value) by cluster, instance = coalesce(instance, ""), metric, series, windowStart = bin(['time'], 60s)
+    | project cluster, instance, metric, series, windowStart, mean = total / n
+    | summarize mean = sum(mean) by cluster, instance, metric, windowStart;
+extend nodes Node on n = nodeMeans | where metric == "cilium_forward_rate" | project n = identity("nodeName", cluster, instance), windowStart, forwardRate = mean;
+extend nodes Node on n = nodeMeans | where metric == "cilium_drop_rate" | project n = identity("nodeName", cluster, instance), windowStart, dropRate = mean;
+extend nodes AzureResource on r = flowLogs | where state == "D" or state == "B"
+    | summarize denied = countif(state == "D"), begun = countif(state == "B") by vnetId = tolower(vnetId), windowStart = bin(['time'], 60s)
+    | project r = identity("azureResource", vnetId), windowStart, deniedFlows = denied, newFlows = begun;
+
+// ---- meters: every series a signal rule may read ----
+nodes Meter on m = azureMeans | project m = identity("meter", resourceId, metric), windowStart, meterKey = resourceId, meter = metric, reading = mean;
+edges MeterOf from m to r with (key = "meterOfResource") = azureMeans | project m = identity("meter", resourceId, metric), windowStart, r = identity("azureResource", resourceId);
+nodes Meter on m = nodeMeans | project m = identity("meter", strcat("node/", cluster, "/", instance), metric), windowStart, meterKey = strcat("node/", cluster, "/", instance), meter = metric, reading = mean;
+edges MeterOf from m to n with (key = "meterOfNode") = nodeMeans | project m = identity("meter", strcat("node/", cluster, "/", instance), metric), windowStart, n = identity("nodeName", cluster, instance);
+nodes Meter on m = podWarnings
+    | project m = identity("meter", strcat("pod/", cluster, "/", namespace, "/", name), "warnings"), windowStart, meterKey = strcat("pod/", cluster, "/", namespace, "/", name), meter = "warnings", reading = toreal(warnings);
+edges MeterOf from m to pod with (key = "meterOfPod") = podWarnings
+    | project m = identity("meter", strcat("pod/", cluster, "/", namespace, "/", name), "warnings"), windowStart, pod = identity("podName", cluster, namespace, name);
+
+// ---- authored: capabilities, signal rules, roll-up policies and curations (editable in a later stage) ----
+nodes Capability on c = caps | project c = identity("capability", capId), capId, name, owner, status;
+edges PartOf from c to p = caps | project c = identity("capability", capId), p = identity("capability", parentId);
+edges Realizes from s to c = realizes | project s = identity("serviceName", cluster, namespace, service), c = identity("capability", capId);
+nodes SignalRule on u = signalRules
+    | project u = identity("signalRule", ruleId), ruleId, ruleType = ['type'], ruleMeter = meter, ruleAbove = above, ruleEnter = enterAfter, ruleBelow = below, ruleExit = exitAfter, ruleSeverity = severity, ruleInvert = invert;
+nodes RollupPolicy on u = policies | project u = identity("rollupPolicy", target), policyTarget = target, policyMode = mode, policyShare = share;
+nodes Curation on u = curations | project u = identity("curation", curId), curId, curAction = action, curTarget = target, curValue = value;

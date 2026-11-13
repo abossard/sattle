@@ -26,20 +26,22 @@ sealed class Rel
     public Dictionary<string, Value> Lits = new(StringComparer.Ordinal);
     /// <summary>The value kind of a telemetry column, from its property in the ontology.</summary>
     public Dictionary<string, string> Kinds = new(StringComparer.Ordinal);
+    /// <summary>Rows of event-time windows, `bin(time, width)`: a summary keyed by windowStart groups them.</summary>
+    public bool EventWindows;
     /// <summary>One row per telemetry window (after a series or a roll-up).</summary>
     public bool Windowed;
     /// <summary>The rows of a telemetry join: one column per property in place of KQL's `property` and `value` columns.</summary>
     public (string Property, string Value, string[] Props)? Long;
 
-    public Rel Next(string port) => new() { Port = port, Cols = [.. Cols], Types = new(Types), Idents = new(Idents), Kinds = new(Kinds), Windowed = Windowed, Long = Long };
+    public Rel Next(string port) => new() { Port = port, Cols = [.. Cols], Types = new(Types), Idents = new(Idents), Kinds = new(Kinds), Windowed = Windowed, EventWindows = EventWindows, Long = Long };
     public static bool Hidden(string c) => c.Contains("__", StringComparison.Ordinal);
     public IEnumerable<string> Visible => Cols.Where(c => !Hidden(c)).Concat(Idents.Keys);
 }
 
 sealed class Refused(string message, SyntaxNode at) : Exception(message) { public SyntaxNode At { get; } = at; }
 
-sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, string file, string text, string graphName, string outModule,
-    List<StepHeader> steps, KustoCode code, List<Diagnostic> diags)
+sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, IReadOnlyDictionary<string, string> rows, string file, string text, string graphName, string outModule,
+    List<StepHeader> steps, KustoCode code, List<Diagnostic> diags, string sinks)
 {
     readonly DefBuilder b = new();
     readonly string mid = Ids.Module(module);
@@ -118,6 +120,15 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         return ports[g] = id;
     }
 
+    /// <summary>A table of rows from a source, read by its name.</summary>
+    string RowsPort(string name)
+    {
+        if (ports.TryGetValue(name, out var id)) return id;
+        id = b.Contain(pid, "port", name, "Port", null, ("name", T(name)), ("direction", T("in")), ("kind", T("rows")));
+        b.Edge(id, "rowType", rows[name]);
+        return ports[name] = id;
+    }
+
     string Op(string kind, params (string, Value)[] props)
     {
         var n = opNo[prefix] = opNo.GetValueOrDefault(prefix) + 1;
@@ -139,6 +150,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     {
         prefix = "step" + (steps.IndexOf(h) + 1);
         var r = Tab(query);
+        if (h.Kind == "link") { Link(h, r, query); return; }
         var key = h.Key(out var refusal);
         if (refusal is not null) throw new Refused(refusal, query);
         var view = View(outModule);
@@ -162,7 +174,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (!h.Extend && h.Kind == "edges" && steps.Count(o => !o.Extend && o.Kind == "edges" && o.Type == h.Type && o.Key(out _) == key) > 1)
             throw new Refused($"two steps make {what}: give one its own key with (key = \"...\"), or write extend edges", query);
         var mode = ("mode", T(h.Extend ? "update" : "create"));
-        var sink = OpNamed(h.Kind == "nodes" ? "EmitEntity" : "EmitRelationship", $"emit.{++emits}", h.Kind == "nodes" ? [mode] : [mode, ("key", T(key)), ("retype", T("reject"))]);
+        var sink = OpNamed(h.Kind == "nodes" ? "EmitEntity" : "EmitRelationship", $"{sinks}.{++emits}", h.Kind == "nodes" ? [mode] : [mode, ("key", T(key)), ("retype", T("reject"))]);
         b.Edge(sink, "ofType", type[0]);
         Wire(r.Port, sink, "in");
         foreach (var (col, slot) in ends) Write(Ref(r, col, query), sink, slot, 0);
@@ -184,6 +196,27 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         return own.Count == 1 ? own : hits;
     }
 
+    /// <summary>`link P from a to b with (confidence = c) = q`: the identities in the columns a and b name the same thing, as the equivalence policy P allows.</summary>
+    void Link(StepHeader h, Rel r, Expression query)
+    {
+        var settings = h.Settings(out var refusal);
+        if (refusal is not null) throw new Refused(refusal, query);
+        if (h.Extend) throw new Refused("a link adds no properties: write link P from a to b = ...", query);
+        if (!settings.TryGetValue("confidence", out var c) || !decimal.TryParse(c, NumberStyles.Float, CultureInfo.InvariantCulture, out var confidence))
+            throw new Refused("a link says how sure it is: with (confidence = 1.0)", query);
+        var pol = KqlFrontEnd.Closure(catalog, module).Select(m => Ids.Child(Ids.Module(m), "equivalence", h.Type)).Where(id => catalog.Entity(id) is not null).ToList();
+        if (pol.Count != 1) throw new Refused($"'{h.Type}' is no equivalence policy of {module}: a link needs one that says which two identity domains may name the same thing", query);
+        if (!r.Idents.TryGetValue(h.Src!, out var left) || !r.Idents.TryGetValue(h.Dst!, out var right))
+            throw new Refused("a link joins two identities: project both with identity(...)", query);
+        if (r.Visible.Any(v => v != h.Src && v != h.Dst)) throw new Refused("a link has no properties: project only the two identities", query);
+        var sink = OpNamed("Link", $"{sinks}.{++emits}");
+        b.Edge(sink, "policy", pol[0]);
+        Wire(r.Port, sink, "in");
+        Write(left, sink, "left", 0);
+        Write(right, sink, "right", 0);
+        Write(new LitX(Value.Decimal(confidence)), sink, "confidence", 0);
+    }
+
     X Ref(Rel r, string col, SyntaxNode at) =>
         r.Idents.TryGetValue(col, out var id) ? id : r.Cols.Contains(col) ? F(col) : throw new Refused($"the rows have no column '{col}'", at);
 
@@ -194,6 +227,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         ParenthesizedExpression p => Tab(p.Expression),
         NameReference n when tables.TryGetValue(n.SimpleName, out var t) => t,
         NameReference n when letSyntax.TryGetValue(n.SimpleName, out var l) => Let(n.SimpleName, l),
+        NameReference n when rows.ContainsKey(n.SimpleName) => new Rel { Port = RowsPort(n.SimpleName), Cols = [.. KqlFrontEnd.Fields(catalog, rows[n.SimpleName]).Select(f => f.Name)] },
         FunctionCallExpression f when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, Tab(f.ArgumentList.Expressions[0].Element), [.. f.ArgumentList.Expressions.Skip(1).Select(x => x.Element)], f),
         PipeExpression p => Pipe(p),
         DataTableExpression d => DataTable(d),
@@ -215,6 +249,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var input = Tab(p.Expression);
         return p.Operator switch
         {
+            FilterOperator { Condition: BinaryExpression { Operator.Text: ">", Left: NameReference t, Right: FunctionCallExpression { Name.SimpleName: "ago" } ago } } f when ago.ArgumentList.Expressions is [var span] && Const(span.Element) is TimeSpan age
+                => Retain(input, t.SimpleName, age.Ticks * 100, f),
             FilterOperator f => Filter(input, [f.Condition]),
             ProjectOperator po => Project(input, [.. po.Expressions.Select(x => x.Element)], false),
             ExtendOperator eo => Project(input, [.. eo.Expressions.Select(x => x.Element)], true),
@@ -366,6 +402,26 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         finally { pathVars.Clear(); }
     }
 
+    /// <summary>`where t > ago(span)`: rows stay while their time is within the span before the newest input time, the data's time.</summary>
+    Rel Retain(Rel r, string col, long ageNs, SyntaxNode at)
+    {
+        if (!r.Cols.Contains(col)) throw new Refused($"the rows have no column '{col}'", at);
+        var op = Op("Retain", ("timestampField", T(col)), ("age", Value.Integer(ageNs)));
+        Wire(r.Port, op, "in");
+        return r.Next(P(op, "out"));
+    }
+
+    /// <summary>`bin(time, width)` as a key of a summary: the rows go into windows of their own time; a late row updates its window.</summary>
+    Rel Window(Rel r, string col, long widthNs, SyntaxNode at)
+    {
+        if (!r.Cols.Contains(col)) throw new Refused($"the rows have no column '{col}'", at);
+        var op = Op("Window", ("timestampField", T(col)), ("width", Value.Integer(widthNs)), ("late", T("revise")));
+        Wire(r.Port, op, "in");
+        var next = r.Next(P(op, "out"));
+        next.Cols.AddRange(["windowStart", "windowEnd"]);
+        return next;
+    }
+
     static IEnumerable<Expression> Conjuncts(Expression e) =>
         e is BinaryExpression { Operator.Text: "and" } a ? Conjuncts(a.Left).Concat(Conjuncts(a.Right)) : e is ParenthesizedExpression p ? Conjuncts(p.Expression) : [e];
 
@@ -427,6 +483,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         Wire(r.Port, op, "in");
         next.Port = P(op, "out");
         next.Windowed = r.Windowed && next.Cols.Contains("windowStart");
+        next.EventWindows = r.EventWindows && next.Cols.Contains("windowStart");
         return next;
     }
 
@@ -453,11 +510,18 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     Rel Summarize(Rel r, SummarizeOperator s)
     {
-        var keys = new List<(string Name, X Value)>(); var byWindow = false;
+        var keys = new List<(string Name, X Value)>(); var byWindow = false; var binned = false;
         var next = new Rel { Port = "" };
         foreach (var it in s.ByClause?.Expressions.Select(x => x.Element) ?? [])
         {
             var (name, e) = it switch { SimpleNamedExpression n => (n.Name.SimpleName, n.Expression), NameReference n => (n.SimpleName, (Expression)n), _ => throw new Refused("name each key: k = expression", it) };
+            if (e is FunctionCallExpression { Name.SimpleName: "bin" } bin)
+            {
+                if (name != "windowStart" || bin.ArgumentList.Expressions.Select(a => a.Element).ToList() is not [NameReference tc, var width] || Const(width) is not TimeSpan w)
+                    throw new Refused("a window of the rows' own time is the key windowStart = bin(time, 60s), with a fixed width", it);
+                r = Window(r, tc.SimpleName, w.Ticks * 100, it);
+                byWindow = binned = true; continue;
+            }
             if (name == "windowStart" && e is NameReference { SimpleName: "windowStart" }) { byWindow = true; continue; }
             if (e is NameReference nr && r.Idents.TryGetValue(nr.SimpleName, out var id))
             {
@@ -469,16 +533,18 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             keys.Add((name, x)); next.Cols.Add(name);
             if (x is FieldX f && !f.Path.Contains('.') && r.Types.TryGetValue(f.Path, out var t)) next.Types[name] = t;
         }
-        var telemetry = r.Long is not null || (r.Windowed && byWindow);
+        var events = byWindow && (binned || r.EventWindows);
+        var telemetry = !events && (r.Long is not null || (r.Windowed && byWindow));
         if (telemetry && !byWindow) throw new Refused("a summary of telemetry keeps its windows: summarize ... by ..., windowStart", s);
-        if (byWindow && !telemetry) throw new Refused("only telemetry rows have windows", s);
+        if (byWindow && !telemetry && !events) throw new Refused("only telemetry rows and rows in windows of bin(time, 60s) have windows", s);
+        if (events) { keys.Add(("windowStart", F("windowStart"))); next.Cols.Add("windowStart"); next.EventWindows = true; }
         var aggs = new List<(string Target, string Fn, X? Value, X? Weight)>();
         foreach (var it in s.Aggregates.Select(x => x.Element))
         {
             // arg_max(order, a, b): the values of the row with the greatest order, and that order
             if (!telemetry && it is FunctionCallExpression { Name.SimpleName: "arg_max" } am && am.ArgumentList.Expressions.Select(a => a.Element).ToList() is [NameReference order, .. var values] && values.All(v => v is NameReference))
             {
-                aggs.Add((order.SimpleName, "max", Scalar(order, r), null)); next.Cols.Add(order.SimpleName);
+                aggs.Add((order.SimpleName, "last", Scalar(order, r), Scalar(order, r))); next.Cols.Add(order.SimpleName);
                 foreach (NameReference v in values) { aggs.Add((v.SimpleName, "last", Scalar(v, r), Scalar(order, r))); next.Cols.Add(v.SimpleName); }
                 continue;
             }
@@ -789,7 +855,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
 
     X Call(FunctionCallExpression f, Rel r, IReadOnlyDictionary<string, X>? scope)
     {
-        if (f.Name.SimpleName is "now" or "ago") throw new Refused("the wall clock is not in a projection: time is the windows of the telemetry", f);
+        if (f.Name.SimpleName is "now" or "ago") throw new Refused("in a projection now() and ago() mean the data's time, the newest input time, never the wall clock; they are accepted only where the engine keeps the result up to date: where time > ago(24h), and the look-back of telemetry", f);
         var a = f.ArgumentList.Expressions.Select(x => Scalar(x.Element, r, scope)).ToList();
         X Nest(string fn) => a.Count < 2 ? throw new Refused($"{f.Name.SimpleName} takes two or more values", f) : a.SkipLast(1).Reverse().Aggregate(a[^1], (acc, x) => new CallX(fn, x, acc));
         X One(string fn) => a.Count == 1 ? new CallX(fn, a[0]) : throw new Refused($"{f.Name.SimpleName} takes one value", f);

@@ -5,10 +5,21 @@ using Sattle.Language;
 namespace Sattle.Kql;
 
 /// <summary>The definitions with the projections written in KQL put in: each module that has files `module.projection.kql` printed again
-/// from the operators the KQL texts give, so the catalog loads plain text through its one loader and checker. `Facts` are those operators, by projection id.</summary>
-public sealed record KqlFiles(List<SourceFile> Files, IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyDictionary<string, DefBuilder> Facts)
+/// from the operators the KQL texts give, so the catalog loads plain text through its one loader and checker. `Facts` are the facts put in, by projection id:
+/// the operators of the KQL text, under the projection node of today's text (its purpose and the history it keeps, which the KQL text does not state).</summary>
+public sealed record KqlFiles(List<SourceFile> Files, IReadOnlyList<Diagnostic> Diagnostics, IReadOnlyDictionary<string, IReadOnlyList<Element>> Facts)
 {
     public bool Ok => !Diagnostics.Any(d => d.IsError);
+
+    static List<Element> Governed(List<Element> facts, string pid)
+    {
+        var rule = new DefBuilder();
+        var rid = rule.Contain(pid, "rule", "steps", "Rule", null, ("name", Value.Text("steps")), ("class", Value.Text("readonly")), ("putput", Value.Boolean(false)),
+            ("reason", Value.Text("the steps of the KQL text; rules get their form in KQL in the edit stage")));
+        foreach (var sink in facts.OfType<Entity>().Where(e => e.Id.StartsWith(pid + "/op:", StringComparison.Ordinal) && Ids.Name(e.Type) is "EmitEntity" or "EmitRelationship" or "Link"))
+            rule.Edge(rid, "governs", sink.Id);
+        return [.. facts.Select(e => e is Entity { Id: var id } p && id == pid ? p with { Props = Props.Of(p.Props.Items.Select(kv => kv.Key == Ids.KProp("forward") ? KeyValuePair.Create(kv.Key, Value.Boolean(false)) : kv)) } : e), .. rule.Elements()];
+    }
 
     /// <summary>The projections in KQL of a definitions folder, `module.projection.kql`.</summary>
     public static List<SourceFile> ReadDirectory(string dir) =>
@@ -18,7 +29,7 @@ public sealed record KqlFiles(List<SourceFile> Files, IReadOnlyList<Diagnostic> 
     /// `loaded` is the catalog of `files` when the caller has it.</summary>
     public static KqlFiles Of(IReadOnlyList<SourceFile> files, IReadOnlyList<SourceFile> kql, Catalog? loaded = null)
     {
-        var result = files.ToList(); var diags = new List<Diagnostic>(); var facts = new Dictionary<string, DefBuilder>(StringComparer.Ordinal);
+        var result = files.ToList(); var diags = new List<Diagnostic>(); var facts = new Dictionary<string, IReadOnlyList<Element>>(StringComparer.Ordinal);
         if (kql.Count == 0) return new(result, diags, facts);
         var cat = loaded;
         if (cat is null)
@@ -40,15 +51,23 @@ public sealed record KqlFiles(List<SourceFile> Files, IReadOnlyList<Diagnostic> 
                 var pid = Ids.Child(mid, "projection", name);
                 if (cat.Graph.Entity(pid) is null) { diags.Add(Err(f, $"module {module} declares no projection {name} for this file to replace")); ok = false; continue; }
                 var inputs = d.Children(pid, "port").Where(p => d.Text(p, "kind") == "graph").ToDictionary(p => d.Text(p, "name")!, p => Ids.ModuleOf(d.Target(p, "expects")!));
-                var low = KqlFrontEnd.Lower(f.Text, cat.Graph, module, inputs, f.Path);
+                var rows = d.Children(pid, "port").Where(p => d.Text(p, "kind") == "rows").ToDictionary(p => d.Text(p, "name")!, p => d.Target(p, "rowType")!);
+                var ingestion = d.Text(pid, "purpose") == "ingestion";
+                var low = KqlFrontEnd.Lower(f.Text, cat.Graph, module, inputs, f.Path, rows, ingestion ? "steps" : "emit");
                 diags.AddRange(low.Diagnostics);
                 if (!low.Ok) { ok = false; continue; }
                 if (low.ProjectionId != pid) { diags.Add(Err(f, $"the graph line names {Ids.Name(low.ProjectionId)}, the file name {name}")); ok = false; continue; }
-                bool Under(string id) => id == pid || id.StartsWith(pid + "/", StringComparison.Ordinal);
-                var err = g.Apply([.. g.Rels.Where(r => Under(r.Source) || Under(r.Target)).Select(Edit.Remove), .. g.Entities.Where(e => Under(e.Id)).Select(Edit.Remove)])
-                    ?? g.Apply([.. low.Facts.Elements().Select(Edit.Create)]);
+                bool Under(string id) => id.StartsWith(pid + "/", StringComparison.Ordinal);
+                // the projection node keeps what the KQL text does not state: its purpose, the history it keeps and its description
+                var keep = new HashSet<string>(new[] { "purpose", "retain", "description" }.Select(Ids.KProp), StringComparer.Ordinal);
+                Entity Settled(Entity mine) => mine with { Props = Props.Of(mine.Props.Items.Where(kv => !keep.Contains(kv.Key)).Concat(cat.Graph.Entity(pid)!.Props.Items.Where(kv => keep.Contains(kv.Key)))) };
+                var put = low.Facts.Elements().Select(e => e is Entity { Id: var id } en && id == pid ? Settled(en) : e).ToList();
+                // an ingestion projection is not forward and so has rules; until the edit stage gives rules a form in KQL, one readonly rule governs all its steps
+                if (ingestion) put = Governed(put, pid);
+                var err = g.Apply([.. g.Rels.Where(r => r.Source == pid || r.Target == pid || Under(r.Source) || Under(r.Target)).Select(Edit.Remove), .. g.Entities.Where(e => e.Id == pid || Under(e.Id)).Select(Edit.Remove)])
+                    ?? g.Apply([.. put.Select(Edit.Create)]);
                 if (err is not null) { diags.Add(Err(f, "the operators do not fit the module: " + err)); ok = false; continue; }
-                facts[pid] = low.Facts;
+                facts[pid] = put;
             }
             if (ok) result[at] = result[at] with { Text = Printer.Print(g, module) };
         }

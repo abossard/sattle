@@ -11,7 +11,7 @@ let telemetry_filled = (g:string, lookback:timespan, ttl:timespan, fill:real) {
     Telemetry | where graph == g and windowStart > now() - lookback | project id, property, windowStart, value = coalesce(value, fill), noData
 };
 // The id of a node that is not an element of an input graph: the identity domain and the key values.
-let identity = (domain:string, k1:string, k2:string = "", k3:string = "") { strcat(domain, "/", k1, "/", k2, "/", k3) };
+let identity = (domain:string, k1:string, k2:string = "", k3:string = "", k4:string = "") { strcat(domain, "/", k1, "/", k2, "/", k3, "/", k4) };
 // A threshold with hysteresis per key (all columns that are not windowStart, value, the four thresholds or noData):
 // the state becomes `high` after `enterAfter` consecutive windows at or above `above`, and `low` after `exitAfter`
 // consecutive windows at or below `below`; a window with noData sets `nodata`. One row per key with the latest state.
