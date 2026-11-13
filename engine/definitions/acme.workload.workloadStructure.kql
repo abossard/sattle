@@ -8,41 +8,41 @@ let svcKey = (cluster:string, namespace:string, name:string) { strcat("svc/", cl
 
 // ---- composition: what the workload is made of and what carries it ----
 let services = graph("master")
-    | graph-match (s) where labels(s) has "Service" and s.namespace == workloadNamespace
-      project s, cluster = s.cluster, namespace = s.namespace, name = s.name, externalName = s.externalName, address = s.address;
-nodes Workload on w = services
-    | project w = identity("workload", cluster, namespace), key = strcat("ns/", cluster, "/", namespace), ['kind'] = "workload", name = namespace, cluster, namespace;
-nodes WorkloadService on s = services
-    | project s, key = svcKey(cluster, namespace, name), ['kind'] = "service", name, cluster, namespace, externalName;
-edges Contains from w to s with (key = "workloadService") = services | project w = identity("workload", cluster, namespace), s;
+    | graph-match (service) where labels(service) has "Service" and service.namespace == workloadNamespace
+      project service, cluster = service.cluster, namespace = service.namespace, name = service.name, externalName = service.externalName, address = service.address;
+nodes Workload on workload = services
+    | project workload = identity("workload", cluster, namespace), key = strcat("ns/", cluster, "/", namespace), ['kind'] = "workload", name = namespace, cluster, namespace;
+nodes WorkloadService on service = services
+    | project service, key = svcKey(cluster, namespace, name), ['kind'] = "service", name, cluster, namespace, externalName;
+edges Contains from workload to service with (key = "workloadService") = services | project workload = identity("workload", cluster, namespace), service;
 
 let placed = graph("master")
-    | graph-match (p)-[b]->(s), (p)-[c]->(d)
-      where labels(p) has "Pod" and labels(b) has "Backs" and labels(s) has "Service" and labels(c) has "ControlledBy" and labels(d) has "Deployment" and s.namespace == workloadNamespace
-      project p, s, d;
-nodes WorkloadPod on p = placed
-    | project p, key = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), ['kind'] = "pod", name = p.name, cluster = p.cluster, namespace = p.namespace;
-nodes WorkloadDeployment on d = placed
-    | project d, key = strcat("deploy/", d.cluster, "/", d.namespace, "/", d.name), ['kind'] = "deployment", name = d.name, cluster = d.cluster, namespace = d.namespace, replicas = d.replicas;
-edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;
-edges Contains from d to p with (key = "deploymentPod") = placed | project d, p;
+    | graph-match (pod)-[b]->(service), (pod)-[c]->(deployment)
+      where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and labels(c) has "ControlledBy" and labels(deployment) has "Deployment" and service.namespace == workloadNamespace
+      project pod, service, deployment;
+nodes WorkloadPod on pod = placed
+    | project pod, key = strcat("pod/", pod.cluster, "/", pod.namespace, "/", pod.name), ['kind'] = "pod", name = pod.name, cluster = pod.cluster, namespace = pod.namespace;
+nodes WorkloadDeployment on deployment = placed
+    | project deployment, key = strcat("deploy/", deployment.cluster, "/", deployment.namespace, "/", deployment.name), ['kind'] = "deployment", name = deployment.name, cluster = deployment.cluster, namespace = deployment.namespace, replicas = deployment.replicas;
+edges Contains from service to deployment with (key = "serviceDeployment") = placed | project service, deployment;
+edges Contains from deployment to pod with (key = "deploymentPod") = placed | project deployment, pod;
 let hosted = graph("master")
-    | graph-match (p)-[b]->(s), (p)-[r]->(n)
-      where labels(p) has "Pod" and labels(b) has "Backs" and labels(s) has "Service" and labels(r) has "RunsOn" and labels(n) has "Node" and s.namespace == workloadNamespace
-      project p, s, n;
-nodes WorkloadNode on n = hosted
-    | project n, key = strcat("node/", n.cluster, "/", n.name), ['kind'] = "node", name = n.name, cluster = n.cluster, pool = n.pool;
-edges HostedOn from p to n with (key = "runsOn") = hosted | project p, n;
-let pooled = hosted | where isnotnull(n.pool) | project n, cluster = n.cluster, pool = coalesce(n.pool, ""), one = 1;
-nodes NodePool on np = pooled
-    | project np = identity("nodePool", cluster, pool), key = strcat("pool/", cluster, "/", pool), ['kind'] = "pool", name = pool, cluster;
-edges MemberOf from n to np with (key = "nodeInPool") = pooled | project n, np = identity("nodePool", cluster, pool);
+    | graph-match (pod)-[b]->(service), (pod)-[ro]->(node)
+      where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and labels(ro) has "RunsOn" and labels(node) has "Node" and service.namespace == workloadNamespace
+      project pod, service, node;
+nodes WorkloadNode on node = hosted
+    | project node, key = strcat("node/", node.cluster, "/", node.name), ['kind'] = "node", name = node.name, cluster = node.cluster, pool = node.pool;
+edges HostedOn from pod to node with (key = "runsOn") = hosted | project pod, node;
+let pooled = hosted | where isnotnull(node.pool) | project node, cluster = node.cluster, pool = coalesce(node.pool, ""), one = 1;
+nodes NodePool on nodePool = pooled
+    | project nodePool = identity("nodePool", cluster, pool), key = strcat("pool/", cluster, "/", pool), ['kind'] = "pool", name = pool, cluster;
+edges MemberOf from node to nodePool with (key = "nodeInPool") = pooled | project node, nodePool = identity("nodePool", cluster, pool);
 let clusters = graph("master")
-    | graph-match (r) where labels(r) has "AzureResource" and r.type == "microsoft.containerservice/managedclusters" and r.name == aksName
-      project r, one2 = 1;
-nodes Cluster on r = clusters | project r, key = tolower(r.resourceId), ['kind'] = "cluster", name = r.name, resourceId = r.resourceId;
+    | graph-match (azureResource) where labels(azureResource) has "AzureResource" and azureResource.type == "microsoft.containerservice/managedclusters" and azureResource.name == aksName
+      project azureResource, one2 = 1;
+nodes Cluster on azureResource = clusters | project azureResource, key = tolower(azureResource.resourceId), ['kind'] = "cluster", name = azureResource.name, resourceId = azureResource.resourceId;
 let poolsOfCluster = pooled | join kind=inner (clusters) on $left.one == $right.one2;
-edges MemberOf from np to r with (key = "poolInCluster") = poolsOfCluster | project np = identity("nodePool", cluster, pool), r;
+edges MemberOf from nodePool to azureResource with (key = "poolInCluster") = poolsOfCluster | project nodePool = identity("nodePool", cluster, pool), azureResource;
 
 // ---- the resources of the subscription by the name they are reached by, and the private endpoints by their address ----
 let suffixes = datatable(stype:string, suffix:string) [
@@ -53,137 +53,137 @@ let suffixes = datatable(stype:string, suffix:string) [
     "microsoft.keyvault/vaults", ".vault.azure.net",
     "microsoft.servicebus/namespaces", ".servicebus.windows.net",
     "microsoft.documentdb/databaseaccounts", ".documents.azure.com"];
-let resources = graph("master") | graph-match (r) where labels(r) has "AzureResource" project r, rkey = tolower(r.resourceId), rtype = tolower(r.type);
-let named = resources | join kind=inner (suffixes) on $left.rtype == $right.stype | project r, rkey, host = strcat(tolower(r.name), suffix);
+let resources = graph("master") | graph-match (azureResource) where labels(azureResource) has "AzureResource" project azureResource, rkey = tolower(azureResource.resourceId), rtype = tolower(azureResource.type);
+let named = resources | join kind=inner (suffixes) on $left.rtype == $right.stype | project azureResource, rkey, host = strcat(tolower(azureResource.name), suffix);
 let endpoints = graph("master")
-    | graph-match (pe) where labels(pe) has "AzureResource" and pe.type == "microsoft.network/privateendpoints" and isnotnull(pe.linkedId) and isnotnull(pe.address)
-      project pe, peAddress = coalesce(pe.address, ""), linked = tolower(coalesce(pe.linkedId, "")), vnet = tolower(coalesce(pe.parentId, ""));
+    | graph-match (endpoint) where labels(endpoint) has "AzureResource" and endpoint.type == "microsoft.network/privateendpoints" and isnotnull(endpoint.linkedId) and isnotnull(endpoint.address)
+      project endpoint, peAddress = coalesce(endpoint.address, ""), linked = tolower(coalesce(endpoint.linkedId, "")), vnet = tolower(coalesce(endpoint.parentId, ""));
 
-// a Service that stands for a resource: an ExternalName Service and the resource its name is
-let externals = services | where isnotnull(externalName) | project s, ext = tolower(coalesce(externalName, ""));
+// assignment Service that stands for assignment azureResource: an ExternalName Service and the azureResource its name is
+let externals = services | where isnotnull(externalName) | project service, ext = tolower(coalesce(externalName, ""));
 let backed = externals | join kind=inner (named) on $left.ext == $right.host;
-edges BackedBy from s to r = backed | project s, r;
+edges BackedBy from service to azureResource = backed | project service, azureResource;
 
-// which component a resource is to the workload: the Service that stands for it, else the resource itself
+// which component assignment azureResource is to the workload: the Service that stands for it, else the azureResource itself
 let candidates = union (resources | project ptkey = rkey, ['kind'] = "resource", rank = 0, skey = ""),
-                       (backed | project ptkey = rkey, ['kind'] = "service", rank = 1, skey = svcKey(s.cluster, s.namespace, s.name));
+                       (backed | project ptkey = rkey, ['kind'] = "service", rank = 1, skey = svcKey(service.cluster, service.namespace, service.name));
 let preferred = candidates | summarize arg_max(rank, ['kind'], skey) by ptkey | project ptkey, pkind = ['kind'], pskey = skey;
 
 // ---- dependencies, each with the way it was found ----
 let sent = graph("master")
-    | graph-match (p)-[f]->(dst), (p)-[b]->(s)
-      where labels(p) has "Pod" and labels(f) has "Sends" and labels(dst) has "Destination" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace
-      project p, dst, src = svcKey(s.cluster, s.namespace, s.name), address = dst.address, dhost = tolower(coalesce(dst.hostName, ""));
+    | graph-match (pod)-[flow]->(destination), (pod)-[b]->(service)
+      where labels(pod) has "Pod" and labels(flow) has "Sends" and labels(destination) has "Destination" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
+      project pod, destination, src = svcKey(service.cluster, service.namespace, service.name), address = destination.address, dhost = tolower(coalesce(destination.hostName, ""));
 let viaEndpoint = sent | join kind=inner (endpoints) on $left.address == $right.peAddress
-    | project p, dst, pe, src, tkey = linked, how = "privateEndpoint", detail = strcat("pod ", p.name, " sends flows to ", address, ", the address of private endpoint ", pe.name);
+    | project pod, destination, endpoint, src, tkey = linked, how = "privateEndpoint", detail = strcat("pod ", pod.name, " sends flows to ", address, ", the address of private endpoint ", endpoint.name);
 let viaName = sent | join kind=inner (named) on $left.dhost == $right.host
-    | project p, dst, r, src, tkey = rkey, how = "dnsName", detail = strcat("pod ", p.name, " sends flows to ", host);
+    | project pod, destination, azureResource, src, tkey = rkey, how = "dnsName", detail = strcat("pod ", pod.name, " sends flows to ", host);
 let accounts = graph("master")
-    | graph-match (p)-[ra]->(sa), (p)-[b]->(s)
-      where labels(p) has "Pod" and labels(ra) has "RunsAs" and labels(sa) has "ServiceAccount" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace and isnotnull(sa.clientId)
-      project sa, src = svcKey(s.cluster, s.namespace, s.name), account = sa.name, client = tolower(coalesce(sa.clientId, ""));
+    | graph-match (pod)-[ra]->(serviceAccount), (pod)-[b]->(service)
+      where labels(pod) has "Pod" and labels(ra) has "RunsAs" and labels(serviceAccount) has "ServiceAccount" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace and isnotnull(serviceAccount.clientId)
+      project serviceAccount, src = svcKey(service.cluster, service.namespace, service.name), account = serviceAccount.name, client = tolower(coalesce(serviceAccount.clientId, ""));
 let identities = graph("master")
-    | graph-match (i) where labels(i) has "AzureResource" and i.type == "microsoft.managedidentity/userassignedidentities" and isnotnull(i.clientId)
-      project i, identityName = i.name, iclient = tolower(coalesce(i.clientId, "")), iprincipal = tolower(coalesce(i.principalId, ""));
+    | graph-match (managedIdentity) where labels(managedIdentity) has "AzureResource" and managedIdentity.type == "microsoft.managedidentity/userassignedidentities" and isnotnull(managedIdentity.clientId)
+      project managedIdentity, identityName = managedIdentity.name, iclient = tolower(coalesce(managedIdentity.clientId, "")), iprincipal = tolower(coalesce(managedIdentity.principalId, ""));
 let assignments = graph("master")
-    | graph-match (a) where labels(a) has "AzureResource" and a.type == "microsoft.authorization/roleassignments" and isnotnull(a.scope)
-      project a, aprincipal = tolower(coalesce(a.principalId, "")), scope = tolower(coalesce(a.scope, ""));
+    | graph-match (assignment) where labels(assignment) has "AzureResource" and assignment.type == "microsoft.authorization/roleassignments" and isnotnull(assignment.scope)
+      project assignment, aprincipal = tolower(coalesce(assignment.principalId, "")), scope = tolower(coalesce(assignment.scope, ""));
 let viaIdentity = accounts
     | join kind=inner (identities) on $left.client == $right.iclient
     | join kind=inner (assignments) on $left.iprincipal == $right.aprincipal
-    | project sa, i, a, src, tkey = scope, how = "identity", detail = strcat("service account ", account, " runs as identity ", identityName, ", which has a role on the resource");
+    | project serviceAccount, managedIdentity, assignment, src, tkey = scope, how = "identity", detail = strcat("service account ", account, " runs as identity ", identityName, ", which has a role on the resource");
 let configured = graph("master")
-    | graph-match (h)-[cf]->(d), (p)-[cb]->(d), (p)-[b]->(s)
-      where labels(h) has "HostReference" and labels(cf) has "Configures" and labels(d) has "Deployment" and labels(p) has "Pod" and labels(cb) has "ControlledBy"
-        and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace
-      project h, src = svcKey(s.cluster, s.namespace, s.name), variable = h.variable, chost = h.host;
+    | graph-match (hostReference)-[cf]->(deployment), (pod)-[cb]->(deployment), (pod)-[b]->(service)
+      where labels(hostReference) has "HostReference" and labels(cf) has "Configures" and labels(deployment) has "Deployment" and labels(pod) has "Pod" and labels(cb) has "ControlledBy"
+        and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
+      project hostReference, src = svcKey(service.cluster, service.namespace, service.name), variable = hostReference.variable, chost = hostReference.host;
 let viaConfigResource = configured | join kind=inner (named) on $left.chost == $right.host
-    | project h, r, src, tkey = rkey, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost);
-let serviceHosts = services | project ts = s, tsvc = svcKey(cluster, namespace, name), shost = strcat(name, ".", namespace, ".svc.cluster.local");
+    | project hostReference, azureResource, src, tkey = rkey, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost);
+let serviceHosts = services | project targetService = service, tsvc = svcKey(cluster, namespace, name), shost = strcat(name, ".", namespace, ".svc.cluster.local");
 let viaConfigService = configured | join kind=inner (serviceHosts) on $left.chost == $right.shost
-    | project h, ts, src, target = tsvc, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost), one = 1;
+    | project hostReference, targetService, src, target = tsvc, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost), one = 1;
 let called = graph("master")
-    | graph-match (a)-[k]->(b), (a)-[x]->(sa), (b)-[y]->(sb)
-      where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" and labels(x) has "Backs" and labels(sa) has "Service" and labels(y) has "Backs" and labels(sb) has "Service"
-        and sa.namespace == workloadNamespace and sb.namespace == workloadNamespace
-      project k, src = svcKey(sa.cluster, sa.namespace, sa.name), target = svcKey(sb.cluster, sb.namespace, sb.name), how = "calls", detail = strcat("pod ", a.name, " calls pod ", b.name), one = 1;
+    | graph-match (callerPod)-[call]->(calleePod), (callerPod)-[x]->(callerService), (calleePod)-[y]->(calleeService)
+      where labels(callerPod) has "Pod" and labels(call) has "Calls" and labels(calleePod) has "Pod" and labels(x) has "Backs" and labels(callerService) has "Service" and labels(y) has "Backs" and labels(calleeService) has "Service"
+        and callerService.namespace == workloadNamespace and calleeService.namespace == workloadNamespace
+      project call, src = svcKey(callerService.cluster, callerService.namespace, callerService.name), target = svcKey(calleeService.cluster, calleeService.namespace, calleeService.name), how = "calls", detail = strcat("pod ", callerPod.name, " calls pod ", calleePod.name), one = 1;
 
 let byEndpoint = viaEndpoint | join kind=inner (preferred) on $left.tkey == $right.ptkey
-    | project p, dst, pe, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
+    | project pod, destination, endpoint, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
 let byName = viaName | join kind=inner (preferred) on $left.tkey == $right.ptkey
-    | project p, dst, r, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
+    | project pod, destination, azureResource, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
 let byIdentity = viaIdentity | join kind=inner (preferred) on $left.tkey == $right.ptkey
-    | project sa, i, a, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
+    | project serviceAccount, managedIdentity, assignment, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
 let byConfig = viaConfigResource | join kind=inner (preferred) on $left.tkey == $right.ptkey
-    | project h, r, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
+    | project hostReference, azureResource, src, target = iff(pkind == "service", pskey, tkey), how, detail, one = 1;
 
 // the evidence: one element per dependency and way it was found, and an edge to the service it is for
-let serviceKeys = services | project s, skey2 = svcKey(cluster, namespace, name);
+let serviceKeys = services | project service, skey2 = svcKey(cluster, namespace, name);
 let evidenceOf = (F:(src:string, target:string, how:string, detail:string, one:long)) { F | where src != target | summarize arg_max(one, detail) by src, target, how };
-let evidenceFor = (E:(src:string, target:string, how:string)) { E | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project e = identity("dependencyEvidence", src, target, how), s };
+let evidenceFor = (E:(src:string, target:string, how:string)) { E | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project evidence = identity("dependencyEvidence", src, target, how), service };
 let evidenceEndpoint = byEndpoint | invoke evidenceOf();
 let evidenceName = byName | invoke evidenceOf();
 let evidenceIdentity = byIdentity | invoke evidenceOf();
 let evidenceConfig = byConfig | invoke evidenceOf();
 let evidenceConfigService = viaConfigService | invoke evidenceOf();
 let evidenceCalls = called | invoke evidenceOf();
-nodes DependencyEvidence on e = evidenceEndpoint | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceName | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceIdentity | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceConfig | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceConfigService | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-nodes DependencyEvidence on e = evidenceCalls | project e = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
-edges EvidenceFor from e to s with (key = "evidenceForEndpoint") = evidenceEndpoint | invoke evidenceFor();
-edges EvidenceFor from e to s with (key = "evidenceForName") = evidenceName | invoke evidenceFor();
-edges EvidenceFor from e to s with (key = "evidenceForIdentity") = evidenceIdentity | invoke evidenceFor();
-edges EvidenceFor from e to s with (key = "evidenceForConfig") = evidenceConfig | invoke evidenceFor();
-edges EvidenceFor from e to s with (key = "evidenceForConfigService") = evidenceConfigService | invoke evidenceFor();
-edges EvidenceFor from e to s with (key = "evidenceForCalls") = evidenceCalls | invoke evidenceFor();
+nodes DependencyEvidence on evidence = evidenceEndpoint | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on evidence = evidenceName | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on evidence = evidenceIdentity | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on evidence = evidenceConfig | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on evidence = evidenceConfigService | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+nodes DependencyEvidence on evidence = evidenceCalls | project evidence = identity("dependencyEvidence", src, target, how), sourceKey = src, targetKey = target, how, detail;
+edges EvidenceFor from evidence to service with (key = "evidenceForEndpoint") = evidenceEndpoint | invoke evidenceFor();
+edges EvidenceFor from evidence to service with (key = "evidenceForName") = evidenceName | invoke evidenceFor();
+edges EvidenceFor from evidence to service with (key = "evidenceForIdentity") = evidenceIdentity | invoke evidenceFor();
+edges EvidenceFor from evidence to service with (key = "evidenceForConfig") = evidenceConfig | invoke evidenceFor();
+edges EvidenceFor from evidence to service with (key = "evidenceForConfigService") = evidenceConfigService | invoke evidenceFor();
+edges EvidenceFor from evidence to service with (key = "evidenceForCalls") = evidenceCalls | invoke evidenceFor();
 
 // the dependencies: one edge per pair, whatever the ways it was found
 let pairs = union (byEndpoint | project src, target), (byName | project src, target), (byIdentity | project src, target),
                   (byConfig | project src, target), (viaConfigService | project src, target), (called | project src, target)
     | where src != target | distinct *;
-let targetServices = services | project t = s, tkey3 = svcKey(cluster, namespace, name);
-let fromService = pairs | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project from = s, target;
+let targetServices = services | project targetService = service, tkey3 = svcKey(cluster, namespace, name);
+let fromService = pairs | join kind=inner (serviceKeys) on $left.src == $right.skey2 | project from = service, target;
 let toService = fromService | join kind=inner (targetServices) on $left.target == $right.tkey3;
-edges DependsOn from from to t with (key = "dependsOnService") = toService | project from, t;
+edges DependsOn from from to targetService with (key = "dependsOnService") = toService | project from, targetService;
 let toResource = fromService | join kind=inner (resources) on $left.target == $right.rkey;
-edges DependsOn from from to r with (key = "dependsOnResource") = toResource | project from, r;
+edges DependsOn from from to azureResource with (key = "dependsOnResource") = toResource | project from, azureResource;
 
-nodes PlatformResource on r = toResource | project r, key = rkey, ['kind'] = "resource", name = r.name, resourceId = r.resourceId, resourceType = rtype;
-nodes PlatformResource on r = backed | project r, key = rkey, ['kind'] = "resource", name = r.name, resourceId = r.resourceId, resourceType = tolower(r.type);
+nodes PlatformResource on azureResource = toResource | project azureResource, key = rkey, ['kind'] = "resource", name = azureResource.name, resourceId = azureResource.resourceId, resourceType = rtype;
+nodes PlatformResource on azureResource = backed | project azureResource, key = rkey, ['kind'] = "resource", name = azureResource.name, resourceId = azureResource.resourceId, resourceType = tolower(azureResource.type);
 let usedKeys = union (toResource | project ukey = rkey), (backed | project ukey = rkey) | distinct *;
 let reachedThrough = endpoints | join kind=inner (usedKeys) on $left.linked == $right.ukey;
-nodes PlatformResource on pe = reachedThrough
-    | project pe, key = tolower(pe.resourceId), ['kind'] = "privateEndpoint", name = pe.name, resourceId = pe.resourceId, resourceType = "microsoft.network/privateendpoints";
+nodes PlatformResource on endpoint = reachedThrough
+    | project endpoint, key = tolower(endpoint.resourceId), ['kind'] = "privateEndpoint", name = endpoint.name, resourceId = endpoint.resourceId, resourceType = "microsoft.network/privateendpoints";
 let reachedResources = reachedThrough | join kind=inner (resources) on $left.linked == $right.rkey;
-edges ConnectedThrough from r to pe with (key = "throughEndpoint") = reachedResources | project r, pe;
-let networks = reachedThrough | join kind=inner (resources | project net = r, nkey = rkey, netName = r.name, netId = r.resourceId, netType = rtype) on $left.vnet == $right.nkey;
-nodes PlatformResource on net = networks
-    | project net, key = nkey, ['kind'] = "network", name = netName, resourceId = netId, resourceType = netType;
-edges ConnectedThrough from pe to net with (key = "throughNetwork") = networks | project pe, net;
+edges ConnectedThrough from azureResource to endpoint with (key = "throughEndpoint") = reachedResources | project azureResource, endpoint;
+let networks = reachedThrough | join kind=inner (resources | project network = azureResource, nkey = rkey, netName = azureResource.name, netId = azureResource.resourceId, netType = rtype) on $left.vnet == $right.nkey;
+nodes PlatformResource on network = networks
+    | project network, key = nkey, ['kind'] = "network", name = netName, resourceId = netId, resourceType = netType;
+edges ConnectedThrough from endpoint to network with (key = "throughNetwork") = networks | project endpoint, network;
 
-// a gateway whose backend is the address of a Service sends it requests: the gateway needs the Service
+// assignment gateway whose backend is the address of assignment Service sends it requests: the gateway needs the Service
 let backends = graph("master")
-    | graph-match (bk) where labels(bk) has "AzureResource" and bk.type == "microsoft.apimanagement/service/backends" and isnotnull(bk.address) and isnotnull(bk.parentId)
-      project baddress = coalesce(bk.address, ""), gateway = tolower(coalesce(bk.parentId, "")), backend = bk.name;
-let addressed = services | where isnotnull(address) | project s, saddress = coalesce(address, ""), skey4 = svcKey(cluster, namespace, name);
+    | graph-match (backendResource) where labels(backendResource) has "AzureResource" and backendResource.type == "microsoft.apimanagement/service/backends" and isnotnull(backendResource.address) and isnotnull(backendResource.parentId)
+      project baddress = coalesce(backendResource.address, ""), gateway = tolower(coalesce(backendResource.parentId, "")), backend = backendResource.name;
+let addressed = services | where isnotnull(address) | project service, saddress = coalesce(address, ""), skey4 = svcKey(cluster, namespace, name);
 let gateways = backends
     | join kind=inner (addressed) on $left.baddress == $right.saddress
     | join kind=inner (resources) on $left.gateway == $right.rkey;
-nodes PlatformResource on r = gateways | project r, key = rkey, ['kind'] = "gateway", name = r.name, resourceId = r.resourceId, resourceType = rtype;
-edges Exposes from r to s = gateways | project r, s;
-nodes DependencyEvidence on e = gateways
-    | project e = identity("dependencyEvidence", rkey, skey4, "backend"), sourceKey = rkey, targetKey = skey4, how = "backend",
-              detail = strcat("backend ", backend, " of ", r.name, " sends requests to ", baddress, ", the address of Service ", s.name);
-edges EvidenceFor from e to s with (key = "evidenceBackend") = gateways | project e = identity("dependencyEvidence", rkey, skey4, "backend"), s;
+nodes PlatformResource on azureResource = gateways | project azureResource, key = rkey, ['kind'] = "gateway", name = azureResource.name, resourceId = azureResource.resourceId, resourceType = rtype;
+edges Exposes from azureResource to service = gateways | project azureResource, service;
+nodes DependencyEvidence on evidence = gateways
+    | project evidence = identity("dependencyEvidence", rkey, skey4, "backend"), sourceKey = rkey, targetKey = skey4, how = "backend",
+              detail = strcat("backend ", backend, " of ", azureResource.name, " sends requests to ", baddress, ", the address of Service ", service.name);
+edges EvidenceFor from evidence to service with (key = "evidenceBackend") = gateways | project evidence = identity("dependencyEvidence", rkey, skey4, "backend"), service;
 
 // ---- communication: who talks to whom, with its flows per window ----
 let backsHere = graph("master")
-    | graph-match (p)-[b]->(s) where labels(p) has "Pod" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace project p = p.id, s = s.id;
-// to resources and services outside: the destination's address leads to a private endpoint or a resolved name
-let destinations = graph("master") | graph-match (dst) where labels(dst) has "Destination" project daddr = dst.address, dname = tolower(coalesce(dst.hostName, ""));
+    | graph-match (pod)-[b]->(service) where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace project pod = pod.id, service = service.id;
+// to resources and services outside: the destination'service address leads to assignment private endpoint or assignment resolved name
+let destinations = graph("master") | graph-match (destination) where labels(destination) has "Destination" project daddr = destination.address, dname = tolower(coalesce(destination.hostName, ""));
 let destinationOf = union
         (destinations | join kind=inner (endpoints) on $left.daddr == $right.peAddress | project daddr, tkey = linked),
         (destinations | join kind=inner (named) on $left.dname == $right.host | project daddr, tkey = rkey)
@@ -191,38 +191,38 @@ let destinationOf = union
     | project daddr2 = daddr, target = iff(pkind == "service", pskey, tkey)
     | distinct *;
 let talkRows = graph("master")
-    | graph-match (p)-[f]->(dst), (p)-[b]->(s)
-      where labels(p) has "Pod" and labels(f) has "Sends" and labels(dst) has "Destination" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace
-      project s, f = f.id, address = dst.address
+    | graph-match (pod)-[flow]->(destination), (pod)-[b]->(service)
+      where labels(pod) has "Pod" and labels(flow) has "Sends" and labels(destination) has "Destination" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
+      project service, flow = flow.id, address = destination.address
     | join kind=inner (destinationOf) on $left.address == $right.daddr2;
-edges TalksTo from s to r with (key = "talksToResource") = talkRows
+edges TalksTo from service to azureResource with (key = "talksToResource") = talkRows
     | join kind=inner (resources) on $left.target == $right.rkey
-    | join kind=inner (telemetry("master", 30m) | where property in ("flows", "drops") | project f = id, windowStart, property, value) on f
-    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by s, r, windowStart;
-edges TalksTo from s to t with (key = "talksToService") = talkRows
-    | join kind=inner (services | project t = s.id, tkey3 = svcKey(cluster, namespace, name)) on $left.target == $right.tkey3
-    | join kind=inner (telemetry("master", 30m) | where property in ("flows", "drops") | project f = id, windowStart, property, value) on f
-    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by s, t, windowStart;
+    | join kind=inner (telemetry("master", 30m) | where property in ("flows", "drops") | project flow = id, windowStart, property, value) on flow
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by service, azureResource, windowStart;
+edges TalksTo from service to targetService with (key = "talksToService") = talkRows
+    | join kind=inner (services | project targetService = service.id, tkey3 = svcKey(cluster, namespace, name)) on $left.target == $right.tkey3
+    | join kind=inner (telemetry("master", 30m) | where property in ("flows", "drops") | project flow = id, windowStart, property, value) on flow
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by service, targetService, windowStart;
 
-// a call between pods is a call between the services of the workload they back
-// a call between pods is a call between the services of the workload they back, with the flows of the calls
+// assignment call between pods is assignment call between the services of the workload they back
+// assignment call between pods is assignment call between the services of the workload they back, with the flows of the calls
 let podCalls = graph("master")
-    | graph-match (a)-[k]->(b) where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" project call = k.id, fromPod = a.id, toPod = b.id
-    | join kind=inner (backsHere | project fromPod = p, src = s) on fromPod
-    | join kind=inner (backsHere | project toPod = p, dst = s) on toPod
-    | where src != dst
-    | project call, fromPod, toPod, src, dst;
-edges TalksTo from src to dst with (key = "talks") = podCalls;
-extend edges TalksTo from src to dst with (key = "talks") = podCalls
+    | graph-match (callerPod)-[callEdge]->(calleePod) where labels(callerPod) has "Pod" and labels(callEdge) has "Calls" and labels(calleePod) has "Pod" project call = callEdge.id, fromPod = callerPod.id, toPod = calleePod.id
+    | join kind=inner (backsHere | project fromPod = pod, caller = service) on fromPod
+    | join kind=inner (backsHere | project toPod = pod, callee = service) on toPod
+    | where caller != callee
+    | project call, fromPod, toPod, caller, callee;
+edges TalksTo from caller to callee with (key = "talks") = podCalls;
+extend edges TalksTo from caller to callee with (key = "talks") = podCalls
     | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call
-    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, windowStart;
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by caller, callee, windowStart;
 
-// ---- the roll-up edges: a component is affected by what it contains and by what it depends on ----
-edges Affects from w to s with (key = "affectsWorkload") = services | project w = identity("workload", cluster, namespace), s;
-edges Affects from s to d with (key = "affectsService") = placed | project s, d;
-edges Affects from from to t with (key = "affectsDependent") = toService | project from, t;
-edges Affects from from to r with (key = "affectsUser") = toResource | project from, r;
-edges Affects from s to r with (key = "affectsStandIn") = backed | project s, r;
-edges Affects from r to s with (key = "affectsGateway") = gateways | project r, s;
-edges Affects from np to n with (key = "affectsPool") = pooled | project np = identity("nodePool", cluster, pool), n;
-edges Affects from r to np with (key = "affectsCluster") = poolsOfCluster | project r, np = identity("nodePool", cluster, pool);
+// ---- the roll-up edges: assignment component is affected by what it contains and by what it depends on ----
+edges Affects from workload to service with (key = "affectsWorkload") = services | project workload = identity("workload", cluster, namespace), service;
+edges Affects from service to deployment with (key = "affectsService") = placed | project service, deployment;
+edges Affects from from to targetService with (key = "affectsDependent") = toService | project from, targetService;
+edges Affects from from to azureResource with (key = "affectsUser") = toResource | project from, azureResource;
+edges Affects from service to azureResource with (key = "affectsStandIn") = backed | project service, azureResource;
+edges Affects from azureResource to service with (key = "affectsGateway") = gateways | project azureResource, service;
+edges Affects from nodePool to node with (key = "affectsPool") = pooled | project nodePool = identity("nodePool", cluster, pool), node;
+edges Affects from azureResource to nodePool with (key = "affectsCluster") = poolsOfCluster | project azureResource, nodePool = identity("nodePool", cluster, pool);

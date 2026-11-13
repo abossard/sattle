@@ -481,7 +481,20 @@ Lineage, the list of elements an element is made of, comes from the rows of the 
 
 A step says how what it makes may be edited in its own `with (...)`, the same place as `key`; there is no block of steps.
 - **First part, built:** `rule`, `edit = "readonly" | "bijective"` and `description`, as described above.
-- **Second part, the editable views (lenses):** which edits a view accepts, the key and the defaults of a created element, and what deleting does. Written as small expressions inside strings, these would be a private syntax of ours; before it is built, two real examples are written out, looking for a form in plain KQL, such as a second query on the step or `let` values the settings name.
+- **Second part, the editable views (lenses), proposed:** the edits a view accepts are words in the step's settings, and what an edit writes to the master is an ordinary KQL function the settings name, which Kusto checks. Today's capabilities view, written this way:
+
+  ```
+  // a capability created in the view becomes a capability of the master with the key given with the edit, an owner and a status
+  let newCapability = (id:string) { print capId = id, owner = "unassigned", status = "active" };
+  // deleting a capability in the view retires it in the master; it is not removed
+  let retiredCapability = () { print status = "retired" };
+  nodes BizCapability on capability
+      with (rule = "capabilities", edit = "lens", accept = "create, delete", update = "name", onCreate = "newCapability", onDelete = "retiredCapability")
+      = capabilities;
+  edges Under from capability to parent with (rule = "tree", edit = "lens", accept = "create, delete") = ...;
+  ```
+
+  `accept` lists the edits the view takes, `update` the properties an edit may change. The parameters of the function `onCreate` names are the key of the new master element, which the edit supplies (today's `key.id`); its row gives the defaults. The row of the function `onDelete` names gives the properties a delete sets; without `onDelete` a delete removes the master element. The identity domain of the new element follows from the type the step reads. Done when the engine's 16 lens tests pass with every projection read from KQL.
 - **Steps that share a rule:** `rule = "name"` on each of them. In the master graph the rule for authored capabilities makes both the capability nodes and their `PartOf` edges, and many readonly rules group several steps.
 
 ### A declared function, restated in a projection
