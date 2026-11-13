@@ -64,29 +64,45 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     static string P(string op, string port) => Ids.Child(op, "port", port);
 
     /// <summary>The rules of the projection, from the steps' settings: name, class and description.</summary>
-    readonly Dictionary<string, (string Class, string? Description)> rules = new(StringComparer.Ordinal);
+    /// <summary>A rule of the projection, from the settings of its steps: what it says about itself and what its steps make.</summary>
+    sealed class RuleSpec
+    {
+        public string? Description, Update, OnCreate, OnDelete;
+        public List<string> Accept = [];
+        public string? MasterType;                       // the type of the element a creating node step of the rule reads, for the key of a create
+        public HashSet<string> Sets = new(StringComparer.Ordinal);
+        public HashSet<string> FromMaster = new(StringComparer.Ordinal);    // properties of the element read, that the step sets from it
+        public bool Entities;
+        public required int Pos;
+    }
+    readonly Dictionary<string, RuleSpec> rules = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> ruleSinks = new(StringComparer.Ordinal);
+    static readonly string[] RuleSettings = ["description", "accept", "update", "onCreate", "onDelete"];
 
-    /// <summary>A step in a rule (`with (rule = "name")`) is governed by it, and its operator is named after it; the class (`edit`) and the `description`
-    /// belong to the rule and may be given on any one of its steps.</summary>
+    /// <summary>A step in a rule (`with (rule = "name")`) is governed by it, and its operator is named after it. The rule's settings (description, accept, update,
+    /// onCreate, onDelete) may be given on any one of its steps. What may be edited is said with accept and update; the kind of rule follows.</summary>
     void Rules()
     {
-        var named = new List<(string Rule, string? Edit, string? Description, StepHeader Step)>();
-        foreach (var h in steps)
+        foreach (var g in steps.Select(h => (Step: h, Settings: h.Settings(out _))).GroupBy(x => x.Settings.GetValueOrDefault("rule")))
         {
-            var settings = h.Settings(out _);
-            settings.TryGetValue("edit", out var edit); settings.TryGetValue("description", out var description);
-            if (edit is not null and not ("readonly" or "bijective")) diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", "a rule is readonly or bijective in this stage; editable views (lenses) come in the second part of the edit stage"));
-            else if (settings.TryGetValue("rule", out var rule)) named.Add((rule, edit, description, h));
-            else if (edit is not null || description is not null) diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", "edit and description belong to a rule: name it with rule = \"...\""));
-        }
-        foreach (var g in named.GroupBy(n => n.Rule))
-        {
-            var edits = g.Select(n => n.Edit).OfType<string>().Distinct().ToList();
-            var descriptions = g.Select(n => n.Description).OfType<string>().Distinct().ToList();
-            var at = g.First().Step.Pos;
-            if (edits.Count > 1 || descriptions.Count > 1) diags.Add(KqlFrontEnd.At(text, file, at, "Profile", $"the steps of rule {g.Key} give it different settings"));
-            rules[g.Key] = (edits.FirstOrDefault() ?? "readonly", descriptions.FirstOrDefault());
+            if (g.Key is null)
+            {
+                foreach (var (h, st) in g.Where(x => RuleSettings.Any(x.Settings.ContainsKey)))
+                    diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", $"{string.Join(", ", RuleSettings.Where(st.ContainsKey))} belong to a rule: name it with rule = \"...\""));
+                continue;
+            }
+            var spec = new RuleSpec { Pos = g.First().Step.Pos };
+            string? One(string key)
+            {
+                var values = g.Select(x => x.Settings.GetValueOrDefault(key)).OfType<string>().Distinct().ToList();
+                if (values.Count > 1) diags.Add(KqlFrontEnd.At(text, file, spec.Pos, "Profile", $"the steps of rule {g.Key} give {key} different values"));
+                return values.FirstOrDefault();
+            }
+            spec.Description = One("description"); spec.Update = One("update"); spec.OnCreate = One("onCreate"); spec.OnDelete = One("onDelete");
+            foreach (var w in (One("accept") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
+                if (w is "create" or "delete") spec.Accept.Add(w);
+                else diags.Add(KqlFrontEnd.At(text, file, spec.Pos, "Profile", $"accept lists create and delete; '{w}' is neither (an update is said with update = \"property, ...\")"));
+            rules[g.Key] = spec;
         }
     }
 
@@ -97,12 +113,87 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (h.Settings(out _).TryGetValue("rule", out var rule)) b.Edge(Ids.Child(pid, "rule", rule), "governs", sink);
     }
 
+    /// <summary>The rule nodes, once every step is lowered. A rule nothing may edit is readonly. An editable rule over the rows of a source is written back one
+    /// for one (class bijective): it accepts create and delete and updates every property it sets. An editable rule over graphs is a view edited by its stated
+    /// rules (class lens): onCreate names a function whose parameters are the key of the new element and whose row gives its defaults; onDelete names a function
+    /// whose row gives what a delete sets, and without it a delete removes the element.</summary>
+    void WriteRules()
+    {
+        foreach (var (name, spec) in rules)
+        {
+            var at = spec.Pos;
+            void Fail(string message) => diags.Add(KqlFrontEnd.At(text, file, at, "Profile", message));
+            var updates = (spec.Update ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+            var editable = spec.Accept.Count > 0 || updates.Count > 0;
+            var cls = !editable ? "readonly" : rows.Count > 0 ? "bijective" : "lens";
+            if (!editable && (spec.OnCreate is not null || spec.OnDelete is not null)) Fail("onCreate and onDelete need accept = \"create\" or \"delete\"");
+            var props = new List<(string, Value)> { ("name", T(name)), ("class", T(cls)), ("putput", Value.Boolean(false)) };
+            if (spec.Description is not null) props.Add(("reason", T(spec.Description)));
+            if (cls == "bijective")
+            {
+                if (!spec.Accept.Contains("create") || !spec.Accept.Contains("delete") || !spec.Sets.SetEquals(updates))
+                    Fail($"this step reads the rows of a source, so what it makes is written back one for one: accept = \"create, delete\" and update = \"{string.Join(", ", spec.Sets.Order(StringComparer.Ordinal))}\"");
+                if (spec.OnCreate is not null || spec.OnDelete is not null) Fail("what a step over the rows of a source makes is written back one for one: it takes no onCreate or onDelete");
+                b.Contain(pid, "rule", name, "Rule", null, [.. props]);
+                continue;
+            }
+            if (cls == "lens")
+            {
+                // the pieces an edit through a view needs, said in the author's terms before the engine's checker sees them
+                foreach (var u in updates.Where(u => !spec.Sets.Contains(u))) Fail($"update names {u}, which this step does not set");
+                if (spec.Accept.Contains("create") && spec.Entities && spec.OnCreate is null)
+                    Fail("this step accepts create but says nothing about the new element's key: name a function with onCreate = \"...\" whose parameters are the key and whose row gives the other values");
+                else if (spec.Accept.Contains("create") && spec.MasterType is { } mt && spec.OnCreate is { } ocf)
+                {
+                    var mv = View(Ids.ModuleOf(mt));
+                    var given = functions.TryGetValue(ocf, out var ofd) && ofd.Body.Expression is PrintOperator pr ? pr.Expressions.Select(x => (x.Element as SimpleNamedExpression)?.Name.SimpleName).OfType<string>().ToHashSet() : [];
+                    var missing = mv.PropsOf(mt).Where(p => p.Value && mv.Props[p.Key].Role != "telemetry").Select(p => mv.Props[p.Key].Name).Where(p => !spec.FromMaster.Contains(p) && !given.Contains(p)).Order(StringComparer.Ordinal).ToList();
+                    if (missing.Count > 0) Fail($"a {Ids.Name(mt)} created through this step needs {string.Join(", ", missing)}: read it from the {Ids.Name(mt)} in the step, or give it in the function onCreate names");
+                }
+                props.Add(("accept", Value.List([.. spec.Accept.Select(Value.Text), .. updates.Count > 0 ? [Value.Text("update(" + string.Join(",", updates) + ")")] : Array.Empty<Value>()])));
+                var deletes = spec.Accept.Contains("delete") && spec.Entities;
+                if (spec.OnDelete is not null) props.Add(("onDelete", T("set")));
+                else if (deletes) props.Add(("onDelete", T("remove")));
+            }
+            var rid = b.Contain(pid, "rule", name, "Rule", null, [.. props]);
+            if (cls != "lens") continue;
+            if (spec.OnCreate is not null || spec.OnDelete is not null)
+            {
+                if (spec.MasterType is not { } type) { Fail("onCreate and onDelete belong to a step that makes nodes from the elements of a graph"); continue; }
+                var view = View(Ids.ModuleOf(type));
+                string? Prop(string p) => view.PropsOf(type).Keys.FirstOrDefault(k => view.Props[k].Name == p);
+                void Defaults(string fn, string slot, IReadOnlyList<string> key)
+                {
+                    if (!functions.TryGetValue(fn, out var fd) || fd.Body.Expression is not PrintOperator print) { Fail($"{fn} is a function that prints one row: let {fn} = (...) {{ print p = ..., q = ... }}"); return; }
+                    var ps = fd.Parameters.Parameters.Select(p => p.Element.NameAndType.Name.SimpleName).ToList();
+                    if (!ps.ToHashSet().SetEquals(key)) { Fail($"the parameters of {fn} are {(key.Count == 0 ? "none" : string.Join(", ", key))}"); return; }
+                    foreach (var it in print.Expressions.Select(x => x.Element))
+                    {
+                        if (it is not SimpleNamedExpression { Expression: var e } sn) { Fail($"{fn} names each value: p = ..."); continue; }
+                        if (Prop(sn.Name.SimpleName) is not { } pid2) { Fail($"{Ids.Name(type)} has no property '{sn.Name.SimpleName}'"); continue; }
+                        X x = e is NameReference r && ps.Contains(r.SimpleName) ? F("key." + r.SimpleName) : e is LiteralExpression || e.IsConstant ? new LitX(FromObject(Const(e), e)) : null!;
+                        if (x is null) { Fail($"{fn} gives a constant or a part of the key, not '{e}'"); continue; }
+                        var sid = b.Contain(rid, slot, sn.Name.SimpleName, "SetProperty");
+                        b.Edge(sid, "property", pid2);
+                        Write(x, sid, "value", 0);
+                    }
+                }
+                if (spec.OnCreate is { } oc)
+                {
+                    var domains = catalog.Entities.Where(e => Ids.Name(e.Type) == "IdentityDomain" && new DefView(catalog).Target(e.Id, "identifies") == type).Select(e => e.Id).ToList();
+                    if (domains.Count != 1) { Fail($"{Ids.Name(type)} has {domains.Count} identity domains; a create needs one"); continue; }
+                    b.Edge(rid, "createKey", domains[0]);
+                    Defaults(oc, "createDefault", [.. new DefView(catalog).Children(domains[0], "component").Select(Ids.Name)]);
+                }
+                if (spec.OnDelete is { } od) Defaults(od, "deleteSet", []);
+            }
+        }
+    }
+
     public KqlResult Run()
     {
         Rules();
         pid = b.Contain(mid, "projection", graphName, "Projection", null, ("name", T(graphName)), ("purpose", T("view")), ("retain", Value.Integer(0)), ("forward", Value.Boolean(rules.Count == 0)));
-        foreach (var (name, (cls, desc)) in rules)
-            b.Contain(pid, "rule", name, "Rule", null, [("name", T(name)), ("class", T(cls)), ("putput", Value.Boolean(false)), .. desc is null ? Array.Empty<(string, Value)>() : [("reason", T(desc))]]);
         b.Edge(pid, "outputOntology", Ids.Module(outModule));
         foreach (var se in ((QueryBlock)code.Syntax).Statements)
         {
@@ -120,6 +211,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             }
             catch (Refused r) { diags.Add(KqlFrontEnd.At(text, file, r.At.TextStart, "Profile", r.Message)); }
         }
+        WriteRules();
         return new KqlResult(pid, b, diags);
     }
 
@@ -229,6 +321,19 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         b.Edge(sink, "ofType", type[0]);
         Wire(r.Port, sink, "in");
         foreach (var (col, slot) in ends) Write(End(cols, col, query), sink, slot, 0);
+        if (h.Settings(out _).TryGetValue("rule", out var ruleName) && rules.TryGetValue(ruleName, out var spec))
+        {
+            foreach (var (c, _, _) in sets) spec.Sets.Add(c);
+            if (h.Kind == "nodes" && !h.Extend)
+            {
+                spec.Entities = true;
+                if (End(cols, h.Id!, query) is FieldX { Path: var idPath } && !idPath.Contains('.') && r.Types.TryGetValue(idPath, out var master))
+                {
+                    spec.MasterType = master;
+                    foreach (var (_, x, _) in sets) if (x is FieldX { Path: var sp } && sp.StartsWith(idPath + ".", StringComparison.Ordinal)) spec.FromMaster.Add(sp[(idPath.Length + 1)..]);
+                }
+            }
+        }
         foreach (var (c, x, prop) in sets)
         {
             var set = b.Contain(sink, "set", c, "SetProperty");

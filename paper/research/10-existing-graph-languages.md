@@ -16,7 +16,7 @@ What we add to KQL, as four library functions and one statement form, each in th
 2. `identity(domain, key, ...)` for nodes whose identity comes from an identity domain.
 3. `telemetry(graph, lookback)`, a table of a graph's telemetry by element and window.
 4. `hysteresis(...)`, a threshold that must hold for a number of windows. It is written in plain KQL in the library, so Kusto's tools check every call to it; the engine maintains it incrementally.
-5. Optional edit settings on a step (`with (edit = ...)`) for editable views.
+5. Settings on a step (`with (...)`): the key of an edge, the rule it belongs to, and what may be edited through a view (section 8 has the form built).
 
 What goes away from today's syntax: `lift` and its clauses, `series`, `rollup`, `threshold` as statements, `traverse`, `fixpoint`, the three kinds of `emit`, key rules, and the `|>` pipe form with `select` and `group by`. Today's six projections use 28 constructs a reader must learn from us. The KQL versions use 9 additions on top of standard KQL. They are 341 lines against 450 today.
 
@@ -410,7 +410,7 @@ Stage 1 built the KQL front end and tested it on the six projections. A front en
 ### What the front end accepts
 
 Sixty-seven constructs, every one plain KQL except the eleven additions below.
-- **Statements (11):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings of a step (`key`, `confidence`, `rule`, `edit`, `description`).
+- **Statements (11):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings of a step (`key`, `confidence`, `rule`, `description`, `accept`, `update`, `onCreate`, `onDelete`).
 - **Table operators (17):** a table of rows from a source, read by its name; `graph-match` (patterns of nodes and edges, `labels(x) has "T"`, `where`, `project`); paths of several edges `-[p*0..16]->` with `all(p, labels(p) has "T")`; `where`, and `where time > ago(24h)` for keeping rows for a span of the data's time; `project`, `extend`, `distinct`; `summarize`, and `summarize ... by ..., windowStart = bin(time, 60s)` for windows of the rows' own time; `join kind=inner`, `union`, `datatable`; `invoke` of a table function, `invoke hysteresis`; a join with `telemetry` and a join with `telemetry_filled`.
 - **Aggregations (10):** `count`, `countif`, `sum`, `min`, `max`, `avg`, `arg_max`, and over telemetry `sumif`, `minif`, `maxif`.
 - **Functions (14):** `iff`, `case`, `coalesce`, `strcat`, `tolower`, `not`, `isnotnull`, `isnull`, `toreal`, `rate`, `identity`, `labels`, `all`, and value functions of one's own.
@@ -434,9 +434,9 @@ The engine keeps every result up to date as data changes, and gives the same res
 | `now()`, `ago()` anywhere but `where time > ago(span)` | in a projection now() and ago() mean the data's time, the newest input time, never the wall clock; they are accepted only where the engine keeps the result up to date: where time > ago(24h), and the look-back of telemetry |
 | the edges of a path in `project` | the edges of a path are not kept: every path would be listed, which is not kept up to date; project the two ends |
 | `nodes on id labels col` | a step names its type ...: the engine writes one type per step, so a type taken from a column needs one step per type |
-| `edit` other than readonly or bijective, and the settings of an editable view | a rule is readonly or bijective in this stage; editable views (lenses) come in the second part of the edit stage |
-| another setting in `with` | 'x' is not a setting of an edge step: its settings are key, rule, edit, description |
-| `edit` or `description` without `rule` | edit and description belong to a rule: name it with rule = "..." |
+| `edit = ...` | say what may be edited with accept = "create, delete" and update = "property, ..."; whether an edit goes back one for one or by the step's rules follows from what the step reads |
+| another setting in `with` | 'x' is not a setting of an edge step: its settings are key, rule, description, accept, update, onCreate, onDelete |
+| `description`, `accept`, `update`, `onCreate` or `onDelete` without `rule` | ... belong to a rule: name it with rule = "..." |
 | `union` of tables with different columns | the tables of a union have the same columns: project each to ... |
 | a step that makes a type but leaves out a required property | a step that makes T sets every required property, and p is not set: set it, or write extend nodes to add properties to nodes another step makes |
 | `extend nodes` when no step makes the type | no step makes T: extend nodes adds properties to nodes another step of this projection makes |
@@ -451,7 +451,7 @@ The engine keeps every result up to date as data changes, and gives the same res
 2. **`nodes`** makes nodes from the rows of a query, the text form of a Kusto graph model's step that adds nodes: `nodes ServiceNode on service = services;`
 3. **`edges`** makes edges in the same way: `edges DependsOn from src to dst = calls | distinct src, dst;`
 4. **`extend nodes` and `extend edges`** add properties to what another step makes, so the text shows which steps make elements and which only add to them (in a Kusto graph model every step makes them): `extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;`
-5. **`with (...)`, the settings of a step:** `key` names the key of an edge, which is part of its identity, so several steps can write one type; `rule`, `edit` and `description` say which rule a step belongs to and how what it makes may be edited; `confidence` belongs to a link: `edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;`
+5. **`with (...)`, the settings of a step:** `key` names the key of an edge, which is part of its identity, so several steps can write one type; `rule` and `description` group steps; `accept`, `update`, `onCreate` and `onDelete` say what may be edited through a view; `confidence` belongs to a link: `edges Contains from s to d with (key = "serviceDeployment") = placed | project s, d;`
 6. **`identity(domain, ...)`** gives the identity of a node that is in no input graph, from its keys; KQL has no identities: `project group = identity("serviceGroup", cluster, namespace)`
 7. **`telemetry(graph, lookback)`** is the telemetry of a graph as a table, one row per element, property and window; KQL has no telemetry of a graph: `join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call`
 8. **`telemetry_filled(graph, lookback, timeToLive, fill)`** gives silence a declared outcome: an empty window takes the fill, and an element silent for the time to live is in "no data": `telemetry_filled("master", 30m, 5m, 0.0)`
@@ -473,29 +473,34 @@ Of the nine additions in section 5, the step whose type comes from a column (`no
 
 ### Rules, and what an element is made of
 
-A rule groups steps and says whether what they make may be edited through a view: readonly, or bijective (an edit goes back to the rows it came from, one for one). In KQL a step names its rule in its `with (...)`: `rule = "observedPods"`, with `edit = "readonly"` (the default) or `"bijective"` and a `description` the canvas shows, given once for the rule. The master graph states its 28 rules this way, as today's text does, so the front end adds no rule of its own. "An ingestion projection must have rules" stays a requirement of the engine worth dropping when today's text is retired.
+A rule groups steps under a name and a description: `rule = "observedPods"`, with a `description` the canvas shows, given once for the rule. The master graph states its 28 rules this way, as today's text does, so the front end adds no rule of its own. What a rule's steps make is read-only unless the steps say what may be edited (see "Editing through a view" below). "An ingestion projection must have rules" stays a requirement of the engine worth dropping when today's text is retired.
 
 Lineage, the list of elements an element is made of, comes from the rows of the step that makes it: every column there that holds an element. The KQL texts keep those columns, under names chosen for a reader (`service`, `pod`, `call`, `capability`); for every element of the service tree, the capabilities, the health tree and the workload structure, the KQL text names the same elements as today's text. A threshold reads the column its author named, so the list of meters shows `dropRatio`, and the operators carry the names of the `let` or of the step they come from.
 
-### The edit stage
+### Editing through a view
 
-A step says how what it makes may be edited in its own `with (...)`, the same place as `key`; there is no block of steps.
-- **First part, built:** `rule`, `edit = "readonly" | "bijective"` and `description`, as described above.
-- **Second part, the editable views (lenses), proposed:** the edits a view accepts are words in the step's settings, and what an edit writes to the master is an ordinary KQL function the settings name, which Kusto checks. Today's capabilities view, written this way:
+A step says what may be edited in its `with (...)`, and nothing about the kind of rule:
+- **No setting:** what the step makes is read-only.
+- **`accept = "create, delete"` and `update = "name"`:** a view may create and delete what the step makes, and change those properties.
+- **`onCreate` and `onDelete`:** each names an ordinary KQL function, which Kusto checks. The function `onCreate` names takes the key of the new element, which the edit supplies, and its `print` row gives the element's other values. The function `onDelete` names gives what a delete sets; without it a delete removes the element.
+- **`rule = "name"`:** steps that share a rule; `description`, given once, is the text the canvas shows.
 
-  ```
-  // a capability created in the view becomes a capability of the master with the key given with the edit, an owner and a status
-  let newCapability = (id:string) { print capId = id, owner = "unassigned", status = "active" };
-  // deleting a capability in the view retires it in the master; it is not removed
-  let retiredCapability = () { print status = "retired" };
-  nodes BizCapability on capability
-      with (rule = "capabilities", edit = "lens", accept = "create, delete", update = "name", onCreate = "newCapability", onDelete = "retiredCapability")
-      = capabilities;
-  edges Under from capability to parent with (rule = "tree", edit = "lens", accept = "create, delete") = ...;
-  ```
+Today's capabilities view, written this way:
 
-  `accept` lists the edits the view takes, `update` the properties an edit may change. The parameters of the function `onCreate` names are the key of the new master element, which the edit supplies (today's `key.id`); its row gives the defaults. The row of the function `onDelete` names gives the properties a delete sets; without `onDelete` a delete removes the master element. The identity domain of the new element follows from the type the step reads. Done when the engine's 16 lens tests pass with every projection read from KQL.
-- **Steps that share a rule:** `rule = "name"` on each of them. In the master graph the rule for authored capabilities makes both the capability nodes and their `PartOf` edges, and many readonly rules group several steps.
+```
+// a capability created in the view becomes a capability of the master with the key given with the edit, an owner and a status
+let newCapability = (id:string) { print capId = id, owner = "unassigned", status = "active" };
+// deleting a capability in the view retires it in the master; it is not removed
+let retiredCapability = () { print status = "retired" };
+nodes BizCapability on capability
+    with (rule = "capabilities", accept = "create, delete", update = "name", onCreate = "newCapability", onDelete = "retiredCapability")
+    = capabilities | project capability = capability.id, name = capability.name;
+edges Under from capability to parent with (rule = "tree", accept = "create, delete") = graph("master") | ...;
+```
+
+A step that reads the rows of a source, like the master graph's authored capabilities, is written back to those rows one for one, so it accepts create and delete and lists every property it sets in `update`. A step that reads graphs is a view and is edited as its settings say: the `tree` step above accepts create and delete and needs neither function, because creating or deleting an `Under` edge in the view creates or deletes the `PartOf` edge it shows. When a piece is missing, the message says it in these terms, for instance "this step accepts create but says nothing about the new element's key". The engine's laws for editable views apply unchanged, and the engine's tests of editing through the capabilities view pass with the projections in KQL.
+
+Open for the canvas stage: drafts, previews and releases of definitions print today's text. A module with projections in KQL that is changed through a draft would come back as today's text, so the editor needs to write KQL text back before drafts work on KQL projections.
 
 ### A declared function, restated in a projection
 

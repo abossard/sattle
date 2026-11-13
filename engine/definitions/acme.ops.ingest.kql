@@ -87,10 +87,10 @@ edges MeterOf from m to pod with (key = "meterOfPod", rule = "observedPodMeters"
     | project m = identity("meter", strcat("pod/", cluster, "/", namespace, "/", name), "warnings"), windowStart, pod = identity("podName", cluster, namespace, name);
 
 // ---- authored: capabilities, signal rules, roll-up policies and curations (editable in a later stage) ----
-nodes Capability on c with (rule = "authoredCapabilities", edit = "bijective") = caps | project c = identity("capability", capId), capId, name, owner, status;
+nodes Capability on c with (rule = "authoredCapabilities", accept = "create, delete", update = "capId, name, owner, status") = caps | project c = identity("capability", capId), capId, name, owner, status;
 edges PartOf from c to p with (rule = "authoredCapabilities") = caps | project c = identity("capability", capId), p = identity("capability", parentId);
-edges Realizes from s to c with (rule = "authoredRealizes", edit = "bijective") = realizes | project s = identity("serviceName", cluster, namespace, service), c = identity("capability", capId);
-nodes SignalRule on u with (rule = "authoredSignalRules", edit = "bijective") = signalRules
+edges Realizes from s to c with (rule = "authoredRealizes", accept = "create, delete") = realizes | project s = identity("serviceName", cluster, namespace, service), c = identity("capability", capId);
+nodes SignalRule on u with (rule = "authoredSignalRules", accept = "create, delete", update = "ruleId, ruleType, ruleMeter, ruleAbove, ruleEnter, ruleBelow, ruleExit, ruleSeverity, ruleInvert") = signalRules
     | project u = identity("signalRule", ruleId), ruleId, ruleType = ['type'], ruleMeter = meter, ruleAbove = above, ruleEnter = enterAfter, ruleBelow = below, ruleExit = exitAfter, ruleSeverity = severity, ruleInvert = invert;
-nodes RollupPolicy on u with (rule = "authoredPolicies", edit = "bijective") = policies | project u = identity("rollupPolicy", target), policyTarget = target, policyMode = mode, policyShare = share;
-nodes Curation on u with (rule = "authoredCuration", edit = "bijective") = curations | project u = identity("curation", curId), curId, curAction = action, curTarget = target, curValue = value;
+nodes RollupPolicy on u with (rule = "authoredPolicies", accept = "create, delete", update = "policyTarget, policyMode, policyShare") = policies | project u = identity("rollupPolicy", target), policyTarget = target, policyMode = mode, policyShare = share;
+nodes Curation on u with (rule = "authoredCuration", accept = "create, delete", update = "curId, curAction, curTarget, curValue") = curations | project u = identity("curation", curId), curId, curAction = action, curTarget = target, curValue = value;

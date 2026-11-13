@@ -2,8 +2,8 @@
 graph capabilityView : acme.biz;
 
 let capabilities = graph("master")
-    | graph-match (c) where labels(c) has "Capability" and c.status != "retired"
-      project capability = c.id, name = c.name;
+    | graph-match (capability) where labels(capability) has "Capability" and capability.status != "retired"
+      project capability;
 let realized = graph("master")
     | graph-match (s)-[r]->(c) where labels(r) has "Realizes" and c.status != "retired"
       project service = s.id, capability = c.id;
@@ -21,8 +21,14 @@ let calls = lifted
     | summarize callFlows = sumif(value, property == "flows"), callDrops = sumif(value, property == "drops") by fromCapability, toCapability, windowStart
     | extend callDropRatio = iff(callFlows > 0, callDrops / callFlows, 0.0);
 
-nodes BizCapability on capability = capabilities;
-edges Under from capability to parent = graph("master")
+// a capability created in the view becomes a capability of the master with the key given with the edit, an owner and a status
+let newCapability = (id:string) { print capId = id, owner = "unassigned", status = "active" };
+// deleting a capability in the view retires it in the master; it is not removed
+let retiredCapability = () { print status = "retired" };
+nodes BizCapability on capability
+    with (rule = "capabilities", accept = "create, delete", update = "name", onCreate = "newCapability", onDelete = "retiredCapability")
+    = capabilities | project capability = capability.id, name = capability.name;
+edges Under from capability to parent with (rule = "tree", accept = "create, delete") = graph("master")
     | graph-match (c)-[k]->(p) where labels(k) has "PartOf" and c.status != "retired" and p.status != "retired"
       project capability = c.id, parent = p.id;
 extend nodes BizCapability on capability with (rule = "counts", description = "number of services realizing the capability") = realized

@@ -123,12 +123,12 @@ sealed record StepHeader(bool Extend, string Kind, string Type, string? Id, stri
     {
         refusal = null; var settings = new Dictionary<string, string>(StringComparer.Ordinal);
         var allowed = Kind switch { "edges" => "key", "link" => "confidence", _ => null };
-        var common = new[] { "rule", "edit", "description" };
+        var common = new[] { "rule", "description", "accept", "update", "onCreate", "onDelete" };
         foreach (Match m in Regex.Matches(With ?? "", @"(\w+)\s*=\s*(""[^""]*""|'[^']*'|[^,]+)"))
         {
             var (name, value) = (m.Groups[1].Value, m.Groups[2].Value.Trim().Trim('"', '\''));
             if (name == allowed || common.Contains(name)) settings[name] = value;
-            else refusal ??= name is "createKey" or "createDefaults" or "deleteSets" or "onDelete" ? "editable views (lenses) come in the second part of the edit stage"
+            else refusal ??= name == "edit" ? "say what may be edited with accept = \"create, delete\" and update = \"property, ...\"; whether an edit goes back one for one or by the step's rules follows from what the step reads"
                 : $"'{name}' is not a setting of {(Kind == "link" ? "a link" : Kind == "edges" ? "an edge step" : "a node step")}: its settings are {string.Join(", ", allowed is null ? common : [allowed, .. common])}";
         }
         return settings;
