@@ -63,6 +63,8 @@ public static class Server
         _ = files;
         var port = int.TryParse(o.Get("port"), out var p) ? p : 5080;
         var app = Build(host, port, (o.Get("allow-origin") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        // the address the server got: with `--port 0` the system picks a free port, and this line says which
+        app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine($"serving {app.Urls.First()} (PROTOCOL.md)"));
         app.Lifetime.ApplicationStarted.Register(() => Task.Run(() =>
         {
             try
@@ -80,7 +82,6 @@ public static class Server
             }
             catch (Exception e) { Console.Error.WriteLine("input failed: " + e); }
         }));
-        Console.WriteLine($"serving http://127.0.0.1:{port} (PROTOCOL.md)");
         app.Run();
         return 0;
     }

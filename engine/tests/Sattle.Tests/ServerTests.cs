@@ -72,15 +72,18 @@ public class ServerTests
     {
         using var host = HostTests.NewHost();
         var replay = new Replay(host, host.Space, host.Adapters, new ReplayOptions { Cluster = "synth" }, host.Gate);
-        Task run; int before, during;
+        int before, during; Exception? failure = null;
+        var run = new Thread(() => { try { replay.Run(EstateTests.EstateDir); } catch (Exception e) { failure = e; } });
         lock (host.Gate)
         {
             before = host.Interner.Count;
-            run = Task.Run(() => replay.Run(EstateTests.EstateDir));
-            Thread.Sleep(500);
+            run.Start();
+            // wait until the replay stands at the lock this test holds (not for a fixed time): whatever it interned before that shows in the count
+            Assert.True(SpinWait.SpinUntil(() => run.ThreadState.HasFlag(ThreadState.WaitSleepJoin), TimeSpan.FromSeconds(120)), "the replay never waited for the lock of its host");
             during = host.Interner.Count;
         }
-        await run;
+        await Task.Run(run.Join);
+        Assert.Null(failure);
         Assert.Equal(before, during);
         Assert.True(host.Interner.Count > before, "the replay interned nothing at all");
     }

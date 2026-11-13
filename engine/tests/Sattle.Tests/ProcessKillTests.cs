@@ -15,7 +15,6 @@ public class ProcessKillTests
         "Release",
 #endif
         "net10.0", "sattle.dll");
-    static int FreePort() { var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); l.Start(); var p = ((System.Net.IPEndPoint)l.LocalEndpoint).Port; l.Stop(); return p; }
     static long Entries(string path)
     {
         try
@@ -38,18 +37,25 @@ public class ProcessKillTests
         try
         {
             var target = rnd.Next(15, 160);
-            var psi = new ProcessStartInfo("dotnet", $"\"{Cli}\" serve \"{EstateTests.EstateDir}\" --cluster synth --store sqlite={path} --port {FreePort()} {(sealEvery > 0 ? $"--seal-every {sealEvery}" : "--no-seal")}")
+            var psi = new ProcessStartInfo("dotnet", $"\"{Cli}\" serve \"{EstateTests.EstateDir}\" --cluster synth --store sqlite={path} --port 0 {(sealEvery > 0 ? $"--seal-every {sealEvery}" : "--no-seal")}")
             { WorkingDirectory = Path.Combine(Repo.Root, "engine"), RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
+            var output = new System.Text.StringBuilder();
+            void Keep(string? line) { if (line is not null) lock (output) output.AppendLine(line); }
+            string Said() { lock (output) return output.ToString(); }
             using (var p = Process.Start(psi)!)
             {
-                p.OutputDataReceived += (_, _) => { }; p.ErrorDataReceived += (_, _) => { }; p.BeginOutputReadLine(); p.BeginErrorReadLine();
+                p.OutputDataReceived += (_, e) => Keep(e.Data); p.ErrorDataReceived += (_, e) => Keep(e.Data); p.BeginOutputReadLine(); p.BeginErrorReadLine();
+                // the server takes the port the system gives it (--port 0), so no other test can hold it; the wait ends when the journal is long enough, when the process ends by itself, or after 180 s on a loaded machine
                 var sw = Stopwatch.StartNew();
-                while (Entries(path) < target && !p.HasExited && sw.Elapsed < TimeSpan.FromSeconds(60)) Thread.Sleep(rnd.Next(0, 3));
-                if (!p.HasExited) p.Kill(entireProcessTree: true);          // a kill, wherever the process is: between entries, inside one, inside a seal
+                while (Entries(path) < target && !p.HasExited && sw.Elapsed < TimeSpan.FromSeconds(180)) Thread.Sleep(rnd.Next(0, 3));
+                var reached = Entries(path);
+                Assert.False(p.HasExited, $"the serve process ended by itself with exit code {(p.HasExited ? p.ExitCode : 0)} after {reached} of {target} journal entries. Its output:\n{Said()}");
+                p.Kill(entireProcessTree: true);          // a kill, wherever the process is: between entries, inside one, inside a seal
                 p.WaitForExit();
+                Assert.True(reached >= target, $"the serve process wrote {reached} of {target} journal entries in {sw.Elapsed.TotalSeconds:F0} s. Its output:\n{Said()}");
             }
             var entries = new SqliteGraphStore(path).Let(s => { using (s) return s.JournalRead().ToList(); });
-            Assert.True(entries.Count > 1, $"the killed process journaled {entries.Count} entries");
+            Assert.True(entries.Count > 1, $"the killed process journaled {entries.Count} entries. Its output:\n{Said()}");
             (string Digest, long Seq, string Space) restarted, fresh;
             using (var h = RestartTests.Reopen(new SqliteGraphStore(path), Options)) { Assert.True(sealEvery > 0 || !h.Restart!.FromSeal, "serve --no-seal took a seal"); restarted = Of(h); }
             var memory = new InMemoryGraphStore();
