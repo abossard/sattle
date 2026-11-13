@@ -62,6 +62,31 @@ public class ServeReplayTests
         Assert.Equal(replayed, CaptureRuns.Gated(() => Served(dir, Repo.ClusterOf(dir))));
     }
 
+    /// <summary>Code review 2, defect 5: `serve CAPTURE --write-definitions` is refused when a definition is not the text of its file, here the space bound with the capture's arguments file or replaced by an overlay. A commit writes every definition back, so the capture's values would be written into the definitions folder. Temporary folders, invented values.</summary>
+    [Theory]
+    [InlineData("arguments")] [InlineData("overlay")]
+    public void Serve_refuses_to_write_definitions_back_when_one_is_not_the_text_of_its_file(string bound)
+    {
+        string Temp(string name) { var d = Path.Combine(Path.GetTempPath(), $"sattle-{name}-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d); return d; }
+        var defs = Temp("defs"); var cap = Temp("cap");
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(Repo.Definitions, "*.sattle")) File.Copy(f, Path.Combine(defs, Path.GetFileName(f)));
+            var spaceFile = Path.Combine(defs, "acme.space.sattle"); var space = File.ReadAllText(spaceFile);
+            var overlay = Path.Combine(cap, "overlay.sattle");
+            var other = Program.WithArguments(space, new Dictionary<string, string> { ["workloadNamespace"] = "other" });
+            Assert.NotEqual(space, other);
+            if (bound == "arguments") File.WriteAllText(Path.Combine(cap, Program.SpaceArguments), "{ \"workloadNamespace\": \"other\" }");
+            else File.WriteAllText(overlay, other);
+            string[] args = bound == "arguments" ? [cap, "--defs", defs, "--write-definitions"] : [cap, "--defs", defs, "--write-definitions", "--overlay", overlay];
+            Assert.Equal(["acme.space.sattle"], Program.NotAsOnDisk(Program.ReadDefinitions(Program.Options.Parse(args))));
+            Assert.Empty(Program.NotAsOnDisk(Program.ReadDefinitions(Program.Options.Parse(["--defs", defs]))));
+            Assert.Equal(2, Program.Main(["serve", .. args]));                                 // refused before a host exists
+            Assert.Equal(space, File.ReadAllText(spaceFile));
+        }
+        finally { Directory.Delete(defs, true); Directory.Delete(cap, true); }
+    }
+
     [Theory]
     [InlineData(1_000_000)] [InlineData(7)] [InlineData(null)]
     public void A_stored_run_restarts_with_the_late_horizon_it_ran_with(int? horizon)

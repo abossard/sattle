@@ -92,7 +92,7 @@ public static class Program
     }
 
     /// <summary>The definitions directory, with `--overlay FILE[,FILE]` replacing the module of the same name (a different space binding for a synthetic capture, for example). Committed edits are written back to the original files, not to an overlay.</summary>
-    internal static IReadOnlyList<SourceFile> ReadDefinitions(Options o)
+    public static IReadOnlyList<SourceFile> ReadDefinitions(Options o)
     {
         var files = Catalog.ReadDirectory(FindDefinitions(o)).ToList();
         var overlay = o.Get("overlay") ?? LocalCaptureOverlay(o);
@@ -112,6 +112,10 @@ public static class Program
         }
         return files;
     }
+
+    /// <summary>The definition files whose text is not the text of their file: a space bound with a capture's arguments, a module replaced by an overlay. A commit writes every definition back, so with `--write-definitions` these would put a capture's values into the definitions folder.</summary>
+    public static List<string> NotAsOnDisk(IReadOnlyList<SourceFile> files) =>
+        [.. files.Where(f => !File.Exists(f.Path) || File.ReadAllText(f.Path) != f.Text).Select(f => Path.GetFileName(f.Path))];
 
     /// <summary>The file a capture directory may hold beside its data: the values of the arguments of the space for that capture, by name (`{ "workloadNamespace": "...", ... }`). `lab/fixtures/build.sh` writes it for the fixtures.</summary>
     public const string SpaceArguments = "space-arguments.json";
@@ -244,6 +248,8 @@ public static class Program
         if (!live && !resumeOnly && !Directory.Exists(capture)) return Fail($"capture directory {capture} does not exist");
         if (resumeOnly) return Serve(o, "", o.Get("cluster") ?? "lab");
         var files = ReadDefinitions(o);
+        if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
+            return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
         if (o.Get("projections") is { } front && front != "sattle")
         {
             if (front != "kql") return Fail($"--projections {front}: sattle or kql");
