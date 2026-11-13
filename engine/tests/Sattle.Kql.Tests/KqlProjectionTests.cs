@@ -63,6 +63,20 @@ public class KqlProjectionTests
             + string.Join("\n", diff.Take(8).Select(e => $"  {e.Key}: {e.Before} -> {e.After}")) + "\n" + string.Join("\n", tele.Take(60)));
     }
 
+    /// <summary>`sattle replay --projections kql` replays the estate with every projection that has a `.kql` file loaded from it, and ends in the state digest of today's text.</summary>
+    [Fact]
+    public void Replaying_with_the_projections_in_KQL_ends_in_the_state_digest_of_todays_text()
+    {
+        var output = new StringWriter(); var saved = Console.Out;
+        Console.SetOut(output);
+        int code;
+        try { code = Program.Main(["replay", Estate, "--cluster", "synth", "--defs", Definitions, "--projections", "kql"]); }
+        finally { Console.SetOut(saved); }
+        Assert.True(code == 0, output.ToString());
+        var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
+        Assert.Equal(Data(Estate).Today.Value.StateDigest(), digest);
+    }
+
     /// <summary>What the profile refuses, and that the message says what to write instead.</summary>
     [Theory]
     [InlineData("nodes ServiceNode on service = services | take 10", "filter or summarize instead")]

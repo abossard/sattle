@@ -470,9 +470,13 @@ Of the nine additions in section 5, the step whose type comes from a column (`no
 6. When `arg_max` has ties, the engine decides which row wins. Kusto returns any of the tied rows.
 7. A `union` needs the same columns. Kusto fills missing columns with nulls.
 
-### Rules of the master graph, open
+### Rules of the master graph
 
-The master graph is made by an ingestion projection, and the engine requires such a projection to have rules (a readonly rule says that what it makes cannot be edited through a view; an editable rule says how an edit goes back to the authored rows). Rules have no form in KQL before the edit stage. For now the master graph in KQL gets one readonly rule over all its steps, put in by the front end and named "steps"; today's text has 23 readonly rules with a description each and 5 editable ones. The state is the same; what form rules take in KQL is decided with the edit stage.
+The master graph is made by an ingestion projection, and the engine requires such a projection to have rules (a readonly rule says that what it makes cannot be edited through a view; an editable rule says how an edit goes back to the authored rows). Rules have no form in KQL before the edit stage, and comments carry no meaning. So until then the master graph in KQL has one readonly rule over all its steps, put in by the front end and named "steps"; today's text has 23 readonly rules with a description each and 5 editable ones. The state is the same.
+
+Open for the edit stage:
+- Where a step's description and an editable view are written. A first thought is a setting in the step's `with (...)`; it is judged then.
+- "An ingestion projection must have rules" is a requirement of the engine worth dropping when today's text is retired: it is what forces a rule onto the master graph here.
 
 ### Rules the engine adds
 
