@@ -282,6 +282,22 @@ Three numbers per step:
 - Allocation at chunk 1 does not change: the emit operators still build a property map per row (3.1 GB of the 38.6 GB), and the fragment is encoded from it. Writing the fragment straight from the columns belongs to step 3.
 - The 12 state digests are unchanged. `Sattle.Differential` every category 312 of 312; the seal, restart, live-resume, process-kill and structure tests 63 of 63; the default run 265 of 265 and 680 passed, 2 skipped. All in the tree.
 
+## Core step 3, grouping: the state of Group, windowed Group and Rollup in tables (2026-11-13)
+The three operators share one container (`KeyTable`), so the step is one change in two parts. Same three numbers as above; "before" is core step 2.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| Before (core step 2) | 8,173 MB (50,295 B) | | |
+| 3a: per key one table row with its count, sums and means; no copy of the values emitted last | 7,544 MB (46,423 B), -629 MB | 26.4 s and 34.2 s against 26.1 s and 29.0 s (load 35, noisy) | +127, -191 |
+| 3b: the multisets of min, max, last and countDistinct as tables | 6,978 MB (42,941 B), -566 MB | 24.4, 24.5 and 24.9 s against 24.8, 24.2 and 24.7 s for the build before the core steps (load 20 to 35); 38.6 GB against 38.5 GB | +104, -93 |
+| Step 3 grouping in all | **-1,195 MB** | equal within the noise | +184, -237 |
+
+- Census rows: Rollup 1,188 MB, then 707 MB (3a), then 352 MB (3b). Group 613, 493, 283 MB. Windowed Group 63, 34, 34 MB. Together 1,864 MB before and 669 MB after.
+- 3a: a key's aggregate is retracted when a step first touches the key, before the step's rows change it, so the values emitted last are not stored. A key with no rows left gives its row back at once (before, a compaction every 1,024 emptied keys).
+- 3b: a multiset is rows of (key's row, aggregate, value) with a weight, found through the arrangement by (key's row, aggregate); the extreme is found by walking those rows. A decimal is keyed by its number whatever its scale (2.5 and 2.50 are one entry, which keeps the digits that came first, as before).
+- Operator time at chunk 1 is 9.3 to 9.6 s against 9.1 to 9.2 s. Allocation does not change: the windowed Group still allocates 11.7 GB at chunk 1, because every call builds a new output batch of 64 rows per column whether or not it writes a row. That is the next thing to remove, in the operators, not in their state.
+- Proofs: the 12 state digests unchanged; `Sattle.Differential` every category 312 of 312; the seal, restart, live-resume, process-kill, operator and grouping tests 164 of 164; the default run 265 of 265 and 680 passed, 2 skipped. All in the tree, on the state of 3b (3a had the same proofs on its own state).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

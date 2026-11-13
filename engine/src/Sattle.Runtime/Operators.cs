@@ -150,174 +150,129 @@ sealed class WindowOp : PhysOp
 
 // ---- aggregation -----------------------------------------------------------------------------------------
 
-/// <summary>Open-addressing hash table over fixed-width long keys with per-slot accumulators. No allocation per row once sized.</summary>
+/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns) and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max`, `last` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
 sealed class KeyTable
 {
-    readonly int k, nL, nD, nDist, nExtL, nExtD, nAgg, nLast;
-    int[] table = new int[128]; int mask = 127;
-    int cap = 64;
-    public int Count;
-    long[] keys; public long[] Cnt; public long[] AccL; public decimal[] AccD;
-    public long[] LastCnt; public long[] LastL; public decimal[] LastD; public bool[] Emitted; bool[] touched;
-    public Dictionary<long, long>?[][]? Dist;
-    public SortedDictionary<long, long>?[][]? ExtL; public SortedDictionary<decimal, long>?[][]? ExtD; public SortedDictionary<(decimal Ord, decimal Val), long>?[][]? LastM; public bool[] LastAbs;
+    readonly int k, nL, nD, nIndex;
+    readonly Table rows;
+    readonly int cnt, accL, accD, emitted;
+    readonly long[] key;
+    readonly Segments<byte> touched = new();
     public readonly List<int> TouchedList = [];
-    /// <summary>The pairs last emitted per (slot, aggregate), for the companion columns of `mean` and `last` (Law 7.5 item 3 (i)); null when the operator has none.</summary>
-    public Dictionary<long, (decimal A, decimal B)>? LastAux;
+    /// <summary>(slot, aggregate, value): the values of a `min` or `max` over integers and codes, and of a `countDistinct`.</summary>
+    readonly Table? longs;
+    /// <summary>(slot, aggregate, value as a number, its digits): the values of a `min` or `max` over decimals.</summary>
+    readonly Table? decimals;
+    /// <summary>(slot, aggregate, order and value as numbers, their digits): the rows of a `last`.</summary>
+    readonly Table? lasts;
 
-    public KeyTable(int k, int nL, int nD, int nDist, int nExtL, int nExtD, int nAgg, int nLast, int initialCapacity = 64)
+    /// <summary>`nIndex`: one more than the greatest index an aggregate's multiset is filed under.</summary>
+    public KeyTable(int k, int nL, int nD, int nIndex, bool longs, bool decimals, bool lasts)
     {
-        this.nLast = nLast; this.k = k; this.nL = nL; this.nD = nD; this.nDist = nDist; this.nExtL = nExtL; this.nExtD = nExtD; this.nAgg = nAgg;
-        cap = Math.Max(64, (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)initialCapacity));
-        table = new int[cap * 2]; mask = table.Length - 1;
-        keys = new long[cap * Math.Max(k, 1)]; Cnt = new long[cap]; AccL = new long[cap * Math.Max(nL, 1)]; AccD = new decimal[cap * Math.Max(nD, 1)];
-        LastCnt = new long[cap]; LastL = new long[cap * Math.Max(nL, 1)]; LastD = new decimal[cap * Math.Max(nD, 1)]; Emitted = new bool[cap]; touched = new bool[cap];
-        if (nDist > 0) Dist = new Dictionary<long, long>?[cap][];
-        if (nExtL > 0) ExtL = new SortedDictionary<long, long>?[cap][];
-        if (nExtD > 0) ExtD = new SortedDictionary<decimal, long>?[cap][];
-        if (nLast > 0) LastM = new SortedDictionary<(decimal, decimal), long>?[cap][];
-        LastAbs = new bool[cap * Math.Max(nAgg, 1)];
+        this.k = k; this.nL = nL; this.nD = nD; this.nIndex = nIndex;
+        cnt = k; accL = cnt + 1; accD = accL + nL; emitted = accD + 2 * nD;
+        rows = new Table([.. Enumerable.Repeat(8, emitted), 4], keyColumns: k);
+        key = new long[k];
+        if (longs) this.longs = new Table([4, 4, 8], keyColumns: 3, arrangedPrefix: 2);
+        if (decimals) this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4, arrangedPrefix: 2);
+        if (lasts) this.lasts = new Table([4, 4, 8, 8, 8, 8, 8, 8, 8, 8], keyColumns: 6, arrangedPrefix: 2);
     }
 
-    /// <summary>Empties the table for reuse, keeping its arrays (windows come and go; their tables are recycled).</summary>
-    public void Reset()
+    public int Count => rows.Count;
+    /// <summary>The live slots, oldest first while none was released.</summary>
+    public IEnumerable<int> Slots() => rows.Rows();
+
+    /// <summary>The key of a slot, in a buffer the next call overwrites.</summary>
+    public ReadOnlySpan<long> KeyAt(int slot) { for (var i = 0; i < k; i++) key[i] = rows.Get(slot, i); return key; }
+
+    public int FindOrAdd(ReadOnlySpan<long> keyOf) { var slot = rows.Find(keyOf); return slot >= 0 ? slot : rows.Add(keyOf, 1); }
+
+    public long Cnt(int slot) => rows.Get(slot, cnt);
+    public void AddCnt(int slot, long w) => rows.Set(slot, cnt, rows.Get(slot, cnt) + w);
+    public long L(int slot, int i) => rows.Get(slot, accL + i);
+    public void AddL(int slot, int i, long v) => rows.Set(slot, accL + i, rows.Get(slot, accL + i) + v);
+    public decimal D(int slot, int i) => Unpack(rows.Get(slot, accD + 2 * i), rows.Get(slot, accD + 2 * i + 1));
+    public void AddD(int slot, int i, decimal v) { var (a, b) = Pack(D(slot, i) + v); rows.Set(slot, accD + 2 * i, a); rows.Set(slot, accD + 2 * i + 1, b); }
+    public bool Emitted(int slot) => rows.Get(slot, emitted) != 0;
+    public void SetEmitted(int slot, bool on) => rows.Set(slot, emitted, on ? 1 : 0);
+
+    /// <summary>The digits of a decimal in two 64-bit halves, and back.</summary>
+    static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(d, bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
+    static decimal Unpack(long a, long b) => new([(int)a, (int)(a >> 32), (int)b, (int)(b >> 32)]);
+
+    /// <summary>Marks a slot touched in this step; true the first time, when the operator retracts what the slot emitted.</summary>
+    public bool Touch(int slot) { if (touched.Has(slot)) return false; touched[slot] = 1; TouchedList.Add(slot); return true; }
+    public void ClearTouched() { foreach (var s in TouchedList) touched.Clear(s); TouchedList.Clear(); }
+
+    /// <summary>Adds a weight to a value of a multiset; the change of the number of distinct values (+1, -1 or 0).</summary>
+    public int AddLong(int slot, int a, long v, long w)
     {
-        Array.Clear(table); Array.Clear(Cnt, 0, Count); Array.Clear(LastCnt, 0, Count); Array.Clear(Emitted, 0, Count); Array.Clear(touched, 0, Count);
-        Array.Clear(AccL, 0, Count * Math.Max(nL, 1)); Array.Clear(LastL, 0, Count * Math.Max(nL, 1)); Array.Clear(AccD, 0, Count * Math.Max(nD, 1)); Array.Clear(LastD, 0, Count * Math.Max(nD, 1));
-        if (Dist is not null) Array.Clear(Dist, 0, Count);
-        if (ExtL is not null) Array.Clear(ExtL, 0, Count);
-        if (ExtD is not null) Array.Clear(ExtD, 0, Count);
-        if (LastM is not null) Array.Clear(LastM, 0, Count);
-        Array.Clear(LastAbs, 0, Count * Math.Max(nAgg, 1));
-        Count = 0; TouchedList.Clear();
+        var had = longs!.Find([slot, a, v]) >= 0;
+        var has = longs.Add([slot, a, v], w) >= 0;
+        return (has ? 1 : 0) - (had ? 1 : 0);
     }
-
-    public ReadOnlySpan<long> KeyAt(int slot) => keys.AsSpan(slot * k, k);
-
-    static ulong Hash(ReadOnlySpan<long> key)
+    public void AddDecimal(int slot, int a, decimal v, long w)
     {
-        ulong h = 14695981039346656037UL;
-        foreach (var x in key) { h ^= (ulong)x; h *= 1099511628211UL; h ^= h >> 29; }
-        return h;
+        var (lo, hi) = DecimalKey.Of(v);
+        var had = decimals!.Find([slot, a, lo, hi]) >= 0;
+        var row = decimals.Add([slot, a, lo, hi], w);
+        if (row >= 0 && !had) { var (x, y) = Pack(v); decimals.Set(row, 4, x); decimals.Set(row, 5, y); }
     }
-
-    public int FindOrAdd(ReadOnlySpan<long> key)
+    public void AddLast(int slot, int a, decimal ord, decimal val, long w)
     {
-        var h = (int)(Hash(key) & (ulong)mask);
-        while (true)
+        var (o1, o2) = DecimalKey.Of(ord); var (v1, v2) = DecimalKey.Of(val);
+        var had = lasts!.Find([slot, a, o1, o2, v1, v2]) >= 0;
+        var row = lasts.Add([slot, a, o1, o2, v1, v2], w);
+        if (row >= 0 && !had)
         {
-            var s = table[h];
-            if (s == 0) break;
-            if (keys.AsSpan((s - 1) * k, k).SequenceEqual(key)) return s - 1;
-            h = (h + 1) & mask;
+            var (p, q) = Pack(ord); var (x, y) = Pack(val);
+            lasts.Set(row, 6, p); lasts.Set(row, 7, q); lasts.Set(row, 8, x); lasts.Set(row, 9, y);
         }
-        if (Count == cap) Grow();
-        var slot = Count++;
-        key.CopyTo(keys.AsSpan(slot * k, k));
-        table[h] = slot + 1;
-        if (Count * 2 > table.Length) Rehash();
-        return slot;
     }
 
-    void Grow()
+    /// <summary>The smallest (or with `desc` the greatest) value of a `min` or `max` over integers; false when it has none.</summary>
+    public bool ExtremeL(int slot, int a, bool desc, out long v)
     {
-        cap *= 2;
-        Array.Resize(ref keys, cap * Math.Max(k, 1)); Array.Resize(ref Cnt, cap); Array.Resize(ref AccL, cap * Math.Max(nL, 1)); Array.Resize(ref AccD, cap * Math.Max(nD, 1));
-        Array.Resize(ref LastCnt, cap); Array.Resize(ref LastL, cap * Math.Max(nL, 1)); Array.Resize(ref LastD, cap * Math.Max(nD, 1)); Array.Resize(ref Emitted, cap); Array.Resize(ref touched, cap);
-        if (Dist is not null) Array.Resize(ref Dist, cap);
-        if (ExtL is not null) Array.Resize(ref ExtL, cap);
-        if (ExtD is not null) Array.Resize(ref ExtD, cap);
-        if (LastM is not null) Array.Resize(ref LastM, cap);
-        Array.Resize(ref LastAbs, cap * Math.Max(nAgg, 1));
-    }
-
-    void Rehash()
-    {
-        table = new int[table.Length * 2]; mask = table.Length - 1;
-        for (var s = 0; s < Count; s++)
+        v = 0; var any = false;
+        for (var r = longs!.ByPrefix!.First([slot, a]); r >= 0; r = longs.ByPrefix.Next(r))
         {
-            var h = (int)(Hash(keys.AsSpan(s * k, k)) & (ulong)mask);
-            while (table[h] != 0) h = (h + 1) & mask;
-            table[h] = s + 1;
+            var x = longs.Get(r, 2);
+            if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
         }
+        return any;
+    }
+    public bool ExtremeD(int slot, int a, bool desc, out decimal v)
+    {
+        v = 0; var any = false;
+        for (var r = decimals!.ByPrefix!.First([slot, a]); r >= 0; r = decimals.ByPrefix.Next(r))
+        {
+            var x = Unpack(decimals.Get(r, 4), decimals.Get(r, 5));
+            if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
+        }
+        return any;
+    }
+    /// <summary>The (order, value) rows of a `last`, in no particular order.</summary>
+    public List<(decimal Ord, decimal Val)> LastRows(int slot, int a)
+    {
+        var res = new List<(decimal, decimal)>();
+        for (var r = lasts!.ByPrefix!.First([slot, a]); r >= 0; r = lasts.ByPrefix.Next(r))
+            res.Add((Unpack(lasts.Get(r, 6), lasts.Get(r, 7)), Unpack(lasts.Get(r, 8), lasts.Get(r, 9))));
+        return res;
     }
 
     /// <summary>Whether a slot holds nothing: no rows, nothing emitted, every accumulator and multiset empty.</summary>
     bool Dead(int s)
     {
-        if (Cnt[s] != 0 || Emitted[s]) return false;
-        for (var i = 0; i < nL; i++) if (AccL[s * nL + i] != 0) return false;
-        for (var i = 0; i < nD; i++) if (AccD[s * nD + i] != 0) return false;
-        return (Dist?[s]?.All(m => m is null || m.Count == 0) ?? true) && (ExtL?[s]?.All(m => m is null || m.Count == 0) ?? true)
-            && (ExtD?[s]?.All(m => m is null || m.Count == 0) ?? true) && (LastM?[s]?.All(m => m is null || m.Count == 0) ?? true);
+        if (Cnt(s) != 0 || Emitted(s)) return false;
+        for (var i = 0; i < nL; i++) if (L(s, i) != 0) return false;
+        for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
+        for (var a = 0; a < nIndex; a++)
+            if (longs?.ByPrefix!.First([s, a]) >= 0 || decimals?.ByPrefix!.First([s, a]) >= 0 || lasts?.ByPrefix!.First([s, a]) >= 0) return false;
+        return true;
     }
 
-    /// <summary>Releases the slots that hold nothing (a group whose rows all went, a roll-up window that left the look-back): the other slots move down and the hash table is rebuilt. Slot numbers change, so no slot may be touched when this is called. Returns the number of slots released.</summary>
-    public int Compact()
-    {
-        if (TouchedList.Count > 0) throw new InvalidOperationException("compaction while slots are touched");
-        var kk = Math.Max(k, 1); var n = 0;
-        for (var s = 0; s < Count; s++)
-        {
-            if (Dead(s)) continue;
-            if (n != s)
-            {
-                Array.Copy(keys, s * kk, keys, n * kk, kk);
-                Cnt[n] = Cnt[s]; LastCnt[n] = LastCnt[s]; Emitted[n] = Emitted[s];
-                Array.Copy(AccL, s * Math.Max(nL, 1), AccL, n * Math.Max(nL, 1), Math.Max(nL, 1)); Array.Copy(LastL, s * Math.Max(nL, 1), LastL, n * Math.Max(nL, 1), Math.Max(nL, 1));
-                Array.Copy(AccD, s * Math.Max(nD, 1), AccD, n * Math.Max(nD, 1), Math.Max(nD, 1)); Array.Copy(LastD, s * Math.Max(nD, 1), LastD, n * Math.Max(nD, 1), Math.Max(nD, 1));
-                Array.Copy(LastAbs, s * Math.Max(nAgg, 1), LastAbs, n * Math.Max(nAgg, 1), Math.Max(nAgg, 1));
-                if (Dist is not null) Dist[n] = Dist[s];
-                if (ExtL is not null) ExtL[n] = ExtL[s];
-                if (ExtD is not null) ExtD[n] = ExtD[s];
-                if (LastM is not null) LastM[n] = LastM[s];
-            }
-            n++;
-        }
-        var released = Count - n;
-        Array.Clear(Cnt, n, released); Array.Clear(LastCnt, n, released); Array.Clear(Emitted, n, released);
-        Array.Clear(AccL, n * Math.Max(nL, 1), released * Math.Max(nL, 1)); Array.Clear(LastL, n * Math.Max(nL, 1), released * Math.Max(nL, 1));
-        Array.Clear(AccD, n * Math.Max(nD, 1), released * Math.Max(nD, 1)); Array.Clear(LastD, n * Math.Max(nD, 1), released * Math.Max(nD, 1));
-        Array.Clear(LastAbs, n * Math.Max(nAgg, 1), released * Math.Max(nAgg, 1));
-        if (Dist is not null) Array.Clear(Dist, n, released);
-        if (ExtL is not null) Array.Clear(ExtL, n, released);
-        if (ExtD is not null) Array.Clear(ExtD, n, released);
-        if (LastM is not null) Array.Clear(LastM, n, released);
-        Count = n;
-        Array.Clear(table);
-        for (var s = 0; s < Count; s++)
-        {
-            var h = (int)(Hash(keys.AsSpan(s * k, k)) & (ulong)mask);
-            while (table[h] != 0) h = (h + 1) & mask;
-            table[h] = s + 1;
-        }
-        return released;
-    }
-
-    public void Touch(int slot) { if (!touched[slot]) { touched[slot] = true; TouchedList.Add(slot); } }
-    public void ClearTouched() { foreach (var s in TouchedList) touched[s] = false; TouchedList.Clear(); }
-    public Dictionary<long, long> DistinctOf(int slot, int a)
-    {
-        Dist![slot] ??= new Dictionary<long, long>?[nDist];
-        return Dist[slot][a] ??= [];
-    }
-    /// <summary>Multiset of the values of one min or max aggregate; the extreme is the first key (descending order for max).</summary>
-    public SortedDictionary<long, long> ExtOfL(int slot, int a, bool desc)
-    {
-        ExtL![slot] ??= new SortedDictionary<long, long>?[nExtL];
-        return ExtL[slot][a] ??= new SortedDictionary<long, long>(desc ? Comparer<long>.Create((x, y) => y.CompareTo(x)) : Comparer<long>.Default);
-    }
-    /// <summary>Rows of a last aggregate by (order, value); the greatest order wins, the greater value breaks a tie.</summary>
-    public SortedDictionary<(decimal Ord, decimal Val), long> LastOf(int slot, int a)
-    {
-        LastM![slot] ??= new SortedDictionary<(decimal, decimal), long>?[nLast];
-        return LastM[slot][a] ??= new SortedDictionary<(decimal, decimal), long>(Comparer<(decimal Ord, decimal Val)>.Create((x, y) => x.Ord != y.Ord ? y.Ord.CompareTo(x.Ord) : y.Val.CompareTo(x.Val)));
-    }
-    public SortedDictionary<decimal, long> ExtOfD(int slot, int a, bool desc)
-    {
-        ExtD![slot] ??= new SortedDictionary<decimal, long>?[nExtD];
-        return ExtD[slot][a] ??= new SortedDictionary<decimal, long>(desc ? Comparer<decimal>.Create((x, y) => y.CompareTo(x)) : Comparer<decimal>.Default);
-    }
+    /// <summary>Gives back the row of a slot that holds nothing (a group whose rows all went, a roll-up window that left the look-back); its number may be given to a new key.</summary>
+    public void ReleaseIfDead(int slot) { if (Dead(slot)) rows.Add(KeyAt(slot), -1); }
 }
 
 enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, AnyAll, Last, WMean }
@@ -334,16 +289,18 @@ abstract class AggregatingOp : PhysOp
     /// <summary>The key code of a cell: its 64-bit code, or the code of its number for a Decimal.</summary>
     protected long KeyCode(Column c, int row) => c.IsDec ? decimals.Code(c.D[row]) : c.L[row];
 
-    /// <summary>The winning (order, value) of a last aggregate: the greatest order, a tie goes to the greater value. The multiset is sorted by number; where the order or the value is text its code says nothing about its order, so those entries are compared by their text (a scan of the entries that can win).</summary>
-    (decimal Ord, decimal Val) LastOf(SortedDictionary<(decimal Ord, decimal Val), long> m, AggSpec s)
+    /// <summary>The winning (order, value) of a last aggregate: the greatest order, a tie goes to the greater value. Where the order or the value is text its code says nothing about its order, so those entries are compared by their text. Null when it has no rows.</summary>
+    (decimal Ord, decimal Val)? LastOf(KeyTable t, int slot, AggSpec s)
     {
-        var first = m.Keys.First();
+        var rows = t.LastRows(slot, s.Index2);
+        if (rows.Count == 0) return null;
+        var first = rows.Max();
         if (!s.OrderIsText && !s.ValueIsText) return first;
         int Text(decimal x, decimal y) => string.CompareOrdinal(it.Get((int)x), it.Get((int)y));
         var best = first;
-        foreach (var k in m.Keys)
+        foreach (var k in rows)
         {
-            if (!s.OrderIsText && k.Ord != first.Ord) break;
+            if (!s.OrderIsText && k.Ord != first.Ord) continue;
             var byOrder = s.OrderIsText ? Text(k.Ord, best.Ord) : 0;
             if (byOrder > 0 || byOrder == 0 && (s.ValueIsText ? Text(k.Val, best.Val) : k.Val.CompareTo(best.Val)) > 0) best = k;
         }
@@ -400,42 +357,40 @@ abstract class AggregatingOp : PhysOp
         keyBuf = new long[keyExprs.Length + 1];
     }
 
+    /// <summary>The state of a group operator with `k` key columns.</summary>
+    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(Math.Max(nL, nD), Math.Max(nDist, nLast)), nExtL > 0 || nDist > 0, nExtD > 0, nLast > 0);
+
     protected void Accumulate(KeyTable t, int slot, Batch b, Column?[] valueCols, int row, long w)
     {
-        t.Cnt[slot] += w;
+        t.AddCnt(slot, w);
         for (var a = 0; a < aggs.Length; a++)
         {
             var s = aggs[a];
             switch (s.Kind)
             {
-                case AggKind.Count: t.AccL[slot * Math.Max(nL, 1) + s.Index] += w; break;
-                case AggKind.SumL: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AccL[slot * Math.Max(nL, 1) + s.Index] += w * c.L[row]; break; }
-                case AggKind.SumD: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AccD[slot * Math.Max(nD, 1) + s.Index] += w * (c.IsDec ? c.D[row] : c.L[row]); break; }
+                case AggKind.Count: t.AddL(slot, s.Index, w); break;
+                case AggKind.SumL: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddL(slot, s.Index, w * c.L[row]); break; }
+                case AggKind.SumD: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row])); break; }
                 case AggKind.ExtL:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        var m = t.ExtOfL(slot, s.Index, s.Desc);
-                        var n = m.GetValueOrDefault(c.L[row]) + w;
-                        if (n == 0) m.Remove(c.L[row]); else m[c.L[row]] = n;
+                        t.AddLong(slot, s.Index, c.L[row], w);
                         break;
                     }
                 case AggKind.ExtD:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        var x = c.IsDec ? c.D[row] : c.L[row];
-                        var m = t.ExtOfD(slot, s.Index, s.Desc);
-                        var n = m.GetValueOrDefault(x) + w;
-                        if (n == 0) m.Remove(x); else m[x] = n;
+                        t.AddDecimal(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w);
                         break;
                     }
                 case AggKind.Mean:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        t.AccD[slot * Math.Max(nD, 1) + s.Index] += w * (c.IsDec ? c.D[row] : c.L[row]);
-                        t.AccL[slot * Math.Max(nL, 1) + s.Index2] += w;
+                        t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row]));
+                        t.AddL(slot, s.Index2, w);
                         break;
                     }
                 case AggKind.WMean:
@@ -443,35 +398,31 @@ abstract class AggregatingOp : PhysOp
                         var c = valueCols[a]!; var wc = orderCols[a]!;
                         if (c.P is not null && !c.P[row] || wc.P is not null && !wc.P[row]) break;
                         var wv = wc.IsDec ? wc.D[row] : wc.L[row];
-                        t.AccD[slot * Math.Max(nD, 1) + s.Index] += w * (c.IsDec ? c.D[row] : c.L[row]) * wv;
-                        t.AccD[slot * Math.Max(nD, 1) + s.Index2] += w * wv;
+                        t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row]) * wv);
+                        t.AddD(slot, s.Index2, w * wv);
                         break;
                     }
                 case AggKind.AnyAll:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        if (c.L[row] != 0) t.AccL[slot * Math.Max(nL, 1) + s.Index] += w;
-                        t.AccL[slot * Math.Max(nL, 1) + s.Index2] += w;
+                        if (c.L[row] != 0) t.AddL(slot, s.Index, w);
+                        t.AddL(slot, s.Index2, w);
                         break;
                     }
                 case AggKind.Last:
                     {
                         var c = valueCols[a]!; var o = orderCols[a]!;
                         if (c.P is not null && !c.P[row] || o.P is not null && !o.P[row]) break;
-                        var key = (o.IsDec ? o.D[row] : o.L[row], c.IsDec ? c.D[row] : c.L[row]);
-                        var m = t.LastOf(slot, s.Index2);
-                        var n = m.GetValueOrDefault(key) + w;
-                        if (n == 0) m.Remove(key); else m[key] = n;
+                        t.AddLast(slot, s.Index2, o.IsDec ? o.D[row] : o.L[row], c.IsDec ? c.D[row] : c.L[row], w);
                         break;
                     }
                 case AggKind.Distinct:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        var m = t.DistinctOf(slot, s.Index); var value = KeyCode(c, row);
-                        var n = m.GetValueOrDefault(value) + w;
-                        if (n == 0) m.Remove(value); else m[value] = n;
+                        var change = t.AddLong(slot, s.Index, KeyCode(c, row), w);
+                        if (change != 0) t.AddL(slot, s.Index2, change);                  // the number of distinct values, kept with the accumulators
                         break;
                     }
             }
@@ -481,34 +432,35 @@ abstract class AggregatingOp : PhysOp
 
     protected long AggL(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.Count or AggKind.SumL => t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index],
-        AggKind.Distinct => t.Dist?[slot]?[aggs[a].Index]?.Count ?? 0,
-        AggKind.ExtL => t.ExtL?[slot]?[aggs[a].Index] is { Count: > 0 } m ? m.Keys.First() : 0,
-        AggKind.AnyAll => aggs[a].All ? (t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index] == t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2] ? 1 : 0) : (t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index] > 0 ? 1 : 0),
-        AggKind.Last when !aggs[a].OutDec => t.LastM?[slot]?[aggs[a].Index2] is { Count: > 0 } m ? (long)LastOf(m, aggs[a]).Val : 0,
+        AggKind.Count or AggKind.SumL => t.L(slot, aggs[a].Index),
+        AggKind.Distinct => t.L(slot, aggs[a].Index2),
+        AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, aggs[a].Desc, out var v) ? v : 0,
+        AggKind.AnyAll => aggs[a].All ? (t.L(slot, aggs[a].Index) == t.L(slot, aggs[a].Index2) ? 1 : 0) : (t.L(slot, aggs[a].Index) > 0 ? 1 : 0),
+        AggKind.Last when !aggs[a].OutDec => LastOf(t, slot, aggs[a]) is { } l ? (long)l.Val : 0,
         _ => 0,
     };
     protected decimal AggD(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.ExtD => t.ExtD?[slot]?[aggs[a].Index] is { Count: > 0 } m ? m.Keys.First() : 0,
-        AggKind.Mean => t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2] is var n && n != 0 ? t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index] / n : 0,
-        AggKind.Last => t.LastM?[slot]?[aggs[a].Index2] is { Count: > 0 } m ? LastOf(m, aggs[a]).Val : 0,
-        AggKind.WMean => t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index2] is var sw && sw != 0 ? t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index] / sw : 0,
-        _ => t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index],
+        AggKind.ExtD => t.ExtremeD(slot, aggs[a].Index, aggs[a].Desc, out var v) ? v : 0,
+        AggKind.Mean => t.L(slot, aggs[a].Index2) is var n && n != 0 ? t.D(slot, aggs[a].Index) / n : 0,
+        AggKind.Last => LastOf(t, slot, aggs[a]) is { } l ? l.Val : 0,
+        AggKind.WMean => t.D(slot, aggs[a].Index2) is var sw && sw != 0 ? t.D(slot, aggs[a].Index) / sw : 0,
+        _ => t.D(slot, aggs[a].Index),
     };
     /// <summary>A min or max over no non-null value is null.</summary>
     protected bool AggAbsent(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.ExtL => !(t.ExtL?[slot]?[aggs[a].Index] is { Count: > 0 }),
-        AggKind.ExtD => !(t.ExtD?[slot]?[aggs[a].Index] is { Count: > 0 }),
-        AggKind.Mean => t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2] == 0,
-        AggKind.WMean => t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index2] == 0,
-        AggKind.AnyAll => t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2] == 0,
-        AggKind.Last => !(t.LastM?[slot]?[aggs[a].Index2] is { Count: > 0 }),
+        AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, false, out _),
+        AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, false, out _),
+        AggKind.Mean => t.L(slot, aggs[a].Index2) == 0,
+        AggKind.WMean => t.D(slot, aggs[a].Index2) == 0,
+        AggKind.AnyAll => t.L(slot, aggs[a].Index2) == 0,
+        AggKind.Last => LastOf(t, slot, aggs[a]) is null,
         _ => false,
     };
 
-    protected void WriteRow(BatchBuilder bb, KeyTable t, int slot, long weight, bool last, long? windowStart, long? windowEnd, int wsCol, int weCol)
+    /// <summary>A row of the key's aggregate as it is now: a retraction is written when a step first touches the key, before its rows change it, so it retracts what was emitted.</summary>
+    protected void WriteRow(BatchBuilder bb, KeyTable t, int slot, long weight, long? windowStart, long? windowEnd, int wsCol, int weCol)
     {
         var row = bb.Add(weight);
         var bt = bb.Batch;
@@ -518,49 +470,34 @@ abstract class AggregatingOp : PhysOp
         if (windowEnd is { } we && weCol >= 0) bt.Cols[weCol].L[row] = we;
         foreach (var (a, ca, cb) in companions)
         {
-            var absent = last ? t.LastAbs[slot * aggs.Length + a] : AggAbsent(t, slot, a);
+            var absent = AggAbsent(t, slot, a);
             if (absent) { bt.Cols[ca].SetAbsent(row, bt.N); if (cb >= 0) bt.Cols[cb].SetAbsent(row, bt.N); continue; }
-            var (pa, pb) = last ? t.LastAux![(long)slot * aggs.Length + a] : AuxOf(t, slot, a);
+            var (pa, pb) = AuxOf(t, slot, a);
             bt.Cols[ca].D[row] = pa; if (cb >= 0) bt.Cols[cb].L[row] = (long)pb;
         }
         for (var a = 0; a < aggs.Length; a++)
         {
             var col = bt.Cols[outAggCol[a]];
-            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.WMean or AggKind.AnyAll or AggKind.Last && (last ? t.LastAbs[slot * aggs.Length + a] : AggAbsent(t, slot, a))) { col.SetAbsent(row, bt.N); continue; }
-            if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean or AggKind.WMean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = last ? t.LastD[slot * Math.Max(nD, 1) + aggs[a].Index] : AggD(t, slot, a);
-            else col.L[row] = last ? t.LastL[slot * Math.Max(nL, 1) + (aggs[a].Kind == AggKind.Distinct ? aggs[a].Index2 : aggs[a].Index)] : AggL(t, slot, a);
+            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.WMean or AggKind.AnyAll or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
+            if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean or AggKind.WMean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
+            else col.L[row] = AggL(t, slot, a);
         }
     }
 
-    /// <summary>Remember the values just emitted so a later change can retract exactly them.</summary>
     /// <summary>The pair of a `mean` (sum, count) or a `last` (order, unused) of one slot now.</summary>
     (decimal A, decimal B) AuxOf(KeyTable t, int slot, int a) => aggs[a].Kind == AggKind.Mean
-        ? (t.AccD[slot * Math.Max(nD, 1) + aggs[a].Index], t.AccL[slot * Math.Max(nL, 1) + aggs[a].Index2])
-        : (LastOf(t.LastM![slot]![aggs[a].Index2]!, aggs[a]).Ord, 0);
-
-    protected void Remember(KeyTable t, int slot)
-    {
-        t.LastCnt[slot] = t.Cnt[slot];
-        foreach (var (a, _, _) in companions)
-            if (!AggAbsent(t, slot, a)) (t.LastAux ??= [])[(long)slot * aggs.Length + a] = AuxOf(t, slot, a);
-        for (var a = 0; a < aggs.Length; a++)
-        {
-            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.WMean or AggKind.AnyAll or AggKind.Last) t.LastAbs[slot * aggs.Length + a] = AggAbsent(t, slot, a);
-            if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean or AggKind.WMean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) t.LastD[slot * Math.Max(nD, 1) + aggs[a].Index] = AggD(t, slot, a);
-            else if (aggs[a].Kind == AggKind.Distinct) t.LastL[slot * Math.Max(nL, 1) + aggs[a].Index2] = AggL(t, slot, a);
-            else t.LastL[slot * Math.Max(nL, 1) + aggs[a].Index] = AggL(t, slot, a);
-        }
-    }
+        ? (t.D(slot, aggs[a].Index), t.L(slot, aggs[a].Index2))
+        : (LastOf(t, slot, aggs[a])!.Value.Ord, 0);
 }
 
 /// <summary>Group by keys (no window): retract and insert per touched key at the end of each batch.</summary>
 sealed class GroupOp : AggregatingOp
 {
-    readonly KeyTable table; readonly (string Role, int Col, bool IsRel, string Port)[] members; int emptied;
+    readonly KeyTable table; readonly (string Role, int Col, bool IsRel, string Port)[] members;
     public GroupOp(TGroup t, Layout inLayout, OpContext cx, (string, int, bool, string)[]? members = null, bool withCompanions = false) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], false, withCompanions)
     {
         this.members = members ?? [];
-        table = new KeyTable(keyExprs.Length, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
+        table = NewKeyTable(keyExprs.Length);
         if (t.ClosesWindows) throw new InvalidOperationException("windowed group uses WindowedGroupOp");
     }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
@@ -568,6 +505,7 @@ sealed class GroupOp : AggregatingOp
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
         var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
+        var bb = new BatchBuilder(OutLayout);
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -575,19 +513,18 @@ sealed class GroupOp : AggregatingOp
             for (var i = 0; i < keyCols.Length; i++) { if (keyCols[i].P is not null && !keyCols[i].P![row]) { ok = false; break; } keyBuf[i] = KeyCode(keyCols[i], row); }
             if (!ok) continue;
             var slot = table.FindOrAdd(keyBuf.AsSpan(0, keyCols.Length));
+            if (table.Touch(slot) && table.Emitted(slot)) WriteRow(bb, table, slot, -1, null, null, -1, -1);
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
             if (members.Length > 0) cx.Out.AddMember(Name, string.Join(',', keyBuf.AsSpan(0, keyCols.Length).ToArray()), members, b, row, b.Weight(row));
-            table.Touch(slot);
         }
-        var bb = new BatchBuilder(OutLayout);
         foreach (var slot in table.TouchedList)
         {
-            if (table.Emitted[slot]) WriteRow(bb, table, slot, -1, true, null, null, -1, -1);
-            if (table.Cnt[slot] > 0) { WriteRow(bb, table, slot, 1, false, null, null, -1, -1); Remember(table, slot); table.Emitted[slot] = true; }
-            else { table.Emitted[slot] = false; emptied++; }
+            var on = table.Cnt(slot) > 0;
+            if (on) WriteRow(bb, table, slot, 1, null, null, -1, -1);
+            table.SetEmitted(slot, on);
         }
+        foreach (var slot in table.TouchedList) table.ReleaseIfDead(slot);       // groups whose rows all went give their rows back
         table.ClearTouched();
-        if (emptied > 1024 && emptied * 4 > table.Count) { table.Compact(); emptied = 0; }      // groups whose rows all went give their slots back
         return bb.Build();
     }
 }
@@ -614,9 +551,7 @@ sealed class WindowedGroupOp : AggregatingOp
         keyOutNoWs = [];
     }
 
-    readonly Stack<KeyTable> pool = [];
-    int expected = 64;
-    KeyTable NewTable() => pool.Count > 0 ? pool.Pop() : new KeyTable(nKeys, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast, expected);
+    KeyTable NewTable() => NewKeyTable(nKeys);
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
@@ -651,18 +586,24 @@ sealed class WindowedGroupOp : AggregatingOp
                 for (var i = 0; i < nKeys; i++) { if (keyCols[i].P is not null && !keyCols[i].P![row]) { ok = false; break; } keyBuf[i] = KeyCode(keyCols[i], row); }
                 if (!ok) continue;
                 var slot = cur.Table.FindOrAdd(keyBuf.AsSpan(0, nKeys));
+                if (cur.Closed)
+                {
+                    // a revision of a closed window: what the key emitted is retracted before the row changes it
+                    if (cur.Table.Touch(slot) && cur.Table.Emitted(slot)) WriteRow(bb, cur.Table, slot, -1, ws, ws + width, outWs, OutLayout.Has("windowEnd") ? OutLayout.Index("windowEnd") : -1);
+                    if (!revised.Any(r => r.Win == cur)) revised.Add((cur, ws));
+                }
                 Accumulate(cur.Table, slot, b, valueCols, row, b.Weight(row));
-                if (cur.Closed) { cur.Table.Touch(slot); if (!revised.Any(r => r.Win == cur)) revised.Add((cur, ws)); }
             }
         }
-        // revisions of closed windows: retract what was emitted, insert the new aggregate
+        // revisions of closed windows: insert the new aggregate
         foreach (var (win, ws) in revised)
         {
             var t = win.Table;
             foreach (var slot in t.TouchedList)
             {
-                if (t.Emitted[slot]) WriteRow(bb, t, slot, -1, true, ws, ws + width, outWs, OutLayout.Has("windowEnd") ? OutLayout.Index("windowEnd") : -1);
-                if (t.Cnt[slot] > 0) { WriteRow(bb, t, slot, 1, false, ws, ws + width, outWs, -1); Remember(t, slot); t.Emitted[slot] = true; } else t.Emitted[slot] = false;
+                var on = t.Cnt(slot) > 0;
+                if (on) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
+                t.SetEmitted(slot, on);
             }
             t.ClearTouched();
         }
@@ -676,14 +617,12 @@ sealed class WindowedGroupOp : AggregatingOp
                 if (win.Closed) continue;
                 win.Closed = true;
                 var t = win.Table;
-                for (var slot = 0; slot < t.Count; slot++)
-                    if (t.Cnt[slot] > 0) { WriteRow(bb, t, slot, 1, false, ws, ws + width, outWs, -1); Remember(t, slot); t.Emitted[slot] = true; }
+                foreach (var slot in t.Slots())
+                    if (t.Cnt(slot) > 0) { WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1); t.SetEmitted(slot, true); }
             }
             var horizon = cx.RevisableFor(width);
             foreach (var ws in windows.Where(w => w.Value.End + horizon <= frontier).Select(w => w.Key).ToList())
             {
-                var t = windows[ws].Table;
-                expected = Math.Max(expected, t.Count); t.Reset(); pool.Push(t);
                 windows.Remove(ws);
             }
         }
@@ -694,7 +633,7 @@ sealed class WindowedGroupOp : AggregatingOp
 /// <summary>Rollup: sums of telemetry rows per key and window. Inputs are already closed windows, so every change is a retraction plus an insertion.</summary>
 sealed class RollupOp : AggregatingOp
 {
-    readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period; int emptied;
+    readonly KeyTable table; readonly int inWs, outWs, outWe; readonly long period;
     readonly List<long> slotWindow = [];
 
     // ---- no data (Def. 7.16) ----
@@ -705,7 +644,7 @@ sealed class RollupOp : AggregatingOp
     /// <summary>The key of a roll-up over a Series with a time to live is in no data iff every member that has a row has a marker record (`nodata any`: iff one has).</summary>
     public RollupOp(TRollup t, Layout inLayout, OpContext cx, bool withCompanions = false) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true, withCompanions)
     {
-        table = new KeyTable(keyExprs.Length + 1, nL, nD, nDist, nExtL, nExtD, aggs.Length, nLast);
+        table = NewKeyTable(keyExprs.Length + 1);
         inWs = inLayout.Index("windowStart"); outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd"); period = t.PeriodNs;
         if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); any = t.NoDataAny; memberCols = [.. t.Members!.Select(inLayout.Index)]; }
     }
@@ -737,6 +676,7 @@ sealed class RollupOp : AggregatingOp
         var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
         var wsCol = b.Cols[inWs].L;
         var n = keyCols.Length;
+        var bb = new BatchBuilder(OutLayout);
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -756,11 +696,9 @@ sealed class RollupOp : AggregatingOp
                 if (has == (0, 0)) s.Members.Remove(member); else s.Members[member] = has;
                 if (marked) { Count(s.Markers, wsCol[row], b.Weight(row)); continue; }       // the record of a member in no data is not aggregated
             }
-            var slot = table.FindOrAdd(keyBuf.AsSpan(0, n + 1));
+            Retract(bb, table.FindOrAdd(keyBuf.AsSpan(0, n + 1)), n, out var slot);
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
-            table.Touch(slot);
         }
-        var bb = new BatchBuilder(OutLayout);
         if (quiet is not null)
             foreach (var s in quiet.Distinct())
             {
@@ -770,7 +708,7 @@ sealed class RollupOp : AggregatingOp
                 if (want != s.Emitted)
                 {
                     // the marker record takes the place of the key's aggregate at its window: that slot is written again without or with it
-                    foreach (var at in new[] { s.Emitted, want }) if (at is { } ws) { s.Key.CopyTo(keyBuf, 0); keyBuf[n] = ws; table.Touch(table.FindOrAdd(keyBuf.AsSpan(0, n + 1))); }
+                    foreach (var at in new[] { s.Emitted, want }) if (at is { } ws) { s.Key.CopyTo(keyBuf, 0); keyBuf[n] = ws; Retract(bb, table.FindOrAdd(keyBuf.AsSpan(0, n + 1)), n, out _); }
                     if (s.Emitted is { } old) WriteMarker(bb, s, old, -1);
                     if (want is { } now) WriteMarker(bb, s, now, 1);
                     s.Emitted = want;
@@ -780,13 +718,22 @@ sealed class RollupOp : AggregatingOp
         foreach (var slot in table.TouchedList)
         {
             var ws = table.KeyAt(slot)[n];
-            if (table.Emitted[slot]) WriteRow(bb, table, slot, -1, true, ws, ws + period, outWs, outWe);
-            if (table.Cnt[slot] > 0 && !Suppressed(slot, n)) { WriteRow(bb, table, slot, 1, false, ws, ws + period, outWs, outWe); Remember(table, slot); table.Emitted[slot] = true; }
-            else { table.Emitted[slot] = false; emptied++; }
+            var on = table.Cnt(slot) > 0 && !Suppressed(slot, n);
+            if (on) WriteRow(bb, table, slot, 1, ws, ws + period, outWs, outWe);
+            table.SetEmitted(slot, on);
         }
+        foreach (var slot in table.TouchedList) table.ReleaseIfDead(slot);       // windows that left the look-back give their rows back
         table.ClearTouched();
-        if (emptied > 1024 && emptied * 4 > table.Count) { table.Compact(); emptied = 0; }      // windows that left the look-back give their slots back
         return bb.Build();
+    }
+
+    /// <summary>The first time a step touches a slot, the aggregate it emitted is retracted, before the step changes it.</summary>
+    void Retract(BatchBuilder bb, int slot, int n, out int touched)
+    {
+        touched = slot;
+        if (!table.Touch(slot) || !table.Emitted(slot)) return;
+        var ws = table.KeyAt(slot)[n];
+        WriteRow(bb, table, slot, -1, ws, ws + period, outWs, outWe);
     }
 }
 
