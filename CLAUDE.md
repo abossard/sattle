@@ -2,6 +2,7 @@
 
 - **Deep modules (John Ousterhout, A Philosophy of Software Design).** A module has a narrow, simple interface and hides a lot of work behind it. Prefer fewer, deeper modules over many shallow ones. Do not leak internals through the interface; do not add pass-through layers or configuration a caller must understand.
 - **Grokking Simplicity (Eric Normand), as much as possible.** Separate data, calculations (pure functions) and actions (anything that depends on time or changes the world). Keep actions thin and at the edges; put the logic in calculations; treat data as immutable and copy on write where state must change.
+- **Finite state machines where applicable.** When behaviour depends on a mode or a sequence of events (a connection, a draft, a session, a window, a health state, a UI flow), model it as an explicit state machine: a closed set of states, a pure transition function `(state, event) -> state`, and the actions run at the edges. No scattered flags whose combinations mean a state.
 - Count every new concept, type, setting or language addition as a cost. If two designs work, pick the one with fewer concepts.
 
 # Model use
