@@ -1,5 +1,7 @@
-// A report on the health of the estate as a document: counts, then one line per element that is not healthy.
-graph healthReport : sattle.doc;
+graph healthReport : sattle.doc with (
+    description = "A report on the health tree as a document: the elements that are not healthy and why.",
+    history = 4);
+input health : acme.tree;
 
 let elements = graph("health")
     | graph-match (e) where labels(e) has "Element"

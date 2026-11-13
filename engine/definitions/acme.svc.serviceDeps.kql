@@ -1,5 +1,7 @@
-// The service tree: the services of each namespace, and who calls whom, from the calls between their pods.
-graph serviceDeps : acme.svc;
+graph serviceDeps : acme.svc with (
+    description = "The service tree: the services of each namespace and who calls whom, lifted from the calls between their pods.",
+    history = 4);
+input master : acme.ops;
 
 let services = graph("master")
     | graph-match (s) where labels(s) has "Service"

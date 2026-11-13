@@ -1,8 +1,10 @@
-// Is my workload healthy, and if not, which part is to blame?
-// Each component's state is the worst severity over everything that affects it, up to sixteen edges away.
-// Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod,
-// read against the authored rules. A meter that has not reported for five minutes is in "no data".
-graph workloadHealth : acme.workload;
+graph workloadHealth : acme.workload with (
+    description = "Is my workload healthy, and if not, which part is to blame? Each component's state is the worst severity over everything that affects it: what it contains and what it depends on, up to sixteen edges away.
+    Its own severity comes from its signals: each meter of an Azure resource or a node and the warning events of each pod, read against the authored rules. A pod's warnings are 0 in every minute in which its source reported without one; a meter that has not reported for five minutes is in no data.
+    A pod also counts the node it runs on. A deployment is unhealthy when at least half of its pods are, else degraded when at least half are degraded or worse, else in no data when at least half are in no data or worse, else healthy; a pod with no severity does not count, and a deployment none of whose pods has one is Unknown. No data ranks above healthy and below degraded; a component that nothing measured is Unknown. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.",
+    history = 4);
+input master : acme.ops;
+input structure : acme.workload;
 declare query_parameters(workloadNamespace:string);
 
 let stateOf = (w:long) { case(w >= 3, "Unhealthy", w == 2, "Degraded", w == 1, "No data", w == 0, "Healthy", "Unknown") };

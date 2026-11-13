@@ -1,6 +1,12 @@
+graph healthTree : acme.tree with (
+    description = "The health tree: every element of the estate under its parent, with its own state and the state rolled up from what is below it.",
+    history = 4);
 // The health of every element of the tree: its own severity from its signals, and the severity rolled up over everything
 // it rolls up, by its policy; with the signals and the evidence (warning events, Azure operations) of each element.
-graph healthTree : acme.tree;
+input structure : acme.tree;
+input rollup : acme.tree;
+input signals : acme.tree;
+input master : acme.ops;
 
 let els = graph("structure") | graph-match (e) where labels(e) has "Element" project element = e.id, ekey = e.nodeKey, ekind = e.nodeKind, ename = e.nodeName;
 let stateOf = (sev:long) { case(sev == 2, "Unhealthy", sev == 1, "Degraded", sev == 0, "Healthy", "Unknown") };

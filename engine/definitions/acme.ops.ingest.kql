@@ -1,7 +1,28 @@
-// The master graph: what the adapters observe (Kubernetes, Hubble, Azure Resource Graph, the Activity Log, Azure Monitor,
-// Prometheus, VNet flow logs) and what people author (capabilities, signal rules, roll-up policies, curations).
+graph ingest : acme.ops with (
+    description = "The master graph: what the sources observed. Pods, services, deployments and nodes of the clusters, the Azure resources, calls between pods, meters, warning, activity and audit events, and the authored capabilities, rules and policies.",
+    history = 8);
 // The inputs are tables of rows, one per source; a window of telemetry is 60 seconds of the rows' own time.
-graph ingest : acme.ops;
+input pods : k8s.PodRow;
+input services : k8s.ServiceRow;
+input accounts : k8s.ServiceAccountRow;
+input hostRefs : k8s.HostReferenceRow;
+input deployments : k8s.DeploymentRow;
+input endpoints : k8s.EndpointRow;
+input flows : hubble.FlowRow;
+input caps : CapabilityRow;
+input realizes : RealizesRow;
+input signalRules : SignalRuleRow;
+input policies : PolicyRow;
+input curations : CurationRow;
+input nodes : k8s.NodeRow;
+input events : k8s.EventRow;
+input resources : azsrc.ResourceRow;
+input metrics : prom.MetricRow;
+input activity : azsrc.ActivityRow;
+input diagActivity : azsrc.ActivityRow;
+input audit : azsrc.AuditRow;
+input resourceMetrics : azsrc.ResourceMetricRow;
+input flowLogs : azsrc.FlowLogRow;
 
 // ---- observed by the Kubernetes adapter ----
 nodes Pod on pod with (rule = "observedPods", description = "observed by the Kubernetes adapter") = pods | project pod = identity("podUid", cluster, uid), cluster, namespace, name, phase, team = teamLabel, ready, serviceAccount;

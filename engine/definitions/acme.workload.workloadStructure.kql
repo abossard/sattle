@@ -1,7 +1,7 @@
-// What is my workload made of, what does it talk to, and what does each part depend on?
-// The services of one namespace with their deployments and pods, the nodes, pools and cluster they run on,
-// and the Azure resources they use, with the evidence for each dependency.
-graph workloadStructure : acme.workload;
+graph workloadStructure : acme.workload with (
+    description = "What is my workload made of, what does it talk to, and what does each part depend on? The services of one namespace with their deployments and pods, the nodes, pools and cluster they run on, and the Azure resources they use, with each dependency's evidence.",
+    history = 4);
+input master : acme.ops;
 declare query_parameters(workloadNamespace:string, aksName:string);
 
 let svcKey = (cluster:string, namespace:string, name:string) { strcat("svc/", cluster, "/", namespace, "/", name) };

@@ -1,5 +1,7 @@
-// The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.
-graph deploymentHealth : acme.deployhealth;
+graph deploymentHealth : acme.deployhealth with (
+    description = "The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.",
+    history = 4);
+input master : acme.ops;
 declare query_parameters(minReady:long = 0);
 
 let deployments = graph("master")

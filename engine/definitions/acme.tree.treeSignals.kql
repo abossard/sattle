@@ -1,6 +1,8 @@
-// The signals of the estate: each meter of an Azure resource, a node or a pod, read against the authored rules of its kind.
+graph treeSignals : acme.tree with (
+    description = "The signals of the estate: each meter of an element read against the authored rules that name it, with its state.",
+    history = 4);
 // Hysteresis, thresholds and severity come from the rule, so a new meter or a changed threshold is a record, not a change of this text.
-graph treeSignals : acme.tree;
+input master : acme.ops;
 
 let rules = graph("master")
     | graph-match (u) where labels(u) has "SignalRule"

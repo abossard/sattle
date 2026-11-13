@@ -389,28 +389,28 @@ Stage 1 built the KQL front end and tested it on the six projections. A front en
 
 ### The size
 
-- The front end is about 1,080 lines of our code: 110 that read the text and build the description of the graphs and tables Kusto checks against, 920 that translate into operators, and 50 that put the result in place of today's text so the engine loads it. The library adds 28 lines written in KQL. Parsing and type checking are Kusto.Language's.
-- The twelve projections take 641 lines of KQL against 964 lines today. The master graph shrinks most, from 307 lines to 75, because today's text repeats a block per source and per metric.
+- The front end is about 1,210 lines of our code: 150 that read the text and its inputs and build the description of the graphs and tables Kusto checks against, 1,020 that translate into operators, and 50 that put the result in place of today's text so the engine loads it. The library adds 28 lines written in KQL. Parsing and type checking are Kusto.Language's.
+- The twelve projections take 720 lines of KQL against 1,025 lines today, each counted with its description, its inputs and the history it keeps. The master graph shrinks most, from 311 lines to 98, because today's text repeats a block per source and per metric.
 
 | Projection | Lines today | Lines in KQL |
 |---|---|---|
-| service tree | 30 | 34 |
-| capabilities (without its edit rules) | 31 | 27 |
-| deployment health | 27 | 21 |
-| deployment report | 20 | 14 |
-| workload structure | 195 | 192 |
-| workload health | 147 | 106 |
-| estate tree: structure | 62 | 48 |
-| estate tree: signals | 40 | 30 |
-| estate tree: roll-up | 20 | 15 |
-| health tree | 60 | 62 |
-| health report | 25 | 17 |
-| master graph | 307 | 75 |
+| service tree | 35 | 37 |
+| capabilities | 35 | 38 |
+| deployment health | 31 | 24 |
+| deployment report | 21 | 17 |
+| workload structure | 214 | 200 |
+| workload health | 157 | 112 |
+| estate tree: structure | 67 | 51 |
+| estate tree: signals | 41 | 33 |
+| estate tree: roll-up | 21 | 19 |
+| health tree | 66 | 71 |
+| health report | 26 | 20 |
+| master graph | 311 | 98 |
 
 ### What the front end accepts
 
-Sixty-seven constructs, every one plain KQL except the eleven additions below.
-- **Statements (11):** the graph line, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings of a step (`key`, `confidence`, `rule`, `description`, `accept`, `update`, `onCreate`, `onDelete`).
+Sixty-eight constructs, every one plain KQL except the twelve additions below.
+- **Statements (12):** the graph line with its settings (`description`, `history`), the input lines, query parameters, a let of a table, of a value function and of a table function, the four step forms (`nodes`, `edges`, `extend nodes`, `extend edges`), the `link` step, and the settings of a step (`key`, `confidence`, `rule`, `description`, `accept`, `update`, `onCreate`, `onDelete`).
 - **Table operators (17):** a table of rows from a source, read by its name; `graph-match` (patterns of nodes and edges, `labels(x) has "T"`, `where`, `project`); paths of several edges `-[p*0..16]->` with `all(p, labels(p) has "T")`; `where`, and `where time > ago(24h)` for keeping rows for a span of the data's time; `project`, `extend`, `distinct`; `summarize`, and `summarize ... by ..., windowStart = bin(time, 60s)` for windows of the rows' own time; `join kind=inner`, `union`, `datatable`; `invoke` of a table function, `invoke hysteresis`; a join with `telemetry` and a join with `telemetry_filled`.
 - **Aggregations (10):** `count`, `countif`, `sum`, `min`, `max`, `avg`, `arg_max`, and over telemetry `sumif`, `minif`, `maxif`.
 - **Functions (14):** `iff`, `case`, `coalesce`, `strcat`, `tolower`, `not`, `isnotnull`, `isnull`, `toreal`, `rate`, `identity`, `labels`, `all`, and value functions of one's own.
@@ -436,6 +436,8 @@ The engine keeps every result up to date as data changes, and gives the same res
 | `nodes on id labels col` | a step names its type ...: the engine writes one type per step, so a type taken from a column needs one step per type |
 | `edit = ...` | say what may be edited with accept = "create, delete" and update = "property, ..."; whether an edit goes back one for one or by the step's rules follows from what the step reads |
 | another setting in `with` | 'x' is not a setting of an edge step: its settings are key, rule, description, accept, update, onCreate, onDelete |
+| `graph("name")` without an input line, when not exactly one ontology of the module or its imports has that name | say which ontology the graph master has: input master : <ontology>; (this module imports acme.ops, sattle.infra) |
+| another setting on the graph line | 'x' is not a setting of the graph line: its settings are description and history |
 | `description`, `accept`, `update`, `onCreate` or `onDelete` without `rule` | ... belong to a rule: name it with rule = "..." |
 | `union` of tables with different columns | the tables of a union have the same columns: project each to ... |
 | a step that makes a type but leaves out a required property | a step that makes T sets every required property, and p is not set: set it, or write extend nodes to add properties to nodes another step makes |
@@ -445,9 +447,9 @@ The engine keeps every result up to date as data changes, and gives the same res
 | several telemetry properties used before summarizing | summarize the telemetry rows of several properties by their window before projecting them: summarize v = sumif(value, property == "p") by ..., windowStart |
 | any other operator or function | x is not in the KQL profile, or f() is not a function of the profile |
 
-### The eleven additions, each with its reason and an example
+### The twelve additions, each with its reason and an example
 
-1. **The graph line** names the projection and the ontology of its result, because a KQL query returns a table and a projection returns a graph: `graph serviceDeps : acme.svc;`
+1. **The graph line** names the projection and the ontology of its result, because a KQL query returns a table and a projection returns a graph. Its settings give the description a reader sees and how many inputs the graph keeps per element: `graph serviceDeps : acme.svc with (description = "The service tree: ...", history = 4);`
 2. **`nodes`** makes nodes from the rows of a query, the text form of a Kusto graph model's step that adds nodes: `nodes ServiceNode on service = services;`
 3. **`edges`** makes edges in the same way: `edges DependsOn from src to dst = calls | distinct src, dst;`
 4. **`extend nodes` and `extend edges`** add properties to what another step makes, so the text shows which steps make elements and which only add to them (in a Kusto graph model every step makes them): `extend nodes ServiceNode on service = backing | distinct pod, service | summarize pods = count() by service;`
@@ -458,6 +460,9 @@ The engine keeps every result up to date as data changes, and gives the same res
 9. **`invoke hysteresis(high, low, initial[, noData])`** is a threshold that must hold for a number of windows; KQL would need a general `scan`, which the engine cannot keep up to date: `invoke hysteresis("degraded", "ok", "ok")`
 10. **`rate(x)`** is a value per second over the period of its property. KQL has no units, so no KQL expression can give a value the unit "per second" that the property declares: `flowRate = rate(flows)`
 11. **`link`** says that two keys name the same thing, for instance a pod known by its uid to one source and by its name to another; Kusto has nothing like it: `link podUidIsPodName from byUid to byName with (confidence = 1.0) = pods | project byUid = identity("podUid", cluster, uid), byName = identity("podName", cluster, namespace, name);`
+12. **`input`**: these are the graphs and tables this projection reads, each with its ontology or row type, so that a projection can be made from its text alone; a projection that reads tables of rows is the ingestion of the master graph, one that reads graphs is a view: `input master : acme.ops;` and `input pods : k8s.PodRow;`. The line may be left out where a graph is named after an ontology the module imports: `graph("ops")`.
+
+Open point: the imports of a module, which pin the ontologies it reads by their digests, stay in the module's `.sattle` file for now, since the format of ontologies stays as it is. A KQL text names an ontology or a row type by its module's name or by the short name the module imports it under (`k8s`). Once the KQL texts replace today's text for good, the projection statements can go from the modules, and a `.sattle` file holds an ontology and its imports.
 
 Of the nine additions in section 5, the step whose type comes from a column (`nodes on id labels col`) is not built: the engine writes one type per step.
 

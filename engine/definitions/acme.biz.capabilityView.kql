@@ -1,5 +1,8 @@
-// The business capabilities and the calls between them, from the calls between the services that realize them.
-graph capabilityView : acme.biz;
+graph capabilityView : acme.biz with (
+    description = "The business capabilities and the calls between them, lifted from the calls between the services that realize them.",
+    history = 8);
+input master : acme.ops;
+input tree : acme.svc;
 
 let capabilities = graph("master")
     | graph-match (capability) where labels(capability) has "Capability" and capability.status != "retired"

@@ -1,7 +1,10 @@
+graph treeStructure : acme.tree with (
+    description = "The tree structure: elements and their parents, from the Azure resource ids and the Kubernetes objects of the master. A cluster that is an Azure resource is one element with the Kubernetes subtree below it.",
+    history = 4);
 // The estate as one tree: subscriptions, resource groups and resources, clusters, namespaces, workloads, pods and nodes,
 // and the groups and moves people curate. Each row names an element: its key, a name, its kind, its parent and a rank;
 // where rows disagree on a name or a parent, the higher rank decides.
-graph treeStructure : acme.tree;
+input master : acme.ops;
 
 let resources = graph("master")
     | graph-match (r) where labels(r) has "AzureResource" and isnotnull(r.subscriptionId) and isnotnull(r.resourceGroup)

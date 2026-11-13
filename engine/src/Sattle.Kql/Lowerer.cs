@@ -1,5 +1,6 @@
 using System.Globalization;
 using Kusto.Language;
+using Kusto.Language.Symbols;
 using Kusto.Language.Syntax;
 using Sattle.Core;
 using Diagnostic = Sattle.Core.Diagnostic;
@@ -40,8 +41,8 @@ sealed class Rel
 
 sealed class Refused(string message, SyntaxNode at) : Exception(message) { public SyntaxNode At { get; } = at; }
 
-sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, IReadOnlyDictionary<string, string> rows, string file, string text, string graphName, string outModule,
-    List<StepHeader> steps, KustoCode code, List<Diagnostic> diags)
+sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, string> inputs, IReadOnlyDictionary<string, string> rows, string graphName, string outModule,
+    string? description, long history, List<StepHeader> steps, KustoCode code, Faults faults)
 {
     readonly DefBuilder b = new();
     readonly string mid = Ids.Module(module);
@@ -52,12 +53,30 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     Dictionary<string, Rel> tables = new(StringComparer.Ordinal);
     Dictionary<string, object?> bound = new(StringComparer.Ordinal);
     readonly Dictionary<string, Rel> lets = new(StringComparer.Ordinal);
+    /// <summary>The lets being written: one that reads itself is refused, never recursed into.</summary>
+    readonly HashSet<string> writing = new(StringComparer.Ordinal);
     readonly Dictionary<string, string> ports = new(StringComparer.Ordinal);
     readonly HashSet<string> parms = new(StringComparer.Ordinal);
     readonly Dictionary<string, OntologyView> views = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> opNo = new(StringComparer.Ordinal);
     string prefix = "";
     int emits;
+    /// <summary>The place in the text of what is being written: a KQL operator, or a step for its sink. Each operator keeps the place it came from.</summary>
+    (int Start, int End) at;
+    readonly Dictionary<string, (int Start, int End)> places = new(StringComparer.Ordinal);
+    /// <summary>Inside a table function written out at a call: the place of the call. Each operator written there keeps it.</summary>
+    (int Start, int End)? call;
+    readonly Dictionary<string, (int Start, int End)> calls = new(StringComparer.Ordinal);
+    readonly Dictionary<(int Start, int End), Rel> shapes = new();
+
+    TOut At<TOut>(SyntaxNode n, Func<TOut> write)
+    {
+        var saved = at; at = (n.TextStart, n.End);
+        try { var r = write(); if (r is Rel rel && call is null) shapes[at] = rel; return r; } finally { at = saved; }
+    }
+
+    /// <summary>A fault of a step, or of a rule at its first step: at the step's head.</summary>
+    void Fault(int pos, string message) => faults.Add(pos, steps.FirstOrDefault(s => s.Pos == pos)?.HeadEnd ?? pos, "Profile", message);
 
     static Value T(string s) => Value.Text(s);
     static FieldX F(string path) => new(path);
@@ -88,20 +107,20 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             if (g.Key is null)
             {
                 foreach (var (h, st) in g.Where(x => RuleSettings.Any(x.Settings.ContainsKey)))
-                    diags.Add(KqlFrontEnd.At(text, file, h.Pos, "Profile", $"{string.Join(", ", RuleSettings.Where(st.ContainsKey))} belong to a rule: name it with rule = \"...\""));
+                    Fault(h.Pos, $"{string.Join(", ", RuleSettings.Where(st.ContainsKey))} belong to a rule: name it with rule = \"...\"");
                 continue;
             }
             var spec = new RuleSpec { Pos = g.First().Step.Pos };
             string? One(string key)
             {
                 var values = g.Select(x => x.Settings.GetValueOrDefault(key)).OfType<string>().Distinct().ToList();
-                if (values.Count > 1) diags.Add(KqlFrontEnd.At(text, file, spec.Pos, "Profile", $"the steps of rule {g.Key} give {key} different values"));
+                if (values.Count > 1) Fault(spec.Pos, $"the steps of rule {g.Key} give {key} different values");
                 return values.FirstOrDefault();
             }
             spec.Description = One("description"); spec.Update = One("update"); spec.OnCreate = One("onCreate"); spec.OnDelete = One("onDelete");
             foreach (var w in (One("accept") ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
                 if (w is "create" or "delete") spec.Accept.Add(w);
-                else diags.Add(KqlFrontEnd.At(text, file, spec.Pos, "Profile", $"accept lists create and delete; '{w}' is neither (an update is said with update = \"property, ...\")"));
+                else Fault(spec.Pos, $"accept lists create and delete; '{w}' is neither (an update is said with update = \"property, ...\")");
             rules[g.Key] = spec;
         }
     }
@@ -121,8 +140,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     {
         foreach (var (name, spec) in rules)
         {
-            var at = spec.Pos;
-            void Fail(string message) => diags.Add(KqlFrontEnd.At(text, file, at, "Profile", message));
+            void Fail(string message) => Fault(spec.Pos, message);
             var updates = (spec.Update ?? "").Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
             var editable = spec.Accept.Count > 0 || updates.Count > 0;
             var cls = !editable ? "readonly" : rows.Count > 0 ? "bijective" : "lens";
@@ -193,8 +211,14 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     public KqlResult Run()
     {
         Rules();
-        pid = b.Contain(mid, "projection", graphName, "Projection", null, ("name", T(graphName)), ("purpose", T("view")), ("retain", Value.Integer(0)), ("forward", Value.Boolean(rules.Count == 0)));
+        // a projection that reads rows is the ingestion of its graph, one that reads graphs a view
+        var props = new List<(string, Value)> { ("name", T(graphName)), ("purpose", T(rows.Count > 0 ? "ingestion" : "view")), ("retain", Value.Integer(history)), ("forward", Value.Boolean(rules.Count == 0)) };
+        if (description is not null) props.Add(("description", T(description)));
+        pid = b.Contain(mid, "projection", graphName, "Projection", null, [.. props]);
         b.Edge(pid, "outputOntology", Ids.Module(outModule));
+        // every input is a port, read or not, so the space can give it a graph or a source
+        foreach (var g in inputs.Keys) GraphPort(g, code.Syntax);
+        foreach (var r in rows.Keys) RowsPort(r);
         foreach (var se in ((QueryBlock)code.Syntax).Statements)
         {
             try
@@ -209,10 +233,10 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                     default: throw new Refused("only lets, query parameters and steps belong in a projection", se.Element);
                 }
             }
-            catch (Refused r) { diags.Add(KqlFrontEnd.At(text, file, r.At.TextStart, "Profile", r.Message)); }
+            catch (Refused r) { faults.Add(r.At, "Profile", r.Message); }
         }
         WriteRules();
-        return new KqlResult(pid, b, diags);
+        return new KqlResult(pid, b, faults.List) { DiagnosticPlaces = faults.Places, OperatorPlaces = places, OperatorCalls = calls, Shapes = shapes };
     }
 
     // ---- ports, operators, names ----
@@ -267,6 +291,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     string OpNamed(string kind, string name, params (string, Value)[] props)
     {
         var id = b.Contain(pid, "op", name, kind, null, [("name", T(name)), .. props]);
+        places[id] = at;
+        if (call is { } c) calls[id] = c;
         foreach (var (pn, dir, pk) in KernelTable.OperatorPorts(kind)) b.Contain(id, "port", pn, "Port", null, ("name", T(pn)), ("direction", T(dir)), ("kind", T(pk)));
         return id;
     }
@@ -291,6 +317,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             r = Tab(query);
             cols = [.. r.Visible.Select(c => (c, r.Idents.TryGetValue(c, out var id) ? (X)id : F(c)))];
         }
+        at = (h.Pos, query.End);
         if (h.Kind == "link") { Link(h, r, cols, query); return; }
         var key = h.Key(out var refusal);
         if (refusal is not null) throw new Refused(refusal, query);
@@ -408,20 +435,22 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
     {
         ParenthesizedExpression p => Tab(p.Expression),
         NameReference n when tables.TryGetValue(n.SimpleName, out var t) => t,
-        NameReference n when letSyntax.TryGetValue(n.SimpleName, out var l) => Let(n.SimpleName, l),
+        // Kusto has bound the name: `let pods = pods | ...` reads the table pods, not the let
+        NameReference n when n.ReferencedSymbol is not TableSymbol && letSyntax.TryGetValue(n.SimpleName, out var l) => Let(n.SimpleName, l, n),
         NameReference n when rows.ContainsKey(n.SimpleName) => new Rel { Port = RowsPort(n.SimpleName), Cols = [.. KqlFrontEnd.Fields(catalog, rows[n.SimpleName]).Select(f => f.Name)] },
         FunctionCallExpression f when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, Tab(f.ArgumentList.Expressions[0].Element), [.. f.ArgumentList.Expressions.Skip(1).Select(x => x.Element)], f),
         PipeExpression p => Pipe(p),
-        DataTableExpression d => DataTable(d),
-        UnionOperator u => Union(null, u),
+        DataTableExpression d => At(d, () => DataTable(d)),
+        UnionOperator u => At(u, () => Union(null, u)),
         _ => throw new Refused($"'{Short(e)}' is not a table the profile can keep up to date", e),
     };
 
-    Rel Let(string name, LetStatement l)
+    Rel Let(string name, LetStatement l, SyntaxNode at)
     {
         if (lets.TryGetValue(name, out var r)) return r;
+        if (!writing.Add(name)) throw new Refused($"the let {name} reads itself", at);
         var saved = prefix; prefix = name;
-        try { r = Tab(l.Expression); } finally { prefix = saved; }
+        try { r = Tab(l.Expression); } finally { prefix = saved; writing.Remove(name); }
         return lets[name] = r;
     }
 
@@ -431,11 +460,11 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (p.Operator is InvokeOperator { Function: FunctionCallExpression { Name.SimpleName: "hysteresis" } } hy && p.Expression is PipeExpression { Operator: ProjectOperator or ExtendOperator } pj)
         {
             var inner = Tab(pj.Expression);
-            return Hysteresis(inner, Fuse(inner, pj.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)pj.Operator).Expressions.Select(x => x.Element)], pj.Operator is ExtendOperator), hy);
+            return At(hy, () => Hysteresis(inner, Fuse(inner, pj.Operator is ProjectOperator po ? [.. po.Expressions.Select(x => x.Element)] : [.. ((ExtendOperator)pj.Operator).Expressions.Select(x => x.Element)], pj.Operator is ExtendOperator), hy));
         }
-        if (p.Operator is GraphMatchOperator gm) return GraphMatch(gm, p.Expression);
+        if (p.Operator is GraphMatchOperator gm) return At(gm, () => GraphMatch(gm, p.Expression));
         var input = Tab(p.Expression);
-        return p.Operator switch
+        return At(p.Operator, () => p.Operator switch
         {
             FilterOperator { Condition: BinaryExpression { Operator.Text: ">", Left: NameReference t, Right: FunctionCallExpression { Name.SimpleName: "ago" } ago } } f when ago.ArgumentList.Expressions is [var span] && Const(span.Element) is TimeSpan age
                 => Retain(input, t.SimpleName, age.Ticks * 100, f),
@@ -449,7 +478,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             InvokeOperator { Function: FunctionCallExpression f } when TableFunction(f.Name.SimpleName) is { } fd => Apply(fd, input, [.. f.ArgumentList.Expressions.Select(x => x.Element)], f),
             InvokeOperator i => Hysteresis(input, [.. input.Visible.Select(c => (c, input.Idents.TryGetValue(c, out var id) ? (X)id : F(c)))], i),
             var op => throw new Refused(Refusal(op), op),
-        };
+        });
     }
 
     /// <summary>A user function whose first parameter is a table: `let f = (T:(a:string, ...), p:string) { T | ... }`.</summary>
@@ -470,8 +499,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             if (!(args[k].IsConstant || args[k].IsLiteral || args[k] is NameReference n && bound.ContainsKey(n.SimpleName))) throw new Refused("the values a table function takes are constants", args[k]);
             bound[ps[k + 1]] = Const(args[k]);
         }
+        var savedCall = call; call ??= (at.TextStart, at.End);
         try { return Tab(fd.Body.Expression); }
-        finally { (tables, bound) = (savedTables, savedBound); }
+        finally { (tables, bound, call) = (savedTables, savedBound, savedCall); }
     }
 
     /// <summary>The value of a constant: a literal, or a parameter of the table function being written out.</summary>

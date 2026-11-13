@@ -105,16 +105,32 @@ public class KqlProjectionTests
     [InlineData("nodes on service labels name = services", "one step per type")]
     public void The_profile_refuses_what_the_engine_cannot_keep_up_to_date_and_says_what_to_write(string step, string says)
     {
-        var text = "graph serviceDeps : acme.svc;\n"
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
             + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
             + step + ";\n";
-        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc", new Dictionary<string, string> { ["master"] = "acme.ops" });
+        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
         Assert.False(low.Ok);
         Assert.Contains(low.Diagnostics, d => d.Code == "Profile" && d.Message.Contains(says, StringComparison.Ordinal));
     }
 
+    /// <summary>What the graph line and the input lines refuse, and that the message says what to write instead.</summary>
+    [Theory]
+    [InlineData("graph serviceDeps : acme.svc;\n", "say which ontology the graph master has: input master : <ontology>;")]
+    [InlineData("graph serviceDeps : acme.svc;\ninput master : acme.nowhere;\n", "acme.nowhere is neither an ontology nor a row type of this module or its imports")]
+    [InlineData("graph serviceDeps : acme.svc;\ninput master : acme.ops;\ninput master : k8s.PodRow;\n", "master is an input already")]
+    [InlineData("graph serviceDeps : acme.svc with (owner = \"me\");\ninput master : acme.ops;\n", "'owner' is not a setting of the graph line")]
+    [InlineData("graph serviceDeps : acme.svc with (history = recent);\ninput master : acme.ops;\n", "history is a whole number")]
+    public void The_graph_line_and_the_inputs_say_what_to_write(string head, string says)
+    {
+        var text = head + "nodes ServiceNode on service = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
+        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
+        Assert.False(low.Ok);
+        Assert.Contains(low.Diagnostics, d => d.Message.Contains(says, StringComparison.Ordinal));
+    }
+
     /// <summary>The catalog of the definitions with one projection in KQL in place of today's text, as `sattle replay --projections kql` loads it.
-    /// Asserts that the catalog holds exactly the operators the front end wrote.</summary>
+    /// Asserts that the catalog holds exactly the operators the front end wrote, and that the KQL text states what today's text states of the projection:
+    /// its purpose, history, description and inputs, so the module's statement of it can go; and that the operator places are keyed by the loaded operators' ids.</summary>
     static Catalog WithKql(Recorded data, string kql)
     {
         var path = Path.Combine(Definitions, kql);
@@ -130,18 +146,54 @@ public class KqlProjectionTests
         var extra = theirs.Keys.Where(k => !mine.ContainsKey(k)).ToList();
         Assert.True(missing.Count == 0 && extra.Count == 0, $"the printed text loads other facts: {missing.Count} missing or changed, {extra.Count} extra\n"
             + string.Join("\n", missing.Take(5).Select(k => $"  - {mine[k]}\n    {(theirs.TryGetValue(k, out var t) ? t : null)}")) + "\n" + string.Join("\n", extra.Take(5).Select(k => $"  + {theirs[k]}")));
+        // the places the editors read are keyed by the ids the loaded catalog gives the operators
+        Assert.Equal(new DefView(loaded.Graph).Children(pid, "op").Order(StringComparer.Ordinal), put.Places.Keys.Order(StringComparer.Ordinal));
+        var (stated, today) = (Stated(loaded.Graph, pid), Stated(data.Catalog.Graph, pid));
+        Assert.True(stated.Count == today.Count && stated.All(kv => today.TryGetValue(kv.Key, out var t) && Equals(t, kv.Value)),
+            $"the KQL text states other things of the projection than today's text:\n  {string.Join("\n  ", stated.Values.Where(e => !today.ContainsValue(e)))}\n  today: {string.Join("\n  ", today.Values.Where(e => !stated.ContainsValue(e)))}");
         return loaded;
     }
 
-    /// <summary>A KQL file replaces a projection that its module declares, named by the file: `module.projection.kql`.</summary>
+    /// <summary>The projection node, its inputs and parameters, and what each of them expects (not the wires to the operators that read them).</summary>
+    static Dictionary<string, Element> Stated(Graph g, string pid)
+    {
+        var d = new DefView(g); var ports = d.Children(pid, "port").ToList();
+        return ports.SelectMany(p => g.OutRels(p).Select(g.Rel).OfType<Rel>().Where(r => Ids.Name(r.Type) != "wire")).Concat<Element>([g.Entity(pid)!, .. ports.Select(p => g.Entity(p)!)]).ToDictionary(e => e.Key.ToString()!);
+    }
+
+    /// <summary>A let may take the name of the table it reads (Kusto binds the name inside to the table), and is never read into itself.</summary>
+    [Fact]
+    public void A_let_may_take_the_name_of_the_table_it_reads()
+    {
+        var text = "graph ingest : acme.ops;\ninput pods : k8s.PodRow;\n"
+            + "let pods = pods | where isnotnull(phase);\n"
+            + "nodes Pod on pod with (rule = \"observedPods\", description = \"observed by the Kubernetes adapter\") = pods | project pod = identity(\"podUid\", cluster, uid), cluster, namespace, name, phase, team = teamLabel, ready, serviceAccount;\n";
+        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.ops");
+        Assert.True(low.Ok, string.Join("\n", low.Diagnostics));
+    }
+
+    /// <summary>A KQL file is named after its module and projection: `module.projection.kql`.</summary>
     [Theory]
-    [InlineData("acme.svc.noSuchProjection.kql", "module acme.svc declares no projection noSuchProjection")]
+    [InlineData("acme.svc.noSuchProjection.kql", "the graph line names serviceDeps, the file name noSuchProjection")]
     [InlineData("acme.nowhere.serviceDeps.kql", "there is no module acme.nowhere")]
-    [InlineData("acme.svc.capabilityView.kql", "module acme.svc declares no projection capabilityView")]
-    public void A_KQL_file_names_the_module_and_projection_it_replaces(string file, string says)
+    public void A_KQL_file_is_named_after_its_module_and_projection(string file, string says)
     {
         var put = KqlFiles.Of(Data(Estate).Files, [new SourceFile(Path.Combine(Definitions, file), "graph serviceDeps : acme.svc;\n")], Data(Estate).Catalog);
         Assert.Contains(put.Diagnostics, d => d.IsError && d.Message.Contains(says, StringComparison.Ordinal));
+    }
+
+    /// <summary>A projection the module's text does not declare is made from its KQL text alone; a graph named after an ontology the module imports
+    /// (acme.svc imports acme.ops as ops) needs no input line.</summary>
+    [Fact]
+    public void A_new_projection_is_made_from_its_KQL_text_alone()
+    {
+        var text = "graph serviceNames : acme.svc with (description = \"The services of each namespace, by name.\", history = 2);\n"
+            + "nodes ServiceNode on service = graph(\"ops\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
+        var put = KqlFiles.Of(Data(Estate).Files, [new SourceFile(Path.Combine(Definitions, "acme.svc.serviceNames.kql"), text)], Data(Estate).Catalog);
+        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
+        var g = Load(put.Files).Graph; var d = new DefView(g); var pid = Ids.Child(Ids.Module("acme.svc"), "projection", "serviceNames");
+        Assert.Equal(("view", 2L, "The services of each namespace, by name."), (d.Text(pid, "purpose"), d.Int(pid, "retain"), d.Text(pid, "description")));
+        Assert.Equal("acme.ops", Ids.ModuleOf(d.Target(Ids.Child(pid, "port", "ops"), "expects")!));
     }
 
     /// <summary>A recording to replay, the definitions `sattle replay` reads for it (for a real capture the local space overlay or its arguments file) and their catalog.</summary>

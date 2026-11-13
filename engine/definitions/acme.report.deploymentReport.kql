@@ -1,5 +1,7 @@
-// A report on the health of the Deployments as a document: counts and one line per Deployment.
-graph deploymentReport : sattle.doc;
+graph deploymentReport : sattle.doc with (
+    description = "A report on the health of the Deployments as a document: counts and one line per Deployment.",
+    history = 4);
+input health : acme.deployhealth;
 
 let workloads = graph("health")
     | graph-match (w) where labels(w) has "Workload"
