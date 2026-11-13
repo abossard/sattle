@@ -37,11 +37,17 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public GraphKey Graph { get; } = graph;
     public OutputBuilder Out { get; } = output;
     public long LateDropped, LateRejected, SkippedEmits;
-    public long LateHorizonFactor = 3;
+    /// <summary>The late horizon: how many widths after its end a closed window stays revisable. Null is no horizon: the window stays revisable while its telemetry is retained (a recording is finite, so a replay sets none).</summary>
+    public long? LateHorizonFactor = 3;
     /// <summary>The retention of telemetry (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
     public long RetentionNs = long.MaxValue;
+    /// <summary>The late horizon of a window of this width as a time; the greatest time when there is none or the product is beyond it.</summary>
+    public long HorizonOf(long width) => LateHorizonFactor is { } n ? Clamp((Int128)width * n) : long.MaxValue;
     /// <summary>How long after its end a window of this width stays revisable.</summary>
-    public long RevisableFor(long width) => Math.Min(width * LateHorizonFactor, RetentionNs);
+    public long RevisableFor(long width) => Math.Min(HorizonOf(width), RetentionNs);
+    /// <summary>Whether a window of this width that ended at `end` can no longer be revised at this frontier.</summary>
+    public bool PastRevision(long end, long width, long frontier) => (Int128)end + RevisableFor(width) <= frontier;
+    public static long Clamp(Int128 time) => time > long.MaxValue ? long.MaxValue : (long)time;
 }
 
 public abstract class PhysOp
@@ -572,7 +578,7 @@ sealed class WindowedGroupOp : AggregatingOp
                     if (!windows.TryGetValue(ws, out cur))
                     {
                         // beyond the allowed lateness the window's state is gone: a row for it is dropped, never a new window that would replace what was emitted
-                        if (ws + width + cx.RevisableFor(width) <= frontier) { if (late == "reject") cx.LateRejected++; else cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
+                        if (cx.PastRevision(ws + width, width, frontier)) { if (late == "reject") cx.LateRejected++; else cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
                         cur = new W(NewTable(), ws + width); windows[ws] = cur; if (cur.End <= frontier) cur.Closed = true;
                     }
                     curWs = ws;
@@ -620,8 +626,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 foreach (var slot in t.Slots())
                     if (t.Cnt(slot) > 0) { WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1); t.SetEmitted(slot, true); }
             }
-            var horizon = cx.RevisableFor(width);
-            foreach (var ws in windows.Where(w => w.Value.End + horizon <= frontier).Select(w => w.Key).ToList())
+            foreach (var ws in windows.Where(w => cx.PastRevision(w.Value.End, width, frontier)).Select(w => w.Key).ToList())
             {
                 windows.Remove(ws);
             }
@@ -761,7 +766,7 @@ sealed class ThresholdOp : PhysOp
     /// <summary>`series`: the Series this operator reads through, if any. Windows older than the frontier minus its `within` leave the input as retractions; here they join the carried state instead.</summary>
     public ThresholdOp(TThreshold t, Layout inLayout, OpContext cx, TSeries? series = null) : base(t)
     {
-        this.t = t; lookBack = series?.WithinNs; horizon = (series?.PeriodNs ?? 0) * cx.LateHorizonFactor;
+        this.t = t; lookBack = series?.WithinNs; horizon = series is null ? 0 : cx.HorizonOf(series.PeriodNs);
         keys = [.. t.Keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
         value = ExprCompiler.Compile(t.Value, inLayout, cx.It, cx.Faults);
         inWs = inLayout.Index("windowStart");
@@ -785,7 +790,7 @@ sealed class ThresholdOp : PhysOp
     }
 
     /// <summary>The frontier from which no accepted window can start less than `within` after the last one of the key.</summary>
-    long DropAt(KeyState st) => st.Last == long.MinValue || lookBack is not { } within ? long.MinValue : st.Last + within + horizon;
+    long DropAt(KeyState st) => st.Last == long.MinValue || lookBack is not { } within ? long.MinValue : OpContext.Clamp((Int128)st.Last + within + horizon);
 
     string Run(KeyState st)
     {

@@ -11,9 +11,9 @@ public class ServeReplayTests
     static string Estate => EstateTests.EstateDir;
 
     [Theory]
-    [InlineData(new[] { "replay", "X" }, 1_000_000)] [InlineData(new[] { "serve", "X" }, 1_000_000)] [InlineData(new[] { "serve", "X", "--live" }, 3)]
+    [InlineData(new[] { "replay", "X" }, null)] [InlineData(new[] { "serve", "X" }, null)] [InlineData(new[] { "serve", "X", "--live" }, 3)]
     [InlineData(new[] { "serve", "X", "--late-horizon", "7" }, 7)] [InlineData(new[] { "replay", "X", "--late-horizon", "3" }, 3)]
-    public void The_late_horizon_is_the_replay_value_for_a_recorded_capture_served_or_replayed_and_3_for_a_live_source(string[] args, int expected) =>
+    public void There_is_no_late_horizon_for_a_recorded_capture_served_or_replayed_and_3_for_a_live_source(string[] args, int? expected) =>
         Assert.Equal(expected, Program.LateHorizonFor(Program.Options.Parse(args)));
 
     /// <summary>The digest `sattle replay` ends in, and the digest of a host built the way `sattle serve` builds it, for the same capture.</summary>
@@ -62,15 +62,16 @@ public class ServeReplayTests
         Assert.Equal(replayed, CaptureRuns.Gated(() => Served(dir, Repo.ClusterOf(dir))));
     }
 
-    [Fact]
-    public void A_stored_run_restarts_with_the_late_horizon_it_ran_with()
+    [Theory]
+    [InlineData(1_000_000)] [InlineData(7)] [InlineData(null)]
+    public void A_stored_run_restarts_with_the_late_horizon_it_ran_with(int? horizon)
     {
         var store = Path.Combine(Path.GetTempPath(), "sattle-horizon-" + Guid.NewGuid().ToString("N") + ".db");
         try
         {
             string digest;
             using (var g = new SqliteGraphStore(store))
-            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000, SealEvery = 50 }))
+            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Cluster = "synth", LateHorizonWindows = horizon, SealEvery = 50 }))
             {
                 new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 100, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
                 h.Finish(); digest = h.StateDigest();
@@ -78,6 +79,7 @@ public class ServeReplayTests
             using var g2 = new SqliteGraphStore(store);
             using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Cluster = "synth", VerifyJournal = true });
             Assert.True(again.Restored);
+            Assert.Equal(horizon, again.LateHorizonWindows);
             Assert.Equal(digest, again.StateDigest());
         }
         finally { foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(store) + "*")) File.Delete(f); }

@@ -377,7 +377,7 @@ public static class Denotation
         {
             var afterLeft = Fold(carried.GetValueOrDefault(key), previous, left[key]);
             var isLive = live.Contains(key);
-            if (afterLeft is not null && (isLive || frontier is null || frontier < afterLeft.LastStart + keep)) next[key] = afterLeft;
+            if (afterLeft is not null && (isLive || frontier is null || frontier - afterLeft.LastStart < keep)) next[key] = afterLeft;
             if (!isLive) continue;
             var first = live[key].First();
             rows.Add((Shape(t, t.Keys.Select(x => (x.Name, Expressions.Eval(x.Value, current.Reader(first)))).Append((t.Target, Value.Text(Fold(afterLeft, current, live[key])!.State)))

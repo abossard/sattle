@@ -12,8 +12,8 @@ public sealed record EngineOptions
     /// <summary>The store of the committed patches. The default keeps the head and a tail of commits, and reads the head from the engine's own graphs (`HeadOnlyGraphStore`); `InMemoryGraphStore` keeps the full history (the test double of the conformance suite).</summary>
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     public Func<ITelemetryStore> TelemetryFactory { get; init; } = () => new InMemoryTelemetryStore();
-    /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6).</summary>
-    public int LateHorizonWindows { get; init; } = 3;
+    /// <summary>Closed windows stay revisable for this many window widths (allowed lateness, Def. 7.6). Null is no late horizon: a closed window stays revisable while its telemetry is retained.</summary>
+    public int? LateHorizonWindows { get; init; } = 3;
     /// <summary>The declared retention of every telemetry series of the space (Def. 7.13): a closed window is kept while its end is after the logical frontier minus this age. Until the definitions declare it per series it is one age for the space. A window is revisable for the smaller of this and the late horizon.</summary>
     public long TelemetryRetentionNs { get; init; } = 48L * 3_600_000_000_000;
     /// <summary>When set, only these graphs and the graphs they derive from are activated (a staged evaluation of one view needs no other graph).</summary>
@@ -172,7 +172,7 @@ public static class PlanCompiler
             if (chain.Count > 1) chains.Add(chain);
         }
         var digest = Digests.Of("[\"" + EngineVersion + "\",\"" + catalog.Modules.GetValueOrDefault(tp.Module)?.Digest + "\",\"" + tp.Id + "\"]");
-        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group by open windows plus " + cx.LateHorizonFactor + " closed windows; Match, Join-free, holds no state beyond the input graph.";
+        var bound = "Series and Rollup state is bounded by look-back / period windows per key; Group by open windows plus " + (cx.LateHorizonFactor is { } horizon ? horizon + " closed windows" : "the closed windows that are retained") + "; Match, Join-free, holds no state beyond the input graph.";
         return new CompiledProjection { Typed = tp, Ops = ops, Info = new PlanInfo(tp.Name, digest, strategies, chains, bound) };
     }
 }

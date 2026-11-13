@@ -14,7 +14,12 @@ public sealed record ProgressInput(string Source, long Until) : Input;
 public sealed record LossInput(long Time) : Input;
 
 /// <summary>`TelemetryRetentionNs`: the declared retention of the series of the space (Def. 7.13).</summary>
-public sealed record Settings(string Tenant = "lab", int LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000);
+/// <summary>`LateHorizonWindows` null: no late horizon.</summary>
+public sealed record Settings(string Tenant = "lab", int? LateHorizonWindows = 3, long TelemetryRetentionNs = 48L * 3_600_000_000_000)
+{
+    /// <summary>The late horizon of a window of this width as a time, the greatest time when there is none.</summary>
+    public System.Int128 Horizon(long width) => LateHorizonWindows is { } n ? (System.Int128)width * n : long.MaxValue;
+}
 
 /// <summary>Every graph of a space after a prefix of the input log.</summary>
 public sealed record SpaceFacts(ImmutableSortedDictionary<string, GraphFacts> Graphs, long? Frontier);
@@ -164,7 +169,7 @@ public static class ReferenceEvaluator
                         var series = Upstream<TSeries>(plan, threshold);
                         var within = series?.WithinNs;
                         var (result, carried) = Denotation.Threshold(threshold, rows with { Rows = p.SeenInput.GetValueOrDefault(slot, ZSet.Empty) }, rows,
-                            within is { } w && frontier is { } f ? f - w : null, within, frontier, (within ?? 0) + (series?.PeriodNs ?? 0) * settings.LateHorizonWindows,
+                            within is { } w && frontier is { } f ? f - w : null, within, frontier, (long)System.Int128.Min((within ?? 0) + (series is null ? 0 : settings.Horizon(series.PeriodNs)), long.MaxValue),
                             p.Carried.GetValueOrDefault(slot, ImmutableSortedDictionary.Create<string, Denotation.Carried>(StringComparer.Ordinal)));
                         p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Carried = p.Carried.SetItem(slot, carried) };
                         outs = outs.SetItem(op.Name, result);
@@ -210,7 +215,7 @@ public static class ReferenceEvaluator
         if (frontierAtPosition is not { } frontier) return true;
         var end = windowStart + w.WidthNs;
         var closed = end <= frontier;
-        var beyondHorizon = end + Math.Min(w.WidthNs * s.LateHorizonWindows, s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the late horizon and the retention (Def. 7.13)
+        var beyondHorizon = end + System.Int128.Min(s.Horizon(w.WidthNs), s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the late horizon and the retention (Def. 7.13)
         return !beyondHorizon && (!closed || w.Late == "revise");
     }
 }

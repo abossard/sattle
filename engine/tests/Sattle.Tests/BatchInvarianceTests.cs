@@ -145,6 +145,49 @@ public class BatchInvarianceTests
         Assert.True(e.Master.Cx.LateDropped >= lateRows);
     }
 
+    const string Wide = """
+        module d @ 1.0.0;
+        entity Day { k: Text; hits?: Integer; }
+        identity day for Day version "1" { k: Text by exact; }
+        rows R { k: Text; t: Instant; }
+        projection ingest ingestion output d {
+          in a: rows R;
+          rule observed readonly "test" {
+            let w = a |> window on t width WIDTH late revise;
+            let p = w |> group by { k: k, windowStart: windowStart } aggregate { hits: count() };
+            emit entity Day from p identity day(k: k) set { k: k, hits: hits };
+          }
+        }
+        """;
+    const string WideSpace = """
+        module ds @ 1.0.0;
+        import d @ 1.0.0 sha256:… as d;
+        space s {
+          source a adapter "sattle.authoring" rows d.R;
+          master graph master = d.ingest(a: a);
+        }
+        """;
+
+    /// <summary>Code review 2, defect 17: a window of any width takes its row and closes, with no late horizon (a replay) and with one of 1,000,000 windows. Before, the width times 1,000,000 passed the greatest time from 2 h 33 min on, so every row counted as too late and was dropped.</summary>
+    [Theory]
+    [InlineData("1h", null)] [InlineData("3h", null)] [InlineData("168h", null)]
+    [InlineData("1h", 1_000_000)] [InlineData("2h", 1_000_000)] [InlineData("3h", 1_000_000)] [InlineData("24h", 1_000_000)] [InlineData("168h", 1_000_000)]
+    [InlineData("168h", int.MaxValue)]
+    public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
+    {
+        var cat = new Sattle.Language.Catalog();
+        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.sattle", Wide.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.sattle", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
+        using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
+        var w = Sattle.Language.Lexer.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
+        e.Advance(start + 1);                                    // a replay advances before its first row
+        var rw = new RowWriter(e.RowLayout("a"), e.Interner);
+        rw.Begin(); rw.Text("k", "a"); rw.Instant("t", start + 2);
+        e.Ingest("a", rw.Build()!, 1);
+        e.Advance(start + w + 1);                                // the window [start, start + w) closes
+        Assert.Equal(0, e.Master.Cx.LateDropped);
+        Assert.Single(e.Master.State.Entities);
+    }
+
     /// <summary>The other side of B2: a late row inside the horizon revises the window (the horizon is the only thing that decides).</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)]

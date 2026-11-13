@@ -25,8 +25,11 @@ public sealed record HostOptions
 {
     public string Tenant { get; init; } = "lab";
     public string Cluster { get; init; } = "lab";
-    /// <summary>Closed windows a Group keeps revisable behind the frontier (the engine's late horizon). 3 for a live source, which must bound its state; a recorded input is finite and is served with the value `replay` uses (1,000,000), so serving a capture gives the replay result. It is part of what a run computes, so it is stored in the journal header and in every seal.</summary>
-    public int LateHorizonWindows { get; init; } = 3;
+    /// <summary>Closed windows a Group keeps revisable behind the frontier (the engine's late horizon). 3 for a live source, which must bound its state; a recorded input is finite and is served as `replay` runs it (no late horizon), so serving a capture gives the replay result. Null is no late horizon. It is part of what a run computes, so it is stored in the journal header and in every seal.</summary>
+    public int? LateHorizonWindows { get; init; } = 3;
+
+    /// <summary>The late horizon a journal header or a seal recorded: the number, none where it recorded none, 3 where the record is older than the field.</summary>
+    internal static int? StoredLateHorizon(JsonNode record) => record.AsObject().TryGetPropertyValue("lateHorizon", out var stored) ? stored?.GetValue<int>() : 3;
     public string? SpaceName { get; init; }
     public long InputRowCap { get; init; } = 40_000_000;
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
@@ -91,6 +94,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public TypedSpace Space => Catalog.Spaces[spaceId];
     public IReadOnlyList<ISourceAdapter> Adapters { get; private set; } = [];
     public string Mode { get => options.Mode; set => options.Mode = value; }
+    /// <summary>The late horizon the space runs with (a restart takes it from the store).</summary>
+    public int? LateHorizonWindows => options.LateHorizonWindows;
     public bool Done { get; set; }
     public long InputRows => inputRows;
     public long CatalogRevision => catalogHistory.Count;
@@ -161,7 +166,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var entries = j.JournalRead().ToList();
         var h = JsonNode.Parse(entries[0])!;
         var hfiles = h["files"]!.AsArray().Select(f => new SourceFile(f!["p"]!.GetValue<string>(), f["t"]!.GetValue<string>())).ToList();
-        var restored = new SpaceHost(hfiles, options with { Durable = store, Resume = true, Tenant = h["tenant"]!.GetValue<string>(), LateHorizonWindows = h["lateHorizon"]?.GetValue<int>() ?? 3, Cluster = h["cluster"]!.GetValue<string>(), SpaceName = h["space"]!.GetValue<string>(), Mode = h["mode"]!.GetValue<string>() });
+        var restored = new SpaceHost(hfiles, options with { Durable = store, Resume = true, Tenant = h["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(h), Cluster = h["cluster"]!.GetValue<string>(), SpaceName = h["space"]!.GetValue<string>(), Mode = h["mode"]!.GetValue<string>() });
         restored.journalPos = entries.Count; restored.replayPos = 1; restored.inputsInJournal = false;
         if (options.VerifyJournal && j.SealLatest() is { } check) { restored.verifyAt = check.Position; restored.verifyDigest = JsonNode.Parse(check.Meta)!["digest"]!.GetValue<string>(); }
         restored.Recover(entries.Skip(1)); restored.Restored = true; restored.TailReplayed = entries.Count - 1; restored.SealRefusal = refusal;
@@ -325,7 +330,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (format != SealFormat) { rejected = $"seal format {format}, this build reads seal format {SealFormat}"; return null; }
             if (m["build"]!.GetValue<string>() != BuildId || m["kernel"]!.GetValue<string>() != Kernel.CompiledDigest) { rejected = "written by another build"; return null; }
             var files = m["sources"]!.AsArray().Select(f => new SourceFile(f!["p"]!.GetValue<string>(), f["t"]!.GetValue<string>())).ToList();
-            host = new SpaceHost(files, options with { Durable = store, Resume = true, Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = m["lateHorizon"]?.GetValue<int>() ?? 3, Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>(), Mode = m["mode"]!.GetValue<string>(), StartGeneration = m["generation"]!.GetValue<int>() });
+            host = new SpaceHost(files, options with { Durable = store, Resume = true, Tenant = m["tenant"]!.GetValue<string>(), LateHorizonWindows = HostOptions.StoredLateHorizon(m), Cluster = m["cluster"]!.GetValue<string>(), SpaceName = m["space"]!.GetValue<string>(), Mode = m["mode"]!.GetValue<string>(), StartGeneration = m["generation"]!.GetValue<int>() });
             if (host.Catalog.Graph.Digest() != m["catalogDigest"]!.GetValue<string>()) { rejected = "the definitions give another catalog than the one sealed"; host.Dispose(); return null; }
             var sw = System.Diagnostics.Stopwatch.StartNew();
             if (m["live"]?.GetValue<string>() is { } liveJson) host.StartLiveCore(ParseReplayOptions(liveJson), liveJson);

@@ -332,8 +332,8 @@ public static class Program
         Console.WriteLine("state digest " + e.StateDigest());
     }
 
-    /// <summary>The late horizon of a run: `--late-horizon` when given, 3 for a live source (it must bound its state), 1,000,000 for a recorded capture, whether it is replayed or served: serving a capture is a replay.</summary>
-    public static int LateHorizonFor(Options o) => int.TryParse(o.Get("late-horizon"), out var lh) ? lh : o.Flags.Contains("live") ? 3 : 1_000_000;
+    /// <summary>The late horizon of a run: `--late-horizon` when given, 3 for a live source (it must bound its state), none for a recorded capture, whether it is replayed or served: serving a capture is a replay.</summary>
+    public static int? LateHorizonFor(Options o) => int.TryParse(o.Get("late-horizon"), out var lh) ? lh : o.Flags.Contains("live") ? 3 : null;
 
     // ---- serve ----
 
