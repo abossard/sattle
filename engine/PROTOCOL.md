@@ -450,6 +450,20 @@ Additive for a client: no endpoint changed. New in the definition language, the 
 ## Version 3.26: seal format 4
 - **Seal format 4.** The tables that hold the results of a projection and the state of its groups have one index on the whole key (before, some were found through the rows of their first key column). A seal therefore holds other objects than before and records `format` 4. A seal of format 3 is not used: the start reports "seal format 3, this build reads seal format 4" and replays the journal. Nothing else on the wire changes, and the state digests are the same.
 
+## Version 3.19: projections in their own definition files (KQL)
+A projection may be written in a file of its own, `module.projection.kql`, beside the module texts. The host reads it with a projection source (`serve --projections kql`); its text is the only text of that projection. Additive for a client of 3.18: module names mean what they meant.
+- **Definition files.** Wherever a module text is named, a projection file may be named instead by its file name: `POST /check` (`module`), `GET /definitions/{name}`, `POST /definitions/{name}`. A name that is no plain file name is refused (`BadName`, 400). A projection file the source does not read, or one of a module the space does not have, is an error of the load (`UnreadFile`).
+- **Printed modules.** `GET /definitions/{module}`, a draft's module text and a release's text leave out the projections that come from a projection file: a module text never holds a projection twice.
+- **Diagnostics** have `file`: the module name for a module text, the file name for a projection file. `line` and `column` are in that file.
+- **Drafts.**
+  - `PUT /drafts/{id}/text/{file}` with `{ "text", "expectedRevision" }` sets the text of a projection file in the draft (projection files only; a module of a draft changes by patches). It returns what `POST /drafts/{id}/patches` returns and publishes the `draft` event, with `file`. A text that does not lower is kept with no change of the draft's facts; its errors are in the check result.
+  - `GET /drafts/{id}/text/{name}` returns a projection file's draft text or a module text.
+  - The check result's `modules` lists the projection files too (`text`, `changed`). Check, preview and commit include the changed files.
+  - A structural patch, a skeleton or a refactoring that touches a projection from a projection file is refused (`KqlProjection`, with `file`): edit the file's text.
+  - A commit whose projection file changed at the head after the draft first changed it gives `StaleRevision` with `file`.
+- **Stores.** A store whose space holds projection files, opened without a projection source, is refused before restore, naming the files.
+- **Not yet.** A projection file cannot be removed once the space holds it (until the editors).
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.
