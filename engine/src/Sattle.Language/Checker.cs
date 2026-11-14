@@ -1287,6 +1287,20 @@ public sealed class SpaceChecker(Graph defs)
         var masterName = graphs.FirstOrDefault(g => g.Master)?.Name;
         bool Reaches(string n, HashSet<string> v) { if (n == masterName) return true; if (!v.Add(n)) return false; return edges.GetValueOrDefault(n)?.Any(x => Reaches(x, v)) ?? false; }
         foreach (var g in graphs.Where(g => !g.Master && !Reaches(g.Name, []))) Err("S3", spaceId, $"graph {g.Name} is not reachable from the master");
+        // S4: a pattern node of a type the matched graph never holds is a reference (the end of a relationship, by its id): it has no properties to read
+        foreach (var g in graphs)
+        {
+            var tp = g.Instance ?? projections[g.ProjectionId];
+            foreach (var m in tp.Ops.OfType<TMatch>())
+            {
+                if (!g.Bindings.TryGetValue(m.GraphPort, out var from) || graphs.FirstOrDefault(x => x.Name == from) is not { } up) continue;
+                var held = (up.Instance ?? projections[up.ProjectionId]).EntityTypes;
+                var view = OntologyView.Build(defs, ProjectionChecker.Closure(defs, tp.Port(m.GraphPort).ExpectsModule!));
+                foreach (var v in m.References(held, view.IsSubtype).Order(StringComparer.Ordinal))
+                    if (m.Reads.FirstOrDefault(r => r.Var == v) is { } read)
+                        Err("S4", graphIds.First(x => (d.Text(x, "name") ?? Ids.Name(x)) == g.Name), $"graph {g.Name}: {tp.Name} reads {Ids.Name(read.PropId)} of {v}, and graph {up.Name} holds no {Ids.Name(m.Nodes.First(n => n.Var == v).TypeId)}: there {v} names the end of a relationship and has no properties. Read the property in a graph that holds the entity");
+            }
+        }
         return (diags.Any(x => x.Severity == "error") ? null : new TypedSpace { Id = spaceId, Name = d.Text(spaceId, "name") ?? Ids.Name(spaceId), Sources = sources, Graphs = graphs }, diags);
     }
 }

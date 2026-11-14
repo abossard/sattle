@@ -80,7 +80,12 @@ public sealed record TNode(string Var, string TypeId);
 public sealed record TEdge(string? Var, string TypeId, string From, string To);
 public sealed record TRead(string Var, string PropId, string Col);
 public sealed record TMatch(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<TNode> Nodes, IReadOnlyList<TEdge> Edges, IReadOnlyList<TRead> Reads, string GraphPort)
-    : TOp(Name, Id, "Match", Inputs, Out);
+    : TOp(Name, Id, "Match", Inputs, Out)
+{
+    /// <summary>The nodes that are references when the pattern is matched in a graph that holds the entity types `held`: an end of an edge whose type the graph never holds, with any of its subtypes. Such a node names the end of the relationship by its id and has no properties: its entity is in another graph, or in none.</summary>
+    public IReadOnlySet<string> References(IReadOnlySet<string> held, Func<string, string, bool> isSubtype) =>
+        Nodes.Where(n => Edges.Any(e => e.From == n.Var || e.To == n.Var) && !held.Any(t => isSubtype(t, n.TypeId))).Select(n => n.Var).ToHashSet(StringComparer.Ordinal);
+}
 public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string Conflict) : TOp(Name, Id, "Union", Inputs, Out);
 public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys, TExpr? Residual) : TOp(Name, Id, "Join", Inputs, Out);
 public sealed record TTraverse(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, string RelTypeId, string Direction, long Min, long Max, string Start, string Target, IReadOnlyList<TRead> Reads) : TOp(Name, Id, "Traverse", Inputs, Out);
@@ -135,6 +140,9 @@ public sealed class TypedProjection
     public required string OutputModule { get; init; }
     public required IReadOnlyList<TPort> Ports { get; init; }
     public required IReadOnlyList<TOp> Ops { get; init; } // topological order
+    /// <summary>The entity types a graph produced by this projection holds: the types its create sinks emit.</summary>
+    public IReadOnlySet<string> EntityTypes => entityTypes ??= Ops.OfType<TEmitEntity>().Where(e => !e.Update).Select(e => e.TypeId).ToHashSet(StringComparer.Ordinal);
+    IReadOnlySet<string>? entityTypes;
     public required IReadOnlyList<TRule> Rules { get; init; }
     /// <summary>The lift statements of the projection and the operators each was lowered to (they are in Ops like any other).</summary>
     public IReadOnlyList<TLiftInfo> Lifts { get; init; } = [];

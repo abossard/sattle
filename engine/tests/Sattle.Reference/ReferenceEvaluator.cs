@@ -131,7 +131,8 @@ public static class ReferenceEvaluator
         var views = plan.Ports.Where(x => x.Kind == "graph").ToDictionary(x => x.Name, x => catalog.OntologyOf(x.ExpectsModule!), StringComparer.Ordinal);
         // as in the engine: an aggregate read only by sinks carries the pair of a mean or a last
         var withPairs = plan.Ops.Where(op => plan.Ops.Where(o => o.Inputs.Values.Any(s => !s.IsPort && s.Name == op.Name)).ToList() is { Count: > 0 } readers && readers.All(o => o is TEmitEntity or TEmitRel)).Select(op => op.Name).ToHashSet(StringComparer.Ordinal);
-        var inputs = new PlanInputs(rowPorts, graphPorts, (port, type, of) => views[port].IsSubtype(type, of), frontier, withPairs);
+        var held = plan.Ports.Where(x => x.Kind == "graph").ToDictionary(x => x.Name, x => PlanOf(catalog, space.Graphs.First(g => g.Name == graph.Bindings[x.Name])).EntityTypes, StringComparer.Ordinal);
+        var inputs = new PlanInputs(rowPorts, graphPorts, held, (port, type, of) => views[port].IsSubtype(type, of), frontier, withPairs);
 
         var outs = ImmutableDictionary.Create<string, Relation>(StringComparer.Ordinal);
         foreach (var op in plan.Ops)

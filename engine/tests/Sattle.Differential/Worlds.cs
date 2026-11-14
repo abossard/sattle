@@ -344,6 +344,52 @@ public static class Worlds
         }
         """)], [new("items", (r, _) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3))), f => ((TextValue)f["k"]).S), BagEdges]) { Witnesses = ["Talks", "Needs"] };
 
+    /// <summary>References: the graph `groups` holds the groups and which item belongs to which, and no item; the items are entities of the master. A pattern over `groups` binds the item end of a `Belongs` by its id, and a lift maps the master's edges through those `Belongs` (the lowered match of its `via` binds the same way).</summary>
+    public static readonly World References = new("ends of relationships that are entities of another graph", "Match and Lift over references", [new SourceFile("w.sattle", """
+        module w @ 1.0.0;
+        entity Item { k: Text label; g: Text; }
+        entity Group { name: Text label; }
+        relationship Edge (Item) -> (Item) kind communication;
+        relationship Belongs (Item) -> (Group) kind composition;
+        relationship Talks (Group) -> (Group) kind communication;
+        relationship Seen (Item) -> (Group);
+        identity item for Item version "1" { k: Text by exact; }
+        identity group for Group version "1" { name: Text by exact; }
+        rows ItemRow { k: Text; g: Text; }
+        rows EdgeRow { src: Text; dst: Text; }
+        projection ingest ingestion output w {
+          in items: rows ItemRow;
+          in edges: rows EdgeRow;
+          rule observed readonly "differential" {
+            emit entity Item from items identity item(k: k) set { k: k, g: g };
+            emit relationship Edge from edges key edge: item(k: src) -> item(k: dst);
+          }
+        }
+        projection membership view forward output w {
+          in master: graph w;
+          let all = match master (i: Item) |> select { i: i, g: i.g };
+          let named = all |> select { g: g } |> distinct;
+          emit entity Group from named identity group(name: g) set { name: g };
+          emit relationship Belongs from all key belongs: i -> group(name: g);
+        }
+        projection talk view forward output w {
+          in master: graph w;
+          in groups: graph w;
+          let all = match groups (g: Group);
+          emit entity Group from all identity g set { name: g.name };
+          lift talks as Talks from master Edge via groups Belongs images each;
+          let seen = match groups (i: Item)-[:Belongs]->(g: Group) |> where g.name != "g0";
+          emit relationship Seen from seen key seen: i -> g;
+        }
+        space s {
+          source items adapter "sattle.authoring" rows ItemRow;
+          source edges adapter "sattle.authoring" rows EdgeRow;
+          master graph master = ingest(items: items, edges: edges);
+          graph groups = membership(master: master);
+          graph view = talk(master: master, groups: groups);
+        }
+        """)], [new("items", (r, _) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3))), f => ((TextValue)f["k"]).S), BagEdges]) { Witnesses = ["Talks", "Seen"] };
+
     public static readonly World TwoKeyRules = new("two key rules", "EmitRelationship, Def. 6.4", [new SourceFile("w.sattle", """
         module w @ 1.0.0;
         entity Item { k?: Text; }
@@ -427,6 +473,7 @@ public static class Worlds
         new World("link", "Link, EmitRelationship", [new SourceFile("w.sattle", Linked)], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
         LinkedView,
+        References,
         ShareRule,
         MembersLeave,
         View("match nodes", "Match, EmitEntity", """

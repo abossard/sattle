@@ -83,7 +83,8 @@ public static class PlanCompiler
         return null;
     }
 
-    public static CompiledProjection Compile(TypedProjection tp, Catalog catalog, OpContext cx)
+    /// <summary>`held`: per graph port, the entity types the graph bound to it holds (`TypedProjection.EntityTypes` of the projection that produces it).</summary>
+    public static CompiledProjection Compile(TypedProjection tp, Catalog catalog, OpContext cx, IReadOnlyDictionary<string, IReadOnlySet<string>> held)
     {
         var ops = new List<PhysOp>(); var byName = new Dictionary<string, PhysOp>();
         var strategies = new List<string>();
@@ -123,7 +124,7 @@ public static class PlanCompiler
                 case TMatch m:
                     {
                         var view = catalog.OntologyOf(tp.Port(m.GraphPort).ExpectsModule!);
-                        var mo = new MatchOp(m, view); mo.Bind(cx.It); op = mo;
+                        var mo = new MatchOp(m, view, m.References(held[m.GraphPort], view.IsSubtype)); mo.Bind(cx.It); op = mo;
                         strategies.Add($"{m.Name}: Match, bilinear delta against the input graph (new before the seed component, old after it)");
                         break;
                     }
@@ -299,13 +300,14 @@ public sealed class Engine : IDisposable, IEngineInput
         {
             var next = remaining.First(g => g.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).All(kv => done.Contains(kv.Value)));
             remaining.Remove(next); done.Add(next.Name);
-            var tp = next.Instance ?? catalog.Projections[next.ProjectionId];
+            TypedProjection ProjectionOf(TGraph g) => g.Instance ?? catalog.Projections[g.ProjectionId];
+            var tp = ProjectionOf(next);
             var key = new GraphKey(this.options.Tenant, next.Name);
             var outb = new OutputBuilder(Interner);
             var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
                 throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
-            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx), IsMaster = next.Master, Cx = cx, Out = outb };
+            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Cx = cx, Out = outb };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
             gr.Head = store.Head(key).Head;

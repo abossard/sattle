@@ -9,6 +9,7 @@ namespace Sattle.Reference;
 public sealed record PlanInputs(
     IReadOnlyDictionary<string, Relation> Rows,
     IReadOnlyDictionary<string, GraphFacts> Graphs,
+    IReadOnlyDictionary<string, IReadOnlySet<string>> Held,   // per graph port, the entity types the graph bound to it holds
     Func<string, string, string, bool> IsSubtype,   // (graph port, type, of)
     long? Frontier,
     IReadOnlySet<string>? WithPairs = null);        // aggregates read only by sinks: they carry the pair of a mean or a last (Law 7.5 item 3 (i))
@@ -18,7 +19,7 @@ public static class Denotation
 {
     public static Relation Of(TOp op, Func<string, Relation> input, PlanInputs p) => op switch
     {
-        TMatch m => Match(m, p.Graphs[m.GraphPort], (t, of) => p.IsSubtype(m.GraphPort, t, of)),
+        TMatch m => Match(m, p.Graphs[m.GraphPort], (t, of) => p.IsSubtype(m.GraphPort, t, of), p.Held[m.GraphPort]),
         TTraverse t => Traverse(t, input("in"), p.Graphs[t.GraphPort], (ty, of) => p.IsSubtype(t.GraphPort, ty, of)),
         TValues v => new Relation(Names(v), ZSet.Of(v.Rows.Select(r => (r.ToImmutableArray(), 1L)))),
         TFilter f => Filter(f, input("in")),
@@ -46,9 +47,10 @@ public static class Denotation
 
     // ---- graph patterns ----
 
-    /// <summary>The bindings of the pattern over the facts of the graph, homomorphism semantics. An edge binds only when both endpoint entities are in the graph and fit their node types.</summary>
-    static Relation Match(TMatch m, GraphFacts g, Func<string, string, bool> sub)
+    /// <summary>The bindings of the pattern over the facts of the graph, homomorphism semantics. An edge binds only when both endpoint entities are in the graph and fit their node types; a node of a type the graph never holds is a reference and binds the end's id without an entity.</summary>
+    static Relation Match(TMatch m, GraphFacts g, Func<string, string, bool> sub, IReadOnlySet<string> held)
     {
+        var references = m.References(held, sub);
         IEnumerable<ImmutableDictionary<string, string>> Extend(IEnumerable<ImmutableDictionary<string, string>> partial, TEdge e, int index) =>
             from b in partial
             from r in g.Rels.Values
@@ -62,7 +64,7 @@ public static class Denotation
             (acc, x) => Extend(acc, x.e, x.i));
         foreach (var n in m.Nodes.Where(n => !m.Edges.Any(e => e.From == n.Var || e.To == n.Var)))
             bindings = from b in bindings from e in g.Entities.Values select b.SetItem(n.Var, e.Id);
-        bindings = bindings.Where(b => m.Nodes.All(n => g.Entities.TryGetValue(b[n.Var], out var e) && sub(e.Type, n.TypeId)));
+        bindings = bindings.Where(b => m.Nodes.All(n => references.Contains(n.Var) || g.Entities.TryGetValue(b[n.Var], out var e) && sub(e.Type, n.TypeId)));
 
         var rows = bindings.Select(b =>
         {

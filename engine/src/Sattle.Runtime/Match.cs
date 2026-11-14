@@ -61,9 +61,13 @@ sealed class MatchOp : PhysOp
     readonly int[] varCol;                // out column per component (entity or rel handle), -1 if the component has no output column
     readonly (int Comp, string PropId, int OutCol, Ty Ty)[] reads;
 
-    public MatchOp(TMatch t, OntologyView view) : base(t)
+    /// <summary>Per node: a reference. It names the end of a matched edge by its id and has no entity in this graph, so it binds without one and never seeds a match.</summary>
+    readonly bool[] reference;
+
+    public MatchOp(TMatch t, OntologyView view, IReadOnlySet<string> references) : base(t)
     {
         this.t = t; this.view = view;
+        reference = [.. t.Nodes.Select(n => references.Contains(n.Var))];
         nodes = [.. t.Nodes]; edges = [.. t.Edges]; nodeVars = [.. nodes.Select(n => n.Var)];
         nodeCount = nodes.Length; compCount = nodes.Length + edges.Length;
         order = new int[compCount][];
@@ -121,6 +125,7 @@ sealed class MatchOp : PhysOp
         for (var seed = 0; seed < compCount; seed++)
         {
             var isNode = seed < nodeCount;
+            if (isNode && reference[seed]) continue;
             foreach (var edit in patch.Edits)
             {
                 if (isNode ? edit.Key.Kind != 'e' : edit.Key.Kind != 'r') continue;
@@ -156,7 +161,7 @@ sealed class MatchOp : PhysOp
                     if (edges[i].From == v) id = r.Source; else if (edges[i].To == v) id = r.Target;
                 }
             if (id is null) return;
-            if (view.Entity(id) is { } e && Fits(comp, e)) { bound[comp] = e; Extend(step + 1, seed, sign, bound, nv, ov, bb); bound[comp] = null; }
+            if ((reference[comp] ? new Entity(id, nodes[comp].TypeId, Props.Empty) : view.Entity(id)) is { } e && Fits(comp, e)) { bound[comp] = e; Extend(step + 1, seed, sign, bound, nv, ov, bb); bound[comp] = null; }
             return;
         }
         var edge = edges[comp - nodeCount];

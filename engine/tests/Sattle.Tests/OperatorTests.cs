@@ -215,6 +215,87 @@ public class OperatorTests
         Assert.Equal(3, Worst());
     }
 
+    /// <summary>A graph that holds only relationships: its projection pairs items with tags of the master and creates no entity, so both ends of every relationship are entities of another graph.</summary>
+    static Catalog PairsWorld(string topBody, out LoadResult res)
+    {
+        var v1 = View("""
+            let tags = match master (t: base.Tag);
+            let items = match master (i: base.Item) |> select { x: i, g: i.group };
+            let j = join items, tags on g == t.key;
+            emit relationship Paired from j key paired: x -> t;
+            """, Paired);
+        v1 = v1[..v1.IndexOf("space s {", StringComparison.Ordinal)];
+        var v2 = $$"""
+            module t.top @ 1.0.0;
+            import t.base @ 1.0.0 sha256:… as base;
+            import t.view @ 1.0.0 sha256:… as v;
+            entity Top { n: Integer; }
+            identity top for Top version "1" { name: Text by exact; }
+            relationship Seen (base.Item) -> (base.Tag);
+            projection top view forward output t.top {
+              in rolled: graph v;
+              {{topBody}}
+            }
+            """;
+        const string sp = """
+            module t.space @ 1.0.0;
+            import t.base @ 1.0.0 sha256:… as base;
+            import t.view @ 1.0.0 sha256:… as v;
+            import t.top @ 1.0.0 sha256:… as t2;
+            space s {
+              source items adapter "sattle.authoring" rows base.ItemRow;
+              source tags adapter "sattle.authoring" rows base.TagRow;
+              source extras adapter "sattle.authoring" rows base.ExtraRow;
+              master graph master = base.ingest(items: items, tags: tags, extras: extras);
+              graph rolled = v.roll(master: master);
+              graph top = t2.top(rolled: rolled);
+            }
+            """;
+        var cat = new Catalog();
+        res = cat.Load([new SourceFile("t.base.sattle", Base), new SourceFile("t.view.sattle", v1), new SourceFile("t.top.sattle", v2), new SourceFile("t.space.sattle", sp)], updatePins: true);
+        return cat;
+    }
+
+    /// <summary>A pattern node of a type its graph never holds is a reference: it binds the end of a matched relationship by its id, without an entity. Here the matched graph holds relationships between items and tags of the master and no entity at all; the pattern over it gives one row per relationship, the ids are the master's, and the rows follow the relationships as they come and go. Before, such a pattern gave no row.</summary>
+    [Fact]
+    public void A_pattern_binds_the_ends_of_a_relationship_whose_entities_are_in_another_graph()
+    {
+        var cat = PairsWorld("""
+            let pairs = match rolled (i: base.Item)-[p: v.Paired]->(t: base.Tag);
+            let g = pairs |> group by { k: "all" } aggregate { n: count() };
+            emit entity Top from g identity top(name: k) set { n: n };
+            emit relationship Seen from pairs key seen: i -> t;
+            """, out var res);
+        Assert.Empty(res.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()));
+        using var e = new Engine(cat, cat.Spaces.Keys.Single());
+        Tags(e, 1, ("g1", "L", 1));
+        Items(e, 2, ("a1", "g1", 1, null, 1), ("a2", "g1", 1, null, 1), ("b1", "g2", 1, null, 1));
+        Assert.Empty(e.Graph("rolled").State.Entities);
+        long Count() => e.Graph("top").State.Entities.SingleOrDefault() is { } top ? (long)((IntegerValue)top.Props.Get("d:t.top/prop:n")!).N : 0;
+        string Seen() => Count() + ": " + string.Join(" ", e.Graph("top").State.Rels.Where(r => Ids.Name(r.Type) == "Seen").Select(r => e.Graph("master").State.Entity(r.Source)!.Props.Text("d:t.base/prop:key") + ">" + e.Graph("master").State.Entity(r.Target)!.Props.Text("d:t.base/prop:key")).Order());
+        Assert.Equal("2: a1>g1 a2>g1", Seen());
+        Items(e, 3, ("a1", "g1", 1, null, -1));                                    // an item goes: its relationship goes, and its row with it
+        Assert.Equal("1: a2>g1", Seen());
+        Tags(e, 4, ("g2", "M", 1));                                                // a tag comes: b1 is paired
+        Assert.Equal("2: a2>g1 b1>g2", Seen());
+        Tags(e, 5, ("g1", "L", -1), ("g2", "M", -1));
+        Assert.Equal("0: ", Seen());
+    }
+
+    /// <summary>A reference has no properties: reading one is refused when the space is checked, with the graph and the type in the message.</summary>
+    [Fact]
+    public void A_property_read_of_a_reference_is_refused_by_the_space_check()
+    {
+        PairsWorld("""
+            let pairs = match rolled (i: base.Item)-[p: v.Paired]->(t: base.Tag) |> select { g: i.group };
+            let g = pairs |> group by { k: g } aggregate { n: count() };
+            emit entity Top from g identity top(name: k) set { n: n };
+            """, out var res);
+        var s4 = Assert.Single(res.Diagnostics, d => d.IsError);
+        Assert.Equal("S4", s4.Code);
+        Assert.Contains("graph rolled holds no Item", s4.Message);
+    }
+
     const string RowsModule = """
         module t.rows @ 1.0.0;
         entity Stat { name: Text; n: Integer; }
