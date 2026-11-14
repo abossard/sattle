@@ -101,9 +101,11 @@ sealed class FilterOp : PhysOp
 
 sealed class MapOp : PhysOp
 {
-    readonly VExpr?[] compute; readonly int[] passthrough; readonly bool[] isDec;
-    public MapOp(TMap t, Layout inLayout, OpContext cx) : base(t)
+    readonly VExpr?[] compute; readonly int[] passthrough; readonly bool[] isDec; readonly int[] carry;
+    /// <summary>`carry`: columns of the input that the output passes on behind its own, for the lineage of what is made of these rows (`PlanCompiler.SourcesOf`).</summary>
+    public MapOp(TMap t, Layout inLayout, OpContext cx, int[]? carry = null) : base(t)
     {
+        this.carry = carry ?? [];
         compute = new VExpr?[OutLayout.Count]; passthrough = new int[OutLayout.Count]; isDec = OutLayout.IsDec;
         for (var c = 0; c < OutLayout.Count; c++)
         {
@@ -126,8 +128,9 @@ sealed class MapOp : PhysOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
-        var cols = new Column[OutLayout.Count];
-        for (var c = 0; c < cols.Length; c++) cols[c] = passthrough[c] >= 0 ? b.Cols[passthrough[c]] : compute[c]!.Eval(b);
+        var cols = new Column[OutLayout.Count + carry.Length];
+        for (var c = 0; c < OutLayout.Count; c++) cols[c] = passthrough[c] >= 0 ? b.Cols[passthrough[c]] : compute[c]!.Eval(b);
+        for (var c = 0; c < carry.Length; c++) cols[OutLayout.Count + c] = b.Cols[carry[c]];
         return b.WithColumns(OutLayout, cols);
     }
 }
@@ -147,8 +150,8 @@ sealed class WindowOp : PhysOp
             var m = src[i] % width; if (m < 0) m += width;
             ws.L[i] = src[i] - m; we.L[i] = src[i] - m + width;
         }
-        var cols = new Column[b.Cols.Length + 2];
-        Array.Copy(b.Cols, cols, b.Cols.Length);
+        var cols = new Column[OutLayout.Count];                 // the input's own columns: ones carried behind them end here
+        Array.Copy(b.Cols, cols, cols.Length - 2);
         cols[^2] = ws; cols[^1] = we;
         return b.WithColumns(OutLayout, cols);
     }
@@ -1130,7 +1133,7 @@ sealed class JoinOp : PhysOp
 
     static Cell[] CellsOf(Batch b, int row)
     {
-        var cells = new Cell[b.Cols.Length];
+        var cells = new Cell[b.Layout.Count];
         for (var c = 0; c < cells.Length; c++) { var col = b.Cols[c]; cells[c] = col.Present(row) ? new Cell(true, col.IsDec ? 0 : col.L[row], col.IsDec ? col.D[row] : 0) : default; }
         return cells;
     }

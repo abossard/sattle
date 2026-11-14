@@ -35,20 +35,9 @@ public static class PlanCompiler
 {
     public const string EngineVersion = "0.1";
 
-    /// <summary>A sink that reads the output of a `Group` directly: the group and the positions of its key columns in the sink's input, so an element emitted from the group can name the rows that make the group up.</summary>
-    static (string, int[])? GroupRefOf(TypedProjection tp, TOp sink)
+    /// <summary>Element-valued columns of a schema that come from a Match or a Traverse.</summary>
+    static (string Role, int Col, bool IsRel, string Port)[] ElementCols(TypedProjection tp, Schema schema)
     {
-        if (!sink.Inputs.TryGetValue("in", out var src) || src.IsPort) return null;
-        if (tp.Ops.First(o => o.Name == src.Name) is not TGroup { ClosesWindows: false } g) return null;
-        var cols = g.Keys.Select(k => g.Out.Cols.ToList().FindIndex(c => c.Name == k.Name)).ToArray();
-        return cols.Any(c => c < 0) ? null : (g.Name, cols);
-    }
-
-    /// <summary>Element-valued columns of a sink's input that come from a Match: the lineage sources of the rows it emits.</summary>
-    static (string, int, bool, string)[] LineageCols(TypedProjection tp, TOp sink)
-    {
-        if (!sink.Inputs.TryGetValue("in", out var src)) return [];
-        var schema = src.IsPort ? tp.Port(src.Name).Rows! : tp.Ops.First(o => o.Name == src.Name).Out;
         var res = new List<(string, int, bool, string)>();
         for (var i = 0; i < schema.Cols.Count; i++)
         {
@@ -59,6 +48,31 @@ public static class PlanCompiler
             else if (tp.Ops.FirstOrDefault(o => o.Name == op) is TTraverse tv) res.Add((c.Name, i, false, tv.GraphPort));
         }
         return [.. res];
+    }
+
+    /// <summary>What the rows of a step say about where they come from: the columns that hold the elements a row was made of, and the `Group` (without windows) a row is a result of, with the columns of its key. A sink writes both down as the lineage of what it emits, a `Group` the first as its members. `Col` is a position in the step's batch; a position after the step's own columns is one a `Map` passes on without naming it.</summary>
+    sealed record Sources((string Role, int Col, bool IsRel, string Port)[] Cols, (string Group, int[] KeyCols)? Group);
+
+    /// <summary>The sources of a step's rows, from those of its input (a calculation over the plan). A `Filter` keeps its input's rows, so it keeps their sources. A `Map` makes one row of each input row: a source column it does not hand on by name is carried behind its own columns (`Carry`: the positions in its input). A `Group` starts over: its rows are results of the group. Every other step says what its own columns say.</summary>
+    static (Sources Out, int[] Carry) SourcesOf(TypedProjection tp, TOp t, Schema? inSchema, Sources? input)
+    {
+        var own = ElementCols(tp, t.Out);
+        switch (t)
+        {
+            case TGroup { ClosesWindows: false } g:
+                var keys = g.Keys.Select(k => g.Out.Cols.ToList().FindIndex(c => c.Name == k.Name)).ToArray();
+                return (new(own, keys.Any(c => c < 0) ? null : (g.Name, keys)), []);
+            case TFilter when input is not null: return (input, []);
+            case TMap m when input is not null && inSchema is not null:
+                var carry = new List<int>();
+                // where the map's output has an input column: under the name of the assign that passes it on, or else carried
+                int Named(int col) => col >= inSchema.Cols.Count ? -1 : m.Out.Cols.ToList().FindIndex(c => m.Assigns.Any(a => a.Name == c.Name && a.Value is TField f && f.Name == inSchema.Cols[col].Name));
+                int Carried(int col) { var at = carry.IndexOf(col); if (at < 0) { at = carry.Count; carry.Add(col); } return m.Out.Cols.Count + at; }
+                var cols = own.Concat(input.Cols.Where(c => Named(c.Col) < 0).Select(c => (c.Role, Carried(c.Col), c.IsRel, c.Port))).ToArray();
+                (string, int[])? group = input.Group is { } gr ? (gr.Group, [.. gr.KeyCols.Select(c => Named(c) is >= 0 and var at ? at : Carried(c))]) : null;
+                return (new(cols, group), [.. carry]);
+            default: return (new(own, null), []);
+        }
     }
 
     /// <summary>The Window whose windows a Group closes: the nearest one upstream of it (two windows of one width may have different late policies).</summary>
@@ -98,9 +112,13 @@ public static class PlanCompiler
         foreach (var l in tp.Lifts)
             strategies.Add($"{l.Name}: Lift {l.EdgeType} through {l.MapType} to {l.Emit} (images {l.Images}), lowered to {l.Ops.Count} operators: {string.Join(", ", l.Ops)}");
         var sink = 0;
+        var sources = new Dictionary<string, Sources>();
         foreach (var t in tp.Ops)
         {
             Layout inL = t.Inputs.ContainsKey("in") ? InputLayout(t, "in") : new Layout([], []);
+            var inSchema = !t.Inputs.TryGetValue("in", out var inSrc) ? null : inSrc.IsPort ? tp.Port(inSrc.Name).Rows : tp.Ops.First(o => o.Name == inSrc.Name).Out;
+            var from = inSrc is null ? null : inSrc.IsPort ? (inSchema is null ? null : new Sources(ElementCols(tp, inSchema), null)) : sources[inSrc.Name];
+            (sources[t.Name], var carry) = SourcesOf(tp, t, inSchema, from);
             VExpr Compile(TExpr e)
             {
                 VExpr IdC(TId id)
@@ -134,7 +152,7 @@ public static class PlanCompiler
                 case TUnion u: op = new UnionOp(u, InputLayout(u, "in0"), InputLayout(u, "in1")); strategies.Add($"{u.Name}: Union, linear: both inputs' signed rows concatenated (weights add)"); break;
                 case TDistinct ds: op = new DistinctOp(ds, inL); strategies.Add($"{ds.Name}: Distinct, per-row multiplicity counts; emits +1 when a row first appears and -1 when its last copy goes"); break;
                 case TFilter f: op = new FilterOp(f, inL, cx); strategies.Add($"{f.Name}: Filter, linear, selection vector"); break;
-                case TMap m: op = new MapOp(m, inL, cx); strategies.Add($"{m.Name}: Map, linear, shared columns"); break;
+                case TMap m: op = new MapOp(m, inL, cx, carry); strategies.Add($"{m.Name}: Map, linear, shared columns"); break;
                 case TRetain rt: op = new RetainOp(rt, inL); strategies.Add($"{rt.Name}: Retain, buffers rows by {rt.TimeField}; withdraws a row when the frontier passes its time plus {Lexer.DurationText(rt.AgeNs)}"); break;
                 case TWindow w: op = new WindowOp(w, inL, cx); strategies.Add($"{w.Name}: Window, linear, window assignment"); break;
                 case TGroup g when g.ClosesWindows:
@@ -144,12 +162,12 @@ public static class PlanCompiler
                         strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, late policy {win.Late}");
                         break;
                     }
-                case TGroup g: op = new GroupOp(g, inL, cx, LineageCols(tp, t), withCompanions); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
+                case TGroup g: op = new GroupOp(g, inL, cx, from?.Cols, withCompanions); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;
                 case TSeries s: op = new SeriesOp(s, inL, cx.It); strategies.Add($"{s.Name}: Series, bilinear: new rows against seen windows, new windows against all rows, retraction at the look-back"); break;
                 case TRollup r: op = new RollupOp(r, inL, cx, withCompanions); strategies.Add($"{r.Name}: Rollup, per (key, window) accumulators, decomposable sum"); break;
                 case TThreshold th: op = new ThresholdOp(th, inL, cx, SeriesOf(tp, th)); strategies.Add($"{th.Name}: Threshold, per-key state machine over ordered closed windows"); break;
-                case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
-                case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, LineageCols(tp, t), GroupRefOf(tp, t)); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
+                case TEmitEntity e: op = new EmitEntityOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitEntity {(e.Update ? "update" : "create")}, support-counted element layer"); break;
+                case TEmitRel e: op = new EmitRelOp(e, sink++, inL, cx, Compile, from?.Cols ?? [], from?.Group); strategies.Add($"{e.Name}: EmitRelationship {(e.Update ? "update" : "create")}, support-counted element layer"); break;
                 case TLink l: op = new LinkOp(l, MakeId(l.Left), MakeId(l.Right), cat); strategies.Add($"{l.Name}: Link, identity binding (alias) when asserted"); break;
                 default: throw new NotSupportedException(t.Kind);
             }

@@ -199,6 +199,48 @@ public class OperatorTests
         Assert.Equal(cat.Modules["t.view"].Digest, again.Modules["t.view"].Digest);
     }
 
+    /// <summary>Code review 2, defect 16: an element names the elements it is made of also when a `select` or a `where` stands between the match and the group, between the group and the emit, or between the match and the emit. Before, only the first shape named anything.</summary>
+    [Theory]
+    [InlineData("the group read directly", """
+        let g = items |> group by { group: i.group } aggregate { best: count() };
+        emit entity Summary from g identity summary(group: group) set { group: group, best: best };
+        """, "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a select and a where before the group", """
+        let plain = items |> select { grp: i.group, s: i.score } |> where s > 0;
+        let g = plain |> group by { group: grp } aggregate { best: count() };
+        emit entity Summary from g identity summary(group: group) set { group: group, best: best };
+        """, "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a select and a where after the group", """
+        let g = items |> group by { group: i.group } aggregate { best: count() };
+        let shown = g |> select { name: group, n: best } |> where n > 0;
+        emit entity Summary from shown identity summary(group: name) set { group: name, best: n };
+        """, "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("selects on both sides, the second without the key as it was", """
+        let plain = items |> select { grp: i.group };
+        let g = plain |> group by { group: grp } aggregate { best: count() };
+        let shown = g |> select { name: concat(group, "!"), n: best } |> select { name: name, n: n };
+        emit entity Summary from shown identity summary(group: name) set { group: name, best: n };
+        """, "a!=a1+a2 b!=b1", "a!=a1 b!=b1")]
+    [InlineData("row by row through a select", """
+        let plain = items |> select { k: i.key, s: i.score } |> where s > 0;
+        emit entity Summary from plain identity summary(group: k) set { group: k, best: s };
+        """, "a1=a1 a2=a2 b1=b1", "a1=a1 b1=b1")]
+    public void An_element_names_what_it_is_made_of_through_select_and_where(string shape, string body, string named, string afterOneWent)
+    {
+        using var e = Mini(Summary, "let items = match master (i: base.Item);\n" + body);
+        string Named()
+        {
+            var keyOf = e.Graph("master").State.Entities.ToDictionary(x => x.Id, x => x.Props.Text("d:t.base/prop:key")!);
+            var reader = new LineageReader(e);
+            return string.Join(' ', e.Graph("rolled").State.Entities.Select(x => x.Props.Text("d:t.view/prop:group") + "="
+                + string.Join('+', reader.Forward("rolled", x.Id)["sources"]!.AsArray().Select(s => keyOf[s!["element"]!.GetValue<string>()]).Order(StringComparer.Ordinal))).Order(StringComparer.Ordinal));
+        }
+        Items(e, 1, ("a1", "a", 1, null, 1), ("a2", "a", 2, null, 1), ("b1", "b", 3, null, 1));
+        Assert.True(named == Named(), $"{shape}: {Named()}");
+        Items(e, 2, ("a2", "a", 2, null, -1));
+        Assert.True(afterOneWent == Named(), $"{shape}, after a2 went: {Named()}");
+    }
+
     const string Stacked = """
         module t.top @ 1.0.0;
         import t.view @ 1.0.0 sha256:… as v;

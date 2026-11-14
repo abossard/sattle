@@ -61,7 +61,7 @@ public sealed class Column
     public void SetAbsent(int i, int n) { if (P is null) { P = new bool[Math.Max(n, IsDec ? D.Length : L.Length)]; Array.Fill(P, true); } P[i] = false; }
 }
 
-/// <summary>A signed row batch (a Z-set slice): columns, weights (null means +1 for every row), optional selection vector.</summary>
+/// <summary>A signed row batch (a Z-set slice): columns, weights (null means +1 for every row), optional selection vector. `Cols` may hold columns behind those the layout names: the ones a `Map` carries for lineage, which only a `Group` and a sink read; every other reader goes by the layout.</summary>
 public sealed class Batch
 {
     public Layout Layout { get; }
