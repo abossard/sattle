@@ -19,9 +19,14 @@ export const WORDS_NODE = 5;
 export const WORDS_EDGE = 4;
 
 export const pack = (r: number, g: number, b: number, a = 255): number => ((a << 24) | (b << 16) | (g << 8) | r) >>> 0;
+/** Opaque colors parsed once: refreshes ask for the same few colors once per element. */
+const opaque = new Map<string, number>();
 export function parseColor(hex: string, alpha = 255): number {
+  if (alpha === 255) { const c = opaque.get(hex); if (c !== undefined) return c; }
   const h = hex.replace("#", "");
-  return pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), alpha);
+  const c = pack(parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16), alpha);
+  if (alpha === 255) opaque.set(hex, c);
+  return c;
 }
 export const withAlpha = (c: number, a: number): number => ((c & 0x00ffffff) | (a << 24)) >>> 0;
 

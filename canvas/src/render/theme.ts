@@ -66,10 +66,17 @@ export const KIND_EDGE_COLOR: Record<"composition" | "dependency" | "communicati
   composition: "#8ea4c4", dependency: "#e3a33b", communication: "#3fb5c9", support: "#8b949e",
 };
 
+/** Cached per base color and type: the function runs for every edge on every refresh, and its answer depends on nothing else. */
+const edgeColors = new Map<string, number>();
 export function edgeColorForType(type: string, theme: Theme): number {
-  const h = hash(type) % 3;
-  const base = theme.edge;
-  return parseColor(h === 0 ? base : shade(base, h === 1 ? 0.85 : 1.15));
+  const key = `${theme.edge}|${type}`;
+  let c = edgeColors.get(key);
+  if (c === undefined) {
+    const h = hash(type) % 3;
+    c = parseColor(h === 0 ? theme.edge : shade(theme.edge, h === 1 ? 0.85 : 1.15));
+    edgeColors.set(key, c);
+  }
+  return c;
 }
 
 export const OPERATOR_ROLE: Record<string, keyof typeof HUES_DARK> = {

@@ -125,7 +125,7 @@ export class Workspace {
     // the shared timeline is scrubbed back: a live patch must not move the graph to now, it stays where the timeline shows it
     if (step && !this.following) {
       const target = this.cursorAt(graph, this.time);
-      if (h.cursor !== target) for (const s of h.seek(target)) pane?.applyStep(s);
+      if (h.cursor !== target) { const steps = h.seek(target); pane?.applySteps(steps); }
     }
   }
 

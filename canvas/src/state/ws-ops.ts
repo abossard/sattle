@@ -9,7 +9,7 @@ export function seekPane(ws: Workspace, graph: string, target: number, fs: Filte
   const hist = ws.histories.get(graph)!;
   const pane = ws.panes.get(graph);
   const steps = hist.seek(target);
-  if (pane) { for (const s of steps) pane.applyStep(s); applyHighlight(ws, graph, fs); }
+  if (pane) { pane.applySteps(steps); applyHighlight(ws, graph, fs); }
 }
 
 /** Move the whole space to time t: every graph shows the revision and the telemetry frame valid at that instant. */

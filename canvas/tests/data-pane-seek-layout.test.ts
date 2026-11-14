@@ -98,3 +98,19 @@ describe("the layout of the workload graph after seeking", () => {
     expect(layered, "revisions laid out as a tree").toBeGreaterThan(0);
   });
 });
+
+// A seek over many revisions is one batch (`applySteps`): the full refresh, the legend and the layout decision run once. The scene it leaves is
+// the one that applying the steps one at a time leaves, with and without the full refresh (a tile hides the supporting kinds, which takes it).
+describe("a seek is one batch", () => {
+  it.each([["the view of the graph", false], ["a tile of the space", true]])("in %s, the scene equals the one step by step", async (_, tile) => {
+    const { info, history } = await load("workload");
+    const panes = [history(), history()].map((h) => { h.seek(0); const p = new DataPane(info, h, document.createElement("div"), darkTheme, events as never); p.setTile(tile); p.start(); return { h, p }; });
+    await flush();
+    const [batch, single] = panes;
+    batch.p.applySteps(batch.h.seek(batch.h.length));
+    for (const s of single.h.seek(single.h.length)) single.p.applyStep(s);
+    await flush();
+    const scene = (p: DataPane) => ({ nodes: Array.from(p.scene.nodeU32), edges: Array.from(p.scene.edgeU32), nodeCount: p.scene.nodeCount, edgeCount: p.scene.edgeCount, positions: positions(p) });
+    expect(scene(batch.p)).toEqual(scene(single.p));
+  });
+});

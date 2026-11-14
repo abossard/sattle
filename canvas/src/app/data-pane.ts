@@ -457,47 +457,57 @@ export class DataPane {
   private recolor(): void { for (const t of ["node", "edge"] as Target[]) { const st = this.coloring[t]; if (st) this.setColoring(t, st.c); } }
 
   // ---- patches ----
-  /** Update the scene after the history applied a step. Falls back to a full refresh when filters or groups are active. */
-  applyStep(step: StepResult): void {
-    const res: Extract<ApplyResult, { ok: true }> = step.result;
+  /** Update the scene after the history applied a step. */
+  applyStep(step: StepResult): void { this.applySteps([step]); }
+  /**
+   * Update the scene after the history applied steps (a seek over many revisions is one batch). Each step writes the elements it touched; what
+   * depends on the whole graph (the full refresh when filters or groups are active, the legend, search matches, the layout decision) runs once.
+   */
+  applySteps(steps: StepResult[]): void {
+    if (!steps.length) return;
     const g = this.graph, s = this.scene;
     this.ensureSized();
-    for (const [id, slot] of res.removedSlots) this.lastPos.set(id, [s.positions[2 * slot], s.positions[2 * slot + 1]]);
-    const added: number[] = [];
-    for (const [id, c] of res.changes.entities) {
-      if (c.kind !== "added") continue;
-      const slot = g.nodeSlot.get(id);
-      if (slot === undefined) continue;
-      const known = this.lastPos.get(id);
-      if (known) { s.positions[2 * slot] = known[0]; s.positions[2 * slot + 1] = known[1]; this.lastPos.delete(id); }
-      else added.push(slot);
-    }
-    // a stub that a patch's edges brought has no position yet; one an entity replaced keeps its place
-    for (const slot of res.dirtyNodes) if (g.isStub(slot) && !added.includes(slot)) added.push(slot);
-    if (added.length) {
-      const neighbours = (v: number) => { const out: number[] = []; for (const es of g.out[v]) out.push(g.edgeDst[es]); for (const es of g.inn[v]) out.push(g.edgeSrc[es]); return out.filter((x) => x >= 0); };
-      const b = s.bounds();
-      placeIncremental(s.positions, added, neighbours, b ? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2] : [0, 0], 22);
-    }
-    this.hub?.revalidate(res.dirtyNodes, res.dirtyEdges);
-    s.positionsDirty = true; s.positionsVersion++;
-    if (this.filter.hiddenTypes.size || this.filter.prop || this.grouping && this.collapsed.size || this.focusDepth || this.thinsIsolated || (this.tile && tileThinsIsolated(g)) || this.hiddenNow.has("support") || (this.info.tree && Object.keys(this.info.tree.state).length)) this.refreshAll();
-    else {
-      for (const slot of res.dirtyNodes) { this.vis[slot] = g.nodes[slot] ? 1 : 0; this.writeNode(slot); }
-      // degree changed for neighbours of touched edges, keep priorities current
-      for (const e of res.dirtyEdges) {
-        const a = g.edgeSrc[e], b = g.edgeDst[e];
-        for (const v of [a, b]) if (v >= 0 && g.nodes[v]) this.writeNode(v);
+    const full = !!(this.filter.hiddenTypes.size || this.filter.prop || this.grouping && this.collapsed.size || this.focusDepth || this.thinsIsolated || (this.tile && tileThinsIsolated(g)) || this.hiddenNow.has("support") || (this.info.tree && Object.keys(this.info.tree.state).length));
+    let structural = false;
+    for (const step of steps) {
+      const res: Extract<ApplyResult, { ok: true }> = step.result;
+      for (const [id, slot] of res.removedSlots) this.lastPos.set(id, [s.positions[2 * slot], s.positions[2 * slot + 1]]);
+      const added: number[] = [];
+      for (const [id, c] of res.changes.entities) {
+        if (c.kind !== "added") continue;
+        const slot = g.nodeSlot.get(id);
+        if (slot === undefined) continue;
+        const known = this.lastPos.get(id);
+        if (known) { s.positions[2 * slot] = known[0]; s.positions[2 * slot + 1] = known[1]; this.lastPos.delete(id); }
+        else added.push(slot);
       }
-      for (const e of res.dirtyEdges) this.writeEdges(e, e + 1);
-      s.nodeCount = Math.max(s.nodeCount, g.nodes.length);
+      // a stub that a patch's edges brought has no position yet; one an entity replaced keeps its place
+      for (const slot of res.dirtyNodes) if (g.isStub(slot) && !added.includes(slot)) added.push(slot);
+      if (added.length) {
+        const neighbours = (v: number) => { const out: number[] = []; for (const es of g.out[v]) out.push(g.edgeDst[es]); for (const es of g.inn[v]) out.push(g.edgeSrc[es]); return out.filter((x) => x >= 0); };
+        const b = s.bounds();
+        placeIncremental(s.positions, added, neighbours, b ? [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2] : [0, 0], 22);
+      }
+      this.hub?.revalidate(res.dirtyNodes, res.dirtyEdges);
+      if (!full) {
+        for (const slot of res.dirtyNodes) { this.vis[slot] = g.nodes[slot] ? 1 : 0; this.writeNode(slot); }
+        // degree changed for neighbours of touched edges, keep priorities current
+        for (const e of res.dirtyEdges) {
+          const a = g.edgeSrc[e], b = g.edgeDst[e];
+          for (const v of [a, b]) if (v >= 0 && g.nodes[v]) this.writeNode(v);
+        }
+        for (const e of res.dirtyEdges) this.writeEdges(e, e + 1);
+      }
+      structural ||= [...res.changes.entities.values(), ...res.changes.relationships.values()].some((c) => c.kind !== "changed");
     }
+    s.positionsDirty = true; s.positionsVersion++;
+    if (full) this.refreshAll();
+    else s.nodeCount = Math.max(s.nodeCount, g.nodes.length);
     if (this.legendStale) this.recolor();
     this.updateMatches();
     this.view.requestRender();
     // the layout of a revision is a function of that revision: when the graph now reads best in another layout (a pane made on an empty revision,
     // a scrub that brought the tree), or a layered graph changed its nodes or edges, it is laid out again
-    const structural = [...res.changes.entities.values(), ...res.changes.relationships.values()].some((c) => c.kind !== "changed");
     const want = this.userLayout ? this.layoutKind : this.autoLayoutKind();
     if (want !== this.layoutKind || (want === "layered" && structural && g.nodeCount <= 5000)) this.runLayout(want, want !== this.layoutKind);
   }
@@ -672,8 +682,11 @@ export class DataPane {
   expandAll(): void { this.collapsed.clear(); this.refreshAll(); this.relayoutIfLayered(); }
 
   setFilter(f: Filter): void {
+    const was = this.filter;
     this.filter = f;
-    this.refreshAll();
+    // the search only marks matches; what is visible changes only with the types or the property condition
+    const sameVisible = was.hiddenTypes.size === f.hiddenTypes.size && [...f.hiddenTypes].every((t) => was.hiddenTypes.has(t)) && JSON.stringify(was.prop) === JSON.stringify(f.prop);
+    if (sameVisible) { this.updateMatches(); this.view.requestRender(); } else this.refreshAll();
   }
 
   private updateMatches(): void {
