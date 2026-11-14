@@ -140,15 +140,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             if (n.Length == 0 || Path.GetFileName(n) != n || n is "." or "..") throw new HostError("BadName", $"'{n}' is no module or file name", 400);
     }
     /// <summary>The other files with the given texts in place of the ones of the same name, and the new ones added.</summary>
-    List<SourceFile> OthersWith(IReadOnlyDictionary<string, string> texts)
+    List<SourceFile> OthersWith(IReadOnlyDictionary<string, string> texts, IReadOnlyList<SourceFile>? from = null)
     {
-        var res = others.Select(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) ? new SourceFile(f.Path, t) : f).ToList();
-        foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && !others.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t));
+        from ??= others;
+        var res = from.Select(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) ? new SourceFile(f.Path, t) : f).ToList();
+        foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && !from.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t));
         return res;
     }
     /// <summary>The projections whose text is a definition file of its own: a printed module leaves them out, so it never holds a projection twice.
     /// Known limit: the files are the ones held now, also when an older revision is printed (a release); a release from before a projection moved into a file would print without it. No projection moves today; this is solved when the `.sattle` projections retire.</summary>
-    IReadOnlySet<string> InFiles(Catalog cat) => cat.Projections.Keys.Where(p => cat.FileOf.TryGetValue(p, out var f) && others.Any(o => o.Path == f)).ToHashSet(StringComparer.Ordinal);
+    IReadOnlySet<string> InFiles(Catalog cat, IReadOnlyList<SourceFile>? files = null) => cat.Projections.Keys.Where(p => cat.FileOf.TryGetValue(p, out var f) && (files ?? others).Any(o => o.Path == f)).ToHashSet(StringComparer.Ordinal);
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
     /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
@@ -911,10 +912,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         return res;
     }
 
-    Catalog Candidate(IReadOnlyDictionary<string, string> texts, out LoadResult res, out Dictionary<string, string> fixedTexts)
+    /// <summary>`baseOthers`: the projection files the texts are read with, the space's by default.</summary>
+    Catalog Candidate(IReadOnlyDictionary<string, string> texts, out LoadResult res, out Dictionary<string, string> fixedTexts, IReadOnlyList<SourceFile>? baseOthers = null)
     {
         var all = WithImportVersions(texts);
-        List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. OthersWith(texts)];
+        List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. OthersWith(texts, baseOthers)];
         var cat = new Catalog(options.Projections);
         res = cat.Load(files, updatePins: true);
         fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes);

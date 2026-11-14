@@ -164,6 +164,7 @@ public static class Server
         app.MapGet("/drafts/{id}/snapshot", (string id) => Guard(() => Json(host.DraftSnapshot(id))));
         app.MapGet("/drafts/{id}/patches", (string id, string? after) => Guard(() => Ndjson(host.DraftPatches(id, Rev(after) ?? 0))));
         app.MapGet("/drafts/{id}/text/{m}", (string id, string m) => Guard(() => Results.Text(host.DraftText(id, m), "text/plain")));
+        app.MapPut("/drafts/{id}/text/{file}", (string id, string file, HttpRequest r) => WithBody(r, b => { return Json(host.SetDraftText(id, file, b["text"]!.GetValue<string>(), Rev(b["expectedRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/patches", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.ApplyDraftPatch(id, b["patch"]!, Rev(b["expectedRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/check", (string id) => Guard(() => Json(host.CheckDraft(id))));
         app.MapPost("/drafts/{id}/commit", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.CommitDraft(id, Rev(b["expectedCatalogRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedCatalogRevision is required", 400))); }));
