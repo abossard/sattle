@@ -21,7 +21,7 @@ public static class Support
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys; residual predicate on the joined rows",
         ["Traverse"] = "per start element breadth-first reach, recomputed only when a visited element or edge changed; emits the difference",
         ["Fixpoint"] = "bounded unrolling: distinct(R union step(R)) repeated maxIterations times from distinct(seed); every operator is incremental",
-        ["Union"] = "linear: concatenation of both inputs' signed rows (conflict policy preserveEvidence only)",
+        ["Union"] = "linear: concatenation of both inputs' signed rows",
         ["Distinct"] = "per-row multiplicity counts, set semantics over signed rows",
         ["EmitEntity"] = "support-counted element layer",
         ["EmitRelationship"] = "support-counted element layer",

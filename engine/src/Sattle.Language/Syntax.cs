@@ -179,7 +179,7 @@ public sealed record MatchSource(string Graph, List<PathPat> Paths, Pos Pos) : P
 public sealed record ValuesSource(List<List<(string Name, Expr Value)>> Rows, Pos Pos) : PipeSource(Pos);
 public sealed record FixpointSource(string Seed, Pipeline Step, long Max, Pos Pos) : PipeSource(Pos);
 public sealed record JoinSource(string A, string B, Expr On, Pos Pos) : PipeSource(Pos);
-public sealed record UnionSource(string A, string B, string Conflict, Pos Pos) : PipeSource(Pos);
+public sealed record UnionSource(string A, string B, Pos Pos) : PipeSource(Pos);
 public sealed record PathPat(List<NodePat> Nodes, List<EdgePat> Edges);
 public sealed record NodePat(string Var, Ref? Type, Pos Pos);
 public sealed record EdgePat(string? Var, Ref Type, bool Forward, Pos Pos);
@@ -621,8 +621,7 @@ public sealed class Parser
         else if (IsWord("union"))
         {
             var up = Next().Pos; var a = Ident(); Sym(","); var b = Ident();
-            var conflict = TryWord("conflict") ? (Cur.Kind == T.Ident && Cur.Text is "requireEqual" or "preferFirst" or "preferLast" or "preserveEvidence" ? Next().Text : throw Err("expected requireEqual, preferFirst, preferLast or preserveEvidence")) : "preserveEvidence";
-            src = new UnionSource(a, b, conflict, up);
+            src = new UnionSource(a, b, up);
         }
         else if (IsWord("join"))
         {

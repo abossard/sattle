@@ -240,7 +240,7 @@ public sealed class ProjectionChecker(Graph defs)
                 Src Remap(Src s) => s.IsPort ? s : s.Name == fp.Name ? new Src(false, prev) : rename.TryGetValue(s.Name, out var r) ? new Src(false, r) : s;
                 foreach (var t in inner) made.Add(t with { Name = rename[t.Name], Inputs = t.Inputs.ToDictionary(kv => kv.Key, kv => Remap(kv.Value)) });
                 var u = $"{fp.Name}@{i}.union";
-                made.Add(new TUnion(u, fp.Id, new Dictionary<string, Src> { ["in0"] = new Src(false, prev), ["in1"] = new Src(false, rename[overOp.Name]) }, fp.Out, "preserveEvidence"));
+                made.Add(new TUnion(u, fp.Id, new Dictionary<string, Src> { ["in0"] = new Src(false, prev), ["in1"] = new Src(false, rename[overOp.Name]) }, fp.Out));
                 prev = i == fp.MaxIterations ? fp.Name : $"{fp.Name}@{i}";
                 made.Add(new TDistinct(prev, fp.Id, new Dictionary<string, Src> { ["in"] = new Src(false, u) }, fp.Out));
             }
@@ -405,15 +405,13 @@ public sealed class ProjectionChecker(Graph defs)
                 {
                     var a = input("in0"); var b = input("in1");
                     if (a is null || b is null) return null;
-                    var conflict = d.Text(op, "conflict") ?? "preserveEvidence";
-                    if (conflict != "preserveEvidence") { Err("Union", op, $"conflict policy {conflict} needs a row key, which a Union of plain rows does not have; only preserveEvidence is supported"); return null; }
                     // A column that names an element of a Match comes with the columns of the properties read from it. Those stay behind: the union's column no longer says which Match it came from, so the two sides may have read different properties.
                     static List<Col> Own(Schema s) { var read = s.Cols.Where(c => c.Origin is not null).Select(c => c.Name + ".").ToList(); return [.. s.Cols.Where(c => !read.Any(r => c.Name.StartsWith(r, StringComparison.Ordinal)))]; }
                     var ac = Own(a); var bc = Own(b);
                     if (a.Window != b.Window || ac.Count != bc.Count || ac.Zip(bc).Any(x => x.First.Name != x.Second.Name || x.First.T.Ty != x.Second.T.Ty || x.First.T.Role != x.Second.T.Role))
                     { Err("Union", op, $"union inputs must have the same columns: {{{string.Join(", ", ac.Select(c => c.Name + ": " + c.T))}}} against {{{string.Join(", ", bc.Select(c => c.Name + ": " + c.T))}}}"); return null; }
                     var cols = ac.Zip(bc).Select(x => x.First with { Origin = null, T = x.First.T with { Req = x.First.T.Req && x.Second.T.Req, Prov = x.First.T.Prov == x.Second.T.Prov ? x.First.T.Prov : null } }).ToList();
-                    return new TUnion(name, op, inputs, new Schema(cols, a.Window), conflict);
+                    return new TUnion(name, op, inputs, new Schema(cols, a.Window));
                 }
             case "Traverse": return R is null ? null : TypeTraverse(op, name, inputs, R, ports);
             case "Series": return TypeSeries(op, name, inputs, R, input("graph"), ports);

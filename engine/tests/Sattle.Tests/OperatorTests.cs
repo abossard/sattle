@@ -464,11 +464,10 @@ public class OperatorTests
     }
 
     [Fact]
-    public void Union_of_unequal_rows_and_an_unsupported_conflict_policy_are_rejected_with_a_typed_reason()
+    public void Union_of_unequal_rows_is_rejected_with_a_typed_reason()
     {
         var unequal = RowsModule.Replace("rows ItemRow { key: Text; group: Text; score: Integer; }", "rows ItemRow { key: Text; group: Text; score: Integer; }\nrows OtherRow { key: Text; }").Replace("in b: rows ItemRow;", "in b: rows OtherRow;").Replace("source b adapter \"sattle.authoring\" rows ItemRow;", "source b adapter \"sattle.authoring\" rows OtherRow;");
         Assert.Contains(Load(unequal), d => d.Contains("same columns"));
-        Assert.Contains(Load(RowsModule.Replace("union a, b;", "union a, b conflict preferFirst;")), d => d.Contains("needs a row key"));
     }
 
     static List<string> Load(string text) => new Catalog().Load([new SourceFile("t.rows.sattle", text)], updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => d.ToString()).ToList();

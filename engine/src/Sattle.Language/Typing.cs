@@ -87,7 +87,7 @@ public sealed record TMatch(string Name, string Id, IReadOnlyDictionary<string, 
     public IReadOnlySet<string> References(IReadOnlySet<string> held, Func<string, string, bool> isSubtype) =>
         Nodes.Where(n => Edges.Any(e => e.From == n.Var || e.To == n.Var) && !held.Any(t => isSubtype(t, n.TypeId))).Select(n => n.Var).ToHashSet(StringComparer.Ordinal);
 }
-public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string Conflict) : TOp(Name, Id, "Union", Inputs, Out);
+public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Union", Inputs, Out);
 public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys, TExpr? Residual) : TOp(Name, Id, "Join", Inputs, Out);
 public sealed record TTraverse(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, string RelTypeId, string Direction, long Min, long Max, string Start, string Target, IReadOnlyList<TRead> Reads) : TOp(Name, Id, "Traverse", Inputs, Out);
 public sealed record TFixpoint(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, long MaxIterations, string OverPort) : TOp(Name, Id, "Fixpoint", Inputs, Out);

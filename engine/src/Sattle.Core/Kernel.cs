@@ -156,7 +156,7 @@ public static class KernelTable
         ("Rule", "class", ["bijective", "lens", "sync", "readonly"]),
         ("Rule", "onDelete", ["remove", "set"]),
         ("ValueRole", "role", ["ok", "warning", "danger", "unknown", "neutral"]),
-        ("Union", "conflict", ["requireEqual", "preferFirst", "preferLast", "preserveEvidence"]),
+        ("Union", "conflict", ["preserveEvidence"]),
         ("Traverse", "direction", ["out", "in", "either"]),
         ("Lift", "images", ["reject", "each"]),
         ("Lift", "selfLoops", ["drop", "keep"]),
@@ -353,5 +353,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:97f46b5a58dbd6111e3c2676b403569b75eddfbe566502a942a01a3e06c8a02f";
+    public const string CompiledDigest = "sha256:7185008e87b15b22f3d172f2c4b426deb080451e5ecd1a12f60a6667fc86de19";
 }

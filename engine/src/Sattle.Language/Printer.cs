@@ -389,7 +389,6 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
         else if (d.TypeName(first) == "Union")
         {
             sb.Append("union ").Append(producer(Ids.Child(first, "port", "in0"))).Append(", ").Append(producer(Ids.Child(first, "port", "in1")));
-            if (d.Text(first, "conflict") is { } c && c != "preserveEvidence") sb.Append(" conflict ").Append(c);
             steps = ops.Skip(1).ToList();
         }
         else sb.Append(producer(Ids.Child(first, "port", "in")));
