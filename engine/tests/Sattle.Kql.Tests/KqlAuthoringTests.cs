@@ -68,11 +68,36 @@ public class KqlAuthoringTests
         Assert.Equal(("full", 0), (a["depth"]!.GetValue<string>(), a["diagnostics"]!.AsArray().Count));
     }
 
+    /// <summary>A link step in the authored graph: the space's check that only the master links identities refuses it, an error on no operator of the text.</summary>
+    const string AuthoredLink = "link podUidIsPodName from byUid to byName with (confidence = 1.0) = realizes | project byUid = identity(\"podUid\", cluster, service), byName = identity(\"podName\", cluster, namespace, service);\n";
+
+    /// <summary>At full depth every error of the engine's load is reported: one that names no operator of the text is placed at the start of the text and names its element.</summary>
+    [Fact]
+    public void At_full_depth_an_error_that_names_no_operator_of_the_text_is_reported_at_its_start()
+    {
+        var text = File.ReadAllText(Path.Combine(Definitions, "acme.ops.authored.kql")) + AuthoredLink;
+        var d = KqlAuthoring.Analyse(Defs.Value.Catalog, "acme.ops.authored", text, Defs.Value.Files)["diagnostics"]!.AsArray().Single()!;
+        Assert.Equal(("engine", "S1", 0, 0), (d["source"]!.GetValue<string>(), d["code"]!.GetValue<string>(), d["start"]!.GetValue<int>(), d["end"]!.GetValue<int>()));
+        Assert.StartsWith("d:acme.space/space:operations: ", d["message"]!.GetValue<string>());
+    }
+
+    /// <summary>The text takes the place of the definition file of its name, however the files' paths are written (a host names a committed file by its
+    /// name alone): the error of the file's old text is gone with it.</summary>
+    [Fact]
+    public void At_full_depth_the_text_replaces_the_file_of_its_name()
+    {
+        const string file = "acme.ops.authored.kql";
+        var shipped = File.ReadAllText(Path.Combine(Definitions, file));
+        var files = Defs.Value.Files.Select(f => Path.GetFileName(f.Path) == file ? new SourceFile(file, shipped + AuthoredLink) : f).ToList();
+        Assert.Empty(KqlAuthoring.Analyse(Defs.Value.Catalog, "acme.ops.authored", shipped, files)["diagnostics"]!.AsArray());
+    }
+
     /// <summary>What is wrong with a text is placed on the words it is about.</summary>
     [Theory]
     [InlineData("nodes ServiceNode on service = services | take 10;\n", "profile", "take 10")]
     [InlineData("nodes ServiceNode on service = services | where nosuch > 1;\n", "kusto", "nosuch")]
     [InlineData("input pods : k8s.NoSuchRow;\nnodes ServiceNode on service = services;\n", "profile", "input pods : k8s.NoSuchRow;")]
+    [InlineData("nodes ServiceNode on service = services | summarize n = dcount(cluster) by service;\n", "profile", "dcount(cluster)")]
     public void What_is_wrong_is_placed_on_the_words_it_is_about(string tail, string source, string placed)
     {
         var text = Head + tail;
@@ -110,6 +135,8 @@ public class KqlAuthoringTests
     [InlineData("let x = graph(\"master\") | graph-match (p) project v = identity(\"", "podUid", true)]
     [InlineData("let x = services | ", "where", true)]
     [InlineData("let x = services | ", "take", false)]
+    [InlineData("let x = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project v = s.", "cluster", true)]
+    [InlineData("let x = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project v = s.", "podUid", false)]
     public void Completion_offers_what_the_ontology_knows_and_leaves_out_what_the_profile_refuses(string before, string item, bool offered)
     {
         var text = Head + before;
@@ -117,15 +144,16 @@ public class KqlAuthoringTests
         Assert.Equal(offered, items.Contains(item));
     }
 
-    /// <summary>Hover gives a type's description from the ontology, and Kusto's description of a let.</summary>
+    /// <summary>Hover gives a type's description from the ontology, Kusto's description of a let, and the type of a column.</summary>
     [Theory]
-    [InlineData("labels(s) has \"Ser", "ontology")]
-    [InlineData("= servi", "kusto")]
-    public void Hover_tells_what_a_name_is(string at, string from)
+    [InlineData("labels(s) has \"Ser", "ontology", "sattle.infra.Service")]
+    [InlineData("= servi", "kusto", "services")]
+    [InlineData("project service, clu", "kusto", "string")]
+    public void Hover_tells_what_a_name_is(string at, string from, string says)
     {
-        var text = Head + "nodes ServiceNode on service = services;\n";
+        var text = Head + "nodes ServiceNode on service = services | project service, cluster;\n";
         var h = KqlAuthoring.Hover(Defs.Value.Catalog, "acme.svc.serviceDeps", text, text.IndexOf(at, StringComparison.Ordinal) + at.Length);
-        Assert.NotNull(h[from]);
+        Assert.Contains(says, h[from]!.ToJsonString());
     }
 
     /// <summary>The places that name a let are its declaration and each use.</summary>

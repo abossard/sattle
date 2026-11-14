@@ -30,13 +30,17 @@ public static class KqlAuthoring
         for (var k = 0; k < list.Count; k++) diags.Add(Diag(text, list[k], at[k], list[k].Code == "Kusto" ? "kusto" : "profile"));
         if (files is not null && low is { Ok: true })
         {
-            // the engine's checker reads the text as the catalog loads it; an error on one of this text's operators is placed on that operator
-            var path = Path.Combine(Path.GetDirectoryName(files[0].Path) ?? "", file);
-            var ops = low.OperatorPlaces;
-            foreach (var d in new Catalog(new KqlSource()).Load([.. files.Where(f => f.Path != path), new SourceFile(path, text)], updatePins: true).Diagnostics.Where(d => ops.Keys.Any(op => Within(d.Focus, op))))
+            // the engine's checker reads the text in place of the file of that name (named as the host names its files). Its findings on this projection are
+            // placed on the operator they name, else on the graph line; an error elsewhere (a rule, a space check, another projection that reads this one)
+            // is placed at the start of the text and names its element
+            var path = files.FirstOrDefault(f => Path.GetFileName(f.Path) == file)?.Path ?? Path.Combine(Path.GetDirectoryName(files[0].Path) ?? "", file);
+            var ops = low.OperatorPlaces; var own = $"d:{module}/projection:{projection[(module.Length + 1)..]}";
+            var head = t.Head is { } hd ? (Lead(text, hd.Index), hd.Index + hd.Length) : (0, 0);
+            foreach (var d in new Catalog(new KqlSource()).Load([.. files.Where(f => Path.GetFileName(f.Path) != file), new SourceFile(path, text)], updatePins: true).Diagnostics)
             {
-                var op = ops.Keys.Where(o => Within(d.Focus, o)).MaxBy(o => o.Length)!;
-                diags.Add(Diag(text, d, ops[op], "engine"));
+                if (ops.Keys.Where(o => Within(d.Focus, o)).MaxBy(o => o.Length) is { } op) diags.Add(Diag(text, d, ops[op], "engine"));
+                else if (Within(d.Focus, own)) diags.Add(Diag(text, d, head, "engine"));
+                else if (d.IsError) diags.Add(Diag(text, d.Focus.Length == 0 ? d : d with { Message = $"{d.Focus}: {d.Message}" }, (0, 0), "engine"));
             }
         }
         return new JsonObject
@@ -93,6 +97,9 @@ public static class KqlAuthoring
         var info = new KustoCodeService(t.Code).GetRelatedElements(offset);
         return new JsonObject { ["digest"] = Digest(text), ["current"] = info.CurrentIndex, ["places"] = new JsonArray([.. info.Elements.Select(r => (JsonNode)P(r.Start, r.Start + r.Length))]) };
     }
+
+    /// <summary>A projection's text as the editors read it: the text and the digest every answer about it carries.</summary>
+    public static JsonObject Read(string text) => new() { ["digest"] = Digest(text), ["text"] = text };
 
     // ---- the outline ----
 
@@ -291,6 +298,15 @@ public static class KqlAuthoring
         if (Regex.IsMatch(line, @"\brule\s*=\s*""$")) return t.Steps.Select(s => s.Get("rule")).OfType<string>().Distinct().Select(r => (r, "rule"));
         if (Regex.IsMatch(line, @"\bwith\s*\((?:[^()]*,)?\s*$") && t.Steps.FirstOrDefault(s => s.Pos <= start && start <= s.HeadEnd) is { } h)
             return (h.Kind switch { "edges" => new[] { "key" }, "link" => ["confidence"], _ => [] }).Concat(["rule", "description", "accept", "update", "onCreate", "onDelete"]).Select(s => (s, "setting"));
+        // the properties of a pattern variable after `v.`: of the types `labels(v) has "T"` names in the statement, else of every type the graphs hold
+        if (Regex.Match(line, @"(?<![\w.])([A-Za-z_]\w*)\.$") is { Success: true } dot)
+        {
+            var v = dot.Groups[1].Value; var statement = text[(text.LastIndexOf(';', Math.Max(0, start - 1)) + 1)..start];
+            if (!Regex.IsMatch(statement, $@"[(\[]{v}[)\]:]")) return [];
+            var named = Regex.Matches(statement, $@"labels\({v}\)\s+has\s+""(\w+)""").Select(m => m.Groups[1].Value).ToHashSet(StringComparer.Ordinal);
+            return view.Types.Values.Where(ty => named.Count == 0 || named.Contains(ty.Name)).SelectMany(ty => view.PropsOf(ty.Id).Keys)
+                .Select(id => view.Props[id].Name).Distinct().Order(StringComparer.Ordinal).Select(n => (n, "property"));
+        }
         // the columns of a step's query after on, from and to
         if (Regex.IsMatch(line, @"^\s*(?:extend\s+)?(?:nodes|edges|link)\s+\w+\s+(?:on|from|.*\bto)\s+$")
             && Top(t.Code).OfType<LetStatement>().FirstOrDefault(l => t.Steps.FirstOrDefault(s => s.Pos <= start && start <= s.HeadEnd) is { } h && h.Pos == l.TextStart) is { Expression.ResultType: TableSymbol ts })

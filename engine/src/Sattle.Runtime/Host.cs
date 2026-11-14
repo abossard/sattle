@@ -128,7 +128,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>The definition files that are no module text (projections in KQL), as they were given. They go wherever the module texts go: into every catalog, the journal header and a seal.</summary>
     readonly List<SourceFile> others = [];
     /// <summary>Every definition file of the space: the module texts as they are now, and the other files.</summary>
-    List<SourceFile> DefinitionFiles() => [.. sources.Values.Select(f => new SourceFile(f.Path, f.Text)), .. others];
+    public List<SourceFile> DefinitionFiles() { lock (Gate) return [.. sources.Values.Select(f => new SourceFile(f.Path, f.Text)), .. others]; }
     /// <summary>A definition file is named by its module (a module text) or by its file name (a projection file that the catalog's source reads). Without a source every name is a module's.</summary>
     bool IsFileName(string name) => options.Projections?.Reads(name) == true;
     /// <summary>The module texts of a map of definition files.</summary>

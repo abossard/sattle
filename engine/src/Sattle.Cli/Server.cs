@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Sattle.Core;
+using Sattle.Kql;
 using Sattle.Runtime;
 
 namespace Sattle.Cli;
@@ -52,6 +53,34 @@ public static class Server
         try { body = JsonNode.Parse(await new StreamReader(r.Body).ReadToEndAsync()); }
         catch (JsonException e) { return Json(new HostError("BadRequest", "the body is not JSON: " + e.Message, 400).ToJson(), 400); }
         return body is null ? Json(new HostError("BadRequest", "empty body", 400).ToJson(), 400) : Guard(() => f(body));
+    }
+
+    /// <summary>A call on a projection's text: `projection` (`module.name`) of a module the space has, and `text`. The catalog, and at depth `full` the
+    /// definition files, are taken under the host's lock; the text is read outside it, so typing does not hold up the input.</summary>
+    static IResult Kql(SpaceHost host, JsonNode b, bool fastOnly, Func<(Sattle.Language.Catalog Catalog, IReadOnlyList<Sattle.Language.SourceFile>? Files), string, string, JsonNode> call)
+    {
+        var projection = Field<string>(b, "projection") ?? throw new HostError("BadRequest", "projection is required", 400);
+        var text = Field<string>(b, "text") ?? throw new HostError("BadRequest", "text is required", 400);
+        var depth = Field<string>(b, "depth") ?? "fast";
+        if (depth is not ("fast" or "full") || fastOnly && depth != "fast") throw new HostError("BadRequest", $"depth '{depth}' is not fast{(fastOnly ? "" : " or full")}", 400);
+        var dot = projection.LastIndexOf('.');
+        (Sattle.Language.Catalog, IReadOnlyList<Sattle.Language.SourceFile>?) at;
+        lock (host.Gate)
+        {
+            if (dot <= 0 || !host.Catalog.Modules.ContainsKey(projection[..dot]) || projection[..dot] == Ids.KernelModule) throw new HostError("UnknownModule", $"no module for the projection '{projection}'", 404);
+            at = (host.Catalog, depth == "full" ? host.DefinitionFiles() : null);
+        }
+        return Json(call(at, projection, text));
+    }
+
+    static int Offset(JsonNode b, string text) =>
+        Field<int?>(b, "offset") is int o && o >= 0 && o <= text.Length ? o : throw new HostError("BadRequest", $"offset must be within the text (0 to {text.Length})", 400);
+
+    /// <summary>A field of a body, null when absent; a field of another JSON type is the client's error.</summary>
+    static T? Field<T>(JsonNode b, string name)
+    {
+        try { return b[name] is { } v ? v.GetValue<T>() : default; }
+        catch (Exception e) when (e is InvalidOperationException or FormatException) { throw new HostError("BadRequest", $"{name} has the wrong type", 400); }
     }
 
     /// <summary>An origin a browser page may call from: this machine (the canvas in development) or one named with --allow-origin.</summary>
@@ -171,6 +200,13 @@ public static class Server
         app.MapPost("/drafts/{id}/restore", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Restore(id, b["digest"]!.GetValue<string>())); }));
         app.MapPost("/drafts/{id}/preview", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Preview(id, b)); }));
         app.MapPost("/drafts/{id}/refactor", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Refactor(id, b)); }));
+        // the editors' calls on a projection's KQL text (research 11, section 2): stateless, read against the head catalog
+        app.MapPost("/kql/analyse", (HttpRequest r) => WithBody(r, b => Kql(host, b, false, (c, p, t) => KqlAuthoring.Analyse(c.Catalog, p, t, c.Files))));
+        app.MapPost("/kql/complete", (HttpRequest r) => WithBody(r, b => Kql(host, b, true, (c, p, t) => KqlAuthoring.Complete(c.Catalog, p, t, Offset(b, t)))));
+        app.MapPost("/kql/hover", (HttpRequest r) => WithBody(r, b => Kql(host, b, true, (c, p, t) => KqlAuthoring.Hover(c.Catalog, p, t, Offset(b, t)))));
+        app.MapPost("/kql/related", (HttpRequest r) => WithBody(r, b => Kql(host, b, true, (c, p, t) => KqlAuthoring.Related(c.Catalog, p, t, Offset(b, t)))));
+        app.MapGet("/kql/{p}", (string p) => Guard(() => Json(KqlAuthoring.Read(host.Definition(p + ".kql")))));
+        app.MapGet("/drafts/{id}/kql/{p}", (string id, string p) => Guard(() => Json(KqlAuthoring.Read(host.DraftText(id, p + ".kql")))));
         app.MapGet("/releases", (HttpContext c, string? module) => Guard(() => Cached(c, host, $"releases-{module}", Cache.Head, () => JsonP(host.Releases(module)))));
         app.MapGet("/releases/diff", (HttpContext c, string from, string to) => Guard(() => Cached(c, host, $"rdiff-{from}-{to}", Cache.Digest, () => JsonP(host.ReleaseDiff(from, to)))));
         app.MapGet("/releases/{digest}", (HttpContext c, string digest) => Guard(() => Cached(c, host, "rel-" + digest, Cache.Digest, () => JsonP(host.ReleaseSnapshot(digest)))));
