@@ -6,6 +6,10 @@
 - **Map/reduce shape, incremental and partitionable.** The engine computes on changes, not on whole graphs: every step takes a batch of changes (rows with a weight of +1 or -1) and returns the changes to its output. Steps without state are maps; steps with state are reduces keyed by a declared key, so their state can be split by key across threads or machines. Each step keeps only what it needs to turn the next input change into an output change, and knows exactly which keys, elements and windows a change touches; nothing is recomputed that no change reached. Shared indexes (arrangements) are the cache.
 - Count every new concept, type, setting or language addition as a cost. If two designs work, pick the one with fewer concepts.
 
+# Web code
+
+- Any HTML, CSS or client-side JavaScript work (the canvas, the editors, the game) runs the `modern-web-guidance:modern-web-guidance` skill first and follows it: use the platform's current features over libraries and old patterns.
+
 # Model use
 
 - Default: Claude Opus 5.5 or Sonnet 5.5 at the effort the task needs.
