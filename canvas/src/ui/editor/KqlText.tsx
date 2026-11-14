@@ -6,10 +6,12 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { linter, lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, hoverTooltip, keymap, lineNumbers, type Tooltip } from "@codemirror/view";
-import { MessageBar, MessageBarBody, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, MessageBar, MessageBarBody, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "react";
-import { completionOf, diagnosticsOf, digestOf, hoverLines, kqlLanguage, type Analysis, type Completion, type Depth, type Hover } from "../../editor/kql";
+import { completionOf, diagnosticsOf, digestOf, hoverLines, kqlLanguage, type Analysis, type Completion, type Depth, type Hover, type Place } from "../../editor/kql";
+import { cardsOf, type Change } from "../../editor/kql-edit";
+import { KqlSteps, type Reading } from "./KqlSteps";
 
 /** What the editor asks of the engine: the KQL calls of the editor service. */
 export interface KqlPort {
@@ -25,12 +27,12 @@ const current = async <T extends { digest: string }>(text: string, answer: Promi
 };
 
 /** The three things the editor asks the engine, as CodeMirror sources. `onAnalysis` hears every analysis that counts (fast and full). */
-export function kqlSources(port: KqlPort, projection: string, onAnalysis: (a: Analysis) => void = () => {}) {
+export function kqlSources(port: KqlPort, projection: string, onAnalysis: (a: Analysis, text: string) => void = () => {}) {
   return {
     async lint(text: string, depth: Depth = "fast"): Promise<Diagnostic[]> {
       const a = await current(text, port.kqlAnalyse(projection, text, depth));
       if (!a) return [];
-      onAnalysis(a);
+      onAnalysis(a, text);
       return diagnosticsOf(a);
     },
     async complete(ctx: CompletionContext): Promise<CompletionResult | null> {
@@ -68,7 +70,7 @@ const sheet = EditorView.theme({
 });
 
 /** The editor's extensions: highlighting, undo, errors (fast after a pause, full once idle), completion and hover from the engine. */
-export function kqlExtensions(port: KqlPort, projection: string, onAnalysis?: (a: Analysis) => void): Extension[] {
+export function kqlExtensions(port: KqlPort, projection: string, onAnalysis?: (a: Analysis, text: string) => void): Extension[] {
   const src = kqlSources(port, projection, onAnalysis);
   let idle: ReturnType<typeof setTimeout> | undefined;
   return [
@@ -108,35 +110,72 @@ const useStyles = makeStyles({
   root: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", height: "100%", minHeight: 0, backgroundColor: tokens.colorNeutralBackground3, padding: tokens.spacingHorizontalM, boxSizing: "border-box", rowGap: tokens.spacingVerticalS },
   head: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalM, flexWrap: "wrap" },
   file: { fontFamily: tokens.fontFamilyMonospace },
+  grow: { flexGrow: 1 },
+  body: { display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 1fr)", columnGap: tokens.spacingHorizontalM, minHeight: 0, "@media (max-width: 1000px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(50vh, 1fr) auto" } },
   host: { minHeight: 0, border: `1.5px solid ${tokens.colorNeutralForeground1}`, backgroundColor: tokens.colorNeutralBackground1, overflow: "hidden" },
 });
 
-/** The `.kql` file of a projection, editable, with the engine's answers. `port` also reads the text (in the draft when one is given). */
-export default function KqlText({ port, projection, draft }: { port: KqlPort & { kqlText(projection: string, draft?: string): Promise<{ text: string }> }; projection: string; draft?: string }) {
+type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ text: string }> };
+
+/**
+ * The `.kql` file of a projection, editable, with the engine's answers, and Steps beside it. `port` also reads the text (in the draft when one
+ * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator.
+ */
+export default function KqlText({ port, projection, draft, rows }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]> }) {
   const s = useStyles();
   const host = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<{ status: "loading" } | { status: "error"; message: string } | { status: "ready" }>({ status: "loading" });
-  const [problems, setProblems] = useState<number | null>(null);
+  const view = useRef<EditorView | null>(null);
+  const [state, setState] = useState<{ status: "loading" } | { status: "error"; message: string } | { status: "ready"; stored: string }>({ status: "loading" });
+  const [reading, setReading] = useState<Reading | null>(null);
+  const [doc, setDoc] = useState("");
+  const [cursor, setCursor] = useState<number | null>(null);
+  const [rowsBy, setRowsBy] = useState<{ status: "idle" | "busy" } | { status: "ready"; by: Map<string, string> } | { status: "error"; message: string }>({ status: "idle" });
   useEffect(() => {
-    let view: EditorView | null = null, gone = false;
-    setState({ status: "loading" });
+    let gone = false;
+    setState({ status: "loading" }); setReading(null); setRowsBy({ status: "idle" });
     port.kqlText(projection, draft).then(({ text }) => {
       if (gone || !host.current) return;
-      view = new EditorView({ parent: host.current, state: EditorState.create({ doc: text, extensions: kqlExtensions(port, projection, (a) => setProblems(a.diagnostics.length)) }) });
-      setState({ status: "ready" });
+      const follow = EditorView.updateListener.of((u) => { if (u.docChanged) setDoc(u.state.doc.toString()); if (u.selectionSet || u.docChanged) setCursor(u.state.selection.main.head); });
+      view.current = new EditorView({ parent: host.current, state: EditorState.create({ doc: text, extensions: [...kqlExtensions(port, projection, (a, t) => setReading({ text: t, analysis: a })), follow] }) });
+      setDoc(text);
+      setState({ status: "ready", stored: text });
     }, (e: Error) => !gone && setState({ status: "error", message: e.message }));
-    return () => { gone = true; view?.destroy(); };
+    return () => { gone = true; view.current?.destroy(); view.current = null; };
   }, [port, projection, draft]);
+  const problems = reading?.analysis.diagnostics.length ?? null;
+  // a visual edit goes in like typing: one transaction on the text, so typing and Steps share one undo history
+  const change = (changes: Change[], select: Place | null) => {
+    const v = view.current;
+    if (!v || !reading || reading.text !== v.state.doc.toString()) return; // computed on an older reading: dropped, the next reading comes
+    v.dispatch({ changes: changes.map((c) => ({ from: c.from, to: c.to, insert: c.insert })), ...(select ? { selection: { anchor: select[0] } } : {}), scrollIntoView: true });
+  };
+  const select = (p: Place) => { const v = view.current; if (v) { v.dispatch({ selection: { anchor: p[0], head: p[0] }, scrollIntoView: true }); v.focus(); } };
+  const askRows = () => {
+    if (!rows || !reading) return;
+    setRowsBy({ status: "busy" });
+    rows().then((ops) => {
+      const cards = cardsOf(reading.analysis), by = new Map<string, string>();
+      for (const o of ops) { const c = cards.get(o.op); if (c) by.set(c, o.rows); }
+      setRowsBy({ status: "ready", by });
+    }, (e: Error) => setRowsBy({ status: "error", message: e.message }));
+  };
+  const stored = state.status === "ready" && doc === state.stored;
   return (
     <div className={s.root}>
       <div className={s.head}>
         <Text className={s.file}>{projection}.kql</Text>
         <Text size={200} role="status">{problems === null ? "" : problems ? `${problems} problem${problems === 1 ? "" : "s"} found by the engine` : "the engine reads the text without problems"}</Text>
         <Text size={200}>Changes are checked as you type; they are not stored in the draft yet.</Text>
+        <span className={s.grow} />
+        {rows && <Button size="small" disabled={!stored || rowsBy.status === "busy"} onClick={askRows}>{rowsBy.status === "busy" ? "Counting rows…" : "Show rows"}</Button>}
+        {rowsBy.status === "error" && <Text size={200}>{rowsBy.message}</Text>}
       </div>
       {state.status === "loading" && <Spinner size="small" label="Reading the projection's text…" />}
       {state.status === "error" && <MessageBar intent="warning"><MessageBarBody>{state.message}</MessageBarBody></MessageBar>}
-      <div ref={host} className={s.host} hidden={state.status !== "ready"} />
+      <div className={s.body} hidden={state.status !== "ready"}>
+        <div ref={host} className={s.host} />
+        <KqlSteps reading={reading} selected={cursor} busy={!reading || reading.text !== doc} rows={rowsBy.status === "ready" && stored ? rowsBy.by : null} onSelect={select} onChanges={change} />
+      </div>
     </div>
   );
 }

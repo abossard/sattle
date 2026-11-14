@@ -1,6 +1,7 @@
 // Records the engine's answers to the KQL editor calls (PROTOCOL 3.41, 3.42) into tests/fixtures/kql.json.gz, so the text editor's tests run
 // without an engine on the answers the engine gives: every shipped projection's text and fast analysis, and the cases of note 11, stage a
-// (a seeded dcount, completion after a pipe and after `s.` in a graph-match, hover on a column).
+// (a seeded dcount, completion after a pipe and after `s.` in a graph-match, hover on a column), and the rows after each engine operator of a
+// draft's preview (stage b puts them under the cards; the samples are left out).
 // Usage: node scripts/record-kql.mjs [engine-url] [definitions-dir]   (defaults http://localhost:5080, ../engine/definitions)
 import { readdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -32,5 +33,9 @@ const cases = {
   afterDot: await post("complete", { projection: svc, text: text(svc), offset: at(text(svc), "project service = s.", 20) }),
   hoverColumn: await post("hover", { projection: svc, text: text(svc), offset: at(text(svc), "project service = ", 9) }),
 };
-writeFileSync(to, gzipSync(`${JSON.stringify({ engine: base, files, cases }, null, 1)}\n`));
-console.log(`${files.length} projections and ${Object.keys(cases).length} cases written to ${to}`);
+const draft = await (await fetch(`${base}/drafts`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json();
+const pv = await (await fetch(`${base}/drafts/${draft.draft}/preview`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ include: ["rows"], rowLimit: "1" }) })).json();
+await fetch(`${base}/drafts/${draft.draft}`, { method: "DELETE" });
+const preview = pv.graphs.flatMap((g) => (g.operators ?? []).map((o) => ({ graph: g.id, op: o.op, name: o.name, kind: o.kind, rows: o.rows, columns: o.columns })));
+writeFileSync(to, gzipSync(`${JSON.stringify({ engine: base, files, cases, preview }, null, 1)}\n`));
+console.log(`${files.length} projections, ${Object.keys(cases).length} cases and ${preview.length} previewed operators written to ${to}`);
