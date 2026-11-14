@@ -518,14 +518,10 @@ public sealed class Engine : IDisposable, IEngineInput
         }
         if (TrackAllocations) OperatorMillis[g.Name + "/(commit)"] = OperatorMillis.GetValueOrDefault(g.Name + "/(commit)") + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
         if (TrackAllocations) { var ks = KindStats.GetValueOrDefault("(flush, apply, store commit)"); KindStats["(flush, apply, store commit)"] = (ks.Ms + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds, 0, ks.Calls + 1); }
-        IReadOnlyList<WindowChange> changes = [];
-        if (samples.Count > 0)
-        {
-            Telemetry.Append(g.Key, [.. samples]);
-            changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var np);
-            g.TelemetryPosition = np;
-        }
-        else if (g.TelemetryPosition == 0) { _ = Telemetry.ClosedWindows(g.Key, 0, out var np); g.TelemetryPosition = np; }
+        if (samples.Count > 0) Telemetry.Append(g.Key, [.. samples]);
+        // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
+        var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
+        g.TelemetryPosition = read;
         if (ep.HasAdvance) Telemetry.Retain(g.Key, ep.Lambda, options.TelemetryRetentionNs);
         var result = new GraphResult(patch, changes, g.Head);
         var conflicts = g.Out.TakeChanged();
