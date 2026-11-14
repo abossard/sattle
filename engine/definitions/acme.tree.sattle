@@ -3,7 +3,7 @@ module acme.tree @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
+import acme.ops     @ 1.0.0 sha256:c075118585cca4bfb0818157e799884854d6b0a6070bd29930c5605c396a262b as ops;
 
 /// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
 entity Element {
@@ -39,6 +39,7 @@ identity evidence for Evidence version "1" { id: Text by exact; }
 /// The tree structure: elements and their parents, from the Azure resource ids and the Kubernetes objects of the master. A cluster that is an Azure resource is one element with the Kubernetes subtree below it.
 projection treeStructure view forward output acme.tree {
   in master: graph ops;
+  in authored: graph ops;
   retain 4;
 
   // ---- Azure side
@@ -97,10 +98,10 @@ projection treeStructure view forward output acme.tree {
   let h1 = union g1, nodes;
 
   // ---- curation (authored records in the master): a group is a named workload at the root that takes the elements named by its records as children, a move gives an element another parent
-  let groupNodes = match master (u: ops.Curation) |> where u.curAction == "group"
+  let groupNodes = match authored (u: ops.Curation) |> where u.curAction == "group"
     |> group by { gname: coalesce(u.curValue, "") } aggregate { n: count() }
     |> select { key: concat("grp/", gname), label: gname, kind: "workload", parent: "", rank: 0 };
-  let curated = match master (u: ops.Curation) |> where u.curAction == "group" or u.curAction == "move"
+  let curated = match authored (u: ops.Curation) |> where u.curAction == "group" or u.curAction == "move"
     |> select { key: u.curTarget, label: "", kind: "", parent: if(u.curAction == "group", concat("grp/", coalesce(u.curValue, "")), coalesce(u.curValue, "")), rank: 9 };
   let h2 = union h1, groupNodes;
   let rows = union h2, curated;
@@ -123,9 +124,10 @@ identity signal for Signal version "1" { element: Text by exact; rule: Text by e
 /// The signals of the estate: each meter of an element read against the authored rules that name it, with its state.
 projection treeSignals view forward output acme.tree {
   in master: graph ops;
+  in authored: graph ops;
   retain 4;
 
-  let rules = match master (u: ops.SignalRule)
+  let rules = match authored (u: ops.SignalRule)
     |> select { rid: u.ruleId, rtype: u.ruleType, rmeter: u.ruleMeter, above: u.ruleAbove, enterAfter: u.ruleEnter, below: u.ruleBelow, exitAfter: u.ruleExit, severity: u.ruleSeverity, sign: if(u.ruleInvert, -1.0, 1.0) };
 
   let azureMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(r: azure.AzureResource)

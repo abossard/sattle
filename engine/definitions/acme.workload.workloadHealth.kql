@@ -4,11 +4,12 @@ graph workloadHealth : acme.workload with (
     A pod also counts the node it runs on. A deployment is unhealthy when at least half of its pods are, else degraded when at least half are degraded or worse, else in no data when at least half are in no data or worse, else healthy; a pod with no severity does not count, and a deployment none of whose pods has one is Unknown. No data ranks above healthy and below degraded; a component that nothing measured is Unknown. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.",
     history = 4);
 input master : acme.ops;
+input authored : acme.ops;
 input structure : acme.workload;
 declare query_parameters(workloadNamespace:string);
 
 let stateOf = (w:long) { case(w >= 3, "Unhealthy", w == 2, "Degraded", w == 1, "No data", w == 0, "Healthy", "Unknown") };
-let rules = graph("master")
+let rules = graph("authored")
     | graph-match (u) where labels(u) has "SignalRule"
       project rid = u.ruleId, rtype = u.ruleType, rmeter = u.ruleMeter, above = u.ruleAbove, enterAfter = u.ruleEnter,
               below = u.ruleBelow, exitAfter = u.ruleExit, severity = u.ruleSeverity, sign = iff(u.ruleInvert, -1.0, 1.0);

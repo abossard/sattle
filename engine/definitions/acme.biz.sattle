@@ -2,8 +2,8 @@
 module acme.biz @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
-import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
-import acme.svc     @ 1.0.0 sha256:1072227675c9c883865023b31a100fbceeab255f1f486cd2b1995ac2155ca9a2 as svc;
+import acme.ops     @ 1.0.0 sha256:c075118585cca4bfb0818157e799884854d6b0a6070bd29930c5605c396a262b as ops;
+import acme.svc     @ 1.0.0 sha256:fa6005495c9fc9329a5ffbbb02313ef6a3c7b78eab8409e9f43e5f0c6630145d as svc;
 
 entity BizCapability { name: Text label; serviceCount?: Integer; }
 relationship Under (BizCapability) -> (BizCapability) kind composition;
@@ -20,12 +20,12 @@ constraint acyclic Under;
 
 /// The business capabilities and the calls between them, lifted from the calls between the services that realize them.
 projection capabilityView view output acme.biz {
-  in master: graph ops;
+  in authored: graph ops;
   in tree: graph svc;
   retain 8;
 
   rule capabilities lens {
-    let active = match master (c: ops.Capability) |> where c.status != "retired";
+    let active = match authored (c: ops.Capability) |> where c.status != "retired";
     emit entity BizCapability from active identity c set { name: c.name };
     accept create, delete, update(name);
     on create key ops.capability default { capId: key.id, owner: "unassigned", status: "active" };
@@ -33,14 +33,14 @@ projection capabilityView view output acme.biz {
   }
 
   rule tree lens {
-    let links = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
+    let links = match authored (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
       |> where c.status != "retired" and p.status != "retired";
     emit relationship Under from links key under: c -> p;
     accept create, delete;
   }
 
   rule counts readonly "number of services realizing the capability" {
-    let realized = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
+    let realized = match authored (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
       |> where c.status != "retired";
     let perCap = realized |> group by { c: c } aggregate { services: countDistinct(s) };
     emit update entity BizCapability from perCap identity c set { serviceCount: services };
@@ -50,7 +50,7 @@ projection capabilityView view output acme.biz {
   // Calls inside one capability and calls of a service that realizes no capability are not lifted; parallel edges collapse onto one, flows and drops are summed, the ratio is recomputed from the sums
   // and the state is derived again from it. The properties carry their own names (a name two modules declare is served qualified, and the service tree's names must not change).
   rule lifted readonly "service dependencies lifted to the capabilities that realize their ends" {
-    lift dependsOn as DependsOn from tree svc.DependsOn via master ops.Realizes
+    lift dependsOn as DependsOn from tree svc.DependsOn via authored ops.Realizes
       when image.status != "retired"
       carry callFlows = flows, callDrops = drops
       derive callDropRatio = if(callFlows > 0, callDrops / callFlows, 0.0)

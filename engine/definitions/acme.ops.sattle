@@ -1,4 +1,4 @@
-/// Project ontology extension, authored business entities and master ingestion.
+/// Project ontology extension, authored business entities, the master ingestion and the ingestion of authored rows.
 module acme.ops @ 1.0.0;
 
 import sattle.infra         @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
@@ -44,7 +44,7 @@ rows SignalRuleRow { ruleId: Text; type: Text; meter: Text; above: Decimal; ente
 rows PolicyRow     { target: Text; mode: Text; share?: Decimal; }
 rows CurationRow   { curId: Text; action: Text; target: Text; value?: Text; }
 
-/// The master graph: what the sources observed. Pods, services, deployments and nodes of the clusters, the Azure resources, calls between pods, meters, warning, activity and audit events, and the authored capabilities, rules and policies.
+/// The master graph: what the sources observed. Pods, services, deployments and nodes of the clusters, the Azure resources, calls between pods, meters, warning, activity and audit events. What people wrote is the graph `authored`.
 projection ingest ingestion output acme.ops {
   in pods: rows k8s.PodRow;
   in services: rows k8s.ServiceRow;
@@ -53,11 +53,6 @@ projection ingest ingestion output acme.ops {
   in deployments: rows k8s.DeploymentRow;
   in endpoints: rows k8s.EndpointRow;
   in flows: rows hubble.FlowRow;
-  in caps: rows CapabilityRow;
-  in realizes: rows RealizesRow;
-  in signalRules: rows SignalRuleRow;
-  in policies: rows PolicyRow;
-  in curations: rows CurationRow;
   in nodes: rows k8s.NodeRow;
   in events: rows k8s.EventRow;
   in resources: rows azsrc.ResourceRow;
@@ -307,38 +302,6 @@ projection ingest ingestion output acme.ops {
       set { serverErrors: mean };
   }
 
-  rule authoredCapabilities bijective {
-    emit entity Capability from caps
-      identity capability(id: capId)
-      set { capId: capId, name: name, owner: owner, status: status };
-    emit relationship PartOf from caps key partOf:
-      capability(id: capId) -> capability(id: parentId);
-  }
-
-  rule authoredRealizes bijective {
-    emit relationship Realizes from realizes key realizes:
-      infra.serviceName(cluster: cluster, namespace: namespace, name: service)
-      -> capability(id: capId);
-  }
-
-  rule authoredSignalRules bijective {
-    emit entity SignalRule from signalRules
-      identity signalRule(id: ruleId)
-      set { ruleId: ruleId, ruleType: type, ruleMeter: meter, ruleAbove: above, ruleEnter: enterAfter, ruleBelow: below, ruleExit: exitAfter, ruleSeverity: severity, ruleInvert: invert };
-  }
-
-  rule authoredPolicies bijective {
-    emit entity RollupPolicy from policies
-      identity rollupPolicy(target: target)
-      set { policyTarget: target, policyMode: mode, policyShare: share };
-  }
-
-  rule authoredCuration bijective {
-    emit entity Curation from curations
-      identity curation(id: curId)
-      set { curId: curId, curAction: action, curTarget: target, curValue: value };
-  }
-
   rule observedAzureMeters readonly "every Azure Monitor metric of every resource, mean per 60 s window" {
     let azureWindows = resourceMetrics |> window on time width 60s late revise;
     let azureSums = azureWindows
@@ -381,5 +344,47 @@ projection ingest ingestion output acme.ops {
       set { meterKey: concat("pod/", cluster, "/", namespace, "/", name), meter: "warnings", reading: toDecimal(warnings) };
     emit relationship MeterOf from podSums key meterOfPod:
       meter(key: concat("pod/", cluster, "/", namespace, "/", name), meter: "warnings") -> infra.podName(cluster: cluster, namespace: namespace, name: name);
+  }
+}
+
+/// What people wrote: the capabilities and the services that realize them, the signal rules, the roll-up policies and the curations of the health tree. An edit of a capability in a view lands here.
+projection authored ingestion output acme.ops {
+  in caps: rows CapabilityRow;
+  in realizes: rows RealizesRow;
+  in signalRules: rows SignalRuleRow;
+  in policies: rows PolicyRow;
+  in curations: rows CurationRow;
+  retain 8;
+
+  rule authoredCapabilities bijective {
+    emit entity Capability from caps
+      identity capability(id: capId)
+      set { capId: capId, name: name, owner: owner, status: status };
+    emit relationship PartOf from caps key partOf:
+      capability(id: capId) -> capability(id: parentId);
+  }
+
+  rule authoredRealizes bijective {
+    emit relationship Realizes from realizes key realizes:
+      infra.serviceName(cluster: cluster, namespace: namespace, name: service)
+      -> capability(id: capId);
+  }
+
+  rule authoredSignalRules bijective {
+    emit entity SignalRule from signalRules
+      identity signalRule(id: ruleId)
+      set { ruleId: ruleId, ruleType: type, ruleMeter: meter, ruleAbove: above, ruleEnter: enterAfter, ruleBelow: below, ruleExit: exitAfter, ruleSeverity: severity, ruleInvert: invert };
+  }
+
+  rule authoredPolicies bijective {
+    emit entity RollupPolicy from policies
+      identity rollupPolicy(target: target)
+      set { policyTarget: target, policyMode: mode, policyShare: share };
+  }
+
+  rule authoredCuration bijective {
+    emit entity Curation from curations
+      identity curation(id: curId)
+      set { curId: curId, curAction: action, curTarget: target, curValue: value };
   }
 }

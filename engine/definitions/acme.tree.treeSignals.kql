@@ -3,8 +3,9 @@ graph treeSignals : acme.tree with (
     history = 4);
 // Hysteresis, thresholds and severity come from the rule, so a new meter or a changed threshold is a record, not a change of this text.
 input master : acme.ops;
+input authored : acme.ops;
 
-let rules = graph("master")
+let rules = graph("authored")
     | graph-match (u) where labels(u) has "SignalRule"
       project rid = u.ruleId, rtype = u.ruleType, rmeter = u.ruleMeter, above = u.ruleAbove, enterAfter = u.ruleEnter,
               below = u.ruleBelow, exitAfter = u.ruleExit, severity = u.ruleSeverity, sign = iff(u.ruleInvert, -1.0, 1.0);

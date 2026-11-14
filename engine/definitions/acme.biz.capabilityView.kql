@@ -1,13 +1,13 @@
 graph capabilityView : acme.biz with (
     description = "The business capabilities and the calls between them, lifted from the calls between the services that realize them.",
     history = 8);
-input master : acme.ops;
+input authored : acme.ops;
 input tree : acme.svc;
 
-let capabilities = graph("master")
+let capabilities = graph("authored")
     | graph-match (capability) where labels(capability) has "Capability" and capability.status != "retired"
       project capability;
-let realized = graph("master")
+let realized = graph("authored")
     | graph-match (s)-[r]->(c) where labels(r) has "Realizes" and c.status != "retired"
       project service = s.id, capability = c.id;
 // a service that realizes two capabilities is in neither: Realizes is declared to give each service one capability
@@ -31,7 +31,7 @@ let retiredCapability = () { print status = "retired" };
 nodes BizCapability on capability
     with (rule = "capabilities", accept = "create, delete", update = "name", onCreate = "newCapability", onDelete = "retiredCapability")
     = capabilities | project capability = capability.id, name = capability.name;
-edges Under from capability to parent with (rule = "tree", accept = "create, delete") = graph("master")
+edges Under from capability to parent with (rule = "tree", accept = "create, delete") = graph("authored")
     | graph-match (c)-[k]->(p) where labels(k) has "PartOf" and c.status != "retired" and p.status != "retired"
       project capability = c.id, parent = p.id;
 extend nodes BizCapability on capability with (rule = "counts", description = "number of services realizing the capability") = realized

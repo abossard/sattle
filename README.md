@@ -3,6 +3,7 @@
 Sattle analyzes cloud deployments with deterministic graph theory.
 
 - One **master graph** is built from what the platform reports: Azure resources, Kubernetes objects, network flows, metrics, activity and audit events.
+- What people write (capabilities and the services that realize them, signal rules, roll-up policies, curations) is a second input graph, **`authored`**. A projection that needs both reads both.
 - **Projections** turn that graph into smaller graphs that a person can read: services, capabilities, a health model. A projection of a projection is again a graph, so abstractions stack.
 - Projections, ontologies and identities are **graphs themselves**. Only the engine is compiled code.
 - Every result is a function of the ordered input. The same input gives the same graphs, whatever the batching.
@@ -28,7 +29,7 @@ npm --prefix canvas run dev
 ```
 
 - Open http://localhost:5173. The canvas shows the estate from files the engine wrote earlier.
-- In **Data graph**, pick a graph in the "Graph" box, in this order: `master` (everything the platform reported), `serviceTree` (services and their calls), `capabilities`, `workloadStructure` (what the workload is made of and depends on), `workload` (its health and which part is to blame).
+- In **Data graph**, pick a graph in the "Graph" box, in this order: `master` (everything the platform reported), `authored` (what people wrote), `serviceTree` (services and their calls), `capabilities`, `workloadStructure` (what the workload is made of and depends on), `workload` (its health and which part is to blame).
 - Click a node. The same entity is highlighted in every graph, so you can follow it from raw data up to its health.
 - Drag the timeline under the graph to replay how the graph changed, revision by revision.
 - **Graph space** shows all graphs and which ones are built from which.
@@ -95,8 +96,11 @@ npm --prefix canvas test
 ```mermaid
 flowchart LR
   S["Sources<br/>Azure, Kubernetes,<br/>flows, metrics, events"] --> M["Master graph<br/>one per graph space"]
+  W["Authored rows<br/>capabilities, rules,<br/>policies, curations"] --> A["Authored graph"]
   M --> P1["Projection<br/>services and their calls"]
   P1 --> P2["Projection<br/>capabilities"]
+  A --> P2
+  A --> H
   M --> H["Workload model<br/>structure, then health with roll-up"]
   P1 --> H
   H --> D["Document projection<br/>report"]
@@ -104,7 +108,7 @@ flowchart LR
   C -.defines.-> P2
   C -.defines.-> H
   classDef box fill:#1f2937,stroke:#9ca3af,color:#f9fafb;
-  class S,M,P1,P2,H,D,C box;
+  class S,W,M,A,P1,P2,H,D,C box;
 ```
 
 - An edge between two lower-level nodes becomes an edge between their higher-level images. The language has one statement for that, [`lift`](engine/definitions/acme.svc.sattle#L56).
@@ -236,7 +240,7 @@ Definitions, all plain text and all loaded as graphs:
 
 - Ontologies: [`sattle.infra`](engine/definitions/sattle.infra.sattle), [`sattle.azure`](engine/definitions/sattle.azure.sattle), [`sattle.doc`](engine/definitions/sattle.doc.sattle).
 - Source row types: [Kubernetes](engine/definitions/sattle.source.k8s.sattle), [Hubble flows](engine/definitions/sattle.source.hubble.sattle), [Prometheus](engine/definitions/sattle.source.prometheus.sattle), [Azure](engine/definitions/sattle.source.azure.sattle).
-- Projections: [`acme.ops`](engine/definitions/acme.ops.sattle) (master), [`acme.svc`](engine/definitions/acme.svc.sattle), [`acme.biz`](engine/definitions/acme.biz.sattle), [`acme.deployhealth`](engine/definitions/acme.deployhealth.sattle), [`acme.workload`](engine/definitions/acme.workload.sattle), [`acme.report`](engine/definitions/acme.report.sattle).
+- Projections: [`acme.ops`](engine/definitions/acme.ops.sattle) (master and authored), [`acme.svc`](engine/definitions/acme.svc.sattle), [`acme.biz`](engine/definitions/acme.biz.sattle), [`acme.deployhealth`](engine/definitions/acme.deployhealth.sattle), [`acme.workload`](engine/definitions/acme.workload.sattle), [`acme.report`](engine/definitions/acme.report.sattle).
 - The graph space that binds them: [`acme.space`](engine/definitions/acme.space.sattle).
 
 How it is tested:

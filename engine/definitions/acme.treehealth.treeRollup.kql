@@ -4,10 +4,10 @@ graph treeRollup : acme.tree with (
 // How each element of the tree rolls up its children: a policy chosen by key, else by kind, else "worst",
 // and the edges along which severity rolls up (none below an element whose policy is "ignore").
 input structure : acme.tree;
-input master : acme.ops;
+input authored : acme.ops;
 
 let els = graph("structure") | graph-match (e) where labels(e) has "Element" project e = e.id, pk = e.nodeKey, pkind = e.nodeKind;
-let policyRows = graph("master") | graph-match (u) where labels(u) has "RollupPolicy" project ptarget = u.policyTarget, pmode = u.policyMode, pshare = coalesce(u.policyShare, 0.5);
+let policyRows = graph("authored") | graph-match (u) where labels(u) has "RollupPolicy" project ptarget = u.policyTarget, pmode = u.policyMode, pshare = coalesce(u.policyShare, 0.5);
 let policies = union (els | project pk, pm = "worst", ps = 0.5, rank = 0),
                      (els | join kind=inner (policyRows) on $left.pkind == $right.ptarget | project pk, pm = pmode, ps = pshare, rank = 1),
                      (els | join kind=inner (policyRows) on $left.pk == $right.ptarget | project pk, pm = pmode, ps = pshare, rank = 2)

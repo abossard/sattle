@@ -5,6 +5,7 @@ graph treeStructure : acme.tree with (
 // and the groups and moves people curate. Each row names an element: its key, a name, its kind, its parent and a rank;
 // where rows disagree on a name or a parent, the higher rank decides.
 input master : acme.ops;
+input authored : acme.ops;
 
 let resources = graph("master")
     | graph-match (r) where labels(r) has "AzureResource" and isnotempty(r.subscriptionId) and isnotempty(r.resourceGroup)
@@ -47,11 +48,11 @@ let nodes = graph("master")
     | project key = nkey, label = nname, ['kind'] = "node", parent = ckey, rank = 1;
 
 // curated: a group is a new workload; a move gives an element another parent
-let groupNodes = graph("master")
+let groupNodes = graph("authored")
     | graph-match (u) where labels(u) has "Curation" and u.curAction == "group" project gname = coalesce(u.curValue, "")
     | summarize n = count() by gname
     | project key = strcat("grp/", gname), label = gname, ['kind'] = "workload", parent = "", rank = 0;
-let curated = graph("master")
+let curated = graph("authored")
     | graph-match (u) where labels(u) has "Curation" and (u.curAction == "group" or u.curAction == "move")
       project key = u.curTarget, label = "", ['kind'] = "", parent = iff(u.curAction == "group", strcat("grp/", coalesce(u.curValue, "")), coalesce(u.curValue, "")), rank = 9;
 let rows = union subscriptions, groups, azureResources, clusters, namespaces, workloads, podsInNamespace, podsInWorkload, nodes, groupNodes, curated;

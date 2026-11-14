@@ -5,7 +5,7 @@ module acme.workload @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:a53135162efc86b0487081ab1c89526bd11f559e94148cf52ec23a2e47ecbb84 as ops;
+import acme.ops     @ 1.0.0 sha256:c075118585cca4bfb0818157e799884854d6b0a6070bd29930c5605c396a262b as ops;
 
 /// A part of the workload or of what carries it. key names it across graphs; own is the worst severity of its own signals (0 healthy, 1 no data, 2 degraded, 3 unhealthy); severity and state are rolled up.
 abstract entity Component {
@@ -294,11 +294,12 @@ projection workloadStructure view forward output acme.workload {
 /// A pod also counts the node it runs on. A deployment is unhealthy when at least half of its pods are, else degraded when at least half are degraded or worse, else in no data when at least half are in no data or worse, else healthy; a pod with no severity does not count, and a deployment none of whose pods has one is Unknown. No data ranks above healthy and below degraded; a component that nothing measured is Unknown. A call between two services is taken as evidence that the caller needs the callee, so failure travels from callee to caller; the communication edge TalksTo itself carries none.
 projection workloadHealth view forward output acme.workload {
   in master: graph ops;
+  in authored: graph ops;
   in structure: graph acme.workload;
   in workloadNamespace: param Text;
   retain 4;
 
-  let rules = match master (u: ops.SignalRule)
+  let rules = match authored (u: ops.SignalRule)
     |> select { rid: u.ruleId, rtype: u.ruleType, rmeter: u.ruleMeter, above: u.ruleAbove, enterAfter: u.ruleEnter, below: u.ruleBelow, exitAfter: u.ruleExit, severity: u.ruleSeverity, sign: if(u.ruleInvert, -1.0, 1.0) };
   // meters of Azure resources and of nodes: Azure Monitor and Prometheus readings, in no data after five minutes without one
   let resourceMeters = match master (m: ops.Meter)-[:ops.MeterOf]->(r: azure.AzureResource)
