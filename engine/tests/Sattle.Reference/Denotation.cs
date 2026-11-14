@@ -24,7 +24,7 @@ public static class Denotation
         TValues v => new Relation(Names(v), ZSet.Of(v.Rows.Select(r => (r.ToImmutableArray(), 1L)))),
         TFilter f => Filter(f, input("in")),
         TMap m => Map(m, input("in")),
-        TUnion u => new Relation(Names(u), input("in0").Rows.Plus(input("in1").Rows)),
+        TUnion u => new Relation(Names(u), Side(u, input("in0")).Plus(Side(u, input("in1")))),
         TDistinct d => new Relation(Names(d), ZSet.Of(input("in").Rows.Where(r => r.Weight > 0).Select(r => (r.Row, 1L)))),
         TJoin j => Join(j, input("left"), input("right")),
         TWindow w => Window(w, input("in")),
@@ -36,6 +36,8 @@ public static class Denotation
     };
 
     static ImmutableArray<string> Names(TOp op) => [.. op.Out.Cols.Select(c => c.Name)];
+    /// <summary>One side of a union, as the union's columns by name: a side may carry more (the properties read from an element), and those stay behind.</summary>
+    static ZSet Side(TUnion u, Relation side) => ZSet.Of(side.Rows.Select(r => (u.Out.Cols.Select(c => r.Row[side.Index(c.Name)]).ToImmutableArray(), r.Weight)));
     static long Instant(Value v) => v switch { InstantValue i => i.Ns, IntegerValue n => (long)n.N, _ => throw new Undefined($"{v.Kind} is not an Instant") };
     static bool True(Value v) => v is BooleanValue { B: true };
 

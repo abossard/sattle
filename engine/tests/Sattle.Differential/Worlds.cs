@@ -189,6 +189,38 @@ public static class Worlds
             }
             """)], [Pods, Flows]) { Witnesses = ["d:w.view/prop:calls="] };
 
+    /// <summary>A view that names everything by the pod it matches, over the same master: every pod counts zero and every call one (a union, one side of which carries the name read from the pod), a group by the pod, two joins on the pod, and sinks whose ids and ends are the pod. A link merges two identities of one pod; every step re-keys through the master's patch.</summary>
+    public static readonly World LinkedUnionJoin = new("a view that unions, groups and joins by a pod that a link merges", "Link, Match, Union, Group, Join, EmitEntity, EmitRelationship in a view", [
+        new SourceFile("w.sattle", Linked[..Linked.IndexOf("space s {", StringComparison.Ordinal)]),
+        new SourceFile("w.view.sattle", """
+            module w.view @ 1.0.0;
+            import w @ 1.0.0 sha256:… as base;
+            entity Node { name?: Text; calls?: Integer; state?: Text; }
+            relationship Talks (Node) -> (Node) { state?: Text; }
+            projection v view forward output w.view {
+              in master: graph base;
+              let pods = match master (p: base.Pod);
+              let zero = pods |> select { p: p, n: 0 };
+              let one = match master (p: base.Pod)-[:base.Calls]->(q: base.Pod) |> select { p: p, n: 1 };
+              let rows = union zero, one;
+              let status = rows |> group by { p: p } aggregate { c: sum(n) } |> select { p: p, c: c, state: if(c > 0, "busy", "idle") };
+              emit entity Node from pods identity p set { name: p.name };
+              emit update entity Node from status identity p set { calls: c, state: state };
+              let calls = match master (a: base.Pod)-[k: base.Calls]->(b: base.Pod) |> where a != b;
+              let src = status |> select { ps: p, ss: state };
+              let dst = status |> select { pt: p, ts: state };
+              let withSrc = join calls, src on a == ps;
+              let withDst = join withSrc, dst on b == pt;
+              emit relationship Talks from withDst key talks: a -> b set { state: if(ss == "busy" and ts == "busy", "busy", "idle") };
+            }
+            space s {
+              source pods adapter "sattle.authoring" rows base.PodRow;
+              source flows adapter "sattle.authoring" rows base.FlowRow;
+              master graph master = base.ingest(pods: pods, flows: flows);
+              graph view = v(master: master);
+            }
+            """)], [Pods, Flows]) { Witnesses = ["d:w.view/prop:calls=", "d:w.view/prop:name=", "rel "] };
+
     public static readonly World LinkedLoads = LinkedLoadsUnder("delta sum");
 
     /// <summary>The world of `LinkedLoads` with the load property declared `{kind} telemetry {rule} every 60s` (a temporality and a combine rule), each group aggregating `aggregate`.</summary>
@@ -466,6 +498,7 @@ public static class Worlds
         new World("link", "Link, EmitRelationship", [new SourceFile("w.sattle", Linked)], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
         LinkedView,
+        LinkedUnionJoin,
         References,
         ShareRule,
         MembersLeave,
