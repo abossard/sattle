@@ -56,6 +56,33 @@ public class Review2KqlRunTests
 
     static Value? P(Entity e, string prop) => e.Props.Get("d:t.base/prop:" + prop);
 
+    /// <summary>Kusto returns the columns of one row of the group: a tie on the order gives (1, 9) or (2, 3). HEAD: one `last` per column, the pair (2, 9) is no input row.</summary>
+    [Fact]
+    public void Arg_max_gives_the_columns_of_one_row_when_two_rows_tie()
+    {
+        var (put, e) = Run("graph ingest : t.base;\ninput items : ItemRow;\n"
+            + "nodes Summary on s with (rule = \"observed\") = items | summarize arg_max(rank, x, y) by bucket | project s = identity(\"summary\", bucket), bucket, key = bucket, best = x, other = y;\n",
+            ("k1", "a", 1, 1, 9, null), ("k2", "a", 1, 2, 3, null));
+        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
+        using var _ = e;
+        var a = Assert.Single(e!.Master.State.Entities);
+        Assert.Contains((P(a, "best"), P(a, "other")), new (Value?, Value?)[] { (Value.Integer(1), Value.Integer(9)), (Value.Integer(2), Value.Integer(3)) });
+    }
+
+    /// <summary>Kusto: the row of the greatest x, whatever its other columns hold. HEAD: a row whose returned value is missing is skipped, the note of the older row is kept.</summary>
+    [Fact]
+    public void Arg_max_gives_the_value_of_the_greatest_row_also_when_that_row_has_none()
+    {
+        var (put, e) = Run("graph ingest : t.base;\ninput items : ItemRow;\n"
+            + "nodes Summary on s with (rule = \"observed\") = items | summarize arg_max(x, note) by bucket | project s = identity(\"summary\", bucket), bucket, key = bucket, best = x, note;\n",
+            ("k1", "a", 0, 1, 0, "older"), ("k2", "a", 0, 2, 0, null));
+        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
+        using var _ = e;
+        var a = Assert.Single(e!.Master.State.Entities);
+        Assert.Equal(Value.Integer(2), P(a, "best"));
+        Assert.NotEqual(Value.Text("older"), P(a, "note"));
+    }
+
     /// <summary>Two identity domains in one union column: refused, or the ids stay apart (Kusto's identity() is a different string per domain). HEAD: both branches are minted in domain A, 4 rows make 2 elements.</summary>
     [Fact]
     public void A_union_of_two_identity_domains_is_refused_or_keeps_the_ids_apart()

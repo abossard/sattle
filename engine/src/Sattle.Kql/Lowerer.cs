@@ -886,7 +886,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         if (telemetry && !byWindow) throw new Refused("a summary of telemetry keeps its windows: summarize ... by ..., windowStart", s);
         if (byWindow && !telemetry && !events) throw new Refused("only telemetry rows and rows in windows of bin(time, 60s) have windows", s);
         if (events) { keys.Add(("windowStart", F("windowStart"))); next.Cols.Add("windowStart"); next.EventWindows = true; }
-        var aggs = new List<(string Target, string Fn, X? Value, X? Weight)>();
+        // Row: the aggregates of one arg_max call carry one row name, so they take their values from one input row
+        var aggs = new List<(string Target, string Fn, X? Value, X? Weight, string? Row)>();
         foreach (var it in s.Aggregates.Select(x => x.Element))
         {
             // arg_max(order, a, b): the values of the row with the greatest order, and that order (named n in n = arg_max(...)); * is every other column
@@ -904,19 +905,20 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                     : [.. values.Select(v => (((NameReference)v).SimpleName, Scalar(v, r)))];
                 foreach (var (c, _) in cols.Where(c => r.Types.ContainsKey(c.Name) || r.Idents.ContainsKey(c.Name)))
                     throw new Refused($"arg_max gives values, and '{c}' is an element: project its properties or its id first", am);
-                aggs.Add((first, "last", Scalar(order, r), Scalar(order, r))); next.Cols.Add(first);
-                foreach (var (c, x) in cols) { aggs.Add((c, "last", x, Scalar(order, r))); next.Cols.Add(c); }
+                aggs.Add((first, "last", Scalar(order, r), Scalar(order, r), first)); next.Cols.Add(first);
+                foreach (var (c, x) in cols) { aggs.Add((c, "last", x, Scalar(order, r), first)); next.Cols.Add(c); }
                 continue;
             }
             if (it is not SimpleNamedExpression { Expression: FunctionCallExpression call } named) throw new Refused("name each aggregate: n = count()", it);
-            aggs.Add(Aggregate(named.Name.SimpleName, call, r, telemetry));
+            var (at, af, av, aw) = Aggregate(named.Name.SimpleName, call, r, telemetry);
+            aggs.Add((at, af, av, aw, null));
             next.Cols.Add(named.Name.SimpleName);
         }
         var op = Op(telemetry ? "Rollup" : "Group");
         foreach (var (name, x) in keys) Write(x, b.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
-        foreach (var (target, fn, value, weight) in aggs)
+        foreach (var (target, fn, value, weight, row) in aggs)
         {
-            var a = b.Contain(op, "agg", target, "Aggregate", null, ("target", T(target)), ("fn", T(fn)));
+            var a = row is null ? b.Contain(op, "agg", target, "Aggregate", null, ("target", T(target)), ("fn", T(fn))) : b.Contain(op, "agg", target, "Aggregate", null, ("target", T(target)), ("fn", T(fn)), ("row", T(row)));
             if (value is not null) Write(value, a, "value", 0);
             if (weight is not null) Write(weight, a, fn == "last" ? "order" : "weight", 0);
         }
