@@ -156,7 +156,7 @@ sealed class WindowOp : PhysOp
 
 // ---- aggregation -----------------------------------------------------------------------------------------
 
-/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns) and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max`, `last` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
+/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns), for a key with more than one value of a `min` or `max` their extreme in the accumulator the aggregate has, and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max`, `last` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
 sealed class KeyTable
 {
     readonly int k, nL, nD, nIndex;
@@ -165,7 +165,7 @@ sealed class KeyTable
     readonly long[] key;
     readonly Segments<byte> touched = new();
     public readonly List<int> TouchedList = [];
-    /// <summary>(slot, aggregate, value): the values of a `min` or `max` over integers and codes, and of a `countDistinct`.</summary>
+    /// <summary>(slot, aggregate, value): the values of a `min` or `max` over integers and codes, and of a `countDistinct`. The aggregate is named by its accumulator in the key's row, which no two aggregates share.</summary>
     readonly Table? longs;
     /// <summary>(slot, aggregate, value as a number, its digits): the values of a `min` or `max` over decimals.</summary>
     readonly Table? decimals;
@@ -200,7 +200,7 @@ sealed class KeyTable
     public long L(int slot, int i) => rows.Get(slot, accL + i);
     public void AddL(int slot, int i, long v) => rows.Set(slot, accL + i, rows.Get(slot, accL + i) + v);
     public decimal D(int slot, int i) => Unpack(rows.Get(slot, accD + 2 * i), rows.Get(slot, accD + 2 * i + 1));
-    public void AddD(int slot, int i, decimal v) { var (a, b) = Pack(D(slot, i) + v); rows.Set(slot, accD + 2 * i, a); rows.Set(slot, accD + 2 * i + 1, b); }
+    public void AddD(int slot, int i, decimal v) => SetD(slot, i, D(slot, i) + v);
     public bool Emitted(int slot) => rows.Get(slot, emitted) != 0;
     public void SetEmitted(int slot, bool on) => rows.Set(slot, emitted, on ? 1 : 0);
 
@@ -219,13 +219,55 @@ sealed class KeyTable
         var has = longs.Add([slot, a, v], w) >= 0;
         return (has ? 1 : 0) - (had ? 1 : 0);
     }
-    public void AddDecimal(int slot, int a, decimal v, long w)
+    /// <summary>Adds a weight to a value of a `min` or `max` over integers and keeps the extreme. A key with one value keeps nothing more: that value is the extreme. A key with more values has the extreme in its row, in accumulator `a`: a new value that beats it takes its place, and only when the extreme itself goes are the values of the key walked for the next one.</summary>
+    public void AddExtremeL(int slot, int a, long v, long w, bool desc)
+    {
+        var change = AddLong(slot, a, v, w);
+        if (change == 0) return;
+        var values = Values(longsOf!, slot, a);
+        if (values < 2) { if (L(slot, a) != 0) rows.Set(slot, accL + a, 0); }
+        else if (change > 0 && values > 2) { if (desc ? v > L(slot, a) : v < L(slot, a)) rows.Set(slot, accL + a, v); }
+        else if (change > 0 || v == L(slot, a))        // the second value came, or the extreme went
+        {
+            long best = 0; var any = false;
+            for (var r = longsOf!.First([slot, a]); r >= 0; r = longsOf.Next(r))
+            {
+                var x = longs!.Get(r, 2);
+                if (!any || (desc ? x > best : x < best)) { best = x; any = true; }
+            }
+            rows.Set(slot, accL + a, best);
+        }
+    }
+    /// <summary>The same for a `min` or `max` over decimals: 2.5 and 2.50 are one value, kept as it was first written.</summary>
+    public void AddExtremeD(int slot, int a, decimal v, long w, bool desc)
     {
         var (lo, hi) = DecimalKey.Of(v);
         var had = decimals!.Find([slot, a, lo, hi]) >= 0;
         var row = decimals.Add([slot, a, lo, hi], w);
-        if (row >= 0 && !had) { var (x, y) = Pack(v); decimals.Set(row, 4, x); decimals.Set(row, 5, y); }
+        if (row >= 0 == had) return;
+        if (row >= 0) { var (x, y) = Pack(v); decimals.Set(row, 4, x); decimals.Set(row, 5, y); }
+        var values = Values(decimalsOf!, slot, a);
+        if (values < 2) { if (D(slot, a) != 0) SetD(slot, a, 0); }
+        else if (row >= 0 && values > 2) { if (desc ? v > D(slot, a) : v < D(slot, a)) SetD(slot, a, v); }
+        else if (row >= 0 || v == D(slot, a))
+        {
+            decimal best = 0; var any = false;
+            for (var r = decimalsOf!.First([slot, a]); r >= 0; r = decimalsOf.Next(r))
+            {
+                var x = Unpack(decimals.Get(r, 4), decimals.Get(r, 5));
+                if (!any || (desc ? x > best : x < best)) { best = x; any = true; }
+            }
+            SetD(slot, a, best);
+        }
     }
+    /// <summary>How many values aggregate `a` of a key's row has: 0, 1, 2, or 3 for more.</summary>
+    static int Values(Arrangement of, int slot, int a)
+    {
+        var n = 0;
+        for (var r = of.First([slot, a]); r >= 0 && n < 3; r = of.Next(r)) n++;
+        return n;
+    }
+    void SetD(int slot, int i, decimal v) { var (a, b) = Pack(v); rows.Set(slot, accD + 2 * i, a); rows.Set(slot, accD + 2 * i + 1, b); }
     public void AddLast(int slot, int a, decimal ord, decimal val, long w)
     {
         var (o1, o2) = DecimalKey.Of(ord); var (v1, v2) = DecimalKey.Of(val);
@@ -238,26 +280,18 @@ sealed class KeyTable
         }
     }
 
-    /// <summary>The smallest (or with `desc` the greatest) value of a `min` or `max` over integers; false when it has none.</summary>
-    public bool ExtremeL(int slot, int a, bool desc, out long v)
+    /// <summary>The extreme of a `min` or `max` over integers; false when it has no value. One value is the extreme itself, of more the key's row holds it.</summary>
+    public bool ExtremeL(int slot, int a, out long v)
     {
-        v = 0; var any = false;
-        for (var r = longsOf!.First([slot, a]); r >= 0; r = longsOf.Next(r))
-        {
-            var x = longs!.Get(r, 2);
-            if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
-        }
-        return any;
+        var first = longsOf!.First([slot, a]);
+        v = first < 0 ? 0 : longsOf.Next(first) < 0 ? longs!.Get(first, 2) : L(slot, a);
+        return first >= 0;
     }
-    public bool ExtremeD(int slot, int a, bool desc, out decimal v)
+    public bool ExtremeD(int slot, int a, out decimal v)
     {
-        v = 0; var any = false;
-        for (var r = decimalsOf!.First([slot, a]); r >= 0; r = decimalsOf.Next(r))
-        {
-            var x = Unpack(decimals!.Get(r, 4), decimals!.Get(r, 5));
-            if (!any || (desc ? x > v : x < v)) { v = x; any = true; }
-        }
-        return any;
+        var first = decimalsOf!.First([slot, a]);
+        v = first < 0 ? 0 : decimalsOf.Next(first) < 0 ? Unpack(decimals!.Get(first, 4), decimals.Get(first, 5)) : D(slot, a);
+        return first >= 0;
     }
     /// <summary>The (order, value) rows of a `last`, in no particular order.</summary>
     public List<(decimal Ord, decimal Val)> LastRows(int slot, int a)
@@ -289,7 +323,7 @@ sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bo
 /// <summary>Group (and the accumulation half of Rollup): per-key accumulators updated by signed weights (DBSP linear aggregates). Output is a retraction plus an insertion per touched key.</summary>
 abstract class AggregatingOp : PhysOp
 {
-    protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD, nDist, nExtL, nExtD, nLast; protected Column?[] orderCols = [];
+    protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD, nLast; readonly bool hasLongs, hasDecimals; protected Column?[] orderCols = [];
     protected readonly int[] outKeyCol, outAggCol;
     protected readonly long[] keyBuf;
     readonly Interner it;
@@ -334,7 +368,7 @@ abstract class AggregatingOp : PhysOp
             }
         }
         keyExprs = [.. keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
-        var list = new List<AggSpec>(); int l = 0, d = 0, dist = 0, last = 0; bool hasExtL = false, hasExtD = false;
+        var list = new List<AggSpec>(); int l = 0, d = 0, last = 0;
         foreach (var a in aggSpecs)
         {
             var v = a.Value is null ? null : ExprCompiler.Compile(a.Value, inLayout, cx.It, cx.Faults);
@@ -342,7 +376,7 @@ abstract class AggregatingOp : PhysOp
             switch (a.Fn)
             {
                 case "count": list.Add(new AggSpec(AggKind.Count, l++, null, false)); break;
-                case "countDistinct": list.Add(new AggSpec(AggKind.Distinct, dist++, v, false, false, l++)); break;       // Index2: where the last emitted count is remembered
+                case "countDistinct": list.Add(new AggSpec(AggKind.Distinct, l, v, false, false, l++)); hasLongs = true; break;       // its values are filed under the accumulator that holds their number
                 case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, d++, v, true)); break;
                 case "sum": list.Add(new AggSpec(AggKind.SumL, l++, v, false)); break;
                 case "mean": list.Add(new AggSpec(AggKind.Mean, d++, v, false, false, l++)); break;
@@ -353,20 +387,20 @@ abstract class AggregatingOp : PhysOp
                         var order = ExprCompiler.Compile(a.Weight!, inLayout, cx.It, cx.Faults);
                         list.Add(new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, last++, order, dec, false, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent, a.Weight!.Type.Ty.Tag is Tag.Text or Tag.Ent)); break;
                     }
-                case "min" or "max" when dec: list.Add(new AggSpec(AggKind.ExtD, d++, v, true, a.Fn == "max")); hasExtD = true; break;
-                case "min" or "max": list.Add(new AggSpec(AggKind.ExtL, l++, v, false, a.Fn == "max")); hasExtL = true; break;
+                case "min" or "max" when dec: list.Add(new AggSpec(AggKind.ExtD, d++, v, true, a.Fn == "max")); hasDecimals = true; break;       // the accumulator holds the extreme of a key with more than one value
+                case "min" or "max": list.Add(new AggSpec(AggKind.ExtL, l++, v, false, a.Fn == "max")); hasLongs = true; break;
                 default: throw new NotSupportedException($"aggregate {a.Fn}");
             }
         }
         _ = telemetryInput; it = cx.It;
-        aggs = [.. list]; nL = l; nD = d; nDist = dist; nExtL = hasExtL ? l : 0; nExtD = hasExtD ? d : 0; nLast = last;   // min and max multisets are indexed like the accumulators they reserve
+        aggs = [.. list]; nL = l; nD = d; nLast = last;
         outKeyCol = [.. outKeyNames.Select(n => OutLayout.Index(n))];
         outAggCol = [.. aggSpecs.Select(a => OutLayout.Index(a.Target))];
         keyBuf = new long[keyExprs.Length + 1];
     }
 
     /// <summary>The state of a group operator with `k` key columns.</summary>
-    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(Math.Max(nL, nD), Math.Max(nDist, nLast)), nExtL > 0 || nDist > 0, nExtD > 0, nLast > 0);
+    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(Math.Max(nL, nD), nLast), hasLongs, hasDecimals, nLast > 0);
 
     protected void Accumulate(KeyTable t, int slot, Batch b, Column?[] valueCols, int row, long w)
     {
@@ -383,14 +417,14 @@ abstract class AggregatingOp : PhysOp
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        t.AddLong(slot, s.Index, c.L[row], w);
+                        t.AddExtremeL(slot, s.Index, c.L[row], w, s.Desc);
                         break;
                     }
                 case AggKind.ExtD:
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        t.AddDecimal(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w);
+                        t.AddExtremeD(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w, s.Desc);
                         break;
                     }
                 case AggKind.Mean:
@@ -441,15 +475,15 @@ abstract class AggregatingOp : PhysOp
     protected long AggL(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
         AggKind.Count or AggKind.SumL => t.L(slot, aggs[a].Index),
+        AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Distinct => t.L(slot, aggs[a].Index2),
-        AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, aggs[a].Desc, out var v) ? v : 0,
         AggKind.AnyAll => aggs[a].All ? (t.L(slot, aggs[a].Index) == t.L(slot, aggs[a].Index2) ? 1 : 0) : (t.L(slot, aggs[a].Index) > 0 ? 1 : 0),
         AggKind.Last when !aggs[a].OutDec => LastOf(t, slot, aggs[a]) is { } l ? (long)l.Val : 0,
         _ => 0,
     };
     protected decimal AggD(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.ExtD => t.ExtremeD(slot, aggs[a].Index, aggs[a].Desc, out var v) ? v : 0,
+        AggKind.ExtD => t.ExtremeD(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Mean => t.L(slot, aggs[a].Index2) is var n && n != 0 ? t.D(slot, aggs[a].Index) / n : 0,
         AggKind.Last => LastOf(t, slot, aggs[a]) is { } l ? l.Val : 0,
         AggKind.WMean => t.D(slot, aggs[a].Index2) is var sw && sw != 0 ? t.D(slot, aggs[a].Index) / sw : 0,
@@ -458,8 +492,8 @@ abstract class AggregatingOp : PhysOp
     /// <summary>A min or max over no non-null value is null.</summary>
     protected bool AggAbsent(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, false, out _),
-        AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, false, out _),
+        AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, out _),
+        AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, out _),
         AggKind.Mean => t.L(slot, aggs[a].Index2) == 0,
         AggKind.WMean => t.D(slot, aggs[a].Index2) == 0,
         AggKind.AnyAll => t.L(slot, aggs[a].Index2) == 0,

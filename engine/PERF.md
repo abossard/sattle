@@ -338,6 +338,23 @@ One behaviour changes (code review 2, defect 22, the part in the results): on a 
 - Proofs: `An_entity_that_a_link_forwards_to_another_id_keeps_its_lineage` (2 cases) and `Every_pod_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id`, all three failing before. `Sattle.Differential` every category 314 of 314; the default run 716 passed, 2 skipped; the KQL tests 138 of 138. Seal format 4.
 - Left as it is, for a later step: the lineage is kept as text rows in dictionaries (supports 196 MB, last-row records 194 MB, group members 39 MB, group references 19 MB at 100,000 nodes), and the last-row record and the group reference of an element are not removed when the element goes (found in X2). Behind `Of(element)` both can change without touching a caller.
 
+## Results table, step 4: `min` and `max` no longer walk the values of a group on every read (2026-11-14)
+A group keeps the values of each `min` and `max` in a table, one entry per distinct value. Every read of the aggregate walked all entries of the group: twice per step that touched the group, more with the check for "no value". Now a group with one value keeps nothing more, since that value is the extreme. A group with more values has the extreme in its own row; a new value that beats it takes its place, and the values are walked only when the extreme itself is retracted.
+
+A first variant kept the extreme in the row of every group. It cost 33 MB at 100,000 nodes (7,058 MB), because the column was never allocated before, and bought nothing there: the roll-ups of the estate have one value per window. The variant above writes the column only for groups with more than one value.
+
+A defect found on the way: a `min` or `max` and a `countDistinct` of one group filed their values under the same number, so the two mixed. `max` beside a `countDistinct` could give a value that was never in its column. Each aggregate now files its values under its own accumulator.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| Three modules (step 3) | 7,025 MB (43,230 B) | 36.8, 35.3 and 38.2 s on a busy machine (the build before the core steps in the same minutes 36.2 s); 39.2 GB | |
+| `min` and `max` without the walk | 7,025 MB (43,230 B), Rollup 369 MB and Group 301 MB as before | 24.7, 24.8 and 25.5 s (the build before the core steps in the same minutes 25.4 s); 39.2 GB | +69, −35 |
+
+- Where it shows: 300 steps of one row each at a group of 1,000,000 values took 0.19 and 0.22 s before and 0.05 and 0.07 s now, the same as at a group of 100 values (measured with a test kept out of the suite, since a time ratio of 4 is too small to assert). The recordings and the estate have few values per group, so their times do not move.
+- The state digests equal those of step 3 at every chunk size (estate, `lab/fixtures`, both recordings; 12 of 12).
+- Proofs: `Min_and_max_equal_the_extremes_of_the_rows_a_group_has_after_every_step` (5 cases against a model, failing on two deliberately broken variants of the new code) and `An_extreme_and_a_count_of_distinct_values_in_one_group_do_not_mix_their_values` (3 cases, the `max` case failing before). `Sattle.Differential` every category 314 of 314; the default run 724 passed, 2 skipped; the KQL tests 142 of 142. Seal format 4.
+- Not covered by a test: when a group falls back to one value, its row's extreme is cleared so that an empty group gives its row back. Leaving the clearing out changes no output, only memory.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

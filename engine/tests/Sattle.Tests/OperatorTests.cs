@@ -89,6 +89,67 @@ public class OperatorTests
         Assert.Equal(Value.Integer(5), Summaries(e, "Summary", "group", "worst")["b"]);
     }
 
+    /// <summary>`min` and `max` against a model under generated inserts and retractions, a few rows per step: the extreme of a group with more than one value is kept with the group and found again among its values only when it goes itself. Scores repeat, so an extreme often has several rows; weights come at two scales (2.5 and 2.50 are one value) and are sometimes missing.</summary>
+    [Theory]
+    [InlineData(1, 1)] [InlineData(2, 1)] [InlineData(3, 4)] [InlineData(4, 4)] [InlineData(5, 25)]
+    public void Min_and_max_equal_the_extremes_of_the_rows_a_group_has_after_every_step(int seed, int rowsPerStep)
+    {
+        using var e = Mini(Summary, """
+            let items = match master (i: base.Item);
+            let g = items |> group by { group: i.group } aggregate { worst: max(i.score), best: min(i.score), heaviest: max(i.weight) };
+            emit entity Summary from g identity summary(group: group) set { group: group, worst: worst, best: best, heaviest: heaviest };
+            """);
+        var rnd = new Random(seed); var live = new Dictionary<string, (string Group, long Score, decimal? Weight)>(); var n = 0;
+        for (var step = 1; step <= 120; step++)
+        {
+            var rows = new List<(string, string, long, decimal?, long)>();
+            for (var i = 0; i < rowsPerStep; i++)
+            {
+                if (live.Count > 0 && rnd.Next(100) < 45)
+                {
+                    var (key, was) = live.ElementAt(rnd.Next(live.Count));
+                    live.Remove(key); rows.Add((key, was.Group, was.Score, was.Weight, -1));
+                }
+                else
+                {
+                    var row = (Group: "g" + rnd.Next(3), Score: (long)rnd.Next(-4, 5), Weight: rnd.Next(4) == 0 ? (decimal?)null : rnd.Next(6) / (rnd.Next(2) == 0 ? 2m : 2.00m));
+                    var key = "k" + n++; live[key] = row; rows.Add((key, row.Group, row.Score, row.Weight, 1));
+                }
+            }
+            Items(e, step, [.. rows]);
+            var worst = Summaries(e, "Summary", "group", "worst"); var best = Summaries(e, "Summary", "group", "best"); var heaviest = Summaries(e, "Summary", "group", "heaviest");
+            var groups = live.Values.GroupBy(x => x.Group).ToDictionary(g => g.Key, g => g.ToList());
+            Assert.Equal(groups.Keys.Order(), worst.Keys.Order());
+            foreach (var (g, of) in groups)
+            {
+                Assert.Equal(Value.Integer(of.Max(x => x.Score)), worst[g]);
+                Assert.Equal(Value.Integer(of.Min(x => x.Score)), best[g]);
+                Assert.Equal(of.Max(x => x.Weight) is { } w ? new DecimalValue(w) : Value.Null, heaviest[g]);
+            }
+        }
+    }
+
+    /// <summary>A `min` or `max` and a `countDistinct` of one group keep their values apart: each aggregate has its own multiset.</summary>
+    [Theory]
+    [InlineData("best: min(i.score), worst: countDistinct(i.key)")]
+    [InlineData("worst: countDistinct(i.key), best: min(i.score)")]
+    [InlineData("best: max(i.score), worst: countDistinct(i.key)")]
+    public void An_extreme_and_a_count_of_distinct_values_in_one_group_do_not_mix_their_values(string aggregates)
+    {
+        using var e = Mini(Summary, $$"""
+            let items = match master (i: base.Item);
+            let g = items |> group by { group: i.group } aggregate { {{aggregates}} };
+            emit entity Summary from g identity summary(group: group) set { group: group, worst: worst, best: best };
+            """);
+        Items(e, 1, ("a1", "a", 1_000_000_000_000, null, 1), ("a2", "a", -1_000_000_000_000, null, 1), ("a3", "a", -1_000_000_000_000, null, 1));
+        var max = aggregates.Contains("max(");
+        Assert.Equal(Value.Integer(max ? 1_000_000_000_000 : -1_000_000_000_000), Summaries(e, "Summary", "group", "best")["a"]);
+        Assert.Equal(Value.Integer(3), Summaries(e, "Summary", "group", "worst")["a"]);
+        Items(e, 2, ("a1", "a", 1_000_000_000_000, null, -1), ("a2", "a", -1_000_000_000_000, null, -1));
+        Assert.Equal(Value.Integer(-1_000_000_000_000), Summaries(e, "Summary", "group", "best")["a"]);
+        Assert.Equal(Value.Integer(1), Summaries(e, "Summary", "group", "worst")["a"]);
+    }
+
     const string Stacked = """
         module t.top @ 1.0.0;
         import t.view @ 1.0.0 sha256:… as v;
