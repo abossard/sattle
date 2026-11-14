@@ -92,6 +92,10 @@ public static class Program
     }
 
     /// <summary>The definitions directory, with `--overlay FILE[,FILE]` replacing the module of the same name (a different space binding for a synthetic capture, for example). Committed edits are written back to the original files, not to an overlay.</summary>
+    /// <summary>With `--projections kql`, the .kql files of the definitions folder are definition files like the module texts; the catalog's source reads them (HostOptionsFor gives the host one).</summary>
+    public static IReadOnlyList<SourceFile> WithProjectionFiles(Options o, IReadOnlyList<SourceFile> files) =>
+        o.Get("projections") == "kql" ? [.. files, .. Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o))] : files;
+
     public static IReadOnlyList<SourceFile> ReadDefinitions(Options o)
     {
         var files = Catalog.ReadDirectory(FindDefinitions(o)).ToList();
@@ -254,9 +258,7 @@ public static class Program
         if (o.Get("projections") is { } front && front != "sattle")
         {
             if (front != "kql") return Fail($"--projections {front}: sattle or kql");
-            if (serve) return Fail("--projections kql is for replay only: a draft of serve prints a module as .sattle text, and would write a projection in KQL into it");
-            // the .kql files of the definitions folder are definition files like the module texts, and the catalog reads them itself
-            files = [.. files, .. Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o))];
+            files = WithProjectionFiles(o, files);
             projections = new Sattle.Kql.KqlSource();
         }
         var cat = new Catalog(projections);
@@ -346,12 +348,13 @@ public static class Program
 
     /// <summary>The options `serve` builds its host with.</summary>
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
-        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000 };
+        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = o.Get("projections") == "kql" ? new Sattle.Kql.KqlSource() : null };
 
     static int Serve(Options o, string capture, string cluster)
     {
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
+        if (files is not null) files = WithProjectionFiles(o, files);
         var spec = o.Get("store");
         IDurableStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
         var hopts = HostOptionsFor(o, cluster, durable);

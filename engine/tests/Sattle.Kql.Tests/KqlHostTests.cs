@@ -199,4 +199,37 @@ public class KqlHostTests
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
         Assert.Contains("graph serviceTreeTwo = svc.serviceDeps(master: master);", h.DraftText(d, "acme.space"));
     }
+
+    /// <summary>`sattle serve --projections kql` builds its host with the `.kql` files and a source that reads them: it serves the estate to the state of today's text, and its definitions are the `.kql` texts.
+    /// The host is built from the helpers `serve` uses (the files, the host options), without starting the server.</summary>
+    [Fact]
+    public void Serve_with_projections_in_KQL_serves_the_state_of_todays_text()
+    {
+        string Served(params string[] extra)
+        {
+            var o = Sattle.Cli.Program.Options.Parse(["serve", EstateDir, "--cluster", "synth", "--defs", Definitions, .. extra]);
+            using var host = new SpaceHost(Sattle.Cli.Program.WithProjectionFiles(o, Sattle.Cli.Program.ReadDefinitions(o)), Sattle.Cli.Program.HostOptionsFor(o, "synth", null));
+            if (extra.Length > 0) Assert.Equal(Text("acme.svc.serviceDeps.kql"), host.Definition("acme.svc.serviceDeps.kql"));
+            new Replay(host, host.Space, host.Adapters, Sattle.Cli.Program.ReplayOptionsOf(o, "synth")).Run(EstateDir);
+            host.Finish();
+            return host.StateDigest();
+        }
+        Assert.Equal(Served(), Served("--projections", "kql"));
+    }
+
+    /// <summary>A store written with projections in KQL, opened without a projection source, is refused, naming the files it holds. The other way round, a store without projection files opened with a source loads today's text: the source has nothing to read, so no projection is held twice.</summary>
+    [Fact]
+    public void A_store_written_with_projections_in_KQL_is_refused_without_a_source()
+    {
+        var store = new InMemoryGraphStore();
+        using (SpaceHost.OpenDurable(store, Files, Options)) { }
+        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.OpenDurable(store, null, Options with { Projections = null }));
+        Assert.Contains("projection source", e.Message);
+        Assert.Contains("acme.svc.serviceDeps.kql", e.Message);
+        var plain = new InMemoryGraphStore();
+        string catalog;
+        using (var h = SpaceHost.OpenDurable(plain, Catalog.ReadDirectory(Definitions), Options with { Projections = null })) catalog = h.Catalog.Graph.Digest();
+        using var r = SpaceHost.OpenDurable(plain, null, Options);
+        Assert.Equal(catalog, r.Catalog.Graph.Digest());
+    }
 }

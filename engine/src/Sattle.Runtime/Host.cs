@@ -330,6 +330,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             host.journalPos = 1;
             return host;
         }
+        if (options.Projections is null && ((Entry.Header)Entry.Parse(j.JournalRead().First(), _ => throw new InvalidDataException("the journal does not start with its header"), new Interner())).Files
+                .Select(f => Path.GetFileName(f.Path)).Where(n => !n.EndsWith(".sattle", StringComparison.Ordinal)).ToList() is { Count: > 0 } held)
+            throw new InvalidOperationException($"no module reads the store's projection files ({string.Join(", ", held)}) without a projection source: open it with the projection source it was written with");
         string? refusal = null;
         if (options.UseSeal && !options.VerifyJournal && j.SealLatest() is { } seal)
         {
