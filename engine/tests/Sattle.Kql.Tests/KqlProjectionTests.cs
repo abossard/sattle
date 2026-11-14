@@ -84,7 +84,7 @@ public class KqlProjectionTests
     [InlineData("nodes ServiceNode on service = services | sort by name asc", "no order")]
     [InlineData("nodes ServiceNode on service = services | top 3 by name", "no order")]
     [InlineData("nodes ServiceNode on service = services | summarize n = dcount(name) by service", "distinct ... | summarize n = count()")]
-    [InlineData("nodes ServiceNode on service = services | summarize n = count_distinct(name) by service", "distinct ... | summarize n = count()")]
+    [InlineData("nodes ServiceNode on service = services | summarize n = count_distinctif(name, cluster == \"a\") by service", "where ... | summarize n = count_distinct(x)")]
     [InlineData("nodes ServiceNode on service = services | summarize n = take_any(name) by service", "min, max or arg_max")]
     [InlineData("nodes ServiceNode on service = services | join (services) on service", "join kind=inner")]
     [InlineData("nodes ServiceNode on service = services | join kind=leftouter (services) on service", "write union and summarize")]

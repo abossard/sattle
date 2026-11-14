@@ -29,8 +29,10 @@ public class KqlOperatorTests
         import t.chem @ 1.0.0 sha256:… as c;
         entity Seen { tag: Text; }
         entity Element { symbol: Text; newest: Text; arrived: Integer; }
+        entity Bonding { symbol: Text; partners: Integer; bonds: Integer; }
         relationship Near (Seen) -> (Seen) kind communication;
         identity element for Element version "1" { symbol: Text by exact; }
+        identity bonding for Bonding version "1" { symbol: Text by exact; }
         """;
 
     const string Space = """
@@ -95,5 +97,16 @@ public class KqlOperatorTests
             + $" | {summary} | project el = identity(\"element\", symbol), symbol, newest, arrived;\n");
         var got = g.Entities.Where(x => Ids.Name(x.Type) == "Element").Select(x => $"{Text(x, "symbol")}:{Text(x, "newest")}").Order(StringComparer.Ordinal);
         Assert.Equal(["C:C1", "H:H2", "O:O1"], got);
+    }
+
+    /// <summary>Per element, the elements its atoms bond to: count_distinct counts each partner element once, count every bond. Both bonds of oxygen go to hydrogen, so oxygen has one partner and two bonds.</summary>
+    [Fact]
+    public void Count_distinct_counts_each_partner_element_once()
+    {
+        var g = Near(Head + "nodes Bonding on b = graph(\"master\") | graph-match (x)-[e]-(y) where labels(e) has \"Bond\" project symbol = x.symbol, other = y.symbol"
+            + " | summarize partners = count_distinct(other), bonds = count() by symbol | project b = identity(\"bonding\", symbol), symbol, partners, bonds;\n");
+        long Int(Entity e, string p) => (long)((IntegerValue)e.Props.Get("d:t.mol/prop:" + p)!).N;
+        var got = g.Entities.Where(x => Ids.Name(x.Type) == "Bonding").Select(x => $"{Text(x, "symbol")}:{Int(x, "partners")}:{Int(x, "bonds")}").Order(StringComparer.Ordinal);
+        Assert.Equal(["H:1:2", "O:1:2"], got);
     }
 }

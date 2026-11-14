@@ -96,7 +96,7 @@ public static class KqlAuthoring
 
     // ---- the outline ----
 
-    static readonly HashSet<string> Refused = new(StringComparer.Ordinal) { "take", "limit", "sample", "sample-distinct", "sort", "order", "top", "top-nested", "top-hitters", "scan", "evaluate", "mv-expand", "mv-apply", "dcount", "count_distinct", "take_any", "now" };
+    static readonly HashSet<string> Refused = new(StringComparer.Ordinal) { "take", "limit", "sample", "sample-distinct", "sort", "order", "top", "top-nested", "top-hitters", "scan", "evaluate", "mv-expand", "mv-apply", "dcount", "take_any", "now" };
 
     static bool Within(string id, string op) => id == op || id.StartsWith(op + "/", StringComparison.Ordinal);
 

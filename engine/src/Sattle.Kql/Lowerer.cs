@@ -916,11 +916,11 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         }
         var op = Op(telemetry ? "Rollup" : "Group");
         foreach (var (name, x) in keys) Write(x, b.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
-        foreach (var (target, fn, value, weight, row) in aggs)
+        foreach (var (target, fn, value, order, row) in aggs)
         {
             var a = row is null ? b.Contain(op, "agg", target, "Aggregate", null, ("target", T(target)), ("fn", T(fn))) : b.Contain(op, "agg", target, "Aggregate", null, ("target", T(target)), ("fn", T(fn)), ("row", T(row)));
             if (value is not null) Write(value, a, "value", 0);
-            if (weight is not null) Write(weight, a, fn == "last" ? "order" : "weight", 0);
+            if (order is not null) Write(order, a, "order", 0);
         }
         Wire(r.Port, op, "in");
         next.Port = P(op, "out");
@@ -957,9 +957,10 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             "sum" or "min" or "max" => (target, fn, A(0), null),
             "avg" => (target, "mean", A(0), null),
             "dcount" or "dcountif" => throw new Refused("dcount is an estimate that may vary between runs: write distinct ... | summarize n = count()", call),
-            "count_distinct" or "count_distinctif" => throw new Refused("count_distinct is a preview function: write distinct ... | summarize n = count()", call),
+            "count_distinct" when args.Count == 1 => (target, "countDistinct", A(0), null),
+            "count_distinctif" => throw new Refused("count_distinctif: filter first, where ... | summarize n = count_distinct(x)", call),
             "take_any" or "take_anyif" or "any" => throw new Refused("take_any picks an arbitrary value: write min, max or arg_max", call),
-            _ => throw new Refused($"{fn} is not an aggregate of the profile (count, countif, sum, min, max, avg, arg_max)", call),
+            _ => throw new Refused($"{fn} is not an aggregate of the profile (count, countif, count_distinct, sum, min, max, avg, arg_max)", call),
         };
     }
 
