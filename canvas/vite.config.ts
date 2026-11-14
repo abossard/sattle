@@ -10,7 +10,9 @@ export default defineConfig({
   server: { fs: { allow: [".."] }, proxy: engine },
   preview: { proxy: engine },
   worker: { format: "es" },
-  build: { target: "es2022" },
+  // React in its own chunk: it changes less often than the app, so a release does not invalidate it in the browser's cache. Fluent stays with the
+  // code that uses it, so the components only the editor needs load with the editor.
+  build: { target: "es2022", rolldownOptions: { output: { codeSplitting: { groups: [{ name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ }] } } } },
   // four workers: the jsdom files are heavy, and with every core taken by other suites their axe runs and dialogs starve; the time limits are ceilings for a busy machine (another suite beside this one): a test that is done returns at once; what they wait for is a condition, not a time
   test: { maxWorkers: 4, testTimeout: 30000, hookTimeout: 30000, include: ["tests/**/*.test.{ts,tsx}"], environment: "node", setupFiles: ["tests/setup.ts"] },
 } as Parameters<typeof defineConfig>[0]);

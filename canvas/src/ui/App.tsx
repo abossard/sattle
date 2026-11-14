@@ -4,15 +4,19 @@ import {
   Toolbar, ToolbarButton, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Keyboard20Regular, WeatherMoon20Regular } from "@fluentui/react-icons";
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { runtime } from "../state/runtime";
 import { SOURCES } from "../state/sources";
 import { dispatch, useStore } from "../state/store";
 import type { ThemeName, View } from "../state/types";
 import { DataView, SpaceView } from "./DataView";
 import { Dialogs } from "./Dialogs";
-import { EditorView } from "./EditorView";
-import { OntologyView } from "./OntologyView";
+
+// The editor and the ontology load when first opened, or once the page is idle: the data graph the page opens on does not wait for them.
+const loadEditor = () => import("./EditorView"), loadOntology = () => import("./OntologyView");
+const EditorView = lazy(() => loadEditor().then((m) => ({ default: m.EditorView })));
+const OntologyView = lazy(() => loadOntology().then((m) => ({ default: m.OntologyView })));
+const whenIdle = (f: () => void) => (typeof requestIdleCallback === "function" ? requestIdleCallback(f, { timeout: 5000 }) : setTimeout(f, 2000));
 import { THEMES, colorScheme } from "./theme";
 
 const VIEWS: { id: View; label: string }[] = [{ id: "data", label: "Data graph" }, { id: "space", label: "Graph space" }, { id: "editor", label: "Projection editor" }, { id: "ontology", label: "Ontology" }];
@@ -81,6 +85,7 @@ export function App() {
   const status = useStore((x) => x.load.status);
   const rejected = useStore((x) => x.rejectedTotal);
   const announcement = useStore((x) => x.announcement);
+  useEffect(() => { if (status === "ready") whenIdle(() => { void loadEditor(); void loadOntology(); }); }, [status]);
   // the root element carries the scheme, so the viewport's own scrollbars and canvas follow the theme too
   useEffect(() => { document.documentElement.style.colorScheme = colorScheme(theme); }, [theme]);
   useEffect(() => {
@@ -113,7 +118,9 @@ export function App() {
       </header>
       <Banners />
       <main id="main" tabIndex={-1} className={s.main}>
-        {status === "ready" && (view === "data" ? <DataView /> : view === "space" ? <SpaceView /> : view === "editor" ? <EditorView /> : <OntologyView />)}
+        <Suspense fallback={<Spinner label="Loading the view…" />}>
+          {status === "ready" && (view === "data" ? <DataView /> : view === "space" ? <SpaceView /> : view === "editor" ? <EditorView /> : <OntologyView />)}
+        </Suspense>
       </main>
       <Status />
       <Dialogs />

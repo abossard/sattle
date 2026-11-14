@@ -4,6 +4,8 @@ if (typeof HTMLCanvasElement !== "undefined") HTMLCanvasElement.prototype.getCon
 if (typeof window !== "undefined") {
   window.matchMedia ??= ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as never;
   globalThis.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} } as never;
+  // the app fetches views it may open next when the page is idle; a test file never is, and a fetch after its environment is torn down fails it
+  globalThis.requestIdleCallback = (() => 0) as never;
 }
 
 // `findBy...` and `waitFor` wait on the condition, not on a time: the limit is a ceiling that a busy machine (another suite beside this one,

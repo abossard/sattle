@@ -1,9 +1,10 @@
 // The data graph view and the graph space view: filters and elements on the left, canvases in the middle, inspector on the right.
 import { Badge, Button, Field, Popover, PopoverSurface, PopoverTrigger, Select, Tab, TabList, Text, makeStyles, tokens } from "@fluentui/react-components";
-import { useMemo, useState } from "react";
+import { Suspense, lazy, useMemo, useState } from "react";
 import { dispatch, useStore } from "../state/store";
 import { CanvasHost } from "./CanvasHost";
-import { DocumentView } from "./DocumentView";
+// documents are one kind of graph among several: their view loads when one is shown
+const DocumentView = lazy(() => import("./DocumentView").then((m) => ({ default: m.DocumentView })));
 import { TreeView } from "./TreeView";
 import { hasHierarchyEdges, hasTreeRows, tileRows, treeOf, treeRowCount } from "../app/tree-model";
 import { ROLE_GLYPH } from "../app/color-by";
@@ -93,7 +94,7 @@ export function DataView() {
           {(isDoc || isTree) && <TabList size="small" selectedValue={mode} onTabSelect={(_, d) => setShown({ ...shown, [active]: String(d.value) })} aria-label="How to show this graph"><Tab value={first}>{isDoc ? "Document" : "Tree"}</Tab><Tab value="graph">Graph</Tab></TabList>}
           {mode === "graph" && <><Button size="small" onClick={() => dispatch({ type: "pane/command", graph: active, command: "fit" })}>Fit</Button><Legend graph={active} /></>}
         </div>
-        {mode === "document" ? <DocumentView graph={active} /> : mode === "tree" ? <TreeView graph={active} /> : <CanvasHost graph={active} />}
+        {mode === "document" ? <Suspense><DocumentView graph={active} /></Suspense> : mode === "tree" ? <TreeView graph={active} /> : <CanvasHost graph={active} />}
         <Timeline graph={active} />
       </section>
       <aside className={s.right} aria-label="Inspector"><Inspector /></aside>
@@ -222,7 +223,7 @@ export function SpaceView() {
                 <Text size={200} className={s.caption} title={subtitle(g.id)}>{subtitle(g.id)}{leftOut(g.id)}</Text>
               </div>
               <div className={s.tileBody}>
-                {kindOf(g) === "document" ? <><DocumentView graph={g.id} compact /><div className={s.fade} /></> : kindOf(g) === "notice" ? <NoticeTile graph={g.id} /> : kindOf(g) === "tree" ? <TreeTile graph={g.id} /> : kindOf(g) === "summary" ? <SummaryTile graph={g.id} /> : <CanvasHost graph={g.id} tile />}
+                {kindOf(g) === "document" ? <><Suspense><DocumentView graph={g.id} compact /></Suspense><div className={s.fade} /></> : kindOf(g) === "notice" ? <NoticeTile graph={g.id} /> : kindOf(g) === "tree" ? <TreeTile graph={g.id} /> : kindOf(g) === "summary" ? <SummaryTile graph={g.id} /> : <CanvasHost graph={g.id} tile />}
               </div>
             </div>
           ))}

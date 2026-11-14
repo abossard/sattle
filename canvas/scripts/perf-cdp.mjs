@@ -1,5 +1,5 @@
 // Runs the in-page perf harness (window.__perf) in headless Chrome with the GPU enabled, driven over CDP.
-// Usage: node scripts/perf-cdp.mjs <url> [chrome-path]   (serve the build first: npx vite preview --port 4173)
+// Usage: [CPU=4] node scripts/perf-cdp.mjs <url> [chrome-path] [steps]   (serve the build first: npx vite preview --port 4173)
 import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,6 +28,8 @@ const evaluate = async (expression) => {
 };
 await send("Page.enable");
 await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false });
+// CPU=4 slows the CPU four times, like a mid-range laptop on battery: load costs that a fast machine hides become visible
+if (process.env.CPU) await send("Emulation.setCPUThrottlingRate", { rate: Number(process.env.CPU) });
 await send("Page.navigate", { url });
 await sleep(1500);
 const log = (k, v) => console.log(JSON.stringify({ [k]: v }));
