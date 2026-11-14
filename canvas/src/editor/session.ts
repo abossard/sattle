@@ -143,6 +143,22 @@ export class EditorSession {
     this.absorb(applied);
   }
 
+  /**
+   * Store a projection file's text in the draft. The draft's facts follow from the text (a text that does not lower changes none, its errors
+   * are in the check), so the graph is read again. Not a step of this undo stack: the text editor keeps the text's own history.
+   */
+  storeKql(file: string, text: string): Promise<Outcome> { return this.serial(() => this.storeKqlNow(file, text)); }
+  private async storeKqlNow(file: string, text: string): Promise<Outcome> {
+    try {
+      const applied = await this.svc.setDraftText(this.draft.draft, file, text, this.revision);
+      await this.resyncNow();
+      return { ok: true, applied };
+    } catch (e) {
+      if (e instanceof EngineError) { if (e.code === "StaleRevision") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
   resync(): Promise<void> { return this.serial(() => this.resyncNow()); }
   private async resyncNow(): Promise<void> {
     const snap = await this.svc.snapshot(this.draft.draft);

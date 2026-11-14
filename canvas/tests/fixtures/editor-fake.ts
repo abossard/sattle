@@ -13,6 +13,7 @@ export function fakeEngine(seed: { entities?: Snapshot["entities"]; relationship
   const g = Graph.fromSnapshot(base);
   let rev = 0;
   const log: Patch[] = [];
+  const files = new Map<string, string>();
   const svc = {
     palette: async () => parsePalette({ operators: [] }),
     createDraft: async () => ({ draft: "d1", baseRevision: "11", revision: "0" }),
@@ -27,8 +28,14 @@ export function fakeEngine(seed: { entities?: Snapshot["entities"]; relationship
       rev++; log.push(p);
       return { revision: String(rev), ok: true, diagnostics: [], modules: { m: { text: `rev ${rev}` } } };
     },
+    // a projection file's text in the draft (PROTOCOL 3.19): kept as sent, one revision on
+    setDraftText: async (_: string, file: string, text: string, expected: string): Promise<Applied> => {
+      if (expected !== String(rev)) throw new EngineError("StaleRevision", "stale", 409);
+      files.set(file, text); rev++;
+      return { revision: String(rev), ok: true, diagnostics: [], modules: { m: { text: `rev ${rev}` } } };
+    },
   } as unknown as EditorService;
-  return { svc, g, calls, get rev() { return rev; } };
+  return { svc, g, calls, files, get rev() { return rev; }, set rev(r: number) { rev = r; } };
 }
 export const add = (n: number): Edit[] => [ent(`d:m/entity:E${n}`, "Entity", { name: text(`E${n}`) })];
 export const names = (g: Graph) => [...g.entities()].map((e) => e.id.slice(e.id.lastIndexOf("E") + 1)).sort((a, b) => Number(a) - Number(b));

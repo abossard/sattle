@@ -100,4 +100,19 @@ describe("text applied over a draft that already holds graph edits", () => {
     expect(ids).toEqual(["d:a/entity:Renamed", "d:sp/graph:new", "d:sp/import:a"]);
     expect(s.graph.entity("d:sp/import:a")!.props.digest).toEqual(text("new"));
   });
+
+  it.each([
+    ["at the draft's revision, the text is kept and the session follows the new revision", 0, true],
+    ["at a revision the draft has left, it is refused and the session reads the draft again", 5, false],
+  ])("storing a projection's KQL text %s", async (_what, moved, ok) => {
+    const eng = fakeEngine();
+    const s = await EditorSession.open(eng.svc);
+    await s.apply(add(1), "add 1");
+    eng.rev += moved; // another writer moved the draft on
+    const o = await s.storeKql("m.p.kql", "graph p : m;");
+    expect(o.ok).toBe(ok);
+    expect(eng.files.get("m.p.kql")).toBe(ok ? "graph p : m;" : undefined);
+    expect(s.revision).toBe(String(eng.rev));
+    expect(s.undoStack.map((x) => x.label)).toEqual(["add 1"]);
+  });
 });

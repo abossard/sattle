@@ -16,6 +16,7 @@ import { align, autoLayout, nodesInRect, NODE_W, partNumbers, partsTouched, zone
 import { ROLE_LABEL, ROLE_ORDER } from "../editor/palette";
 import type { IdentityEffect, Release } from "../editor/service";
 import { rendererTheme } from "../state/effects";
+import { storeKqlText } from "../state/editor-effects";
 import { runtime } from "../state/runtime";
 import { dispatch, useStore } from "../state/store";
 import type { Command } from "../state/types";
@@ -502,7 +503,7 @@ export function EditorView() {
           </Toolbar>
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          {shown === "text" ? (() => { const p = projections.find((x) => x.id === ed.projection); return p ? <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.svc.preview(ed.draft, { include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} /></Suspense> : null; })() : shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
+          {shown === "text" ? (() => { const p = projections.find((x) => x.id === ed.projection); return p ? <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.svc.preview(ed.draft, { include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeKqlText(`${p.module}.${p.name}.kql`, text, dispatch)} /></Suspense> : null; })() : shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
             keyMarquee={marquee} wiring={ed.wiring} wireTarget={ed.wiring ? targets[wireIdx] ?? null : null} canWire={(a, b) => canWire(g, a, b).ok}
             onSelect={(ids) => dispatch({ type: "editor/select", ids })} onMove={(ids, dx, dy) => move(ids, dx, dy)} onWire={(from, to) => run({ t: "wire", from, to })}
             onNoteMove={(id, x, y) => persist(manual, notes.map((n) => (n.id === id ? { ...n, x, y } : n)), groups)} onNoteEdit={(id, text) => persist(manual, notes.map((n) => (n.id === id ? { ...n, text } : n)), groups)} />}

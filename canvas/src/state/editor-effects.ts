@@ -22,6 +22,16 @@ const summary = (s: EditorSession, busy = ""): Partial<EditorState> => ({
   undo: s.undoStack.slice(-5).map((x) => x.label).reverse(), redo: s.redoStack.slice(-5).map((x) => x.label).reverse(), textVersion: s.version,
 });
 
+/** Store a projection's KQL text in the draft (the text editor's "Store in draft"): the summary follows; the error when the engine refuses. */
+export async function storeKqlText(file: string, text: string, dispatch: Dispatch): Promise<string | null> {
+  const s = runtime.session;
+  if (!s) return "no draft is open";
+  dispatch({ type: "editor/summary", patch: { busy: `storing ${file}` } });
+  const o = await s.storeKql(file, text);
+  dispatch({ type: "editor/summary", patch: { ...summary(s), notice: o.ok ? "" : o.error } });
+  return o.ok ? null : o.error;
+}
+
 export function summarizePatch(label: string, from: string, to: string, p: Patch): ReleaseDiff {
   const items: ReleaseDiff["items"] = [];
   const count = { added: 0, removed: 0, changed: 0 };

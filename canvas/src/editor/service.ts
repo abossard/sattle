@@ -117,6 +117,8 @@ export class EditorService {
   async kqlAnalyse(projection: string, text: string, depth: Depth): Promise<Analysis> { return (await this.call("POST", "/kql/analyse", { projection, text, depth })) as Analysis; }
   async kqlComplete(projection: string, text: string, offset: number): Promise<Completion> { return (await this.call("POST", "/kql/complete", { projection, text, offset })) as Completion; }
   async kqlHover(projection: string, text: string, offset: number): Promise<Hover> { return (await this.call("POST", "/kql/hover", { projection, text, offset })) as Hover; }
+  /** Store a projection file's text in the draft (`file` is `module.projection.kql`); check, preview and commit include it from then on. */
+  async setDraftText(id: string, file: string, text: string, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
   async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
   /**
    * The patch that creates an operator with its ports and placeholders for required slots, starting at the draft's revision, and the ids of

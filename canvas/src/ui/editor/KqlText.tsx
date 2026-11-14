@@ -121,7 +121,9 @@ type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ t
  * The `.kql` file of a projection, editable, with the engine's answers, and Steps beside it. `port` also reads the text (in the draft when one
  * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator.
  */
-export default function KqlText({ port, projection, draft, rows }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]> }) {
+export default function KqlText({ port, projection, draft, rows, store }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]>;
+  /** store the text in the draft; the engine's refusal, or null */
+  store?: (text: string) => Promise<string | null> }) {
   const s = useStyles();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -160,13 +162,22 @@ export default function KqlText({ port, projection, draft, rows }: { port: Port;
     }, (e: Error) => setRowsBy({ status: "error", message: e.message }));
   };
   const stored = state.status === "ready" && doc === state.stored;
+  const [storing, setStoring] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const keep = () => {
+    if (!store || state.status !== "ready") return;
+    const text = doc;
+    setStoring({ busy: true, error: null });
+    store(text).then((error) => { setStoring({ busy: false, error }); if (!error) { setState({ status: "ready", stored: text }); setRowsBy({ status: "idle" }); } });
+  };
   return (
     <div className={s.root}>
       <div className={s.head}>
         <Text className={s.file}>{projection}.kql</Text>
         <Text size={200} role="status">{problems === null ? "" : problems ? `${problems} problem${problems === 1 ? "" : "s"} found by the engine` : "the engine reads the text without problems"}</Text>
-        <Text size={200}>Changes are checked as you type; they are not stored in the draft yet.</Text>
+        <Text size={200}>{store ? (stored ? "The draft holds this text." : "Changed here, not yet in the draft.") : "Changes are checked as you type; they are not stored in the draft."}</Text>
         <span className={s.grow} />
+        {store && <Button size="small" appearance="primary" disabled={stored || storing.busy} onClick={keep}>{storing.busy ? "Storing…" : "Store in draft"}</Button>}
+        {storing.error && <Text size={200} role="alert">{storing.error}</Text>}
         {rows && <Button size="small" disabled={!stored || rowsBy.status === "busy"} onClick={askRows}>{rowsBy.status === "busy" ? "Counting rows…" : "Show rows"}</Button>}
         {rowsBy.status === "error" && <Text size={200}>{rowsBy.message}</Text>}
       </div>
