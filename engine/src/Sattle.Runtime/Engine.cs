@@ -35,8 +35,8 @@ public static class PlanCompiler
 {
     public const string EngineVersion = "0.1";
 
-    /// <summary>Element-valued columns of a schema that come from a Match or a Traverse.</summary>
-    static (string Role, int Col, bool IsRel, string Port)[] ElementCols(TypedProjection tp, Schema schema)
+    /// <summary>Element-valued columns of a schema that come from a Match or a Traverse, each with the input whose graph holds the element. `graphOf` says that for a variable of a pattern: a reference (Version 3.28) is an entity of another graph, and no source when no input of the projection holds its type.</summary>
+    static (string Role, int Col, bool IsRel, string Port)[] ElementCols(TypedProjection tp, Schema schema, Func<TMatch, string, string?> graphOf)
     {
         var res = new List<(string, int, bool, string)>();
         for (var i = 0; i < schema.Cols.Count; i++)
@@ -44,7 +44,7 @@ public static class PlanCompiler
             var c = schema.Cols[i];
             if (c.Origin is null || c.T.Ty.Tag is not (Tag.Ent or Tag.Rel)) continue;
             var op = c.Origin.Split(':')[0];
-            if (tp.Ops.FirstOrDefault(o => o.Name == op) is TMatch m) res.Add((c.Name, i, c.T.Ty.Tag == Tag.Rel, m.GraphPort));
+            if (tp.Ops.FirstOrDefault(o => o.Name == op) is TMatch m) { if (graphOf(m, c.Origin[(op.Length + 1)..]) is { } port) res.Add((c.Name, i, c.T.Ty.Tag == Tag.Rel, port)); }
             else if (tp.Ops.FirstOrDefault(o => o.Name == op) is TTraverse tv) res.Add((c.Name, i, false, tv.GraphPort));
         }
         return [.. res];
@@ -54,9 +54,9 @@ public static class PlanCompiler
     sealed record Sources((string Role, int Col, bool IsRel, string Port)[] Cols, (string Group, int[] KeyCols)? Group);
 
     /// <summary>The sources of a step's rows, from those of its input (a calculation over the plan). A `Filter` keeps its input's rows, so it keeps their sources. A `Map` makes one row of each input row: a source column it does not hand on by name is carried behind its own columns (`Carry`: the positions in its input). A `Group` starts over: its rows are results of the group. Every other step says what its own columns say.</summary>
-    static (Sources Out, int[] Carry) SourcesOf(TypedProjection tp, TOp t, Schema? inSchema, Sources? input)
+    static (Sources Out, int[] Carry) SourcesOf(TypedProjection tp, TOp t, Schema? inSchema, Sources? input, Func<TMatch, string, string?> graphOf)
     {
-        var own = ElementCols(tp, t.Out);
+        var own = ElementCols(tp, t.Out, graphOf);
         switch (t)
         {
             case TGroup { ClosesWindows: false } g:
@@ -113,12 +113,16 @@ public static class PlanCompiler
             strategies.Add($"{l.Name}: Lift {l.EdgeType} through {l.MapType} to {l.Emit} (images {l.Images}), lowered to {l.Ops.Count} operators: {string.Join(", ", l.Ops)}");
         var sink = 0;
         var sources = new Dictionary<string, Sources>();
+        var references = tp.Ops.OfType<TMatch>().ToDictionary(m => m.Name, m => m.References(held[m.GraphPort], catalog.OntologyOf(tp.Port(m.GraphPort).ExpectsModule!).IsSubtype));
+        // the input whose graph holds what a pattern variable binds: the pattern's own, and for a reference the first other input whose graph holds its type
+        string? GraphOf(TMatch m, string v) => !references[m.Name].Contains(v) ? m.GraphPort
+            : tp.Ports.FirstOrDefault(p => p.Name != m.GraphPort && held.TryGetValue(p.Name, out var has) && has.Any(t => catalog.OntologyOf(p.ExpectsModule!).IsSubtype(t, m.Nodes.First(n => n.Var == v).TypeId)))?.Name;
         foreach (var t in tp.Ops)
         {
             Layout inL = t.Inputs.ContainsKey("in") ? InputLayout(t, "in") : new Layout([], []);
             var inSchema = !t.Inputs.TryGetValue("in", out var inSrc) ? null : inSrc.IsPort ? tp.Port(inSrc.Name).Rows : tp.Ops.First(o => o.Name == inSrc.Name).Out;
-            var from = inSrc is null ? null : inSrc.IsPort ? (inSchema is null ? null : new Sources(ElementCols(tp, inSchema), null)) : sources[inSrc.Name];
-            (sources[t.Name], var carry) = SourcesOf(tp, t, inSchema, from);
+            var from = inSrc is null ? null : inSrc.IsPort ? (inSchema is null ? null : new Sources(ElementCols(tp, inSchema, GraphOf), null)) : sources[inSrc.Name];
+            (sources[t.Name], var carry) = SourcesOf(tp, t, inSchema, from, GraphOf);
             VExpr Compile(TExpr e)
             {
                 VExpr IdC(TId id)
@@ -142,7 +146,7 @@ public static class PlanCompiler
                 case TMatch m:
                     {
                         var view = catalog.OntologyOf(tp.Port(m.GraphPort).ExpectsModule!);
-                        var mo = new MatchOp(m, view, m.References(held[m.GraphPort], view.IsSubtype)); mo.Bind(cx.It); op = mo;
+                        var mo = new MatchOp(m, view, references[m.Name]); mo.Bind(cx.It); op = mo;
                         strategies.Add($"{m.Name}: Match, bilinear delta against the input graph (new before the seed component, old after it)");
                         break;
                     }

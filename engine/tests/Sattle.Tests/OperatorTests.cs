@@ -307,7 +307,7 @@ public class OperatorTests
     }
 
     /// <summary>A graph that holds only relationships: its projection pairs items with tags of the master and creates no entity, so both ends of every relationship are entities of another graph.</summary>
-    static Catalog PairsWorld(string topBody, out LoadResult res)
+    static Catalog PairsWorld(string topBody, out LoadResult res, bool masterToo = false)
     {
         var v1 = View("""
             let tags = match master (t: base.Tag);
@@ -325,10 +325,11 @@ public class OperatorTests
             relationship Seen (base.Item) -> (base.Tag);
             projection top view forward output t.top {
               in rolled: graph v;
+              {{(masterToo ? "in master: graph base;" : "")}}
               {{topBody}}
             }
             """;
-        const string sp = """
+        var sp = $$"""
             module t.space @ 1.0.0;
             import t.base @ 1.0.0 sha256:… as base;
             import t.view @ 1.0.0 sha256:… as v;
@@ -339,7 +340,7 @@ public class OperatorTests
               source extras adapter "sattle.authoring" rows base.ExtraRow;
               master graph master = base.ingest(items: items, tags: tags, extras: extras);
               graph rolled = v.roll(master: master);
-              graph top = t2.top(rolled: rolled);
+              graph top = t2.top(rolled: rolled{{(masterToo ? ", master: master" : "")}});
             }
             """;
         var cat = new Catalog();
@@ -371,6 +372,28 @@ public class OperatorTests
         Assert.Equal("2: a2>g1 b1>g2", Seen());
         Tags(e, 5, ("g1", "L", -1), ("g2", "M", -1));
         Assert.Equal("0: ", Seen());
+    }
+
+    /// <summary>The lineage of a row that binds a reference: the reference is an entity of another graph, so it is named in the input of the projection whose graph holds its type, and not at all when the projection reads no such graph. The relationship is named in the graph it was matched in.</summary>
+    [Theory]
+    [InlineData(true, "i@master p@rolled t@master")]
+    [InlineData(false, "p@rolled")]
+    public void A_reference_is_named_in_the_graph_that_holds_it(bool masterToo, string named)
+    {
+        var cat = PairsWorld("""
+            let pairs = match rolled (i: base.Item)-[p: v.Paired]->(t: base.Tag);
+            emit relationship Seen from pairs key seen: i -> t;
+            """, out var res, masterToo);
+        Assert.Empty(res.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()));
+        using var e = new Engine(cat, cat.Spaces.Keys.Single());
+        Tags(e, 1, ("g1", "L", 1));
+        Items(e, 2, ("a1", "g1", 1, null, 1));
+        var reader = new LineageReader(e);
+        var seen = e.Graph("top").State.Rels.Single(r => Ids.Name(r.Type) == "Seen");
+        var sources = reader.Forward("top", seen.Id)["sources"]!.AsArray();
+        Assert.Equal(named, string.Join(' ', sources.Select(s => s!["role"] + "@" + s["graph"]).Order(StringComparer.Ordinal)));
+        foreach (var s in sources)                                                  // each named element is in the graph it is named in, and knows what it is part of
+            Assert.Contains(reader.Reverse(s!["graph"]!.GetValue<string>(), s["element"]!.GetValue<string>())["partOf"]!.AsArray(), p => p!["element"]!.GetValue<string>() == seen.Id);
     }
 
     /// <summary>A reference has no properties: reading one is refused when the space is checked, with the graph and the type in the message.</summary>
