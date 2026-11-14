@@ -10,7 +10,9 @@ import { Button, MessageBar, MessageBarBody, Spinner, Text, makeStyles, tokens }
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "react";
 import { completionOf, diagnosticsOf, digestOf, hoverLines, kqlLanguage, type Analysis, type Completion, type Depth, type Hover, type Place } from "../../editor/kql";
-import { cardsOf, type Change } from "../../editor/kql-edit";
+import { add, cardsOf, listsOf, type Change } from "../../editor/kql-edit";
+import { matchOf } from "../../editor/kql-example";
+import type { Graph } from "../../core/graph";
 import { KqlSteps, type Reading } from "./KqlSteps";
 
 /** What the editor asks of the engine: the KQL calls of the editor service. */
@@ -121,7 +123,9 @@ type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ t
  * The `.kql` file of a projection, editable, with the engine's answers, and Steps beside it. `port` also reads the text (in the draft when one
  * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator.
  */
-export default function KqlText({ port, projection, draft, rows, store }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]>;
+export default function KqlText({ port, projection, draft, rows, store, picked }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]>;
+  /** the element picked in a data graph (an edge brings its ends): by example, a `let` with the graph-match that finds its like */
+  picked?: { graph: string; data: Graph; ids: string[] } | null;
   /** store the text in the draft; the engine's refusal, or null */
   store?: (text: string) => Promise<string | null> }) {
   const s = useStyles();
@@ -162,6 +166,22 @@ export default function KqlText({ port, projection, draft, rows, store }: { port
     }, (e: Error) => setRowsBy({ status: "error", message: e.message }));
   };
   const stored = state.status === "ready" && doc === state.stored;
+  // by example: the picked element of a graph this projection reads, as a new `let` after the last one
+  const reads = new Set(((reading?.analysis.inputs as { name: string; kind: string }[] | undefined) ?? []).filter((i) => i.kind === "graph").map((i) => i.name));
+  const example = picked && reads.has(picked.graph) ? matchOf(picked.data, picked.ids, picked.graph) : null;
+  const addExample = () => {
+    if (!reading || !example) return;
+    const lists = listsOf(reading.analysis), statements = lists.find((l) => l.id === "statements");
+    const stmts = (reading.analysis.statements as { kind: string; name?: string | null; place: Place }[] | undefined) ?? [];
+    if (!statements) return;
+    const names = new Set(stmts.map((x) => x.name).filter(Boolean));
+    let name = "example";
+    for (let n = 2; names.has(name); n++) name = `example${n}`;
+    const lastLet = [...stmts].reverse().find((x) => x.kind === "let");
+    const k = lastLet ? statements.items.findIndex((p) => p[0] === lastLet.place[0]) + 1 : statements.items.length;
+    const e = add(reading.text, statements, k, `let ${name} = ${example}`, ";\n");
+    change(e.changes, e.select);
+  };
   const [storing, setStoring] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const keep = () => {
     if (!store || state.status !== "ready") return;
@@ -176,6 +196,7 @@ export default function KqlText({ port, projection, draft, rows, store }: { port
         <Text size={200} role="status">{problems === null ? "" : problems ? `${problems} problem${problems === 1 ? "" : "s"} found by the engine` : "the engine reads the text without problems"}</Text>
         <Text size={200}>{store ? (stored ? "The draft holds this text." : "Changed here, not yet in the draft.") : "Changes are checked as you type; they are not stored in the draft."}</Text>
         <span className={s.grow} />
+        {picked && <Button size="small" disabled={!example} onClick={addExample} title={example ? undefined : `pick an element of a graph this projection reads (${[...reads].join(", ")})`}>Add a let from the picked element</Button>}
         {store && <Button size="small" appearance="primary" disabled={stored || storing.busy} onClick={keep}>{storing.busy ? "Storing…" : "Store in draft"}</Button>}
         {storing.error && <Text size={200} role="alert">{storing.error}</Text>}
         {rows && <Button size="small" disabled={!stored || rowsBy.status === "busy"} onClick={askRows}>{rowsBy.status === "busy" ? "Counting rows…" : "Show rows"}</Button>}
