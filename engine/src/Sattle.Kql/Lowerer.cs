@@ -211,8 +211,12 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 }
                 if (spec.OnCreate is { } oc)
                 {
-                    var domains = catalog.Entities.Where(e => Ids.Name(e.Type) == "IdentityDomain" && new DefView(catalog).Target(e.Id, "identifies") == type).Select(e => e.Id).ToList();
-                    if (domains.Count != 1) { Fail($"{Ids.Name(type)} has {domains.Count} identity domains; a create needs one"); continue; }
+                    // the key of a new element is the domain whose components are the parameters of the create function; with one domain, that one
+                    var dv = new DefView(catalog);
+                    var domains = catalog.Entities.Where(e => Ids.Name(e.Type) == "IdentityDomain" && dv.Target(e.Id, "identifies") == type).Select(e => e.Id).ToList();
+                    var given = FunctionNamed(oc)?.Parameters.Parameters.Select(p => p.Element.NameAndType.Name.SimpleName).ToHashSet() ?? [];
+                    if (domains.Count > 1) domains = [.. domains.Where(d => dv.Children(d, "component").Select(Ids.Name).ToHashSet().SetEquals(given))];
+                    if (domains.Count != 1) { Fail($"{Ids.Name(type)} has no identity domain or more than one whose components are the parameters of {oc}; a create needs exactly one"); continue; }
                     b.Edge(rid, "createKey", domains[0]);
                     Defaults(oc, "createDefault", [.. new DefView(catalog).Children(domains[0], "component").Select(Ids.Name)]);
                 }
