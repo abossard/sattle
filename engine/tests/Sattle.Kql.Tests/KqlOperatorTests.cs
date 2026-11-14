@@ -73,6 +73,8 @@ public class KqlOperatorTests
 
     /// <summary>Who each atom is bonded to, read without the bond's direction: written undirected, as the union of both directions, or as a path of one edge in either direction, the answer is each bond twice.</summary>
     [Theory]
+    [InlineData("an edge without a direction", "graph(\"master\") | graph-match (x)-[e]-(y) where labels(e) has \"Bond\" project atom = x.id, other = y.id")]
+    [InlineData("the union of two pattern results", "union (graph(\"master\") | graph-match (x)-[e]->(y) where labels(e) has \"Bond\" project atom = x.id, other = y.id), (graph(\"master\") | graph-match (x)<-[e]-(y) where labels(e) has \"Bond\" project atom = x.id, other = y.id)")]
     [InlineData("a path without a direction", "graph(\"master\") | graph-match (x)-[p*1..1]-(y) where labels(x) has \"Atom\" and all(p, labels(p) has \"Bond\") project atom = x.id, other = y.id")]
     public void Each_bond_is_read_in_both_directions(string what, string pairs)
     {
