@@ -25,6 +25,9 @@ describe("protocol parsing", () => {
     const doc = parseSpace({ protocol: "3", space: "s", graphs: [{ id: "g", role: "projection", description }] });
     expect(doc.graphs[0].description).toBe(want);
   });
+  it.each([["master", "master"], ["input", "input"], ["projection", "projection"], ["catalog", "catalog"], ["something new", "projection"]])("the role of a graph in /space: %s", (role, want) => {
+    expect(parseSpace({ protocol: "3", space: "s", graphs: [{ id: "g", role }] }).graphs[0].role).toBe(want);
+  });
   it("diagnostics of the engine's checker: position, element and message", () => {
     expect(parseDiagnostics([{ code: "UnknownField", severity: "error", message: "m", line: 3, column: 4, element: "d:a/b" }])).toEqual([{ code: "UnknownField", severity: "error", focus: "d:a/b", message: "m", line: 3, col: 4 }]);
     expect(parseDiagnostics(undefined)).toEqual([]);

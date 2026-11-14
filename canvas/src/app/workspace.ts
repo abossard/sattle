@@ -294,7 +294,7 @@ export class Workspace {
         const next: Selection[] = [];
         for (const e of frontier) {
           const id = `${e.graph}|${e.kind}|${e.id}`;
-          if (seen.has(id) || role(e.graph) === "catalog" || role(e.graph) === "master") continue;
+          if (seen.has(id) || role(e.graph) === "catalog" || role(e.graph) === "master" || role(e.graph) === "input") continue;   // an input graph has no graph below it
           seen.add(id);
           if (!this.lineageDone.has(id)) {
             if (budget-- <= 0) break;
@@ -353,7 +353,7 @@ export class Workspace {
     const { lower, upper } = this.closure(sel);
     const kindOf = (k: string) => (k.startsWith("n:") ? "entity" : "relationship") as "entity" | "relationship";
     const below = [mine, ...[...lower].flatMap(([graph, keys]) => [...keys].map((k) => ({ graph, kind: kindOf(k), id: k.slice(2) })))]
-      .filter((e) => this.graphInfo(e.graph)?.role !== "master" && this.lineageInfo.get(`${e.graph}|${e.kind}|${e.id}`)?.complete === false);
+      .filter((e) => this.graphInfo(e.graph)?.role !== "master" && this.graphInfo(e.graph)?.role !== "input" && this.lineageInfo.get(`${e.graph}|${e.kind}|${e.id}`)?.complete === false);
     const above = new Set<string>();
     for (const e of [mine, ...[...upper].flatMap(([graph, keys]) => [...keys].map((k) => ({ graph, kind: kindOf(k), id: k.slice(2) })))]) for (const g of this.reverseInfo.get(`${e.graph}|${e.kind}|${e.id}`)?.incompleteIn ?? []) above.add(g);
     return { below, aboveIn: [...above].sort(), cutOff: this.cutOff.has(`${sel.graph}|${sel.kind}|${sel.id}`) };

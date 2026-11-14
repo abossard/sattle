@@ -20,7 +20,7 @@ const patchesOf = (src: StaticSource, graph: string): Promise<Patch[]> => new Pr
 });
 
 const url = "http://localhost/demo/estate/manifest.json";
-const GRAPHS = ["master", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "treeSignals", "treeStructure", "treeRollup", "healthTree", "healthReport", "workloadStructure", "workload"];
+const GRAPHS = ["master", "authored", "deploymentHealth", "deploymentReport", "serviceTree", "capabilities", "treeSignals", "treeStructure", "treeRollup", "healthTree", "healthReport", "workloadStructure", "workload"];
 
 describe("StaticSource: the engine's output on the estate fixture", () => {
   it("loads every graph without rejections and its patches apply in order", async () => {
@@ -50,11 +50,11 @@ describe("StaticSource: the engine's output on the estate fixture", () => {
 
 describe("the estate space: inputs, lineage in both directions, documents", () => {
   const open = async () => { const src = new StaticSource("t", url, fetcher()); const info = await src.open(); return { src, info }; };
-  it("capabilities read the service tree and the master", async () => {
+  it("capabilities read the service tree and what people wrote", async () => {
     const { info } = await open();
-    expect(info.graphs.find((g) => g.id === "capabilities")!.inputs.sort()).toEqual(["master", "serviceTree"]);
+    expect(info.graphs.find((g) => g.id === "capabilities")!.inputs.sort()).toEqual(["authored", "serviceTree"]);
   });
-  it("a lifted edge names the lower edge and nodes it stands for, and the master node names what it is part of", async () => {
+  it("a lifted edge names the lower edge and nodes it stands for, the capabilities from authored", async () => {
     const { src } = await open();
     const graph = Graph.fromSnapshot(await src.snapshot("capabilities"));
     for (const p of await patchesOf(src, "capabilities")) graph.apply(p);
@@ -62,7 +62,7 @@ describe("the estate space: inputs, lineage in both directions, documents", () =
     expect(lifted.length).toBeGreaterThan(0);
     const l = (await src.lineage("capabilities", lifted[0].id))!;
     expect(l.complete).toBe(true);
-    expect(new Set(l.sources.map((s) => `${s.graph}:${s.kind}`))).toEqual(new Set(["serviceTree:entity", "serviceTree:relationship", "master:entity"]));
+    expect(new Set(l.sources.map((s) => `${s.graph}:${s.kind}`))).toEqual(new Set(["serviceTree:entity", "serviceTree:relationship", "authored:entity"]));
     const lower = l.sources.find((s) => s.graph === "serviceTree" && s.kind === "relationship")!;
     const lowerLineage = (await src.lineage("serviceTree", lower.element))!;
     expect(lowerLineage.sources.some((s) => s.graph === "master" && s.kind === "relationship")).toBe(true);

@@ -8,7 +8,7 @@ import type { EdgeKind, PresentationHint, TreeSpec } from "./presentation";
 
 export interface GraphInfo {
   id: string;
-  role: "master" | "projection" | "catalog";
+  role: "master" | "input" | "projection" | "catalog";
   descriptor: GraphDescriptorWire;
   ontology: OntologyDefinition;
   /** which property values mean ok, warning, danger or unknown (from the ontology), so a viewer can color by it */

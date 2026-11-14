@@ -14,7 +14,7 @@ export type Dialog = "shortcuts" | "rejections" | null;
 export interface Selection { graph: string; kind: "entity" | "relationship"; id: string }
 
 export interface GraphSummary {
-  id: string; role: "master" | "projection" | "catalog"; direction?: string; editable?: boolean;
+  id: string; role: "master" | "input" | "projection" | "catalog"; direction?: string; editable?: boolean;
   head: string; patches: number; nodes: number; edges: number;
   /** bumped by every action that changes the graph's data; components select it to re-render */
   version: number;

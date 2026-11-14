@@ -27,7 +27,7 @@ export const ENGINE_ENDPOINTS = {
 };
 
 export interface SpaceGraph {
-  id: string; role: "master" | "projection" | "catalog"; head: string; ontology: string; inputs: string[]; direction: string; editable: boolean; projection: string | null; document: boolean;
+  id: string; role: "master" | "input" | "projection" | "catalog"; head: string; ontology: string; inputs: string[]; direction: string; editable: boolean; projection: string | null; document: boolean;
   /** engine 3.17: the first sentence of the projection's `///` comment stands alone as a caption */
   description?: string;
 }
@@ -42,7 +42,7 @@ export function parseSpace(raw: unknown): SpaceDoc {
     space: String(o.space), protocol: "3", kernelDigest: String(o.kernelDigest ?? ""), seq: o.seq === undefined ? undefined : String(o.seq), catalogRevision: String(o.catalogRevision ?? "0"),
     graphs: gs.map((g) => {
       const x = g as Record<string, unknown>;
-      const role = x.role === "catalog" ? "catalog" : x.role === "master" ? "master" : "projection";
+      const role = x.role === "catalog" ? "catalog" : x.role === "master" ? "master" : x.role === "input" ? "input" : "projection";
       return { id: String(x.id), role, head: String(x.head ?? "0"), ontology: String(x.ontology ?? ""), inputs: Array.isArray(x.inputs) ? x.inputs.map(String) : [], direction: String(x.direction ?? ""), editable: x.editable === true, document: x.document === true, projection: x.projection ? String(x.projection) : null, description: typeof x.description === "string" && x.description ? x.description : undefined };
     }),
     input: o.input ? { mode: String((o.input as Record<string, unknown>).mode), logicalTime: String((o.input as Record<string, unknown>).logicalTime ?? ""), rows: String((o.input as Record<string, unknown>).rows ?? "") } : null,
