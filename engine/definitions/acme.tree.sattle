@@ -3,7 +3,7 @@ module acme.tree @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:6edf655fd882b812b3f969784463528003d263552ac9ad0c65356fbc6adb3756 as ops;
+import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
 
 /// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
 entity Element {

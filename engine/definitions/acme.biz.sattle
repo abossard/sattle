@@ -2,8 +2,8 @@
 module acme.biz @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
-import acme.ops     @ 1.0.0 sha256:6edf655fd882b812b3f969784463528003d263552ac9ad0c65356fbc6adb3756 as ops;
-import acme.svc     @ 1.0.0 sha256:f20afd254d40cb3543c91c4321e61837a3a3aa2694083f0735648e8c2c280782 as svc;
+import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
+import acme.svc     @ 1.0.0 sha256:2329961ae27ee2000c2a66b10311a87e99de12a5863abdeb31cc3730f636b148 as svc;
 
 entity BizCapability { name: Text label; serviceCount?: Integer; }
 relationship Under (BizCapability) -> (BizCapability) kind composition;

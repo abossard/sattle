@@ -83,7 +83,7 @@ public static class KernelTable
         T("Projection : Declaration | purpose:T retain:I forward:B"), T("Port | name:T direction:T kind:T default:Any?"),
         T("Rule | name:T class:T putput:B reason:T? accept:L? onDelete:T? sourceVar:T? targetVar:T?"),
         T("Match : Operator |"), T("Filter : Operator |"), T("Map : Operator |"), T("Join : Operator |"),
-        T("Union : Operator | conflict:T"), T("Distinct : Operator |"), T("Group : Operator |"),
+        T("Union : Operator |"), T("Distinct : Operator |"), T("Group : Operator |"),
         T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I late:T"), T("Retain : Operator | timestampField:T age:I"),
         T("Values : Operator |"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
@@ -153,7 +153,6 @@ public static class KernelTable
         ("Rule", "class", ["bijective", "lens", "sync", "readonly"]),
         ("Rule", "onDelete", ["remove", "set"]),
         ("ValueRole", "role", ["ok", "warning", "danger", "unknown", "neutral"]),
-        ("Union", "conflict", ["preserveEvidence"]),
         ("Traverse", "direction", ["out", "in", "either"]),
         ("Window", "late", ["ignore", "revise", "reject"]),
         ("EmitEntity", "mode", ["create", "update"]),
@@ -345,5 +344,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:50c003f968d7e99ee86f16fe5208573a81b711eb12c03e23b2f1eb478cf15d50";
+    public const string CompiledDigest = "sha256:dde19e7f32847164dbf4b78e5d0b53987ca35552b566c1c96377fdfd29792cb2";
 }

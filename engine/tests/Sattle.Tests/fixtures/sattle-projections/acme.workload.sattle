@@ -5,7 +5,7 @@ module acme.workload @ 1.0.0;
 
 import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:c075118585cca4bfb0818157e799884854d6b0a6070bd29930c5605c396a262b as ops;
+import acme.ops     @ 1.0.0 sha256:9b18e925ffdd121f8df429691ae059c88e6e7526ed06a29af4b324cdf2f12133 as ops;
 
 /// A part of the workload or of what carries it. key names it across graphs; own is the worst severity of its own signals (0 healthy, 1 no data, 2 degraded, 3 unhealthy); severity and state are rolled up.
 abstract entity Component {

@@ -500,7 +500,7 @@ public sealed class Lowering
         }
         else if (pipe.Source is UnionSource u)
         {
-            var op = Op(cx, "Union", OpName(idx++), u.Pos, ("conflict", T("preserveEvidence")));
+            var op = Op(cx, "Union", OpName(idx++), u.Pos);
             b.Edge(Source(cx, u.A, u.Pos), "wire", Port(op, "in0"));
             b.Edge(Source(cx, u.B, u.Pos), "wire", Port(op, "in1"));
             prev = Port(op, "out");

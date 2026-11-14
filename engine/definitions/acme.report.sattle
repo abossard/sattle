@@ -2,4 +2,4 @@
 module acme.report @ 1.0.0;
 
 import sattle.doc        @ 1.0.0 sha256:d08f49763c2dd278261b4cadfd33f9c3209421773074c005dbd00fe95466ee4f as doc;
-import acme.deployhealth @ 1.0.0 sha256:d8f2705ecf9e342cd3586e82add56fa2bec971810e512b80fa911fbf4ed54f98 as dh;
+import acme.deployhealth @ 1.0.0 sha256:88b2dd8a8bf9fb5755a01b16cc3613d8f2f041159b7f1624b10bd518c6e957ed as dh;

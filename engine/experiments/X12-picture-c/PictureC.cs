@@ -214,7 +214,7 @@ public static class Lowering
                 var r = r0;
                 if (!r.Cols.ToHashSet().SetEquals(first.Cols)) throw new Refused(v.Id, $"the rows of a union have the same columns: {string.Join(", ", first.Cols)}");
                 if (!r.Cols.SequenceEqual(first.Cols)) r = Assigns(v.Id, r, [.. first.Cols.Select(c => (c, (Expr)new Ref(c)))]);
-                var op = Op("Union", v.Id, ("conflict", T("preserveEvidence")));
+                var op = Op("Union", v.Id);
                 B.Edge(acc.Port, "wire", P(op, "in0")); B.Edge(r.Port, "wire", P(op, "in1"));
                 acc = acc with { Port = P(op, "out") };
             }

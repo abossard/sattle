@@ -708,7 +708,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             if (!oriented.Where(e => e.Both).All(e => Fits(e.From, view.Types[types[e.Var]].Sources) && Fits(e.To, view.Types[types[e.Var]].Targets))) continue;
             var one = Matched(oriented);
             if (acc is null) { acc = one; continue; }
-            var u = Op("Union", ("conflict", T("preserveEvidence")));
+            var u = Op("Union");
             Wire(acc.Port, u, "in0"); Wire(one.Port, u, "in1");
             acc = acc.Next(P(u, "out"));
         }
@@ -1168,7 +1168,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var acc = parts[0];
         foreach (var p in parts.Skip(1))
         {
-            var op = Op("Union", ("conflict", T("preserveEvidence")));
+            var op = Op("Union");
             Wire(acc.Port, op, "in0"); Wire(p.Port, op, "in1");
             acc = acc.Next(P(op, "out"));
         }
