@@ -14,6 +14,8 @@ public interface IProjectionSource
     /// <summary>The projections of `module` in `files` (every definition file that is not a module text), read against `catalog`,
     /// which holds the module's own text and everything it imports.</summary>
     ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files);
+    /// <summary>Whether a definition file of this name is one the source reads (a projection file), not a module text.</summary>
+    bool Reads(string fileName);
 }
 
 /// <summary>The facts of a module's projections, by projection id; the file and position each element comes from; and what is wrong.</summary>

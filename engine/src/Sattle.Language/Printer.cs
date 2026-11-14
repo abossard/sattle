@@ -8,7 +8,7 @@ namespace Sattle.Language;
 public sealed class UnprintableException(string element, string message) : Exception(message) { public string Element { get; } = element; }
 
 /// <summary>Canonical printer (research 03 section 7.2): graph to text with parse(print(G)) = G on the module's facts. Layout is canonical, names are the stored names.</summary>
-public sealed class Printer(Graph g, string module)
+public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except = null)
 {
     readonly DefView d = new(g);
     readonly string mid = Ids.Module(module);
@@ -16,7 +16,8 @@ public sealed class Printer(Graph g, string module)
     readonly Dictionary<string, string> aliasOf = new(StringComparer.Ordinal); // module -> alias
     string Name(string id) => d.Text(id, "name") ?? Ids.Name(id);
 
-    public static string Print(Graph g, string module) => new Printer(g, module).Run();
+    /// <summary>`except`: projections that are not printed, because their text is a definition file of its own (a projection in KQL).</summary>
+    public static string Print(Graph g, string module, IReadOnlySet<string>? except = null) => new Printer(g, module, except).Run();
 
     /// <summary>The text of one expression node of a module (aliases as the module's imports declare them).</summary>
     public static string ExprText(Graph g, string module, string exprNode)
@@ -45,7 +46,7 @@ public sealed class Printer(Graph g, string module)
         sb.Append('\n');
         var blocks = new List<string>();
         foreach (var slot in new[] { "entity", "rel", "extend", "constraint", "identity", "equivalence", "rows", "projection", "space" })
-            foreach (var id in InDeclarationOrder(d.Children(mid, slot).OrderBy(x => x, StringComparer.Ordinal)))
+            foreach (var id in InDeclarationOrder(d.Children(mid, slot).Where(x => except is null || !except.Contains(x)).OrderBy(x => x, StringComparer.Ordinal)))
             {
                 try
                 {

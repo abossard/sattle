@@ -26,9 +26,10 @@ public sealed partial class SpaceHost
     Dictionary<string, string> TextsOf(Graph g, List<Diagnostic>? problems = null)
     {
         var res = new Dictionary<string, string>();
+        var except = InFiles(Catalog);
         foreach (var m in ModulesOf(g))
         {
-            try { res[m] = Printer.Print(g, m); }
+            try { res[m] = Printer.Print(g, m, except); }
             catch (UnprintableException e) { problems?.Add(new Diagnostic("Unprintable", "error", e.Element, e.Message)); }
             catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or NullReferenceException or IndexOutOfRangeException or ArgumentException or InvalidCastException)
             {
@@ -231,7 +232,7 @@ public sealed partial class SpaceHost
     Graph FactsAt(Release r) => ModuleFacts(StateAt("catalog", r.Revision), r.Module);
 
     public JsonNode ReleaseSnapshot(string digest) { lock (Gate) { var r = FindRelease(digest); return catalogExport.SnapshotOf(FactsAt(r), catalogExport.CatalogDescriptor(r.Revision)); } }
-    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return Printer.Print(StateAt("catalog", r.Revision), r.Module); } }
+    public string ReleaseText(string digest) { lock (Gate) { var r = FindRelease(digest); return Printer.Print(StateAt("catalog", r.Revision), r.Module, InFiles(Catalog)); } }
     public JsonNode ReleaseDiff(string from, string to)
     {
         lock (Gate)
@@ -313,8 +314,8 @@ public sealed partial class SpaceHost
             var cand = Candidate(changed, out var res, out _);
             if (res.HasErrors) throw new HostError("RefactorInvalid", "the refactored text does not check", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. res.Diagnostics.Select(DiagJson)]) });
             var patch = catalogExport.Patch(new Patch("catalog", d.Revision, d.Revision + 1, Graph.Diff(d.Graph, cand.Graph)));
-            var modules = new JsonObject();
-            foreach (var m in edited.Keys.Order()) modules[m] = new JsonObject { ["text"] = Printer.Print(cand.Graph, m) };
+            var modules = new JsonObject(); var except = InFiles(Catalog);
+            foreach (var m in edited.Keys.Order()) modules[m] = new JsonObject { ["text"] = Printer.Print(cand.Graph, m, except) };
             var premises = BrokenPremises(cand, S("kind"), S("module"), body);
             var preserves = premises.Count == 0 ? new JsonObject { ["outputs"] = "union" }
                 : new JsonObject { ["outputs"] = "not preserved", ["premises"] = new JsonArray([.. premises.Select(p => (JsonNode)new JsonObject { ["premise"] = p.Premise, ["reason"] = p.Reason })]) };

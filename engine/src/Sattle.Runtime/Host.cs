@@ -129,6 +129,26 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly List<SourceFile> others = [];
     /// <summary>Every definition file of the space: the module texts as they are now, and the other files.</summary>
     List<SourceFile> DefinitionFiles() => [.. sources.Values.Select(f => new SourceFile(f.Path, f.Text)), .. others];
+    /// <summary>A definition file is named by its module (a module text) or by its file name (a projection file that the catalog's source reads). Without a source every name is a module's.</summary>
+    bool IsFileName(string name) => options.Projections?.Reads(name) == true;
+    /// <summary>The module texts of a map of definition files.</summary>
+    IEnumerable<KeyValuePair<string, string>> ModuleTexts(IReadOnlyDictionary<string, string> texts) => texts.Where(kv => !IsFileName(kv.Key));
+    /// <summary>A name from a request is a plain name: it never reaches a path outside the definitions folder.</summary>
+    static void CheckNames(IEnumerable<string> names)
+    {
+        foreach (var n in names)
+            if (n.Length == 0 || Path.GetFileName(n) != n || n is "." or "..") throw new HostError("BadName", $"'{n}' is no module or file name", 400);
+    }
+    /// <summary>The other files with the given texts in place of the ones of the same name, and the new ones added.</summary>
+    List<SourceFile> OthersWith(IReadOnlyDictionary<string, string> texts)
+    {
+        var res = others.Select(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) ? new SourceFile(f.Path, t) : f).ToList();
+        foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && !others.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t));
+        return res;
+    }
+    /// <summary>The projections whose text is a definition file of its own: a printed module leaves them out, so it never holds a projection twice.
+    /// Known limit: the files are the ones held now, also when an older revision is printed (a release); a release from before a projection moved into a file would print without it. No projection moves today; this is solved when the `.sattle` projections retire.</summary>
+    IReadOnlySet<string> InFiles(Catalog cat) => cat.Projections.Keys.Where(p => cat.FileOf.TryGetValue(p, out var f) && others.Any(o => o.Path == f)).ToHashSet(StringComparer.Ordinal);
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
     /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
@@ -760,7 +780,15 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
     }
 
-    public string Definition(string module) { lock (Gate) { return Catalog.Modules.ContainsKey(module) && module != Ids.KernelModule ? Printer.Print(Catalog.Graph, module) : throw new HostError("UnknownModule", $"no module {module}", 404); } }
+    /// <summary>The text of a definition file: a module printed without its projections in files of their own, or such a file as it is.</summary>
+    public string Definition(string name)
+    {
+        lock (Gate)
+        {
+            if (IsFileName(name)) return others.FirstOrDefault(f => Path.GetFileName(f.Path) == name)?.Text ?? throw new HostError("UnknownModule", $"no definition file {name}", 404);
+            return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name, InFiles(Catalog)) : throw new HostError("UnknownModule", $"no module {name}", 404);
+        }
+    }
     public JsonNode Definitions() { lock (Gate) { return new JsonArray([.. Catalog.Modules.Values.Where(m => m.Name != Ids.KernelModule).Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["version"] = m.Version, ["digest"] = m.Digest, ["revision"] = Rev(Catalog.Graph.Entity(m.ReleaseId)?.Props.Text(Ids.KProp("revision")) is { } r ? long.Parse(r, CultureInfo.InvariantCulture) : 0) })]); } }
 
     // ---- telemetry ----
@@ -855,7 +883,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     (string Path, string Text)[] SourceList(IReadOnlyDictionary<string, string> texts)
     {
         var list = sources.ToDictionary(kv => kv.Key, kv => kv.Value);
-        foreach (var (module, text) in texts) list[module] = (list.TryGetValue(module, out var old) ? old.Path : module + ".sattle", text);
+        foreach (var (module, text) in ModuleTexts(texts)) list[module] = (list.TryGetValue(module, out var old) ? old.Path : module + ".sattle", text);
         return [.. list.Values];
     }
 
@@ -865,7 +893,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     Dictionary<string, string> WithImportVersions(IReadOnlyDictionary<string, string> texts)
     {
         var res = new Dictionary<string, string>(texts);
-        foreach (var (module, text) in texts)
+        foreach (var (module, text) in ModuleTexts(texts))
         {
             var m = ModuleHeader.Match(text);
             var version = m.Success && m.Groups[2].Success ? m.Groups[2].Value : "1.0.0";
@@ -886,7 +914,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     Catalog Candidate(IReadOnlyDictionary<string, string> texts, out LoadResult res, out Dictionary<string, string> fixedTexts)
     {
         var all = WithImportVersions(texts);
-        List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. others];
+        List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. OthersWith(texts)];
         var cat = new Catalog(options.Projections);
         res = cat.Load(files, updatePins: true);
         fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes);
@@ -900,8 +928,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     JsonNode DiagJson(Diagnostic d) => new JsonObject
     {
         ["code"] = d.Code, ["severity"] = d.Severity, ["message"] = d.Message, ["line"] = d.Line, ["column"] = d.Col, ["element"] = d.Focus.Length > 0 && d.Focus.StartsWith("d:", StringComparison.Ordinal) ? d.Focus : null,
-        ["module"] = ModuleOfPath(d.File),
+        ["module"] = ModuleOfPath(d.File), ["file"] = FileNameOf(d.File),
     };
+
+    /// <summary>The name of the definition file a path is: its module for a module text, its file name for another file.</summary>
+    string? FileNameOf(string? path) => path is null ? null : sources.FirstOrDefault(kv => kv.Value.Path == path).Key ?? Path.GetFileName(path);
 
     string ParseModuleName(string module, string text)
     {
@@ -915,7 +946,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         lock (Gate)
         {
-            foreach (var (module, text) in texts)
+            CheckNames(texts.Keys);
+            foreach (var (module, text) in ModuleTexts(texts))
             {
                 if (module == Ids.KernelModule) throw new HostError("KernelFrozen", "the kernel is compiled into the engine", 422);
                 ParseModuleName(module, text);
@@ -976,7 +1008,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         lock (Gate)
         {
             var module = string.Join("+", texts.Keys.Order());
-            foreach (var (m, t) in texts)
+            CheckNames(texts.Keys);
+            foreach (var (m, t) in ModuleTexts(texts))
             {
                 if (m == Ids.KernelModule) throw new HostError("KernelFrozen", "the kernel is compiled into the engine", 422);
                 ParseModuleName(m, t);
@@ -1020,8 +1053,13 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             // swap
             Engine = fresh; Catalog = cand;
             foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
-            foreach (var (m, t) in texts) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
-            if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying) foreach (var e in sources.Values) if (File.Exists(e.Path)) File.WriteAllText(e.Path, e.Text);
+            foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
+            var withFiles = OthersWith(texts); others.Clear(); others.AddRange(withFiles);
+            if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying)
+            {
+                foreach (var e in sources.Values) if (File.Exists(e.Path)) File.WriteAllText(e.Path, e.Text);
+                foreach (var f in others) if (texts.ContainsKey(Path.GetFileName(f.Path))) File.WriteAllText(f.Path, f.Text);
+            }
             if (catPatch.Edits.Length > 0) catalogHistory.Add(catPatch); else catalogHistory.Add(new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, []));
             Rebuild();
             foreach (var (g, p) in newPatches) { served[g].History.Add(p); Trim(served[g]); }
