@@ -537,6 +537,13 @@ A space has one master and may have more graphs that ingest: graphs produced by 
 - **Nesting.** An expression that nests deeper than 100 levels is refused wherever it stands ("an expression nested deeper than 100 levels"). Before, an expression inside a pipeline step (a `where`, a `select`) was not measured, and a row of thousands of operators there ended the process with a stack overflow; the test of this limit edited the `when` clause of a lift and so never read a pipeline step.
 - **Answers that change.** None of a replay: the shipped projections had no `Lift`. A catalog form with a `Lift` node is refused by the kernel check (unknown type).
 
+## Version 3.40: the `Fixpoint` operator is gone (no change of the wire format)
+- **Kernel.** The operator type `Fixpoint` (parameters `maxFacts`, `maxIterations`, ports `seed` and `out`, slots `relation` and `op`) and the relationship type `over` are gone. The kernel digest is `sha256:50c003f968d7e99ee86f16fe5208573a81b711eb12c03e23b2f1eb478cf15d50` (`GET /palette`, `kernelDigest`).
+- **Palette.** `GET /palette` lists 18 operators. The reference scope `step` and the quantities of `maxIterations` and `maxFacts` are gone with it.
+- **Text.** The engine's own notation has no `fixpoint ... via ... max N`. Reach over the relationships of a graph is a `Traverse` with its depth bounds (`|> traverse g via T out depth 1 .. N from a as b`), as before; recursion over plain rows is no longer expressible.
+- **Run.** `replay` prints no line "fixpoint at its bound".
+- **Answers that change.** None of a replay: no shipped projection had a `Fixpoint`. A catalog form with a `Fixpoint` node is refused by the kernel check (unknown type).
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.

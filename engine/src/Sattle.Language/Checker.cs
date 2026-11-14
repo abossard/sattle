@@ -184,79 +184,10 @@ public sealed class ProjectionChecker(Graph defs)
         return new TypedProjection
         {
             Id = pid, Name = d.Text(pid, "name") ?? Ids.Name(pid), Module = module, Purpose = d.Text(pid, "purpose") ?? "view", Forward = forward,
-            Retain = (int)d.Int(pid, "retain"), OutputModule = outMod, Ports = ports, Ops = Unroll(typed, schemas, pid), Rules = rules, Params = [.. paramKinds.Select(kv => (kv.Key, kv.Value, paramDefaults.GetValueOrDefault(kv.Key)))],
+            Retain = (int)d.Int(pid, "retain"), OutputModule = outMod, Ports = ports, Ops = typed, Rules = rules, Params = [.. paramKinds.Select(kv => (kv.Key, kv.Value, paramDefaults.GetValueOrDefault(kv.Key)))],
         };
     }
 
-    /// <summary>Fixpoint by bounded unrolling: R0 = distinct(seed), R(i+1) = distinct(R(i) union step(R(i))), the result is R(max). The step operators are typed once (against the seed schema) and cloned per iteration; every operator involved is incremental, so retractions are handled like any other change. Facts that need more than max steps are not derived; maxFacts is recorded and not enforced.</summary>
-    List<TOp> Unroll(List<TOp> typed, Dictionary<string, Schema> schemas, string pid)
-    {
-        var fixes = typed.OfType<TFixpoint>().ToList();
-        if (fixes.Count == 0) return typed;
-        var byName = typed.ToDictionary(t => t.Name);
-        var remove = new HashSet<string>(fixes.Select(f => f.Name)); var made = new List<TOp>();
-        foreach (var fp in fixes)
-        {
-            var overOp = byName.Values.FirstOrDefault(t => Ids.Child(t.Id, "port", "out") == d.Target(fp.Id, "over"));
-            if (overOp is null) { Err("Fixpoint", fp.Id, "the step result of a fixpoint must be an operator output"); continue; }
-            // the step: operators between the relation and the result
-            var inner = new List<TOp>(); var seen = new HashSet<string>();
-            void Walk(TOp t)
-            {
-                if (t.Name == fp.Name || !seen.Add(t.Name)) return;
-                foreach (var s in t.Inputs.Values.Where(s => !s.IsPort && byName.ContainsKey(s.Name) && Reaches(byName[s.Name], fp.Name, byName))) Walk(byName[s.Name]);
-                inner.Add(t);
-            }
-            Walk(overOp);
-            foreach (var t in inner) remove.Add(t.Name);
-            // F5: a body that computes values (a depth counter) leaves the finite domain, and then only the bound ends the iteration (Theorem 6.5)
-            var computed = inner.OfType<TMap>().SelectMany(m => m.Assigns).Where(a => a.Value is not TField and not TLit).Select(a => a.Name).ToList();
-            if (computed.Count > 0) { Err("Fixpoint", fp.Id, $"the step computes {string.Join(", ", computed.Select(c => $"'{c}'"))}; a fixpoint body copies fields or uses literals, so its facts stay in a finite domain (F5)"); continue; }
-            if (overOp.Out.Window != 0 || overOp.Out.Cols.Count != fp.Out.Cols.Count || overOp.Out.Cols.Zip(fp.Out.Cols).Any(x => x.First.Name != x.Second.Name || x.First.T.Ty != x.Second.T.Ty || !x.First.T.Role.IsData))
-            { Err("Fixpoint", fp.Id, $"the step must produce the relation's columns {fp.Out}, found {overOp.Out}"); continue; }
-            var seed = fp.Inputs["seed"];
-            var prev = $"{fp.Name}@0";
-            made.Add(new TDistinct(prev, fp.Id, new Dictionary<string, Src> { ["in"] = seed }, fp.Out));
-            for (var i = 1; i <= fp.MaxIterations; i++)
-            {
-                var rename = inner.ToDictionary(t => t.Name, t => $"{fp.Name}@{i}.{t.Name}");
-                Src Remap(Src s) => s.IsPort ? s : s.Name == fp.Name ? new Src(false, prev) : rename.TryGetValue(s.Name, out var r) ? new Src(false, r) : s;
-                foreach (var t in inner) made.Add(t with { Name = rename[t.Name], Inputs = t.Inputs.ToDictionary(kv => kv.Key, kv => Remap(kv.Value)) });
-                var u = $"{fp.Name}@{i}.union";
-                made.Add(new TUnion(u, fp.Id, new Dictionary<string, Src> { ["in0"] = new Src(false, prev), ["in1"] = new Src(false, rename[overOp.Name]) }, fp.Out));
-                prev = i == fp.MaxIterations ? fp.Name : $"{fp.Name}@{i}";
-                made.Add(new TDistinct(prev, fp.Id, new Dictionary<string, Src> { ["in"] = new Src(false, u) }, fp.Out));
-            }
-        }
-        // stable topological order: an operator follows the operators it reads
-        var all = typed.Where(t => !remove.Contains(t.Name)).Concat(made).ToList();
-        var names = all.Select(t => t.Name).ToHashSet(); var done = new HashSet<string>(); var res = new List<TOp>();
-        void Place(TOp t)
-        {
-            if (!done.Add(t.Name)) return;
-            foreach (var s in t.Inputs.Values.Where(s => !s.IsPort && names.Contains(s.Name))) Place(all.First(x => x.Name == s.Name));
-            res.Add(t);
-        }
-        foreach (var t in all) Place(t);
-        _ = schemas; _ = pid;
-        return res;
-    }
-
-    static bool Reaches(TOp t, string target, Dictionary<string, TOp> byName)
-    {
-        var seen = new HashSet<string>(); var todo = new Stack<TOp>(); todo.Push(t);
-        while (todo.Count > 0)
-        {
-            var x = todo.Pop();
-            if (!seen.Add(x.Name)) continue;
-            foreach (var s in x.Inputs.Values.Where(s => !s.IsPort))
-            {
-                if (s.Name == target) return true;
-                if (byName.TryGetValue(s.Name, out var up)) todo.Push(up);
-            }
-        }
-        return false;
-    }
 
     TPolicy? Policy(string rule)
     {
@@ -361,17 +292,6 @@ public sealed class ProjectionChecker(Graph defs)
                         if (!r.Keys.Order(StringComparer.Ordinal).SequenceEqual(names) || names.Any(n => r[n].Type.Ty != rows[0][n].Type.Ty)) { Err("Values", op, "all rows of values need the same columns of the same types"); return null; }
                     var cols = names.Select(n => new Col(n, new FType(rows[0][n].Type.Ty, true, Role.Data))).ToList();
                     return new TValues(name, op, inputs, new Schema(cols), [.. rows.Select(r => names.Select(n => r[n].Value).ToArray())]);
-                }
-            case "Fixpoint":
-                {
-                    var seed = input("seed");
-                    if (seed is null) return null;
-                    if (seed.Window != 0 || seed.Cols.Any(c => !c.T.Role.IsData || c.Origin is not null)) { Err("Fixpoint", op, "a fixpoint relation is plain data rows (select ids and values first)"); return null; }
-                    long max = d.Int(op, "maxIterations");
-                    if (max < 1 || max > 64) { Err("Fixpoint", op, "maxIterations must be between 1 and 64"); return null; }
-                    var over = d.Target(op, "over");
-                    if (over is null) { Err("Fixpoint", op, "a fixpoint has no step result"); return null; }
-                    return new TFixpoint(name, op, inputs, seed, max, over);
                 }
             case "Distinct": return R is null ? null : new TDistinct(name, op, inputs, R);
             case "Retain":

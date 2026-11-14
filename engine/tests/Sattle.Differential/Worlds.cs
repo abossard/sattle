@@ -136,28 +136,6 @@ public static class Worlds
         identity signal for Signal version "1" { k: Text by exact; }
         """;
 
-    static string Fixpoint(int max) => $$"""
-        module w @ 1.0.0;
-        entity Pair { a: Text; b: Text; }
-        identity pair for Pair version "1" { a: Text by exact; b: Text by exact; }
-        rows EdgeRow { src: Text; dst: Text; }
-        projection ingest ingestion output w {
-          in edges: rows EdgeRow;
-          rule observed readonly "differential" {
-            let base = edges |> select { a: src, b: dst };
-            let step = base |> select { x: a, y: b };
-            let closure = fixpoint base
-              via join closure, step on b == x
-                |> select { a: a, b: y }
-              max {{max}};
-            emit entity Pair from closure identity pair(a: a, b: b) set { a: a, b: b };
-          }
-        }
-        space s {
-          source edges adapter "sattle.authoring" rows EdgeRow;
-          master graph master = ingest(edges: edges);
-        }
-        """;
 
     const string Linked = """
         module w @ 1.0.0;
@@ -485,8 +463,6 @@ public static class Worlds
             identity meter for Meter version "1" { k: Text by exact; }
             """, 0.25, tail: "    emit entity Meter from p1 identity meter(k: k) set { k: k, hits: hits };\n    emit entity Meter from p2 identity meter(k: k) set { k: k, total: total };") with { Witnesses = ["prop:hits", "prop:total"] },
         Windowed("revise") with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] }, Windowed("ignore") with { Witnesses = ["window "] }, Windowed("reject") with { Witnesses = ["window "] },
-        new("fixpoint max 2", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(2))], [BagEdges]),
-        new World("fixpoint max 8", "Fixpoint", [new SourceFile("w.sattle", Fixpoint(8))], [BagEdges]) with { Witnesses = ["Pair"] },
         new World("link", "Link, EmitRelationship", [new SourceFile("w.sattle", Linked)], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
         LinkedView,

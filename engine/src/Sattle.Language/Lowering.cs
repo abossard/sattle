@@ -456,21 +456,6 @@ public sealed class Lowering
     void Let(ProjCtx cx, LetStmt l)
     {
         var pipe = l.Pipe;
-        if (pipe.Source is FixpointSource fs)
-        {
-            // the fixpoint operator is the first op of the let group, the step chain follows it; the let's own name is the relation inside the step
-            if (Count(fs.Step) == 0) throw new LowerError("Fixpoint", "the step of a fixpoint needs at least one operator", fs.Pos);
-            if (pipe.Steps.Count > 0) throw new LowerError("Fixpoint", $"steps after the `max` of a fixpoint are not part of it: bind the fixpoint with its own let and continue from '{l.Name}'", pipe.Steps[0].Pos);
-            var n = 1 + Count(fs.Step);
-            string Name(int i) => i == n - 1 ? l.Name : $"{l.Name}#{i}";
-            var fp = Op(cx, "Fixpoint", Name(0), fs.Pos, ("maxFacts", Value.Integer(1_000_000)), ("maxIterations", Value.Integer(fs.Max)));
-            b.Edge(Source(cx, fs.Seed, fs.Pos), "wire", Port(fp, "seed"));
-            cx.Out[l.Name] = Port(fp, "out");
-            var idx = 1;
-            var last = Chain(cx, fs.Step, Name, n, ref idx);
-            b.Edge(fp, "over", last);
-            return;
-        }
         var count = Count(pipe);
         if (count == 0) { cx.Out[l.Name] = Source(cx, ((IdentSource)pipe.Source).Name, pipe.Pos); return; }
         var i0 = 0;

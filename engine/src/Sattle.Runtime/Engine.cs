@@ -241,22 +241,6 @@ public sealed class Engine : IDisposable, IEngineInput
     public ITelemetryStore Telemetry { get; }
     public IReadOnlyList<GraphRuntime> Graphs => graphs;
 
-    /// <summary>Fixpoints whose last unrolled step still derived facts: R(max) differs from R(max - 1), so the result may lack facts that need more steps than the bound (Def. 5.19, Theorem 6.5). Per graph and fixpoint (its definition id), the number of facts the last step added. Computed from the operators' state, nothing extra is kept.</summary>
-    public IEnumerable<(string Graph, string Fixpoint, long Gained)> FixpointsAtBound()
-    {
-        foreach (var g in graphs)
-        {
-            var distinct = g.Plan.Ops.OfType<DistinctOp>().ToList();
-            foreach (var last in distinct.Where(d => !d.Name.Contains('@')))
-            {
-                var steps = distinct.Where(d => d.Typed.Id == last.Typed.Id && d.Name.StartsWith(last.Name + "@", StringComparison.Ordinal) && int.TryParse(d.Name[(last.Name.Length + 1)..], out _)).ToList();
-                if (steps.Count == 0) continue;
-                var prev = steps.MaxBy(d => int.Parse(d.Name[(last.Name.Length + 1)..]))!;
-                var gained = last.Held - prev.Held;
-                if (gained > 0) yield return (g.Name, last.Typed.Id, gained);
-            }
-        }
-    }
     public GraphRuntime Master => graphs.First(g => g.IsMaster);
     public string SpaceName { get; }
     public string Tenant => options.Tenant;

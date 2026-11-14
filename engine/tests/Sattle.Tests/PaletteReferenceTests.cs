@@ -16,7 +16,6 @@ public class PaletteReferenceTests
     [InlineData("EmitRelationship", "ofType:EntityType|RelationshipType:required:outputOntology")]
     [InlineData("Traverse", "ofType:EntityType|RelationshipType:required:inputGraph")]
     [InlineData("Link", "policy:EquivalencePolicy:required:module")]
-    [InlineData("Fixpoint", "over:Port:required:step")]
     [InlineData("Filter", "")]
     public void Each_operator_lists_its_references_with_their_target_types_and_scope(string kind, string expected)
     {

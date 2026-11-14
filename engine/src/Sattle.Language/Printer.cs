@@ -319,13 +319,6 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
     void Let(string pid, string name, List<string> ops, Func<string, string> producer)
     {
         sb.Append("  let ").Append(name).Append(" = ");
-        if (d.TypeName(ops[0]) == "Fixpoint")
-        {
-            sb.Append("fixpoint ").Append(producer(Ids.Child(ops[0], "port", "seed"))).Append("\n    via ");
-            Chain(pid, [.. ops.Skip(1)], producer);
-            sb.Append("\n    max ").Append(d.Int(ops[0], "maxIterations")).Append(";\n");
-            return;
-        }
         Chain(pid, ops, producer);
         sb.Append(";\n");
     }

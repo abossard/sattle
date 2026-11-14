@@ -172,7 +172,6 @@ public abstract record PipeSource(Pos Pos);
 public sealed record IdentSource(string Name, Pos Pos) : PipeSource(Pos);
 public sealed record MatchSource(string Graph, List<PathPat> Paths, Pos Pos) : PipeSource(Pos);
 public sealed record ValuesSource(List<List<(string Name, Expr Value)>> Rows, Pos Pos) : PipeSource(Pos);
-public sealed record FixpointSource(string Seed, Pipeline Step, long Max, Pos Pos) : PipeSource(Pos);
 public sealed record JoinSource(string A, string B, Expr On, Pos Pos) : PipeSource(Pos);
 public sealed record UnionSource(string A, string B, Pos Pos) : PipeSource(Pos);
 public sealed record PathPat(List<NodePat> Nodes, List<EdgePat> Edges);
@@ -594,11 +593,6 @@ public sealed class Parser
         {
             var jp = Next().Pos; var a = Ident(); Sym(","); var b = Ident(); Word("on");
             src = new JoinSource(a, b, Expression(), jp);
-        }
-        else if (IsWord("fixpoint"))
-        {
-            var fp = Next().Pos; var seed = Ident(); Word("via"); var step = Pipe(); Word("max");
-            src = new FixpointSource(seed, step, Int(), fp);
         }
         else if (IsWord("values"))
         {

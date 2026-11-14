@@ -31,13 +31,13 @@ public static partial class Refactor
     [GeneratedRegex(@"^  in (\S+): (rows|graph|param) (\S+);$")] private static partial Regex PortRx();
     [GeneratedRegex(@"^  (let|emit|link|rule|retain|in) ")] private static partial Regex ItemRx();
 
-    /// <summary>Names a statement reads: the source after from, via (the step of a fixpoint), series, match, join, union, and a let bound directly to another name.</summary>
+    /// <summary>Names a statement reads: the source after from, series, match, join, union, and a let bound directly to another name.</summary>
     static string[] SourceRefs(string text)
     {
         var toks = Lexer.Lex(text).Where(t => t.Kind != T.Doc).ToList(); var refs = new List<string>();
         for (var i = 0; i < toks.Count - 1; i++)
         {
-            if (toks[i].Kind == T.Ident && toks[i].Text is "from" or "via" or "series" or "match" or "join" or "union" or "fixpoint" or "traverse" && toks[i + 1].Kind == T.Ident)
+            if (toks[i].Kind == T.Ident && toks[i].Text is "from" or "series" or "match" or "join" or "union" or "traverse" && toks[i + 1].Kind == T.Ident)
             {
                 refs.Add(toks[i + 1].Text);
                 if (toks[i].Text is "join" or "union" && i + 3 < toks.Count && toks[i + 2].Text == "," && toks[i + 3].Kind == T.Ident) refs.Add(toks[i + 3].Text);

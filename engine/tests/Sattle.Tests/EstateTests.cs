@@ -32,12 +32,9 @@ public class EstateTests
           retain 4;
           let parts = match st (c: wl.Component) |> select { k: c.key, nm: c.name };
           emit entity Part from parts identity part(key: k) set { key: k, name: nm };
-          let base = match st (a: wl.Component)-[:wl.Affects]->(b: wl.Component) |> select { a: a.key, b: b.key };
-          let step = base |> select { x: a, y: b };
-          let reach = fixpoint base
-            via join reach, step on b == x
-              |> select { a: a, b: y }
-            max 8;
+          let reach = match st (c: wl.Component)
+            |> traverse st via wl.Affects out depth 1 .. 9 from c as d
+            |> select { a: c.key, b: d.key };
           emit relationship Reaches from reach key reach: part(key: a) -> part(key: b);
         }
 
@@ -176,7 +173,7 @@ public class EstateTests
     }
 
     [Fact]
-    public void The_closure_is_larger_than_its_base_so_the_fixpoint_walked_more_than_one_step()
+    public void The_closure_is_larger_than_its_base_so_the_traversal_walked_more_than_one_step()
     {
         var e = WithDemo.Value.Engine;
         var baseEdges = e.Graph("workloadStructure").State.Rels.Count(r => Ids.Name(r.Type) == "Affects");

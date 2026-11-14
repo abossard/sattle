@@ -90,7 +90,6 @@ public sealed record TMatch(string Name, string Id, IReadOnlyDictionary<string, 
 public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Union", Inputs, Out);
 public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys, TExpr? Residual) : TOp(Name, Id, "Join", Inputs, Out);
 public sealed record TTraverse(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, string RelTypeId, string Direction, long Min, long Max, string Start, string Target, IReadOnlyList<TRead> Reads) : TOp(Name, Id, "Traverse", Inputs, Out);
-public sealed record TFixpoint(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, long MaxIterations, string OverPort) : TOp(Name, Id, "Fixpoint", Inputs, Out);
 public sealed record TValues(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<Value[]> Rows) : TOp(Name, Id, "Values", Inputs, Out);
 public sealed record TDistinct(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Distinct", Inputs, Out);
 public sealed record TFilter(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Pred) : TOp(Name, Id, "Filter", Inputs, Out);

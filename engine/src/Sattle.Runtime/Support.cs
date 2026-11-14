@@ -20,7 +20,6 @@ public static class Support
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys; residual predicate on the joined rows",
         ["Traverse"] = "per start element breadth-first reach, recomputed only when a visited element or edge changed; emits the difference",
-        ["Fixpoint"] = "bounded unrolling: distinct(R union step(R)) repeated maxIterations times from distinct(seed); every operator is incremental",
         ["Union"] = "linear: concatenation of both inputs' signed rows",
         ["Distinct"] = "per-row multiplicity counts, set semantics over signed rows",
         ["EmitEntity"] = "support-counted element layer",
@@ -76,7 +75,7 @@ public static class Support
     {
         ["Series.read"] = new("fieldRef", [], "var.property of the pattern variables of the graph the series reads"),
     };
-    /// <summary>What a reference of a definition node must name, for an editor (`Type.edge`; the kernel's edge table gives the edge's name and target types). `Scope` says where the target is looked up: `outputOntology` (the projection's output ontology), `inputGraph` (the ontology of the graph port the operator reads), `module` (a declaration in scope of the module: this one or an import), `pattern` (a node of the same pattern), `domain` (a component of the identity domain the node names), `emittedType` (a property of the type the enclosing emit writes), `kernel` (a built-in), `step` (an output port of an operator of the fixpoint's step). The checker refuses a node whose required reference is missing or out of scope.</summary>
+    /// <summary>What a reference of a definition node must name, for an editor (`Type.edge`; the kernel's edge table gives the edge's name and target types). `Scope` says where the target is looked up: `outputOntology` (the projection's output ontology), `inputGraph` (the ontology of the graph port the operator reads), `module` (a declaration in scope of the module: this one or an import), `pattern` (a node of the same pattern), `domain` (a component of the identity domain the node names), `emittedType` (a property of the type the enclosing emit writes), `kernel` (a built-in). The checker refuses a node whose required reference is missing or out of scope.</summary>
     public sealed record Reference(bool Required, string Multiplicity, string Scope, string Meaning);
     public static readonly Dictionary<string, Reference> References = new()
     {
@@ -84,7 +83,6 @@ public static class Support
         ["EmitRelationship.ofType"] = new(true, "1", "outputOntology", "the relationship type the sink writes (not abstract)"),
         ["Traverse.ofType"] = new(true, "1", "inputGraph", "the relationship type the traversal follows"),
         ["Link.policy"] = new(true, "1", "module", "the equivalence policy whose two identity domains the link binds"),
-        ["Fixpoint.over"] = new(true, "1", "step", "the output port of the last operator of the step: the relation that is iterated"),
         ["PatternNode.ofType"] = new(true, "1", "inputGraph", "the entity type the pattern variable ranges over"),
         ["PatternEdge.ofType"] = new(true, "1", "inputGraph", "the relationship type of the pattern edge"),
         ["PatternEdge.from"] = new(true, "1", "pattern", "the pattern node the edge starts at"),
@@ -112,7 +110,6 @@ public static class Palette
         ["width"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"), ["ttl"] = new("duration", "ns"), ["fill"] = new("value", "unit of the property read"),
         ["enterAfter"] = new("count", "windows"), ["exitAfter"] = new("count", "windows"),
         ["above"] = new("value", "unit of the thresholded value"), ["below"] = new("value", "unit of the thresholded value"),
-        ["maxIterations"] = new("count", "iterations"), ["maxFacts"] = new("count", "facts"),
         ["minDepth"] = new("count", "hops"), ["maxDepth"] = new("count", "hops"), ["minHops"] = new("count", "hops"), ["maxHops"] = new("count", "hops"),
         ["retain"] = new("count", "retained inputs per element"),
         ["min"] = new("value", "unit of the constrained property"), ["max"] = new("value", "unit of the constrained property"),
@@ -249,7 +246,7 @@ public static class Palette
         return new Patch("catalog", revision, revision + 1, edits);
     }
 
-    /// <summary>A placeholder for every required slot (multiplicity 1 or +) whose child can be given a default, so a new operator prints at once and its remaining problems are typing diagnostics on known element ids. Slots whose child needs a choice (pattern nodes, identity expressions, fixpoint relations, row values) are left empty and printing names the element.</summary>
+    /// <summary>A placeholder for every required slot (multiplicity 1 or +) whose child can be given a default, so a new operator prints at once and its remaining problems are typing diagnostics on known element ids. Slots whose child needs a choice (pattern nodes, identity expressions, row values) are left empty and printing names the element.</summary>
     static List<(string Id, string Slot)> FillRequiredSlots(DefBuilder b, string op, string kind)
     {
         var made = new List<(string, string)>();
