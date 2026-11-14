@@ -59,14 +59,9 @@ public sealed class Catalog
         Modules[Ids.KernelModule] = new ModuleInfo(Ids.KernelModule, Kernel.Version, Kernel.CompiledDigest, kernelRelease, "<kernel>", new ModuleAst(Ids.KernelModule, Kernel.Version, null, [], [], default));
     }
 
-    public static List<SourceFile> ReadDirectory(string dir)
-    {
-        List<SourceFile> files = [.. Directory.EnumerateFiles(dir, "*.sattle").Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
-        return AfterRead?.Invoke(files, dir) ?? files;
-    }
-
-    /// <summary>A step applied to what `ReadDirectory` read, given the files and the folder. A seam for test runs, until the catalog reads projections written in KQL itself: the test assemblies set it when `SATTLE_PROJECTIONS=kql`, so every test reads its projections from the `.kql` files. Nothing in the engine or the CLI sets it; null changes nothing.</summary>
-    public static Func<List<SourceFile>, string, List<SourceFile>>? AfterRead { get; set; }
+    /// <summary>The definition files of a folder: the module texts (`.sattle`) and the projections in files of their own (`.kql`), which only a catalog with a projection source reads.</summary>
+    public static List<SourceFile> ReadDirectory(string dir) =>
+        [.. Directory.EnumerateFiles(dir, "*.sattle").Concat(Directory.EnumerateFiles(dir, "*.kql")).Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
 
     /// <summary>Digest of a module release (section 2.9): sha256 of the canonical JSON of the sorted facts of the contains-closure, the edges leaving it and the import triples.</summary>
     public static string ModuleDigest(Graph g, string module, IEnumerable<(string Module, string Version, string Digest)> imports)
@@ -146,13 +141,15 @@ public sealed class Catalog
             LoadModule(file, ast, diags, fixes, updatePins, others, read);
             if (diags.Skip(before).Any(x => x.IsError)) { /* module not committed; dependents report UnknownImport */ }
         }
-        diags.AddRange(Unread(others, read));
+        diags.AddRange(Unread(others, read, projections is not null));
         return new LoadResult([.. diags.Select(Locate)], fixes);
     }
 
     /// <summary>A definition file that is not a module text and that no module read: an error with its name, never ignored.</summary>
-    static IEnumerable<Diagnostic> Unread(IEnumerable<SourceFile> others, IReadOnlySet<string> read) =>
-        others.Where(f => !read.Contains(f.Path)).Select(f => new Diagnostic("UnreadFile", "error", "", $"no module read {Path.GetFileName(f.Path)}: its module is missing or did not load, or nothing reads files of its kind", f.Path, 1, 1));
+    static IEnumerable<Diagnostic> Unread(IEnumerable<SourceFile> others, IReadOnlySet<string> read, bool hasSource) =>
+        others.Where(f => !read.Contains(f.Path)).Select(f => new Diagnostic("UnreadFile", "error", "", hasSource
+            ? $"no module read {Path.GetFileName(f.Path)}: its module is missing or did not load, or nothing reads files of its kind"
+            : $"{Path.GetFileName(f.Path)} is a projection file and this catalog has no projection source to read it: the projections of a definitions folder are in its .kql files", f.Path, 1, 1));
 
     void LoadModule(SourceFile file, ModuleAst ast, List<Diagnostic> diags, List<PinFix> fixes, bool updatePins, IReadOnlyList<SourceFile> others, HashSet<string> read)
     {

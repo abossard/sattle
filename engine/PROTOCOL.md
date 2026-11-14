@@ -451,7 +451,7 @@ Additive for a client: no endpoint changed. New in the definition language, the 
 - **Seal format 4.** The tables that hold the results of a projection and the state of its groups have one index on the whole key (before, some were found through the rows of their first key column). A seal therefore holds other objects than before and records `format` 4. A seal of format 3 is not used: the start reports "seal format 3, this build reads seal format 4" and replays the journal. Nothing else on the wire changes, and the state digests are the same.
 
 ## Version 3.19: projections in their own definition files (KQL)
-A projection may be written in a file of its own, `module.projection.kql`, beside the module texts. The host reads it with a projection source (`serve --projections kql`); its text is the only text of that projection. Additive for a client of 3.18: module names mean what they meant.
+A projection may be written in a file of its own, `module.projection.kql`, beside the module texts. The host reads it with a projection source (since 3.38 the command line always gives it one); its text is the only text of that projection. Additive for a client of 3.18: module names mean what they meant.
 - **Definition files.** Wherever a module text is named, a projection file may be named instead by its file name: `POST /check` (`module`), `GET /definitions/{name}`, `POST /definitions/{name}`. A name that is no plain file name is refused (`BadName`, 400). A projection file the source does not read, or one of a module the space does not have, is an error of the load (`UnreadFile`).
 - **Printed modules.** `GET /definitions/{module}`, a draft's module text and a release's text leave out the projections that come from a projection file: a module text never holds a projection twice.
 - **Diagnostics** have `file`: the module name for a module text, the file name for a projection file. `line` and `column` are in that file.
@@ -522,6 +522,12 @@ A space has one master and may have more graphs that ingest: graphs produced by 
 ## Version 3.37: the aggregate `weightedMean` is gone (no change of the wire format)
 - **Kernel.** `Aggregate.fn` no longer has the value `weightedMean`, and an `Aggregate` no longer has the slot `weight`; `GET /palette` lists neither. A weighted mean is written with two sums, `sum(value * weight) / sum(weight)`. It gives the same value when every row with a weight has a value; `weightedMean` left out a row without a value, so where such rows exist the second sum takes the weight only where the value is present. The second argument of `last` stays in the slot `order`. The kernel digest is `sha256:7c7b7621661da0fdfb52c2fa51a37fbbbcc35587e95b4ad573518aa75b77489f` (`GET /palette`, `kernelDigest`).
 - **Answers that change.** None of a replay: no definition of the repository used it. A catalog form with `fn` `weightedMean` is refused by the kernel check of the property's values.
+
+## Version 3.38: projections are read only from their `.kql` files (no change of the wire format)
+- **Definitions.** The module texts of the shipped definitions declare no projection; every projection is the file `module.projection.kql` beside them. A definitions folder is its `.sattle` and its `.kql` files.
+- **Command line.** `check`, `replay`, `serve` and the benchmarks always read the `.kql` files with a projection source; the option `--projections` is gone.
+- **A projection file without a source.** A catalog or host given a definitions folder without a projection source reports each `.kql` file as `UnreadFile`: "X.kql is a projection file and this catalog has no projection source to read it". A store whose journal holds projection files, opened without a source, is refused as before.
+- **What a commit writes.** With `--write-definitions`, a commit writes the module texts, which hold no projection, and each committed `.kql` file exactly as committed.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.

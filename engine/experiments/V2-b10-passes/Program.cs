@@ -12,7 +12,7 @@ var text = File.ReadAllText(overlay);
 var mod = System.Text.RegularExpressions.Regex.Match(text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline).Groups[1].Value;
 var ix = files.FindIndex(f => System.Text.RegularExpressions.Regex.Match(f.Text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } m && m.Groups[1].Value == mod);
 files[ix] = files[ix] with { Text = text };
-var cat = new Catalog(); var load = cat.Load(files, updatePins: true); if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
+var cat = new Catalog(new Sattle.Kql.KqlSource()); var load = cat.Load(files, updatePins: true); if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
 var spaceId = cat.Spaces.Keys.First(); var cluster = Sattle.Cli.Program.DetectCluster(capture);
 using var e = new Engine(cat, spaceId, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });      // HostOptions and EngineOptions default, as bench b10 runs
 var replay = new Replay(e, cat.Spaces[spaceId], AdapterRegistry.Create(cluster), new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = Min, LatenessNs = Min, FlushAtEnd = true, Speed = 0, Cluster = cluster });

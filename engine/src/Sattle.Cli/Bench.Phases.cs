@@ -34,7 +34,7 @@ static partial class Bench
     public static int Phases(Program.Options o)
     {
         var capture = Capture(o); var cluster = Program.DetectCluster(capture);
-        var cat = new Catalog(); var setup = Stopwatch.StartNew();
+        var cat = new Catalog(new Sattle.Kql.KqlSource()); var setup = Stopwatch.StartNew();
         var load = cat.Load(Program.ReadDefinitions(o), updatePins: true); var loadMs = setup.Elapsed.TotalMilliseconds;
         if (load.HasErrors) throw new InvalidOperationException(string.Join("\n", load.Diagnostics));
         var spaceId = cat.Spaces.Keys.First();

@@ -19,7 +19,7 @@ public static class Program
     const string Usage = """
         sattle check  [--defs DIR] [--update-pins] [--print MODULE] [--plan]
         sattle replay CAPTURE [--defs DIR] [--overlay FILE] [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--late-horizon WINDOWS] [--chunk N]
-                              [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR] [--projections sattle|kql]
+                              [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
         sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from checkpoint|latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
@@ -92,10 +92,6 @@ public static class Program
     }
 
     /// <summary>The definitions directory, with `--overlay FILE[,FILE]` replacing the module of the same name (a different space binding for a synthetic capture, for example). Committed edits are written back to the original files, not to an overlay.</summary>
-    /// <summary>With `--projections kql`, the .kql files of the definitions folder are definition files like the module texts; the catalog's source reads them (HostOptionsFor gives the host one).</summary>
-    public static IReadOnlyList<SourceFile> WithProjectionFiles(Options o, IReadOnlyList<SourceFile> files) =>
-        o.Get("projections") == "kql" ? [.. files, .. Sattle.Kql.KqlFiles.ReadDirectory(FindDefinitions(o))] : files;
-
     public static IReadOnlyList<SourceFile> ReadDefinitions(Options o)
     {
         var files = Catalog.ReadDirectory(FindDefinitions(o)).ToList();
@@ -180,14 +176,14 @@ public static class Program
     {
         var dir = FindDefinitions(o);
         var files = Catalog.ReadDirectory(dir);
-        var cat = new Catalog();
+        var cat = new Catalog(new Sattle.Kql.KqlSource());
         var res = cat.Load(files, updatePins: o.Flags.Contains("update-pins"));
         if (o.Flags.Contains("update-pins") && res.PinFixes.Count > 0)
         {
             foreach (var (path, text) in Catalog.ApplyPinFixes(files, res.PinFixes)) File.WriteAllText(path, text);
             Console.WriteLine($"updated {res.PinFixes.Count} import pin(s) in {res.PinFixes.Select(f => f.File).Distinct().Count()} file(s)");
             files = Catalog.ReadDirectory(dir);
-            cat = new Catalog(); res = cat.Load(files);
+            cat = new Catalog(new Sattle.Kql.KqlSource()); res = cat.Load(files);
         }
         Print(res.Diagnostics);
         var errors = res.Diagnostics.Count(d => d.IsError);
@@ -254,14 +250,7 @@ public static class Program
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
-        IProjectionSource? projections = null;
-        if (o.Get("projections") is { } front && front != "sattle")
-        {
-            if (front != "kql") return Fail($"--projections {front}: sattle or kql");
-            files = WithProjectionFiles(o, files);
-            projections = new Sattle.Kql.KqlSource();
-        }
-        var cat = new Catalog(projections);
+        var cat = new Catalog(new Sattle.Kql.KqlSource());
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
@@ -348,13 +337,12 @@ public static class Program
 
     /// <summary>The options `serve` builds its host with.</summary>
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
-        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = o.Get("projections") == "kql" ? new Sattle.Kql.KqlSource() : null };
+        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = new Sattle.Kql.KqlSource() };
 
     static int Serve(Options o, string capture, string cluster)
     {
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
-        if (files is not null) files = WithProjectionFiles(o, files);
         var spec = o.Get("store");
         IDurableStore? durable = spec is null || spec == "memory" ? null : spec.StartsWith("sqlite=", StringComparison.Ordinal) ? new SqliteGraphStore(spec["sqlite=".Length..]) : spec.StartsWith("cosmos=", StringComparison.Ordinal) ? OpenCosmos(spec["cosmos=".Length..]) : throw new ArgumentException($"unknown store '{spec}'");
         var hopts = HostOptionsFor(o, cluster, durable);

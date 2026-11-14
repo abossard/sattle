@@ -58,7 +58,7 @@ static partial class Bench
 
     sealed class Rig : IDisposable
     {
-        public readonly Catalog Cat = new(); public readonly string Space; public readonly Engine Engine; public readonly TimingInput Input; public readonly Replay Replay;
+        public readonly Catalog Cat = new(new Sattle.Kql.KqlSource()); public readonly string Space; public readonly Engine Engine; public readonly TimingInput Input; public readonly Replay Replay;
         public Rig(string cluster, Func<string, IGraphStore> factory, int chunkRows)
         {
             var res = Cat.Load(Catalog.ReadDirectory(FindDefs()));
@@ -271,7 +271,7 @@ static partial class Bench
         var path = o.Get("db") ?? Path.Combine(Path.GetTempPath(), "sattle-b10-" + Guid.NewGuid().ToString("N") + ".db");
         var files = Catalog.ReadDirectory(FindDefs());
         var sealEvery = long.TryParse(o.Get("seal-every"), out var se) ? se : 0;
-        var opts = new Sattle.Runtime.HostOptions { Cluster = cluster, SealEvery = sealEvery };
+        var opts = new Sattle.Runtime.HostOptions { Cluster = cluster, SealEvery = sealEvery, Projections = new Sattle.Kql.KqlSource() };
         var restartOpts = opts with { UseSeal = !o.Flags.Contains("no-seal") };
         var cosmos = o.Get("cosmos"); var dbName = "b10" + Guid.NewGuid().ToString("N")[..10];
         IDurableStore Open() => cosmos is null ? new SqliteGraphStore(path) : CosmosGraphStore.Open(cosmos, dbName, false);

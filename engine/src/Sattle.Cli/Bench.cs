@@ -37,13 +37,13 @@ static partial class Bench
     static double Ms(long ticks) => ticks * 1000.0 / Stopwatch.Frequency;
     static double Pct(List<double> xs, double p) { var s = xs.Order().ToList(); return s.Count == 0 ? 0 : s[Math.Min(s.Count - 1, (int)Math.Ceiling(p * s.Count) - 1)]; }
 
-    /// <summary>`lookBack`: every look-back and retention of the definitions (`24h`, and the default look-back of a lift) becomes this duration, so that a run of a few dozen windows reaches the steady state that the shipped 24 h reach after 1,440.</summary>
+    /// <summary>`lookBack`: every look-back and retention of the definitions (`24h`) becomes this duration, so that a run of a few dozen windows reaches the steady state that the shipped 24 h reach after 1,440.</summary>
     static Engine NewEngine(IGraphStore? store = null, string? lookBack = null)
     {
-        var cat = new Catalog();
+        var cat = new Catalog(new Sattle.Kql.KqlSource());
         var files = Catalog.ReadDirectory(FindDefs());
         if (lookBack is not null)
-            files = [.. files.Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text.Replace("24h", lookBack), @"(?ms)^(\s*lift\b(?:(?!\bwithin\b)[^;])*);", "$1 within " + lookBack + ";") })];
+            files = [.. files.Select(f => f with { Text = f.Text.Replace("24h", lookBack) })];
         var res = cat.Load(files, updatePins: lookBack is not null);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
         // the shipped ratio: telemetry is retained for 48 h and read 24 h back, so a shortened look-back comes with twice its length of retention

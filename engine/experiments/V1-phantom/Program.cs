@@ -8,7 +8,7 @@ using Sattle.Language;
 using Sattle.Runtime;
 
 var defs = args[0]; var fix = args[1] == "fix";
-var cat = new Catalog(); var res = cat.Load(Catalog.ReadDirectory(defs), updatePins: true);
+var cat = new Catalog(new Sattle.Kql.KqlSource()); var res = cat.Load(Catalog.ReadDirectory(defs), updatePins: true);
 if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
 using var e = new Engine(cat, cat.Spaces.Keys.First(), new EngineOptions { StoreFactory = _ => new InMemoryGraphStore() });
 int pods = 31250, services = 6250, resources = 62500, pairs = 50000, perWindow = 208000, windows = 3; const long Min = 60_000_000_000;
