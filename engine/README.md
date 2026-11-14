@@ -1,6 +1,6 @@
 # Sattle engine
 
-A deterministic graph transformation engine, first slice. Compiled kernel in C# (.NET 10) that loads ontologies, identity domains and projections as typed definition graphs from `.sattle` text, replays recorded lab data into a master graph, derives a service dependency tree with telemetry, and serves both to the canvas.
+A deterministic graph transformation engine, first slice. Compiled kernel in C# (.NET 10) that loads ontologies and identity domains from `.sattle` text and projections from `.kql` files as typed definition graphs, replays recorded lab data into a master graph, derives a service dependency tree with telemetry, and serves both to the canvas.
 
 ## Build, test, run
 ```bash
@@ -32,12 +32,11 @@ sattle check [--defs DIR] [--update-pins] [--print MODULE] [--plan]
 - Parses and checks every `.sattle` file in `definitions/`: syntax with positions, K1 to K11, the typing judgments, release digests and import pins. Errors print as `file:line:col: error Code: message`. Exit 1 on errors.
 - `--update-pins` rewrites import digests in place (digests are computed, never typed). `--print` shows the canonical printed form. `--plan` shows the compiled plan: for each `lift` statement the operators it was lowered to (`dependsOn: Lift Calls through Backs to DependsOn (images each), lowered to 15 operators: ...`), strategy per operator, fused chains, adapter contract check.
 ```bash
-sattle replay CAPTURE [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N] [--late-horizon WINDOWS] [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR] [--projections sattle|kql]
+sattle replay CAPTURE [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N] [--late-horizon WINDOWS] [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
 ```
 - `CAPTURE` is a capture directory, `lab/fixtures`, or `latest` (newest under `lab/captures`). Records are merged in capture-time order. Each source's adapter turns them into rows. Explicit `Advance(λ)` controls are inserted when the capture clock crosses a step boundary: `λ = floor(capturedAt / step) * step - lateness`, so logical time is a recorded input and never the wall clock.
 - `--speed N` plays N capture seconds per wall second (0, the default, is as fast as possible). `--chunk` sets rows per batch; it changes patch granularity, never the result (T6).
 - `--store memory` (the default) keeps the head number of each graph and nothing else: the graphs are the engine's own, and nothing reads history from this store. `sqlite=` and `cosmos=` keep the whole history, and only they can be restarted from (`serve --store`).
-- `--projections kql` loads the projections written in KQL (`definitions/<module>.<projection>.kql`) in place of the `.sattle` projections of the same module and name. The `.kql` files are definition files like the module texts: the catalog reads them itself, and a message about one names the line of the `.kql` file. A module loaded this way has another digest, so pins are updated. `sattle` (the default) reads only the `.sattle` files. `serve` refuses it for now: a draft prints a module as `.sattle` text, and would write a projection in KQL into it.
 - Prints records and rows per source, rejections, per graph revision, element counts per type and telemetry counts, the service tree with top dependencies, identity statistics, runtime faults, lost events and a state digest. `--out DIR` writes the canvas files.
 ```bash
 sattle serve CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]]

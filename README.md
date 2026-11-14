@@ -57,10 +57,10 @@ Projections are written in KQL, the query language of Azure Data Explorer and Lo
 ### 4. Change a projection and see the effect
 
 ```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --projections kql
+dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth
 ```
 
-- It prints the elements of each graph and a state digest. The digest ends in `7bd6`, the same as without `--projections kql`: the KQL projections give exactly the graphs of the original definitions.
+- It prints the elements of each graph and a state digest, which ends in `b2eb`.
 - Change a rule in one of the `.kql` files and run it again. The counts and the digest show what changed. An error names the line in the `.kql` file.
 - The **Projection editor** tab edits projections as graphs. It still writes the older `.sattle` text; a KQL version is being designed.
 
