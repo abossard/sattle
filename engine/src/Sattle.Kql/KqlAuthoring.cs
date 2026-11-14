@@ -113,6 +113,9 @@ public static class KqlAuthoring
 
     static JsonArray P(int start, int end) => [start, end];
 
+    /// <summary>The end of a step's head: before the `=` that ends it and the white space before that.</summary>
+    static int Trail(string text, int start, int end) { while (end > start && (text[end - 1] == '=' || char.IsWhiteSpace(text[end - 1]))) end--; return end; }
+
     /// <summary>A place begins at its own first token: the graph, input and step lines are found from the start of their line, so their indent is left out.</summary>
     static int Lead(string text, int i) { while (i < text.Length && text[i] is ' ' or '\t') i++; return i; }
     static JsonArray P(SyntaxNode n) => P(n.TextStart, n.End);
@@ -153,7 +156,7 @@ public static class KqlAuthoring
         {
             ["name"] = l.Name.SimpleName,
             ["parameters"] = new JsonArray([.. ((FunctionDeclaration)l.Expression).Parameters.Parameters.Select(x => x.Element).Select(p => (JsonNode)new JsonObject
-                { ["name"] = p.NameAndType.Name.SimpleName, ["table"] = p.NameAndType.Type is SchemaTypeExpression })]),
+                { ["name"] = p.NameAndType.Name.SimpleName, ["table"] = p.NameAndType.Type is SchemaTypeExpression, ["place"] = P(p) })]),
             ["place"] = P(l), ["body"] = P(((FunctionDeclaration)l.Expression).Body),
         })];
 
@@ -176,6 +179,8 @@ public static class KqlAuthoring
                 ["name"] = step is null ? l.Name.SimpleName : null, ["type"] = step?.Type, ["on"] = step?.Id, ["from"] = step?.Src, ["to"] = step?.Dst,
                 ["settings"] = Settings(step?.With ?? []),
                 ["place"] = P(Lead(t.Text, place.Item1), place.Item2), ["query"] = P(q),
+                // a step's head, its kind, type, columns and settings up to the `=`: a setting is added to a step without `with (...)` at its end
+                ["head"] = step is null ? null : P(Lead(t.Text, step.Pos), Trail(t.Text, step.Pos, step.HeadEnd)),
                 ["reads"] = new JsonObject
                 {
                     ["lets"] = Read(n => n is NameReference r && lets.Contains(r.SimpleName) ? r.SimpleName : null),

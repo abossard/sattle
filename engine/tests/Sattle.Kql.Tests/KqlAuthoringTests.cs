@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Sattle.Core;
 using Sattle.Language;
 
@@ -24,19 +25,7 @@ public class KqlAuthoringTests
         + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
 
     /// <summary>Every operator the engine runs for a projection is on a card of the outline: a KQL operator, a step's sink, or a table function written out at its call.</summary>
-    [Theory]
-    [InlineData("acme.svc.serviceDeps.kql")]
-    [InlineData("acme.biz.capabilityView.kql")]
-    [InlineData("acme.deployhealth.deploymentHealth.kql")]
-    [InlineData("acme.report.deploymentReport.kql")]
-    [InlineData("acme.workload.workloadStructure.kql")]
-    [InlineData("acme.workload.workloadHealth.kql")]
-    [InlineData("acme.treereport.healthReport.kql")]
-    [InlineData("acme.tree.treeStructure.kql")]
-    [InlineData("acme.tree.treeSignals.kql")]
-    [InlineData("acme.treehealth.treeRollup.kql")]
-    [InlineData("acme.treehealth.healthTree.kql")]
-    [InlineData("acme.ops.ingest.kql")]
+    [Theory, MemberData(nameof(Shipped))]
     public void Every_operator_the_engine_runs_is_on_a_card_of_the_outline(string kql)
     {
         var text = File.ReadAllText(Path.Combine(Definitions, kql)); var projection = kql[..^4];
@@ -70,6 +59,78 @@ public class KqlAuthoringTests
 
     /// <summary>A link step in the authored graph: the space's check that only the master links identities refuses it, an error on no operator of the text.</summary>
     const string AuthoredLink = "link podUidIsPodName from byUid to byName with (confidence = 1.0) = realizes | project byUid = identity(\"podUid\", cluster, service), byName = identity(\"podName\", cluster, namespace, service);\n";
+
+    public static TheoryData<string> Shipped => [.. Directory.EnumerateFiles(Definitions, "*.kql").Select(f => Path.GetFileName(f)).Order(StringComparer.Ordinal)];
+
+    static (int Start, int End) At(JsonNode? p) => (p![0]!.GetValue<int>(), p[1]!.GetValue<int>());
+
+    /// <summary>Every list of an outline that an editor changes (research 11, section 5) with the separator between its items: the statements of the file,
+    /// the operators of a pipeline, the items of a project, extend, summarize or distinct, the keys of a join, the legs of a union, the patterns of a
+    /// graph-match, the settings of a statement, the parameters of the file and of a function. Each with the place it lies in.</summary>
+    static IEnumerable<(string What, string Separator, (int Start, int End) Within, List<(int Start, int End)> Items)> Lists(JsonObject o, int length)
+    {
+        var top = new List<(int, int)> { At(o["graph"]!["place"]) };
+        top.AddRange(o["inputs"]!.AsArray().Select(i => At(i!["place"])));
+        if (o["parameters"] is JsonObject ps) { top.Add(At(ps["place"])); yield return ("parameters", ",", At(ps["place"]), [.. ps["items"]!.AsArray().Select(i => At(i!["place"]))]); }
+        foreach (var f in o["functions"]!.AsArray()) { top.Add(At(f!["place"])); yield return ("function parameters", ",", At(f["place"]), [.. f["parameters"]!.AsArray().Select(x => At(x!["place"]))]); }
+        yield return ("graph settings", ",", At(o["graph"]!["place"]), [.. o["graph"]!["settings"]!.AsArray().Select(x => At(x!["place"]))]);
+        foreach (var st in o["statements"]!.AsArray())
+        {
+            top.Add(At(st!["place"]));
+            yield return ("settings", ",", At(st["place"]), [.. st["settings"]!.AsArray().Select(x => At(x!["place"]))]);
+            foreach (var l in Pipeline(st["operators"]!.AsArray(), At(st["query"]))) yield return l;
+        }
+        yield return ("statements", ";", (0, length), [.. top.Order()]);
+    }
+
+    static IEnumerable<(string, string, (int, int), List<(int, int)>)> Pipeline(JsonArray ops, (int, int) within)
+    {
+        yield return ("operators", "|", within, [.. ops.Select(x => At(x!["place"]))]);
+        foreach (var op in ops)
+        {
+            var place = At(op!["place"]); var parts = op["parts"]!.AsObject();
+            foreach (var key in new[] { "project", "by", "aggregates" })
+                if (parts[key] is JsonArray items) yield return (op["kind"] + " " + key, ",", place, [.. items.Select(i => At(i!["place"]))]);
+            foreach (var key in new[] { "on", "legs", "pattern" })
+                if (parts[key] is JsonArray items) yield return (op["kind"] + " " + key, ",", place, [.. items.Select(At)]);
+            foreach (var inner in op["inner"]!.AsArray()) foreach (var l in Pipeline(inner!.AsArray(), place)) yield return l;
+        }
+    }
+
+    /// <summary>The places of an outline nest: each item of a list lies inside what holds it, the items follow each other in the text, and none overlap.</summary>
+    [Theory, MemberData(nameof(Shipped))]
+    public void The_items_of_every_list_lie_in_order_inside_what_holds_them(string kql)
+    {
+        var text = File.ReadAllText(Path.Combine(Definitions, kql));
+        var outline = KqlAuthoring.Analyse(Defs.Value.Catalog, kql[..^4], text);
+        Assert.Empty(outline["diagnostics"]!.AsArray());
+        foreach (var (what, _, within, items) in Lists(outline, text.Length))
+        {
+            Assert.All(items, i => Assert.True(within.Start <= i.Start && i.Start <= i.End && i.End <= within.End, $"{what}: {i} is not inside {within}"));
+            for (var k = 1; k < items.Count; k++) Assert.True(items[k - 1].End <= items[k].Start, $"{what}: {items[k - 1]} and {items[k]} overlap or are out of order");
+        }
+        // a step's head runs from its first token to the `=` before its query
+        foreach (var st in outline["statements"]!.AsArray().Where(s => s!["head"] is not null))
+        {
+            var (head, place, query) = (At(st!["head"]), At(st["place"]), At(st["query"]));
+            Assert.Equal((place.Start, "="), (head.Start, Regex.Replace(text[head.End..query.Start], @"//[^\n]*", "").Trim()));
+            Assert.DoesNotMatch(@"\s$", text[head.Start..head.End]);
+        }
+    }
+
+    /// <summary>Between two items of a list stand only its separator, white space and comments: the text an editor carries with an item when it removes,
+    /// moves or copies it (research 11, section 5).</summary>
+    [Theory, MemberData(nameof(Shipped))]
+    public void Between_two_items_of_a_list_stand_only_its_separator_white_space_and_comments(string kql)
+    {
+        var text = File.ReadAllText(Path.Combine(Definitions, kql));
+        foreach (var (what, separator, _, items) in Lists(KqlAuthoring.Analyse(Defs.Value.Catalog, kql[..^4], text), text.Length))
+            for (var k = 1; k < items.Count; k++)
+            {
+                var between = Regex.Replace(text[items[k - 1].End..items[k].Start], @"//[^\n]*", "").Trim();
+                Assert.True(between == separator || what == "statements" && between == "", $"{what}: between {items[k - 1]} and {items[k]} stands '{between}'");
+            }
+    }
 
     /// <summary>At full depth every error of the engine's load is reported: one that names no operator of the text is placed at the start of the text and names its element.</summary>
     [Fact]

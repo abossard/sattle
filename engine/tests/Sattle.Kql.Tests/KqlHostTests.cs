@@ -234,4 +234,33 @@ public class KqlHostTests
         using var r = SpaceHost.OpenDurable(plain, null, Options);
         Assert.Equal(catalog, r.Catalog.Graph.Digest());
     }
+
+    /// <summary>Each operator of a preview's rows is named by an id the outline of its projection's text shows (on an operator, a step's sink or a
+    /// function's call), so an editor puts the rows after each operator under its card (research 11, section 2 e).</summary>
+    [Fact]
+    public void The_operators_of_a_preview_are_named_by_ids_the_outline_shows()
+    {
+        using var h = new SpaceHost(Files, Options);
+        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        var ops = h.Preview(d, new JsonObject { ["include"] = new JsonArray("rows"), ["rowLimit"] = "1" })["graphs"]!.AsArray()
+            .SelectMany(g => g!["operators"]?.AsArray() ?? []).Select(o => o!["op"]!.GetValue<string>()).ToList();
+        var projections = ops.GroupBy(op => op[..op.IndexOf("/op:", StringComparison.Ordinal)]).ToList();
+        Assert.Equal(Directory.EnumerateFiles(Definitions, "*.kql").Count(), projections.Count);
+        foreach (var projection in projections)
+        {
+            var (module, name) = (projection.Key[2..projection.Key.IndexOf('/', StringComparison.Ordinal)], projection.Key[(projection.Key.LastIndexOf(':') + 1)..]);
+            var shown = new HashSet<string>(StringComparer.Ordinal);
+            void Walk(JsonNode? n)
+            {
+                if (n is JsonArray a) foreach (var x in a) Walk(x);
+                if (n is not JsonObject o) return;
+                foreach (var (k, v) in o)
+                    if (k is "engine" or "expands") foreach (var id in v!.AsArray()) shown.Add(id!.GetValue<string>());
+                    else if (k == "sink" && v is not null) shown.Add(v.GetValue<string>());
+                    else Walk(v);
+            }
+            Walk(KqlAuthoring.Analyse(h.Catalog, $"{module}.{name}", Text($"{module}.{name}.kql"))["statements"]);
+            Assert.Subset(shown, projection.ToHashSet(StringComparer.Ordinal));
+        }
+    }
 }
