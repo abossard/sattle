@@ -4,7 +4,7 @@ import {
   Spinner, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Textarea, Toolbar, ToolbarButton, ToolbarDivider, Tree, TreeItem, TreeItemLayout, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Checkmark12Regular, ZoomIn20Regular, ZoomOut20Regular, Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular, Comment20Regular, Copy20Regular, ClipboardPaste20Regular, Delete20Regular, Eye20Regular, Keyboard20Regular, Save20Regular, AlignLeft20Regular, FolderArrowRight20Regular } from "@fluentui/react-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
 import { Graph } from "../core/graph";
@@ -27,6 +27,9 @@ import { Definitions } from "./editor/Definitions";
 import { NewProjectionDialog } from "./editor/NewProjection";
 import { Properties } from "./editor/Properties";
 import { Notations } from "../editors/Notations";
+
+// the KQL text editor brings CodeMirror: it loads when its tab is first opened
+const KqlText = lazy(() => import("./editor/KqlText"));
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr) minmax(260px, 340px)", minHeight: 0, height: "100%", "@media (max-width: 1000px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(70dvh, auto) auto auto", height: "100%", overflowY: "auto", "& > section": { order: -1 } } },
@@ -341,7 +344,7 @@ export function EditorView() {
   const [marquee, setMarquee] = useState<{ a: Pos; b: Pos } | null>(null);
   const [zoom, setZoom] = useState(1);
   // how the projection is shown in the centre: the node canvas of this view, or the five notations of editors/Workbench on the same draft
-  const [shown, setShown] = useState<"canvas" | "notations">("canvas");
+  const [shown, setShown] = useState<"canvas" | "notations" | "text">("canvas");
   useEffect(() => { if (ed.status === "idle") dispatch({ type: "editor/open" }); }, [ed.status]);
   const key = `sattle-canvas-editor:${ed.projection}`;
   useEffect(() => { const v = store(key); setManual(v?.manual ?? {}); setNotes(v?.notes ?? []); setGroups(v?.groups ?? []); }, [key]);
@@ -461,7 +464,7 @@ export function EditorView() {
           <Badge appearance="outline" shape="square" color="informative">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
           {ed.busy && <Spinner size="tiny" label={ed.busy} labelPosition="after" />}
           <span className={s.grow} />
-          <TabList size="small" selectedValue={shown} onTabSelect={(_, d) => setShown(d.value as "canvas" | "notations")} aria-label="How the projection is shown"><Tab value="canvas">Canvas</Tab><Tab value="notations">Notations</Tab></TabList>
+          <TabList size="small" selectedValue={shown} onTabSelect={(_, d) => setShown(d.value as "canvas" | "notations" | "text")} aria-label="How the projection is shown"><Tab value="canvas">Canvas</Tab><Tab value="notations">Notations</Tab><Tab value="text">KQL text</Tab></TabList>
           <span className={s.zoom}><Button size="small" appearance="subtle" className={s.square} icon={<ZoomOut20Regular />} onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} aria-label="Zoom out" /><Text size={200} className={s.zoneText}>{Math.round(zoom * 100)}%</Text><Button size="small" appearance="subtle" className={s.square} icon={<ZoomIn20Regular />} onClick={() => setZoom(Math.min(2, zoom + 0.1))} aria-label="Zoom in" /></span>
         </div>
         <div className={s.bar}>
@@ -499,7 +502,7 @@ export function EditorView() {
           </Toolbar>
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          {shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
+          {shown === "text" ? (() => { const p = projections.find((x) => x.id === ed.projection); return p ? <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} /></Suspense> : null; })() : shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
             keyMarquee={marquee} wiring={ed.wiring} wireTarget={ed.wiring ? targets[wireIdx] ?? null : null} canWire={(a, b) => canWire(g, a, b).ok}
             onSelect={(ids) => dispatch({ type: "editor/select", ids })} onMove={(ids, dx, dy) => move(ids, dx, dy)} onWire={(from, to) => run({ t: "wire", from, to })}
             onNoteMove={(id, x, y) => persist(manual, notes.map((n) => (n.id === id ? { ...n, x, y } : n)), groups)} onNoteEdit={(id, text) => persist(manual, notes.map((n) => (n.id === id ? { ...n, text } : n)), groups)} />}

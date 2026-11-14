@@ -321,6 +321,15 @@ await runAxe("editor rule program");
 if (!(await clickText("[role=tab]", "Definitions"))) fail.push("editor: no Definitions tab");
 await sleep(500);
 await runAxe("editor definitions");
+// the KQL text of the projection (note 11, stage a): CodeMirror with the engine's answers, in each theme
+if (!(await clickText("[role=tab]", "KQL text"))) fail.push("editor: no KQL text tab");
+else {
+  for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector(".cm-editor")`)); i++) await sleep(250);
+  await sleep(1500);
+  for (const theme of ["light", "dark", "contrast"]) { await dispatch({ type: "ui/theme", theme }); await sleep(300); await runAxe(`editor KQL text (${theme})`); }
+  await dispatch({ type: "ui/theme", theme: "light" });
+  await clickText("[role=tab]", "Canvas"); await sleep(500);
+}
 // a lift (engine 3.13): its card and its panel (parameters with defaults, the three relationship types, carry, keep, derive, state and when)
 const liftOp = await evaluate(`(() => { const c = window.__sattle.session.catalog; for (const p of c.projections()) for (const o of c.children(p.id, "op")) if (window.__sattle.session.graph.entity(o)?.type === "Lift") return JSON.stringify([p.module, p.id, o]); return ""; })()`);
 if (liftOp) {

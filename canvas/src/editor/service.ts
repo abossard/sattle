@@ -6,6 +6,7 @@ import { parseDiagnostics } from "../source/engine-protocol";
 import { parsePatch, parseRecords, parseSnapshot } from "../source/snapshot-file";
 import type { EngineDiagnostic } from "../source/types";
 import { parsePalette, type Palette } from "./palette";
+import type { Analysis, Completion, Depth, Hover, KqlText, Related } from "./kql";
 
 export class EngineError extends Error {
   constructor(readonly code: string, message: string, readonly status: number, readonly element?: string, readonly diagnostics: EngineDiagnostic[] = []) { super(`${code}: ${message}`); }
@@ -109,6 +110,14 @@ export class EditorService {
     return json;
   }
   async palette(): Promise<Palette> { return parsePalette(await this.call("GET", "/palette")); }
+
+  // ---- a projection's KQL text (PROTOCOL 3.41, 3.42): `projection` is `module.name`, e.g. acme.svc.serviceDeps ----
+  /** The text as the space holds it, or as a draft holds it when given; never printed from the catalog. */
+  async kqlText(projection: string, draft?: string): Promise<KqlText> { return (await this.call("GET", draft ? `/drafts/${draft}/kql/${projection}` : `/kql/${projection}`)) as KqlText; }
+  async kqlAnalyse(projection: string, text: string, depth: Depth): Promise<Analysis> { return (await this.call("POST", "/kql/analyse", { projection, text, depth })) as Analysis; }
+  async kqlComplete(projection: string, text: string, offset: number): Promise<Completion> { return (await this.call("POST", "/kql/complete", { projection, text, offset })) as Completion; }
+  async kqlHover(projection: string, text: string, offset: number): Promise<Hover> { return (await this.call("POST", "/kql/hover", { projection, text, offset })) as Hover; }
+  async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
   /**
    * The patch that creates an operator with its ports and placeholders for required slots, starting at the draft's revision, and the ids of
    * those placeholders (engine 3.19): the children the patch creates only so that the operator prints. An engine before 3.19 names none.
