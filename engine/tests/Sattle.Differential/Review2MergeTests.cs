@@ -66,4 +66,35 @@ public class Review2MergeTests
         var mismatch = Differential.FirstMismatch(w, log, 0, reordered: false);
         Assert.True(mismatch is null, mismatch?.ToString());
     }
+
+    /// <summary>Two rows under the id of the name give the window no value (a conflict); a row under the id of the uid gives it one. After the link the window has none, whichever came first. Before: a link after the rows left the value of the uid's rows, and the conflict under the id that lost.</summary>
+    [Fact]
+    public void A_window_without_a_value_under_one_id_has_none_after_the_merge()
+    {
+        Input[] log =
+        [
+            Load(null, "Web", 5, 10), Load(null, "web", 7, 20),
+            Load("u0", null, 3, 30),
+            Advance(90),
+            PodRow("u0", "Web"),
+        ];
+        var mismatch = Differential.FirstMismatch(Worlds.LinkedLoads, log, 0, reordered: false);
+        Assert.True(mismatch is null, mismatch?.ToString());
+    }
+
+    /// <summary>Before: the state digest depended on whether the link came before or after the rows (PROTOCOL 3.22 says it does not).</summary>
+    [Fact]
+    public void The_state_digest_does_not_depend_on_the_order_of_the_link_and_the_rows()
+    {
+        string Digest(params Input[] log)
+        {
+            using var engine = new Engine(Worlds.LinkedLoads.Catalog, Worlds.LinkedLoads.Catalog.Spaces.Keys.Single());
+            long seq = 0;
+            foreach (var i in log)
+                if (i is AdvanceInput a) engine.Advance(a.Frontier, ++seq); else EngineRun.Ingest(engine, [(RowInput)i], ++seq);
+            return engine.StateDigest();
+        }
+        var rows = new Input[] { Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), Advance(90) };
+        Assert.Equal(Digest([.. rows, PodRow("u0", "Web")]), Digest([PodRow("u0", "Web"), .. rows]));
+    }
 }

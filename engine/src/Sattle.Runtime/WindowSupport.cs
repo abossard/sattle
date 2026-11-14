@@ -11,7 +11,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     public void Write(WindowKey key, TVal value, long weight, long period, long own, string? combine)
     {
         tele.Add((key, value, weight, period, own));
-        combineOf.TryAdd(key.Prop, combine);
+        combineOf.TryAdd(key.Prop, combine); periodOf.TryAdd(key.Prop, period);
     }
 
     /// <summary>Windows that more than one row writes, or one row with a weight other than one: the rows that support them, value to weight. A window written by exactly one row (premise B1, the normal case) is not here: the store holds its value and that is its whole support.</summary>
@@ -24,6 +24,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     readonly HashSet<(int Elem, int Prop)> multiOwn = [];
     readonly Dictionary<WindowKey, Dictionary<long, Dictionary<TVal, long>>> byOwn = [];
     readonly Dictionary<int, string?> combineOf = [];
+    readonly Dictionary<int, long> periodOf = [];
     /// <summary>Windows that two ids of one class write with different values under a rule that does not combine them (a mean stored as one number, a last without its order): such a window has no value.</summary>
     public long MergeConflicts { get; private set; }
     /// <summary>Windows written under more than one own id: the measure of how often Law 7.5 item 3 combines.</summary>
@@ -51,9 +52,19 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         multiOwn.Add(ep); soleOwn.Remove(ep);
     }
 
-    /// <summary>Before the store moves the windows of a merged element (`MoveElement`), the support of its windows follows it: under one own id when only one ever wrote the pair, else per own id.</summary>
-    public void Move(ITelemetryStore store, GraphKey g, int from, int to)
+    /// <summary>The windows of a merged element follow it. First the support of each window moves: under one own id when only one ever wrote the pair, else per own id. Then the store moves the values (`MoveElement`). Last each moved window is set to what its supporting rows give, the same rule a write follows (`Settle`), so the result does not depend on whether the link came before the rows or after them. Returns the samples that correct the store.</summary>
+    public List<Sample> Move(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId)
     {
+        var moved = MoveSupport(store, g, from, to);
+        store.MoveElement(g, from, to, combine);
+        var res = new List<Sample>();
+        foreach (var key in moved) Settle(store, g, key, [], periodOf.GetValueOrDefault(key.Prop), inputId, res, moved: true);
+        return res;
+    }
+
+    List<WindowKey> MoveSupport(ITelemetryStore store, GraphKey g, int from, int to)
+    {
+        var moved = new List<WindowKey>();
         // a row of this step that has not reached the store yet follows its element
         for (var i = 0; i < tele.Count; i++) if (tele[i].Key.Element == from) tele[i] = tele[i] with { Key = tele[i].Key with { Element = to } };
         var props = soleOwn.Keys.Concat(multiOwn).Where(ep => ep.Elem == from).Select(ep => ep.Prop).Distinct().ToList();
@@ -63,7 +74,12 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
             var fromSupports = multiOwn.Contains(f)
                 ? byOwn.Where(w => w.Key.Element == from && w.Key.Prop == p).Select(w => (w.Key, w.Value)).ToList()
                 : [.. SupportsOf(store, g, from, p).Where(x => x.Support.Count > 0).Select(x => (x.Key, new Dictionary<long, Dictionary<TVal, long>> { [soleOwn[f]] = x.Support }))];
-            foreach (var (k, _) in fromSupports) { byOwn.Remove(k); sharedWindows.Remove(k); }
+            foreach (var (k, _) in fromSupports)
+            {
+                byOwn.Remove(k); sharedWindows.Remove(k);
+                conflicts.Note($"window {k.Element} {k.Prop} {k.WindowStart}", null);          // a conflict of the window is one of the survivor's window now
+                moved.Add(k with { Element = to });
+            }
             if (!multiOwn.Contains(f) && !multiOwn.Contains(t) && (!soleOwn.TryGetValue(t, out var st) || st == soleOwn[f]))
             {
                 // one own id on both sides: plain supports, re-keyed
@@ -91,6 +107,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
             }
             soleOwn.Remove(f); multiOwn.Remove(f);
         }
+        return moved;
     }
 
     /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left.</summary>
@@ -111,21 +128,27 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
             var n = cur.Net.GetValueOrDefault((own, value)) + weight;
             if (n == 0) cur.Net.Remove((own, value)); else cur.Net[(own, value)] = n;
         }
-        foreach (var key in order)
+        foreach (var key in order) Settle(store, g, key, step[key].Net, step[key].Period, inputId, res, moved: false);
+        tele.Clear();
+        return res;
+    }
+
+    /// <summary>One window after rows came or went (`byRow`: own id and value to weight), or after a merge moved its support (`moved`, no rows): the rows are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when they give none.</summary>
+    void Settle(ITelemetryStore store, GraphKey g, WindowKey key, Dictionary<(long Own, TVal Value), long> byRow, long per, long inputId, List<Sample> res, bool moved)
+    {
         {
-            var (byRow, per) = step[key];
-            if (byRow.Count == 0) continue;
+            if (byRow.Count == 0 && !moved) return;
             TVal? Stored() => StoredOf(store, g, key);
             void Set(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B));
             void Delete(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, Deleted: true));
-            if (multiOwn.Contains((key.Element, key.Prop))) { FlushOfTwoIds(key, byRow, Stored(), Set, Delete); continue; }
+            if (multiOwn.Contains((key.Element, key.Prop))) { FlushOfTwoIds(key, byRow, Stored(), Set, Delete); return; }
             var net = new Dictionary<TVal, long>();
             foreach (var ((_, v), w) in byRow) net[v] = net.GetValueOrDefault(v) + w;
             foreach (var v in net.Where(x => x.Value == 0).Select(x => x.Key).ToList()) net.Remove(v);
-            if (net.Count == 0) continue;
+            if (net.Count == 0 && !moved) return;
             var shared = sharedWindows.TryGetValue(key, out var support);
             // one row out and one row in: the revision of a window that one row writes
-            if (!shared && net.Count == 2 && net.Values.Sum() == 0 && net.Values.Max() == 1) { Set(net.First(x => x.Value == 1).Key); continue; }
+            if (!shared && net.Count == 2 && net.Values.Sum() == 0 && net.Values.Max() == 1) { Set(net.First(x => x.Value == 1).Key); return; }
             var stored = Stored();
             support ??= stored is { } one ? new() { [one] = 1 } : [];
             foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; }
@@ -137,8 +160,6 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
             // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)
             if (support.Count == 0 || support.Count == 1 && support.Values.First() == 1) sharedWindows.Remove(key); else sharedWindows[key] = support;
         }
-        tele.Clear();
-        return res;
     }
 
     /// <summary>A window that rows under more than one own id write: under each own id premise B1 (one value, or none and a conflict); across them the property's rule, `sum`, `min` and `max` in their monoid, any other rule only equal values. A window without a value under one id has none (Law 7.5 item 3).</summary>

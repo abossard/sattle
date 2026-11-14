@@ -404,8 +404,12 @@ public sealed class OutputBuilder
         return moved.Contains((loser, survivor)) ? moved : [(loser, survivor), .. moved];
     }
 
-    /// <summary>Before the store moves the windows of a merged element (`MoveElement`), the support of its windows follows it: under one own id when only one ever wrote the pair, else per own id.</summary>
-    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to) => windows.Move(store, g, from, to);
+    /// <summary>The telemetry windows of a merged element follow it, in the support and in the store; the samples that set each moved window to what its rows give are appended to the store.</summary>
+    public void MoveTelemetry(ITelemetryStore store, GraphKey g, int from, int to, Func<int, string?> combine, long inputId)
+    {
+        var corrections = windows.Move(store, g, from, to, combine, inputId);
+        if (corrections.Count > 0) store.Append(g, [.. corrections]);
+    }
 
     public IReadOnlyCollection<Conflict> Conflicts => conflicts.All;
     /// <summary>The conflicts that appeared, changed or ended since the last call: what a commit reports.</summary>

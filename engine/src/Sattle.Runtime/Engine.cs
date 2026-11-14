@@ -359,10 +359,7 @@ public sealed class Engine : IDisposable, IEngineInput
             {
                 var properties = catalog.OntologyOf(g.Typed.OutputModule).Props;
                 foreach (var (from, to) in g.Out.Remap(loser, survivor))
-                {
-                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to);
-                    Telemetry.MoveElement(g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null);
-                }
+                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
             }
         };
     }
