@@ -29,9 +29,9 @@ public static partial class Refactor
 
     [GeneratedRegex(@"^projection (\S+) (\S+)( forward)? output (\S+) \{$")] private static partial Regex HeaderRx();
     [GeneratedRegex(@"^  in (\S+): (rows|graph|param) (\S+);$")] private static partial Regex PortRx();
-    [GeneratedRegex(@"^  (let|lift|emit|link|rule|retain|in) ")] private static partial Regex ItemRx();
+    [GeneratedRegex(@"^  (let|emit|link|rule|retain|in) ")] private static partial Regex ItemRx();
 
-    /// <summary>Names a statement reads: the source after from, via (the mapping of a lift), series, match, join, union, and a let bound directly to another name.</summary>
+    /// <summary>Names a statement reads: the source after from, via (the step of a fixpoint), series, match, join, union, and a let bound directly to another name.</summary>
     static string[] SourceRefs(string text)
     {
         var toks = Lexer.Lex(text).Where(t => t.Kind != T.Doc).ToList(); var refs = new List<string>();
@@ -63,7 +63,6 @@ public static partial class Refactor
                 {
                     cur = null;
                     var kind = im.Groups[1].Value;
-                    if (kind == "lift") kind = "let";                  // a lift statement names a relation like a let and reads only graph ports
                     if (kind == "in") { b.Ports.Add(l); continue; }
                     if (kind == "retain") { b.Retain = l; continue; }
                     var name = kind switch { "let" => l.Split(' ')[3], "rule" => l.Split(' ')[3], _ => $"emit.{++emits}" };

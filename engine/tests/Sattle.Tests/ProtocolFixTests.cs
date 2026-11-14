@@ -101,8 +101,8 @@ public class ProtocolFixTests
     {
         using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var ent = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status")!;
-        JsonNode Edit(JsonNode? before, JsonNode? after) => new JsonObject { ["kind"] = "entity", ["id"] = "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status", ["before"] = before?.DeepClone(), ["after"] = after?.DeepClone() };
+        var ent = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == "d:acme.svc/projection:serviceDeps/op:dependsOn__state0")!;
+        JsonNode Edit(JsonNode? before, JsonNode? after) => new JsonObject { ["kind"] = "entity", ["id"] = "d:acme.svc/projection:serviceDeps/op:dependsOn__state0", ["before"] = before?.DeepClone(), ["after"] = after?.DeepClone() };
         var text = h.DraftText(d, "acme.svc");
         var res = h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(Edit(ent, null), Edit(null, ent)) }, 0);
         Assert.True(res["ok"]!.GetValue<bool>());

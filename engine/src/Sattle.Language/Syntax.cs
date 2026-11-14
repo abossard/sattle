@@ -165,11 +165,6 @@ public abstract record Stmt(Pos Pos) : ProjItem(Pos);
 public sealed record LetStmt(string Name, Pipeline Pipe, Pos Pos) : Stmt(Pos);
 public sealed record EmitEntityStmt(bool Update, Ref Type, string From, Expr Id, List<(string Name, Expr Value, Pos Pos)> Set, Pos Pos) : Stmt(Pos);
 public sealed record EmitRelStmt(bool Update, Ref Type, string From, string KeyName, Expr Source, Expr Target, List<(string Name, Expr Value, Pos Pos)> Set, string? Retype, Pos Pos) : Stmt(Pos);
-/// <summary>Defaults of the lift statement (README, "Edge lifting").</summary>
-public static class LiftDefaults { public const long WithinNs = 24L * 3600 * 1_000_000_000; }
-public sealed record LiftStateDecl(string Target, string Of, decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial, Pos Pos);
-/// <summary>`lift NAME as REL from GRAPH EDGETYPE via GRAPH MAPTYPE [carry p = q, ...] [keep c = src.p, ...] [when image.p == v] [derive p = expr, ...] [state p of m above A for N then "x" below B for M then "y" initial "z"] [images reject|each] [selfloops keep|drop] [within 24h];` The edges of the lower graph lifted along the mapping relationship to the relationship REL of this projection (README, "Edge lifting").</summary>
-public sealed record LiftStmt(string Name, Ref Emit, string EdgesGraph, Ref EdgeType, string MapGraph, Ref MapType, List<(string Target, string Source, Pos Pos)> Carry, List<(string Name, Expr Value, Pos Pos)> Derive, List<(string Name, string Path, Pos Pos)> Keep, Expr? When, List<LiftStateDecl> States, string? Images, string SelfLoops, long WithinNs, Pos Pos) : Stmt(Pos);
 public sealed record LinkStmt(Ref Policy, string From, Expr Left, Expr Right, Expr Confidence, Pos Pos) : Stmt(Pos);
 
 public sealed record Pipeline(PipeSource Source, List<Step> Steps, Pos Pos);
@@ -220,7 +215,7 @@ public sealed class Parser
 
     /// <summary>The deepest nesting of expressions and pipelines a text may have, and the deepest expression tree it may give (a row of operators such as `a + b + c` nests one level per operator). Texts written by people nest a handful of levels; without a limit a text of a few hundred nested brackets, or of a few thousand operators in a row, overflows the stack here or in a later pass, which ends the process.</summary>
     public const int MaxNesting = 100;
-    int depth;
+    int depth, expressions;
     void Enter() { if (++depth > MaxNesting) throw new SyntaxError($"nested deeper than {MaxNesting} levels", Cur.Pos); }
 
     Token Cur => toks[p];
@@ -560,40 +555,12 @@ public sealed class Parser
             }
             throw Err("expected entity or relationship");
         }
-        if (TryWord("lift"))
-        {
-            var name = Ident(); Word("as"); var emit = RefP();
-            Word("from"); var eg = Ident(); var et = RefP(); Word("via"); var mg = Ident(); var mt = RefP();
-            var carry = new List<(string, string, Pos)>(); var derive = new List<(string, Expr, Pos)>(); var keep = new List<(string, string, Pos)>(); Expr? when = null; var states = new List<LiftStateDecl>();
-            string? images = null; string selfLoops = "drop"; long within = LiftDefaults.WithinNs;
-            while (!IsSym(";"))
-            {
-                var cp = Cur.Pos;
-                if (TryWord("carry")) { do { var cpos = Cur.Pos; var t = Ident(); Sym("="); carry.Add((t, Ident(), cpos)); } while (TrySym(",")); }
-                else if (TryWord("when")) { when = Expression(); }
-                else if (TryWord("keep")) { do { var kpos = Cur.Pos; var t = Ident(); Sym("="); keep.Add((t, PathText(), kpos)); } while (TrySym(",")); }
-                else if (TryWord("derive")) { do { var dpos = Cur.Pos; var t = Ident(); Sym("="); derive.Add((t, Expression(), dpos)); } while (TrySym(",")); }
-                else if (TryWord("state"))
-                {
-                    var t = Ident(); Word("of"); var of = Ident();
-                    Word("above"); var above = Number(); Word("for"); var en = Int(); Word("then"); var high = Str();
-                    Word("below"); var below = Number(); Word("for"); var ex = Int(); Word("then"); var low = Str(); Word("initial"); var init = Str();
-                    states.Add(new LiftStateDecl(t, of, above, en, high, below, ex, low, init, cp));
-                }
-                else if (TryWord("images")) { images = Cur.Kind == T.Ident && Cur.Text is "reject" or "each" ? Next().Text : throw Err("expected reject or each"); }
-                else if (TryWord("selfloops")) { selfLoops = Cur.Kind == T.Ident && Cur.Text is "keep" or "drop" ? Next().Text : throw Err("expected keep or drop"); }
-                else if (TryWord("within")) { if (Cur.Kind != T.Duration) throw Err("expected a duration"); within = Lexer.DurationNs(Next().Text); }
-                else throw Err("expected carry, keep, when, derive, state, images, selfloops, within or ';'");
-            }
-            Sym(";");
-            return new LiftStmt(name, emit, eg, et, mg, mt, carry, derive, keep, when, states, images, selfLoops, within, pos);
-        }
         if (TryWord("link"))
         {
             var pol = RefP(); Word("from"); var from = Ident(); Word("left"); var l = Expression(); Word("right"); var r = Expression(); Word("confidence"); var c = Expression(); Sym(";");
             return new LinkStmt(pol, from, l, r, c, pos);
         }
-        throw Err("expected let, emit, lift, link or rule");
+        throw Err("expected let, emit, link or rule");
     }
 
     List<(string, Expr, Pos)> RecordP()
@@ -777,10 +744,11 @@ public sealed class Parser
     // ---- expressions ----
     public Expr Expression()
     {
-        Enter();
+        Enter(); expressions++;
         Expr e; var pos = Cur.Pos;
-        try { e = Disj(); } finally { depth--; }
-        if (depth == 0 && DepthOf(e) > MaxNesting) throw new SyntaxError($"an expression nested deeper than {MaxNesting} levels (a row of operators nests one level each)", pos);
+        try { e = Disj(); } finally { depth--; expressions--; }
+        // measured once, when the outermost expression is read: also inside a pipeline, where `depth` is not zero
+        if (expressions == 0 && DepthOf(e) > MaxNesting) throw new SyntaxError($"an expression nested deeper than {MaxNesting} levels (a row of operators nests one level each)", pos);
         return e;
     }
 

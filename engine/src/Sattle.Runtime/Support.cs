@@ -26,7 +26,6 @@ public static class Support
         ["EmitEntity"] = "support-counted element layer",
         ["EmitRelationship"] = "support-counted element layer",
         ["Link"] = "identity binding",
-        ["Lift"] = "lowered at check time to Match, Join, Group, Filter, Series, Rollup, Map, Threshold and the emits of the lifted relationship: every strategy of those operators applies, and lineage names every lower element",
     };
     public static readonly Dictionary<string, string> Unsupported = new()
     {
@@ -75,16 +74,7 @@ public static class Support
     public sealed record SlotValue(string Kind, string[] Roots, string Offers);
     public static readonly Dictionary<string, SlotValue> SlotValues = new()
     {
-        ["Lift.carry"] = new("fieldRef", [], "the telemetry properties of the lower relationship type (the edge type of the lift, in the ontology of the edge graph)"),
-        ["Lift.keep"] = new("fieldRef", ["src", "dst"], "src.p or dst.p: the data properties of the image type (the target type of the mapping relationship)"),
-        ["Lift.derive"] = new("expr", [], "the columns of the windows: the carried and the derived properties"),
-        ["Lift.when"] = new("expr", ["node", "image"], "node.p or image.p: the properties of the mapped node and of its image"),
         ["Series.read"] = new("fieldRef", [], "var.property of the pattern variables of the graph the series reads"),
-    };
-    /// <summary>Values a parameter has when the text does not say it.</summary>
-    public static readonly Dictionary<string, object> ParamDefaults = new()
-    {
-        ["Lift.within"] = 24L * 3600 * 1_000_000_000, ["Lift.selfLoops"] = "drop",
     };
     /// <summary>What a reference of a definition node must name, for an editor (`Type.edge`; the kernel's edge table gives the edge's name and target types). `Scope` says where the target is looked up: `outputOntology` (the projection's output ontology), `inputGraph` (the ontology of the graph port the operator reads), `module` (a declaration in scope of the module: this one or an import), `pattern` (a node of the same pattern), `domain` (a component of the identity domain the node names), `emittedType` (a property of the type the enclosing emit writes), `kernel` (a built-in), `step` (an output port of an operator of the fixpoint's step). The checker refuses a node whose required reference is missing or out of scope.</summary>
     public sealed record Reference(bool Required, string Multiplicity, string Scope, string Meaning);
@@ -93,9 +83,6 @@ public static class Support
         ["EmitEntity.ofType"] = new(true, "1", "outputOntology", "the entity type the sink writes (not abstract)"),
         ["EmitRelationship.ofType"] = new(true, "1", "outputOntology", "the relationship type the sink writes (not abstract)"),
         ["Traverse.ofType"] = new(true, "1", "inputGraph", "the relationship type the traversal follows"),
-        ["Lift.ofType"] = new(true, "1", "outputOntology", "the relationship type the lifted edges are written as"),
-        ["Lift.liftEdge"] = new(true, "1", "inputGraph", "the relationship type that is lifted (in the graph the lift reads its edges from)"),
-        ["Lift.liftVia"] = new(true, "1", "inputGraph", "the mapping relationship from a node to its image (in the graph the lift reads the mapping from)"),
         ["Link.policy"] = new(true, "1", "module", "the equivalence policy whose two identity domains the link binds"),
         ["Fixpoint.over"] = new(true, "1", "step", "the output port of the last operator of the step: the relation that is iterated"),
         ["PatternNode.ofType"] = new(true, "1", "inputGraph", "the entity type the pattern variable ranges over"),
@@ -144,7 +131,6 @@ public static class Palette
                 {
                     if (res.Any(x => x!["name"]!.GetValue<string>() == p.Name)) continue;
                     var o = new JsonObject { ["name"] = p.Name, ["kind"] = KindName(p.Kind), ["required"] = p.Required };
-                    if (Support.ParamDefaults.TryGetValue(t + "." + p.Name, out var dv)) o["default"] = dv is long l ? l.ToString(System.Globalization.CultureInfo.InvariantCulture) : (string)dv;
                     if (enums[type + "." + p.Name].FirstOrDefault() is { } v) o["values"] = new JsonArray([.. v.Select(x => (JsonNode)x)]);
                     if (Quantities.TryGetValue(p.Name, out var q))
                     {
@@ -191,7 +177,7 @@ public static class Palette
             var supported = Support.Operators.TryGetValue(kind, out var strategy);
             var o = new JsonObject
             {
-                ["kind"] = kind, ["supported"] = supported, ["role"] = Support.SinkKinds.Contains(kind) ? "sink" : Support.TelemetryKinds.Contains(kind) ? "telemetry" : kind is "Match" ? "source" : kind is "Lift" ? "lift" : "linear",
+                ["kind"] = kind, ["supported"] = supported, ["role"] = Support.SinkKinds.Contains(kind) ? "sink" : Support.TelemetryKinds.Contains(kind) ? "telemetry" : kind is "Match" ? "source" : "linear",
                 ["container"] = "Projection", ["slot"] = "op",
                 ["ports"] = new JsonArray([.. KernelTable.OperatorPorts(kind).Select(p => (JsonNode)new JsonObject { ["name"] = p.Name, ["direction"] = p.Direction, ["kind"] = p.Kind })]),
                 ["params"] = Params(kind), ["references"] = References(kind), ["slots"] = Slots(kind), ["strategy"] = supported ? strategy : null, ["sink"] = Support.SinkKinds.Contains(kind), ["telemetry"] = Support.TelemetryKinds.Contains(kind),

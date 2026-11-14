@@ -25,24 +25,14 @@ public sealed class Lowering
     Graph work;
     OntologyView? view;
 
-    readonly string sinkPrefix; readonly bool fragment;
-    Lowering(ModuleAst ast, Graph catalog, string file, string sinkPrefix = "", bool fragment = false)
+    Lowering(ModuleAst ast, Graph catalog, string file)
     {
-        this.sinkPrefix = sinkPrefix; this.fragment = fragment;
         this.ast = ast; this.catalog = catalog; this.file = file; mid = Ids.Module(ast.Name); work = catalog;
     }
 
     public static LowerResult Lower(ModuleAst ast, Graph catalog, string file)
     {
         var l = new Lowering(ast, catalog, file);
-        l.Run();
-        return new LowerResult(l.b, l.diags, l.map, ast);
-    }
-
-    /// <summary>Lowers a fragment of a module that is already in the catalog (the expansion of a lift statement): no module node and no import edges (the aliases are read from the imports), sink names carry the prefix. The result holds the facts of the projection (it is merged into the existing one by the caller).</summary>
-    public static LowerResult LowerFragment(ModuleAst ast, Graph catalog, string file, string sinkPrefix)
-    {
-        var l = new Lowering(ast, catalog, file, sinkPrefix, true);
         l.Run();
         return new LowerResult(l.b, l.diags, l.map, ast);
     }
@@ -86,18 +76,15 @@ public sealed class Lowering
 
     void Run()
     {
-        if (!fragment)
-        {
-            if (ast.Doc is not null) b.Node(mid, "Module", ("name", T(ast.Name)), ("description", T(ast.Doc)));
-            else b.Node(mid, "Module", ("name", T(ast.Name)));
-            Reg(mid, ast.Pos);
-        }
+        if (ast.Doc is not null) b.Node(mid, "Module", ("name", T(ast.Name)), ("description", T(ast.Doc)));
+        else b.Node(mid, "Module", ("name", T(ast.Name)));
+        Reg(mid, ast.Pos);
         foreach (var im in ast.Imports)
         {
             var rel = $"d:{im.Module}@{im.Version}";
             if (catalog.Entity(rel) is null) { Err("UnknownImport", $"module {im.Module} @ {im.Version} is not loaded", im.Pos); continue; }
             if (!alias.TryAdd(im.Alias, im.Module)) { Err("DuplicateAlias", $"import alias '{im.Alias}' is declared twice", im.Pos); continue; }
-            if (!fragment) b.Edge(mid, "imports", rel, ("alias", T(im.Alias)));
+            b.Edge(mid, "imports", rel, ("alias", T(im.Alias)));
         }
         Ontology();
         work = catalog.Clone();
@@ -409,7 +396,7 @@ public sealed class Lowering
 
     void Statement(ProjCtx cx, Stmt s, (string Id, string Name)? rule)
     {
-        string SinkName() => rule is { } r ? $"{r.Name}.{cx.RuleCount[r.Name] = cx.RuleCount.GetValueOrDefault(r.Name) + 1}" : $"{sinkPrefix}emit.{++cx.EmitCount}";
+        string SinkName() => rule is { } r ? $"{r.Name}.{cx.RuleCount[r.Name] = cx.RuleCount.GetValueOrDefault(r.Name) + 1}" : $"emit.{++cx.EmitCount}";
         void Govern(string sink) { if (rule is { } r) b.Edge(r.Id, "governs", sink); }
         switch (s)
         {
@@ -437,49 +424,6 @@ public sealed class Lowering
                     Expr(e.Target, op, "target", 0, cx);
                     Sets(op, type, e.Set, cx);
                     Govern(op);
-                    break;
-                }
-            case LiftStmt l:
-                {
-                    if (rule is { } lr && cx.RuleClass.GetValueOrDefault(lr.Name) != "readonly") throw new LowerError("Lift", "a lift statement is allowed in a forward projection or in a readonly rule, not in a bijective or lens rule (its edges cannot be edited back)", l.Pos);
-                    var emitType = Resolve(l.Emit, "rel") ?? throw new LowerError("Skipped", "unresolved", l.Pos);
-                    var edgeType = Resolve(l.EdgeType, "rel") ?? throw new LowerError("Skipped", "unresolved", l.Pos);
-                    var mapType = Resolve(l.MapType, "rel") ?? throw new LowerError("Skipped", "unresolved", l.Pos);
-                    var liftProps = new List<(string, Value)> { ("within", Value.Integer(l.WithinNs)), ("selfLoops", T(l.SelfLoops)) };
-                    if (l.Images is not null) liftProps.Add(("images", T(l.Images)));
-                    var op = Op(cx, "Lift", l.Name, l.Pos, [.. liftProps]);
-                    b.Edge(op, "ofType", emitType); b.Edge(op, "liftEdge", edgeType); b.Edge(op, "liftVia", mapType);
-                    if (!cx.GraphPorts.TryGetValue(l.EdgesGraph, out var eg)) throw new LowerError("UnknownName", $"'{l.EdgesGraph}' is not a graph port", l.Pos);
-                    if (!cx.GraphPorts.TryGetValue(l.MapGraph, out var mg)) throw new LowerError("UnknownName", $"'{l.MapGraph}' is not a graph port", l.Pos);
-                    b.Edge(eg, "wire", Port(op, "edges")); b.Edge(mg, "wire", Port(op, "map"));
-                    cx.Out[l.Name] = Port(op, "out");
-                    Govern(op);
-                    if (l.When is not null) Expr(l.When, op, "when", 0, cx);
-                    var k = 0;
-                    foreach (var (target, source, pos) in l.Carry)
-                    {
-                        var a = b.Contain(op, "carry", target, "Assign", k++, ("target", T(target))); Reg(a, pos);
-                        Expr(new PathExpr(source, pos), a, "value", 0, cx);
-                    }
-                    k = 0;
-                    foreach (var (kname, kpath, pos) in l.Keep)
-                    {
-                        var a = b.Contain(op, "keep", kname, "Assign", k++, ("target", T(kname))); Reg(a, pos);
-                        Expr(new PathExpr(kpath, pos), a, "value", 0, cx);
-                    }
-                    k = 0;
-                    foreach (var (target, value, pos) in l.Derive)
-                    {
-                        var a = b.Contain(op, "derive", target, "Assign", k++, ("target", T(target))); Reg(a, pos);
-                        Expr(value, a, "value", 0, cx);
-                    }
-                    k = 0;
-                    foreach (var st in l.States)
-                    {
-                        var sid = b.Contain(op, "state", st.Target, "LiftState", k++, ("target", T(st.Target)), ("of", T(st.Of)), ("above", Value.Decimal(st.Above)), ("enterAfter", Value.Integer(st.EnterAfter)), ("high", T(st.High)),
-                            ("below", Value.Decimal(st.Below)), ("exitAfter", Value.Integer(st.ExitAfter)), ("low", T(st.Low)), ("initial", T(st.Initial)));
-                        Reg(sid, st.Pos);
-                    }
                     break;
                 }
             case LinkStmt l:

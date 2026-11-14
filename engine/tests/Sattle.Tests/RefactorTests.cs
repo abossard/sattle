@@ -69,7 +69,7 @@ public class RefactorTests
     }
 
     [Fact]
-    public void A_rule_that_holds_a_lift_statement_moves_between_stacked_projections_with_its_statement_and_without_changing_any_output()
+    public void A_readonly_rule_with_statements_of_its_own_moves_between_stacked_projections_without_changing_any_output()
     {
         using var h = HostTests.NewSattleHost();
         HostTests.Drive(h);
@@ -78,8 +78,8 @@ public class RefactorTests
         Apply(h, Body("moveRule", ("module", "acme.biz"), ("from", "capabilityView"), ("to", "capabilityCore"), ("rule", "lifted")));
         Assert.Equal(before, Union(h));
         var text = h.Definition("acme.biz");
-        Assert.Contains("lift dependsOn as DependsOn from tree svc.DependsOn via authored ops.Realizes", text);
-        Assert.True(text.IndexOf("projection capabilityCore", StringComparison.Ordinal) is var core && core > 0 && text.IndexOf("rule lifted", StringComparison.Ordinal) > core, "the rule with its lift statement is now in capabilityCore");
+        Assert.True(text.IndexOf("projection capabilityCore", StringComparison.Ordinal) is var core && core > 0 && text.IndexOf("rule lifted", StringComparison.Ordinal) > core, "the rule is now in capabilityCore");
+        Assert.True(text.IndexOf("let dependsOn__edges = match tree", StringComparison.Ordinal) > core, "and so are the statements its emits read");
     }
 
     [Fact]
@@ -100,7 +100,6 @@ public class RefactorTests
         { "UpdateWithoutCreate", ["backed", "emit.2"], "serviceDeps" },
         { "SharedOperator", ["services", "emit.1"], "serviceDeps" },
         { "DependsOnUnmoved", ["serviceOut", "emit.6"], "serviceDeps" },
-        { "SharedOperator", ["dependsOn"], "serviceDeps" },                 // the lift statement alone: the roll-ups that read its relation stay
         { "UnknownSelection", ["nope"], "serviceDeps" },
         { "IngestionProjection", ["observedNodes", "observedMetrics"], "ingest" },
     };

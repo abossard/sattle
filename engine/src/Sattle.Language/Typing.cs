@@ -145,8 +145,6 @@ public sealed class TypedProjection
     public IReadOnlySet<string> EntityTypes => entityTypes ??= Ops.OfType<TEmitEntity>().Where(e => !e.Update).Select(e => e.TypeId).ToHashSet(StringComparer.Ordinal);
     IReadOnlySet<string>? entityTypes;
     public required IReadOnlyList<TRule> Rules { get; init; }
-    /// <summary>The lift statements of the projection and the operators each was lowered to (they are in Ops like any other).</summary>
-    public IReadOnlyList<TLiftInfo> Lifts { get; init; } = [];
     public TPort Port(string name) => Ports.First(p => p.Name == name);
 }
 

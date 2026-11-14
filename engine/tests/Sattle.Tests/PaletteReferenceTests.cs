@@ -15,7 +15,6 @@ public class PaletteReferenceTests
     [InlineData("EmitEntity", "ofType:EntityType|RelationshipType:required:outputOntology")]
     [InlineData("EmitRelationship", "ofType:EntityType|RelationshipType:required:outputOntology")]
     [InlineData("Traverse", "ofType:EntityType|RelationshipType:required:inputGraph")]
-    [InlineData("Lift", "liftEdge:RelationshipType:required:inputGraph liftVia:RelationshipType:required:inputGraph ofType:EntityType|RelationshipType:required:outputOntology")]
     [InlineData("Link", "policy:EquivalencePolicy:required:module")]
     [InlineData("Fixpoint", "over:Port:required:step")]
     [InlineData("Filter", "")]
@@ -33,7 +32,7 @@ public class PaletteReferenceTests
         Assert.Equal("from:PatternNode:required:pattern ofType:EntityType|RelationshipType:required:inputGraph to:PatternNode:required:pattern", Refs(all["PatternEdge"]!));
         Assert.Equal("domain:IdentityDomain:required:module", Refs(all["IdOf"]!));
         Assert.Equal("function:Function:required:kernel", Refs(all["Call"]!));
-        Assert.Equal("createKey:IdentityDomain:optional:module governs:EmitEntity|EmitRelationship|Link|Lift:required:projection", Refs(Palette["rules"]!["references"]!));
+        Assert.Equal("createKey:IdentityDomain:optional:module governs:EmitEntity|EmitRelationship|Link:required:projection", Refs(Palette["rules"]!["references"]!));
     }
 
     /// <summary>Every edge the kernel draws from an operator or a node inside one is described: a new edge without a description fails here, not in an editor.</summary>

@@ -89,8 +89,6 @@ public static class KernelTable
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
         T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator | nodata:T?"), T("Delta : Operator | target:T"),
         T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B?"),
-        T("Lift : Operator | within:I images:T? selfLoops:T"),
-        T("LiftState | target:T of:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
         T("Assign | target:T"), T("Aggregate | target:T fn:T row:T?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
@@ -125,11 +123,10 @@ public static class KernelTable
         E("onProperty : Constraint -> PropertyType | ordinal:I"), E("identifies : IdentityDomain -> EntityType"),
         E("canonicalizer : KeyComponent -> Function"), E("between : EquivalencePolicy -> IdentityDomain | ordinal:I"),
         E("rowType : Port -> RowType"), E("expects : Port -> Module"), E("outputOntology : Projection -> Module"), E("wire : Port -> Port"),
-        E("ofType : PatternNode EmitEntity PatternEdge EmitRelationship Traverse Lift -> EntityType RelationshipType"),
-        E("liftEdge : Lift -> RelationshipType"), E("liftVia : Lift -> RelationshipType"),
+        E("ofType : PatternNode EmitEntity PatternEdge EmitRelationship Traverse -> EntityType RelationshipType"),
         E("from : PatternEdge -> PatternNode"), E("to : PatternEdge -> PatternNode"), E("domain : IdOf -> IdentityDomain"),
         E("component : SetComponent -> KeyComponent"), E("property : SetProperty -> PropertyType"), E("function : Call -> Function"),
-        E("policy : Link -> EquivalencePolicy"), E("over : Fixpoint -> Port"), E("governs : Rule -> EmitEntity EmitRelationship Link Lift"),
+        E("policy : Link -> EquivalencePolicy"), E("over : Fixpoint -> Port"), E("governs : Rule -> EmitEntity EmitRelationship Link"),
         E("createKey : Rule -> IdentityDomain"), E("master : GraphSpace -> Graph"), E("producedBy : Graph -> Projection"),
         E("provides : Source -> RowType"), E("bindsPort : Binding -> Port"), E("boundFrom : Binding -> Graph Source"),
         E("boundTo : Key -> Identity"), E("sameAs : Key -> Key | evidence:Entity"), E("mergedInto : Identity -> Identity | evidence:Entity"),
@@ -158,8 +155,6 @@ public static class KernelTable
         ("ValueRole", "role", ["ok", "warning", "danger", "unknown", "neutral"]),
         ("Union", "conflict", ["preserveEvidence"]),
         ("Traverse", "direction", ["out", "in", "either"]),
-        ("Lift", "images", ["reject", "each"]),
-        ("Lift", "selfLoops", ["drop", "keep"]),
         ("Window", "late", ["ignore", "revise", "reject"]),
         ("EmitEntity", "mode", ["create", "update"]),
         ("EmitRelationship", "mode", ["create", "update"]),
@@ -212,7 +207,6 @@ public static class KernelTable
         S("Link", "left", "IdOf", "1"), S("Link", "right", "IdOf", "1"), S("Link", "confidence", "Expr", "1"),
         S("Series", "read", "FieldRef", "+", true), S("Rollup", "key", "Assign", "+"), S("Rollup", "agg", "Aggregate", "+"),
         S("Delta", "key", "Assign", "+"), S("Delta", "value", "Expr", "1"), S("Threshold", "key", "Assign", "+"), S("Threshold", "value", "Expr", "1"), S("Threshold", "aboveBy", "Expr", "?"), S("Threshold", "enterBy", "Expr", "?"), S("Threshold", "belowBy", "Expr", "?"), S("Threshold", "exitBy", "Expr", "?"),
-        S("Lift", "carry", "Assign", "*", true), S("Lift", "derive", "Assign", "*", true), S("Lift", "keep", "Assign", "*", true), S("Lift", "when", "Expr", "?"), S("Lift", "state", "LiftState", "*", true),
         S("Call", "arg", "Expr", "*", true), S("IdOf", "component", "SetComponent", "+"), S("Assign", "value", "Expr", "1"),
         S("Aggregate", "value", "Expr", "?"), S("Aggregate", "order", "Expr", "?"),
         S("SetProperty", "value", "Expr", "1"), S("SetComponent", "value", "Expr", "1"), S("RowValue", "assign", "Assign", "+"),
@@ -231,7 +225,6 @@ public static class KernelTable
         "EmitEntity" or "EmitRelationship" or "Link" => [("in", "in", "rows")],
         "Series" => [("graph", "in", "graph"), ("in", "in", "rows"), ("out", "out", "rows")],
         "Union" => [("in0", "in", "rows"), ("in1", "in", "rows"), ("out", "out", "rows")],
-        "Lift" => [("edges", "in", "graph"), ("map", "in", "graph"), ("out", "out", "rows")],
         _ => [],
     };
 
@@ -353,5 +346,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:7c7b7621661da0fdfb52c2fa51a37fbbbcc35587e95b4ad573518aa75b77489f";
+    public const string CompiledDigest = "sha256:397ea0b6c26095bbe0391494a4224f21ea3f47c4d969c3f5bf304f2b5f1137a7";
 }

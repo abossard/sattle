@@ -101,13 +101,12 @@ public class LanguageTests
             t = Each(t, @"above 0\.05 for 3 then ""degraded"" below 0\.02 for 3", _ => $"above 0.{rng.Next(10, 30)} for {rng.Next(1, 7)} then \"degraded\" below 0.0{rng.Next(1, 10)} for {rng.Next(1, 7)}");
             t = Each(t, @"within (24h|30m)(?! ttl)", _ => $"within {rng.Next(30, 181)}m");
             t = Each(t, @"ttl 5m", _ => $"ttl {rng.Next(1, 11)}m");
-            t = Each(t, @"images each;", _ => "images reject;");
             t = Each(t, @"set \{ ([^{}()""]*?) \}", Shuffled);
             return t;
         });
         var (cat, res) = Load(sources);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        Assert.All(new[] { "Lift", "LiftState", "ValueRole" }, k => Assert.Contains(cat.Graph.Entities, e => Ids.Name(e.Type) == k));          // the node kinds the premise names
+        Assert.Contains(cat.Graph.Entities, e => Ids.Name(e.Type) == "ValueRole");          // the node kind the premise names
         var printed = cat.Modules.Keys.Where(m => m != Ids.KernelModule).ToDictionary(m => m + ".sattle", m => Printer.Print(cat.Graph, m));
         var (cat2, res2) = Load(printed, updatePins: false);
         Assert.Empty(res2.Diagnostics);
@@ -118,12 +117,10 @@ public class LanguageTests
     /// <summary>T-ROUNDTRIP, second set: well-formed definition graphs that the parser does not produce. Each is printed and parsed again; the test states which round-trip, which change, and which are unprintable.</summary>
     [Theory]
     [InlineData("a step node renamed", "changes")]                                                          // the printer names the step by its name property, so the id follows the name again
-    [InlineData("a parameter without its value, whose default the parser always writes", "changes")]        // printed as the clause left out, parsed back with its default
-    [InlineData("a lift without its mapping", "unprintable")]
     public void Graphs_outside_the_naming_scheme_of_the_parser_round_trip_change_or_are_unprintable(string graph, string expected)
     {
         var (cat, _) = Load(Sources());
-        const string Module = "acme.svc", Lift = "d:acme.svc/projection:serviceDeps/op:dependsOn";
+        const string Module = "acme.svc";
         var g = cat.Graph.Clone();
         switch (graph)
         {
@@ -138,16 +135,6 @@ public class LanguageTests
                     Assert.Null(g.Apply([.. hit.Select(x => Edit.Create(x switch { Entity e => e with { Id = R(e.Id) }, Rel r => r with { Id = R(r.Id), Source = R(r.Source), Target = R(r.Target) }, _ => x }))]));
                     break;
                 }
-            case "a parameter without its value, whose default the parser always writes":
-                {
-                    var lift = g.Entity(Lift)!;
-                    Assert.Equal(Value.Text("drop"), lift.Props.Get(Ids.KProp("selfLoops")));          // the parser writes the default of a clause left out
-                    Assert.Null(g.Apply([new Edit(lift.Key, lift, lift with { Props = Props.Of(lift.Props.Items.Where(kv => kv.Key != Ids.KProp("selfLoops"))) })]));
-                    break;
-                }
-            case "a lift without its mapping":
-                Assert.Null(g.Apply([Edit.Remove(g.OutEdges(Lift).Single(r => Ids.Name(r.Type) == "liftVia"))]));
-                break;
         }
         string outcome;
         try

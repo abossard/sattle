@@ -43,23 +43,6 @@ public sealed class ProjectionChecker(Graph defs)
     /// <summary>Checks one projection. With paramValues (the constants of a space binding) a parameter reads as its value; without, as a typed placeholder, which is enough to check the projection on its own.</summary>
     public (TypedProjection? Projection, List<Diagnostic> Diagnostics) Check(string pid, IReadOnlyDictionary<string, Value>? values = null)
     {
-        if (LiftExpander.HasLift(defs, pid))
-        {
-            var ex = LiftExpander.Expand(defs, pid);
-            if (ex.Diagnostics.Any(x => x.IsError)) return (null, ex.Diagnostics);
-            var inner = new ProjectionChecker(ex.Graph);
-            var (tp, dg) = inner.Check(pid, values);
-            Typed = inner.Typed;
-            var names = ex.Lifts.Select(l => l.Name).ToList();
-            bool Of(string lift, string focusOrName, string root) => focusOrName == root + "/op:" + lift || focusOrName.StartsWith(root + "/op:" + lift + "__", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + "#", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + ".", StringComparison.Ordinal) || focusOrName.StartsWith(root + "/op:" + lift + "/", StringComparison.Ordinal);
-            var mapped = dg.Select(x => names.FirstOrDefault(n => Of(n, x.Focus, pid)) is { } n ? x with { Message = $"lift {n}: {x.Message}" } : x).ToList();
-            if (tp is null) return (null, [.. ex.Diagnostics, .. mapped]);
-            bool Generated(string lift, string op) => op == lift || op.StartsWith(lift + "__", StringComparison.Ordinal) || op.StartsWith(lift + "#", StringComparison.Ordinal) || op.StartsWith(lift + ".", StringComparison.Ordinal);
-            var d0 = new DefView(defs);
-            var info = ex.Lifts.Select(l => new TLiftInfo(l.Name, l.Id, Ids.Name(d0.Target(l.Id, "ofType")!), Ids.Name(d0.Target(l.Id, "liftEdge")!), Ids.Name(d0.Target(l.Id, "liftVia")!), d0.Text(l.Id, "images") ?? "function", [.. tp.Ops.Where(o => Generated(l.Name, o.Name)).Select(o => o.Name)])).ToList();
-            tp = new TypedProjection { Id = tp.Id, Name = tp.Name, Module = tp.Module, Purpose = tp.Purpose, Forward = tp.Forward, Retain = tp.Retain, OutputModule = tp.OutputModule, Ports = tp.Ports, Ops = tp.Ops, Rules = tp.Rules, Params = tp.Params, Lifts = info };
-            return (tp, [.. ex.Diagnostics, .. mapped]);
-        }
         projectionId = pid; paramValues = values; paramKinds.Clear(); paramDefaults.Clear(); demands.Clear();
         Dictionary<string, TOp>? ops = null;
         TypedProjection? result = null;

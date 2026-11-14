@@ -108,9 +108,6 @@ public static class PlanCompiler
             return src.IsPort ? Layout.Of(tp.Port(src.Name).Rows!) : byName[src.Name].OutLayout;
         }
         IdentityCatalog cat = cx.Ids;
-        // a lift statement is lowered at check time: its operators are in tp.Ops like any other, the plan names them under their statement
-        foreach (var l in tp.Lifts)
-            strategies.Add($"{l.Name}: Lift {l.EdgeType} through {l.MapType} to {l.Emit} (images {l.Images}), lowered to {l.Ops.Count} operators: {string.Join(", ", l.Ops)}");
         var sink = 0;
         var sources = new Dictionary<string, Sources>();
         var references = tp.Ops.OfType<TMatch>().ToDictionary(m => m.Name, m => m.References(held[m.GraphPort], catalog.OntologyOf(tp.Port(m.GraphPort).ExpectsModule!).IsSubtype));

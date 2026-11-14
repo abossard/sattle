@@ -53,11 +53,22 @@ projection serviceDeps view forward output acme.svc {
     serviceGroup(cluster: s.cluster, namespace: s.namespace) -> s;
 
   // a service dependency exists while some pod-to-pod call connects two services; its telemetry is the pod-level Calls telemetry summed per pair of services, a pod that backs two services counts for both
-  lift dependsOn as DependsOn from master infra.Calls via master infra.Backs
-    keep cluster = src.cluster, namespace = src.namespace
-    derive dropRatio = if(flows > 0, drops / flows, 0.0), flowRate = rate(flows)
-    state status of dropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok"
-    images each;
+  let dependsOn__edges = match master (source: infra.Pod)-[edge: infra.Calls]->(target: infra.Pod);
+  let dependsOn__images = match master (node: infra.Pod)-[:infra.Backs]->(image: infra.Service);
+  let dependsOn__imagePairs = dependsOn__images |> select { m: node, i: image };
+  let dependsOn__from = dependsOn__imagePairs |> select { sourceMapped: m, sourceImage: i };
+  let dependsOn__to = dependsOn__imagePairs |> select { targetMapped: m, targetImage: i };
+  let dependsOn__fromEnd = join dependsOn__edges, dependsOn__from on source == sourceMapped;
+  let dependsOn__ends = join dependsOn__fromEnd, dependsOn__to on target == targetMapped;
+  let dependsOn__lifted = dependsOn__ends |> where sourceImage != targetImage;
+  emit relationship DependsOn from dependsOn__lifted key dependsOn: sourceImage -> targetImage;
+  let dependsOn__windows = dependsOn__lifted
+    |> series master edge.drops, edge.flows within 24h
+    |> rollup by { sourceImage: sourceImage, targetImage: targetImage, cluster: sourceImage.cluster, namespace: sourceImage.namespace } combine { drops: sum(drops), flows: sum(flows) };
+  let dependsOn = dependsOn__windows |> select { src: sourceImage, dst: targetImage, windowStart: windowStart, cluster: cluster, namespace: namespace, drops: drops, flows: flows, dropRatio: if(flows > 0, drops / flows, 0.0), flowRate: rate(flows) };
+  emit update relationship DependsOn from dependsOn key dependsOn: src -> dst set { drops: drops, flows: flows, dropRatio: dropRatio, flowRate: flowRate };
+  let dependsOn__state0 = dependsOn |> threshold dropRatio by { src: src, dst: dst } above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok" as status;
+  emit update relationship DependsOn from dependsOn__state0 key dependsOn: src -> dst set { status: status };
 
   // telemetry: roll-up along the tree, service pair -> source service -> namespace group
   let serviceOut = dependsOn |> rollup by { s: src } combine { flowsOut: sum(flows) };

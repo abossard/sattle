@@ -9,7 +9,7 @@ namespace Sattle.Tests;
 [Trait("Category", "Slow")]
 public class DraftTests
 {
-    const string Health = "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status";          // the state clause of the lift statement of the service tree
+    const string Health = "d:acme.svc/projection:serviceDeps/op:dependsOn__state0";          // the threshold that gives a dependency of the service tree its status
 
     static (SpaceHost H, string D) NewDraft()
     {
@@ -40,7 +40,7 @@ public class DraftTests
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         JsonNode patch;
-        if (what == "an integer beyond 64 bits") patch = SetProp(h, d, "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status", "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
+        if (what == "an integer beyond 64 bits") patch = SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
         else
         {
             // a `contains` edge from a call back to itself, with the slot of one of its own arguments
@@ -63,7 +63,7 @@ public class DraftTests
     {
         var p = Palette.Build();
         var ops = p["operators"]!.AsArray();
-        Assert.Equal(20, ops.Count);
+        Assert.Equal(19, ops.Count);
         var window = ops.First(o => o!["kind"]!.GetValue<string>() == "Window")!;
         Assert.Equal(["in", "out"], window["ports"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
         Assert.Equal(["ignore", "revise", "reject"], window["params"]!.AsArray().First(x => x!["name"]!.GetValue<string>() == "late")!["values"]!.AsArray().Select(x => x!.GetValue<string>()));
@@ -88,71 +88,6 @@ public class DraftTests
         Assert.Equal(["remove", "set"], p["rules"]!["onDelete"]!.AsArray().Select(x => x!.GetValue<string>()).Order());
         Assert.Equal(["ok", "warning", "danger", "unknown", "neutral"], p["valueRoles"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Contains(p["projectionPorts"]!.AsArray(), x => x!["kind"]!.GetValue<string>() == "param");
-    }
-
-    [Fact]
-    public void The_palette_describes_the_Lift_operator_with_its_ports_parameters_slots_and_the_state_clause()
-    {
-        var p = Palette.Build();
-        var lift = p["operators"]!.AsArray().Single(o => o!["kind"]!.GetValue<string>() == "Lift")!;
-        Assert.True(lift["supported"]!.GetValue<bool>());
-        Assert.Equal("lift", lift["role"]!.GetValue<string>());
-        Assert.Equal(["edges:in:graph", "map:in:graph", "out:out:rows"], lift["ports"]!.AsArray().Select(x => $"{x!["name"]}:{x["direction"]}:{x["kind"]}"));
-        var ps = lift["params"]!.AsArray();
-        Assert.Equal(["within", "images", "selfLoops"], ps.Select(x => x!["name"]!.GetValue<string>()));
-        Assert.Equal("duration", ps.Single(x => x!["name"]!.GetValue<string>() == "within")!["quantity"]!.GetValue<string>());
-        Assert.Equal(["reject", "each"], ps.Single(x => x!["name"]!.GetValue<string>() == "images")!["values"]!.AsArray().Select(x => x!.GetValue<string>()));
-        Assert.False(ps.Single(x => x!["name"]!.GetValue<string>() == "images")!["required"]!.GetValue<bool>());          // no images clause: the mapping must be a function
-        Assert.Equal(["carry", "derive", "keep", "state", "when"], lift["slots"]!.AsArray().Where(x => x!["name"]!.GetValue<string>() != "port").Select(x => x!["name"]!.GetValue<string>()).Order());
-        Assert.Contains("Match", lift["strategy"]!.GetValue<string>());
-        Assert.Contains(p["functions"]!.AsArray(), f => f!["name"]!.GetValue<string>() == "EntityId");
-        // defaults, the child types of the slots with their parameters, and what each slot holds
-        Assert.Equal("86400000000000", ps.Single(x => x!["name"]!.GetValue<string>() == "within")!["default"]!.GetValue<string>());
-        Assert.Equal("drop", ps.Single(x => x!["name"]!.GetValue<string>() == "selfLoops")!["default"]!.GetValue<string>());
-        JsonNode Slot(string n) => lift["slots"]!.AsArray().Single(x => x!["name"]!.GetValue<string>() == n)!;
-        var state = Slot("state")["childTypes"]!.AsArray().Single()!;
-        Assert.Equal("LiftState", state["type"]!.GetValue<string>());
-        Assert.Equal(["target", "of", "above", "enterAfter", "high", "below", "exitAfter", "low", "initial"], state["params"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
-        Assert.Equal("count", state["params"]!.AsArray().Single(x => x!["name"]!.GetValue<string>() == "enterAfter")!["quantity"]!.GetValue<string>());
-        Assert.Equal("fieldRef", Slot("carry")["value"]!["kind"]!.GetValue<string>());
-        Assert.Equal(["src", "dst"], Slot("keep")["value"]!["roots"]!.AsArray().Select(x => x!.GetValue<string>()));
-        Assert.Equal("expr", Slot("derive")["value"]!["kind"]!.GetValue<string>());
-        Assert.Equal("expr", Slot("when")["value"]!["kind"]!.GetValue<string>());
-        Assert.Equal(["target"], Slot("carry")["childTypes"]!.AsArray().Single()!["params"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
-    }
-
-    [Fact]
-    public void A_skeleton_patch_creates_a_Lift_with_its_three_ports_and_the_checker_asks_for_the_wires_and_the_types()
-    {
-        var (h, d) = NewDraft();
-        using var hostGuard = h;
-        var patch = h.Skeleton(new JsonObject { ["kind"] = "Lift", ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "l2", ["params"] = new JsonObject { ["within"] = "3600000000000" }, ["draft"] = d });
-        Assert.Equal(4, patch["edits"]!.AsArray().Count(e => e!["kind"]!.GetValue<string>() == "entity"));          // the operator and its ports edges, map and out
-        var res = h.ApplyDraftPatch(d, patch, 0);
-        Assert.False(res["ok"]!.GetValue<bool>());                                                                   // unwired ports and no relationship types: not a statement yet
-        Assert.True(res["diagnostics"]!.AsArray().Any(x => x!["element"] is { } el && el.GetValue<string>().StartsWith("d:acme.svc/projection:serviceDeps/op:l2")), res["diagnostics"]!.ToJsonString());
-    }
-
-    [Fact]
-    public void A_draft_edit_of_a_lift_clause_prints_back_as_the_clause_and_a_preview_shows_what_it_changes()
-    {
-        var (h, d) = NewDraft();
-        using var hostGuard = h;
-        var lift = "d:acme.svc/projection:serviceDeps/op:dependsOn";
-        var (keep, _) = SetProp(h, d, lift, "selfLoops", new JsonObject { ["kind"] = "text", ["value"] = "keep" });
-        var r = h.ApplyDraftPatch(d, keep, 0);
-        Assert.True(r["ok"]!.GetValue<bool>(), r["diagnostics"]!.ToJsonString());
-        Assert.Contains("\n    selfloops keep;", r["modules"]!["acme.svc"]!["text"]!.GetValue<string>());                // printed as the clause, the other defaults stay unsaid
-        var (within, _) = SetProp(h, d, lift, "within", new JsonObject { ["kind"] = "integer", ["value"] = "7200000000000" });
-        var r2 = h.ApplyDraftPatch(d, within, 1);
-        Assert.True(r2["ok"]!.GetValue<bool>(), r2["diagnostics"]!.ToJsonString());
-        Assert.Contains("within 2h", r2["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
-        // an edit that makes the statement unliftable is a typed diagnostic that names the statement, not an engine fault
-        var (bad, _) = SetProp(h, d, lift, "images", new JsonObject { ["kind"] = "text", ["value"] = "reject" });
-        var rb = h.ApplyDraftPatch(d, bad, 2);
-        Assert.True(rb["ok"]!.GetValue<bool>());                                                                      // `images reject` is a legal clause
-        var preview = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "diff") });
-        Assert.NotNull(preview["graphs"]);
     }
 
     [Fact]
@@ -331,23 +266,20 @@ public class DraftTests
     /// <summary>T-PREVIEW: with no input between the preview and the commit, the complete preview's output of every graph equals the state the commit's activation produces (Proposition 9.10 (b)).</summary>
     [Theory]
     [InlineData("a threshold that never recovers", true)]
-    [InlineData("a lift that keeps self-loops and looks back 2h", false)]          // no self-loop in this world: the outputs stay as they were
+    [InlineData("a series that looks back 2h", false)]          // every window of this world is younger than two hours: the outputs stay as they were
     public void A_complete_preview_equals_the_activation_a_commit_performs(string draft, bool changes)
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         HostTests.Drive(h);
-        const string Lift = "d:acme.svc/projection:serviceDeps/op:dependsOn";
-        var edits = draft switch
-        {
-            "a threshold that never recovers" => new[] { SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "30" }).Do },
-            _ => [SetProp(h, d, Lift, "selfLoops", new JsonObject { ["kind"] = "text", ["value"] = "keep" }).Do],
-        };
+        const string Series = "d:acme.svc/projection:serviceDeps/op:dependsOn__windows#0";
         var rev = 0L;
-        foreach (var e in edits) Assert.True(h.ApplyDraftPatch(d, e, rev++)["ok"]!.GetValue<bool>());
         if (draft != "a threshold that never recovers")
-            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Lift, "within", new JsonObject { ["kind"] = "integer", ["value"] = "7200000000000" }).Do, rev++)["ok"]!.GetValue<bool>());
+            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Series, "within", new JsonObject { ["kind"] = "integer", ["value"] = "7200000000000" }).Do, rev++)["ok"]!.GetValue<bool>());
         else
+        {
+            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "30" }).Do, rev++)["ok"]!.GetValue<bool>());
             Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Health, "below", Dec("0.0")).Do, rev++)["ok"]!.GetValue<bool>());
+        }
         var p = h.Preview(d, new JsonObject { ["include"] = new JsonArray("counts") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
         var previewed = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());

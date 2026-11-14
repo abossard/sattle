@@ -86,7 +86,7 @@ public class HostTests
             : shape == "row" ? "workloadNamespace" + string.Concat(Enumerable.Repeat(" ++ \"x\"", depth))
             : string.Concat(Enumerable.Repeat("if(true, ", depth)) + "workloadNamespace" + string.Concat(Enumerable.Repeat(", \"x\")", depth));
         var text = SattleText("acme.workload");
-        var changed = text.Replace("when image.namespace == workloadNamespace", "when image.namespace == " + nested);
+        var changed = text.Replace("where image.namespace == workloadNamespace", "where image.namespace == " + nested);
         Assert.NotEqual(text, changed);
         var answer = h.Check("acme.workload", changed);
         Assert.Equal(!refused, answer["ok"]!.GetValue<bool>());

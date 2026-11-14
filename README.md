@@ -111,7 +111,7 @@ flowchart LR
   class S,W,M,A,P1,P2,H,D,C box;
 ```
 
-- An edge between two lower-level nodes becomes an edge between their higher-level images. The language has one statement for that, [`lift`](engine/definitions/acme.svc.sattle#L56).
+- An edge between two lower-level nodes becomes an edge between their higher-level images. A projection writes that with joins, as in [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql).
 - Health is not built into the engine. It is an ontology and two projections: [`acme.workload`](engine/definitions/acme.workload.sattle).
 
 ## Portfolio
@@ -131,7 +131,7 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 ![Service tree](docs/screenshots/service-tree.png)
 
 - Pod-to-pod calls lifted to service-to-service dependencies, with flows summed per pair.
-- Definition: [`serviceDeps` in `acme.svc`](engine/definitions/acme.svc.sattle#L30), the `lift` statement at [line 56](engine/definitions/acme.svc.sattle#L56).
+- Definition: [`serviceDeps` of `acme.svc`](engine/definitions/acme.svc.serviceDeps.kql).
 - Theory: edge lifting as a quotient in [Ch. 5](paper/ch05-projection-language.md).
 
 ### 3. One level higher: capabilities
@@ -139,7 +139,7 @@ All screenshots show the synthetic estate that ships with the repository ([gener
 ![Capabilities](docs/screenshots/capabilities.png)
 
 - Service dependencies lifted again to the business capabilities the services realize.
-- Definition: [`capabilityView` in `acme.biz`](engine/definitions/acme.biz.sattle#L22), lifted at [line 53](engine/definitions/acme.biz.sattle#L53).
+- Definition: [`capabilityView` of `acme.biz`](engine/definitions/acme.biz.capabilityView.kql).
 
 ### 4. What a workload is made of and depends on
 

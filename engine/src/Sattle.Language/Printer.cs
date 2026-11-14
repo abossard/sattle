@@ -264,8 +264,7 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
             return parent == pid ? Name(src) : Base(Name(parent));
         }
         // let groups
-        var governed = new HashSet<string>(d.Children(pid, "rule").SelectMany(r => d.Targets(r, "governs")), StringComparer.Ordinal);
-        var groups = ops.Where(o => !IsSink(o) && !(d.TypeName(o) == "Lift" && governed.Contains(o))).GroupBy(o => Base(Name(o))).ToDictionary(x => x.Key, x => x.OrderBy(o => Suffix(Name(o))).ToList());
+        var groups = ops.Where(o => !IsSink(o)).GroupBy(o => Base(Name(o))).ToDictionary(x => x.Key, x => x.OrderBy(o => Suffix(Name(o))).ToList());
         var printed = new HashSet<string>(); var order = new List<string>();
         void Visit(string b)
         {
@@ -289,8 +288,7 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
             if (d.Text(r, "reason") is { } reason) sb.Append(' ').Append(Q(reason));
             sb.Append(" {\n");
             Policies(r);
-            foreach (var lf in d.Targets(r, "governs").Where(o => d.TypeName(o) == "Lift").OrderBy(o => Name(o), StringComparer.Ordinal)) Lift(lf, "    ");
-            foreach (var s in d.Targets(r, "governs").Where(o => d.TypeName(o) != "Lift").OrderBy(o => Suffix(Name(o)))) Sink(s, "    ", Producer);
+            foreach (var s in d.Targets(r, "governs").OrderBy(o => Suffix(Name(o)))) Sink(s, "    ", Producer);
             sb.Append("  }\n");
         }
         sb.Append("}\n\n");
@@ -318,32 +316,8 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
         var j = name.LastIndexOf('.'); return j >= 0 && int.TryParse(name[(j + 1)..], out var k) ? k : int.MaxValue;
     }
 
-    /// <summary>The lift statement of a Lift operator: only the clauses that differ from the defaults are printed.</summary>
-    void Lift(string op, string indent = "  ")
-    {
-        if (d.Target(op, "ofType") is null || d.Target(op, "liftEdge") is null || d.Target(op, "liftVia") is null) throw new UnprintableException(op, $"lift {Name(op)} needs the relationship to lift to, the edge type and the mapping");
-        string GraphOf(string port) => Name((g.InRels(Ids.Child(op, "port", port)).Select(g.Rel).FirstOrDefault(r => r is not null && Ids.Name(r!.Type) == "wire") ?? throw new UnprintableException(op, $"lift {Name(op)}: the port {port} has no wire (W1)"))!.Source);
-        sb.Append(indent).Append("lift ").Append(Name(op)).Append(" as ").Append(Ref(d.Target(op, "ofType")!))
-            .Append(" from ").Append(GraphOf("edges")).Append(' ').Append(Ref(d.Target(op, "liftEdge")!)).Append(" via ").Append(GraphOf("map")).Append(' ').Append(Ref(d.Target(op, "liftVia")!));
-        if (d.Children(op, "when").Count > 0) sb.Append("\n" + indent + "  when ").Append(Expr(d.Children(op, "when")[0], 0));
-        var carry = d.Children(op, "carry");
-        if (carry.Count > 0) sb.Append("\n" + indent + "  carry ").Append(string.Join(", ", carry.Select(a => $"{d.Text(a, "target")} = {Expr(d.Children(a, "value")[0], 0)}")));
-        var keep = d.Children(op, "keep");
-        if (keep.Count > 0) sb.Append("\n" + indent + "  keep ").Append(string.Join(", ", keep.Select(a => $"{d.Text(a, "target")} = {Expr(d.Children(a, "value")[0], 0)}")));
-        var derive = d.Children(op, "derive");
-        if (derive.Count > 0) sb.Append("\n" + indent + "  derive ").Append(string.Join(", ", derive.Select(a => $"{d.Text(a, "target")} = {Expr(d.Children(a, "value")[0], 0)}")));
-        foreach (var st in d.Children(op, "state"))
-            sb.Append($"\n{indent}  state {d.Text(st, "target")} of {d.Text(st, "of")} above {Norm.Decimal(d.Dec(st, "above"))} for {d.Int(st, "enterAfter")} then {Q(d.Text(st, "high")!)} below {Norm.Decimal(d.Dec(st, "below"))} for {d.Int(st, "exitAfter")} then {Q(d.Text(st, "low")!)} initial {Q(d.Text(st, "initial")!)}");
-        if (d.Text(op, "images") is { } images) sb.Append("\n" + indent + "  images ").Append(images);
-        // a parameter without a value prints as its default left out, and the parser then writes the default
-        if (d.Text(op, "selfLoops") is { } selfLoops && selfLoops != "drop") sb.Append("\n" + indent + "  selfloops ").Append(selfLoops);
-        if (d.Int(op, "within", LiftDefaults.WithinNs) != LiftDefaults.WithinNs) sb.Append("\n" + indent + "  within ").Append(Lexer.DurationText(d.Int(op, "within")));
-        sb.Append(";\n");
-    }
-
     void Let(string pid, string name, List<string> ops, Func<string, string> producer)
     {
-        if (d.TypeName(ops[0]) == "Lift") { Lift(ops[0]); return; }
         sb.Append("  let ").Append(name).Append(" = ");
         if (d.TypeName(ops[0]) == "Fixpoint")
         {

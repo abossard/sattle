@@ -299,7 +299,7 @@ public static class Worlds
         """);
 
     /// <summary>The shapes of the workload model: item edges lifted to the groups the items belong to (communication), and a dependency between groups derived from the same edges by joins with a table of the groups that count and with the groups themselves (Match, Values, Join, Distinct, EmitRelationship).</summary>
-    public static readonly World LiftedDependency = new("lifted and derived dependency", "Lift, Match, Values, Join, Distinct, EmitRelationship", [new SourceFile("w.sattle", """
+    public static readonly World LiftedDependency = new("lifted and derived dependency", "Match, Values, Join, Distinct, EmitRelationship", [new SourceFile("w.sattle", """
         module w @ 1.0.0;
         entity Item { k: Text label; g: Text; }
         entity Group { name: Text label; }
@@ -325,7 +325,15 @@ public static class Worlds
           in master: graph w;
           let all = match master (g: Group);
           emit entity Group from all identity g set { name: g.name };
-          lift talks as Talks from master Edge via master Belongs images each;
+          let talks__edges = match master (source: Item)-[edge: Edge]->(target: Item);
+          let talks__images = match master (node: Item)-[:Belongs]->(image: Group);
+          let talks__imagePairs = talks__images |> select { m: node, i: image };
+          let talks__from = talks__imagePairs |> select { sourceMapped: m, sourceImage: i };
+          let talks__to = talks__imagePairs |> select { targetMapped: m, targetImage: i };
+          let talks__fromEnd = join talks__edges, talks__from on source == sourceMapped;
+          let talks__ends = join talks__fromEnd, talks__to on target == targetMapped;
+          let talks__lifted = talks__ends |> where sourceImage != targetImage;
+          emit relationship Talks from talks__lifted key talks: sourceImage -> targetImage;
           let reached = match master (a: Item)-[:Edge]->(b: Item), (a)-[:Belongs]->(ga: Group), (b)-[:Belongs]->(gb: Group) |> select { from: ga.name, to: gb.name };
           let counting = values { counted: "g0" }, { counted: "g1" };
           let needed = join reached, counting on to == counted;
@@ -344,8 +352,8 @@ public static class Worlds
         }
         """)], [new("items", (r, _) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3))), f => ((TextValue)f["k"]).S), BagEdges]) { Witnesses = ["Talks", "Needs"] };
 
-    /// <summary>References: the graph `groups` holds the groups and which item belongs to which, and no item; the items are entities of the master. A pattern over `groups` binds the item end of a `Belongs` by its id, and a lift maps the master's edges through those `Belongs` (the lowered match of its `via` binds the same way).</summary>
-    public static readonly World References = new("ends of relationships that are entities of another graph", "Match and Lift over references", [new SourceFile("w.sattle", """
+    /// <summary>References: the graph `groups` holds the groups and which item belongs to which, and no item; the items are entities of the master. A pattern over `groups` binds the item end of a `Belongs` by its id, and the master's edges are mapped through those `Belongs` by two joins, whose match over `groups` binds the same way.</summary>
+    public static readonly World References = new("ends of relationships that are entities of another graph", "Match and Join over references", [new SourceFile("w.sattle", """
         module w @ 1.0.0;
         entity Item { k: Text label; g: Text; }
         entity Group { name: Text label; }
@@ -377,7 +385,15 @@ public static class Worlds
           in groups: graph w;
           let all = match groups (g: Group);
           emit entity Group from all identity g set { name: g.name };
-          lift talks as Talks from master Edge via groups Belongs images each;
+          let talks__edges = match master (source: Item)-[edge: Edge]->(target: Item);
+          let talks__images = match groups (node: Item)-[:Belongs]->(image: Group);
+          let talks__imagePairs = talks__images |> select { m: node, i: image };
+          let talks__from = talks__imagePairs |> select { sourceMapped: m, sourceImage: i };
+          let talks__to = talks__imagePairs |> select { targetMapped: m, targetImage: i };
+          let talks__fromEnd = join talks__edges, talks__from on source == sourceMapped;
+          let talks__ends = join talks__fromEnd, talks__to on target == targetMapped;
+          let talks__lifted = talks__ends |> where sourceImage != targetImage;
+          emit relationship Talks from talks__lifted key talks: sourceImage -> targetImage;
           let seen = match groups (i: Item)-[:Belongs]->(g: Group) |> where g.name != "g0";
           emit relationship Seen from seen key seen: i -> g;
         }

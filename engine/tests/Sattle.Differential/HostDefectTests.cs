@@ -94,11 +94,11 @@ public class HostDefectTests
         Assert.All(h.Meters("serviceTree")["thresholds"]!.AsArray(), t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
     }
 
-    /// <summary>Review: Refactor.cs:40. An extracted rule keeps every port it reads. The port after `via` of a lift is not collected, so extracting `lifted` from `capabilityView` gives a projection that does not check.</summary>
+    /// <summary>Review: Refactor.cs:40. An extracted rule keeps every port its statements read: extracting `lifted` from `capabilityView`, which reads the service tree and the authored graph, gives a projection that checks.</summary>
     [Fact]
-    public void Extracting_a_rule_with_a_lift_keeps_the_port_of_its_mapping()
+    public void Extracting_a_rule_keeps_every_port_its_statements_read()
     {
-        var files = Catalog.ReadDirectory(Path.Combine(Definitions, "..", "tests", "Sattle.Tests", "fixtures", "sattle-projections"));       // the projections in the engine's own notation, where a lift is a statement
+        var files = Catalog.ReadDirectory(Path.Combine(Definitions, "..", "tests", "Sattle.Tests", "fixtures", "sattle-projections"));       // the projections in the engine's own notation
         static string Module(SourceFile f) => Path.GetFileNameWithoutExtension(f.Path);
         var changed = Refactor.Extract(files.ToDictionary(Module, f => f.Text), "acme.biz", "capabilityView", ["lifted"], "liftedOnly");
         Assert.Contains("acme.biz", changed.Keys);

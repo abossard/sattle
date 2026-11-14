@@ -50,10 +50,26 @@ projection capabilityView view output acme.biz {
   // Calls inside one capability and calls of a service that realizes no capability are not lifted; parallel edges collapse onto one, flows and drops are summed, the ratio is recomputed from the sums
   // and the state is derived again from it. The properties carry their own names (a name two modules declare is served qualified, and the service tree's names must not change).
   rule lifted readonly "service dependencies lifted to the capabilities that realize their ends" {
-    lift dependsOn as DependsOn from tree svc.DependsOn via authored ops.Realizes
-      when image.status != "retired"
-      carry callFlows = flows, callDrops = drops
-      derive callDropRatio = if(callFlows > 0, callDrops / callFlows, 0.0)
-      state callStatus of callDropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok";
+    let dependsOn__edges = match tree (source: svc.ServiceNode)-[edge: svc.DependsOn]->(target: svc.ServiceNode);
+    let dependsOn__images = match authored (node: infra.Service)-[:ops.Realizes]->(image: ops.Capability)
+      |> where image.status != "retired";
+    let dependsOn__imagePairs = dependsOn__images |> select { m: node, i: image };
+    let dependsOn__counted = dependsOn__imagePairs |> group by { m: m } aggregate { n: count() } |> select { mk: m, n: n };
+    let dependsOn__pairs = dependsOn__imagePairs;
+    let dependsOn__joined = join dependsOn__pairs, dependsOn__counted on m == mk;
+    let dependsOn__single = dependsOn__joined |> where n == 1;
+    let dependsOn__from = dependsOn__single |> select { sourceMapped: m, sourceImage: i };
+    let dependsOn__to = dependsOn__single |> select { targetMapped: m, targetImage: i };
+    let dependsOn__fromEnd = join dependsOn__edges, dependsOn__from on entityId(source) == entityId(sourceMapped);
+    let dependsOn__ends = join dependsOn__fromEnd, dependsOn__to on entityId(target) == entityId(targetMapped);
+    let dependsOn__lifted = dependsOn__ends |> where sourceImage != targetImage;
+    emit relationship DependsOn from dependsOn__lifted key dependsOn: sourceImage -> targetImage;
+    let dependsOn__windows = dependsOn__lifted
+      |> series tree edge.flows, edge.drops within 24h
+      |> rollup by { sourceImage: sourceImage, targetImage: targetImage } combine { callFlows: sum(flows), callDrops: sum(drops) };
+    let dependsOn = dependsOn__windows |> select { src: sourceImage, dst: targetImage, windowStart: windowStart, callFlows: callFlows, callDrops: callDrops, callDropRatio: if(callFlows > 0, callDrops / callFlows, 0.0) };
+    emit update relationship DependsOn from dependsOn key dependsOn: src -> dst set { callFlows: callFlows, callDrops: callDrops, callDropRatio: callDropRatio };
+    let dependsOn__state0 = dependsOn |> threshold callDropRatio by { src: src, dst: dst } above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok" as callStatus;
+    emit update relationship DependsOn from dependsOn__state0 key dependsOn: src -> dst set { callStatus: callStatus };
   }
 }

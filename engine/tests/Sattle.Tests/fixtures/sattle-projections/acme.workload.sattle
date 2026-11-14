@@ -252,9 +252,21 @@ projection workloadStructure view forward output acme.workload {
   emit relationship EvidenceFor from gateways key evidenceBackend: dependencyEvidence(source: rkey, target: skey4, how: "backend") -> s;
 
   // ---- communication: who talks to whom, with its flows per window ----
-  lift talks as TalksTo from master infra.Calls via master infra.Backs
-    when image.namespace == workloadNamespace
-    images each;
+  let talks__edges = match master (source: infra.Pod)-[edge: infra.Calls]->(target: infra.Pod);
+  let talks__images = match master (node: infra.Pod)-[:infra.Backs]->(image: infra.Service)
+    |> where image.namespace == workloadNamespace;
+  let talks__imagePairs = talks__images |> select { m: node, i: image };
+  let talks__from = talks__imagePairs |> select { sourceMapped: m, sourceImage: i };
+  let talks__to = talks__imagePairs |> select { targetMapped: m, targetImage: i };
+  let talks__fromEnd = join talks__edges, talks__from on source == sourceMapped;
+  let talks__ends = join talks__fromEnd, talks__to on target == targetMapped;
+  let talks__lifted = talks__ends |> where sourceImage != targetImage;
+  emit relationship TalksTo from talks__lifted key talks: sourceImage -> targetImage;
+  let talks__windows = talks__lifted
+    |> series master edge.drops, edge.flows within 24h
+    |> rollup by { sourceImage: sourceImage, targetImage: targetImage } combine { drops: sum(drops), flows: sum(flows) };
+  let talks = talks__windows |> select { src: sourceImage, dst: targetImage, windowStart: windowStart, drops: drops, flows: flows };
+  emit update relationship TalksTo from talks key talks: src -> dst set { drops: drops, flows: flows };
   // a destination is the resource behind the private endpoint at its address, or the resource of the name Hubble resolved for it
   let destinations = match master (dst: infra.Destination) |> select { daddr: dst.address, dname: lowerInvariant(coalesce(dst.hostName, "")) };
   let destinationEndpoints = join destinations, endpoints on daddr == peAddress;

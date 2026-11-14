@@ -76,6 +76,18 @@ public class ProjectionEdgesTests
         Assert.True(lifted.Values.All(v => v > 0));
     }
 
+    [Fact]
+    public void On_the_estate_the_flows_out_of_the_service_groups_are_in_every_window_the_sum_of_the_flows_out_of_the_services()
+    {
+        var e = OnEstate.Value; var tree = e.Graph("serviceTree");
+        var dump = ((InMemoryTelemetryStore)e.Telemetry).Dump(tree.Key).Where(x => e.Interner.Get(x.Prop).EndsWith("prop:flowsOut", StringComparison.Ordinal)).ToList();
+        var groups = tree.State.Entities.Where(x => Ids.Name(x.Type) == "ServiceGroup").Select(x => x.Id).ToHashSet();
+        var perWindow = dump.GroupBy(x => x.Ws).ToList();
+        Assert.NotEmpty(perWindow);
+        foreach (var w in perWindow)
+            Assert.Equal(w.Where(x => !groups.Contains(e.Interner.Get(x.Element))).Sum(x => x.Value), w.Where(x => groups.Contains(e.Interner.Get(x.Element))).Sum(x => x.Value));
+    }
+
     // ---- the policies of the lift, on variants of the estate's authored capabilities and flows ----------------------------------------
 
     /// <summary>A copy of the estate whose authored `realizes` rows (service to capability, null: none) and flows differ.</summary>
