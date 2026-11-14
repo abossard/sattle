@@ -166,7 +166,7 @@ public static class KqlAuthoring
     {
         var lets = Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is not FunctionDeclaration && !t.Steps.Any(s => s.Pos == l.TextStart)).Select(l => l.Name.SimpleName).ToHashSet(StringComparer.Ordinal);
         var functions = Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is FunctionDeclaration).Select(l => l.Name.SimpleName).ToHashSet(StringComparer.Ordinal);
-        var a = new JsonArray();
+        var a = new JsonArray(); var letColumns = new Dictionary<string, JsonArray>(StringComparer.Ordinal);
         foreach (var l in Top(t.Code).OfType<LetStatement>().Where(l => l.Expression is not FunctionDeclaration))
         {
             var step = t.Steps.FirstOrDefault(s => s.Pos == l.TextStart);
@@ -189,8 +189,9 @@ public static class KqlAuthoring
                     ["functions"] = Read(n => n is FunctionCallExpression f && functions.Contains(f.Name.SimpleName) ? f.Name.SimpleName : null),
                 },
                 ["sink"] = step is null || low is null ? null : low.OperatorPlaces.Where(kv => kv.Value == place).Select(kv => kv.Key).FirstOrDefault(),
-                ["operators"] = Operators(t, low, q, step is not null, lets, functions),
+                ["operators"] = Operators(t, low, q, step is not null, lets, functions, letColumns),
             };
+            if (step is null && o["operators"]!.AsArray() is [.., var last]) letColumns[l.Name.SimpleName] = last!["columns"]!.AsArray();
             a.Add(o);
         }
         return a;
@@ -204,7 +205,7 @@ public static class KqlAuthoring
         _ => [(e, e)],
     };
 
-    static JsonArray Operators(KqlText t, KqlResult? low, Expression query, bool isStep, HashSet<string> lets, HashSet<string> functions)
+    static JsonArray Operators(KqlText t, KqlResult? low, Expression query, bool isStep, HashSet<string> lets, HashSet<string> functions, Dictionary<string, JsonArray> letColumns)
     {
         var chain = Chain(query); var a = new JsonArray();
         for (var k = 0; k < chain.Count; k++)
@@ -232,19 +233,26 @@ public static class KqlAuthoring
             var (kind, name) = kn;
             var place = (n.TextStart, n.End);
             var shape = low?.Shapes.GetValueOrDefault(place);
+            // the columns of the rows after the operator: where the lowering knows them, Kusto's columns that the rows have (a table function's `match_id`
+            // and the right key a join renames are not; after a telemetry join, `property` and `value` are what the text reads); a let keeps its own
             var columns = new JsonArray();
-            foreach (var c in (result.ResultType as TableSymbol)?.Columns ?? [])
+            var rows = shape is null ? null : new HashSet<string>([.. shape.Cols, .. shape.Idents.Keys, .. shape.Types.Keys, .. shape.Long is { } l ? [l.Property, l.Value] : Array.Empty<string>()], StringComparer.Ordinal);
+            if (shape is null && kind == "let" && name is not null && letColumns.TryGetValue(name, out var of)) columns = (JsonArray)of.DeepClone();
+            else foreach (var c in ((result.ResultType as TableSymbol)?.Columns ?? []).Where(c => rows is null || rows.Contains(c.Name)))
                 columns.Add(new JsonObject { ["name"] = c.Name, ["type"] = c.Type.Name, ["element"] = shape?.Types.GetValueOrDefault(c.Name) is { } et ? Ids.ModuleOf(et) + "." + Ids.Name(et) : null,
-                    ["telemetry"] = shape is not null && (shape.Kinds.ContainsKey(c.Name) || shape.Long is { } lg && lg.Value == c.Name) ? true : null });
+                    // after a telemetry join, `property` and `value` are read only in the aggregates of a summarize (`sumif(value, property == "p")`)
+                    ["telemetry"] = shape is not null && (shape.Kinds.ContainsKey(c.Name) || shape.Long is { } lg && (lg.Value == c.Name || lg.Property == c.Name)) ? true : null,
+                    // a column made by identity(...) names a node or an end of an edge: a step's sink reads it, no other operator does
+                    ["identity"] = shape?.Idents.ContainsKey(c.Name) == true ? true : null });
             var engine = low is null || inSink ? [] : low.OperatorPlaces.Where(kv => kv.Value == place && !low.OperatorCalls.ContainsKey(kv.Key)).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList();
             var expands = low is null ? [] : low.OperatorCalls.Where(kv => kv.Value.Start >= place.TextStart && kv.Value.End <= place.End).Select(kv => kv.Key).Order(StringComparer.Ordinal).ToList();
             a.Add(new JsonObject
             {
-                ["kind"] = kind, ["name"] = name, ["place"] = P(n), ["parts"] = Parts(n), ["columns"] = columns,
+                ["probe"] = shape is null ? null : string.Join(",", shape.Cols.Concat(shape.Idents.Keys).Concat(shape.Types.Keys).Distinct()) + (shape.Long is null ? "" : " LONG"), ["kind"] = kind, ["name"] = name, ["place"] = P(n), ["parts"] = Parts(n), ["columns"] = columns,
                 ["engine"] = new JsonArray([.. engine.Select(x => (JsonNode)x)]), ["inSink"] = inSink, ["expands"] = new JsonArray([.. expands.Select(x => (JsonNode)x)]),
                 // the pipelines inside: the right side of a join, the legs of a union, each from its source to its last operator
                 ["inner"] = new JsonArray([.. (n switch { JoinOperator j => new[] { j.Expression }, UnionOperator u => u.Expressions.Select(x => x.Element), _ => Enumerable.Empty<Expression>() })
-                    .Select(x => (JsonNode)Operators(t, low, x, false, lets, functions))]),
+                    .Select(x => (JsonNode)Operators(t, low, x, false, lets, functions, letColumns))]),
             });
         }
         return a;

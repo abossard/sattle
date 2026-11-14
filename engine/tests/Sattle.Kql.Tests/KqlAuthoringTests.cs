@@ -97,6 +97,32 @@ public class KqlAuthoringTests
         }
     }
 
+    /// <summary>The columns the outline lists after an operator are columns of its rows: a `where` that names each of them, put after the operator,
+    /// reads without an error in its statement (a `where` keeps the columns, so what follows reads as before). A step's last project is left out: its
+    /// columns are the sink's, and an operator is added before it. So are the columns the outline marks as read elsewhere: an identity (the sink reads
+    /// it) and a telemetry join's `property` and `value` (a summarize's aggregates read them).</summary>
+    [Theory, MemberData(nameof(Shipped))]
+    public void Every_column_the_outline_lists_after_an_operator_can_be_named_there(string kql)
+    {
+        var text = File.ReadAllText(Path.Combine(Definitions, kql));
+        var outline = KqlAuthoring.Analyse(Defs.Value.Catalog, kql[..^4], text);
+        var wrong = new List<string>();
+        foreach (var st in outline["statements"]!.AsArray())
+            foreach (var op in st!["operators"]!.AsArray().Where(o => !o!["inSink"]!.GetValue<bool>()))
+            {
+                var names = op!["columns"]!.AsArray().Where(c => c!["identity"] is null && !(c["telemetry"] is not null && c["name"]!.GetValue<string>() is "property" or "value"))
+                    .Select(c => c!["name"]!.GetValue<string>()).ToList();
+                if (names.Count == 0) continue;
+                var (end, place) = (At(op["place"]).End, At(st["place"]));
+                var edited = text[..end] + " | where " + string.Join(" and ", names.Select(n => $"isnotnull(['{n}'])")) + text[end..];
+                var shift = edited.Length - text.Length;
+                wrong.AddRange(KqlAuthoring.Analyse(Defs.Value.Catalog, kql[..^4], edited)["diagnostics"]!.AsArray()
+                    .Where(d => d!["start"]!.GetValue<int>() >= place.Start && d["start"]!.GetValue<int>() <= place.End + shift)
+                    .Select(d => $"{st["kind"]} {st["name"] ?? st["type"]} after {op["kind"]}: {d!["message"]}"));
+            }
+        Assert.Empty(wrong);
+    }
+
     /// <summary>The places of an outline nest: each item of a list lies inside what holds it, the items follow each other in the text, and none overlap.</summary>
     [Theory, MemberData(nameof(Shipped))]
     public void The_items_of_every_list_lie_in_order_inside_what_holds_them(string kql)
