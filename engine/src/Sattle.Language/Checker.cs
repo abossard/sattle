@@ -852,6 +852,17 @@ public sealed class ProjectionChecker(Graph defs)
 
     // ---- projection judgments --------------------------------------------------------------------------
 
+    /// <summary>The entity types that the other ingestion projections of the module with the same output create: in a space, another graph that ingests holds them, so an edge end of such a type is not deferred.
+    /// This assumes the space binds the sibling too. A space that binds this projection without it gets no warning; the graph's references still list those ends as missing.</summary>
+    IEnumerable<string> SiblingCreates(string pid)
+    {
+        if (d.Text(pid, "purpose") != "ingestion" || d.Container(pid) is not { } mid) return [];
+        var output = d.Target(pid, "outputOntology");
+        return d.Children(mid, "projection").Where(p => p != pid && d.Text(p, "purpose") == "ingestion" && d.Target(p, "outputOntology") == output)
+            .SelectMany(p => d.Children(p, "op")).Where(op => d.TypeName(op) == "EmitEntity" && d.Text(op, "mode") != "update")
+            .Select(op => d.Target(op, "ofType")).OfType<string>();
+    }
+
     void EmitterChecks(List<TOp> ops, List<TRule> rules, string pid)
     {
         TelemetryKeyCheck(ops);
@@ -868,6 +879,7 @@ public sealed class ProjectionChecker(Graph defs)
             {
                 if (x.Type.Ty.TypeId is not { } st) continue;
                 var candidates = creates.Where(c => x.Type.Ty.TypeId is not null && Types.Comparable(c.EntityId.Type.Ty, x.Type.Ty, outView)).Select(c => c.TypeId).Distinct().ToList();
+                if (candidates.Count == 0 && SiblingCreates(pid).Any(c => outView.IsSubtype(c, st) || outView.IsSubtype(st, c))) continue;
                 if (candidates.Count == 0) { Err("EndpointDeferred", e.Id, $"{side} of {Ids.Name(e.TypeId)} is emitted by no create emit of this projection", "warning"); continue; }
                 if (allowed.Count > 0 && !candidates.Any(c => allowed.Any(a => outView.IsSubtype(c, a)))) Err("EmitRelationship", e.Id, $"{side} {Ids.Name(st)} resolves to {string.Join(", ", candidates.Select(Ids.Name))}, which relationship type {ti.Name} does not allow");
             }
@@ -1297,9 +1309,21 @@ public sealed class SpaceChecker(Graph defs)
         var seen = new HashSet<string>(); var onPath = new HashSet<string>();
         bool Cyc(string n) { if (onPath.Contains(n)) return true; if (!seen.Add(n)) return false; onPath.Add(n); var c = edges.GetValueOrDefault(n)?.Any(Cyc) ?? false; onPath.Remove(n); return c; }
         if (graphs.Any(g => Cyc(g.Name))) Err("S3", spaceId, "graph production has a cycle");
-        var masterName = graphs.FirstOrDefault(g => g.Master)?.Name;
-        bool Reaches(string n, HashSet<string> v) { if (n == masterName) return true; if (!v.Add(n)) return false; return edges.GetValueOrDefault(n)?.Any(x => Reaches(x, v)) ?? false; }
-        foreach (var g in graphs.Where(g => !g.Master && !Reaches(g.Name, []))) Err("S3", spaceId, $"graph {g.Name} is not reachable from the master");
+        // a graph ingests when an ingestion projection produces it: the master, and graphs of authored rows. Every other graph reads one that ingests.
+        var ingests = graphs.Where(g => projections.GetValueOrDefault(g.ProjectionId)?.Purpose == "ingestion").Select(g => g.Name).ToHashSet(StringComparer.Ordinal);
+        bool Reaches(string n, HashSet<string> v) { if (ingests.Contains(n)) return true; if (!v.Add(n)) return false; return edges.GetValueOrDefault(n)?.Any(x => Reaches(x, v)) ?? false; }
+        foreach (var g in graphs.Where(g => !ingests.Contains(g.Name) && !Reaches(g.Name, []))) Err("S3", spaceId, $"graph {g.Name} is not reachable from a graph that ingests");
+        foreach (var src in graphs.SelectMany(g => g.Bindings.Values.Where(sources.Select(s => s.Name).Contains).Select(s => (Source: s, Graph: g.Name))).GroupBy(x => x.Source).Where(x => x.Select(y => y.Graph).Distinct().Count() > 1))
+            Err("S2", spaceId, $"source {src.Key} is bound by more than one graph ({string.Join(", ", src.Select(x => x.Graph).Distinct())})");
+        // a graph other than the master that ingests writes no telemetry (windows, loss marks and coverage stay with the master) and links no identities (a merge reaches the sinks of the graphs that step after the one that links)
+        foreach (var g in graphs.Where(g => !g.Master && ingests.Contains(g.Name)))
+        {
+            var ops = projections[g.ProjectionId].Ops;
+            if (ops.Any(o => (o switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => [] }).Any(x => x.Telemetry)))
+                Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it writes no telemetry");
+            if (ops.OfType<TLink>().Any())
+                Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it links no identities, a link rule belongs to the master's projection");
+        }
         // S4: a pattern node of a type the matched graph never holds is a reference (the end of a relationship, by its id): it has no properties to read
         foreach (var g in graphs)
         {

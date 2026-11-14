@@ -105,7 +105,7 @@ public class LiftTests
     // ---- conservation: nothing is counted twice, nothing appears ---------------------------------------------------------------------------
 
     static string ServiceName(Engine e, string id) => e.Graph("serviceTree").State.Entities.First(x => x.Id == id).Props.Text("d:acme.svc/prop:name")!;
-    static string CapName(Engine e, string id) => e.Graph("capabilities").State.Entities.FirstOrDefault(x => x.Id == id)?.Props.Text("d:acme.biz/prop:name") ?? e.Master.State.Entities.First(x => x.Id == id).Props.Text("d:acme.ops/prop:name")!;
+    static string CapName(Engine e, string id) => e.Graph("capabilities").State.Entities.FirstOrDefault(x => x.Id == id)?.Props.Text("d:acme.biz/prop:name") ?? e.Graph("authored").State.Entities.First(x => x.Id == id).Props.Text("d:acme.ops/prop:name")!;
 
     static Dictionary<string, decimal> Summed(Engine e, string graph, string prop, Func<string, string> name)
     {
@@ -205,7 +205,7 @@ public class LiftTests
         Assert.Contains("lift dependsOn as DependsOn from master infra.Calls via master infra.Backs\n    keep cluster = src.cluster, namespace = src.namespace\n    derive dropRatio = if(flows > 0, drops / flows, 0.0), flowRate = rate(flows)\n    state status of dropRatio above 0.05 for 3 then \"degraded\" below 0.02 for 3 then \"ok\" initial \"ok\"\n    images each;", svc);
         Assert.DoesNotContain("selfloops", svc); Assert.DoesNotContain("within", svc);
         var biz = Printer.Print(cat.Graph, "acme.biz");
-        Assert.Contains("    lift dependsOn as DependsOn from tree svc.DependsOn via master ops.Realizes\n      when image.status != \"retired\"\n      carry callFlows = flows, callDrops = drops\n", biz);
+        Assert.Contains("    lift dependsOn as DependsOn from tree svc.DependsOn via authored ops.Realizes\n      when image.status != \"retired\"\n      carry callFlows = flows, callDrops = drops\n", biz);
         Assert.DoesNotContain("images ", biz);
     }
 

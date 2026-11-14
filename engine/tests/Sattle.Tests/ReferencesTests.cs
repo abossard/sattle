@@ -29,7 +29,7 @@ public class ReferencesTests
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")).Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
-            .Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
+            .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
         files.Add(new SourceFile("acme.callsview.sattle", CallsView));
         return files;
     }
@@ -52,16 +52,26 @@ public class ReferencesTests
         return dir;
     }
 
+    /// <summary>The one exception is `authored`: a `Realizes` edge runs from a service, which the master holds, so its service end is a reference that names the master.</summary>
     [Fact]
-    public void The_estate_has_no_relationship_without_an_endpoint_and_so_no_references()
+    public void The_estate_has_no_relationship_without_an_endpoint_and_so_no_references_except_the_service_ends_of_what_people_wrote()
     {
         var (h, space) = Serve(Estate, Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList());
         using (h)
             foreach (var g in space["graphs"]!.AsArray().Where(x => x!["id"]!.GetValue<string>() != "catalog"))
             {
-                Assert.Equal("0", g!["dangling"]!.GetValue<string>());
+                var id = g!["id"]!.GetValue<string>();
+                var refs = h.Snapshot(id, null)["extent"]!["references"]!.AsArray();
+                if (id == "authored")
+                {
+                    var realizes = h.Engine.Graph("authored").State.Rels.Count(r => Ids.Name(r.Type) == "Realizes");
+                    Assert.Equal(realizes.ToString(), g["dangling"]!.GetValue<string>());
+                    Assert.All(refs, r => { Assert.Equal("inOtherGraph", r!["state"]!.GetValue<string>()); Assert.Equal("master", r["graph"]!.GetValue<string>()); Assert.Equal("Service", r["entityType"]!.GetValue<string>()); });
+                    continue;
+                }
+                Assert.Equal("0", g["dangling"]!.GetValue<string>());
                 Assert.Empty(g["danglingBy"]!.AsArray());
-                Assert.Empty(h.Snapshot(g["id"]!.GetValue<string>(), null)["extent"]!["references"]!.AsArray());
+                Assert.Empty(refs);
             }
     }
 

@@ -80,8 +80,8 @@ public class EstateTests
 
     static string Space(string text) => text
         .Replace("import acme.biz ", "import acme.estatedemo @ 1.0.0 sha256:… as demo;\nimport acme.biz ")
-        .Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");",
-            "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph demoClosure = demo.closure(st: workloadStructure);\n  graph demoBoth = demo.both(st: workload);\n  graph demoSeries = demo.series(master: master);\n  graph demoValues = demo.values(master: master);");
+        .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");",
+            "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph demoClosure = demo.closure(st: workloadStructure);\n  graph demoBoth = demo.both(st: workload);\n  graph demoSeries = demo.series(master: master);\n  graph demoValues = demo.values(master: master);");
 
     /// <summary>The definitions with the estate's space binding, and with the demo projections and their graphs when `demo` is set.</summary>
     public static Catalog LoadCatalog(bool demo)

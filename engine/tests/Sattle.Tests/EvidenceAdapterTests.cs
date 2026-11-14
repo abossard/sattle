@@ -27,7 +27,8 @@ public class EvidenceAdapterTests
         ["auditID"] = id, ["verb"] = verb, ["stage"] = stage, ["objectRef"] = new { resource, @namespace = "kube-system", name }, ["user"] = new { username = "alice" }, ["responseStatus"] = new { code = 200 }, ["requestReceivedTimestamp"] = "2026-01-01T10:00:05.000000Z",
     });
 
-    static IEnumerable<Entity> Of(Engine e, string type) => e.Master.State.Entities.Where(x => Ids.Name(x.Type) == type);
+    // what was observed is in the master, what people wrote (signal rules, capabilities) in `authored`
+    static IEnumerable<Entity> Of(Engine e, string type) => e.Graphs.Where(g => g.Ingests).SelectMany(g => g.State.Entities).Where(x => Ids.Name(x.Type) == type);
 
     [Fact]
     public void Diagnostic_activity_records_are_evidence_elements_linked_to_their_resource()

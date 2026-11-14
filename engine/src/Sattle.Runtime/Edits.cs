@@ -5,7 +5,8 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>Backward edits (research 03 section 4.4): a view edit becomes a proposal on the master's authored partition (lens put), then authored rows (bijective inverse), is checked on a staged copy (PutGet), and only then accepted as recorded input rows.</summary>
+/// <summary>Backward edits (research 03 section 4.4): a view edit becomes a proposal on the authored partition of the graph that ingests the edited type (lens put), then authored rows (bijective inverse), is checked on a staged copy (PutGet), and only then accepted as recorded input rows.
+/// That graph is the owner: the master, or another graph that ingests authored rows.</summary>
 public sealed partial class SpaceHost
 {
     static string TypeLabel(Catalog c, string id) => new DefView(c.Graph).Text(id, "name") ?? Ids.Name(id);
@@ -28,10 +29,22 @@ public sealed partial class SpaceHost
         new(code, message, status, new JsonObject { ["graph"] = graph, ["element"] = element, ["rule"] = rule });
 
     /// <summary>The inverse of a bijective ingestion rule over an authored rows port: row field per entity property, key field, and the parent field carried by a relationship.</summary>
-    sealed record RowInverse(string Source, string RelTypeId, string EntityTypeId, string KeyField, string ParentField, Dictionary<string, string> FieldProp, string Rule);
+    sealed record RowInverse(string Source, string RelTypeId, string EntityTypeId, string KeyField, string ParentField, Dictionary<string, string> FieldProp, string Rule, string Owner);
 
-    RowInverse? InverseOf(TypedProjection master)
+    /// <summary>The graph that carries edits of `rt`: `rt` itself or a graph it reads, that ingests and has a bijective rule; with that rule's inverse.</summary>
+    (GraphRuntime Owner, RowInverse Inverse)? OwnerOf(GraphRuntime rt)
     {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        IEnumerable<GraphRuntime> Up(GraphRuntime x) => seen.Add(x.Name) ? [x, .. x.PortSources.Values.Where(n => Engine.Graphs.Any(o => o.Name == n)).SelectMany(n => Up(Engine.Graph(n)))] : [];
+        var found = Up(rt).Where(x => x.Ingests).Select(x => (Owner: x, Inverse: InverseOf(x))).Where(x => x.Inverse is not null).ToList();
+        // the owner is chosen by the edited type once two graphs carry edits; until then two candidates are refused, not chosen by the order of the ports
+        if (found.Count > 1) throw Reject("NotEditable", $"graphs {string.Join(" and ", found.Select(x => x.Owner.Name))} both carry edits of {rt.Name}: an edit cannot be placed", rt.Name);
+        return found.Count == 1 ? (found[0].Owner, found[0].Inverse!) : null;
+    }
+
+    RowInverse? InverseOf(GraphRuntime owner)
+    {
+        var master = owner.Typed;
         foreach (var r in master.Rules.Where(r => r.Class == "bijective"))
         {
             var ent = master.Ops.OfType<TEmitEntity>().FirstOrDefault(e => e.Rule == r.Name && !e.Update);
@@ -42,8 +55,8 @@ public sealed partial class SpaceHost
             var key = ((TId)rel.Source).Comps.Select(c => c.Value).OfType<TField>().FirstOrDefault()?.Name;
             var parent = ((TId)rel.Target).Comps.Select(c => c.Value).OfType<TField>().FirstOrDefault()?.Name;
             if (key is null || parent is null) continue;
-            var sourceName = Space.Graphs.First(g => g.Master).Bindings[src.Name];
-            return new RowInverse(sourceName, rel.TypeId, ent.TypeId, key, parent, fieldProp, r.Name);
+            var sourceName = Space.Graphs.First(g => g.Name == owner.Name).Bindings[src.Name];
+            return new RowInverse(sourceName, rel.TypeId, ent.TypeId, key, parent, fieldProp, r.Name, owner.Name);
         }
         return null;
     }
@@ -97,10 +110,10 @@ public sealed partial class SpaceHost
             var rt = Engine.Graph(g);
             var tp = rt.Typed;
             if (tp.Rules.Count == 0 || tp.Forward) throw Reject("NotEditable", $"graph {g} is produced by a forward projection", g);
-            var master = Engine.Master;
-            var inv = InverseOf(master.Typed) ?? throw Reject("NotEditable", "the master graph has no bijective ingestion rule to carry edits", g);
+            var (owner, inv) = OwnerOf(rt) ?? throw Reject("NotEditable", $"no graph that ingests and that {g} reads has a bijective ingestion rule to carry edits", g);
+            var isOwner = rt == owner;
             // bases for every graph on the path
-            var bases = new List<string> { g }; if (!rt.IsMaster) bases.Add(master.Name);
+            var bases = new List<string> { g }; if (!isOwner) bases.Add(owner.Name);
             var given = body["baseRevisions"]?.AsObject() ?? [];
             foreach (var b in bases)
             {
@@ -115,9 +128,9 @@ public sealed partial class SpaceHost
             if (edits.Count == 0) return new JsonObject { ["accepted"] = true, ["revisions"] = new JsonObject { [g] = Rev(served[g].Head) } };
 
             // 1. ownership and acceptance per edit
-            var proposal = master.State.Clone();
-            var overlay = new List<Edit>();   // edits on the master's authored partition
-            if (rt.IsMaster) Classify(tp, g, edits, overlay, inv, rt);
+            var proposal = owner.State.Clone();
+            var overlay = new List<Edit>();   // edits on the owner's authored partition
+            if (isOwner) Classify(tp, g, edits, overlay, inv, rt);
             else Backward(tp, g, rt, edits, overlay, inv);
             if (overlay.Count > 0)
             {
@@ -126,7 +139,7 @@ public sealed partial class SpaceHost
             }
 
             // 2. bijective inverse: authored rows
-            var before = Table(master.State, inv); var after = Table(proposal, inv);
+            var before = Table(owner.State, inv); var after = Table(proposal, inv);
             var changed = after.Where(kv => !before.TryGetValue(kv.Key, out var old) || !old.SequenceEqual(kv.Value)).ToList();
             var removed = before.Where(kv => !after.ContainsKey(kv.Key)).ToList();
             if (removed.Count > 0) throw Reject("BadEdit", "authored rows cannot be removed, only retired", g);
@@ -134,12 +147,12 @@ public sealed partial class SpaceHost
             // 3. staged forward evaluation: authored rows only, on a fresh engine
             using var staged = new Engine(Catalog, spaceId, new EngineOptions { Tenant = options.Tenant, Only = new HashSet<string> { g } }, interner);
             StageRows(staged, inv, after, 1);
-            var expected = (rt.IsMaster ? master.State : rt.State).Clone();
+            var expected = (isOwner ? owner.State : rt.State).Clone();
             var apply = expected.Apply([.. edits.Select(e => new Edit(e.Kind == 'e' ? ElementKey.Entity(e.Id ?? e.After!.Key.Id) : ElementKey.Rel(e.Id ?? e.After!.Key.Id), e.Before, e.After))]);
             if (apply is not null) throw Reject("BadEdit", apply, g);
             var actualView = staged.Graph(g).State;
-            if (OwnedDiff(tp, g, expected, actualView, rt.IsMaster) is { } diff) throw Reject("PutGetViolation", $"forward evaluation of the proposal does not reproduce the edited view: {diff}", g, diff);
-            var cons = Conformance.Check(staged.Master.State, Catalog.OntologyOf(staged.Master.Typed.OutputModule)).Concat(Conformance.Check(actualView, Catalog.OntologyOf(staged.Graph(g).Typed.OutputModule))).FirstOrDefault(d => d.IsError);
+            if (OwnedDiff(tp, g, expected, actualView, isOwner ? inv : null) is { } diff) throw Reject("PutGetViolation", $"forward evaluation of the proposal does not reproduce the edited view: {diff}", g, diff);
+            var cons = Conformance.Check(staged.Graph(owner.Name).State, Catalog.OntologyOf(staged.Graph(owner.Name).Typed.OutputModule)).Concat(Conformance.Check(actualView, Catalog.OntologyOf(staged.Graph(g).Typed.OutputModule))).FirstOrDefault(d => d.IsError);
             if (cons is not null) throw Reject("ConstraintViolation", cons.Message, g, cons.Focus);
 
             // 4. accept: the rows become recorded input
@@ -193,7 +206,7 @@ public sealed partial class SpaceHost
     /// <summary>Lens put: view edits become master edits, by the rule that owns the touched element (P2).</summary>
     void Backward(TypedProjection tp, string g, GraphRuntime rt, List<ViewEdit> edits, List<Edit> overlay, RowInverse inv)
     {
-        var master = Engine.Master.State;
+        var master = Engine.Graph(inv.Owner).State;
         for (var ei = 0; ei < edits.Count; ei++)
         {
             var e = edits[ei];
@@ -219,7 +232,7 @@ public sealed partial class SpaceHost
                 // key and id
                 // the type the view's element comes from: the one its create key identifies, else the type of the element the emit reads (a lens that accepts no create has no create key)
                 var src = policy.SourceTypeId ?? sink.EntityId.Type.Ty.TypeId ?? throw Reject("NotEditable", $"rule {rule.Name} names no source type for {TypeLabel(Catalog, en.Type)}", g, en.Id, rule.Name);
-                var view = Catalog.OntologyOf(Engine.Master.Typed.OutputModule);
+                var view = Catalog.OntologyOf(Engine.Graph(inv.Owner).Typed.OutputModule);
                 if (kind == "create")
                 {
                     var key = e.Key ?? throw Reject("KeyMismatch", "a created element needs a key", g, en.Id);
@@ -251,12 +264,12 @@ public sealed partial class SpaceHost
                 {
                     var existing = master.Entity(en.Id) ?? throw Reject("BadEdit", $"{en.Id} is not in the master", g, en.Id);
                     // the put ends in authored rows through the emit of the master's bijective rule; that emit is a bijection only while one key of its domain names the element: after an alias or a merge two rows give it, and a put cannot say which (Def. 8.4, Theorem 8.2 (c))
-                    if (Engine.Master.Typed.Ops.OfType<TEmitEntity>().FirstOrDefault(x => x.Rule == inv.Rule && x.TypeId == inv.EntityTypeId && !x.Update)?.EntityId is TId tid)
+                    if (Engine.Graph(inv.Owner).Typed.Ops.OfType<TEmitEntity>().FirstOrDefault(x => x.Rule == inv.Rule && x.TypeId == inv.EntityTypeId && !x.Update)?.EntityId is TId tid)
                     {
                         var keys = Engine.Identities.Bindings().Where(b => b.Domain.Id == tid.DomainId && b.Id == existing.Id).Select(b => string.Join(",", b.Components)).Order(StringComparer.Ordinal).ToList();
                         if (keys.Count > 1) throw Reject("AmbiguousKey", $"{existing.Id} has {keys.Count} keys in {tid.DomainName}: {string.Join("; ", keys)}", g, en.Id, rule.Name);
                     }
-                    var view2 = Catalog.OntologyOf(Engine.Master.Typed.OutputModule);
+                    var view2 = Catalog.OntologyOf(Engine.Graph(inv.Owner).Typed.OutputModule);
                     var props = existing.Props;
                     if (kind == "delete")
                     {
@@ -282,7 +295,7 @@ public sealed partial class SpaceHost
                 if (rule.Class != "lens" || rule.Policy is null || !rule.Policy.Accept.Contains(kind)) throw Reject("NotAccepted", $"rule {rule.Name} does not accept {kind}", g, rl.Id, rule.Name);
                 var expectId = IdentityCatalog.RelationshipId(options.Tenant, tp.OutputModule, sink.Key, rl.Source, rl.Target);
                 if (kind == "create" && rl.Id.Length > 0 && rl.Id != expectId) throw Reject("KeyMismatch", $"the relationship id is {expectId}", g, rl.Id);
-                var mrel = IdentityCatalog.RelationshipId(options.Tenant, Engine.Master.Typed.OutputModule, MasterRelKey(inv), rl.Source, rl.Target);
+                var mrel = IdentityCatalog.RelationshipId(options.Tenant, Engine.Graph(inv.Owner).Typed.OutputModule, MasterRelKey(inv), rl.Source, rl.Target);
                 if (kind == "create") edits[ei] = e with { Id = expectId, After = rl with { Id = expectId } };
                 if (kind == "create") overlay.Add(Edit.Create(new Rel(mrel, rl.Source, rl.Target, inv.RelTypeId, Props.Empty)));
                 else if (master.Rel(mrel) is { } old) overlay.Add(Edit.Remove(old));
@@ -291,7 +304,7 @@ public sealed partial class SpaceHost
         }
     }
 
-    string MasterRelKey(RowInverse inv) => Engine.Master.Typed.Ops.OfType<TEmitRel>().First(e => e.Rule == inv.Rule && e.TypeId == inv.RelTypeId && !e.Update).Key;
+    string MasterRelKey(RowInverse inv) => Engine.Graph(inv.Owner).Typed.Ops.OfType<TEmitRel>().First(e => e.Rule == inv.Rule && e.TypeId == inv.RelTypeId && !e.Update).Key;
 
     static IEnumerable<string> ChangedNames(TypedProjection tp, TEmitEntity sink, Entity before, Entity after)
     {
@@ -324,9 +337,9 @@ public sealed partial class SpaceHost
     };
 
     /// <summary>The first difference between the edited view and the staged forward view on the elements the lens rules own, or null.</summary>
-    string? OwnedDiff(TypedProjection tp, string g, Graph expected, Graph actual, bool isMaster)
+    string? OwnedDiff(TypedProjection tp, string g, Graph expected, Graph actual, RowInverse? owned)
     {
-        var types = isMaster ? [InverseOf(tp)!.EntityTypeId, InverseOf(tp)!.RelTypeId] : tp.Rules.Where(r => r.Class is "lens" or "bijective").SelectMany(r => tp.Ops.Where(o => (o is TEmitEntity { Update: false } ee && ee.Rule == r.Name) || (o is TEmitRel { Update: false } er && er.Rule == r.Name))
+        var types = owned is not null ? [owned.EntityTypeId, owned.RelTypeId] : tp.Rules.Where(r => r.Class is "lens" or "bijective").SelectMany(r => tp.Ops.Where(o => (o is TEmitEntity { Update: false } ee && ee.Rule == r.Name) || (o is TEmitRel { Update: false } er && er.Rule == r.Name))
             .Select(o => o is TEmitEntity x ? x.TypeId : ((TEmitRel)o).TypeId)).ToList();
         var ownedProps = tp.Ops.OfType<TEmitEntity>().Where(e => e.Rule is not null && tp.Rules.First(r => r.Name == e.Rule).Class is "lens" or "bijective").SelectMany(e => e.Sets.Where(s => !s.Telemetry).Select(s => s.PropId)).ToHashSet();
         string? Sig(Element e) => e switch

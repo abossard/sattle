@@ -473,6 +473,20 @@ A projection may be written in a file of its own, `module.projection.kql`, besid
 - **New diagnostic `S4`** (space check): a projection reads a property of a pattern node that is a reference in the graph its port is bound to. The message names the graph and the type. A reference has no properties; the property is read in a graph that holds the entity.
 - No existing definition changes its result: the rule applies only where a pattern could not match before.
 
+## Version 3.29: a second input graph for authored rows
+A space has one master and may have more graphs that ingest: graphs produced by an ingestion projection, whose rows come from sources. The shipped space has two: `master` (what the platform observed) and `authored` (what people wrote: capabilities, `PartOf`, `Realizes`, signal rules, roll-up policies, curations). `Realizes` runs from a service in `master` to a capability in `authored`; in `authored` its service end is a reference (3.28), and the capability view reads only its id.
+- **`GET /space`.** The `role` of such a graph is `"input"`; it has no `inputs`. `master` and `projection` are as before. A client of 3.28 that treats every role other than `master` as a projection shows `authored` as a graph without inputs.
+- **The space descriptor** (`replay --out`, `serve --out`): `authored` is listed among `projections` with no `graphInputs`; a projection that reads it names it as its source (`"kind": "projection"`).
+- **Edits** (`POST /graphs/{g}/edits`): an edit lands in the graph that ingests the edited type, the one whose bijective rule carries it; `baseRevisions` names that graph. When two graphs a view reads could carry its edits, the edit is refused (`NotEditable`).
+- **What stays with the master** (three cuts):
+  - a graph other than the master that ingests writes no telemetry: windows, loss marks, coverage and filling stay with the master;
+  - it links no identities: a `link` rule belongs to the master's projection;
+  - identity bindings ride on the master's commits, as before.
+  Diagnostic `S1` for the first two.
+- **Stepping.** Every graph that ingests steps whenever the master does, after it; a merge the master makes in a step reaches their elements in the same step.
+- **Definition checks.** A source is bound by one graph (`S2`). Every graph reads, directly or through others, a graph that ingests (`S3`).
+- **Lineage.** An element of a graph that ingests and that no source element supports is complete, as on the master before.
+
 ## Version 3.30: the `last` aggregates of one row (kernel digest changed; no change of the wire format)
 - **Kernel.** `Aggregate` has a new optional text property `row`. The kernel digest is `sha256:97f46b5a58dbd6111e3c2676b403569b75eddfbe566502a942a01a3e06c8a02f` (`GET /palette`, `kernelDigest`).
 - **Meaning.** The `last` aggregates of one `Group` that have the same `row` value take their values from one input row: the row with the greatest order. On a tie the greatest values decide, compared in the order of the aggregates' names, where no value is below every value. A value that row does not have is absent in the result. A row without an order is not considered. A `last` without `row` means what it meant: each picks its own row among those that have its value.

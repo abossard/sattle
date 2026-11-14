@@ -77,7 +77,7 @@ public class RefactorTests
         Apply(h, Body("moveRule", ("module", "acme.biz"), ("from", "capabilityView"), ("to", "capabilityCore"), ("rule", "lifted")));
         Assert.Equal(before, Union(h));
         var text = h.Definition("acme.biz");
-        Assert.Contains("lift dependsOn as DependsOn from tree svc.DependsOn via master ops.Realizes", text);
+        Assert.Contains("lift dependsOn as DependsOn from tree svc.DependsOn via authored ops.Realizes", text);
         Assert.True(text.IndexOf("projection capabilityCore", StringComparison.Ordinal) is var core && core > 0 && text.IndexOf("rule lifted", StringComparison.Ordinal) > core, "the rule with its lift statement is now in capabilityCore");
     }
 

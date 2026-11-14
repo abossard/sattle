@@ -247,7 +247,7 @@ public class ProjectionEdgesTests
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         var space = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
-        if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
+        if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
         files[i] = files[i] with { Text = space };
         if (module is not null) files.Add(new SourceFile(module + ".sattle", moduleText!));
         var cat = new Catalog(); var res = cat.Load(files, updatePins: true);
@@ -267,8 +267,9 @@ public class ProjectionEdgesTests
 
         projection oneStep view forward output biz {
           in master: graph ops;
+          in authored: graph ops;
           retain 4;
-          let realized = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
+          let realized = match authored (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
           let fromImage = realized |> select { sa: s, ca: c };
           let toImage = realized |> select { sb: s, cb: c };
           let calls = match master (a: infra.Pod)-[k:infra.Calls]->(b: infra.Pod), (a)-[:infra.Backs]->(s: infra.Service), (b)-[:infra.Backs]->(t: infra.Service);
@@ -291,7 +292,7 @@ public class ProjectionEdgesTests
         var dir = Copy([.. realizes.Split(',')], extraWebToDb, null);
         try
         {
-            var e = RunWith(dir, "acme.onestep", OneStep, "graph oneStep = extra.oneStep(master: master);");
+            var e = RunWith(dir, "acme.onestep", OneStep, "graph oneStep = extra.oneStep(master: master, authored: authored);");
             foreach (var prop in new[] { "callFlows", "callDrops" })
             {
                 var twoSteps = Summed(e, "capabilities", prop, id => CapName(e, id));
@@ -316,7 +317,8 @@ public class ProjectionEdgesTests
             Assert.Equal(["Ordering -> Data platform"], lifted.Keys.ToList());                      // web has two images: its edge is not lifted to either; api to db is
             Assert.Equal(service["api -> db"], lifted["Ordering -> Data platform"]);
             var cat = Repo.LoadExamples(out _);
-            var violations = Conformance.Check(e.Master.State, cat.OntologyOf(e.Master.Typed.OutputModule));
+            var authored = e.Graph("authored");                                                        // what people wrote, `Realizes` among it
+            var violations = Conformance.Check(authored.State, cat.OntologyOf(authored.Typed.OutputModule));
             Assert.Contains(violations, d => d.Code == "Cardinality");                              // `constraint cardinality Realizes per source 0 .. 1`
         }
         finally { Directory.Delete(dir, true); }

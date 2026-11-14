@@ -25,7 +25,7 @@ public sealed class LineageReader(Engine engine)
         var list = l.Sources.Select(s => new Source(s.Role, s.IsRel, UpstreamName(rt, s.GraphPort), It.Get(s.Handle)));
         if (l.FromRows) return ([.. list.Distinct().OrderBy(s => s.Role, StringComparer.Ordinal).ThenBy(s => s.Element, StringComparer.Ordinal)], true, l.Contributions);
         var last = list.ToList();
-        return (last, l.Total == 0 ? rt.IsMaster : last.Count > 0, last.Count);
+        return (last, l.Total == 0 ? rt.Ingests : last.Count > 0, last.Count);
     }
 
     static JsonNode SourceJson(Source s) => new JsonObject { ["graph"] = s.Graph, ["element"] = s.Element, ["kind"] = s.IsRel ? "relationship" : "entity", ["role"] = s.Role };

@@ -214,6 +214,8 @@ public sealed class GraphRuntime
     public required GraphKey Key { get; init; }
     public required CompiledProjection Plan { get; init; }
     public required bool IsMaster { get; init; }
+    /// <summary>Produced by an ingestion projection: source rows reach it. The master ingests; another graph may too (authored rows), and then writes no telemetry.</summary>
+    public required bool Ingests { get; init; }
     public required OpContext Cx { get; init; }
     public required OutputBuilder Out { get; init; }
     public Graph State { get; } = new();
@@ -313,11 +315,12 @@ public sealed class Engine : IDisposable, IEngineInput
         var active = space.Graphs.ToList();
         if (this.options.Only is { } only)
         {
-            var need = new HashSet<string>(only);
+            // every graph that ingests stays: the rows of each source have a graph to go to
+            var need = new HashSet<string>(only.Concat(active.Where(g => (g.Instance ?? catalog.Projections[g.ProjectionId]).Purpose == "ingestion").Select(g => g.Name)));
             for (var grew = true; grew;) { grew = false; foreach (var g in active.Where(g => need.Contains(g.Name))) foreach (var up in g.Bindings.Values) grew |= active.Any(x => x.Name == up) && need.Add(up); }
             active = [.. active.Where(g => need.Contains(g.Name))];
         }
-        var remaining = active.ToList(); var done = new HashSet<string>();
+        var remaining = active.OrderBy(g => g.Master ? 0 : 1).ToList(); var done = new HashSet<string>();     // the master first: the other graphs that ingest step after it
         while (remaining.Count > 0)
         {
             var next = remaining.First(g => g.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).All(kv => done.Contains(kv.Value)));
@@ -329,11 +332,11 @@ public sealed class Engine : IDisposable, IEngineInput
             var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
                 throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
-            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Cx = cx, Out = outb };
+            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
             gr.Head = store.Head(key).Head;
-            if (next.Master) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
+            if (gr.Ingests) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
         foreach (var g in graphs)
@@ -349,14 +352,17 @@ public sealed class Engine : IDisposable, IEngineInput
                 if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Any(authored.Contains)) is { r: not null } written)
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{written.r.OutName}', which an authored source feeds ({string.Join(", ", series.Feeding[st.Reads.ToList().IndexOf(written.r)].Where(authored.Contains))}): authored data records no progress (Def. 7.15)");
             }
+        // the rows of a graph that ingests are not evaluated again: each one's sink follows a merge
         Identities.OnMerge = (loser, survivor) =>
         {
-            if (graphs.FirstOrDefault(g => g.IsMaster) is not { } master) return;
-            var properties = catalog.OntologyOf(master.Typed.OutputModule).Props;
-            foreach (var (from, to) in master.Out.Remap(loser, survivor))
+            foreach (var g in graphs.Where(g => g.Ingests))
             {
-                master.Out.MoveTelemetry(Telemetry, master.Key, from, to);
-                Telemetry.MoveElement(master.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null);
+                var properties = catalog.OntologyOf(g.Typed.OutputModule).Props;
+                foreach (var (from, to) in g.Out.Remap(loser, survivor))
+                {
+                    g.Out.MoveTelemetry(Telemetry, g.Key, from, to);
+                    Telemetry.MoveElement(g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null);
+                }
             }
         };
     }
@@ -376,8 +382,7 @@ public sealed class Engine : IDisposable, IEngineInput
         var ep = new Epoch { Id = ++epochId };
         ep.Rows[port] = rows;
         InputRows += rows.Rows;
-        Run(ep, seq, source);
-        _ = gname;
+        Run(ep, seq, source, gname);
     }
 
     /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
@@ -437,10 +442,11 @@ public sealed class Engine : IDisposable, IEngineInput
     public long EpochsWithMerge { get; private set; }
     public long MostMergesInOneEpoch { get; private set; }
 
-    void Run(Epoch master, long seq, string cause)
+    /// <summary>`rowsFor`: the graph that ingests the epoch's rows, null when it carries none.</summary>
+    void Run(Epoch master, long seq, string cause, string? rowsFor = null)
     {
         var mergesBefore = Identities.Merges;
-        try { RunEpoch(master, seq, cause); }
+        try { RunEpoch(master, seq, cause, rowsFor); }
         finally
         {
             var merged = Identities.Merges - mergesBefore;
@@ -448,18 +454,19 @@ public sealed class Engine : IDisposable, IEngineInput
         }
     }
 
-    void RunEpoch(Epoch master, long seq, string cause)
+    void RunEpoch(Epoch master, long seq, string cause, string? rowsFor)
     {
         var results = new Dictionary<string, GraphResult>();
         foreach (var g in graphs)
         {
             Epoch ep;
             var filling = master.Progress && g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills);
-            if (master.Progress && g.IsMaster && !filling) continue;       // the progress of a source concerns the graphs that fill
-            if (g.IsMaster)
+            if (master.Progress && g.Ingests && !filling) continue;       // the progress of a source concerns the graphs that fill
+            if (g.Ingests)
             {
+                // every graph that ingests steps with the master, after it: a merge the master's link makes in this step reaches their sinks before the views read them
                 ep = new Epoch { Id = master.Id, HasAdvance = master.HasAdvance, Lambda = master.Lambda, Progress = master.Progress, Covered = covered, Loss = master.Loss };
-                foreach (var (port, b) in master.Rows) ep.Rows[port] = b;
+                if (g.Name == rowsFor) foreach (var (port, b) in master.Rows) ep.Rows[port] = b;
             }
             else
             {

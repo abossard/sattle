@@ -697,7 +697,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 var dir = rules.Count == 0 ? "forward" : rules.All(r => r.Class == "readonly") ? "readonly" : rules.All(r => r.Class == "lens") ? "lens" : "mixed";
                 graphs.Add(new JsonObject
                 {
-                    ["id"] = g.Name, ["role"] = g.IsMaster ? "master" : "projection", ["head"] = Rev(served[g.Name].Head), ["ontology"] = g.Typed.OutputModule,
+                    ["id"] = g.Name, ["role"] = g.IsMaster ? "master" : g.Ingests ? "input" : "projection", ["head"] = Rev(served[g.Name].Head), ["ontology"] = g.Typed.OutputModule,
                     ["inputs"] = new JsonArray([.. g.PortSources.Values.Where(v => Engine.Graphs.Any(x => x.Name == v)).Distinct().Select(v => (JsonNode)v)]),
                     ["direction"] = dir, ["editable"] = rules.Any(r => r.Class is "lens" or "bijective"), ["document"] = g.Typed.OutputModule == Documents.Module, ["description"] = export.DescriptionOf(g), ["dangling"] = Rev(g.State.Rels.Count(r => g.State.Entity(r.Source) is null || g.State.Entity(r.Target) is null)), ["danglingBy"] = DanglingBy(g), ["descriptor"] = export.Descriptor(g, served[g.Name].Head), ["projection"] = g.Typed.Name,
                 });

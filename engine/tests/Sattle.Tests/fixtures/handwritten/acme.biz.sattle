@@ -19,12 +19,12 @@ constraint enum DependsOn.callStatus in ["ok", "degraded"];
 constraint acyclic Under;
 
 projection capabilityView view output acme.biz {
-  in master: graph ops;
+  in authored: graph ops;
   in tree: graph svc;
   retain 8;
 
   rule capabilities lens {
-    let active = match master (c: ops.Capability) |> where c.status != "retired";
+    let active = match authored (c: ops.Capability) |> where c.status != "retired";
     emit entity BizCapability from active identity c set { name: c.name };
     accept create, delete, update(name);
     on create key ops.capability default { capId: key.id, owner: "unassigned", status: "active" };
@@ -32,14 +32,14 @@ projection capabilityView view output acme.biz {
   }
 
   rule tree lens {
-    let links = match master (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
+    let links = match authored (c: ops.Capability)-[:ops.PartOf]->(p: ops.Capability)
       |> where c.status != "retired" and p.status != "retired";
     emit relationship Under from links key under: c -> p;
     accept create, delete;
   }
 
   rule counts readonly "number of services realizing the capability" {
-    let realized = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
+    let realized = match authored (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability)
       |> where c.status != "retired";
     let perCap = realized |> group by { c: c } aggregate { services: countDistinct(s) };
     emit update entity BizCapability from perCap identity c set { serviceCount: services };
@@ -50,7 +50,7 @@ projection capabilityView view output acme.biz {
   // that realizes no capability are not lifted; parallel edges collapse onto one, flows and drops are summed, the ratio is
   // recomputed from the sums and the state is derived again from it.
   rule lifted readonly "service dependencies lifted to the capabilities that realize their ends" {
-    let imageRows = match master (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
+    let imageRows = match authored (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
     // policy for a service with several images (Realizes is declared 0 .. 1, data can still have two): it is not lifted, so that no call is counted for two capabilities
     let imageCount = imageRows |> group by { s: s } aggregate { n: count() } |> select { sk: s, n: n };
     let pairs = imageRows |> select { s: s, c: c };
@@ -59,8 +59,8 @@ projection capabilityView view output acme.biz {
     let fromImage = image |> select { sa: s, ca: c };
     let toImage = image |> select { sb: s, cb: c };
     let calls = match tree (a: svc.ServiceNode)-[d:svc.DependsOn]->(b: svc.ServiceNode);
-    let withFrom = join calls, fromImage on a.cluster == sa.cluster and a.namespace == sa.namespace and a.name == sa.name;
-    let ends = join withFrom, toImage on b.cluster == sb.cluster and b.namespace == sb.namespace and b.name == sb.name;
+    let withFrom = join calls, fromImage on entityId(a) == entityId(sa);
+    let ends = join withFrom, toImage on entityId(b) == entityId(sb);
     let edges = ends |> where ca != cb;
     emit relationship DependsOn from edges key dependsOn: ca -> cb;
 

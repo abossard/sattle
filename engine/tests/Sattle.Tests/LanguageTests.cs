@@ -29,7 +29,7 @@ public class LanguageTests
         var (cat, res) = Load(Sources());
         Assert.Empty(res.Diagnostics);
         Assert.Equal(18, cat.Modules.Count);                               // the kernel and the seventeen modules of the definitions
-        Assert.Equal(12, cat.Projections.Count);
+        Assert.Equal(13, cat.Projections.Count);
         Assert.Single(cat.Spaces);
         Assert.All(cat.Modules.Values, m => Assert.StartsWith("sha256:", m.Digest));
     }

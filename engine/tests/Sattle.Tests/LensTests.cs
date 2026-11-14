@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
+using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
@@ -18,11 +19,11 @@ public class LensTests
     static JsonNode CreateUnder(string src, string tgt) => new JsonObject { ["kind"] = "relationship", ["id"] = null, ["before"] = null, ["after"] = Under("", src, tgt) };
 
     static string Heads(SpaceHost h, string g) => h.SpaceInfo()["graphs"]!.AsArray().First(x => x!["id"]!.GetValue<string>() == g)!["head"]!.GetValue<string>();
-    static JsonObject Edit(SpaceHost h, params JsonNode[] edits) => new() { ["baseRevisions"] = new JsonObject { ["capabilities"] = Heads(h, "capabilities"), ["master"] = Heads(h, "master") }, ["edits"] = new JsonArray([.. edits]) };
+    static JsonObject Edit(SpaceHost h, params JsonNode[] edits) => new() { ["baseRevisions"] = new JsonObject { ["capabilities"] = Heads(h, "capabilities"), ["authored"] = Heads(h, "authored") }, ["edits"] = new JsonArray([.. edits]) };
     static HostError Rejected(SpaceHost h, JsonObject edit, string graph = "capabilities") => Assert.Throws<HostError>(() => h.ApplyEdits(graph, edit));
 
-    static string CapId(SpaceHost h, string key) => h.Engine.Master.State.Entities.First(e => e.Props.Text("d:acme.ops/prop:capId") == key).Id;
-    static Entity? Cap(SpaceHost h, string key) => h.Engine.Master.State.Entities.FirstOrDefault(e => e.Props.Text("d:acme.ops/prop:capId") == key);
+    static string CapId(SpaceHost h, string key) => h.Engine.Graph("authored").State.Entities.First(e => e.Props.Text("d:acme.ops/prop:capId") == key).Id;
+    static Entity? Cap(SpaceHost h, string key) => h.Engine.Graph("authored").State.Entities.FirstOrDefault(e => e.Props.Text("d:acme.ops/prop:capId") == key);
     static string? Status(SpaceHost h, string key) => Cap(h, key)?.Props.Text("d:acme.ops/prop:status");
     static Graph View(SpaceHost h) => h.Engine.Graph("capabilities").State;
     static string[] ViewNames(SpaceHost h) => [.. View(h).Entities.Select(e => e.Props.Text("d:acme.biz/prop:name")!).Order()];
@@ -35,7 +36,7 @@ public class LensTests
     }
 
     [Fact]
-    public void Create_rename_reparent_and_retire_flow_through_the_master_as_authored_rows()
+    public void Create_rename_reparent_and_retire_flow_through_the_authored_graph_as_authored_rows()
     {
         using var h = NewHost();
         var res = h.ApplyEdits("capabilities", Edit(h, Create("payments", "Payments")));
@@ -43,11 +44,11 @@ public class LensTests
         var cap = Cap(h, "payments")!;
         Assert.Equal("unassigned", cap.Props.Text("d:acme.ops/prop:owner"));           // the complement's "missing"
         Assert.Equal("active", cap.Props.Text("d:acme.ops/prop:status"));
-        Assert.Equal(cap.Id, View(h).Entities.Single().Id);                              // view and master share the entity id
+        Assert.Equal(cap.Id, View(h).Entities.Single().Id);                              // view and authored graph share the entity id
     }
 
     [Fact]
-    public void Edits_of_the_view_reproduce_in_the_view_and_the_master_is_changed_only_on_the_authored_partition()
+    public void Edits_of_the_view_reproduce_in_the_view_and_change_only_the_authored_graph()
     {
         using var h = NewHost();
         Seed(h);
@@ -59,7 +60,7 @@ public class LensTests
         h.ApplyEdits("capabilities", Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = billing.Id, ["before"] = Ent(billing.Id, "Billing"), ["after"] = renamed }));
         Assert.Equal(["Invoicing", "Payments"], ViewNames(h));
         Assert.Equal("Invoicing", Cap(h, "billing")!.Props.Text("d:acme.ops/prop:name"));
-        // delete the leaf: the master keeps a retired capability and its PartOf edge, the view loses both
+        // delete the leaf: the authored graph keeps a retired capability and its PartOf edge, the view loses both
         var rel = View(h).Rels.Single();
         h.ApplyEdits("capabilities", Edit(h, new JsonObject { ["kind"] = "relationship", ["id"] = rel.Id, ["before"] = Under(rel.Id, rel.Source, rel.Target), ["after"] = null },
             new JsonObject { ["kind"] = "entity", ["id"] = billing.Id, ["before"] = Ent(billing.Id, "Invoicing"), ["after"] = null }));
@@ -73,38 +74,37 @@ public class LensTests
     {
         using var h = NewHost();
         Seed(h);
-        var digest = h.StateDigest(); var heads = (Heads(h, "master"), Heads(h, "capabilities"));
+        var digest = h.StateDigest(); var heads = (Heads(h, "authored"), Heads(h, "capabilities"));
         var pay = View(h).Entities.First(e => e.Props.Text("d:acme.biz/prop:name") == "Payments");
         var withCount = Ent(pay.Id, "Payments", Prop("serviceCount", "integer", "3"));
         var e1 = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay.Id, ["before"] = Ent(pay.Id, "Payments"), ["after"] = withCount }));
         Assert.Equal(("ReadOnlyByRule", "counts"), (e1.Code, e1.Extra["rule"]!.GetValue<string>()));
         var e2 = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = "e:x", ["before"] = null, ["after"] = Ent("e:x", "X"), ["key"] = null }), "serviceTree");
         Assert.Equal("NotEditable", e2.Code);
-        var stale = Edit(h, Create("x", "X")); stale["baseRevisions"]!["master"] = "0";
+        var stale = Edit(h, Create("x", "X")); stale["baseRevisions"]!["authored"] = "0";
         var e3 = Rejected(h, stale);
         Assert.Equal(("StaleBase", 409), (e3.Code, e3.Status));
         var e4 = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay.Id, ["before"] = Ent(pay.Id, "Payments"), ["after"] = null, ["key"] = null }, new JsonObject { ["kind"] = "relationship", ["id"] = null, ["before"] = null, ["after"] = Under("", pay.Id, pay.Id) }));
         Assert.NotEqual("", e4.Code);
         Assert.Equal(digest, h.StateDigest());
-        Assert.Equal(heads, (Heads(h, "master"), Heads(h, "capabilities")));
+        Assert.Equal(heads, (Heads(h, "authored"), Heads(h, "capabilities")));
     }
 
     [Fact]
-    public void Master_edits_reject_readonly_elements_and_accept_the_authored_partition()
+    public void The_master_holds_only_observed_rows_and_refuses_edits_NotEditable()
     {
         using var h = NewHost();
         new SyntheticWorld(h, 4, 2).LoadStructure();
         var pod = h.Engine.Master.State.Entities.First(e => Ids.Name(e.Type) == "Pod");
+        var node = new JsonObject { ["id"] = V(pod.Id), ["type"] = V("Pod"), ["properties"] = new JsonArray() };
         var edit = new JsonObject
         {
             ["baseRevisions"] = new JsonObject { ["master"] = Heads(h, "master") },
-            ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = pod.Id, ["before"] = null, ["after"] = null }),
+            ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = pod.Id, ["before"] = node, ["after"] = null }),
         };
-        // a pod is owned by observedPods
-        var node = new JsonObject { ["id"] = V(pod.Id), ["type"] = V("Pod"), ["properties"] = new JsonArray() };
-        edit["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = pod.Id, ["before"] = node, ["after"] = null });
-        var e = Assert.Throws<HostError>(() => h.ApplyEdits("master", edit));
-        Assert.Equal(("ReadOnlyByRule", "observedPods"), (e.Code, e.Extra["rule"]!.GetValue<string>()));
+        var digest = h.StateDigest();
+        Assert.Equal("NotEditable", Assert.Throws<HostError>(() => h.ApplyEdits("master", edit)).Code);   // authored rows go to the authored graph
+        Assert.Equal(digest, h.StateDigest());
     }
 
     [Fact]
@@ -141,12 +141,12 @@ public class LensTests
     {
         using var h = NewHost();
         Seed(h);
-        var digest = h.StateDigest(); var head = Heads(h, "master");
+        var digest = h.StateDigest(); var head = Heads(h, "authored");
         var edits = View(h).Entities.Select(e => (JsonNode)new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, e.Props.Text("d:acme.biz/prop:name")!), ["after"] = Ent(e.Id, e.Props.Text("d:acme.biz/prop:name")!) }).ToArray();
         var res = h.ApplyEdits("capabilities", Edit(h, edits));
         Assert.True(res["accepted"]!.GetValue<bool>());
         Assert.Equal(digest, h.StateDigest());
-        Assert.Equal(head, Heads(h, "master"));
+        Assert.Equal(head, Heads(h, "authored"));
     }
 
     [Fact]
@@ -158,8 +158,8 @@ public class LensTests
         a.ApplyEdits("capabilities", Edit(a, new JsonObject { ["kind"] = "entity", ["id"] = id, ["before"] = Ent(id, "Tmp"), ["after"] = null }));
         Assert.Equal("retired", Status(a, "tmp"));
         Assert.Empty(View(a).Entities);
-        Assert.Null(Cap(b, "tmp"));                                         // applying only the second view state (empty) to the original master
-        Assert.NotEqual(a.Engine.Master.State.Digest(), b.Engine.Master.State.Digest());
+        Assert.Null(Cap(b, "tmp"));                                         // applying only the second view state (empty) to the original authored graph
+        Assert.NotEqual(a.Engine.Graph("authored").State.Digest(), b.Engine.Graph("authored").State.Digest());
         Assert.False(a.Engine.Graph("capabilities").Typed.Rules.First(r => r.Name == "capabilities").PutPut);
     }
 
@@ -196,7 +196,7 @@ public class LensTests
                     case 5 when ents.Count > 0: { var e = ents[rnd.Next(ents.Count)]; edits.Add(new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, Name(e)), ["after"] = null }); break; } // often a PutGet violation
                     default: continue;
                 }
-                var digest = h.StateDigest(); var mh = Heads(h, "master");
+                var digest = h.StateDigest(); var mh = Heads(h, "authored");
                 try
                 {
                     h.ApplyEdits("capabilities", Edit(h, [.. edits]));
@@ -217,7 +217,7 @@ public class LensTests
                     rejected++; lastMsg = e.Code + ": " + e.Message;
                     Assert.Contains(e.Code, new[] { "PutGetViolation", "ConstraintViolation", "BadEdit", "KeyMismatch" });
                     Assert.Equal(digest, h.StateDigest());                  // nothing was accepted
-                    Assert.Equal(mh, Heads(h, "master"));
+                    Assert.Equal(mh, Heads(h, "authored"));
                 }
                 _ = expected;
             }
@@ -228,27 +228,38 @@ public class LensTests
     /// <summary>The capability lens of acme.ops with a second key of a capability, its name, and an equivalence of the two: authored rows with one name give one capability, whose identity then has two keys in the domain of the emit.</summary>
     static SpaceHost WithNamedCapabilities()
     {
-        var h = NewHost();
-        var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.ops.sattle"));
+        var files = Catalog.ReadDirectory(Repo.Definitions);
+        string Text(string name) => files.Single(f => f.Path.EndsWith(name, StringComparison.Ordinal)).Text;
+        var ops = Text("acme.ops.sattle"); var space = Text("acme.space.sattle");
         const string Domain = "identity capability for Capability version \"1\" { id: Text by exact; }";
-        const string Rule = "  rule authoredRealizes bijective {";
-        var edited = text
+        const string Port = "  in flowLogs: rows azsrc.FlowLogRow;";
+        const string Rule = "  rule observedPods readonly";
+        // a link rule belongs to the master's projection: it reads the capability rows from a source of its own
+        var editedOps = ops
             .Replace(Domain, Domain + "\nidentity capabilityName for Capability version \"1\" { name: Text by exact; }\nequivalence capabilityIsNamed between capability, capabilityName assert threshold 1.0;")
-            .Replace(Rule, "  rule namedCapabilities readonly \"a capability is the one its name names\" {\n    link capabilityIsNamed from caps\n      left  capability(id: capId)\n      right capabilityName(name: name)\n      confidence 1.0;\n  }\n\n" + Rule);
-        Assert.NotEqual(text, edited);
-        try { h.Commit("acme.ops", edited, h.CatalogRevision); } catch (HostError e) { Assert.Fail(e.Extra["diagnostics"]![0]!.ToJsonString()); }
-        return h;
+            .Replace(Port, Port + "\n  in capNames: rows CapabilityRow;")
+            .Replace(Rule, "  rule namedCapabilities readonly \"a capability is the one its name names\" {\n    link capabilityIsNamed from capNames\n      left  capability(id: capId)\n      right capabilityName(name: name)\n      confidence 1.0;\n  }\n\n" + Rule);
+        var editedSpace = space
+            .Replace("  source caps ", "  source capNames adapter \"sattle.authoring\" rows ops.CapabilityRow;\n  source caps ")
+            .Replace("flowLogs: flowLogs)", "flowLogs: flowLogs, capNames: capNames)");
+        Assert.NotEqual(ops, editedOps); Assert.NotEqual(space, editedSpace);
+        return new SpaceHost([.. files.Select(f => f.Path.EndsWith("acme.ops.sattle", StringComparison.Ordinal) ? f with { Text = editedOps } : f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = editedSpace } : f)], new HostOptions { Cluster = "synth" });
     }
 
-    [Fact]
-    public void An_edit_of_an_element_with_two_keys_is_rejected_AmbiguousKey()
+    /// <summary>With `linkFirst` false the authored graph holds the capability before the link names it, so the merge reaches an element of the authored graph.</summary>
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void An_edit_of_an_element_with_two_keys_is_rejected_AmbiguousKey(bool linkFirst)
     {
         using var h = WithNamedCapabilities();
         void Rows(params (string Id, string Name)[] rows)
         {
-            var rw = new RowWriter(h.RowLayout("caps"), h.Interner);
-            foreach (var (id, name) in rows) { rw.Begin(); rw.Text("capId", id); rw.Text("name", name); rw.Text("owner", "unassigned"); rw.Text("status", "active"); }
-            h.Ingest("caps", rw.Build()!, 5000 + rows.Length);
+            foreach (var source in linkFirst ? new[] { "capNames", "caps" } : ["caps", "capNames"])
+            {
+                var rw = new RowWriter(h.RowLayout(source), h.Interner);
+                foreach (var (id, name) in rows) { rw.Begin(); rw.Text("capId", id); rw.Text("name", name); rw.Text("owner", "unassigned"); rw.Text("status", "active"); }
+                h.Ingest(source, rw.Build()!, 5000 + rows.Length);
+            }
         }
         string IdOfKey(string key) => h.Engine.Identities.Bindings().Single(b => b.Domain.Name == "capability" && b.Components.SequenceEqual([key])).Id;
         Rows(("payments", "Payments"), ("billing", "Billing"));
@@ -261,13 +272,13 @@ public class LensTests
         var pay = IdOfKey("payments");
         Assert.Equal(pay, IdOfKey("pay"));
         Assert.Equal([pay], View(h).Entities.Select(e => e.Id));
-        var digest = h.StateDigest(); var heads = (Heads(h, "master"), Heads(h, "capabilities"));
+        var digest = h.StateDigest(); var heads = (Heads(h, "authored"), Heads(h, "capabilities"));
         var before = Ent(pay, "Payments");
         var update = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay, ["before"] = before, ["after"] = Ent(pay, "Settlement") }));
         var delete = Rejected(h, Edit(h, new JsonObject { ["kind"] = "entity", ["id"] = pay, ["before"] = before.DeepClone(), ["after"] = null }));
         Assert.All(new[] { update, delete }, e => Assert.Equal(("AmbiguousKey", pay), (e.Code, e.Extra["element"]!.GetValue<string>())));
         Assert.Contains("payments", update.Message); Assert.Contains("pay;", update.Message);
         Assert.Equal(digest, h.StateDigest());                                                   // nothing changed
-        Assert.Equal(heads, (Heads(h, "master"), Heads(h, "capabilities")));
+        Assert.Equal(heads, (Heads(h, "authored"), Heads(h, "capabilities")));
     }
 }

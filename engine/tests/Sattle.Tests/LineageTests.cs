@@ -30,6 +30,7 @@ public class LineageTests
 
     static List<string> Sources(JsonNode lineage) => lineage["sources"]!.AsArray().Select(s => s!["role"]!.GetValue<string>() + "@" + s["graph"]!.GetValue<string>()).ToList();
 
+    /// <summary>The services a capability is realized by are ends of `Realizes` in `authored`, references there; the view reads no graph that holds them, so the lineage names them as the service nodes of the tree.</summary>
     [Fact]
     public void A_lifted_capability_edge_names_the_service_edge_the_services_and_the_capabilities_it_is_made_of()
     {
@@ -38,7 +39,7 @@ public class LineageTests
         var l = h.Lineage("capabilities", edge["id"]!["value"]!.GetValue<string>());
         Assert.True(l["complete"]!.GetValue<bool>());
         Assert.Equal("lifted", l["rule"]!.GetValue<string>());
-        Assert.Equal(["edge@serviceTree", "source@serviceTree", "sourceImage@master", "sourceMapped@master", "target@serviceTree", "targetImage@master", "targetMapped@master"], Sources(l));
+        Assert.Equal(["edge@serviceTree", "source@serviceTree", "sourceImage@authored", "target@serviceTree", "targetImage@authored"], Sources(l));
         Assert.Equal("1", l["contributions"]!.GetValue<string>());
         // the service edge it stands for is web to api of the service tree
         var d = l["sources"]!.AsArray().Single(s => s!["role"]!.GetValue<string>() == "edge")!["element"]!.GetValue<string>();
@@ -176,7 +177,7 @@ public class LineageTests
     {
         var files = EstateFiles();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
+        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
         files.Add(new SourceFile("acme.bygroup.sattle", ByGroup));
         var h = new SpaceHost(files, new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
         using (h)
