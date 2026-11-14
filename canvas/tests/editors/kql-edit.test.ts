@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import type { Analysis, Place } from "../../src/editor/kql";
-import { add, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, type List } from "../../src/editor/kql-edit";
+import { add, addBy, addSetting, addWhere, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, starter, type List } from "../../src/editor/kql-edit";
 
 const rec = JSON.parse(String(gunzipSync(readFileSync("tests/fixtures/kql.json.gz")))) as { files: { projection: string; text: string; analyse: Analysis }[] };
 const files = rec.files.map((f) => [f.projection, f.text, listsOf(f.analyse)] as const);
@@ -74,5 +74,36 @@ describe("rows under the right card", () => {
     const cards = cardsOf(analysis);
     expect(own.length).toBeGreaterThan(0);
     expect(own.filter((o) => !cards.has(o.op)).map((o) => o.op)).toEqual([]);
+  });
+});
+
+describe("absent parts and new operators", () => {
+  type Step = { head?: Place | null; settings?: { place: Place }[]; operators: { kind: string; place: Place; parts?: Record<string, unknown> }[] };
+  const steps = rec.files.flatMap((f) => (f.analyse.statements as Step[]).map((s) => [f.projection, f.text, s] as const));
+
+  it.each(steps.filter(([, , s]) => s.head && !s.settings?.length).slice(0, 12))("%s: a setting on a step without one goes at the end of its head", (_p, text, s) => {
+    const e = addSetting(s, "history", "4")!;
+    const out = apply(text, e.changes);
+    expect(out.slice(s.head![0], e.select![1] + 1)).toBe(`${text.slice(s.head![0], s.head![1])} with (history = 4)`);
+    expect(out.slice(e.select![0], e.select![1])).toBe("history = 4");
+  });
+
+  it.each(steps.flatMap(([p, t, s]) => s.operators.filter((o) => o.kind === "summarize").map((o) => [p, t, o] as const)).slice(0, 12))("%s: a by key is added after the last one", (_p, text, o) => {
+    const e = addBy(o as never, "cluster")!;
+    expect(apply(text, e.changes).slice(e.select![0] - 2, e.select![1])).toBe(", cluster");
+  });
+
+  it.each([
+    ["a summarize without by", "summarize n = count()", { aggregates: [{ place: [10, 21] }] }, (o: never) => addBy(o, "cluster"), "summarize n = count() by cluster"],
+    ["a graph-match without where", "graph-match (s)", { pattern: [[12, 15]] }, (o: never) => addWhere(o, 'labels(s) has "Service"'), 'graph-match (s) where labels(s) has "Service"'],
+  ])("%s gets the part after its last item", (_what, text, parts, edit, want) => {
+    expect(apply(text, edit({ place: [0, text.length], parts } as never)!.changes)).toBe(want);
+  });
+
+  it.each([
+    ["where", "where isnotempty(name)"], ["project", "project call, name, flows"], ["extend", "extend name_copy = name"],
+    ["summarize", "summarize n = count() by name"], ["distinct", "distinct call, name, flows"],
+  ] as const)("a new %s names only the columns before it", (kind, want) => {
+    expect(starter(kind, [{ name: "call", element: "infra.Calls" }, { name: "name", type: "string" }, { name: "flows", type: "long", telemetry: true }])).toBe(want);
   });
 });

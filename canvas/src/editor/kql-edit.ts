@@ -156,3 +156,64 @@ export function cardsOf(a: Analysis): Map<string, string> {
   });
   return out;
 }
+
+// ---- new operators and absent parts (the contract's stage b, "absent parts") ----
+export interface Column { name: string; type?: string | null; element?: string | null; telemetry?: boolean | null }
+export const STARTER_KINDS = ["where", "project", "extend", "summarize", "distinct"] as const;
+export type StarterKind = (typeof STARTER_KINDS)[number];
+
+/** Text for a new operator after one with these columns, that reads without error: it names only columns that are there. */
+export function starter(kind: StarterKind, columns: Column[]): string | null {
+  const plain = columns.filter((c) => !c.element);
+  const first = (plain.find((c) => c.type === "string") ?? plain[0] ?? columns[0])?.name;
+  if (!first) return null;
+  const all = columns.map((c) => c.name).join(", ");
+  switch (kind) {
+    case "where": return `where isnotempty(${first})`;
+    case "project": return `project ${all}`;
+    case "extend": return `extend ${first}_copy = ${first}`;
+    case "summarize": return `summarize n = count() by ${first}`;
+    case "distinct": return `distinct ${all}`;
+  }
+}
+
+const insertAt = (at: number, insert: string, select: Place): Edit => ({ changes: [{ from: at, to: at, insert }], select });
+interface OperatorParts { place: Place; parts?: { aggregates?: { place: Place }[]; by?: { place: Place }[]; pattern?: Place[]; where?: Place | null } }
+
+/** ` by expr` after the last aggregate of a summarize without one (with one: the next item of its list, after the last). */
+export function addBy(op: OperatorParts, expr: string): Edit | null {
+  const by = op.parts?.by ?? [], aggs = op.parts?.aggregates ?? [];
+  if (by.length) { const at = by[by.length - 1].place[1]; return insertAt(at, `, ${expr}`, [at + 2, at + 2 + expr.length]); }
+  if (!aggs.length) return null;
+  const at = aggs[aggs.length - 1].place[1];
+  return insertAt(at, ` by ${expr}`, [at + 4, at + 4 + expr.length]);
+}
+
+/** ` where cond` after the last pattern of a graph-match without a condition. */
+export function addWhere(op: OperatorParts, cond: string): Edit | null {
+  const pats = op.parts?.pattern ?? [];
+  if (op.parts?.where || !pats.length) return null;
+  const at = pats[pats.length - 1][1];
+  return insertAt(at, ` where ${cond}`, [at + 7, at + 7 + cond.length]);
+}
+
+/** A setting of a step: ` with (name = value)` at the end of its head when it has none, else the next item after the last. */
+export function addSetting(step: { head?: Place | null; settings?: { place: Place }[] }, name: string, value: string): Edit | null {
+  const item = `${name} = ${value}`;
+  const s = step.settings ?? [];
+  if (s.length) { const at = s[s.length - 1].place[1]; return insertAt(at, `, ${item}`, [at + 2, at + 2 + item.length]); }
+  if (!step.head) return null;
+  const at = step.head[1];
+  return insertAt(at, ` with (${item})`, [at + 7, at + 7 + item.length]);
+}
+
+/** Where a new operator of a statement goes: at the end of a `let`; in a step, before its last operator, whose columns feed the step's sink. */
+export function newOperatorAt(statement: { kind?: string; operators?: unknown[] }): number {
+  const n = statement.operators?.length ?? 0;
+  return statement.kind !== "let" && n > 1 ? n - 1 : n;
+}
+/** The new operators that fit at `newOperatorAt`: any kind, except as a step's last operator, where only a `where` keeps the sink's columns. */
+export function startersFor(statement: { kind?: string; operators?: unknown[] }): StarterKind[] {
+  const n = statement.operators?.length ?? 0;
+  return statement.kind !== "let" && newOperatorAt(statement) === n ? ["where"] : [...STARTER_KINDS];
+}

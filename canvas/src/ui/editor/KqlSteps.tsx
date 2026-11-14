@@ -1,11 +1,11 @@
 // Steps on the KQL outline (note 11, stage b): each statement as a card, each operator of its pipeline as a row with its rows count, beside
 // the text. A notation is a pure view: a reading (the text and the engine's outline of it), the selected place and the busy mark in; a place
 // to select and text changes out. It knows nothing of the engine or of the text editor.
-import { Button, Input, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { ArrowDown16Regular, ArrowUp16Regular, Delete16Regular, Edit16Regular } from "@fluentui/react-icons";
+import { Button, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Text, Tooltip, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
+import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular, Edit16Regular } from "@fluentui/react-icons";
 import { useState } from "react";
 import type { Analysis, Place } from "../../editor/kql";
-import { listsOf, move, remove, set, type Change, type List } from "../../editor/kql-edit";
+import { add, addBy, addWhere, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
 
 export interface Reading { text: string; analysis: Analysis }
 interface Props {
@@ -59,7 +59,9 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
   const statements = lists.find((l) => l.id === "statements")!;
   const stmts = (analysis.statements as { kind: string; name?: string | null; type?: string | null; place: Place }[] | undefined) ?? [];
   const opsOf = (i: number) => lists.find((l) => l.id === `statements.${i}.operators`);
-  const kinds = (analysis.statements as { operators?: { kind: string }[] }[]) ?? [];
+  type Op = { kind: string; columns?: Column[]; parts?: { by?: unknown[]; where?: unknown; pattern?: unknown[] } };
+  const kinds = (analysis.statements as { kind: string; operators?: Op[] }[]) ?? [];
+  const firstColumn = (cols: Column[] = []) => (cols.find((c) => !c.element && c.type === "string") ?? cols.find((c) => !c.element) ?? cols[0])?.name;
   const field = (place: Place, what: string) => editing && editing.place === place
     ? <Input size="small" aria-label={`Text of ${what}`} autoFocus value={editing.value} onClick={(e) => e.stopPropagation()} onChange={(_, d) => setEditing({ place, value: d.value })}
         onKeyDown={(e) => { if (e.key === "Enter") { const ed = set([place], editing.value); onChanges(ed.changes, ed.select); setEditing(null); } else if (e.key === "Escape") setEditing(null); }}
@@ -76,6 +78,17 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
             <div className={s.head} onClick={() => onSelect(st.place)}>
               <button type="button" className={s.pick} onClick={(e) => { e.stopPropagation(); onSelect(st.place); }}><Text weight="semibold">{what}</Text></button><span className={s.grow} />
               {rows?.get(`statements.${i}`) && <span className={s.rows}>{rows.get(`statements.${i}`)} rows</span>}
+              {ops && (() => {
+                const k = newOperatorAt(kinds[i]);
+                const cols = kinds[i]?.operators?.[k - 1]?.columns ?? [];
+                const offer = startersFor(kinds[i]).flatMap((kind) => { const op = starter(kind, cols); return op ? [[kind, op] as const] : []; });
+                return offer.length > 0 && (
+                  <Menu>
+                    <MenuTrigger disableButtonEnhancement><Tooltip content={`Add an operator to ${what}`} relationship="label"><Button size="small" appearance="subtle" icon={<Add16Regular />} onClick={(e) => e.stopPropagation()} /></Tooltip></MenuTrigger>
+                    <MenuPopover><MenuList>{offer.map(([kind, op]) => <MenuItem key={kind} onClick={() => { const e = add(text, ops, k, op); onChanges(e.changes, e.select); }}>{op}</MenuItem>)}</MenuList></MenuPopover>
+                  </Menu>
+                );
+              })()}
               {index >= 0 && <Actions text={text} list={statements} i={index} what={what} onChanges={onChanges} />}
             </div>
             {ops && (
@@ -87,7 +100,10 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
                     <li key={j} className={mergeClasses(s.op, inside(p, selected) && s.opSel)} onClick={() => onSelect(p)}>
                       <span className={s.kind}>{kind}</span>
                       {field(p, `${kind} of ${what}`)}
-                      <span className={s.rows}>{rows?.get(id) ? `${rows.get(id)} rows` : ""}</span>
+                      <span className={s.rows}>{rows?.get(id) ? `${rows.get(id)} rows` : ""}
+                        {kind === "summarize" && !kinds[i]?.operators?.[j]?.parts?.by?.length && firstColumn(kinds[i]?.operators?.[j - 1]?.columns) && <Button size="small" appearance="subtle" onClick={(e) => { e.stopPropagation(); const ed = addBy((analysis.statements as never[])[i]["operators"][j], firstColumn(kinds[i]?.operators?.[j - 1]?.columns)!); if (ed) onChanges(ed.changes, ed.select); }}>Add by</Button>}
+                        {kind === "graph-match" && !kinds[i]?.operators?.[j]?.parts?.where && <Button size="small" appearance="subtle" onClick={(e) => { e.stopPropagation(); const ed = addWhere((analysis.statements as never[])[i]["operators"][j], "true"); if (ed) onChanges(ed.changes, ed.select); }}>Add where</Button>}
+                      </span>
                       <Actions text={text} list={ops} i={j} what={`${kind} of ${what}`} onChanges={onChanges} onEdit={() => setEditing({ place: p, value: text.slice(p[0], p[1]) })} />
                     </li>
                   );

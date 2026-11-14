@@ -58,4 +58,11 @@ describe("Steps on the outline", () => {
     fireEvent.keyDown(box, { key: "Enter" });
     expect(after()).toBe(f.text.replace(images, images.replace("project service, capability", "project capability, service")));
   });
+
+  it("adding an operator puts the starter at the end of a let, naming the columns before it", async () => {
+    const { after } = show();
+    fireEvent.click(screen.getByRole("button", { name: "Add an operator to let images" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "where isnotempty(service)" }));
+    expect(after()).toBe(f.text.replace(images, images.replace("project service, capability;", "project service, capability | where isnotempty(service);")));
+  });
 });
