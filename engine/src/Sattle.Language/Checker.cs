@@ -863,9 +863,23 @@ public sealed class ProjectionChecker(Graph defs)
             .Select(op => d.Target(op, "ofType")).OfType<string>();
     }
 
+    /// <summary>The equivalence policy that joins an identity domain with another, if one is declared: a `link` under it makes two ids of the domains one.</summary>
+    string? JoinedBy(string domain) => d.Graph.InRels(domain).Select(d.Graph.Rel).FirstOrDefault(r => r is not null && Ids.Name(r.Type) == "between")?.Source;
+
+    /// <summary>A view names its elements by the element (`identity p`), not by a key in a domain that an equivalence policy joins. Such an id changes when a link joins the key's id with another: the row that leaves the view then computes the new id and does not find the element it once made, which stays under the id that lost. An ingestion projection keeps what it wrote and moves it with the merge, so it may. (To allow it in a view, the view's sinks that compute ids would have to move what they made on a merge.)</summary>
+    void LinkedIdentityCheck(List<TOp> ops, string pid)
+    {
+        if (d.Text(pid, "purpose") == "ingestion") return;
+        foreach (var (op, ids) in ops.Select(o => (o, o switch { TEmitEntity e => new[] { e.EntityId }, TEmitRel r => [r.Source, r.Target], _ => [] })))
+            foreach (var id in ids.OfType<TId>())
+                if (JoinedBy(id.DomainId) is { } policy)
+                    Err("IdentityLinked", op.Id, $"identity domain {id.DomainName} is joined by the equivalence policy {d.Text(policy, "name") ?? Ids.Name(policy)}: an id computed with it in a view changes when a link joins it, and the view would keep the element under the id that lost. Name the element itself: match the entity and write `identity p`");
+    }
+
     void EmitterChecks(List<TOp> ops, List<TRule> rules, string pid)
     {
         TelemetryKeyCheck(ops);
+        LinkedIdentityCheck(ops, pid);
         var creates = ops.OfType<TEmitEntity>().Where(e => !e.Update).ToList();
         var relCreates = ops.OfType<TEmitRel>().Where(e => !e.Update).ToList();
         foreach (var e in ops.OfType<TEmitEntity>().Where(e => e.Update))
