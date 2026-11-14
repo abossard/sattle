@@ -3,3 +3,10 @@
 .graph-view .gl, .graph-view .ov { position: absolute; inset: 0; width: 100%; height: 100%; }
 .graph-view .ov { pointer-events: none; }
 .graph-view:focus-visible { outline: 2px solid var(--colorStrokeFocus2); outline-offset: -2px; }
+
+/* Browser surfaces follow the sheet: tabular figures, drafting-blue selection and caret, thin ink scrollbars. */
+.fui-FluentProvider { font-variant-numeric: tabular-nums; caret-color: var(--colorBrandForeground1); accent-color: var(--colorBrandBackground); scrollbar-color: var(--colorNeutralStroke1) transparent; scrollbar-width: thin; }
+.fui-FluentProvider ::selection { background: var(--colorBrandBackground2); color: var(--colorNeutralForeground1); }
+.fui-FluentProvider a { text-underline-offset: 0.2em; }
+/* A badge is a label, never a bar: a flex column stretches it to the column width otherwise. */
+.fui-FluentProvider .fui-Badge { max-width: max-content; }

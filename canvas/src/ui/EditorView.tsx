@@ -3,7 +3,7 @@ import {
   Badge, Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Combobox, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, Option, Select,
   Spinner, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Textarea, Toolbar, ToolbarButton, ToolbarDivider, Tree, TreeItem, TreeItemLayout, makeStyles, tokens,
 } from "@fluentui/react-components";
-import { Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular, Comment20Regular, Copy20Regular, ClipboardPaste20Regular, Delete20Regular, Eye20Regular, Keyboard20Regular, Save20Regular, AlignLeft20Regular, FolderArrowRight20Regular } from "@fluentui/react-icons";
+import { Checkmark12Regular, ZoomIn20Regular, ZoomOut20Regular, Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular, Comment20Regular, Copy20Regular, ClipboardPaste20Regular, Delete20Regular, Eye20Regular, Keyboard20Regular, Save20Regular, AlignLeft20Regular, FolderArrowRight20Regular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
@@ -12,7 +12,7 @@ import type { Entity } from "../core/model";
 import { moduleOfId } from "../core/catalog";
 import { canWire, statementNames } from "../editor/commands";
 import { stackOf } from "../editor/stack";
-import { align, autoLayout, nodesInRect, NODE_W, type Pos } from "../editor/layout";
+import { align, autoLayout, nodesInRect, NODE_W, partNumbers, partsTouched, zoneOf, type Pos } from "../editor/layout";
 import { ROLE_LABEL, ROLE_ORDER } from "../editor/palette";
 import type { IdentityEffect, Release } from "../editor/service";
 import { rendererTheme } from "../state/effects";
@@ -21,7 +21,7 @@ import { dispatch, useStore } from "../state/store";
 import type { Command } from "../state/types";
 import { webgl2Available } from "./CanvasHost";
 import { DirectionBadge } from "./common";
-import { EditorCanvas, portIdOf, type Group, type Note } from "./editor/EditorCanvas";
+import { EditorCanvas, TitleBlock, portIdOf, type Group, type Note } from "./editor/EditorCanvas";
 import { incompleteOperators } from "../editor/incomplete";
 import { Definitions } from "./editor/Definitions";
 import { NewProjectionDialog } from "./editor/NewProjection";
@@ -29,16 +29,25 @@ import { Properties } from "./editor/Properties";
 import { Notations } from "../editors/Notations";
 
 const useStyles = makeStyles({
-  root: { display: "grid", gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr) minmax(260px, 340px)", minHeight: 0, height: "100%", "@media (max-width: 1000px)": { gridTemplateColumns: "1fr", height: "auto" } },
+  root: { display: "grid", gridTemplateColumns: "minmax(200px, 260px) minmax(0, 1fr) minmax(260px, 340px)", minHeight: 0, height: "100%", "@media (max-width: 1000px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(70dvh, auto) auto auto", height: "100%", overflowY: "auto", "& > section": { order: -1 } } },
   side: { overflow: "auto", minHeight: 0, borderRight: `1px solid ${tokens.colorNeutralStroke2}` },
   right: { overflow: "auto", minHeight: 0, borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
-  center: { display: "grid", gridTemplateRows: "auto auto auto minmax(0, 1fr) minmax(160px, 36%)", minHeight: 0, minWidth: 0, overflow: "hidden" },
-  tools: { overflowX: "auto", minWidth: 0 },
-  bar: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` },
+  center: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "auto auto auto minmax(0, 1fr) minmax(140px, 28%)", minHeight: 0, minWidth: 0, overflow: "hidden" },
+  tools: { display: "flex", alignItems: "center", flexWrap: "wrap", minWidth: 0, whiteSpace: "nowrap", borderBottom: `1px solid ${tokens.colorNeutralStroke2}`, "& .fui-Toolbar > *": { flexShrink: 0 } },
+  // the last 32px fade out, so a cut label reads as "scroll for more"
+  scroll: { overflowX: "auto", minWidth: 0, flex: "1 1 240px", maskImage: "linear-gradient(to right, #000 calc(100% - 32px), transparent)" },
+  fixed: { flex: "0 0 auto", borderLeft: `1px solid ${tokens.colorNeutralStroke2}`, "@media (max-width: 1000px)": { flexBasis: "100%", borderLeft: "none", borderTop: `1px solid ${tokens.colorNeutralStroke2}`, justifyContent: "flex-end" } },
+  bar: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`, "@media (min-width: 1001px)": { flexWrap: "nowrap", "& > .fui-Badge, & > .fui-TabList": { flexShrink: 0 } } },
   pad: { padding: tokens.spacingHorizontalM, display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS },
   bottom: { minHeight: 0, overflow: "auto", borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
   grow: { flexGrow: 1 },
   mono: { fontFamily: tokens.fontFamilyMonospace, width: "100%" },
+  part: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, padding: `${tokens.spacingVerticalS} ${tokens.spacingHorizontalM}`, borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  partRef: { display: "inline-grid", placeItems: "center", minWidth: "20px", height: "20px", borderRadius: "50%", border: `1px solid ${tokens.colorNeutralForeground1}`, fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase100 },
+  zoom: { display: "inline-flex", alignItems: "center", columnGap: tokens.spacingHorizontalXS, flexShrink: 0 },
+  square: { minWidth: "28px", paddingInline: 0 },
+  pick: { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", alignItems: "center", columnGap: tokens.spacingHorizontalS, width: "min(360px, 38%)", minWidth: "160px", flex: "0 1 auto", "& .fui-Select": { minWidth: 0 }, "@media (max-width: 1000px)": { width: "100%" } },
+  zoneText: { fontFamily: tokens.fontFamilyMonospace, color: tokens.colorNeutralForeground3 },
 });
 
 const store = (key: string) => { try { return JSON.parse(localStorage.getItem(key) ?? "null"); } catch { return null; } };
@@ -128,7 +137,7 @@ function Problems() {
       <ul>{incomplete.map((i) => <li key={i.op}><Button appearance="transparent" size="small" onClick={() => dispatch({ type: "editor/select", ids: [i.op] })}>{i.kind} {i.name}</Button>: {i.missing.join(", ")}</li>)}</ul>
     </MessageBarBody></MessageBar>
   );
-  if (!ed.diagnostics.length && !incomplete.length) return <div className={s.pad}><Badge color="success" appearance="outline">✓ no problems</Badge><Text>The engine accepts the draft as it is.</Text></div>;
+  if (!ed.diagnostics.length && !incomplete.length) return <div className={s.pad}><Badge color="informative" appearance="outline" shape="square" icon={<Checkmark12Regular />}>no problems</Badge><Text>The engine accepts the draft as it is.</Text></div>;
   return (
     <>
     {lead}
@@ -446,14 +455,14 @@ export function EditorView() {
       </aside>
       <section className={s.center} aria-label="Projection editor">
         <div className={s.bar}>
-          <Field label="Projection" orientation="horizontal"><Select value={ed.projection} onChange={(_, d) => { const p = projections.find((x) => x.id === d.value)!; dispatch({ type: "editor/projection", module: p.module, projection: p.id }); dispatch({ type: "editor/releases", module: p.module }); }}>
+          <Field label="Projection" orientation="horizontal" className={s.pick}><Select value={ed.projection} onChange={(_, d) => { const p = projections.find((x) => x.id === d.value)!; dispatch({ type: "editor/projection", module: p.module, projection: p.id }); dispatch({ type: "editor/releases", module: p.module }); }}>
             {projections.map((p) => <option key={p.id} value={p.id}>{p.module}: {p.name}</option>)}</Select></Field>
           {(() => { const p = projections.find((x) => x.id === ed.projection); return p ? <DirectionBadge direction={p.direction} /> : null; })()}
-          <Badge appearance="outline">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
+          <Badge appearance="outline" shape="square" color="informative">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
           {ed.busy && <Spinner size="tiny" label={ed.busy} labelPosition="after" />}
           <span className={s.grow} />
           <TabList size="small" selectedValue={shown} onTabSelect={(_, d) => setShown(d.value as "canvas" | "notations")} aria-label="How the projection is shown"><Tab value="canvas">Canvas</Tab><Tab value="notations">Notations</Tab></TabList>
-          <Button size="small" onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} aria-label="Zoom out">−</Button><Text size={200}>{Math.round(zoom * 100)}%</Text><Button size="small" onClick={() => setZoom(Math.min(2, zoom + 0.1))} aria-label="Zoom in">+</Button>
+          <span className={s.zoom}><Button size="small" appearance="subtle" className={s.square} icon={<ZoomOut20Regular />} onClick={() => setZoom(Math.max(0.5, zoom - 0.1))} aria-label="Zoom out" /><Text size={200} className={s.zoneText}>{Math.round(zoom * 100)}%</Text><Button size="small" appearance="subtle" className={s.square} icon={<ZoomIn20Regular />} onClick={() => setZoom(Math.min(2, zoom + 0.1))} aria-label="Zoom in" /></span>
         </div>
         <div className={s.bar}>
           <Breadcrumb aria-label="Stacked projections" size="small">
@@ -466,7 +475,7 @@ export function EditorView() {
             {stack.down.map((d, i) => <BreadcrumbItem key={d}><BreadcrumbButton onClick={() => openProjection(d)}>{i === 0 ? "feeds " : ""}{c.name(d)}</BreadcrumbButton></BreadcrumbItem>)}
           </Breadcrumb>
         </div>
-        <div className={s.tools}><Toolbar size="small" aria-label="Editor commands">
+        <div className={s.tools}><div className={s.scroll}><Toolbar size="small" aria-label="Editor commands">
           <Tooltip2 label="Undo (Ctrl+Z)"><ToolbarButton aria-label={`Undo${ed.undo[0] ? ` ${ed.undo[0]}` : ""}`} icon={<ArrowUndo20Regular />} disabled={!ed.undo.length} onClick={() => dispatch({ type: "editor/undo" })}>Undo</ToolbarButton></Tooltip2>
           <ToolbarButton aria-label={`Redo${ed.redo[0] ? ` ${ed.redo[0]}` : ""}`} icon={<ArrowRedo20Regular />} disabled={!ed.redo.length} onClick={() => dispatch({ type: "editor/redo" })}>Redo</ToolbarButton>
           <ToolbarDivider />
@@ -482,16 +491,20 @@ export function EditorView() {
           <ToolbarDivider />
           <ToolbarButton icon={<FolderArrowRight20Regular />} onClick={() => setDialog("refactor")}>Refactor</ToolbarButton>
           <ToolbarButton icon={<Eye20Regular />} onClick={() => { setBottom("versions"); dispatch({ type: "editor/preview" }); }}>Preview</ToolbarButton>
-          <ToolbarButton icon={<Save20Regular />} appearance="primary" onClick={() => setDialog("commit")}>Commit…</ToolbarButton>
-          <ToolbarButton onClick={() => dispatch({ type: "editor/discard" })}>Discard draft</ToolbarButton>
           <ToolbarButton aria-label="Keyboard shortcuts" icon={<Keyboard20Regular />} onClick={() => dispatch({ type: "ui/dialog", dialog: "shortcuts" })} />
         </Toolbar></div>
+          <Toolbar size="small" aria-label="Draft" className={s.fixed}>
+            <ToolbarButton onClick={() => dispatch({ type: "editor/discard" })}>Discard draft</ToolbarButton>
+            <ToolbarButton icon={<Save20Regular />} appearance="primary" onClick={() => setDialog("commit")}>Commit…</ToolbarButton>
+          </Toolbar>
+        </div>
         <div style={{ position: "relative", minHeight: 0 }}>
           {shown === "notations" ? <Notations /> : <EditorCanvas dg={dg} positions={positions} selected={ed.selected} flagged={flagged} notes={notes} groups={groups} zoom={zoom}
             keyMarquee={marquee} wiring={ed.wiring} wireTarget={ed.wiring ? targets[wireIdx] ?? null : null} canWire={(a, b) => canWire(g, a, b).ok}
             onSelect={(ids) => dispatch({ type: "editor/select", ids })} onMove={(ids, dx, dy) => move(ids, dx, dy)} onWire={(from, to) => run({ t: "wire", from, to })}
             onNoteMove={(id, x, y) => persist(manual, notes.map((n) => (n.id === id ? { ...n, x, y } : n)), groups)} onNoteEdit={(id, text) => persist(manual, notes.map((n) => (n.id === id ? { ...n, text } : n)), groups)} />}
-          {ed.notice && <div style={{ position: "absolute", left: 8, right: 8, bottom: 8 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
+          {shown === "canvas" && <TitleBlock changes={session.undoStack.slice(-3).reverse().map((st) => ({ label: st.label, parts: partsTouched(st.edits, dg, positions, (id) => c.nearest(id, (x) => nodeById.has(x))) }))} total={session.undoStack.length} base={ed.base} rows={[["Module", ed.module], ["Projection", c.name(ed.projection)], ["Reads", dg.nodes.filter((n) => n.kind === "binding").map((n) => n.title).join(", ") || "none"], ["Writes", stack.outputs.map((o) => c.name(o)).join(", ") || "none"], ["Draft", `${ed.draft} · rev ${ed.revision} · base ${ed.base}`], ["Sheet", `${dg.nodes.length} parts · 1 of 1`]]} />}
+          {ed.notice && <div style={{ position: "absolute", left: 36, right: 36, top: 36 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}
         </div>
         <div className={s.bottom}>
@@ -501,7 +514,9 @@ export function EditorView() {
           {bottom === "problems" ? <Problems /> : bottom === "text" ? <TextPanel /> : bottom === "definitions" ? <Definitions session={session} module={ed.module} /> : <Projects />}
         </div>
       </section>
-      <aside className={s.right} aria-label="Properties"><Properties session={session} selected={ed.selected} projection={ed.projection} diagnostics={ed.diagnostics} /></aside>
+      <aside className={s.right} aria-label="Properties">
+        {ed.selected.length === 1 && nodeById.has(ed.selected[0]) && <div className={s.part}><span className={s.partRef}>{partNumbers(dg, positions).get(ed.selected[0])}</span><Text weight="semibold">{nodeById.get(ed.selected[0])!.opKind ?? nodeById.get(ed.selected[0])!.kind} {nodeById.get(ed.selected[0])!.title}</Text><span className={s.grow} /><Text size={200} className={s.zoneText}>zone {zoneOf(positions.get(ed.selected[0]) ?? { x: 0, y: 0 })}</Text></div>}
+        <Properties session={session} selected={ed.selected} projection={ed.projection} diagnostics={ed.diagnostics} /></aside>
       <QuickAdd open={dialog === "add"} onClose={() => setDialog(null)} />
       <CommitDialog open={dialog === "commit"} onClose={() => setDialog(null)} />
       <RefactorDialog open={dialog === "refactor"} onClose={() => setDialog(null)} />

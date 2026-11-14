@@ -26,12 +26,12 @@ export function shade(hex: string, factor: number): string {
 }
 
 export const darkTheme: Theme = {
-  name: "dark", bg: "#11181f", bgRgb: rgb01("#11181f"), panel: "#18222c", text: "#e8eef4", muted: "#9aa9b8", line: "#2a3a48",
+  name: "dark", bg: "#121316", bgRgb: rgb01("#121316"), panel: "#1b1d20", text: "#e8eef4", muted: "#9aa9b8", line: "#2a3a48",
   selected: [1, 1, 1], added: rgb01("#83ead1"), removed: rgb01("#ff9b9e"), changed: rgb01("#ffcf7c"), identity: rgb01("#f3a8d4"), source: rgb01("#8ec8ff"),
   edge: "#7f93a6", hue: HUES_DARK,
 };
 export const lightTheme: Theme = {
-  name: "light", bg: "#f4f6f8", bgRgb: rgb01("#f4f6f8"), panel: "#ffffff", text: "#16212b", muted: "#52626f", line: "#cfd8e0",
+  name: "light", bg: "#eceef1", bgRgb: rgb01("#eceef1"), panel: "#ffffff", text: "#16212b", muted: "#52626f", line: "#cfd8e0",
   selected: rgb01("#0b1a26"), added: rgb01("#0d8a6c"), removed: rgb01("#c43d45"), changed: rgb01("#b87a00"), identity: rgb01("#b83d8a"), source: rgb01("#1a63a6"),
   edge: "#7c8c9a", hue: Object.fromEntries(Object.entries(HUES_DARK).map(([k, v]) => [k, shade(v, 0.62)])),
 };

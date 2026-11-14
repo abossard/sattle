@@ -24,7 +24,7 @@ export const TypeGlyph = ({ shape, color, size = 14 }: { shape: string; color: s
 
 export const DirectionBadge = ({ direction }: { direction: string }) => {
   const d = isDirectionClass(direction) ? DIRECTION[direction] : direction === "mixed" ? { glyph: "⇅", label: "mixed", help: "Some rules edit backward, others are forward only." } : { glyph: "?", label: direction, help: "unknown direction class" };
-  return <Tooltip content={d.help} relationship="description"><Badge appearance="outline" color={direction === "forward" || direction === "readonly" ? "informative" : "brand"}>{d.glyph} {d.label}</Badge></Tooltip>;
+  return <Tooltip content={d.help} relationship="description"><Badge appearance="outline" shape="square" color="informative">{d.glyph} {d.label}</Badge></Tooltip>;
 };
 
 export const roleColor = (role: string) => (role === "master" || role === "input" ? "success" : role === "catalog" ? "important" : "informative") as "success" | "important" | "informative";

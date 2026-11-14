@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Catalog } from "../src/core/catalog";
 import { Graph, invertPatch } from "../src/core/graph";
 import type { Edit, Entity, Rel } from "../src/core/model";
-import { align, autoLayout } from "../src/editor/layout";
+import { align, autoLayout, partsTouched } from "../src/editor/layout";
 import { stackOf } from "../src/editor/stack";
 import { addNamedEdits, addRuleEdits, canWire, paramEdits, pasteEdits, setExprEdits, statementNames, unwireEdits, wireEdits } from "../src/editor/commands";
 import { canonicalFunctions, exprEdits, parseExpr } from "../src/editor/expr";
@@ -167,6 +167,20 @@ describe("layout", () => {
     const a = align([`${P}/op:m`, `${P}/op:f`], new Map([[`${P}/op:m`, { x: 10, y: 5 }], [`${P}/op:f`, { x: 300, y: 80 }], [`${P}/op:e`, { x: 9, y: 9 }]]), "left");
     expect(a.get(`${P}/op:f`)).toEqual({ x: 10, y: 80 });
     expect(a.get(`${P}/op:e`)).toEqual({ x: 9, y: 9 });
+  });
+
+  // parts number in reading order: master 1 (column 1), m 2 (column 2), f 3 and e 4 (column 3, f above e)
+  const c = new Catalog(catalogGraph());
+  const dg = c.projectionGraph(P);
+  const pos = new Map([[`${P}/port:master`, { x: 20, y: 20 }], [`${P}/op:m`, { x: 330, y: 20 }], [`${P}/op:f`, { x: 640, y: 20 }], [`${P}/op:e`, { x: 640, y: 200 }]]);
+  const ids = new Set(dg.nodes.map((n) => n.id));
+  it.each<[string, Edit[], string]>([
+    ["an operator is its own part", [ent(`${P}/op:f`, "Filter", { name: text("g") })], "3 · A3"],
+    ["a port goes to the operator that holds it", [port(`${P}/op:e`, "in", "in", "rows")], "4 · B3"],
+    ["a wire touches the parts at both ends, in part order", wireEdits(`${P}/op:f/port:out`, `${P}/op:m/port:graph`), "2 · A2, 3 · A3"],
+    ["an element of no part on the sheet is a dash", [ent("d:other/projection:q", "Projection", { name: text("q") })], "–"],
+  ])("a change to %s reads as its part and zone", (_what, edits, want) => {
+    expect(partsTouched(edits, dg, pos, (id) => c.nearest(id, (x) => ids.has(x)))).toBe(want);
   });
 });
 

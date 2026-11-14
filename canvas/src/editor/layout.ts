@@ -1,11 +1,15 @@
 // Node positions of a projection graph: layered left to right by data flow, plus what the author moved.
 import type { DefGraph, DefNode } from "../core/def-graph";
+import type { Edit } from "../core/model";
 
 export interface Pos { x: number; y: number }
 export const NODE_W = 220;
 export const rowH = (n: DefNode) => 34 + Math.max(0, Math.min(n.lines.length, 4)) * 15 + Math.max(n.inputs.length, n.outputs.length) * 0;
 export const GAP_X = 90;
 export const GAP_Y = 26;
+/** Zones of the drawing sheet: one column per layout column, numbered from 1; rows lettered from A. */
+export const ZONE = { w: NODE_W + GAP_X, h: 160 };
+export const zoneOf = (p: Pos) => `${String.fromCharCode(65 + Math.min(25, Math.max(0, Math.floor(p.y / ZONE.h))))}${Math.max(0, Math.floor(p.x / ZONE.w)) + 1}`;
 
 /** Columns by longest path from the sources; rules and the output ontology on the right. Stable for the same graph. */
 export function autoLayout(dg: DefGraph): Map<string, Pos> {
@@ -62,4 +66,23 @@ export function align(sel: string[], pos: Map<string, Pos>, how: "left" | "top" 
 export function nodesInRect(dg: DefGraph, pos: Map<string, Pos>, a: Pos, b: Pos): string[] {
   const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
   return dg.nodes.filter((n) => { const at = pos.get(n.id); return !!at && at.x < x1 && at.x + NODE_W > x0 && at.y < y1 && at.y + rowH(n) > y0; }).map((n) => n.id);
+}
+
+/** Part numbers in reading order of the sheet: zone column by zone column, top to bottom inside a column. */
+export function partNumbers(dg: DefGraph, positions: Map<string, Pos>): Map<string, number> {
+  const at = (id: string) => positions.get(id) ?? { x: 0, y: 0 };
+  const col = (id: string) => Math.floor(at(id).x / ZONE.w);
+  const order = [...dg.nodes].sort((a, b) => col(a.id) - col(b.id) || at(a.id).y - at(b.id).y || at(a.id).x - at(b.id).x);
+  return new Map(order.map((n, i) => [n.id, i + 1]));
+}
+
+/**
+ * The parts an undo step touched, as "number · zone", in part order: every element an edit names (a relationship also its two ends) goes to
+ * the part that holds it (`partOf`, null when none on this sheet does). "–" when the step touched no part of the sheet.
+ */
+export function partsTouched(edits: Edit[], dg: DefGraph, positions: Map<string, Pos>, partOf: (id: string) => string | null): string {
+  const ids = edits.flatMap((e) => (e.kind === "relationship" ? [e.id, ...[e.before, e.after].flatMap((r) => (r ? [r.source, r.target] : []))] : "id" in e ? [e.id] : []));
+  const nums = partNumbers(dg, positions);
+  const parts = [...new Set(ids.map(partOf).filter((p): p is string => !!p && nums.has(p)))].sort((a, b) => nums.get(a)! - nums.get(b)!);
+  return parts.length ? parts.map((p) => `${nums.get(p)} · ${zoneOf(positions.get(p) ?? { x: 0, y: 0 })}`).join(", ") : "–";
 }

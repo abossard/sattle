@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-14T20:20:09.251161Z",
+  "title": "Design System: Sattle canvas",
+  "seededFrom": {
+    "world": "a93cd76e85b1e30e"
+  },
+  "extensions": {
+    "colorMeta": {
+      "drafting-blue": {
+        "role": "primary",
+        "displayName": "Drafting Blue",
+        "canonical": "#1d5fa6",
+        "tonalRamp": [
+          "#060d19",
+          "#09192d",
+          "#0d2441",
+          "#103055",
+          "#133c6a",
+          "#16487e",
+          "#1a5392",
+          "#1d5fa6"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Paper",
+        "canonical": "#ffffff",
+        "tonalRamp": [
+          "#202124",
+          "#46484d",
+          "#5f6268",
+          "#868990",
+          "#c9cbd0",
+          "#e3e5e8",
+          "#f6f7f8",
+          "#ffffff"
+        ]
+      },
+      "night": {
+        "role": "neutral",
+        "displayName": "Night",
+        "canonical": "#1b1d20",
+        "tonalRamp": [
+          "#0e0f11",
+          "#121316",
+          "#17191c",
+          "#1b1d20",
+          "#2c2e32",
+          "#3a3d42",
+          "#80838a",
+          "#e6e7e9"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "body": {
+        "displayName": "Body",
+        "purpose": "Panels, forms, tables."
+      },
+      "title": {
+        "displayName": "Card title",
+        "purpose": "Part titles on the sheet."
+      },
+      "label-mono": {
+        "displayName": "Reference",
+        "purpose": "Zones, ports, ids, change steps."
+      },
+      "caption-caps": {
+        "displayName": "Cell caption",
+        "purpose": "Title block cell captions."
+      }
+    },
+    "shadows": [
+      {
+        "name": "shadow2",
+        "value": "0 1px 2px rgba(0,0,0,.10)",
+        "purpose": "Smallest lift."
+      },
+      {
+        "name": "shadow4",
+        "value": "0 1px 3px rgba(0,0,0,.12)",
+        "purpose": "Cards in panels."
+      },
+      {
+        "name": "shadow8",
+        "value": "0 2px 6px rgba(0,0,0,.14)",
+        "purpose": "Menus."
+      },
+      {
+        "name": "shadow16",
+        "value": "0 4px 12px rgba(0,0,0,.16)",
+        "purpose": "Dialogs and popovers."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "narrow",
+        "value": "600px"
+      },
+      {
+        "name": "tabs-fade",
+        "value": "700px"
+      },
+      {
+        "name": "editor-stack",
+        "value": "1000px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Part card",
+      "kind": "card",
+      "refersTo": "part-card",
+      "description": "Square card with ink outline and mono rows.",
+      "html": "<div class=\"ds-card\"><b>Join</b><span>left: orders</span></div>",
+      "css": ".ds-card{width:220px;padding:8px 10px;background:#fff;color:#202124;border:1.5px solid #202124;font:13px 'Segoe UI',system-ui,sans-serif}.ds-card b{display:block;font-weight:600}.ds-card span{font:11px ui-monospace,Menlo,monospace;color:#46484d}.ds-card:hover{border-color:#1d5fa6}"
+    },
+    {
+      "name": "Part balloon",
+      "kind": "custom",
+      "refersTo": "part-balloon",
+      "description": "Numbered circle on a card corner.",
+      "html": "<span class=\"ds-balloon\">3</span>",
+      "css": ".ds-balloon{display:inline-grid;place-items:center;min-width:20px;height:20px;border-radius:50%;border:1px solid #202124;background:#fff;color:#202124;font:10px ui-monospace,Menlo,monospace}"
+    },
+    {
+      "name": "Title block",
+      "kind": "custom",
+      "refersTo": "title-block",
+      "description": "Ruled table of the sheet facts.",
+      "html": "<table class=\"ds-tb\"><tr><td><small>Module</small><code>health</code></td><td><small>Projection</small><code>rollup</code></td></tr></table>",
+      "css": ".ds-tb{width:320px;border-collapse:collapse;background:#fff;border:1.5px solid #202124;font-size:12px}.ds-tb td{border:.75px solid #202124;padding:1px 8px}.ds-tb small{display:block;font-size:9px;line-height:11px;letter-spacing:.06em;text-transform:uppercase;color:#5f6268}.ds-tb code{font:10px ui-monospace,Menlo,monospace}"
+    },
+    {
+      "name": "Direction badge",
+      "kind": "chip",
+      "refersTo": "badge-direction",
+      "description": "Square outline badge with glyph and label.",
+      "html": "<span class=\"ds-badge\">⇅ mixed</span>",
+      "css": ".ds-badge{display:inline-block;padding:0 6px;border:1px solid #868990;border-radius:1px;color:#46484d;font-size:12px;line-height:20px}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Drawing Sheet",
+    "overview": "Paper, ink, a ruled frame and one drafting blue, on Fluent UI v9. A projection is a sheet with numbered parts, lettered zones and a title block.",
+    "keyCharacteristics": [
+      "Paper and ink neutrals, near square corners, hairline rules.",
+      "One hue: drafting blue, for selection, focus, caret and live wires.",
+      "Amber and red stay with diagnostics and errors.",
+      "Tabular figures; monospace for references.",
+      "Frame, ticks, balloons, title block."
+    ],
+    "rules": [
+      {
+        "name": "The One Blue Rule",
+        "body": "Drafting blue means selected, focused or live. Any other use of blue is wrong.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Does the Work Rule",
+        "body": "Structure is drawn in ink and rule weights, not in tinted fills. Amber and red belong to diagnostics only.",
+        "section": "colors"
+      },
+      {
+        "name": "The Reference Is Mono Rule",
+        "body": "Anything that names a place or an id is set in the monospace.",
+        "section": "typography"
+      },
+      {
+        "name": "The Rule Weight Rule",
+        "body": "On the sheet, importance is stroke width and dash pattern.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Use Fluent components and theme tokens; change the look in theme.ts.",
+      "Draw the sheet in ink, with stroke weight and dash pattern carrying meaning.",
+      "Use drafting blue only for selection, focus, caret and live wires.",
+      "Keep corners at 4px or less.",
+      "Set zone labels, part numbers, ports and ids in the monospace."
+    ],
+    "donts": [
+      "Put amber or red on anything that is not a diagnostic or an error.",
+      "Use soft large shadows, gradient fills or rounded cards.",
+      "Let a badge stretch to the width of its column.",
+      "Introduce a second accent hue."
+    ]
+  }
+}

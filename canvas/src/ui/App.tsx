@@ -1,7 +1,7 @@
 // Application shell. Everything on screen is a Fluent component; the WebGL canvas sits behind CanvasHost.
 import {
   Button, FluentProvider, Menu, MenuItemRadio, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarActions, MessageBarBody, MessageBarTitle, Select, Spinner, Tab, TabList, Text,
-  Toolbar, ToolbarButton, makeStyles, teamsHighContrastTheme, tokens, webDarkTheme, webLightTheme,
+  Toolbar, ToolbarButton, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Keyboard20Regular, WeatherMoon20Regular } from "@fluentui/react-icons";
 import { useEffect } from "react";
@@ -13,19 +13,26 @@ import { DataView, SpaceView } from "./DataView";
 import { Dialogs } from "./Dialogs";
 import { EditorView } from "./EditorView";
 import { OntologyView } from "./OntologyView";
+import { THEMES, colorScheme } from "./theme";
 
-const themes = { light: webLightTheme, dark: webDarkTheme, contrast: teamsHighContrastTheme };
 const VIEWS: { id: View; label: string }[] = [{ id: "data", label: "Data graph" }, { id: "space", label: "Graph space" }, { id: "editor", label: "Projection editor" }, { id: "ontology", label: "Ontology" }];
 
 const useStyles = makeStyles({
-  root: { display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr) auto", height: "100vh", backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground1 },
-  head: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalM, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`, borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  root: { display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr) auto", height: "100dvh", backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground1 },
+  head: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalL, flexWrap: "wrap", minHeight: "40px", padding: `0 ${tokens.spacingHorizontalM}`, backgroundColor: tokens.colorNeutralBackground1, borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  brand: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, margin: 0, fontSize: tokens.fontSizeBase300, fontWeight: tokens.fontWeightSemibold, letterSpacing: "0.01em" },
   grow: { flexGrow: 1 },
+  views: { minWidth: 0, maxWidth: "100%", overflowX: "auto", scrollbarWidth: "thin", "@media (max-width: 700px)": { maskImage: "linear-gradient(to right, #000 calc(100% - 32px), transparent)" } },
   main: { minHeight: 0, overflow: "hidden", "&:focus": { outline: "none" } },
-  status: { display: "flex", columnGap: tokens.spacingHorizontalL, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`, borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
+  status: { display: "flex", columnGap: tokens.spacingHorizontalL, flexWrap: "wrap", padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`, borderTop: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground2, "& b": { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightRegular, color: tokens.colorNeutralForeground1 } },
   skip: { position: "absolute", left: "-999px", ":focus": { left: tokens.spacingHorizontalM, top: tokens.spacingVerticalM, zIndex: 100, backgroundColor: tokens.colorNeutralBackground1, padding: tokens.spacingHorizontalM } },
   hidden: { position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" },
 });
+
+/** The product mark: a sheet with its zone ticks. */
+const Mark = () => (
+  <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M1.5 1.5h13v13h-13z M1.5 5.5h2 M1.5 10.5h2 M5.5 1.5v2 M10.5 1.5v2 M9 10h5.5v4.5" fill="none" stroke="currentColor" strokeWidth="1.2" /></svg>
+);
 
 function Status() {
   const s = useStyles();
@@ -74,6 +81,8 @@ export function App() {
   const status = useStore((x) => x.load.status);
   const rejected = useStore((x) => x.rejectedTotal);
   const announcement = useStore((x) => x.announcement);
+  // the root element carries the scheme, so the viewport's own scrollbars and canvas follow the theme too
+  useEffect(() => { document.documentElement.style.colorScheme = colorScheme(theme); }, [theme]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
@@ -85,12 +94,12 @@ export function App() {
     return () => document.removeEventListener("keydown", onKey);
   }, [view]);
   return (
-    <FluentProvider theme={themes[theme]}>
+    <FluentProvider theme={THEMES[theme]}>
       <div className={s.root}>
       <a className={s.skip} href="#main">Skip to the main view</a>
       <header className={s.head}>
-        <Text as="h1" size={500} weight="semibold">◈ Sattle canvas</Text>
-        <TabList selectedValue={view} onTabSelect={(_, d) => dispatch({ type: "ui/view", view: d.value as View })} aria-label="Views">{VIEWS.map((v) => <Tab key={v.id} value={v.id}>{v.label}</Tab>)}</TabList>
+        <h1 className={s.brand}><Mark />Sattle canvas</h1>
+        <TabList className={s.views} selectedValue={view} onTabSelect={(_, d) => dispatch({ type: "ui/view", view: d.value as View })} aria-label="Views">{VIEWS.map((v) => <Tab key={v.id} value={v.id}>{v.label}</Tab>)}</TabList>
         <span className={s.grow} />
         <Select aria-label="Data source" value={source} onChange={(_, d) => dispatch({ type: "source/opening", id: d.value })}>{SOURCES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
         <Toolbar aria-label="Application">
