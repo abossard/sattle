@@ -1,0 +1,62 @@
+{
+  "graph": "deploymentHealth",
+  "ontology": "acme.deployhealth",
+  "description": "The Deployments of the workload and the traffic between them, each with a state: a Deployment is Healthy while enough of its pods are ready.",
+  "history": 4,
+  "inputs": [{ "name": "master", "ontology": "acme.ops" }],
+  "parameters": [{ "name": "minReady", "kind": "Integer", "default": 0 }],
+  "verbs": [
+    { "id": "deployments", "verb": "graph-match", "graph": "master",
+      "pattern": { "nodes": [{ "var": "d", "label": "Deployment" }] } },
+    { "id": "readyPods", "verb": "graph-match", "graph": "master",
+      "pattern": {
+        "nodes": [{ "var": "p", "label": "Pod", "props": { "ready": { "lit": true } } }, { "var": "d", "label": "Deployment" }],
+        "edges": [{ "var": "c", "label": "ControlledBy", "from": "p", "to": "d" }] } },
+    { "id": "zero", "verb": "project", "columns": { "d": { "ref": "d" }, "n": { "lit": 0 } } },
+    { "id": "one", "verb": "project", "columns": { "d": { "ref": "d" }, "n": { "lit": 1 } } },
+    { "id": "rows", "verb": "union" },
+    { "id": "count", "verb": "summarize", "aggregates": { "readyPods": { "fn": "sum", "args": [{ "ref": "n" }] } }, "by": { "d": { "ref": "d" } } },
+    { "id": "status", "verb": "extend",
+      "columns": { "state": { "fn": "iff", "args": [{ "fn": ">", "args": [{ "ref": "readyPods" }, { "param": "minReady" }] }, { "lit": "Healthy" }, { "lit": "Unhealthy" }] } } },
+    { "id": "workloads", "verb": "nodes",
+      "target": { "nodes": [{ "var": "w", "label": "Workload", "id": { "ref": "d" },
+        "props": { "cluster": { "ref": "d.cluster" }, "namespace": { "ref": "d.namespace" }, "name": { "ref": "d.name" }, "replicas": { "ref": "d.replicas" } } }] } },
+    { "id": "workloadState", "verb": "nodes",
+      "target": { "nodes": [{ "var": "w", "label": "Workload", "id": { "ref": "d" }, "extend": true,
+        "props": { "readyPods": { "ref": "readyPods" }, "state": { "ref": "state" } } }] } },
+    { "id": "calls", "verb": "graph-match", "graph": "master",
+      "pattern": {
+        "nodes": [{ "var": "a", "label": "Pod" }, { "var": "b", "label": "Pod" }, { "var": "da", "label": "Deployment" }, { "var": "db", "label": "Deployment" }],
+        "edges": [{ "var": "k", "label": "Calls", "from": "a", "to": "b" }, { "var": "x", "label": "ControlledBy", "from": "a", "to": "da" }, { "var": "y", "label": "ControlledBy", "from": "b", "to": "db" }] } },
+    { "id": "apart", "verb": "where", "condition": { "fn": "!=", "args": [{ "ref": "da" }, { "ref": "db" }] } },
+    { "id": "srcStatus", "verb": "project", "columns": { "ds": { "ref": "d" }, "srcState": { "ref": "state" } } },
+    { "id": "dstStatus", "verb": "project", "columns": { "dt": { "ref": "d" }, "dstState": { "ref": "state" } } },
+    { "id": "withSrc", "verb": "join", "kind": "inner", "on": [{ "left": "da", "right": "ds" }] },
+    { "id": "withDst", "verb": "join", "kind": "inner", "on": [{ "left": "db", "right": "dt" }] },
+    { "id": "talks", "verb": "edges",
+      "target": {
+        "nodes": [{ "var": "src", "label": "Workload", "id": { "ref": "da" } }, { "var": "dst", "label": "Workload", "id": { "ref": "db" } }],
+        "edges": [{ "var": "t", "label": "Talks", "from": "src", "to": "dst",
+          "props": { "state": { "fn": "iff", "args": [
+            { "fn": "or", "args": [{ "fn": "==", "args": [{ "ref": "srcState" }, { "lit": "Unhealthy" }] }, { "fn": "==", "args": [{ "ref": "dstState" }, { "lit": "Unhealthy" }] }] },
+            { "lit": "Unhealthy" }, { "lit": "Healthy" }] } } }] } }
+  ],
+  "wires": [
+    { "from": "deployments", "to": "zero" },
+    { "from": "readyPods", "to": "one" },
+    { "from": "zero", "to": "rows" },
+    { "from": "one", "to": "rows" },
+    { "from": "rows", "to": "count" },
+    { "from": "count", "to": "status" },
+    { "from": "deployments", "to": "workloads" },
+    { "from": "status", "to": "workloadState" },
+    { "from": "calls", "to": "apart" },
+    { "from": "status", "to": "srcStatus" },
+    { "from": "status", "to": "dstStatus" },
+    { "from": "apart", "to": "withSrc", "port": "left" },
+    { "from": "srcStatus", "to": "withSrc", "port": "right" },
+    { "from": "withSrc", "to": "withDst", "port": "left" },
+    { "from": "dstStatus", "to": "withDst", "port": "right" },
+    { "from": "withDst", "to": "talks" }
+  ]
+}
