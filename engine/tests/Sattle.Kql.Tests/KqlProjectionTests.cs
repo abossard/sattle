@@ -10,6 +10,8 @@ public class KqlProjectionTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
+    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
     [Fact]
@@ -63,14 +65,14 @@ public class KqlProjectionTests
             + string.Join("\n", diff.Take(8).Select(e => $"  {e.Key}: {e.Before} -> {e.After}")) + "\n" + string.Join("\n", tele.Take(60)));
     }
 
-    /// <summary>`sattle replay --projections kql` replays the estate with every projection that has a `.kql` file loaded from it, and ends in the state digest of today's text.</summary>
+    /// <summary>`sattle replay` replays the estate with the projections of the `.kql` files and ends in the state digest of today's text.</summary>
     [Fact]
-    public void Replaying_with_the_projections_in_KQL_ends_in_the_state_digest_of_todays_text()
+    public void Replaying_the_projections_in_KQL_ends_in_the_state_digest_of_todays_text()
     {
         var output = new StringWriter(); var saved = Console.Out;
         Console.SetOut(output);
         int code;
-        try { code = Program.Main(["replay", Estate, "--cluster", "synth", "--defs", Definitions, "--projections", "kql"]); }
+        try { code = Program.Main(["replay", Estate, "--cluster", "synth", "--defs", Definitions]); }
         finally { Console.SetOut(saved); }
         Assert.True(code == 0, output.ToString());
         var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
@@ -267,7 +269,7 @@ public class KqlProjectionTests
 
     static Recorded Data(string dir) => Loaded.GetOrAdd(dir, d => new(() =>
     {
-        var files = Catalog.ReadDirectory(Definitions).ToList();
+        var files = Catalog.ReadDirectory(SattleProjections).ToList();
         var overlay = Path.Combine(Captures, "space-overlay.sattle");
         if (d != Estate && File.Exists(overlay)) { var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)); files[i] = files[i] with { Text = File.ReadAllText(overlay) }; }
         else if (d != Estate && Program.ArgumentsOf(d) is { } arguments) files = Program.WithArguments(files, arguments);

@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -230,20 +231,21 @@ public class LensTests
     {
         var files = Catalog.ReadDirectory(Repo.Definitions);
         string Text(string name) => files.Single(f => f.Path.EndsWith(name, StringComparison.Ordinal)).Text;
-        var ops = Text("acme.ops.sattle"); var space = Text("acme.space.sattle");
+        var ops = Text("acme.ops.sattle"); var ingest = Text("acme.ops.ingest.kql"); var space = Text("acme.space.sattle");
         const string Domain = "identity capability for Capability version \"1\" { id: Text by exact; }";
-        const string Port = "  in flowLogs: rows azsrc.FlowLogRow;";
-        const string Rule = "  rule observedPods readonly";
+        const string Input = "input flowLogs : azsrc.FlowLogRow;";
+        const string Before = "// ---- observed by the Kubernetes adapter ----";
+        var editedOps = ops.Replace(Domain, Domain + "\nidentity capabilityName for Capability version \"1\" { name: Text by exact; }\nequivalence capabilityIsNamed between capability, capabilityName assert threshold 1.0;");
         // a link rule belongs to the master's projection: it reads the capability rows from a source of its own
-        var editedOps = ops
-            .Replace(Domain, Domain + "\nidentity capabilityName for Capability version \"1\" { name: Text by exact; }\nequivalence capabilityIsNamed between capability, capabilityName assert threshold 1.0;")
-            .Replace(Port, Port + "\n  in capNames: rows CapabilityRow;")
-            .Replace(Rule, "  rule namedCapabilities readonly \"a capability is the one its name names\" {\n    link capabilityIsNamed from capNames\n      left  capability(id: capId)\n      right capabilityName(name: name)\n      confidence 1.0;\n  }\n\n" + Rule);
+        var editedIngest = ingest
+            .Replace(Input, Input + "\ninput capNames : CapabilityRow;")
+            .Replace(Before, "// a capability is the one its name names\nlink capabilityIsNamed from byId to byName with (confidence = 1.0, rule = \"namedCapabilities\") = capNames\n    | project byId = identity(\"capability\", capId), byName = identity(\"capabilityName\", name);\n\n" + Before);
         var editedSpace = space
             .Replace("  source caps ", "  source capNames adapter \"sattle.authoring\" rows ops.CapabilityRow;\n  source caps ")
             .Replace("flowLogs: flowLogs)", "flowLogs: flowLogs, capNames: capNames)");
-        Assert.NotEqual(ops, editedOps); Assert.NotEqual(space, editedSpace);
-        return new SpaceHost([.. files.Select(f => f.Path.EndsWith("acme.ops.sattle", StringComparison.Ordinal) ? f with { Text = editedOps } : f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = editedSpace } : f)], new HostOptions { Cluster = "synth" });
+        Assert.NotEqual(ops, editedOps); Assert.NotEqual(ingest, editedIngest); Assert.NotEqual(space, editedSpace);
+        var edited = new Dictionary<string, string> { ["acme.ops.sattle"] = editedOps, ["acme.ops.ingest.kql"] = editedIngest, ["acme.space.sattle"] = editedSpace };
+        return new SpaceHost([.. files.Select(f => edited.TryGetValue(Path.GetFileName(f.Path), out var t) ? f with { Text = t } : f)], new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
     }
 
     /// <summary>With `linkFirst` false the authored graph holds the capability before the link names it, so the merge reaches an element of the authored graph.</summary>

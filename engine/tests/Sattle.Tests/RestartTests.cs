@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -11,7 +12,7 @@ public class RestartTests
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
-    static HostOptions Options => new() { Cluster = "synth" };
+    static HostOptions Options => new() { Projections = new KqlSource(), Cluster = "synth" };
 
     public static IEnumerable<object[]> Stores() => StoreConformanceTests.CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
 
@@ -110,12 +111,13 @@ public class RestartTests
     {
         using var d = new Durable(kind);
         string digest; long rev, seq;
-        var edited = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.sattle")).Replace("param Integer = 0", "param Integer = 1");
-        Assert.NotEqual(File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.sattle")), edited);
+        const string Kql = "acme.deployhealth.deploymentHealth.kql";
+        var edited = File.ReadAllText(Path.Combine(Repo.Definitions, Kql)).Replace("minReady:long = 0", "minReady:long = 1");
+        Assert.NotEqual(File.ReadAllText(Path.Combine(Repo.Definitions, Kql)), edited);
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h);
-            h.Commit("acme.deployhealth", edited, h.CatalogRevision);
+            h.Commit(Kql, edited, h.CatalogRevision);
             digest = h.StateDigest(); rev = h.CatalogRevision; seq = h.Seq;
             h.CreateDraft(null);                                      // a draft consumes a sequence number and is not stored
             seq = h.Seq;
@@ -126,7 +128,7 @@ public class RestartTests
             Assert.Equal(digest, r.StateDigest());
             Assert.Equal(rev, r.CatalogRevision);
             Assert.Equal(seq, r.Seq);
-            Assert.Contains("param Integer = 1", r.Definition("acme.deployhealth"));
+            Assert.Contains("minReady:long = 1", r.Definition(Kql));
             r.Advance(100 * 365 * 24 * 60 * Min, 1_000_000);          // the restored space accepts more input and journals it
             digest = r.StateDigest(); seq = r.Seq;
         }
@@ -198,8 +200,8 @@ public class RestartTests
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h);
-            var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.sattle"));
-            h.Commit("acme.deployhealth", text.Replace("param Integer = 0", "param Integer = 1"), h.CatalogRevision);
+            var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.deploymentHealth.kql"));
+            h.Commit("acme.deployhealth.deploymentHealth.kql", text.Replace("minReady:long = 0", "minReady:long = 1"), h.CatalogRevision);
             h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false });
             var envelope = File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First();
             h.LiveEnvelope("hub", envelope, "{\"n\":0}");

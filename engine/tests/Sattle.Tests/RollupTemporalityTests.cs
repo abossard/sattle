@@ -18,7 +18,7 @@ public class RollupTemporalityTests
         Loaded.GetOrAdd(temporality, t => new Lazy<IReadOnlyList<Diagnostic>>(() =>
         {
             var calls = string.Join(", ", Fns.Select(f => $"x_{f}: " + (f == "count" ? "count()" : $"{f}(flows)")));
-            var files = Catalog.ReadDirectory(Repo.Definitions).Select(f =>
+            var files = Catalog.ReadDirectory(Repo.SattleProjections).Select(f =>
                 f.Path.EndsWith("sattle.infra.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("flows?: Integer telemetry delta sum every 60s;", $"flows?: Integer {t};") } :
                 f.Path.EndsWith("acme.svc.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("  // telemetry: roll-up along the tree", $"  let depWindows = match master (a: infra.Pod)-[c:infra.Calls]->(b: infra.Pod) |> series master c.flows within 24h |> rollup by {{ a: a }} combine {{ {calls} }};\n  // telemetry: roll-up along the tree") } : f).ToList();
             Assert.Contains(t, files.First(f => f.Path.EndsWith("sattle.infra.sattle", StringComparison.Ordinal)).Text);

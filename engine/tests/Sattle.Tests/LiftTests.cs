@@ -13,7 +13,7 @@ public class LiftTests
     /// <summary>The definitions for a capture directory (with the overlay `sattle replay` applies), optionally with the hand-written service tree and capability modules, and an edit of one module.</summary>
     static List<SourceFile> Files(string dir, bool handWritten = false, string? module = null, Func<string, string>? edit = null)
     {
-        var files = Repo.DefinitionFilesFor(dir);
+        var files = Repo.DefinitionFilesFor(dir, Repo.SattleProjections);
         for (var i = 0; i < files.Count; i++)
         {
             var name = Path.GetFileNameWithoutExtension(files[i].Path);
@@ -192,7 +192,7 @@ public class LiftTests
             Assert.DoesNotContain(diags, d => d.IsError);
             return TimeSpan.FromTicks(tp!.Ops.OfType<TSeries>().Single(x => x.Name.StartsWith("dependsOn__", StringComparison.Ordinal)).WithinNs / 100);
         }
-        var original = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.biz.sattle"));
+        var original = File.ReadAllText(Path.Combine(Repo.SattleProjections, "acme.biz.sattle"));
         Assert.Equal(TimeSpan.FromHours(24), Within(original));
         Assert.Equal(TimeSpan.FromMinutes(2), Within(original.Replace("initial \"ok\";\n  }", "initial \"ok\"\n      within 2m;\n  }")));
     }

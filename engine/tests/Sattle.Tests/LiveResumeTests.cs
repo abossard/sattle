@@ -1,3 +1,4 @@
+using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Cli;
 using Sattle.Runtime;
@@ -30,7 +31,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
 
     static IReadOnlyList<string> Events() => LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
     static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
-    static HostOptions Options(long sealEvery) => new() { Cluster = "synth", SealEvery = sealEvery };
+    static HostOptions Options(long sealEvery) => new() { Projections = new KqlSource(), Cluster = "synth", SealEvery = sealEvery };
 
     /// <summary>The digest and input rows of the run that was never interrupted, computed once for the class (every case uses the same events).</summary>
     static readonly Lazy<(string Digest, long Rows)> Uninterrupted = new(() =>
@@ -165,7 +166,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             // LV2, LV3: the replay of the recording with the live horizon ends in the live digest
             string Replayed(int horizon)
             {
-                var cat = new Catalog(); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
+                var cat = new Catalog(new KqlSource()); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
                 var space = cat.Spaces.Keys.Single();
                 using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = horizon });
                 new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Ro with { FlushAtEnd = false }).Run(dir);

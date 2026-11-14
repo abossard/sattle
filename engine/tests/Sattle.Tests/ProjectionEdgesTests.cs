@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -250,7 +251,7 @@ public class ProjectionEdgesTests
         if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
         files[i] = files[i] with { Text = space };
         if (module is not null) files.Add(new SourceFile(module + ".sattle", moduleText!));
-        var cat = new Catalog(); var res = cat.Load(files, updatePins: true);
+        var cat = new Catalog(new KqlSource()); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var id = cat.Spaces.Keys.Single();
         var engine = new Engine(cat, id, new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });

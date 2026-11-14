@@ -10,6 +10,8 @@ public class KqlReviewRunTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
+    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
     static string FindRoot()
@@ -22,7 +24,7 @@ public class KqlReviewRunTests
     /// <summary>The definitions with one projection in KQL given as text in place of its file: what the front end says, and what the catalog says of the text it printed (null when the front end refused).</summary>
     static (KqlFiles Put, Catalog? Catalog, List<Diagnostic> LoadErrors) Loaded(string file, string text)
     {
-        var put = KqlFiles.Of(Catalog.ReadDirectory(Definitions).ToList(), [new SourceFile(Path.Combine(Definitions, file), text)]);
+        var put = KqlFiles.Of(Catalog.ReadDirectory(SattleProjections).ToList(), [new SourceFile(Path.Combine(Definitions, file), text)]);
         if (!put.Ok) return (put, null, []);
         var cat = new Catalog();
         var res = cat.Load(put.Files, updatePins: true);

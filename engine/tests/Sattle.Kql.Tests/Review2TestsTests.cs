@@ -11,9 +11,9 @@ public class Review2TestsTests
         return d!.FullName;
     }
 
-    // HEAD: with --projections kql made a no-op, the replay uses today's text and ends in the same digest, so the existing test cannot tell; a changed KQL file must change the digest.
+    // a changed KQL file must change the digest of a replay
     [Fact]
-    public void Replaying_with_the_projections_in_KQL_reads_the_KQL_files()
+    public void A_replay_reads_the_KQL_files()
     {
         var root = Root();
         var estate = Path.Combine(root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
@@ -22,13 +22,14 @@ public class Review2TestsTests
         var report = Path.Combine(defs, "acme.report.deploymentReport.kql");
         var text = File.ReadAllText(report);
         Assert.Contains("\"Deployment health\"", text);
-        File.WriteAllText(report, text.Replace("\"Deployment health\"", "\"Deployment health, from KQL\""));
-        string Digest(params string[] more)
+        string Digest()
         {
             var output = new StringWriter(); var saved = Console.Out; Console.SetOut(output);
-            try { Assert.Equal(0, Program.Main(["replay", estate, "--cluster", "synth", "--defs", defs, .. more])); } finally { Console.SetOut(saved); }
+            try { Assert.Equal(0, Program.Main(["replay", estate, "--cluster", "synth", "--defs", defs])); } finally { Console.SetOut(saved); }
             return output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal));
         }
-        Assert.NotEqual(Digest(), Digest("--projections", "kql"));
+        var before = Digest();
+        File.WriteAllText(report, text.Replace("\"Deployment health\"", "\"Deployment health, from KQL\""));
+        Assert.NotEqual(before, Digest());
     }
 }

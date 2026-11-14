@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Differential;
 
@@ -19,8 +20,8 @@ public class HostDefectTests
         }
     }
 
-    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shipped = new(() => { var f = Catalog.ReadDirectory(Definitions); return (f, SpaceHost.LoadDefinitions(f)); });
-    static SpaceHost ShippedHost() => new(Shipped.Value.Files, new HostOptions { Cluster = "synth" }, Shipped.Value.Loaded);
+    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shipped = new(() => { var f = Catalog.ReadDirectory(Definitions); return (f, SpaceHost.LoadDefinitions(f, new KqlSource())); });
+    static SpaceHost ShippedHost() => new(Shipped.Value.Files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }, Shipped.Value.Loaded);
 
     static List<JsonNode> Drain(Subscription s) { var l = new List<JsonNode>(); while (s.Messages.Reader.TryRead(out var m)) l.Add(JsonNode.Parse(m)!); return l; }
 
@@ -74,9 +75,10 @@ public class HostDefectTests
     {
         using var h = ShippedHost();
         var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var text = h.Definition("acme.svc");
-        Assert.Contains("above 0.05 for 3", text);
-        h.Commit("acme.svc", text.Replace("above 0.05 for 3", "above 0.06 for 3"), h.CatalogRevision);
+        const string Kql = "acme.svc.serviceDeps.kql";
+        var text = h.Definition(Kql);
+        Assert.Contains("above = 0.05", text);
+        h.Commit(Kql, text.Replace("above = 0.05", "above = 0.06"), h.CatalogRevision);
         var changed = h.CheckDraft(draft)["modules"]!.AsObject().Where(m => m.Value!["changed"]?.GetValue<bool>() == true).Select(m => m.Key);
         Assert.Empty(changed);
     }
@@ -96,7 +98,7 @@ public class HostDefectTests
     [Fact]
     public void Extracting_a_rule_with_a_lift_keeps_the_port_of_its_mapping()
     {
-        var files = Shipped.Value.Files;
+        var files = Catalog.ReadDirectory(Path.Combine(Definitions, "..", "tests", "Sattle.Tests", "fixtures", "sattle-projections"));       // the projections in the engine's own notation, where a lift is a statement
         static string Module(SourceFile f) => Path.GetFileNameWithoutExtension(f.Path);
         var changed = Refactor.Extract(files.ToDictionary(Module, f => f.Text), "acme.biz", "capabilityView", ["lifted"], "liftedOnly");
         Assert.Contains("acme.biz", changed.Keys);

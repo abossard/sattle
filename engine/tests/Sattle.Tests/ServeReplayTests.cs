@@ -2,6 +2,7 @@ using Sattle.Cli;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -96,13 +97,13 @@ public class ServeReplayTests
         {
             string digest;
             using (var g = new SqliteGraphStore(store))
-            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Cluster = "synth", LateHorizonWindows = horizon, SealEvery = 50 }))
+            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Estate), new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = horizon, SealEvery = 50 }))
             {
                 new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 100, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
                 h.Finish(); digest = h.StateDigest();
             }
             using var g2 = new SqliteGraphStore(store);
-            using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Cluster = "synth", VerifyJournal = true });
+            using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Projections = new KqlSource(), Cluster = "synth", VerifyJournal = true });
             Assert.NotNull(again.Restart);
             Assert.Equal(horizon, again.LateHorizonWindows);
             Assert.Equal(digest, again.StateDigest());

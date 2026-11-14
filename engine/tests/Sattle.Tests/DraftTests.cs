@@ -13,7 +13,7 @@ public class DraftTests
 
     static (SpaceHost H, string D) NewDraft()
     {
-        var h = HostTests.NewHost();
+        var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         return (h, d);
     }

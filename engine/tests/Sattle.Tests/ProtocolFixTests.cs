@@ -34,7 +34,7 @@ public class ProtocolFixTests
     [Fact]
     public void A_wired_filter_without_a_predicate_is_unprintable_and_names_the_filter()
     {
-        var cat = Repo.LoadExamples(out _);
+        var cat = Repo.LoadSattleExamples();
         var op = "d:acme.ops/projection:ingest/op:known";
         var prefix = op + "/predicate:";
         var gone = cat.Graph.Entities.Where(e => e.Id.StartsWith(prefix, StringComparison.Ordinal)).Select(e => e.Id).ToHashSet();
@@ -62,7 +62,7 @@ public class ProtocolFixTests
     [MemberData(nameof(RequiredSlots))]
     public void A_skeleton_creates_the_required_slot_children_and_starts_at_the_draft_revision(string kind, string[] children)
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         h.ApplyDraftPatch(d, h.Skeleton(new JsonObject { ["kind"] = "Distinct", ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "first", ["draft"] = d }), 0);
         var op = "d:acme.svc/projection:serviceDeps/op:probe";
@@ -99,7 +99,7 @@ public class ProtocolFixTests
     [Fact]
     public void A_patch_that_removes_and_recreates_an_element_is_one_edit_and_changes_nothing()
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var ent = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status")!;
         JsonNode Edit(JsonNode? before, JsonNode? after) => new JsonObject { ["kind"] = "entity", ["id"] = "d:acme.svc/projection:serviceDeps/op:dependsOn/state:status", ["before"] = before?.DeepClone(), ["after"] = after?.DeepClone() };
@@ -115,7 +115,7 @@ public class ProtocolFixTests
     [Fact]
     public void A_projection_without_its_output_ontology_is_unprintable_and_names_the_projection()
     {
-        var cat = Repo.LoadExamples(out _);
+        var cat = Repo.LoadSattleExamples();
         var pid = "d:acme.svc/projection:serviceDeps";
         var g = cat.Graph.Clone();
         Assert.Null(g.Apply(g.Rels.Where(r => r.Source == pid && Ids.Name(r.Type) == "outputOntology").Select(Edit.Remove).ToList()));
@@ -125,7 +125,7 @@ public class ProtocolFixTests
     [Fact]
     public void Extracting_a_creating_rule_without_its_updates_names_the_statements_to_include()
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var e = Assert.Throws<HostError>(() => h.Refactor(d, new JsonObject { ["kind"] = "extract", ["module"] = "acme.biz", ["projection"] = "capabilityView", ["select"] = new JsonArray("capabilities", "tree"), ["name"] = "part" }));
         Assert.Equal("UpdateWithoutCreate", e.Code);
@@ -138,7 +138,7 @@ public class ProtocolFixTests
     [Fact]
     public void A_match_without_a_pattern_node_is_unprintable_and_names_the_match_operator()
     {
-        var cat = Repo.LoadExamples(out _);
+        var cat = Repo.LoadSattleExamples();
         var op = "d:acme.svc/projection:serviceDeps/op:services";
         var gone = cat.Graph.Entities.Where(e => e.Id.StartsWith(op + "/node:", StringComparison.Ordinal)).Select(e => e.Id).ToHashSet();
         Assert.NotEmpty(gone);

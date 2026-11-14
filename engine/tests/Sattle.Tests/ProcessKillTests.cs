@@ -1,3 +1,4 @@
+using Sattle.Kql;
 using System.Diagnostics;
 using Microsoft.Data.Sqlite;
 using Sattle.Runtime;
@@ -25,7 +26,7 @@ public class ProcessKillTests
         }
         catch (SqliteException) { return 0; }
     }
-    static HostOptions Options => new() { Cluster = "synth" };
+    static HostOptions Options => new() { Projections = new KqlSource(), Cluster = "synth" };
     static (string Digest, long Seq, string Space) Of(SpaceHost h) => (h.StateDigest(), h.Seq, h.SpaceInfo().ToJsonString());
 
     [Theory]

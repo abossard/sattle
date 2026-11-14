@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -13,7 +14,7 @@ public class LineageTests
 
     static SpaceHost Serve(string dir)
     {
-        var h = new SpaceHost(EstateFiles(), new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
         h.Finish();
         return h;
@@ -39,11 +40,11 @@ public class LineageTests
         var l = h.Lineage("capabilities", edge["id"]!["value"]!.GetValue<string>());
         Assert.True(l["complete"]!.GetValue<bool>());
         Assert.Equal("lifted", l["rule"]!.GetValue<string>());
-        Assert.Equal(["edge@serviceTree", "source@serviceTree", "sourceImage@authored", "target@serviceTree", "targetImage@authored"], Sources(l));
+        Assert.Equal(["dependency@serviceTree", "fromCapability@authored", "fromNode@serviceTree", "toCapability@authored", "toNode@serviceTree"], Sources(l));
         Assert.Equal("1", l["contributions"]!.GetValue<string>());
         // the service edge it stands for is web to api of the service tree
-        var d = l["sources"]!.AsArray().Single(s => s!["role"]!.GetValue<string>() == "edge")!["element"]!.GetValue<string>();
-        Assert.Equal("relationship", l["sources"]!.AsArray().Single(s => s!["role"]!.GetValue<string>() == "edge")!["kind"]!.GetValue<string>());
+        var d = l["sources"]!.AsArray().Single(s => s!["role"]!.GetValue<string>() == "dependency")!["element"]!.GetValue<string>();
+        Assert.Equal("relationship", l["sources"]!.AsArray().Single(s => s!["role"]!.GetValue<string>() == "dependency")!["kind"]!.GetValue<string>());
         Assert.Contains(h.Snapshot("serviceTree", null)["extent"]!["relationships"]!.AsArray(), r => r!["id"]!["value"]!.GetValue<string>() == d);
     }
 
@@ -54,7 +55,7 @@ public class LineageTests
         var group = h.Snapshot("serviceTree", null)["extent"]!["entities"]!.AsArray().Single(e => e!["type"]!["value"]!.GetValue<string>() == "ServiceGroup")!["id"]!["value"]!.GetValue<string>();
         var l = h.Lineage("serviceTree", group);
         Assert.True(l["complete"]!.GetValue<bool>());
-        Assert.Equal(["s@master", "s@master", "s@master"], Sources(l));
+        Assert.Equal(["service@master", "service@master", "service@master"], Sources(l));
         Assert.Equal("3", l["sourceCount"]!.GetValue<string>());
     }
 
@@ -69,7 +70,7 @@ public class LineageTests
             var edge = LiftedEdge(h, "capabilities", "Storefront", "Ordering")["id"]!["value"]!.GetValue<string>();
             var full = h.Lineage("capabilities", edge, int.MaxValue - 1);
             Assert.Equal("2", full["contributions"]!.GetValue<string>());
-            Assert.Equal(2, full["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "edge"));
+            Assert.Equal(2, full["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "dependency"));
             Assert.Null(full["next"]);
             var paged = new List<string>(); string? after = null; var pages = 0;
             do
@@ -179,7 +180,7 @@ public class LineageTests
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
         files.Add(new SourceFile("acme.bygroup.sattle", ByGroup));
-        var h = new SpaceHost(files, new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
         using (h)
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);

@@ -10,7 +10,7 @@ public class Review2TimeKqlTests
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);
         while (d is not null && !Directory.Exists(Path.Combine(d.FullName, "engine", "definitions"))) d = d.Parent;
-        var cat = new Catalog();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(Language.Catalog.ReadDirectory(Path.Combine(d!.FullName, "engine", "definitions")).ToList(), updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, x => x.IsError);
         return cat.Graph;

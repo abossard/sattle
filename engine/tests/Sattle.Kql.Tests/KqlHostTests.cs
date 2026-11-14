@@ -39,7 +39,9 @@ public class KqlHostTests
         Assert.Equal(File.ReadAllText(Path.Combine(Definitions, $"{module}.{projection}.kql")), h.Definition($"{module}.{projection}.kql"));
     }
 
-    static List<SourceFile> Files => [.. Catalog.ReadDirectory(Definitions), .. KqlFiles.ReadDirectory(Definitions)];
+    static List<SourceFile> Files => Catalog.ReadDirectory(Definitions);
+    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL.</summary>
+    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string EstateDir => Path.Combine(FindRoot(), "engine", "tests", "Sattle.Tests", "fixtures", "estate");
     static string Text(string file) => File.ReadAllText(Path.Combine(Definitions, file));
     static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { Cluster = "synth" }).Run(EstateDir);
@@ -200,21 +202,21 @@ public class KqlHostTests
         Assert.Contains("graph serviceTreeTwo = svc.serviceDeps(master: master);", h.DraftText(d, "acme.space"));
     }
 
-    /// <summary>`sattle serve --projections kql` builds its host with the `.kql` files and a source that reads them: it serves the estate to the state of today's text, and its definitions are the `.kql` texts.
+    /// <summary>`sattle serve` builds its host with the `.kql` files and a source that reads them: it serves the estate to the state of the projections' former text, and its definitions are the `.kql` texts.
     /// The host is built from the helpers `serve` uses (the files, the host options), without starting the server.</summary>
     [Fact]
-    public void Serve_with_projections_in_KQL_serves_the_state_of_todays_text()
+    public void Serve_with_projections_in_KQL_serves_the_state_of_their_former_text()
     {
-        string Served(params string[] extra)
+        string Served(string defs)
         {
-            var o = Sattle.Cli.Program.Options.Parse(["serve", EstateDir, "--cluster", "synth", "--defs", Definitions, .. extra]);
-            using var host = new SpaceHost(Sattle.Cli.Program.WithProjectionFiles(o, Sattle.Cli.Program.ReadDefinitions(o)), Sattle.Cli.Program.HostOptionsFor(o, "synth", null));
-            if (extra.Length > 0) Assert.Equal(Text("acme.svc.serviceDeps.kql"), host.Definition("acme.svc.serviceDeps.kql"));
+            var o = Sattle.Cli.Program.Options.Parse(["serve", EstateDir, "--cluster", "synth", "--defs", defs]);
+            using var host = new SpaceHost(Sattle.Cli.Program.ReadDefinitions(o), Sattle.Cli.Program.HostOptionsFor(o, "synth", null));
+            if (defs == Definitions) Assert.Equal(Text("acme.svc.serviceDeps.kql"), host.Definition("acme.svc.serviceDeps.kql"));
             new Replay(host, host.Space, host.Adapters, Sattle.Cli.Program.ReplayOptionsOf(o, "synth")).Run(EstateDir);
             host.Finish();
             return host.StateDigest();
         }
-        Assert.Equal(Served(), Served("--projections", "kql"));
+        Assert.Equal(Served(SattleProjections), Served(Definitions));
     }
 
     /// <summary>A store written with projections in KQL, opened without a projection source, is refused, naming the files it holds. The other way round, a store without projection files opened with a source loads today's text: the source has nothing to read, so no projection is held twice.</summary>
@@ -228,7 +230,7 @@ public class KqlHostTests
         Assert.Contains("acme.svc.serviceDeps.kql", e.Message);
         var plain = new InMemoryGraphStore();
         string catalog;
-        using (var h = SpaceHost.OpenDurable(plain, Catalog.ReadDirectory(Definitions), Options with { Projections = null })) catalog = h.Catalog.Graph.Digest();
+        using (var h = SpaceHost.OpenDurable(plain, Catalog.ReadDirectory(SattleProjections), Options with { Projections = null })) catalog = h.Catalog.Graph.Digest();
         using var r = SpaceHost.OpenDurable(plain, null, Options);
         Assert.Equal(catalog, r.Catalog.Graph.Digest());
     }

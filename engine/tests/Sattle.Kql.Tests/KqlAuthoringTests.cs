@@ -14,7 +14,7 @@ public class KqlAuthoringTests
     static readonly Lazy<(List<SourceFile> Files, Catalog Catalog)> Defs = new(() =>
     {
         var files = Catalog.ReadDirectory(Definitions).ToList();
-        var cat = new Catalog();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(files, updatePins: true);
         Assert.True(!res.Diagnostics.Any(x => x.IsError), string.Join("\n", res.Diagnostics.Where(x => x.IsError)));
         return (files, cat);

@@ -1,5 +1,6 @@
 using Sattle.Cli;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -18,7 +19,7 @@ public class LiveCrashTests
 
     static string Fixture => EstateTests.EstateDir;
     static ReplayOptions Ro => new() { ChunkRows = 20, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
-    static HostOptions Options => new() { Cluster = "synth" };
+    static HostOptions Options => new() { Projections = new KqlSource(), Cluster = "synth" };
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
     static readonly Lazy<IReadOnlyList<string>> Events = new(() => LiveReproducibilityTests.Arrival(Fixture, seed: 2, distance: 4).Take(80).ToList());
     static readonly Lazy<string> Whole = new(() =>

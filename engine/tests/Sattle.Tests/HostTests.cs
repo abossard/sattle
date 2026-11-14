@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -11,10 +12,15 @@ public class HostTests
     const long Min = 60_000_000_000;
     static readonly long T0 = 1_794_300_000_000_000_000 / Min * Min;
 
-    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f)); });
+    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f, new KqlSource())); });
 
     /// <summary>A host on the example definitions. The checked catalog is loaded once per test run (loading costs more than a host), every host gets its own engine and state.</summary>
-    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Cluster = "synth" }, Shared.Value.Loaded);
+    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }, Shared.Value.Loaded);
+
+    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> SattleShared = new(() => { var f = Catalog.ReadDirectory(Repo.SattleProjections); return (f, SpaceHost.LoadDefinitions(f)); });
+
+    /// <summary>A host on the definitions with every projection in the engine's own notation (`Repo.SattleProjections`), for the tests of that notation and of the calls that edit it.</summary>
+    public static SpaceHost NewSattleHost() => new(SattleShared.Value.Files, new HostOptions { Cluster = "synth" }, SattleShared.Value.Loaded);
 
     /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
@@ -46,7 +52,8 @@ public class HostTests
         }
     }
 
-    static string Text(string module) => File.ReadAllText(Path.Combine(Repo.Definitions, module + ".sattle"));
+    static string Text(string file) => File.ReadAllText(Path.Combine(Repo.Definitions, file));
+    static string SattleText(string module) => File.ReadAllText(Path.Combine(Repo.SattleProjections, module + ".sattle"));
 
     [Fact]
     public void Definitions_are_served_as_a_graph_with_the_kernel_as_ontology()
@@ -73,12 +80,12 @@ public class HostTests
     [InlineData("row", 50, false)] [InlineData("row", 150, true)] [InlineData("row", 20000, true)]              // a row of operators nests one level each: 20,000 of them overflowed the stack in a later pass
     public void A_text_nested_deeper_than_the_limit_is_a_diagnostic_and_never_a_stack_overflow(string shape, int depth, bool refused)
     {
-        using var h = NewHost();
+        using var h = NewSattleHost();
         var nested = shape == "paren"
             ? new string('(', depth) + "workloadNamespace" + new string(')', depth)
             : shape == "row" ? "workloadNamespace" + string.Concat(Enumerable.Repeat(" ++ \"x\"", depth))
             : string.Concat(Enumerable.Repeat("if(true, ", depth)) + "workloadNamespace" + string.Concat(Enumerable.Repeat(", \"x\")", depth));
-        var text = Text("acme.workload");
+        var text = SattleText("acme.workload");
         var changed = text.Replace("when image.namespace == workloadNamespace", "when image.namespace == " + nested);
         Assert.NotEqual(text, changed);
         var answer = h.Check("acme.workload", changed);
@@ -90,21 +97,22 @@ public class HostTests
     public void Check_reports_typed_diagnostics_with_positions_and_the_patch_without_changing_state()
     {
         using var h = NewHost();
-        var good = h.Check("acme.svc", Text("acme.svc"));
+        const string File = "acme.svc.serviceDeps.kql";
+        var good = h.Check(File, Text(File));
         Assert.True(good["ok"]!.GetValue<bool>());
         Assert.Empty(good["patch"]!["edits"]!.AsArray());
-        var bad = h.Check("acme.svc", Text("acme.svc").Replace("drops / flows", "drops / nosuch"));
+        var bad = h.Check(File, Text(File).Replace("drops / flows", "drops / nosuch"));
         Assert.False(bad["ok"]!.GetValue<bool>());
-        var d = bad["diagnostics"]!.AsArray().First(x => x!["code"]!.GetValue<string>() == "UnknownField")!;
+        var d = bad["diagnostics"]!.AsArray().First(x => x!["code"]!.GetValue<string>() == "Kusto")!;        // the column is unknown to the KQL text
         Assert.True(d["line"]!.GetValue<int>() > 0 && d["column"]!.GetValue<int>() > 0);
-        Assert.StartsWith("d:acme.svc/", d["element"]!.GetValue<string>());
-        var changed = h.Check("acme.svc", Text("acme.svc").Replace("above 0.05", "above 0.5"));
+        Assert.Equal(File, d["file"]!.GetValue<string>());
+        var changed = h.Check(File, Text(File).Replace("above = 0.05", "above = 0.5"));
         Assert.True(changed["ok"]!.GetValue<bool>());
         Assert.NotEmpty(changed["patch"]!["edits"]!.AsArray());
         Assert.Contains("acme.svc", changed["affected"]!["modules"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Contains("serviceTree", changed["affected"]!["graphs"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Equal(h.CatalogRevision.ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());                 // nothing committed
-        Assert.Throws<HostError>(() => h.Check("acme.other", Text("acme.svc")));
+        Assert.Throws<HostError>(() => h.Check("acme.other", Text("acme.svc.sattle")));
     }
 
     [Fact]
@@ -118,10 +126,11 @@ public class HostTests
         var masterBefore = h.Engine.Master.State.Digest();
         var masterHead = h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "master")!["head"]!.GetValue<string>();
         // initial 3 windows of 10 percent drops: lower the entry threshold so the status ends degraded
-        var edited = Text("acme.svc").Replace("above 0.05 for 3 then \"degraded\" below 0.02 for 3", "above 0.05 for 3 then \"degraded\" below 0.0 for 30");
-        Assert.NotEqual(Text("acme.svc"), edited);
+        const string File = "acme.svc.serviceDeps.kql";
+        var edited = Text(File).Replace("above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3", "above = 0.05, enterAfter = 3, below = 0.0, exitAfter = 30");
+        Assert.NotEqual(Text(File), edited);
         var rev0 = h.CatalogRevision;
-        var res = h.Commit("acme.svc", edited, rev0);
+        var res = h.Commit(File, edited, rev0);
         Assert.Equal((rev0 + 1).ToString(), res["catalogRevision"]!.GetValue<string>());
         var graphs = res["activation"]!["graphs"]!.AsArray();
         Assert.Single(graphs);                                                                     // only serviceTree changed
@@ -131,7 +140,7 @@ public class HostTests
         Assert.Equal(masterHead, h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "master")!["head"]!.GetValue<string>());
         Assert.Equal("degraded", Status());
         // the result equals a fresh engine with the new definition fed the same inputs
-        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.svc.sattle") ? f with { Text = edited } : f).ToList(), new HostOptions { Cluster = "synth" });
+        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         Drive(fresh);
         Assert.Equal(fresh.StateDigest(), h.StateDigest());
         // history: the patches of serviceTree, applied in order to the empty graph, give the served snapshot element by element
@@ -151,7 +160,7 @@ public class HostTests
         Assert.Equal(snapshot.Keys, replayed.Keys);
         Assert.Equal(h.Engine.Graph("serviceTree").State.RelCount, extent["relationships"]!.AsArray().Count);
         // stale and invalid edits
-        Assert.Equal(409, Assert.Throws<HostError>(() => h.Commit("acme.svc", Text("acme.svc"), rev0)).Status);
+        Assert.Equal(409, Assert.Throws<HostError>(() => h.Commit("acme.svc", Text("acme.svc.sattle"), rev0)).Status);
         var invalid = Assert.Throws<HostError>(() => h.Commit("acme.svc", edited.Replace("drops / flows", "drops / nosuch"), rev0 + 1));
         Assert.Equal("Invalid", invalid.Code);
         Assert.Equal((rev0 + 1).ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());
@@ -162,7 +171,7 @@ public class HostTests
     {
         using var h = NewHost();
         Drive(h, 3);
-        var res = h.Commit("acme.svc", Text("acme.svc"), h.CatalogRevision);
+        var res = h.Commit("acme.svc", Text("acme.svc.sattle"), h.CatalogRevision);
         Assert.Equal(h.CatalogRevision.ToString(), res["catalogRevision"]!.GetValue<string>());
     }
 
@@ -229,13 +238,47 @@ public class HostTests
         var l = h.Lineage("serviceTree", dep.Id);
         Assert.Equal("serviceDeps", l["projection"]!.GetValue<string>());
         Assert.Equal("forward", l["direction"]!.GetValue<string>());
-        Assert.Contains("dependsOn__edges", l["operators"]!.AsArray().Select(x => x!.GetValue<string>()));          // the operators the lift statement was lowered to
+        Assert.Equal(l["sink"]!.GetValue<string>(), l["operators"]!.AsArray().Last()!.GetValue<string>());          // the operators the step's query was lowered to, ending at its sink
         var src = l["sources"]!.AsArray();
-        Assert.Contains(src, s => s!["role"]!.GetValue<string>() == "edge" && s["kind"]!.GetValue<string>() == "relationship" && s["graph"]!.GetValue<string>() == "master");
+        Assert.Contains(src, s => s!["role"]!.GetValue<string>() == "call" && s["kind"]!.GetValue<string>() == "relationship" && s["graph"]!.GetValue<string>() == "master");
         var calls = h.Engine.Master.State.Rels.First(r => Ids.Name(r.Type) == "Calls");
         var ml = h.Lineage("master", calls.Id);
         Assert.Equal("observedCalls", ml["rule"]!.GetValue<string>());
         Assert.Contains("FlowRow", ml["inputs"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Equal(404, Assert.Throws<HostError>(() => h.Lineage("master", "e:nope")).Status);
+    }
+
+    /// <summary>The projections of the definitions folder are in its `.kql` files: a catalog or a host given no projection source says so for each file, instead of only failing the space's references.</summary>
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Definitions_loaded_without_a_projection_source_name_each_projection_file_and_what_is_missing(bool host)
+    {
+        var files = Catalog.ReadDirectory(Repo.Definitions);
+        var message = host ? Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { Cluster = "synth" })).Message
+            : string.Join("\n", new Catalog().Load(files).Diagnostics.Select(d => d.Message));
+        foreach (var kql in files.Where(f => f.Path.EndsWith(".kql", StringComparison.Ordinal)))
+            Assert.Contains($"{Path.GetFileName(kql.Path)} is a projection file and this catalog has no projection source to read it", message);
+    }
+
+    /// <summary>A commit writes the module texts, which hold no projection, and each `.kql` file as it was committed; a host started from the written folder loads the same catalog.</summary>
+    [Fact]
+    public void A_committed_projection_file_is_written_as_committed_and_a_host_on_the_written_folder_loads_the_same_catalog()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-defs-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
+            const string Kql = "acme.svc.serviceDeps.kql";
+            using var h = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = new KqlSource(), Cluster = "synth" }) { DefinitionsDir = dir, WriteDefinitions = true };
+            var edited = Text(Kql).Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
+            Assert.NotEqual(Text(Kql), edited);
+            h.Commit(Kql, edited, h.CatalogRevision);
+            Assert.Equal(edited, File.ReadAllText(Path.Combine(dir, Kql)));
+            Assert.All(Directory.EnumerateFiles(dir, "*.sattle"), f => Assert.DoesNotContain("\nprojection ", File.ReadAllText(f)));
+            using var again = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+            Assert.Equal(h.Catalog.Graph.Digest(), again.Catalog.Graph.Digest());
+        }
+        finally { Directory.Delete(dir, true); }
     }
 }

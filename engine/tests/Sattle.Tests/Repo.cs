@@ -1,4 +1,5 @@
 using Sattle.Language;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -7,6 +8,8 @@ public static class Repo
 {
     public static string Root { get; } = FindRoot();
     public static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The definitions as they were before the projections moved to KQL: every projection written in the engine's own notation, which only the tests of that notation and of the operators still read.</summary>
+    public static string SattleProjections => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     /// <summary>The folder of the local data (`fixtures`, `captures`): `lab` of the repository, or the folder the environment variable SATTLE_LAB names. With an empty folder the tests run as on a fresh clone, where neither is there.</summary>
     static string Lab => Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } folder ? folder : Path.Combine(Root, "lab");
     /// <summary>The scrubbed excerpt of a real capture. Its data files are generated locally and are not in the repository.</summary>
@@ -29,14 +32,14 @@ public static class Repo
     public static List<SourceFile> DefinitionFiles(bool forCaptures) => DefinitionFilesWith(forCaptures ? Overlay : null);
 
     /// <summary>The definitions `sattle replay DIR` reads for `dir`: with the overlay it applies.</summary>
-    public static List<SourceFile> DefinitionFilesFor(string dir) =>
-        OverlayFor(dir) is { } overlay ? DefinitionFilesWith(overlay)
-        : Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments ? Sattle.Cli.Program.WithArguments(DefinitionFilesWith(null), arguments)      // a capture that names its workload (`space-arguments.json`, as `lab/fixtures/build.sh` writes it)
-        : DefinitionFilesWith(null);
+    public static List<SourceFile> DefinitionFilesFor(string dir, string? folder = null) =>
+        OverlayFor(dir) is { } overlay ? DefinitionFilesWith(overlay, folder)
+        : Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments ? Sattle.Cli.Program.WithArguments(DefinitionFilesWith(null, folder), arguments)      // a capture that names its workload (`space-arguments.json`, as `lab/fixtures/build.sh` writes it)
+        : DefinitionFilesWith(null, folder);
 
-    static List<SourceFile> DefinitionFilesWith(string? overlay)
+    static List<SourceFile> DefinitionFilesWith(string? overlay, string? folder = null)
     {
-        var files = Catalog.ReadDirectory(Definitions).ToList();
+        var files = Catalog.ReadDirectory(folder ?? Definitions).ToList();
         if (overlay is not null) { var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)); files[i] = files[i] with { Text = File.ReadAllText(overlay) }; }
         return files;
     }
@@ -47,7 +50,7 @@ public static class Repo
     public static Catalog CatalogFor(string dir, out LoadResult result)
     {
         if (OverlayFor(dir) is null && Sattle.Cli.Program.ArgumentsOf(dir) is null) return LoadExamples(out result);
-        var loaded = WithOverlay.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
+        var loaded = WithOverlay.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(new KqlSource()); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
         result = loaded.Result; return loaded.Cat;
     }
 
@@ -63,7 +66,7 @@ public static class Repo
 
     static readonly Lazy<(Catalog Cat, LoadResult Result)> Examples = new(() =>
     {
-        var cat = new Catalog();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(Catalog.ReadDirectory(Definitions), updatePins: true);
         return (cat, res);
     });
@@ -74,4 +77,9 @@ public static class Repo
         result = Examples.Value.Result;
         return Examples.Value.Cat;
     }
+
+    static readonly Lazy<Catalog> SattleExamples = new(() => { var cat = new Catalog(); cat.Load(Catalog.ReadDirectory(SattleProjections)); return cat; });
+
+    /// <summary>The definitions of `SattleProjections`, checked once per test run, for the tests of the engine's own notation.</summary>
+    public static Catalog LoadSattleExamples() => SattleExamples.Value;
 }

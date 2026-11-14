@@ -25,7 +25,7 @@ public class PaletteAggregateTests
     /// <summary>Every aggregate in one mutated definition (one catalog load for all of them): the Group over EventRow columns and the Rollup over the `flows` telemetry, each aggregate under its own name `x_{fn}`.</summary>
     static IReadOnlyList<Diagnostic> LoadAll(string file, string from, string to)
     {
-        var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(file, StringComparison.Ordinal) ? f with { Text = f.Text.Replace(from, to) } : f).ToList();
+        var files = Catalog.ReadDirectory(Repo.SattleProjections).Select(f => f.Path.EndsWith(file, StringComparison.Ordinal) ? f with { Text = f.Text.Replace(from, to) } : f).ToList();
         Assert.Contains(to, files.First(f => f.Path.EndsWith(file, StringComparison.Ordinal)).Text);
         return new Catalog().Load(files, updatePins: true).Diagnostics;
     }

@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -11,7 +12,7 @@ public class RetentionOfHistoryTests
     const long Min = 60_000_000_000;
     static SpaceHost Fed(int patches, int events)
     {
-        var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Cluster = "synth", RetainPatches = patches, RetainEvents = events });
+        var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = new KqlSource(), Cluster = "synth", RetainPatches = patches, RetainEvents = events });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
         return h;
     }

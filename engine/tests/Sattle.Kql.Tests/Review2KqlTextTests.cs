@@ -8,7 +8,7 @@ public class Review2KqlTextTests
 {
     static readonly Lazy<Graph> Catalog = new(() =>
     {
-        var cat = new Catalog();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(Language.Catalog.ReadDirectory(Definitions).ToList(), updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, x => x.IsError);
         return cat.Graph;
@@ -16,6 +16,8 @@ public class Review2KqlTextTests
 
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
+    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string FindRoot()
     {
         var d = new DirectoryInfo(AppContext.BaseDirectory);
@@ -102,7 +104,7 @@ public class Review2KqlTextTests
     [Fact]
     public void A_KQL_file_of_a_module_named_in_one_part_gets_a_diagnostic_not_an_exception()
     {
-        var files = Language.Catalog.ReadDirectory(Definitions).ToList();
+        var files = Language.Catalog.ReadDirectory(SattleProjections).ToList();
         files.Add(new SourceFile("w.sattle", "module w @ 1.0.0;\n"));
         KqlFiles? put = null;
         var thrown = Record.Exception(() => put = KqlFiles.Of(files, [new SourceFile("w.kql", "graph p : w;\n")]));
@@ -114,7 +116,7 @@ public class Review2KqlTextTests
     [Fact]
     public void A_module_declared_without_a_version_is_found_by_its_KQL_file()
     {
-        var files = Language.Catalog.ReadDirectory(Definitions).ToList();
+        var files = Language.Catalog.ReadDirectory(SattleProjections).ToList();
         files.Add(new SourceFile("w.sattle", "module w;\n"));
         var put = KqlFiles.Of(files, [new SourceFile("w.p.kql", "graph p : w;\n")]);
         Assert.DoesNotContain(put.Diagnostics, d => d.Message.Contains("there is no module w", StringComparison.Ordinal));
@@ -126,7 +128,7 @@ public class Review2KqlTextTests
     {
         var path = Path.Combine(Definitions, "acme.biz.capabilityView.kql");
         var text = File.ReadAllText(path).Replace("with (rule = \"tree\", accept", "with (rule = \"a#b\", accept", StringComparison.Ordinal);
-        var thrown = Record.Exception(() => KqlFiles.Of(Language.Catalog.ReadDirectory(Definitions).ToList(), [new SourceFile(path, text)]));
+        var thrown = Record.Exception(() => KqlFiles.Of(Language.Catalog.ReadDirectory(SattleProjections).ToList(), [new SourceFile(path, text)]));
         Assert.True(thrown is null, $"{thrown?.GetType().Name}: {thrown?.Message}");
     }
 

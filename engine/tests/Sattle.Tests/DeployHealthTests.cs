@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -17,7 +18,7 @@ public class DeployHealthTests
     static Timeline Replay(int minReady)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("dh.deploymentHealth(master: master)", $"dh.deploymentHealth(master: master, minReady: {minReady})") } : f).ToList();
-        var cat = new Catalog();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var space = cat.Spaces.Keys.Single();

@@ -6,7 +6,7 @@ namespace Sattle.Tests;
 /// <summary>Step 3: the .sattle front end. Parser, lowering to the catalog graph, canonical printer, checks K1 to K11, typing judgments, release digests.</summary>
 public class LanguageTests
 {
-    static Dictionary<string, string> Sources() => Catalog.ReadDirectory(Repo.Definitions).ToDictionary(f => Path.GetFileName(f.Path), f => f.Text);
+    static Dictionary<string, string> Sources() => Catalog.ReadDirectory(Repo.SattleProjections).ToDictionary(f => Path.GetFileName(f.Path), f => f.Text);
 
     static (Catalog Cat, LoadResult Result) Load(Dictionary<string, string> sources, bool updatePins = true)
     {
@@ -55,7 +55,7 @@ public class LanguageTests
     [Fact]
     public void Import_pins_are_verified_and_can_be_fixed()
     {
-        var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:…") }).ToList();
+        var files = Catalog.ReadDirectory(Repo.SattleProjections).Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:…") }).ToList();
         var cat = new Catalog();
         var res = cat.Load(files, updatePins: false);
         Assert.Contains(res.Diagnostics, d => d.Code == "ImportPinMissing" && d.Line > 0);

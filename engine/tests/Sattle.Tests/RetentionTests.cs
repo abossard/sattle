@@ -1,6 +1,7 @@
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -12,8 +13,8 @@ public class RetentionTests
 
     static Catalog Catalog(string age, bool captures = false)
     {
-        var files = Repo.DefinitionFiles(captures).Select(f => f.Path.EndsWith("acme.ops.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("retain on time for 24h", $"retain on time for {age}") } : f).ToList();
-        var cat = new Catalog();
+        var files = Repo.DefinitionFiles(captures).Select(f => f.Path.EndsWith("acme.ops.ingest.kql", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("ago(24h)", $"ago({age})") } : f).ToList();
+        var cat = new Catalog(new KqlSource());
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         return cat;

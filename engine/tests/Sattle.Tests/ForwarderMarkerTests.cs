@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -93,7 +94,7 @@ public class ForwarderMarkerTests
         const string path = "/api/v1/pods";
         string[] first = [Marker(1, "2026-01-01T10:00:00.000Z", "relist-start", path), ListItem(2, "2026-01-01T10:00:00.100Z", "Pod", path, "a"), ListItem(3, "2026-01-01T10:00:00.200Z", "Pod", path, "b"), Marker(4, "2026-01-01T10:00:00.300Z", "relist-end", path)];
         string[] second = [Marker(5, "2026-01-01T10:05:00.000Z", "relist-start", path), first[1], Marker(6, "2026-01-01T10:05:00.300Z", "relist-end", path)];      // a is unchanged: the same record, the same key; b is gone
-        using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Cluster = "c" });
+        using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = new KqlSource(), Cluster = "c" });
         h.StartLive(new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "c", FlushAtEnd = false });
         var n = 0;
         foreach (var line in first.Concat(second)) h.LiveEnvelope("fake", line, $"{{\"n\":{n++}}}");

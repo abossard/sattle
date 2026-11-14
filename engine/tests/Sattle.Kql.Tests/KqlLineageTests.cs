@@ -13,12 +13,14 @@ public class KqlLineageTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
+    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
     /// <summary>The estate served with today's text and with every projection that has a `.kql` file loaded from it.</summary>
     static readonly Lazy<(SpaceHost Today, SpaceHost Kql)> Hosts = new(() =>
     {
-        var files = Catalog.ReadDirectory(Definitions).ToList();
+        var files = Catalog.ReadDirectory(SattleProjections).ToList();
         var put = KqlFiles.Of(files, KqlFiles.ReadDirectory(Definitions));
         Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
         return (Serve(files), Serve(put.Files));

@@ -1,5 +1,6 @@
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -114,7 +115,7 @@ public class WorkloadTests
     [InlineData("configuration", "HostReference,AzureResource")]
     public void Why_web_depends_on_the_cache_is_answered_by_its_evidence_and_the_lineage_of_the_evidence(string how, string masterTypes)
     {
-        using var h = new SpaceHost(Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Cluster = "synth" });
+        using var h = new SpaceHost(Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
         var structure = h.Engine.Graph("workloadStructure").State;
         Assert.Contains(structure.Rels, r => Ids.Name(r.Type) == "DependsOn" && NameOf(structure, r.Source) == "web" && NameOf(structure, r.Target) == "shopcache");
@@ -159,15 +160,16 @@ public class WorkloadTests
     public void A_deployment_takes_the_rank_that_at_least_half_of_its_measured_pods_reach(string pods, string severities, string deployment, string service)
     {
         const string Key = "deploy/synth/shop/web";
-        var rows = severities.Length == 0 ? "values { dk: \"none\", pk2: \"none\", k: \"none\", own: 0 }"
-            : "values " + string.Join(", ", severities.Split(',').Select((sev, i) => $"{{ dk: \"{Key}\", pk2: \"pod{i}\", k: \"pod{i}\", own: {sev} }}"));
-        var files = Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => !f.Path.EndsWith("acme.workload.sattle", StringComparison.Ordinal) ? f : f with
+        var rows = severities.Length == 0 ? "\"none\", \"none\", \"none\", 0"
+            : string.Join(", ", severities.Split(',').Select((sev, i) => $"\"{Key}\", \"pod{i}\", \"pod{i}\", {sev}"));
+        const string PodsOfDeployment = "graph(\"structure\")\n    | graph-match (d)-[c]->(p) where labels(d) has \"WorkloadDeployment\" and labels(c) has \"Contains\" and labels(p) has \"WorkloadPod\" project dk = d.key, pk2 = p.key\n    | join kind=inner (ownByKey) on $left.pk2 == $right.k";
+        var files = Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => !f.Path.EndsWith("acme.workload.workloadHealth.kql", StringComparison.Ordinal) ? f : f with
         {
-            Text = f.Text.Contains("  let podsOfDeployment = join deployed, ownByKey on pk2 == k;", StringComparison.Ordinal)
-                ? f.Text.Replace("  let podsOfDeployment = join deployed, ownByKey on pk2 == k;", $"  let podsOfDeployment = {rows};\n  let unusedPods = join deployed, ownByKey on pk2 == k;")
+            Text = f.Text.Contains(PodsOfDeployment, StringComparison.Ordinal)
+                ? f.Text.Replace(PodsOfDeployment, $"datatable(dk:string, pk2:string, k:string, own:long) [{rows}]")
                 : throw new InvalidOperationException("the statement of the pods of a deployment changed"),
         }).ToList();
-        var cat = new Sattle.Language.Catalog();
+        var cat = new Sattle.Language.Catalog(new KqlSource());
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var space = cat.Spaces.Keys.Single();

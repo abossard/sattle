@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -10,7 +11,7 @@ namespace Sattle.Tests;
 public class SealTests
 {
     const long Min = 60_000_000_000;
-    static HostOptions Options(long sealEvery) => new() { Cluster = "synth", SealEvery = sealEvery };
+    static HostOptions Options(long sealEvery) => new() { Projections = new KqlSource(), Cluster = "synth", SealEvery = sealEvery };
     static List<SourceFile> Files => EstateTests.Files(demo: true);
 
     public static IEnumerable<object[]> Stores() => RestartTests.Stores();
@@ -38,22 +39,19 @@ public class SealTests
     [InlineData(0)] [InlineData(25)]
     public void Projections_in_KQL_stay_with_the_space_through_a_definition_commit_and_a_restart(long sealEvery)
     {
-        List<SourceFile> files = [.. Catalog.ReadDirectory(Repo.Definitions), .. Sattle.Kql.KqlFiles.ReadDirectory(Repo.Definitions)];
+        var files = Catalog.ReadDirectory(Repo.Definitions);
         Assert.Contains(files, f => f.Path.EndsWith(".kql", StringComparison.Ordinal));
-        var options = Options(sealEvery) with { Projections = new Sattle.Kql.KqlSource() };
-        string plainCatalog, plainState;
-        using (var plain = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions), Options(0))) { Feed(plain); plainCatalog = plain.Catalog.Graph.Digest(); plainState = plain.StateDigest(); }
+        var options = Options(sealEvery);
         using var d = new RestartTests.Durable("memory");
         string catalog, state;
-        var edited = files.First(f => f.Path.EndsWith("acme.deployhealth.sattle", StringComparison.Ordinal)).Text.Replace("param Integer = 0", "param Integer = 1");
+        const string Kql = "acme.deployhealth.deploymentHealth.kql";
+        var edited = files.First(f => f.Path.EndsWith(Kql, StringComparison.Ordinal)).Text.Replace("minReady:long = 0", "minReady:long = 1");
         using (var h = SpaceHost.OpenDurable(d.Open(), files, options))
         {
             Feed(h);
-            Assert.NotEqual(plainCatalog, h.Catalog.Graph.Digest());                               // the projections came from the .kql files
-            Assert.Equal(plainState, h.StateDigest());                                             // and give the state of today's text
             var svc = h.Catalog.Modules["acme.svc"].Digest;
-            h.Commit("acme.deployhealth", edited, h.CatalogRevision);
-            Assert.Equal(svc, h.Catalog.Modules["acme.svc"].Digest);                               // another module's commit keeps them
+            h.Commit(Kql, edited, h.CatalogRevision);
+            Assert.Equal(svc, h.Catalog.Modules["acme.svc"].Digest);                               // a commit of another projection's file keeps the others
             catalog = h.Catalog.Graph.Digest(); state = h.StateDigest();
         }
         d.Close();
@@ -63,8 +61,8 @@ public class SealTests
             Assert.Equal((catalog, state), (r.Catalog.Graph.Digest(), r.StateDigest()));
         }
         d.Close();
-        Assert.Contains("no module read", Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery) with { UseSeal = false })).Message);      // the same store, opened without a source
-        Assert.Contains("no module read", Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, Options(0))).Message);
+        Assert.Contains("no module reads the store's projection files", Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options(sealEvery) with { UseSeal = false, Projections = null })).Message);      // the same store, opened without a source
+        Assert.Contains("has no projection source", Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, Options(0) with { Projections = null })).Message);
     }
 
     /// <summary>Six flows between two pods at a given minute, with the given verdicts.</summary>
@@ -221,11 +219,12 @@ public class SealTests
     {
         using var d = new RestartTests.Durable(kind);
         string digest, space; long rev;
-        var edited = Files.First(f => f.Path.EndsWith("acme.deployhealth.sattle", StringComparison.Ordinal)).Text.Replace("param Integer = 0", "param Integer = 1");
+        const string Kql = "acme.deployhealth.deploymentHealth.kql";
+        var edited = Files.First(f => f.Path.EndsWith(Kql, StringComparison.Ordinal)).Text.Replace("minReady:long = 0", "minReady:long = 1");
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(25)))
         {
             Feed(h);
-            h.Commit("acme.deployhealth", edited, h.CatalogRevision);
+            h.Commit(Kql, edited, h.CatalogRevision);
             MoreInput(h);
             h.Seal();
             digest = h.StateDigest(); space = Space(h); rev = h.CatalogRevision;
@@ -235,10 +234,10 @@ public class SealTests
         Assert.Equal(digest, r.StateDigest());
         Assert.Equal(rev, r.CatalogRevision);
         Assert.Equal(space, Space(r));
-        Assert.Contains("param Integer = 1", r.Definition("acme.deployhealth"));
+        Assert.Contains("minReady:long = 1", r.Definition(Kql));
         // whether the seal was used or the journal replayed, a further definition commit works (it needs the retained inputs, which are read back from the journal)
-        r.Commit("acme.deployhealth", edited.Replace("param Integer = 1", "param Integer = 2"), r.CatalogRevision);
-        Assert.Contains("param Integer = 2", r.Definition("acme.deployhealth"));
+        r.Commit(Kql, edited.Replace("minReady:long = 1", "minReady:long = 2"), r.CatalogRevision);
+        Assert.Contains("minReady:long = 2", r.Definition(Kql));
     }
 
     [Fact]

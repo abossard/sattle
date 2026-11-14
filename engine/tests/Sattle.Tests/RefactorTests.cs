@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Runtime;
+using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -52,7 +53,7 @@ public class RefactorTests
     [MemberData(nameof(Extractions))]
     public void Extract_keeps_the_union_of_output_graphs_and_inline_restores_the_text(string module, string[] select, string name)
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         HostTests.Drive(h);
         var projection = module == "acme.biz" ? "capabilityView" : "ingest";
         var before = Union(h); var text = h.Definition(module);
@@ -70,7 +71,7 @@ public class RefactorTests
     [Fact]
     public void A_rule_that_holds_a_lift_statement_moves_between_stacked_projections_with_its_statement_and_without_changing_any_output()
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         HostTests.Drive(h);
         var before = Union(h);
         Apply(h, Body("extract", ("module", "acme.biz"), ("projection", "capabilityView"), ("select", new[] { "capabilities", "counts" }), ("name", "capabilityCore")));
@@ -84,7 +85,7 @@ public class RefactorTests
     [Fact]
     public void A_rule_moves_between_stacked_projections_without_changing_any_output()
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         HostTests.Drive(h);
         var before = Union(h);
         Apply(h, Body("extract", ("module", "acme.biz"), ("projection", "capabilityView"), ("select", new[] { "capabilities", "counts" }), ("name", "capabilityCore")));
@@ -108,7 +109,7 @@ public class RefactorTests
     [MemberData(nameof(Rejections))]
     public void Unsafe_extractions_are_rejected_with_a_typed_reason_and_change_nothing(string code, string[] select, string projection)
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var e = Assert.Throws<HostError>(() => h.Refactor(d, Body("extract", ("module", projection == "ingest" ? "acme.ops" : "acme.svc"), ("projection", projection), ("select", select), ("name", "part"))));
         Assert.Equal(code, e.Code);
@@ -118,7 +119,7 @@ public class RefactorTests
     [Fact]
     public void Selecting_a_statement_inside_a_rule_is_a_split_rule_and_an_unknown_projection_is_named()
     {
-        using var h = HostTests.NewHost();
+        using var h = HostTests.NewSattleHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         Assert.Equal("SplitRule", Assert.Throws<HostError>(() => h.Refactor(d, Body("extract", ("module", "acme.biz"), ("projection", "capabilityView"), ("select", new[] { "tree.1" }), ("name", "x")))).Code);
         Assert.Equal("NotAProjection", Assert.Throws<HostError>(() => h.Refactor(d, Body("extract", ("module", "acme.biz"), ("projection", "nope"), ("select", new[] { "tree" }), ("name", "x")))).Code);
@@ -151,7 +152,7 @@ public class RefactorTests
         files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.twoparts @ 1.0.0 sha256:… as tp;\nimport acme.biz ")
             .Replace("  graph capabilities = ", "  graph both = tp.both(master: master, workloadNamespace: \"shop\", clusterLabel: \"synth\");\n  graph capabilities = ") };
         files.Add(new Sattle.Language.SourceFile("acme.twoparts.sattle", TwoParts));
-        using var h = new SpaceHost(files, new HostOptions { Cluster = "synth" });
+        using var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var r = h.Refactor(d, Body("extract", ("module", "acme.twoparts"), ("projection", "both"), ("select", new[] { "nodes", "emit.2" }), ("name", "nodesSeen")));
         var text = r["modules"]!["acme.twoparts"]!["text"]!.GetValue<string>();
