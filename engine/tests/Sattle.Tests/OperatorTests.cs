@@ -314,6 +314,40 @@ public class OperatorTests
         Assert.Empty(Summaries(e, "Summary", "group", "heaviest"));
     }
 
+    const string Paired = "entity Summary { group: Text; }\nidentity summary for Summary version \"1\" { group: Text by exact; }\nrelationship Paired (base.Item) -> (base.Tag);";
+
+    /// <summary>A Union takes columns that name elements: both sides have the column with the same element type, and each side may have read other properties of its element before. After the union the column is still an element for an emit, and its rows follow insertions and retractions on both sides.</summary>
+    [Fact]
+    public void A_union_takes_element_columns_and_an_emit_uses_them()
+    {
+        using var e = Mini(Paired, """
+            let tags = match master (t: base.Tag);
+            let high = match master (i: base.Item) |> where i.score > 5 |> select { x: i, g: i.group };
+            let heavy = match master (i: base.Item) |> where coalesce(i.weight, 0.0) > 1.0 |> select { x: i, g: i.group };
+            let both = union high, heavy;
+            let j = join both, tags on g == t.key;
+            emit relationship Paired from j key paired: x -> t;
+            """);
+        Tags(e, 1, ("g1", "L", 1));
+        Items(e, 2, ("a1", "g1", 9, null, 1), ("a2", "g1", 1, 2.5m, 1), ("a3", "g1", 9, 2.5m, 1), ("a4", "g1", 1, null, 1), ("b1", "g2", 9, 2.5m, 1));
+        HashSet<string> Sources() => [.. e.Graph("rolled").State.Rels.Where(r => Ids.Name(r.Type) == "Paired").Select(r => e.Graph("master").State.Entity(r.Source)!.Props.Text("d:t.base/prop:key")!)];
+        Assert.Equal(["a1", "a2", "a3"], Sources().Order());                      // a3 comes from both sides and is one relationship
+        Items(e, 3, ("a3", "g1", 9, 2.5m, -1), ("a3", "g1", 9, null, 1));        // a3 leaves one side and stays through the other
+        Assert.Equal(["a1", "a2", "a3"], Sources().Order());
+        Items(e, 4, ("a3", "g1", 9, null, -1), ("a1", "g1", 9, null, -1));
+        Assert.Equal(["a2"], Sources().Order());
+    }
+
+    /// <summary>What a Union refuses about element columns, and what its column no longer is.</summary>
+    [Theory]
+    [InlineData("let a = match master (i: base.Item) |> select { x: i };\nlet b = match master (t: base.Tag) |> select { x: t };\nlet u = union a, b;\nemit entity Summary from u identity summary(group: \"k\") set { group: \"k\" };", "union inputs must have the same columns")]
+    [InlineData("let a = match master (i: base.Item) |> select { x: i };\nlet b = match master (i: base.Item) |> select { x: i };\nlet u = union a, b;\nlet r = u |> select { g: x.group };\nemit entity Summary from r identity summary(group: g) set { group: g };", "x.group")]
+    public void A_union_refuses_element_columns_of_two_types_and_a_property_read_after_it(string body, string message)
+    {
+        var res = new Catalog().Load([new SourceFile("t.base.sattle", Base), new SourceFile("t.view.sattle", View(body, Paired))], updatePins: true);
+        Assert.Contains(res.Diagnostics, d => d.IsError && d.Message.Contains(message));
+    }
+
     const string Labelled = "entity Summary { group: Text; label?: Text; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
 
     static void Tags(Engine e, long seq, params (string Key, string Label, long W)[] rows)

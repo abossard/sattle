@@ -130,7 +130,7 @@ public static class PlanCompiler
                 case TTraverse tr: op = new TraverseOp(tr, inL, catalog.OntologyOf(tp.Port(tr.GraphPort).ExpectsModule!), cx.It); strategies.Add($"{tr.Name}: Traverse, per start element a breadth-first reach over {tr.Direction} edges to depth {tr.Max}; a start is recomputed only when a visited element or edge changed, and only the difference is emitted"); break;
                 case TValues v: op = new ValuesOp(v, cx.It); strategies.Add($"{v.Name}: Values, the constant rows are emitted once, in the first evaluation of the graph"); break;
                 case TJoin j: op = new JoinOp(j, InputLayout(j, "left"), InputLayout(j, "right"), cx); strategies.Add($"{j.Name}: Join, hash join on {j.Keys.Count} equality key(s), bilinear delta: new left against old right, then new right against the new left"); break;
-                case TUnion u: op = new UnionOp(u); strategies.Add($"{u.Name}: Union, linear: both inputs' signed rows concatenated (weights add)"); break;
+                case TUnion u: op = new UnionOp(u, InputLayout(u, "in0"), InputLayout(u, "in1")); strategies.Add($"{u.Name}: Union, linear: both inputs' signed rows concatenated (weights add)"); break;
                 case TDistinct ds: op = new DistinctOp(ds, inL); strategies.Add($"{ds.Name}: Distinct, per-row multiplicity counts; emits +1 when a row first appears and -1 when its last copy goes"); break;
                 case TFilter f: op = new FilterOp(f, inL, cx); strategies.Add($"{f.Name}: Filter, linear, selection vector"); break;
                 case TMap m: op = new MapOp(m, inL, cx); strategies.Add($"{m.Name}: Map, linear, shared columns"); break;

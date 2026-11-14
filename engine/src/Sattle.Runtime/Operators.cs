@@ -902,21 +902,24 @@ sealed class ThresholdOp : PhysOp
 
 // ---- set operators ---------------------------------------------------------------------------------------
 
-/// <summary>Union: both inputs have the same columns, the output is their signed rows one after the other (a Z-set sum). Linear, no state.</summary>
-sealed class UnionOp(TUnion t) : PhysOp(t)
+/// <summary>Union: the signed rows of both inputs one after the other (a Z-set sum). Linear, no state. Each column is taken from the input's column of the same name: an input may carry columns the union leaves behind (the properties read from an element before the union).</summary>
+sealed class UnionOp : PhysOp
 {
+    readonly int[][] from;
+    public UnionOp(TUnion t, Layout in0, Layout in1) : base(t) => from = [.. new[] { in0, in1 }.Select(l => OutLayout.Names.Select(l.Index).ToArray())];
+
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var bb = new BatchBuilder(OutLayout);
-        foreach (var port in new[] { "in0", "in1" })
+        for (var p = 0; p < 2; p++)
         {
-            var b = In(inputs, port); if (b is null || b.Rows == 0) continue;
+            var b = In(inputs, p == 0 ? "in0" : "in1"); if (b is null || b.Rows == 0) continue;
             for (var k = 0; k < b.Rows; k++)
             {
                 var src = b.RowAt(k); var row = bb.Add(b.Weight(src));
                 for (var c = 0; c < OutLayout.Count; c++)
                 {
-                    var col = b.Cols[c]; var dst = bb.Batch.Cols[c];
+                    var col = b.Cols[from[p][c]]; var dst = bb.Batch.Cols[c];
                     if (!col.Present(src)) { bb.Absent(row, c); continue; }
                     if (dst.IsDec) dst.D[row] = col.D[src]; else dst.L[row] = col.L[src];
                 }
