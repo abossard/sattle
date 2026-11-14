@@ -656,7 +656,7 @@ public sealed class Lowering
                 : b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn)), ("row", T(a.Row)));
             Reg(id, a.Pos);
             if (a.Value is not null) Expr(a.Value, id, "value", 0, cx);
-            if (a.Weight is not null) Expr(a.Weight, id, a.Fn == "last" ? "order" : "weight", 0, cx);
+            if (a.Order is not null) Expr(a.Order, id, "order", 0, cx);
         }
     }
 

@@ -72,7 +72,7 @@ public sealed record TComp(string CompId, string CompName, string Canonicalizer,
 public sealed record TId(string DomainId, string DomainName, IReadOnlyList<TComp> Comps, FType Type) : TExpr(Type);
 
 /// <summary>`Row`: the mark of a `last`. The `last` aggregates of one group with the same mark take their values from one input row: the one with the greatest order, on a tie the greatest values in the order of the aggregates; a value that row does not have is absent.</summary>
-public sealed record TAgg(string Target, string Fn, TExpr? Value, TExpr? Weight, FType Out, string? Row = null);
+public sealed record TAgg(string Target, string Fn, TExpr? Value, TExpr? Order, FType Out, string? Row = null);
 public sealed record TSet(string PropId, string PropName, TExpr Value, bool Telemetry, long Period, string? Combine);
 public sealed record Src(bool IsPort, string Name);
 

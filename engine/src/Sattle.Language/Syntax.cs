@@ -190,7 +190,7 @@ public sealed record DistinctStep(Pos Pos) : Step(Pos);
 public sealed record TraverseStep(string Graph, Ref Rel, string Direction, long Min, long Max, string From, string As, Pos Pos) : Step(Pos);
 public sealed record SelectStep(List<(string Name, Expr Value)> Record, Pos Pos) : Step(Pos);
 /// <summary>`Row`: the mark after a `last`, `last(value, order) row name`. The `last` aggregates of one group with the same mark take their values from one input row.</summary>
-public sealed record AggDecl(string Target, string Fn, Expr? Value, Expr? Weight, Pos Pos, string? Row = null);
+public sealed record AggDecl(string Target, string Fn, Expr? Value, Expr? Order, Pos Pos, string? Row = null);
 public sealed record GroupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos) : Step(Pos);
 public sealed record WindowStep(string On, long WidthNs, string Late, Pos Pos) : Step(Pos);
 public sealed record RetainStep(string On, long AgeNs, Pos Pos) : Step(Pos);

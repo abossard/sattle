@@ -7,18 +7,16 @@ namespace Sattle.Tests;
 /// <summary>`/palette` says per aggregate where it may be used (`Group` over data, `Rollup` over telemetry). The declaration and the checker must agree: every listed context is accepted, every other one is a typed error.</summary>
 public class PaletteAggregateTests
 {
-    static readonly string[] All = ["count", "countDistinct", "sum", "min", "max", "mean", "weightedMean", "any", "all", "last"];
+    static readonly string[] All = ["count", "countDistinct", "sum", "min", "max", "mean", "any", "all", "last"];
 
     /// <summary>One call of each aggregate over the columns of the EventRow (count Integer, time Instant, name Text) and over the telemetry `flows`.</summary>
     static string Call(string fn, bool rollup) => (fn, rollup) switch
     {
         ("count", _) => "count()",
         ("countDistinct", false) => "countDistinct(name)",
-        ("weightedMean", false) => "weightedMean(count, count)",
         ("any" or "all", false) => fn + "(count > 0)",
         ("last", false) => "last(name, time)",
         (_, false) => fn + "(count)",
-        ("weightedMean", true) => "weightedMean(flows, flows)",
         ("last", true) => "last(flows, flows)",
         ("any" or "all", true) => fn + "(flows > 0)",
         (_, true) => fn + "(flows)",
@@ -38,7 +36,7 @@ public class PaletteAggregateTests
     static bool Refused(IEnumerable<Diagnostic> diags, string agg) => diags.Any(d => d.IsError && d.Focus.EndsWith("/agg:" + agg, StringComparison.Ordinal) && d.Code is "Aggregate" or "Unsupported");
 
     [Theory]
-    [InlineData("count")] [InlineData("countDistinct")] [InlineData("sum")] [InlineData("min")] [InlineData("max")] [InlineData("mean")] [InlineData("weightedMean")] [InlineData("any")] [InlineData("all")] [InlineData("last")]
+    [InlineData("count")] [InlineData("countDistinct")] [InlineData("sum")] [InlineData("min")] [InlineData("max")] [InlineData("mean")] [InlineData("any")] [InlineData("all")] [InlineData("last")]
     public void A_group_over_data_accepts_exactly_the_aggregates_the_palette_lists_for_Group(string fn)
     {
         var listed = Support.AggregateContexts[fn].Any(c => c.Operator == "Group");
@@ -46,7 +44,7 @@ public class PaletteAggregateTests
     }
 
     [Theory]
-    [InlineData("count")] [InlineData("countDistinct")] [InlineData("sum")] [InlineData("min")] [InlineData("max")] [InlineData("mean")] [InlineData("weightedMean")] [InlineData("any")] [InlineData("all")] [InlineData("last")]
+    [InlineData("count")] [InlineData("countDistinct")] [InlineData("sum")] [InlineData("min")] [InlineData("max")] [InlineData("mean")] [InlineData("any")] [InlineData("all")] [InlineData("last")]
     public void A_rollup_over_telemetry_accepts_exactly_the_aggregates_the_palette_lists_for_Rollup_given_a_delta_value(string fn)
     {
         var ctx = Support.AggregateContexts[fn].FirstOrDefault(c => c.Operator == "Rollup");

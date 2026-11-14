@@ -73,7 +73,7 @@ public class DraftTests
         Assert.False(ops.First(o => o!["kind"]!.GetValue<string>() == "Delta")!["supported"]!.GetValue<bool>());
         Assert.Contains(p["functions"]!.AsArray(), f => f!["name"]!.GetValue<string>() == "Divide" && f["signature"]!.GetValue<string>().Contains("Decimal"));
         Assert.Contains(p["ruleClasses"]!.AsArray(), c => c!["name"]!.GetValue<string>() == "lens");
-        Assert.Contains(p["aggregates"]!.AsArray(), a => a!["name"]!.GetValue<string>() == "weightedMean");
+        Assert.Contains(p["aggregates"]!.AsArray(), a => a!["name"]!.GetValue<string>() == "countDistinct");
     }
 
     [Fact]

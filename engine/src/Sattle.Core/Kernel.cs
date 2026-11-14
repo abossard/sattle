@@ -164,7 +164,7 @@ public static class KernelTable
         ("EmitEntity", "mode", ["create", "update"]),
         ("EmitRelationship", "mode", ["create", "update"]),
         ("EmitRelationship", "retype", ["reject", "keepExisting", "takeNew"]),
-        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "any", "all", "mean", "weightedMean", "last"]),
+        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "any", "all", "mean", "last"]),
         ("PatternNode", "side", ["source", "target"]),
         ("PatternEdge", "side", ["source", "target"]),
         ("Function", "role", ["scalar", "canonicalizer"]),
@@ -214,7 +214,7 @@ public static class KernelTable
         S("Delta", "key", "Assign", "+"), S("Delta", "value", "Expr", "1"), S("Threshold", "key", "Assign", "+"), S("Threshold", "value", "Expr", "1"), S("Threshold", "aboveBy", "Expr", "?"), S("Threshold", "enterBy", "Expr", "?"), S("Threshold", "belowBy", "Expr", "?"), S("Threshold", "exitBy", "Expr", "?"),
         S("Lift", "carry", "Assign", "*", true), S("Lift", "derive", "Assign", "*", true), S("Lift", "keep", "Assign", "*", true), S("Lift", "when", "Expr", "?"), S("Lift", "state", "LiftState", "*", true),
         S("Call", "arg", "Expr", "*", true), S("IdOf", "component", "SetComponent", "+"), S("Assign", "value", "Expr", "1"),
-        S("Aggregate", "value", "Expr", "?"), S("Aggregate", "weight", "Expr", "?"), S("Aggregate", "order", "Expr", "?"),
+        S("Aggregate", "value", "Expr", "?"), S("Aggregate", "order", "Expr", "?"),
         S("SetProperty", "value", "Expr", "1"), S("SetComponent", "value", "Expr", "1"), S("RowValue", "assign", "Assign", "+"),
         S("GraphSpace", "graph", "Graph", "+"), S("GraphSpace", "source", "Source", "*"), S("GraphSpace", "binding", "Binding", "*"),
     ];
@@ -353,5 +353,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:7185008e87b15b22f3d172f2c4b426deb080451e5ecd1a12f60a6667fc86de19";
+    public const string CompiledDigest = "sha256:7c7b7621661da0fdfb52c2fa51a37fbbbcc35587e95b4ad573518aa75b77489f";
 }

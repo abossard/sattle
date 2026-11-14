@@ -583,7 +583,7 @@ public sealed class ProjectionChecker(Graph defs)
         foreach (var a in d.Children(op, "agg"))
         {
             var target = d.Text(a, "target") ?? Ids.Name(a); var fn = d.Text(a, "fn") ?? "";
-            var ve = d.Children(a, "value").FirstOrDefault(); var we = d.Children(a, fn == "last" ? "order" : "weight").FirstOrDefault();
+            var ve = d.Children(a, "value").FirstOrDefault(); var we = d.Children(a, "order").FirstOrDefault();
             var v = ve is null ? null : Ex(ve, R); var w = we is null ? null : Ex(we, R);
             if (ve is not null && v is null) continue;
             var row = d.Text(a, "row");
@@ -599,21 +599,16 @@ public sealed class ProjectionChecker(Graph defs)
                         case "countDistinct": ft = new FType(Ty.Int(), true, Role.Data); break;
                         case "sum": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "sum needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
                         case "mean": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "mean needs a numeric argument"); else ft = new FType(Ty.Dec(), false, Role.Data); break;
-                        case "weightedMean":
-                            if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "weightedMean needs a numeric argument");
-                            else if (w is null || !w.Type.Role.IsData || !w.Type.Ty.IsNumeric) Err("Aggregate", a, "weightedMean needs a numeric weight: weightedMean(value, weight)");
-                            else ft = new FType(Ty.Dec(), false, Role.Data);
-                            break;
                         case "any" or "all": if (v.Type.Ty.Tag != Tag.Boolean) Err("Aggregate", a, $"{fn} needs a Boolean argument"); else ft = new FType(Ty.Boolean, false, Role.Data); break;
                         case "last":
                             if (w is null) Err("Aggregate", a, "last needs an ordering: last(value, order)");
                             else if (!w.Type.Role.IsData || w.Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant)) Err("Aggregate", a, $"the ordering of last must be a data Integer, Decimal or Instant, found {w.Type}");
                             else if (v.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) Err("Aggregate", a, "last takes a value column, not an element");
-                            else if (row is not null && res.FirstOrDefault(x => x.Row == row) is { } first && !SameExpr(first.Weight!, w)) Err("Aggregate", a, $"the last aggregates of row {row} take one row, so they have one ordering: {target} orders by another than {first.Target}");
+                            else if (row is not null && res.FirstOrDefault(x => x.Row == row) is { } first && !SameExpr(first.Order!, w)) Err("Aggregate", a, $"the last aggregates of row {row} take one row, so they have one ordering: {target} orders by another than {first.Target}");
                             else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data);
                             break;
                         case "min" or "max": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, $"{fn} needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
-                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, weightedMean, any, all, last)"); break;
+                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, any, all, last)"); break;
                     }
             }
             else

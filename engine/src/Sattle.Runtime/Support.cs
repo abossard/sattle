@@ -42,7 +42,6 @@ public static class Support
         ["min"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["max"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["mean"] = [new("Group", "numeric data value", "Decimal"), new("Rollup", "numeric telemetry value", "Decimal", "gauge")],
-        ["weightedMean"] = [new("Group", "numeric data value and a numeric data weight: weightedMean(value, weight)", "Decimal")],
         ["any"] = [new("Group", "Boolean data value", "Boolean")],
         ["all"] = [new("Group", "Boolean data value", "Boolean")],
         ["last"] = [new("Group", "data value (not an element) and an ordering of data Integer, Decimal or Instant: last(value, order)", "same as the value")],

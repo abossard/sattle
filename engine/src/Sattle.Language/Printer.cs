@@ -460,7 +460,7 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
     {
         var args = new List<string>();
         if (d.Children(a, "value").FirstOrDefault() is { } v) args.Add(Expr(v, 0));
-        if ((d.Children(a, "weight").FirstOrDefault() ?? d.Children(a, "order").FirstOrDefault()) is { } w) args.Add(Expr(w, 0));
+        if (d.Children(a, "order").FirstOrDefault() is { } w) args.Add(Expr(w, 0));
         return $"{d.Text(a, "target")}: {d.Text(a, "fn")}({string.Join(", ", args)})" + (d.Text(a, "row") is { } row ? " row " + row : "");
     })) + " }";
     string Record(IEnumerable<(string Name, string Node)> items) => "{ " + string.Join(", ", items.Select(x => $"{x.Name}: {Expr(x.Node, 0)}")) + " }";

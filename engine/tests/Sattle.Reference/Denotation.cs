@@ -201,7 +201,7 @@ public static class Denotation
     }
 
     /// <summary>The columns that carry the pair of an aggregate, as the engine names them: sum and count of a `mean`, the order of a `last` with an order that is no text.</summary>
-    public static string[] PairNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Weight?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
+    public static string[] PairNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Order?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
 
     /// <summary>The pair of an aggregate over its rows: the sum and count of a mean, the order of the row a last takes.</summary>
     static IEnumerable<(string Name, Value Value)> PairOf(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows, IReadOnlyList<TAgg> aggs)
@@ -217,11 +217,11 @@ public static class Denotation
         else if (PairNames(a).Length > 0 && a.Row is not null)
         {
             var row = RowOf(a.Row, aggs, rows);
-            yield return (a.Target + "#order", row is null || Expressions.Eval(a.Value!, row) is NullValue ? Value.Null : Value.Decimal(Number(Expressions.Eval(a.Weight!, row))));
+            yield return (a.Target + "#order", row is null || Expressions.Eval(a.Value!, row) is NullValue ? Value.Null : Value.Decimal(Number(Expressions.Eval(a.Order!, row))));
         }
         else if (PairNames(a).Length > 0)
         {
-            var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Weight!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
+            var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Order!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
                 .GroupBy(r => Canon.Of([r.Order, r.Value])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
             yield return (a.Target + "#order", ordered.Length == 0 ? Value.Null : Value.Decimal(Number(ordered.Aggregate((x, y) => Canon.Compare(y.Order, x.Order) is var c && (c > 0 || c == 0 && Canon.Compare(y.Value, x.Value) > 0) ? y : x).Order)));
         }
@@ -249,7 +249,7 @@ public static class Denotation
     static Func<string, Value>? RowOf(string mark, IReadOnlyList<TAgg> aggs, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)
     {
         var members = aggs.Where(x => x.Row == mark).ToList();
-        var entries = rows.Select(r => (Order: Expressions.Eval(members[0].Weight!, r.Read), Values: members.Select(m => Expressions.Eval(m.Value!, r.Read)).ToImmutableArray(), r.Read, r.Weight))
+        var entries = rows.Select(r => (Order: Expressions.Eval(members[0].Order!, r.Read), Values: members.Select(m => Expressions.Eval(m.Value!, r.Read)).ToImmutableArray(), r.Read, r.Weight))
             .Where(r => r.Order is not NullValue).GroupBy(r => Canon.Of([r.Order, .. r.Values])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
         if (entries.Length == 0) return null;
         int Compare((Value Order, ImmutableArray<Value> Values, Func<string, Value> Read, long Weight) x, (Value Order, ImmutableArray<Value> Values, Func<string, Value> Read, long Weight) y)
@@ -282,12 +282,6 @@ public static class Denotation
                     var n = valued.Sum(r => r.Weight);
                     return n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value)) / n);
                 }
-            case "weightedMean":
-                {
-                    var w = valued.Select(r => (r.Value, By: Expressions.Eval(a.Weight!, r.Read), r.Weight)).Where(r => r.By is not NullValue).ToArray();
-                    var total = w.Sum(r => r.Weight * Canon.Number(r.By));
-                    return total == 0 ? Value.Null : Value.Decimal(w.Sum(r => r.Weight * Canon.Number(r.Value) * Canon.Number(r.By)) / total);
-                }
             case "any" or "all":
                 {
                     long present = valued.Sum(r => r.Weight), holds = valued.Where(r => True(r.Value)).Sum(r => r.Weight);
@@ -302,7 +296,7 @@ public static class Denotation
             case "last":
                 {
                     // the value with the greatest order; among equal orders the greatest value
-                    var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Weight!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
+                    var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Order!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
                         .GroupBy(r => Canon.Of([r.Order, r.Value])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
                     if (ordered.Length == 0) return Value.Null;
                     var best = ordered.Aggregate((x, y) => Canon.Compare(y.Order, x.Order) is var c && (c > 0 || c == 0 && Canon.Compare(y.Value, x.Value) > 0) ? y : x);

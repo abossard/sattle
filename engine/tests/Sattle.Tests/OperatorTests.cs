@@ -594,26 +594,25 @@ public class OperatorTests
         Assert.Contains("both inputs have a column named", Errors(JoinBody("g == tk").Replace("tk: t.key", "g: t.key").Replace("g == tk", "g == g")));
     }
 
-    const string Stats = "entity Summary { group: Text; avg?: Decimal; wavg?: Decimal; avgW?: Decimal; big?: Boolean; small?: Boolean; newest?: Text; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
+    const string Stats = "entity Summary { group: Text; avg?: Decimal; avgW?: Decimal; big?: Boolean; small?: Boolean; newest?: Text; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
 
     [Fact]
     public void Mean_any_all_and_last_follow_inserts_and_retractions_and_are_null_over_no_value()
     {
         using var e = Mini(Stats, """
             let items = match master (i: base.Item);
-            let g = items |> group by { group: i.group } aggregate { avg: mean(i.score), avgW: mean(i.weight), wavg: weightedMean(i.score, i.weight), big: any(i.score > 4), small: all(i.score < 10), newest: last(i.key, i.score) };
-            emit entity Summary from g identity summary(group: group) set { group: group, avg: avg, avgW: avgW, wavg: wavg, big: big, small: small, newest: newest };
+            let g = items |> group by { group: i.group } aggregate { avg: mean(i.score), avgW: mean(i.weight), big: any(i.score > 4), small: all(i.score < 10), newest: last(i.key, i.score) };
+            emit entity Summary from g identity summary(group: group) set { group: group, avg: avg, avgW: avgW, big: big, small: small, newest: newest };
             """);
         Items(e, 1, ("a1", "a", 3, 1.5m, 1), ("a2", "a", 7, null, 1), ("a3", "a", 5, 2.5m, 1), ("b1", "b", 12, null, 1));
         Value V(string g, string p) => Summaries(e, "Summary", "group", p)[g];
         Assert.Equal(new DecimalValue(5m), V("a", "avg")); Assert.Equal(new DecimalValue(2m), V("a", "avgW"));     // the null weight is skipped
-        Assert.Equal(new DecimalValue(4.25m), V("a", "wavg")); Assert.Equal(Value.Null, V("b", "wavg"));
         Assert.Equal(new BooleanValue(true), V("a", "big")); Assert.Equal(new BooleanValue(true), V("a", "small")); Assert.Equal(new TextValue("a2"), V("a", "newest"));
         Assert.Equal(new BooleanValue(false), V("b", "small")); Assert.Equal(Value.Null, V("b", "avgW"));         // no weight at all: null
         Items(e, 2, ("a2", "a", 7, null, -1));                                                                   // the newest row goes: the next one takes over
         Assert.Equal(new TextValue("a3"), V("a", "newest")); Assert.Equal(new DecimalValue(4m), V("a", "avg")); Assert.Equal(new BooleanValue(true), V("a", "big"));
         Items(e, 3, ("a3", "a", 5, 2.5m, -1));
-        Assert.Equal(new BooleanValue(false), V("a", "big")); Assert.Equal(new TextValue("a1"), V("a", "newest")); Assert.Equal(new DecimalValue(3m), V("a", "wavg"));
+        Assert.Equal(new BooleanValue(false), V("a", "big")); Assert.Equal(new TextValue("a1"), V("a", "newest"));
     }
 
     [Fact]

@@ -350,7 +350,7 @@ sealed class KeyTable
     public void ReleaseIfDead(int slot) { if (Dead(slot)) rows.Add(KeyAt(slot), -1); }
 }
 
-enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, AnyAll, Last, WMean }
+enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, AnyAll, Last }
 sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bool Desc = false, int Index2 = -1, VExpr? Order = null, bool OutDec = false, bool All = false, bool ValueIsText = false, bool OrderIsText = false)
 {
     /// <summary>For a `last` that takes its value from one row with others: the row set, and its place among the members; -1 for any other aggregate.</summary>
@@ -420,7 +420,7 @@ abstract class AggregatingOp : PhysOp
     readonly (int Agg, int ColA, int ColB)[] companions = [];
 
     /// <summary>The names of the companion columns an aggregate has, if any.</summary>
-    public static string[] CompanionNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Weight?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
+    public static string[] CompanionNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Order?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
 
     protected AggregatingOp(TOp t, IReadOnlyList<(string Name, TExpr Value)> keys, IReadOnlyList<TAgg> aggSpecs, Layout inLayout, OpContext cx, string[] outKeyNames, bool telemetryInput, bool withCompanions = false) : base(t)
     {
@@ -447,12 +447,11 @@ abstract class AggregatingOp : PhysOp
                 case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, d++, v, true)); break;
                 case "sum": list.Add(new AggSpec(AggKind.SumL, l++, v, false)); break;
                 case "mean": list.Add(new AggSpec(AggKind.Mean, d++, v, false, false, l++)); break;
-                case "weightedMean": list.Add(new AggSpec(AggKind.WMean, d++, v, false, false, d++, ExprCompiler.Compile(a.Weight!, inLayout, cx.It, cx.Faults))); break;
                 case "any" or "all": list.Add(new AggSpec(AggKind.AnyAll, l++, v, false, false, l++, null, false, a.Fn == "all")); break;
                 case "last":
                     {
-                        var order = ExprCompiler.Compile(a.Weight!, inLayout, cx.It, cx.Faults);
-                        var spec = new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, a.Row is null ? last++ : -1, order, dec, false, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent, a.Weight!.Type.Ty.Tag is Tag.Text or Tag.Ent);
+                        var order = ExprCompiler.Compile(a.Order!, inLayout, cx.It, cx.Faults);
+                        var spec = new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, a.Row is null ? last++ : -1, order, dec, false, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent, a.Order!.Type.Ty.Tag is Tag.Text or Tag.Ent);
                         if (a.Row is { } mark)
                         {
                             var set = sets.FindIndex(x => x.Mark == mark);
@@ -508,15 +507,6 @@ abstract class AggregatingOp : PhysOp
                         if (c.P is not null && !c.P[row]) break;
                         t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row]));
                         t.AddL(slot, s.Index2, w);
-                        break;
-                    }
-                case AggKind.WMean:
-                    {
-                        var c = valueCols[a]!; var wc = orderCols[a]!;
-                        if (c.P is not null && !c.P[row] || wc.P is not null && !wc.P[row]) break;
-                        var wv = wc.IsDec ? wc.D[row] : wc.L[row];
-                        t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row]) * wv);
-                        t.AddD(slot, s.Index2, w * wv);
                         break;
                     }
                 case AggKind.AnyAll:
@@ -576,7 +566,6 @@ abstract class AggregatingOp : PhysOp
         AggKind.ExtD => t.ExtremeD(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Mean => t.L(slot, aggs[a].Index2) is var n && n != 0 ? t.D(slot, aggs[a].Index) / n : 0,
         AggKind.Last => LastOf(t, slot, aggs[a]) is { } l ? l.Val : 0,
-        AggKind.WMean => t.D(slot, aggs[a].Index2) is var sw && sw != 0 ? t.D(slot, aggs[a].Index) / sw : 0,
         _ => t.D(slot, aggs[a].Index),
     };
     /// <summary>A min or max over no non-null value is null.</summary>
@@ -585,7 +574,6 @@ abstract class AggregatingOp : PhysOp
         AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, out _),
         AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, out _),
         AggKind.Mean => t.L(slot, aggs[a].Index2) == 0,
-        AggKind.WMean => t.D(slot, aggs[a].Index2) == 0,
         AggKind.AnyAll => t.L(slot, aggs[a].Index2) == 0,
         AggKind.Last => LastOf(t, slot, aggs[a]) is null,
         _ => false,
@@ -610,8 +598,8 @@ abstract class AggregatingOp : PhysOp
         for (var a = 0; a < aggs.Length; a++)
         {
             var col = bt.Cols[outAggCol[a]];
-            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.WMean or AggKind.AnyAll or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
-            if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean or AggKind.WMean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
+            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.AnyAll or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
+            if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
             else col.L[row] = AggL(t, slot, a);
         }
     }

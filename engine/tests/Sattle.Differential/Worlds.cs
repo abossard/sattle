@@ -451,7 +451,7 @@ public static class Worlds
         Aggregate("countDistinct", "v: countDistinct(k)", "v: Integer;", "v: v"),
         Aggregate("sum", "v: sum(n), w: sum(d)", "v: Integer; w?: Decimal;", "v: v, w: w"),
         Aggregate("min and max", "lo: min(n), hi: max(n), top: max(d)", "lo?: Integer; hi?: Integer; top?: Decimal;", "lo: lo, hi: hi, top: top") with { Witnesses = ["hi=n:", "top=n:"] },
-        Aggregate("mean", "v: mean(n), w: weightedMean(n, d)", "v?: Decimal; w?: Decimal;", "v: v, w: w"),
+        Aggregate("mean", "v: mean(n), w: mean(d)", "v?: Decimal; w?: Decimal;", "v: v, w: w"),
         Aggregate("any and all", "some: any(n > 2), every: all(n > 2)", "some?: Boolean; every?: Boolean;", "some: some, every: every") with { Witnesses = ["some=b:1", "every=b:0"] },
         Aggregate("last", "v: last(k, n)", "v?: Text;", "v: v") with { Witnesses = ["v=t:k"] },
         Aggregate("last of one row", "v: last(k, n) row top, w: last(d, n) row top, x: last(n, n) row top", "v?: Text; w?: Decimal; x?: Integer;", "v: v, w: w, x: x") with { Witnesses = ["v=t:k", "prop:x=n:"] },
