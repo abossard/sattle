@@ -454,6 +454,7 @@ public static class Worlds
         Aggregate("mean", "v: mean(n), w: weightedMean(n, d)", "v?: Decimal; w?: Decimal;", "v: v, w: w"),
         Aggregate("any and all", "some: any(n > 2), every: all(n > 2)", "some?: Boolean; every?: Boolean;", "some: some, every: every") with { Witnesses = ["some=b:1", "every=b:0"] },
         Aggregate("last", "v: last(k, n)", "v?: Text;", "v: v") with { Witnesses = ["v=t:k"] },
+        Aggregate("last of one row", "v: last(k, n) row top, w: last(d, n) row top, x: last(n, n) row top", "v?: Text; w?: Decimal; x?: Integer;", "v: v, w: w, x: x") with { Witnesses = ["v=t:k", "prop:x=n:"] },
         Aggregate("countDistinct over a decimal", "v: countDistinct(d)", "v: Integer;", "v: v"),
         Rows("group by a decimal key", "Group", "    let p = a |> select { k: g, g: g, n: n, d: coalesce(d, 0.0) };\n    let q = p |> group by { k: k, g: g, d: d } aggregate { n: sum(n) };\n    let x = q |> select { k: k, g: g, n: n };"),
         Aggregate("count with countDistinct", "c: count(), v: countDistinct(k)", "c: Integer; v: Integer;", "c: c, v: v"),

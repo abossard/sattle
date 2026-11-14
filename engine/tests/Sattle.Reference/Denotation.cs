@@ -204,7 +204,7 @@ public static class Denotation
     public static string[] PairNames(TAgg a) => a.Fn switch { "mean" => [a.Target + "#sum", a.Target + "#count"], "last" when a.Weight?.Type.Ty.Tag is not (Tag.Text or Tag.Ent) => [a.Target + "#order"], _ => [] };
 
     /// <summary>The pair of an aggregate over its rows: the sum and count of a mean, the order of the row a last takes.</summary>
-    static IEnumerable<(string Name, Value Value)> PairOf(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)
+    static IEnumerable<(string Name, Value Value)> PairOf(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows, IReadOnlyList<TAgg> aggs)
     {
         var valued = a.Value is null ? [] : rows.Select(r => (Value: Expressions.Eval(a.Value, r.Read), r.Read, r.Weight)).Where(r => r.Value is not NullValue).ToImmutableArray();
         static decimal Number(Value v) => v is InstantValue t ? t.Ns : Canon.Number(v);
@@ -213,6 +213,11 @@ public static class Denotation
             var n = valued.Sum(r => r.Weight);
             yield return (a.Target + "#sum", n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value))));
             yield return (a.Target + "#count", n == 0 ? Value.Null : Value.Integer(n));
+        }
+        else if (PairNames(a).Length > 0 && a.Row is not null)
+        {
+            var row = RowOf(a.Row, aggs, rows);
+            yield return (a.Target + "#order", row is null || Expressions.Eval(a.Value!, row) is NullValue ? Value.Null : Value.Decimal(Number(Expressions.Eval(a.Weight!, row))));
         }
         else if (PairNames(a).Length > 0)
         {
@@ -234,13 +239,30 @@ public static class Denotation
         var result =
             from g in members
             where g.Sum(x => x.Weight) > 0
-            let named = g.First().Key.Concat(aggs.Select(a => (a.Target, Aggregate(a, [.. g.Select(x => (x.Read, x.Weight))])))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)
-            let pairValues = extra.Length == 0 ? [] : aggs.SelectMany(a => PairOf(a, [.. g.Select(x => (x.Read, x.Weight))])).ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal)
+            let named = g.First().Key.Concat(aggs.Select(a => (a.Target, Aggregate(a, [.. g.Select(x => (x.Read, x.Weight))], aggs)))).ToDictionary(x => x.Item1, x => x.Item2, StringComparer.Ordinal)
+            let pairValues = extra.Length == 0 ? [] : aggs.SelectMany(a => PairOf(a, [.. g.Select(x => (x.Read, x.Weight))], aggs)).ToDictionary(x => x.Name, x => x.Value, StringComparer.Ordinal)
             select (Shape(op, With(period is { } w ? With(named, [("windowEnd", Value.Instant(Instant(named["windowStart"]) + w))]) : named, more ?? [])).AddRange(extra.Select(n => pairValues[n])), 1L);
         return new Relation([.. Names(op), .. extra], ZSet.Of(result));
     }
 
-    public static Value Aggregate(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)
+    /// <summary>The input row that the `last` aggregates of one row mark take their values from. Among the rows that have an order (taken once per distinct order and member values, with positive weight): the greatest order, and on a tie the greatest values in the order of the members, where no value is below every value. Null when no row has an order.</summary>
+    static Func<string, Value>? RowOf(string mark, IReadOnlyList<TAgg> aggs, ImmutableArray<(Func<string, Value> Read, long Weight)> rows)
+    {
+        var members = aggs.Where(x => x.Row == mark).ToList();
+        var entries = rows.Select(r => (Order: Expressions.Eval(members[0].Weight!, r.Read), Values: members.Select(m => Expressions.Eval(m.Value!, r.Read)).ToImmutableArray(), r.Read, r.Weight))
+            .Where(r => r.Order is not NullValue).GroupBy(r => Canon.Of([r.Order, .. r.Values])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
+        if (entries.Length == 0) return null;
+        int Compare((Value Order, ImmutableArray<Value> Values, Func<string, Value> Read, long Weight) x, (Value Order, ImmutableArray<Value> Values, Func<string, Value> Read, long Weight) y)
+        {
+            var c = Canon.Compare(x.Order, y.Order);
+            for (var i = 0; c == 0 && i < members.Count; i++)
+                c = x.Values[i] is NullValue || y.Values[i] is NullValue ? (x.Values[i] is NullValue ? 0 : 1) - (y.Values[i] is NullValue ? 0 : 1) : Canon.Compare(x.Values[i], y.Values[i]);
+            return c;
+        }
+        return entries.Aggregate((x, y) => Compare(y, x) > 0 ? y : x).Read;
+    }
+
+    public static Value Aggregate(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows, IReadOnlyList<TAgg>? aggs = null)
     {
         var valued = a.Value is null ? [] : rows.Select(r => (Value: Expressions.Eval(a.Value, r.Read), r.Read, r.Weight)).Where(r => r.Value is not NullValue).ToImmutableArray();
         IEnumerable<Value> Present() => valued.GroupBy(r => Canon.Of(r.Value)).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First().Value);
@@ -270,6 +292,12 @@ public static class Denotation
                 {
                     long present = valued.Sum(r => r.Weight), holds = valued.Where(r => True(r.Value)).Sum(r => r.Weight);
                     return present == 0 ? Value.Null : Value.Boolean(a.Fn == "any" ? holds > 0 : holds == present);
+                }
+            case "last" when a.Row is not null:
+                {
+                    // the value of the one row the mark's aggregates share
+                    var value = RowOf(a.Row, aggs!, rows) is { } row ? Expressions.Eval(a.Value!, row) : Value.Null;
+                    return value is NullValue || !decimalOut ? value : Value.Decimal(Canon.Number(value));
                 }
             case "last":
                 {

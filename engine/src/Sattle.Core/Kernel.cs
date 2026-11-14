@@ -93,7 +93,7 @@ public static class KernelTable
         T("LiftState | target:T of:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
-        T("Assign | target:T"), T("Aggregate | target:T fn:T"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
+        T("Assign | target:T"), T("Aggregate | target:T fn:T row:T?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
         T("Function | name:T signature:T role:T inverse:T?"),
         T("GraphSpace : Declaration |"), T("Graph | name:T"), T("Source | name:T adapter:T"), T("Binding | value:Any?"),
         // system vocabulary, section 2.7
@@ -353,5 +353,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:df107fbdf074b95e5bfca837afbc1bf3948b05ebf45f9288c40c3940abe920a1";
+    public const string CompiledDigest = "sha256:97f46b5a58dbd6111e3c2676b403569b75eddfbe566502a942a01a3e06c8a02f";
 }

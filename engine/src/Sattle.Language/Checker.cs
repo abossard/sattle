@@ -588,6 +588,8 @@ public sealed class ProjectionChecker(Graph defs)
             var ve = d.Children(a, "value").FirstOrDefault(); var we = d.Children(a, fn == "last" ? "order" : "weight").FirstOrDefault();
             var v = ve is null ? null : Ex(ve, R); var w = we is null ? null : Ex(we, R);
             if (ve is not null && v is null) continue;
+            var row = d.Text(a, "row");
+            if (row is not null && (fn != "last" || telemetry)) { Err("Aggregate", a, $"'row {row}' marks a last of a group: the last aggregates with one mark take their values from one row"); continue; }
             FType? ft = null;
             if (fn == "count") { if (v is not null) Err("Aggregate", a, "count takes no argument"); ft = new FType(Ty.Int(), true, Role.Data); }
             else if (v is null) Err("Aggregate", a, $"{fn} needs an argument");
@@ -609,6 +611,7 @@ public sealed class ProjectionChecker(Graph defs)
                             if (w is null) Err("Aggregate", a, "last needs an ordering: last(value, order)");
                             else if (!w.Type.Role.IsData || w.Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant)) Err("Aggregate", a, $"the ordering of last must be a data Integer, Decimal or Instant, found {w.Type}");
                             else if (v.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) Err("Aggregate", a, "last takes a value column, not an element");
+                            else if (row is not null && res.FirstOrDefault(x => x.Row == row) is { } first && !SameExpr(first.Weight!, w)) Err("Aggregate", a, $"the last aggregates of row {row} take one row, so they have one ordering: {target} orders by another than {first.Target}");
                             else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data);
                             break;
                         case "min" or "max": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, $"{fn} needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
@@ -624,10 +627,20 @@ public sealed class ProjectionChecker(Graph defs)
                 else if (fn == "mean" && role.Temporality != "gauge") Err("Aggregate", a, "mean over a delta value is not defined; use sum, or rate it first");
                 else ft = new FType(fn == "mean" ? Ty.Dec() : v.Type.Ty, v.Type.Req, role, fn);
             }
-            if (ft is not null) res.Add(new TAgg(target, fn, v, w, ft));
+            if (ft is not null && row is not null && res.Count(x => x.Row == row) >= 62) { Err("Aggregate", a, $"row {row} has more than 62 last aggregates"); continue; }
+            if (ft is not null) res.Add(new TAgg(target, fn, v, w, ft, row));
         }
         return res;
     }
+
+    /// <summary>Whether two expressions over one row are the same expression.</summary>
+    static bool SameExpr(TExpr a, TExpr b) => (a, b) switch
+    {
+        (TField x, TField y) => x.Name == y.Name,
+        (TLit x, TLit y) => x.Value.Equals(y.Value),
+        (TCall x, TCall y) => x.Fn == y.Fn && x.Args.Count == y.Args.Count && x.Args.Zip(y.Args).All(p => SameExpr(p.First, p.Second)),
+        _ => false,
+    };
 
     TOp? TypeMatch(string op, string name, Dictionary<string, Src> inputs, List<TPort> ports)
     {

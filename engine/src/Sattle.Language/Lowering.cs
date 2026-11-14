@@ -652,7 +652,9 @@ public sealed class Lowering
     {
         foreach (var a in aggs)
         {
-            var id = b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn))); Reg(id, a.Pos);
+            var id = a.Row is null ? b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn)))
+                : b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn)), ("row", T(a.Row)));
+            Reg(id, a.Pos);
             if (a.Value is not null) Expr(a.Value, id, "value", 0, cx);
             if (a.Weight is not null) Expr(a.Weight, id, a.Fn == "last" ? "order" : "weight", 0, cx);
         }

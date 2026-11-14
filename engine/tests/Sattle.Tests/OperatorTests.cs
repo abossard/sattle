@@ -150,6 +150,55 @@ public class OperatorTests
         Assert.Equal(Value.Integer(1), Summaries(e, "Summary", "group", "worst")["a"]);
     }
 
+    /// <summary>Code review 2, defect 9: the `last` aggregates of one group that carry the same `row` mark take their values from one input row, the one with the greatest order; on a tie the greatest values in the order of the aggregates decide, and a value that row does not have is absent. Without the mark each `last` picks its own row, so their values can come from two rows and a missing value is skipped.</summary>
+    [Theory]
+    [InlineData(true)] [InlineData(false)]
+    public void The_last_aggregates_of_one_row_take_their_values_from_one_input_row(bool marked)
+    {
+        var row = marked ? " row top" : "";
+        using var e = Mini(Summary, $$"""
+            let items = match master (i: base.Item);
+            let g = items |> group by { group: i.group } aggregate { best: last(i.score, i.score){{row}}, heaviest: last(i.weight, i.score){{row}} };
+            emit entity Summary from g identity summary(group: group) set { group: group, best: best, heaviest: heaviest };
+            let t = items |> group by { group: concat(i.group, "/tie") } aggregate { best: last(i.score, 1){{row}}, heaviest: last(i.weight, 1){{row}} };
+            emit entity Summary from t identity summary(group: group) set { group: group, best: best, heaviest: heaviest };
+            """);
+        string Of(string g) => $"{Summaries(e, "Summary", "group", "best")[g]} {Summaries(e, "Summary", "group", "heaviest")[g]}".Replace("IntegerValue { Kind = Integer, N = ", "").Replace("DecimalValue { Kind = Decimal, Q = ", "").Replace(" }", "").Replace("NullValue { Kind = Null", "none");
+        Items(e, 1, ("a1", "a", 1, 9.0m, 1), ("a2", "a", 2, 3.0m, 1));
+        Assert.Equal("2 3", Of("a"));
+        Assert.Equal(marked ? "2 3" : "2 9", Of("a/tie"));                          // every row ties: marked, the row with the greatest score (best is the first aggregate by name); unmarked, (2, 9) is no input row
+        Items(e, 2, ("a3", "a", 7, null, 1));                                           // the greatest order has no weight
+        Assert.Equal(marked ? "7 none" : "7 3", Of("a"));
+        Items(e, 3, ("a3", "a", 7, null, -1), ("a2", "a", 2, 3.0m, -1));                // the winner goes, and the row after it
+        Assert.Equal("1 9", Of("a"));
+        Assert.Equal("1 9", Of("a/tie"));
+        Items(e, 4, ("a1", "a", 1, 9.0m, -1));
+        Assert.DoesNotContain("a", Summaries(e, "Summary", "group", "best").Keys);
+    }
+
+    /// <summary>The `row` mark is printed with its aggregate and read back, and the checker says what it does not mean.</summary>
+    [Theory]
+    [InlineData("best: last(i.score, i.score) row top, heaviest: last(i.weight, i.score) row top", null)]
+    [InlineData("best: max(i.score) row top", "marks a last")]
+    [InlineData("best: last(i.score, i.score) row top, heaviest: last(i.weight, i.weight) row top", "one ordering")]
+    public void The_row_mark_of_a_last_is_printed_and_checked(string aggregates, string? refused)
+    {
+        var body = $$"""
+            let items = match master (i: base.Item);
+            let g = items |> group by { group: i.group } aggregate { {{aggregates}} };
+            emit entity Summary from g identity summary(group: group) set { group: group, best: best };
+            """;
+        var cat = new Catalog();
+        var res = cat.Load([new SourceFile("t.base.sattle", Base), new SourceFile("t.view.sattle", View(body, Summary))], updatePins: true);
+        if (refused is not null) { Assert.Contains(res.Diagnostics, d => d.IsError && d.Message.Contains(refused)); return; }
+        Assert.Empty(res.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()));
+        var printed = Printer.Print(cat.Graph, "t.view");
+        Assert.Contains("aggregate { best: last(i.score, i.score) row top, heaviest: last(i.weight, i.score) row top }", printed);
+        var again = new Catalog();
+        Assert.DoesNotContain(again.Load([new SourceFile("t.base.sattle", Base), new SourceFile("t.view.sattle", printed)], updatePins: true).Diagnostics, d => d.IsError);
+        Assert.Equal(cat.Modules["t.view"].Digest, again.Modules["t.view"].Digest);
+    }
+
     const string Stacked = """
         module t.top @ 1.0.0;
         import t.view @ 1.0.0 sha256:… as v;

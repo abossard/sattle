@@ -355,6 +355,19 @@ A defect found on the way: a `min` or `max` and a `countDistinct` of one group f
 - Proofs: `Min_and_max_equal_the_extremes_of_the_rows_a_group_has_after_every_step` (5 cases against a model, failing on two deliberately broken variants of the new code) and `An_extreme_and_a_count_of_distinct_values_in_one_group_do_not_mix_their_values` (3 cases, the `max` case failing before). `Sattle.Differential` every category 314 of 314; the default run 724 passed, 2 skipped; the KQL tests 142 of 142. Seal format 4.
 - Not covered by a test: when a group falls back to one value, its row's extreme is cleared so that an empty group gives its row back. Leaving the clearing out changes no output, only memory.
 
+## Results table, step 5: the `last` aggregates of one row (2026-11-14)
+An addition, for `arg_max` in KQL: several `last` aggregates of one group can be marked as one row (`last(value, order) row name`). They then take their values from the same input row, the one with the greatest order; a tie goes to the greatest values of the kept columns in the order of the aggregates' names. Without the mark each `last` picks its own winner, so two columns of one output row could come from two input rows. A group keeps one entry per distinct input row of a mark: the order and every kept column. A projection without the mark keeps nothing more and means what it meant.
+
+| | Live bytes at the end (per master entity) | Chunk 1: wall, operators allocated | Runtime lines |
+|---|---|---|---|
+| `min` and `max` without the walk (step 4) | 7,025 MB (43,230 B) | 24.7, 24.8 and 25.5 s (the build before the core steps in the same minutes 25.4 s); 39.2 GB | |
+| The `last` aggregates of one row | 7,025 MB (43,230 B), Rollup 369 MB and Group 301 MB as before | 24.2, 24.9 and 24.2 s (the build before the core steps in the same minutes 24.7 s); 39.2 GB | +93, −6 (language and kernel +25, −8) |
+
+- No definition of the estate or the recordings uses the mark yet, so these numbers say only that the addition costs nothing where it is not used.
+- Cost where it is used: a marked group's rows are walked once per step and group to find the winner (the answer is kept for all aggregates of the mark within the step). A group with many rows and frequent changes pays for the walk; keeping the winner in the group's row, as step 4 does for `min` and `max`, is the remedy if a measurement asks for it.
+- The state digests equal those of step 4 at every chunk size (estate, `lab/fixtures`, both recordings; 12 of 12).
+- Proofs: `The_last_aggregates_of_one_row_take_their_values_from_one_input_row` (marked and unmarked, a tie, a winner without a value, a retraction of the winner), `The_row_mark_of_a_last_is_printed_and_checked` (3 cases), and the differential world "last of one row" against the reference evaluator. `Sattle.Differential` every category 324 of 324; the default run 734 passed, 2 skipped; the KQL tests 166 of 166. The kernel digest changes (a new optional property of `Aggregate`); seal format 4 stays.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
