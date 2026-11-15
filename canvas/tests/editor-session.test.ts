@@ -59,18 +59,13 @@ describe("editor session", () => {
     expect(names(s.graph)).toEqual(["1"]);
   });
 
-  it("a refactoring the engine planned is one undoable step; a restore the engine applied itself is read back from the draft's log", async () => {
+  it("a restore the engine applied itself is read back from the draft's log and is one undoable step", async () => {
     const eng = fakeEngine();
     const s = await EditorSession.open(eng.svc);
     await s.apply(add(1), "a");
-    const plan = { patch: { from: { tenant: "t", graph: "catalog", revision: "1" }, to: { tenant: "t", graph: "catalog", revision: "2" }, projection: "catalog", profile: "extensionalFinite" as const, edits: add(2), cause: { inputs: [], configurationVersion: "0" } }, modules: {}, preserves: {} };
-    expect((await s.applyRefactoring(plan, "extract")).ok).toBe(true);
-    expect(names(eng.g)).toEqual(["1", "2"]);
-    await s.undo();
-    expect(names(eng.g)).toEqual(["1"]);
     // the engine adds E3 on its own (restore) and answers the patch it applied; the session joins it to the draft and can undo it
     const before = eng.rev;
-    const restored = { ...plan.patch, from: { ...plan.patch.from, revision: String(before) }, to: { ...plan.patch.to, revision: String(before + 1) }, edits: add(3) };
+    const restored = { from: { tenant: "t", graph: "catalog", revision: String(before) }, to: { tenant: "t", graph: "catalog", revision: String(before + 1) }, projection: "catalog", profile: "extensionalFinite" as const, edits: add(3), cause: { inputs: [], configurationVersion: "0" } };
     await (eng.svc as unknown as { applyPatch: (...a: unknown[]) => Promise<unknown> }).applyPatch("d1", restored, String(before));
     await s.absorbRestore({ revision: String(eng.rev), ok: true, diagnostics: [], modules: {}, patch: restored }, "restore release");
     expect(names(s.graph)).toEqual(["1", "3"]);

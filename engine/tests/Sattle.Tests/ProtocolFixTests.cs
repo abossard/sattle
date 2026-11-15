@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Protocol mismatches the canvas found in version 3: seq on /space, a patch from restore, named unprintable elements, skeleton base revision and required slots, version bumps, catalog meters.</summary>
+/// <summary>Protocol mismatches the canvas found in version 3: seq on /space, a patch from restore, named unprintable elements, version bumps, catalog meters.</summary>
 public class ProtocolFixTests
 {
     [Fact]
@@ -44,37 +44,6 @@ public class ProtocolFixTests
         Assert.Null(g.Apply(edits));
         var e = Assert.Throws<UnprintableException>(() => Printer.Print(g, "acme.ops"));
         Assert.Equal(op, e.Element);
-    }
-
-    public static TheoryData<string, string[]> RequiredSlots => new()
-    {
-        { "Filter", ["predicate:#0"] },
-        { "Map", ["assign:x", "assign:x/value:#0"] },
-        { "Group", ["key:x", "key:x/value:#0"] },
-        { "Rollup", ["key:x", "agg:n"] },
-        { "Threshold", ["key:x", "value:#0"] },
-        { "EmitEntity", ["id:#0"] },
-        { "EmitRelationship", ["source:#0", "target:#0"] },
-        { "Series", ["read:#0"] },
-    };
-
-    [Theory]
-    [MemberData(nameof(RequiredSlots))]
-    public void A_skeleton_creates_the_required_slot_children_and_starts_at_the_draft_revision(string kind, string[] children)
-    {
-        using var h = HostTests.NewSattleHost();
-        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        h.ApplyDraftPatch(d, h.Skeleton(new JsonObject { ["kind"] = "Distinct", ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "first", ["draft"] = d }), 0);
-        var op = "d:acme.svc/projection:serviceDeps/op:probe";
-        var patch = h.Skeleton(new JsonObject { ["kind"] = kind, ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "probe", ["draft"] = d });
-        Assert.Equal("1", patch["from"]!["revision"]!["value"]!.GetValue<string>());                     // the draft's revision, not the catalog head
-        var ids = patch["edits"]!.AsArray().Where(e => e!["kind"]!.GetValue<string>() == "entity").Select(e => e!["id"]!["value"]!.GetValue<string>()).ToHashSet();
-        foreach (var c in children) Assert.Contains(op + "/" + c, ids);
-        // the answer names these children as placeholders, with their slots: nothing in the graph tells the placeholder `n = count()` from one an author wrote
-        var placeholders = patch["placeholders"]!.AsArray().Select(p => p!["id"]!["value"]!.GetValue<string>() + " in " + p["slot"]!.GetValue<string>()).Order(StringComparer.Ordinal).ToList();
-        Assert.Equal(children.Where(c => !c.Contains('/')).Select(c => op + "/" + c + " in " + c[..c.IndexOf(':')]).Order(StringComparer.Ordinal).ToList(), placeholders);       // the value of a placeholder assignment belongs to it
-        var applied = h.ApplyDraftPatch(d, patch, 1);                                                 // the answer is still the patch to apply: the list is beside its edits
-        Assert.NotNull(applied);
     }
 
     [Fact]
@@ -120,19 +89,6 @@ public class ProtocolFixTests
         var g = cat.Graph.Clone();
         Assert.Null(g.Apply(g.Rels.Where(r => r.Source == pid && Ids.Name(r.Type) == "outputOntology").Select(Edit.Remove).ToList()));
         Assert.Equal(pid, Assert.Throws<UnprintableException>(() => Printer.Print(g, "acme.svc")).Element);
-    }
-
-    [Fact]
-    public void Extracting_a_creating_rule_without_its_updates_names_the_statements_to_include()
-    {
-        using var h = HostTests.NewSattleHost();
-        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var e = Assert.Throws<HostError>(() => h.Refactor(d, new JsonObject { ["kind"] = "extract", ["module"] = "acme.biz", ["projection"] = "capabilityView", ["select"] = new JsonArray("capabilities", "tree"), ["name"] = "part" }));
-        Assert.Equal("UpdateWithoutCreate", e.Code);
-        Assert.Equal(["counts"], e.Extra["include"]!.AsArray().Select(x => x!.GetValue<string>()));
-        // the lens rule that only emits relationships extracts, with the deferred-endpoint warning reported as data
-        var ok = h.Refactor(d, new JsonObject { ["kind"] = "extract", ["module"] = "acme.biz", ["projection"] = "capabilityView", ["select"] = new JsonArray("tree"), ["name"] = "part" });
-        Assert.Contains(ok["diagnostics"]!.AsArray(), x => x!["code"]!.GetValue<string>() == "EndpointDeferred" && x["severity"]!.GetValue<string>() == "warning");
     }
 
     [Fact]

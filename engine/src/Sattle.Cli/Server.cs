@@ -184,22 +184,18 @@ public static class Server
             Json(host.Commit(m, b["text"]!.GetValue<string>(), Rev(b["expectedRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedRevision is required", 400)))));
         app.MapPost("/graphs/{g}/edits", (string g, HttpRequest r) => WithBody(r, b => { return Json(host.ApplyEdits(g, b)); }));
         app.MapGet("/palette", (HttpContext c) => Guard(() => Cached(c, host, "palette", Cache.Head, () => JsonP(Palette.Build()))));
-        app.MapPost("/palette/skeleton", (HttpRequest r) => WithBody(r, b => { return Json(host.Skeleton(b)); }));
-        app.MapPost("/drafts/{id}/skeleton", (string id, HttpRequest r) => WithBody(r, b => { b["draft"] = id; return Json(host.Skeleton(b)); }));
         app.MapPost("/drafts", (HttpRequest r) => WithBody(r, b => { return Json(host.CreateDraft(Rev(b["base"]?.GetValue<string>()))); }));
         app.MapGet("/drafts", () => Guard(() => Json(host.ListDrafts())));
         app.MapGet("/drafts/{id}", (string id) => Guard(() => Json(host.DraftInfo(id))));
         app.MapDelete("/drafts/{id}", (string id) => Guard(() => { host.DiscardDraft(id); return Json(new JsonObject { ["discarded"] = true }); }));
         app.MapGet("/drafts/{id}/snapshot", (string id) => Guard(() => Json(host.DraftSnapshot(id))));
         app.MapGet("/drafts/{id}/patches", (string id, string? after) => Guard(() => Ndjson(host.DraftPatches(id, Rev(after) ?? 0))));
-        app.MapGet("/drafts/{id}/text/{m}", (string id, string m) => Guard(() => Results.Text(host.DraftText(id, m), "text/plain")));
         app.MapPut("/drafts/{id}/text/{file}", (string id, string file, HttpRequest r) => WithBody(r, b => { return Json(host.SetDraftText(id, file, b["text"]!.GetValue<string>(), Rev(b["expectedRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/patches", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.ApplyDraftPatch(id, b["patch"]!, Rev(b["expectedRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/check", (string id) => Guard(() => Json(host.CheckDraft(id))));
         app.MapPost("/drafts/{id}/commit", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.CommitDraft(id, Rev(b["expectedCatalogRevision"]?.GetValue<string>()) ?? throw new HostError("BadRequest", "expectedCatalogRevision is required", 400))); }));
         app.MapPost("/drafts/{id}/restore", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Restore(id, b["digest"]!.GetValue<string>())); }));
         app.MapPost("/drafts/{id}/preview", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Preview(id, b)); }));
-        app.MapPost("/drafts/{id}/refactor", (string id, HttpRequest r) => WithBody(r, b => { return Json(host.Refactor(id, b)); }));
         // the editors' calls on a projection's KQL text (research 11, section 2): stateless, read against the head catalog
         app.MapPost("/kql/analyse", (HttpRequest r) => WithBody(r, b => Kql(host, b, false, (c, p, t) => KqlAuthoring.Analyse(c.Catalog, p, t, c.Files))));
         app.MapPost("/kql/complete", (HttpRequest r) => WithBody(r, b => Kql(host, b, true, (c, p, t) => KqlAuthoring.Complete(c.Catalog, p, t, Offset(b, t)))));

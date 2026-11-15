@@ -143,19 +143,17 @@ public class KqlHostTests
         h.DiscardDraft(d);
     }
 
-    /// <summary>A structural edit or a refactoring of a projection written in KQL would be lost at the next commit, which is made from text: refused, with the file to edit.</summary>
-    [Theory]
-    [InlineData("a new operator")]
-    [InlineData("an extraction")]
-    public void A_structural_edit_of_a_projection_in_KQL_is_refused(string what)
+    /// <summary>A structural edit of a projection written in KQL would be lost at the next commit, which is made from text: refused, with the file to edit.</summary>
+    [Fact]
+    public void A_structural_edit_of_a_projection_in_KQL_is_refused()
     {
         var h = Served.Value;
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var e = Assert.Throws<HostError>(() =>
-        {
-            if (what == "a new operator") h.ApplyDraftPatch(d, h.Skeleton(new JsonObject { ["kind"] = "Distinct", ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "first", ["draft"] = d }), 0);
-            else h.Refactor(d, new JsonObject { ["kind"] = "extract", ["module"] = "acme.svc", ["projection"] = "serviceDeps", ["select"] = new JsonArray("x"), ["name"] = "part" });
-        });
+        // a new operator of serviceDeps, made from one of its own
+        const string projection = "d:acme.svc/projection:serviceDeps", id = projection + "/op:first";
+        var op = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>().StartsWith(projection + "/op:", StringComparison.Ordinal))!.DeepClone();
+        op["id"] = new JsonObject { ["value"] = id };
+        var e = Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = id, ["after"] = op }) }, 0));
         Assert.Equal(("KqlProjection", "acme.svc.serviceDeps.kql"), (e.Code, e.Extra["file"]!.GetValue<string>()));
         Assert.Equal("0", h.DraftInfo(d)["revision"]!.GetValue<string>());
         h.DiscardDraft(d);

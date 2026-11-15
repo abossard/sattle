@@ -6,7 +6,7 @@ using Sattle.Kql;
 
 namespace Sattle.Differential;
 
-/// <summary>The defects of the review's list "Correctness, reached today" that sit outside the operators: host, snapshot, drafts, export, refactoring. Each states the correct behaviour and fails until the defect is fixed.</summary>
+/// <summary>The defects of the review's list "Correctness, reached today" that sit outside the operators: host, snapshot, drafts, export. Each states the correct behaviour and fails until the defect is fixed.</summary>
 [Trait("Category", "KnownDefect")]
 public class HostDefectTests
 {
@@ -94,16 +94,4 @@ public class HostDefectTests
         Assert.All(h.Meters("serviceTree")["thresholds"]!.AsArray(), t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
     }
 
-    /// <summary>Review: Refactor.cs:40. An extracted rule keeps every port its statements read: extracting `lifted` from `capabilityView`, which reads the service tree and the authored graph, gives a projection that checks.</summary>
-    [Fact]
-    public void Extracting_a_rule_keeps_every_port_its_statements_read()
-    {
-        var files = Catalog.ReadDirectory(Path.Combine(Definitions, "..", "tests", "Sattle.Tests", "fixtures", "sattle-projections"));       // the projections in the engine's own notation
-        static string Module(SourceFile f) => Path.GetFileNameWithoutExtension(f.Path);
-        var changed = Refactor.Extract(files.ToDictionary(Module, f => f.Text), "acme.biz", "capabilityView", ["lifted"], "liftedOnly");
-        Assert.Contains("acme.biz", changed.Keys);
-        var result = new Catalog().Load(files.Select(f => changed.TryGetValue(Module(f), out var t) ? f with { Text = t } : f), updatePins: true);
-        var errors = result.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()[(d.ToString().LastIndexOf("acme.", StringComparison.Ordinal) is >= 0 and var i ? i : 0)..]).ToArray();
-        Assert.True(errors.Length == 0, string.Join("\n", errors));
-    }
 }

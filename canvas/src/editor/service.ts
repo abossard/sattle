@@ -1,4 +1,4 @@
-// The editor side of the engine protocol (v3): palette, drafts, releases, preview and refactoring. HTTP only.
+// The editor side of the engine protocol (v3): palette, drafts, releases, preview and the KQL editor calls. HTTP only.
 // Responses are parsed here, so the rest of the editor sees typed values; engine errors become EngineError with the code and element.
 import type { Patch, Snapshot } from "../core/model";
 import { patchToWire } from "../core/wire";
@@ -69,29 +69,8 @@ export function parseIdentity(v: unknown): IdentityEffect | undefined {
   return { preview, live, comparable: o.comparable === true && !!difference, ...(difference ? { difference } : {}) };
 }
 export interface Preview { scope: { rows: string; totalRows: string; complete: boolean; logicalTime: string }; diagnostics: EngineDiagnostic[]; graphs: PreviewGraph[]; identity?: IdentityEffect; milliseconds: string }
-export interface Refactoring { patch: Patch; modules: Record<string, { text: string }>; preserves: unknown }
-export type RefactorRequest =
-  | { kind: "extract"; module: string; projection: string; select: string[]; name: string }
-  | { kind: "inline"; module: string; projection: string; into: string }
-  | { kind: "moveRule"; module: string; from: string; to: string; rule: string };
 
 const throwing = (where: string) => (r: { source: string; where: string; errors: string[] }) => { throw new Error(`${where}: ${r.where}: ${r.errors.join("; ")}`); };
-
-/** The `placeholders` of a skeleton answer as element ids; entries that are not `{ id: { value } }` are left out. */
-export function parsePlaceholders(raw: unknown): string[] {
-  const list = (raw as { placeholders?: unknown } | null)?.placeholders;
-  return (Array.isArray(list) ? list : []).flatMap((x) => { const v = (x as { id?: { value?: unknown } } | null)?.id?.value; return typeof v === "string" && v ? [v] : []; });
-}
-
-/**
- * A skeleton answer: the patch, checked against the contract schema, and the ids of its placeholders. `placeholders` is the engine's own key beside
- * the patch (3.19) and the schema allows no extra key, so it is taken off before the check.
- */
-export function parseSkeleton(raw: unknown): Patch & { placeholders: string[] } {
-  const { placeholders: _taken, ...patch } = (raw ?? {}) as Record<string, unknown>;
-  const p = parsePatch(patch, "skeleton", "skeleton", throwing("skeleton"));
-  return { ...p!, placeholders: parsePlaceholders(raw) };
-}
 
 export class EditorService {
   private readonly base: string;
@@ -120,13 +99,6 @@ export class EditorService {
   /** Store a projection file's text in the draft (`file` is `module.projection.kql`); check, preview and commit include it from then on. */
   async setDraftText(id: string, file: string, text: string, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
   async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
-  /**
-   * The patch that creates an operator with its ports and placeholders for required slots, starting at the draft's revision, and the ids of
-   * those placeholders (engine 3.19): the children the patch creates only so that the operator prints. An engine before 3.19 names none.
-   */
-  async skeleton(draft: string, kind: string, container: string, name: string, params: Record<string, string> = {}): Promise<Patch & { placeholders: string[] }> {
-    return parseSkeleton(await this.call("POST", `/drafts/${draft}/skeleton`, { kind, container, name, params }));
-  }
 
   async createDraft(base?: string): Promise<Draft> { const d = (await this.call("POST", "/drafts", base ? { base } : {})) as Draft; return { draft: String(d.draft), baseRevision: String(d.baseRevision), revision: String(d.revision) }; }
   async discard(id: string): Promise<void> { await this.call("DELETE", `/drafts/${id}`); }
@@ -156,7 +128,6 @@ export class EditorService {
   async releaseDiff(from: string, to: string): Promise<Patch> {
     return parsePatch(await this.call("GET", `/releases/diff?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`), "/releases/diff", "release diff", throwing("release diff"))!;
   }
-  async draftText(id: string, module: string): Promise<string> { return String(await this.call("GET", `/drafts/${id}/text/${encodeURIComponent(module)}`)); }
 
   /** `rowLimit` (engine 3.21): how many rows of each operator a preview with `include: ["rows"]` samples (the engine's default is 20, at most 1000) */
   async preview(id: string, body: { graphs?: string[]; include?: string[]; limit?: string; rowLimit?: string; scope?: { maxRows: string } }): Promise<Preview> {
@@ -169,10 +140,6 @@ export class EditorService {
       ...(Array.isArray(g.operators) ? { operators: parseOperatorRows(g.operators) } : {}),
     }));
     return { scope: o.scope as Preview["scope"], diagnostics: parseDiagnostics(o.diagnostics), graphs, identity: parseIdentity(o.identity), milliseconds: String(o.milliseconds ?? "") };
-  }
-  async refactor(id: string, req: RefactorRequest): Promise<Refactoring> {
-    const o = (await this.call("POST", `/drafts/${id}/refactor`, req)) as Record<string, unknown>;
-    return { patch: parsePatch(o.patch, "refactor", "refactoring patch", throwing("refactor"))!, modules: (o.modules ?? {}) as Refactoring["modules"], preserves: o.preserves };
   }
   /** Text check of a module (v2 endpoint, unchanged in v3): the engine parses the text and answers the catalog patch it stands for. */
   async checkText(module: string, text: string): Promise<{ ok: boolean; patch: Patch | null; diagnostics: EngineDiagnostic[]; affectedModules: string[] }> {

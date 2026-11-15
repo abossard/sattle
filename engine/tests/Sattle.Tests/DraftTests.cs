@@ -90,19 +90,6 @@ public class DraftTests
     }
 
     [Fact]
-    public void A_skeleton_patch_creates_an_operator_with_its_kernel_fixed_ports()
-    {
-        var (h, d) = NewDraft();
-        using var hostGuard = h;
-        var patch = h.Skeleton(new JsonObject { ["kind"] = "Window", ["container"] = "d:acme.svc/projection:serviceDeps", ["name"] = "w1", ["params"] = new JsonObject { ["width"] = "60000000000" }, ["draft"] = d });
-        Assert.Equal(3, patch["edits"]!.AsArray().Count(e => e!["kind"]!.GetValue<string>() == "entity"));       // the operator and its two ports
-        var res = h.ApplyDraftPatch(d, patch, 0);
-        // a Window with unwired ports is a W1 error, reported by element id
-        Assert.False(res["ok"]!.GetValue<bool>());
-        Assert.Contains(res["diagnostics"]!.AsArray(), x => x!["element"] is { } el && el.GetValue<string>().StartsWith("d:acme.svc/projection:serviceDeps/op:w1"));
-    }
-
-    [Fact]
     public void Structural_edits_print_canonically_and_undo_is_an_inverse_patch_not_a_rewind()
     {
         var (h, d) = NewDraft(); using var hostGuard = h;

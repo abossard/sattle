@@ -89,7 +89,7 @@ The graph carries data as well as structure. Telemetry is time-indexed, high rat
 
 ## Engine protocol notes
 
-`engine/PROTOCOL.md` version 3 with the 3.1 corrections, against the engine built from the working tree on 2026-11-10. The workarounds for the version 3 mismatches are gone: the stream resumes after `seq` of `GET /space`, restore uses the patch in its answer, skeletons come from `POST /drafts/{id}/skeleton` and carry placeholders for required slots, a module version bump commits and rewrites its dependents' import pins (the text-to-graph diff includes the modules `/check` reports as affected), `catalog/meters` is no longer asked for.
+`engine/PROTOCOL.md` version 3 with the 3.1 corrections, against the engine built from the working tree on 2026-11-10. The workarounds for the version 3 mismatches are gone: the stream resumes after `seq` of `GET /space`, restore uses the patch in its answer, a module version bump commits and rewrites its dependents' import pins (the text-to-graph diff includes the modules `/check` reports as affected), `catalog/meters` is no longer asked for.
 
 Found while verifying (not worked around silently):
 

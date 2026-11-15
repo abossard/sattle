@@ -577,6 +577,19 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Places in `POST /kql/analyse`.** The `place` of the graph line and of an input ends before its `;`, as the places of the other statements always did. Between two statements of the file stands only the separator `;` (with white space and comments), so an editor that removes, moves or adds a statement treats every statement alike.
 - **`POST /kql/complete` at a statement's start** also offers `declare query_parameters` (kind `step`).
 
+## Version 3.46: the old structural draft calls are gone (removals only)
+- **Removed routes:**
+  - `POST /palette/skeleton` and `POST /drafts/{id}/skeleton`: a new operator and its placeholders;
+  - `POST /drafts/{id}/refactor`: extract, inline and moveRule on a projection's `.sattle` text, with the premises it broke;
+  - `GET /drafts/{id}/text/{module}`: a draft's module text.
+
+  The two skeleton routes and refactor answer 404. A `GET` of `/drafts/{id}/text/{module}` answers 405, because the `PUT` of a projection file stays on that path. A projection is written in KQL, and changing it is an edit of its text: `PUT /drafts/{id}/text/{file}`, read back with `GET /drafts/{id}/kql/{projection}`.
+- **Unchanged:**
+  - `POST /drafts/{id}/patches`, for module declarations; a patch that touches a projection written in KQL is still refused (`KqlProjection`, with the file);
+  - `POST /check` and `/definitions/{module}`;
+  - every other draft call.
+- **Answers that change:** none of a replay; the graphs, state digests and module digests are the same.
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.
