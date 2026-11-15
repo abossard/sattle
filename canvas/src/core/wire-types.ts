@@ -87,7 +87,7 @@ export type Operator =
   | (OpBase & { kind: "filter"; predicate: Expression })
   | (OpBase & { kind: "map"; fields: Assignment[] })
   | (OpBase & { kind: "join"; on: Expression })
-  | (OpBase & { kind: "union"; conflict: ConflictPolicy })
+  | (OpBase & { kind: "union" })
   | (OpBase & { kind: "distinct" })
   | (OpBase & { kind: "group"; keys: Assignment[]; aggregates: AggregateField[] })
   | (OpBase & { kind: "traverse"; relationship: Id; direction: "outgoing" | "incoming" | "either"; minimumDepth: number; maximumDepth: number })

@@ -141,7 +141,7 @@ export class Catalog {
         return [...assigns("key", "key "), ...aggs];
       }
       case "Join": return [`on ${this.children(id, "on").map((x) => this.expr(x)).join("")}`];
-      case "Union": return [`union, conflict ${text(e, "conflict")}`];
+      case "Union": return ["union of its inputs, by column name"];
       case "Distinct": return ["distinct rows"];
       case "Traverse": return [`via ${ofType ? this.name(ofType) : "?"} ${text(e, "direction")} depth ${text(e, "minDepth")} .. ${text(e, "maxDepth")}`, `from ${text(e, "start")} as ${text(e, "target")}`];
       case "Values": return [`${this.children(id, "row").length} constant rows`];

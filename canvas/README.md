@@ -73,7 +73,7 @@ Each walkthrough is a list of editor commands (`tests/walkthroughs/*.json`: modu
 | Match (nodes, edges) | yes | no | workload health, deploymentHealth |
 | Filter, Map, Join | yes | no | deploymentHealth |
 | Group (keys, aggregates) | yes | no | deploymentHealth, Values |
-| Union (conflict policy) | yes | no | deploymentHealth, `kUnion` |
+| Union | yes | no | deploymentHealth, `kUnion` |
 | Distinct | yes | no | `kUnion` |
 | Values (rows) | yes | no | `kValues` |
 | Traverse | yes | no | workload health |
@@ -86,7 +86,7 @@ Each walkthrough is a list of editor commands (`tests/walkthroughs/*.json`: modu
 | Aggregates count, sum, min, max, mean | yes | no | Rollup over telemetry (`kSeries`), Group over data (`kValues`) |
 | Aggregates countDistinct, any, all, last, weightedMean | yes (Group over data only) | no | `kValues` |
 
-Equivalence: `deploymentHealth` and the workload health (`workloadHealth` of `acme.workload`) rebuilt from scratch print the same canonical text as the originals and the previews have equal digests. The workload health walkthrough (828 commands) is made from the definition in the catalog fixture (`tests/editing/commands-of.ts`; `WRITE_WALKTHROUGHS=1 npx vitest run tests/editing/walkthrough-of.test.ts` writes it again, the same test fails when it no longer matches the catalog). The feature walkthroughs (`kLoop`, `kLink`, `kRetain`, `kSeries`, `kUnion`, `kValues`) are new projections of `acme.workload` that read the master and the workload structure.
+Equivalence: `deploymentHealth` and the workload health (`workloadHealth` of `acme.workload`) rebuilt from scratch print the same canonical text as the originals and the previews have equal digests. The workload health walkthrough (828 commands) is made from the definition in the catalog fixture (`tests/editing/commands-of.ts`; `WRITE_WALKTHROUGHS=1 npx vitest run tests/editing/walkthrough-of.test.ts` writes it again, the same test fails when it no longer matches the catalog). The feature walkthroughs (`kLink`, `kRetain`, `kSeries`, `kUnion`, `kValues`) are new projections of `acme.workload` that read the master and the workload structure.
 
 - Declared parameters with defaults (`in minReady: param Integer = 0;`) show on the canvas as port lines and in the panel, a graph of the space binds them (`Binding.value`), and the new projection dialog takes `rows` inputs (row type, source), parameter defaults, purpose and retained revisions. With `minReady` set to 1 on `deploymentHealth` the preview's states change.
 - No slot of any operator points at the Text tab: `tests/slot-kinds.test.ts` reads every slot kind of the palette against the kinds the panel edits.
