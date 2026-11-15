@@ -3,7 +3,7 @@ import { Graph } from "../src/core/graph";
 import type { Edit } from "../src/core/model";
 import { parsePalette } from "../src/editor/palette";
 import { ent, rel, text } from "../src/editor/patches";
-import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjectionEdits, setValueRoleEdits, valueSegment } from "../src/editor/structures";
+import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjection, setValueRoleEdits, valueSegment } from "../src/editor/structures";
 
 const M = "d:m";
 const E = (e: Edit) => e as Extract<Edit, { kind: "entity" }>;
@@ -11,7 +11,6 @@ const R = (e: Edit) => e as Extract<Edit, { kind: "relationship" }>;
 const mk = (...es: Edit[]) => Graph.fromSnapshot({ version: { tenant: "t", graph: "catalog", revision: "0" }, entities: es.filter((e) => e.kind === "entity").map((e) => E(e).after!), relationships: [] });
 const g = mk(ent(M, "Module"), ent(`${M}/entity:Cap`, "EntityType"), ent(`${M}/rel:Under`, "RelationshipType"), ent(`${M}/prop:status`, "PropertyType"), ent(`${M}/prop:owner`, "PropertyType"), ent(`${M}/identity:a`, "IdentityDomain"), ent(`${M}/identity:b`, "IdentityDomain"),
   ent(`${M}/projection:p/rule:r`, "Rule", { class: text("lens"), accept: { kind: "list", items: [text("create")] } }), ent(`${M}/projection:p/op:l`, "Link"));
-const addNewProjection = (g: Graph, spec: Parameters<typeof newProjectionEdits>[1]) => newProjectionEdits(g, spec, palette);
 const params = (...n: [string, string, boolean, string[]?][]) => n.map(([name, kind, required, values]) => ({ name, kind, required, ...(values ? { values } : {}) }));
 const palette = parsePalette({
   operators: [], functions: [], valueKinds: ["Text", "Integer", "Decimal", "Boolean", "Instant", "Entity", "List"], valueRoles: ["ok", "warning", "danger", "unknown", "neutral"],
@@ -92,28 +91,44 @@ describe("equivalence policies and value roles", () => {
 
 });
 
-describe("a new projection and its place in the space", () => {
+describe("a new projection: its KQL file and its place in the space", () => {
   const S = "d:sp/space:s";
-  const base = mk(ent(M, "Module"), ent("d:out", "Module"), ent("d:ops", "Module"), ent(S, "GraphSpace"), ent(`${S}/graph:master`, "Graph"));
-  const spec = { module: "m", name: "podReady", description: "", outputModule: "d:out", graphName: "podReady", inputs: [{ port: "master", graph: "master", ontology: "d:ops" }], params: [{ port: "minReady", kind: "Integer", value: "1" }] };
-  const rels = (r: { ok: boolean; value?: Edit[] }) => (r.value ?? []).filter((e) => e.kind === "relationship").map((e) => (e as { id: string }).id.replace(/d:m\/projection:podReady/g, "P").replace(new RegExp(S.replace(/[/]/g, "\\/"), "g"), "S"));
-  it("creates the projection with its ports, its graph in the space and one binding per port", () => {
-    const r = addNewProjection(base, spec);
-    expect(r.ok).toBe(true);
-    expect(rels(r)).toEqual(expect.arrayContaining([
-      "P|outputOntology|d:out", "d:m|contains|P", "S|contains|S/graph:podReady", "S/graph:podReady|producedBy|P",
-      "P/port:master|expects|d:ops", "S/binding:podReady.master|bindsPort|P/port:master", "S/binding:podReady.master|boundFrom|S/graph:master",
-      "P/port:minReady|valueKind|d:sattle.kernel/builtin:Integer", "S/binding:podReady.minReady|bindsPort|P/port:minReady",
-    ]));
-    const b = (r.ok ? r.value : []).find((e) => e.kind === "entity" && e.id.endsWith("binding:podReady.minReady")) as Extract<Edit, { kind: "entity" }>;
+  const base = mk(ent(M, "Module"), ent("d:out", "Module"), ent("d:ops", "Module"), ent(S, "GraphSpace"), ent(`${S}/graph:master`, "Graph"),
+    ent("d:src/rows:PodRow", "RowType"), ent(`${M}/rows:CapRow`, "RowType"), ent(`${S}/source:pods`, "Source"));
+  const spec = { module: "m", name: "podReady", description: "", outputModule: "d:out", graphName: "podReady", inputs: [{ port: "master", graph: "master", ontology: "d:ops" }], params: [{ port: "minReady", kind: "long", value: "1" }] };
+  const rels = (edits: Edit[]) => edits.filter((e) => e.kind === "relationship").map((e) => (e as { id: string }).id.replace(/d:m\/projection:podReady/g, "P").replace(new RegExp(S.replace(/[/]/g, "\\/"), "g"), "S"));
+  it("writes the graph line, the inputs and the parameters, and binds each port in the space", () => {
+    const r = newProjection(base, spec);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.file).toBe("m.podReady.kql");
+    expect(r.value.text).toBe("graph podReady : out;\ninput master : ops;\ndeclare query_parameters(minReady:long);\n");
+    expect(rels(r.value.edits)).toEqual([
+      "S|contains|S/graph:podReady", "S/graph:podReady|producedBy|P",
+      "S|contains|S/binding:podReady.master", "S/binding:podReady.master|bindsPort|P/port:master", "S/binding:podReady.master|boundFrom|S/graph:master",
+      "S|contains|S/binding:podReady.minReady", "S/binding:podReady.minReady|bindsPort|P/port:minReady",
+    ]);
+    const b = r.value.edits.find((e) => e.kind === "entity" && e.id.endsWith("binding:podReady.minReady")) as Extract<Edit, { kind: "entity" }>;
     expect(b.after!.props.value).toEqual({ kind: "integer", value: "1" });
   });
   it.each([
-    ["a name that exists", { ...spec, graphName: "master" }],
+    ["settings", { description: "Pods \"ready\"", history: "4" }, 'graph podReady : out with (description = "Pods \\"ready\\"", history = 4);'],
+    ["a rows input of another module", { inputs: [], rows: [{ port: "pods", rowType: "d:src/rows:PodRow", source: `${S}/source:pods` }] }, "input pods : src.PodRow;"],
+    ["a rows input of its own module", { inputs: [], rows: [{ port: "caps", rowType: `${M}/rows:CapRow`, source: `${S}/source:pods` }] }, "input caps : CapRow;"],
+    ["defaults", { params: [{ port: "ns", kind: "string", value: "", default: "shop" }, { port: "min", kind: "long", value: "", default: "0" }] }, 'declare query_parameters(ns:string = "shop", min:long = 0);'],
+  ])("writes %s", (_, patch, line) => {
+    const r = newProjection(base, { ...spec, ...patch });
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text.split("\n")).toContain(line);
+  });
+  it.each([
+    ["a graph name that exists", { ...spec, graphName: "master" }],
     ["a bad name", { ...spec, name: "bad name" }],
     ["no output ontology", { ...spec, outputModule: "d:nope" }],
     ["a graph the space does not have", { ...spec, inputs: [{ port: "master", graph: "nope", ontology: "d:ops" }] }],
-    ["a port name used twice", { ...spec, params: [{ port: "master", kind: "Integer", value: "1" }] }],
-    ["a parameter that is not a number", { ...spec, params: [{ port: "t", kind: "Integer", value: "x" }] }],
-  ])("refuses %s", (_, s) => expect(addNewProjection(base, s).ok).toBe(false));
+    ["a port name used twice", { ...spec, params: [{ port: "master", kind: "long", value: "1" }] }],
+    ["a parameter that is not a number", { ...spec, params: [{ port: "t", kind: "long", value: "x" }] }],
+    ["a parameter type KQL does not declare", { ...spec, params: [{ port: "t", kind: "Integer", value: "1" }] }],
+    ["a parameter with neither value nor default", { ...spec, params: [{ port: "t", kind: "long", value: "" }] }],
+    ["a history that is not a whole number", { ...spec, history: "four" }],
+  ])("refuses %s", (_, s) => expect(newProjection(base, s).ok).toBe(false));
 });

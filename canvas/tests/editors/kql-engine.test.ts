@@ -7,6 +7,7 @@ import type { Analysis } from "../../src/editor/kql";
 import { add, addBy, apply, columnFor, listsOf, newOperatorAt, starter, startersFor, type Column } from "../../src/editor/kql-edit";
 import { EditorService } from "../../src/editor/service";
 import { EditorSession } from "../../src/editor/session";
+import { newProjection } from "../../src/editor/structures";
 
 const ENGINE = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.ENGINE;
 const projection = "acme.biz.capabilityView", file = `${projection}.kql`;
@@ -76,4 +77,29 @@ describe.skipIf(!ENGINE)("a projection's KQL text through the engine's draft", (
     }
     expect(tried).toBeGreaterThan(40);
   }, 300000);
+
+  it("a new projection made the KQL way, given deployment health's statements, commits and previews deployment health's digest", async () => {
+    const svc = new EditorService(ENGINE!);
+    const space = "d:acme.space/space:operations", name = `madeHealth${Date.now()}`;
+    const original = (await svc.kqlText("acme.deployhealth.deploymentHealth")).text;
+    const header = "declare query_parameters(minReady:long = 0);\n";
+    expect(original).toContain(header);
+    const s = await EditorSession.open(svc);
+    const made = newProjection(s.graph, { module: "acme.deployhealth", name, description: "", outputModule: "d:acme.deployhealth", graphName: name, history: "4",
+      inputs: [{ port: "master", graph: "master", ontology: "d:acme.ops" }], params: [{ port: "minReady", kind: "long", value: "", default: "0" }] });
+    if (!made.ok) throw new Error(made.reason);
+    expect(made.value.text).toBe(`graph ${name} : acme.deployhealth with (history = 4);\ninput master : acme.ops;\n${header}`);
+    expect((await s.storeKql(made.value.file, made.value.text + original.slice(original.indexOf(header) + header.length))).ok).toBe(true);
+    expect((await s.apply(made.value.edits, `bind ${name}`)).ok).toBe(true);
+    expect(s.graph.entity(`${space}/binding:${name}.master`)).toBeDefined();
+    expect(s.diagnostics.filter((d) => d.severity === "error").map((d) => d.message)).toEqual([]);
+    await svc.commit(s.draft.draft, s.draft.baseRevision);
+    const fresh = await EditorSession.open(svc);
+    try {
+      const pv = await svc.preview(fresh.draft.draft, { graphs: ["deploymentHealth", name], include: ["counts"], limit: "3000" });
+      const of = (id: string) => pv.graphs.find((g) => g.id === id)!;
+      expect(Number(of(name).counts.entities)).toBeGreaterThan(0);
+      expect(of(name).digest).toBe(of("deploymentHealth").digest);
+    } finally { await svc.discard(fresh.draft.draft).catch(() => {}); }
+  }, 120000);
 });

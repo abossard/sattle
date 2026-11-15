@@ -3,7 +3,7 @@
 import { Graph } from "../core/graph";
 import type { Edit, Patch } from "../core/model";
 import { removeEdits } from "../editor/patches";
-import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjectionEdits, setValueRoleEdits, type Result } from "../editor/structures";
+import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjection, setValueRoleEdits, type Result } from "../editor/structures";
 import { EditorService } from "../editor/service";
 import { EditorSession, type Outcome } from "../editor/session";
 import { runtime } from "./runtime";
@@ -61,7 +61,6 @@ function plan(cmd: Command, s: EditorSession): { edits: Edit[]; label: string } 
   const g = s.graph, pal = s.palette;
   switch (cmd.t) {
     case "delete": return { edits: removeEdits(g, cmd.ids), label: `delete ${cmd.ids.length} element${cmd.ids.length === 1 ? "" : "s"}` };
-    case "newProjection": return { edits: need(newProjectionEdits(g, cmd.spec, pal)), label: `new projection ${cmd.spec.name}` };
     case "rowType": return { edits: need(addRowTypeEdits(g, `d:${cmd.module}`, cmd.name, pal)), label: `add rows ${cmd.name}` };
     case "field": return { edits: need(addFieldEdits(g, cmd.rows, cmd.name, cmd.kind, cmd.optional, pal)), label: `add field ${cmd.name}` };
     case "constraint": return { edits: need(addConstraintEdits(g, `d:${cmd.module}`, cmd.kind, cmd.target, cmd.properties, cmd.severity, cmd.attrs, pal)), label: `add ${cmd.kind} constraint` };
@@ -139,12 +138,20 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
             report(null);
             return;
           }
+          case "newProjection": {
+            // the file first (the projection and its ports follow from the text), then its graph and bindings in the space
+            const p = need(newProjection(s.graph, cmd.spec));
+            const stored = await s.storeKql(p.file, p.text);
+            if (!stored.ok) { report(stored); return; }
+            const o = p.edits.length ? await s.apply(p.edits, `bind ${cmd.spec.name}`) : null;
+            report(o);
+            if (!o || o.ok) dispatch({ type: "editor/projection", module: cmd.spec.module, projection: `d:${cmd.spec.module}/projection:${cmd.spec.name}` });
+            return;
+          }
           default: {
             const p = plan(cmd, s);
             if (!p) return;
-            const o = await s.apply(p.edits, p.label);
-            report(o);
-            if (cmd.t === "newProjection" && o.ok) dispatch({ type: "editor/projection", module: cmd.spec.module, projection: `d:${cmd.spec.module}/projection:${cmd.spec.name}` });
+            report(await s.apply(p.edits, p.label));
             return;
           }
         }

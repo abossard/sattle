@@ -11,7 +11,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Edit } from "../../src/core/model";
 import type { Place } from "../../src/editor/kql";
 import { apply, listsOf, type Change } from "../../src/editor/kql-edit";
-import { contains, ent, rel, text as textValue } from "../../src/editor/patches";
+import { text as textValue } from "../../src/editor/patches";
+import { bindingEdits } from "../../src/editor/structures";
 import { EditorService } from "../../src/editor/service";
 import { EditorSession } from "../../src/editor/session";
 import { KqlOutline } from "../../src/ui/editor/KqlOutline";
@@ -27,15 +28,9 @@ const SPACE = "d:acme.space/space:operations";
 const twinOf = (r: KqlReference) => `${r.projection}Twin`;
 
 /** The graph of the space that a projection makes, bound as the reference binds its own (absent edits when the space has it already). */
-function binding(s: EditorSession, r: KqlReference, name: string): Edit[] {
-  const graph = `${SPACE}/graph:${name}`, proj = `d:${r.module}/projection:${name}`;
-  if (s.graph.entity(graph)) return [];
-  const edits = [ent(graph, "Graph", { name: textValue(name) }), contains(SPACE, graph, "graph"), rel(graph, "producedBy", proj)];
-  const bind = (port: string, props: Parameters<typeof ent>[2], extra: Edit[]) => { const b = `${SPACE}/binding:${name}.${port}`; edits.push(ent(b, "Binding", props), contains(SPACE, b, "binding"), rel(b, "bindsPort", `${proj}/port:${port}`), ...extra); };
-  for (const [port, from] of Object.entries(r.inputs)) bind(port, {}, [rel(`${SPACE}/binding:${name}.${port}`, "boundFrom", `${SPACE}/graph:${from}`)]);
-  for (const [port, value] of Object.entries(r.values)) bind(port, { value: textValue(value) }, []);
-  return edits;
-}
+const binding = (s: EditorSession, r: KqlReference, name: string): Edit[] =>
+  bindingEdits(s.graph, r.module, name, name, Object.fromEntries(Object.entries(r.inputs).map(([port, from]) => [port, `${SPACE}/graph:${from}`])),
+    Object.fromEntries(Object.entries(r.values).map(([port, v]) => [port, textValue(v)])));
 
 /** A draft that holds the twin's text (and the original's, when it has no file), both graphs bound in the space. */
 async function draftWith(svc: EditorService, r: KqlReference, text: string): Promise<EditorSession> {

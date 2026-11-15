@@ -4,6 +4,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it } from "vitest";
 import { History } from "../../src/app/history";
+import type { Patch } from "../../src/core/model";
 import { EditorSession } from "../../src/editor/session";
 import { ent, text, contains } from "../../src/editor/patches";
 import { runtime } from "../../src/state/runtime";
@@ -17,8 +18,11 @@ import { openApp } from "../ui/helpers";
 beforeAll(() => { SOURCES.push({ id: "tree-review", label: "Tree", make: () => new TreeSource() }); });
 
 const P = "d:m/projection:p", OP = `${P}/op:f`;
+const SPACE = "d:sp/space:s";
+/** The module `m` with one projection, and a graph space holding the graph `master`. */
 const seed = () => {
-  const edits = [ent("d:m", "Module", { name: text("m") }), ent(P, "Projection", { name: text("p"), purpose: text("view"), forward: { kind: "boolean", value: true } }), ent(OP, "Filter", { name: text("f") }), contains(P, OP, "op")];
+  const edits = [ent("d:m", "Module", { name: text("m") }), ent(P, "Projection", { name: text("p"), purpose: text("view"), forward: { kind: "boolean", value: true } }), ent(OP, "Filter", { name: text("f") }), contains(P, OP, "op"),
+    ent(SPACE, "GraphSpace"), ent(`${SPACE}/graph:master`, "Graph", { name: text("master") }), contains(SPACE, `${SPACE}/graph:master`, "graph")];
   return {
     entities: edits.filter((e) => e.kind === "entity").map((e) => (e as unknown as { after: never }).after),
     relationships: edits.filter((e) => e.kind === "relationship").map((e) => (e as unknown as { after: never }).after),
@@ -67,8 +71,50 @@ describe("ui/editor/NewProjection.tsx:38 the graph a new projection produces", (
     await openEditor();
     await user.click(await screen.findByRole("button", { name: /New projection/ }));
     const dialog = await findDialog();
-    await user.type(within(dialog).getByLabelText("Name"), "serviceView");
-    expect((within(dialog).getByLabelText("Graph it produces in the space") as HTMLInputElement).value).toBe("serviceView");
+    await user.type(within(dialog).getByLabelText(/^Name/), "serviceView");
+    expect((within(dialog).getByLabelText(/^Graph it produces in the space/) as HTMLInputElement).value).toBe("serviceView");
+  }, 30000);
+});
+
+describe("ui/editor/NewProjection.tsx a new projection the KQL way", () => {
+  it("stores the projection's file in the draft, then binds its graph in the space", async () => {
+    const user = userEvent.setup();
+    const eng = await openEditor();
+    // this engine keeps a text as sent; the projection and the ports a real engine lowers from it are added here at the text's revision, so the bindings find them
+    const keep = eng.svc.setDraftText.bind(eng.svc), pr = "d:m/projection:serviceView";
+    eng.svc.setDraftText = async (...a) => {
+      const done = await keep(...a);
+      eng.g.apply({ from: eng.g.version, to: { ...eng.g.version!, revision: String(eng.rev) }, edits: [ent(pr, "Projection"), ...["master", "minReady"].map((p) => ent(`${pr}/port:${p}`, "Port"))] } as Patch);
+      return done;
+    };
+    await user.click(await screen.findByRole("button", { name: /New projection/ }));
+    const dialog = await findDialog();
+    await user.type(within(dialog).getByLabelText(/^Name/), "serviceView");
+    await user.type(within(dialog).getByLabelText(/^History/), "4");
+    await user.selectOptions(within(dialog).getByLabelText(/^Output ontology/), "d:m");
+    await user.selectOptions(within(dialog).getByLabelText("Expects ontology"), "d:m");
+    await user.click(within(dialog).getByRole("button", { name: "Add parameter" }));
+    await user.type(within(dialog).getByLabelText("Parameter"), "minReady");
+    await user.type(within(dialog).getByLabelText("Default"), "0");
+    await user.click(within(dialog).getByRole("button", { name: "Create projection" }));
+    await waitFor(() => expect(eng.g.entity(`${SPACE}/binding:serviceView.master`)).toBeDefined());
+    expect(eng.files.get("m.serviceView.kql")).toBe("graph serviceView : m with (history = 4);\ninput master : m;\ndeclare query_parameters(minReady:long = 0);\n");
+    expect(eng.g.entity(`${SPACE}/graph:serviceView`)?.type).toBe("Graph");
+    expect(eng.g.entity(`${SPACE}/binding:serviceView.minReady`), "a parameter with only a default is not bound").toBeUndefined();
+    expect(useStore.getState().editor.projection).toBe("d:m/projection:serviceView");
+  }, 30000);
+
+  it("says why it cannot be made and stores nothing", async () => {
+    const user = userEvent.setup();
+    const eng = await openEditor();
+    await user.click(await screen.findByRole("button", { name: /New projection/ }));
+    const dialog = await findDialog();
+    await user.type(within(dialog).getByLabelText(/^Name/), "master");
+    await user.selectOptions(within(dialog).getByLabelText(/^Output ontology/), "d:m");
+    await user.selectOptions(within(dialog).getByLabelText("Expects ontology"), "d:m");
+    await user.click(within(dialog).getByRole("button", { name: "Create projection" }));
+    expect(await within(dialog).findByText("graph master already exists in the space")).toBeDefined();
+    expect(eng.files.size).toBe(0);
   }, 30000);
 });
 
