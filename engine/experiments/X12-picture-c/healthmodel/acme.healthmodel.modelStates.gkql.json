@@ -1,0 +1,29 @@
+{
+  "graph": "modelStates",
+  "ontology": "acme.healthmodel",
+  "description": "The health model with the state of each resource: the state of the Deployment it names.",
+  "history": 4,
+  "inputs": [{"name": "model", "ontology": "acme.healthmodel"}, {"name": "health", "ontology": "acme.deployhealth"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "entities", "verb": "graph-match", "graph": "model", "pattern": {"nodes": [{"var": "e", "label": "ModelEntity"}]}},
+    {"id": "copyEntities", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "ModelEntity", "id": {"ref": "e"}, "props": {"key": {"ref": "e.key"}, "name": {"ref": "e.name"}, "role": {"ref": "e.role"}, "ignoreUnknown": {"ref": "e.ignoreUnknown"}}}]}},
+    {"id": "links", "verb": "graph-match", "graph": "model", "pattern": {"nodes": [{"var": "p", "label": "ModelEntity"}, {"var": "c", "label": "ModelEntity"}], "edges": [{"var": "h", "label": "HasChild", "from": "p", "to": "c"}]}},
+    {"id": "copyLinks", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "ModelEntity", "id": {"ref": "p"}}, {"var": "t", "label": "ModelEntity", "id": {"ref": "c"}}], "edges": [{"var": "k", "label": "HasChild", "from": "s", "to": "t", "props": {"impact": {"ref": "h.impact"}}}]}},
+    {"id": "resources", "verb": "graph-match", "graph": "model", "pattern": {"nodes": [{"var": "r", "label": "ModelEntity", "props": {"role": {"lit": "resource"}}}]}},
+    {"id": "named", "verb": "project", "columns": {"e": {"ref": "r"}, "rc": {"fn": "coalesce", "args": [{"ref": "r.cluster"}, {"lit": ""}]}, "rn": {"fn": "coalesce", "args": [{"ref": "r.namespace"}, {"lit": ""}]}, "rd": {"fn": "coalesce", "args": [{"ref": "r.deployment"}, {"lit": ""}]}}},
+    {"id": "deployments", "verb": "graph-match", "graph": "health", "pattern": {"nodes": [{"var": "w", "label": "Workload"}]}},
+    {"id": "deploymentStates", "verb": "project", "columns": {"wc": {"ref": "w.cluster"}, "wn": {"ref": "w.namespace"}, "wd": {"ref": "w.name"}, "wstate": {"ref": "w.state"}}},
+    {"id": "same", "verb": "join", "kind": "inner", "on": [{"left": "rc", "right": "wc"}, {"left": "rn", "right": "wn"}, {"left": "rd", "right": "wd"}]},
+    {"id": "resourceState", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "ModelEntity", "id": {"ref": "e"}, "extend": true, "props": {"state": {"ref": "wstate"}}}]}}
+  ],
+  "wires": [
+    {"from": "entities", "to": "copyEntities"},
+    {"from": "links", "to": "copyLinks"},
+    {"from": "resources", "to": "named"},
+    {"from": "deployments", "to": "deploymentStates"},
+    {"from": "named", "to": "same", "port": "left"},
+    {"from": "deploymentStates", "to": "same", "port": "right"},
+    {"from": "same", "to": "resourceState"}
+  ]
+}

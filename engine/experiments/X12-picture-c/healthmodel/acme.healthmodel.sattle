@@ -1,0 +1,20 @@
+/// A health model: a root, user flows, system components and the resources they run on, linked parent to child. How much a child counts for its parent (its impact) is set on the link, so a child shared by two parents can count fully for one and less for the other. Resources take their state from deployment health; the states of the others are rolled up level by level.
+module acme.healthmodel @ 1.0.0;
+
+import acme.deployhealth @ 1.0.0 sha256:88b2dd8a8bf9fb5755a01b16cc3613d8f2f041159b7f1624b10bd518c6e957ed as dh;
+
+/// An authored entity of the model. A resource names the Deployment it stands for.
+rows ModelEntityRow { key: Text; name: Text; role: Text; ignoreUnknown: Boolean; cluster?: Text; namespace?: Text; deployment?: Text; }
+/// An authored link from a parent to a child, with the child's impact on that parent: Standard, Limited or Suppressed.
+rows ModelLinkRow { parent: Text; child: Text; impact: Text; }
+
+/// One entity of the model. role is root, flow, component or resource; ignoreUnknown says whether the entity's roll-up leaves out children whose state is Unknown.
+entity ModelEntity {
+  key: Text; name: Text label; role: Text; ignoreUnknown: Boolean;
+  cluster?: Text; namespace?: Text; deployment?: Text;
+  state?: Text roles { "Healthy": ok, "Degraded": warning, "Unhealthy": danger, "Unknown": unknown };
+}
+/// The parent's state depends on the child's. impact: Standard counts the child's state as it is, Limited one level milder (Unhealthy as Degraded, Degraded as Healthy), Suppressed not at all.
+relationship HasChild (ModelEntity) -> (ModelEntity) hierarchy kind composition { impact: Text; }
+
+identity modelEntity for ModelEntity version "1" { key: Text by exact; }
