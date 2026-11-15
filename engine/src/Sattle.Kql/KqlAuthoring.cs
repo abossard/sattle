@@ -35,7 +35,7 @@ public static class KqlAuthoring
             // is placed at the start of the text and names its element
             var path = files.FirstOrDefault(f => Path.GetFileName(f.Path) == file)?.Path ?? Path.Combine(Path.GetDirectoryName(files[0].Path) ?? "", file);
             var ops = low.OperatorPlaces; var own = $"d:{module}/projection:{projection[(module.Length + 1)..]}";
-            var head = t.Head is { } hd ? (Lead(text, hd.Index), hd.Index + hd.Length) : (0, 0);
+            var head = t.Head is { } hd ? (Lead(text, hd.Index), Unsep(text, hd.Index + hd.Length)) : (0, 0);
             foreach (var d in new Catalog(new KqlSource()).Load([.. files.Where(f => Path.GetFileName(f.Path) != file), new SourceFile(path, text)], updatePins: true).Diagnostics)
             {
                 if (ops.Keys.Where(o => Within(d.Focus, o)).MaxBy(o => o.Length) is { } op) diags.Add(Diag(text, d, ops[op], "engine"));
@@ -46,7 +46,7 @@ public static class KqlAuthoring
         return new JsonObject
         {
             ["digest"] = Digest(text), ["depth"] = files is null ? "fast" : "full", ["diagnostics"] = diags,
-            ["graph"] = t.Head is { } h ? new JsonObject { ["name"] = h.Groups["name"].Value, ["ontology"] = h.Groups["out"].Value, ["place"] = P(Lead(text, h.Index), h.Index + h.Length),
+            ["graph"] = t.Head is { } h ? new JsonObject { ["name"] = h.Groups["name"].Value, ["ontology"] = h.Groups["out"].Value, ["place"] = P(Lead(text, h.Index), Unsep(text, h.Index + h.Length)),
                 ["settings"] = Settings(t.GraphSettings) } : null,
             ["inputs"] = Inputs(t),
             ["parameters"] = Parameters(t.Code),
@@ -117,6 +117,8 @@ public static class KqlAuthoring
     static int Trail(string text, int start, int end) { while (end > start && (text[end - 1] == '=' || char.IsWhiteSpace(text[end - 1]))) end--; return end; }
 
     /// <summary>A place begins at its own first token: the graph, input and step lines are found from the start of their line, so their indent is left out.</summary>
+    /// <summary>The end of a line that closes with its `;` (the graph line, an input), without it: the separator stands between items, as in every list.</summary>
+    static int Unsep(string text, int end) { if (end > 0 && text[end - 1] == ';') end--; while (end > 0 && char.IsWhiteSpace(text[end - 1])) end--; return end; }
     static int Lead(string text, int i) { while (i < text.Length && text[i] is ' ' or '\t') i++; return i; }
     static JsonArray P(SyntaxNode n) => P(n.TextStart, n.End);
 
@@ -137,9 +139,9 @@ public static class KqlAuthoring
             : n is NameReference r && r.SimpleName == name && r.Parent is not FunctionCallExpression).Select(n => (JsonNode)P(n))];
         var a = new JsonArray();
         foreach (var (name, m) in t.Graphs)
-            a.Add(new JsonObject { ["name"] = name, ["kind"] = "graph", ["ontology"] = m, ["place"] = t.InputLines.Where(x => x.Name == name).Select(x => P(Lead(t.Text, x.Start), x.End)).FirstOrDefault(), ["uses"] = Uses(name, true) });
+            a.Add(new JsonObject { ["name"] = name, ["kind"] = "graph", ["ontology"] = m, ["place"] = t.InputLines.Where(x => x.Name == name).Select(x => P(Lead(t.Text, x.Start), Unsep(t.Text, x.End))).FirstOrDefault(), ["uses"] = Uses(name, true) });
         foreach (var (name, rt) in t.Rows)
-            a.Add(new JsonObject { ["name"] = name, ["kind"] = "rows", ["rowType"] = Ids.ModuleOf(rt) + "." + Ids.Name(rt), ["place"] = t.InputLines.Where(x => x.Name == name).Select(x => P(Lead(t.Text, x.Start), x.End)).FirstOrDefault(), ["uses"] = Uses(name, false) });
+            a.Add(new JsonObject { ["name"] = name, ["kind"] = "rows", ["rowType"] = Ids.ModuleOf(rt) + "." + Ids.Name(rt), ["place"] = t.InputLines.Where(x => x.Name == name).Select(x => P(Lead(t.Text, x.Start), Unsep(t.Text, x.End))).FirstOrDefault(), ["uses"] = Uses(name, false) });
         return a;
     }
 
@@ -291,7 +293,7 @@ public static class KqlAuthoring
         return OntologyView.Build(catalog, mods);
     }
 
-    static readonly string[] StepForms = ["nodes", "edges", "extend nodes", "extend edges", "link", "input", "let"];
+    static readonly string[] StepForms = ["nodes", "edges", "extend nodes", "extend edges", "link", "input", "let", "declare query_parameters"];
 
     /// <summary>The items of the ontology at a place, by what the line says before it.</summary>
     static IEnumerable<(string Word, string Kind)> Ours(Graph catalog, string module, KqlText t, string text, int start, string line)

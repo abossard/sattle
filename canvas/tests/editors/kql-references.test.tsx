@@ -63,8 +63,8 @@ describe.skipIf(!ENGINE)("the reference projections built in each notation from 
       const svc = new EditorService(ENGINE!);
       const original = r.text ?? (await svc.kqlText(`${r.module}.${r.projection}`)).text;
       const a0 = await svc.kqlAnalyse(`${r.module}.${r.projection}`, original, "fast");
-      // the statements of the original after its graph line, in text order: the graph line and the inputs own their `;`, the rest do not
-      const wanted = listsOf(a0).find((l) => l.id === "statements")!.items.slice(1).map((p) => original.slice(p[0], p[1]).replace(/;\s*$/, ""));
+      // the statements of the original after its graph line, in text order
+      const wanted = listsOf(a0).find((l) => l.id === "statements")!.items.slice(1).map((p) => original.slice(p[0], p[1]));
       let text = `graph ${twinOf(r)} : ${r.module};\n`;
       const end = text.length - 1;
       const forms = (await svc.kqlComplete(projection, text, end + 1)).items.filter((i) => i.kind === "step").map((i) => i.insert ?? i.text);
@@ -74,7 +74,7 @@ describe.skipIf(!ENGINE)("the reference projections built in each notation from 
         const onChanges = vi.fn<(c: Change[], s: Place | null) => void>();
         render(<View reading={reading} forms={forms} selected={null} busy={false} onSelect={() => {}} onChanges={onChanges} />);
         // the form the statement starts with (the longest: `extend nodes` before `nodes`); a statement no form starts is written over the first
-        const form = [...forms].sort((x, y) => y.length - x.length).find((f) => statement.startsWith(`${f} `)) ?? (formless.push(statement.split(/[\s(]/)[0]), forms[0]);
+        const form = [...forms].sort((x, y) => y.length - x.length).find((f) => new RegExp(`^${f}[\\s(]`).test(statement)) ?? (formless.push(statement.split(/[\s(]/)[0]), forms[0]);
         fireEvent.click(screen.getByRole("button", { name: "Add a statement" }));
         fireEvent.click(screen.getByRole("menuitem", { name: form }));
         const box = screen.getByRole("textbox", { name: "Text of the new statement" });
@@ -85,8 +85,8 @@ describe.skipIf(!ENGINE)("the reference projections built in each notation from 
         text = apply(text, onChanges.mock.calls[0][0]);
         cleanup();
       }
-      // only a parameters declaration has no form of its own
-      expect([...new Set(formless)]).toEqual(r.projection === "deploymentHealth" || r.projection === "workloadHealth" ? ["declare"] : []);
+      // every statement starts with a form the engine completes at a statement's start, a parameters declaration too
+      expect(formless).toEqual([]);
       const full = await svc.kqlAnalyse(projection, text, "full");
       expect(full.diagnostics.filter((d) => d.severity === "error").map((d) => d.message), notation).toEqual([]);
       built.set(notation, text);

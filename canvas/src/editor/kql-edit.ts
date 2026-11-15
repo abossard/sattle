@@ -116,13 +116,10 @@ export function add(text: string, list: List, k: number, body: string, joint = j
 
 /**
  * A new statement at the end of the file (the list rule's add on the statements list), in one of the forms the engine completes at a statement's
- * start. The graph line and an input own their `;`, the other statements leave it outside: after one that owns it the new statement owns its
- * own, after one that does not the joint brings it.
+ * start. No statement owns its `;`: the joint brings it, and the last statement's `;` stays at the end of the file.
  */
 export function addStatement(text: string, statements: List, body: string): Edit {
-  const last = statements.items[statements.items.length - 1];
-  const owns = text.slice(last[0], last[1]).trimEnd().endsWith(";");
-  const e = add(text, statements, statements.items.length, owns ? `${body};` : body, owns ? "\n" : ";\n");
+  const e = add(text, statements, statements.items.length, body, ";\n");
   return { changes: e.changes, select: e.select && [e.select[0], e.select[0] + body.length] };
 }
 

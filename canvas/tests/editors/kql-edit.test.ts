@@ -117,8 +117,8 @@ describe("absent parts and new operators", () => {
   });
 
   it.each([
-    ["the graph line, which owns its `;`", "graph g : m;\n", [[0, 12]], "graph g : m;\nnodes T on k = x;\n", [13, 29]],
-    ["a let, which leaves its `;` outside", "graph g : m;\nlet x = a;\n", [[0, 12], [13, 22]], "graph g : m;\nlet x = a;\nnodes T on k = x;\n", [24, 40]],
+    ["the graph line", "graph g : m;\n", [[0, 11]], "graph g : m;\nnodes T on k = x;\n", [13, 29]],
+    ["a let", "graph g : m;\nlet x = a;\n", [[0, 11], [13, 22]], "graph g : m;\nlet x = a;\nnodes T on k = x;\n", [24, 40]],
   ] as const)("a new statement after %s ends with one `;`", (_what, text, items, want, select) => {
     const e = addStatement(text, { id: "statements", sep: ";", items: items.map((p) => [...p] as Place) }, "nodes T on k = x");
     expect(apply(text, e.changes)).toBe(want);

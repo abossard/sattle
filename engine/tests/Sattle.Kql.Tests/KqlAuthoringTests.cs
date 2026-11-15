@@ -154,7 +154,7 @@ public class KqlAuthoringTests
             for (var k = 1; k < items.Count; k++)
             {
                 var between = Regex.Replace(text[items[k - 1].End..items[k].Start], @"//[^\n]*", "").Trim();
-                Assert.True(between == separator || what == "statements" && between == "", $"{what}: between {items[k - 1]} and {items[k]} stands '{between}'");
+                Assert.True(between == separator, $"{what}: between {items[k - 1]} and {items[k]} stands '{between}'");
             }
     }
 
@@ -218,6 +218,7 @@ public class KqlAuthoringTests
     [Theory]
     [InlineData("let x = graph(\"master\") | graph-match (p) where labels(p) has \"", "Pod", true)]
     [InlineData("", "nodes", true)]
+    [InlineData("", "declare query_parameters", true)]
     [InlineData("nodes ", "ServiceNode", true)]
     [InlineData("let x = graph(\"master\") | graph-match (p) project v = identity(\"", "podUid", true)]
     [InlineData("let x = services | ", "where", true)]

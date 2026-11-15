@@ -573,6 +573,10 @@ The text editor of a projection reads and checks its `.kql` text through these c
   - `telemetry: true` is now also on a telemetry join's `property`, as on its `value`: after the join both are read only in the aggregates of a `summarize` (`sumif(value, property == "p")`).
 - Every column the outline lists after an operator other than a step's last `project`, and without either mark, can be named by an operator put after it (tested on every shipped `.kql` file).
 
+## Version 3.45: no statement owns its `;`; a parameters declaration is a statement form
+- **Places in `POST /kql/analyse`.** The `place` of the graph line and of an input ends before its `;`, as the places of the other statements always did. Between two statements of the file stands only the separator `;` (with white space and comments), so an editor that removes, moves or adds a statement treats every statement alike.
+- **`POST /kql/complete` at a statement's start** also offers `declare query_parameters` (kind `step`).
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.
