@@ -11,7 +11,7 @@ public class EstateTests
     const long Min = 60_000_000_000;
     static string Estate => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
-    /// <summary>Projections of the shapes the canvas walkthroughs build, over the workload model and the master of the estate. They write their own small ontology.</summary>
+    /// <summary>The ontology of the demo projections (`DemoProjections`): the shapes the canvas walkthroughs build, over the workload model and the master of the estate.</summary>
     const string Demo = """
         module acme.estatedemo @ 1.0.0;
         import acme.ops    @ 1.0.0 sha256:… as ops;
@@ -25,56 +25,61 @@ public class EstateTests
         entity Reading { component: Text label; degraded?: Text; }
         identity part for Part version "1" { key: Text by exact; }
         identity reading for Reading version "1" { component: Text by exact; }
-
-        /// What affects each part of the workload, directly or through others? The closure of the roll-up edges.
-        projection closure view forward output acme.estatedemo {
-          in st: graph wl;
-          retain 4;
-          let parts = match st (c: wl.Component) |> select { k: c.key, nm: c.name };
-          emit entity Part from parts identity part(key: k) set { key: k, name: nm };
-          let reach = match st (c: wl.Component)
-            |> traverse st via wl.Affects out depth 1 .. 9 from c as d
-            |> select { a: c.key, b: d.key };
-          emit relationship Reaches from reach key reach: part(key: a) -> part(key: b);
-        }
-
-        /// Every part once, whether it is a service or not: a union and a distinct.
-        projection both view forward output acme.estatedemo {
-          in st: graph wl;
-          retain 4;
-          let comps = match st (c: wl.Component) |> select { k: c.key, kd: c.kind, nm: c.name };
-          let services = match st (c: wl.WorkloadService) |> select { k: c.key, kd: c.kind, nm: c.name };
-          let all = union comps, services;
-          let once = all |> distinct;
-          emit entity Part from once identity part(key: k) set { key: k, kind: kd, name: nm };
-        }
-
-        /// The drop rate of the nodes over time, and the operations of the activity log per minute.
-        projection series view forward output acme.estatedemo {
-          in master: graph ops;
-          retain 4;
-          let ser = match master (nd: infra.Node)
-            |> series master nd.dropRate within 24h;
-          let warn = ser
-            |> rollup by { c: nd.name } combine { m: mean(dropRate), n: count(), s: sum(dropRate), v: max(dropRate) };
-          let warnOn = warn
-            |> threshold v by { c: c } above 0.01 for 2 then "on" below 0.005 for 2 then "off" initial "off" as degraded;
-          let acts = match master (ev: azure.ActivityEvent)
-            |> select { t: ev.time, c: ev.operation }
-            |> window on t width 1m late ignore
-            |> group by { c: c, windowStart: windowStart } aggregate { n: count() };
-          emit entity Reading from warnOn identity reading(component: c) set { component: c, degraded: degraded };
-          emit entity Part from acts identity part(key: concat("evt/", c)) set { key: concat("evt/", c), kind: "activity", name: c, own: n };
-        }
-
-        /// Two constant rows.
-        projection values view forward output acme.estatedemo {
-          in master: graph ops;
-          retain 4;
-          let rows = values { k: "a", n: 1 }, { k: "b", n: 2 };
-          emit entity Part from rows identity part(key: k) set { key: k, kind: "constant", name: k, own: n };
-        }
         """;
+
+    /// <summary>The projections of the demo module, one KQL text each.</summary>
+    static readonly SourceFile[] DemoProjections =
+    [
+        new("acme.estatedemo.closure.kql", """
+            graph closure : acme.estatedemo with (
+                description = "What affects each part of the workload, directly or through others? The closure of the roll-up edges.",
+                history = 4);
+            input st : acme.workload;
+
+            nodes Part on part = graph("st") | graph-match (c) where labels(c) has "Component" project k = c.key, nm = c.name
+                | project part = identity("part", k), key = k, name = nm;
+            edges Reaches from a to b with (key = "reach") = graph("st")
+                | graph-match (c)-[p*1..9]->(d) where labels(c) has "Component" and all(p, labels(p) has "Affects") project ka = c.key, kb = d.key
+                | project a = identity("part", ka), b = identity("part", kb);
+            """),
+        new("acme.estatedemo.both.kql", """
+            graph both : acme.estatedemo with (
+                description = "Every part once, whether it is a service or not: a union and a distinct.",
+                history = 4);
+            input st : acme.workload;
+
+            let comps = graph("st") | graph-match (c) where labels(c) has "Component" project k = c.key, kd = c.kind, nm = c.name;
+            let services = graph("st") | graph-match (c) where labels(c) has "WorkloadService" project k = c.key, kd = c.kind, nm = c.name;
+            nodes Part on part = union comps, services | distinct * | project part = identity("part", k), key = k, ['kind'] = kd, name = nm;
+            """),
+        new("acme.estatedemo.series.kql", """
+            graph series : acme.estatedemo with (
+                description = "The drop rate of the nodes over time, and the operations of the activity log per minute.",
+                history = 4);
+            input master : acme.ops;
+
+            let warn = graph("master") | graph-match (nd) where labels(nd) has "Node" project nd = nd.id, c = nd.name
+                | join kind=inner (telemetry("master", 24h) | where property == "dropRate" | project nd = id, windowStart, property, value) on nd
+                | project c, windowStart, dropRate = value
+                | summarize m = avg(dropRate), n = count(), s = sum(dropRate), v = max(dropRate) by c, windowStart;
+            let warnOn = warn
+                | project c, windowStart, value = v, above = 0.01, enterAfter = 2, below = 0.005, exitAfter = 2
+                | invoke hysteresis("on", "off", "off");
+            let acts = graph("master") | graph-match (ev) where labels(ev) has "ActivityEvent" project t = ev.['time'], c = ev.operation
+                | summarize n = count() by c, windowStart = bin(t, 1m);
+            nodes Reading on r = warnOn | project r = identity("reading", c), component = c, degraded = state;
+            nodes Part on part = acts | project part = identity("part", strcat("evt/", c)), windowStart, key = strcat("evt/", c), ['kind'] = "activity", name = c, own = n;
+            """),
+        new("acme.estatedemo.values.kql", """
+            graph values : acme.estatedemo with (
+                description = "Two constant rows.",
+                history = 4);
+            input master : acme.ops;
+
+            nodes Part on part = datatable(k:string, n:long) ["a", 1, "b", 2]
+                | project part = identity("part", k), key = k, ['kind'] = "constant", name = k, own = n;
+            """),
+    ];
 
     static string Space(string text) => text
         .Replace("import acme.biz ", "import acme.estatedemo @ 1.0.0 sha256:… as demo;\nimport acme.biz ")
@@ -97,7 +102,7 @@ public class EstateTests
         var spaceText = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = demo ? Space(spaceText) : spaceText };
-        if (demo) files.Add(new SourceFile("acme.estatedemo.sattle", Demo.Replace("import acme.ops    @ 1.0.0 sha256:… as ops;", "import acme.ops    @ 1.0.0 sha256:… as ops;\nimport sattle.infra @ 1.0.0 sha256:… as infra;\nimport sattle.azure @ 1.0.0 sha256:… as azure;")));
+        if (demo) files.AddRange([new SourceFile("acme.estatedemo.sattle", Demo), .. DemoProjections]);
         return files;
     }
 

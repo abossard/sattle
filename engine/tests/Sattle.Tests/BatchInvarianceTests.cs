@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
+using Sattle.Kql;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
@@ -150,14 +151,13 @@ public class BatchInvarianceTests
         entity Day { k: Text; hits?: Integer; }
         identity day for Day version "1" { k: Text by exact; }
         rows R { k: Text; t: Instant; }
-        projection ingest ingestion output d {
-          in a: rows R;
-          rule observed readonly "test" {
-            let w = a |> window on t width WIDTH late revise;
-            let p = w |> group by { k: k, windowStart: windowStart } aggregate { hits: count() };
-            emit entity Day from p identity day(k: k) set { k: k, hits: hits };
-          }
-        }
+        """;
+    const string WideIngest = """
+        graph ingest : d;
+        input a : R;
+        nodes Day on day with (rule = "observed", description = "test") = a
+            | summarize hits = count() by k, windowStart = bin(t, WIDTH)
+            | project day = identity("day", k), windowStart, k, hits;
         """;
     const string WideSpace = """
         module ds @ 1.0.0;
@@ -175,8 +175,8 @@ public class BatchInvarianceTests
     [InlineData("168h", int.MaxValue)]
     public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
     {
-        var cat = new Sattle.Language.Catalog();
-        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.sattle", Wide.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.sattle", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
+        var cat = new Sattle.Language.Catalog(new KqlSource());
+        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.sattle", Wide), new Sattle.Language.SourceFile("d.ingest.kql", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.sattle", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
         using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
         var w = Sattle.Language.Lexer.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
         e.Advance(start + 1);                                    // a replay advances before its first row

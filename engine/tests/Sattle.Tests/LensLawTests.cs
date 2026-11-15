@@ -1,11 +1,12 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
+using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>T-LENS (Theorem 8.2, experiment Q3): one lens per step kind over authored items (a filter with a delete that retires, a one-element match, an emit with a literal, a map that drops fields), random source tables and random view edits. Every accepted edit satisfies PutGet, an unchanged element is GetPut, a rejected edit changes nothing, and PutPut holds where the rule declares it. A rule over a step with a complement that accepts delete cannot declare putput.</summary>
+/// <summary>T-LENS (Theorem 8.2, experiment Q3): one lens per step kind over authored items (a filter with a delete that retires, a one-element match, an emit with a literal, a map that drops fields), random source tables and random view edits. Every accepted edit satisfies PutGet, an unchanged element is GetPut, and a rejected edit changes nothing.</summary>
 [Trait("Category", "Slow")]
 public class LensLawTests
 {
@@ -16,44 +17,45 @@ public class LensLawTests
         identity item for Item version "1" { k: Text by exact; }
         /// the row shape of the authoring adapter
         rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
-        projection ingest ingestion output t.base {
-          in items: rows CapabilityRow;
-          rule authored bijective {
-            emit entity Item from items identity item(k: capId) set { k: capId, a: name, d: owner, status: status };
-            emit relationship Under from items key under: item(k: capId) -> item(k: parentId);
-          }
-        }
         """;
 
-    const string Filtered = "let shown = match master (i: base.Item) |> where i.status != \"gone\";";
-    const string Retiring = "accept create, delete, update(a);\n    on create key base.item default { k: key.k, d: \"none\", status: \"live\" };\n    on delete set { status: \"gone\" };";
+    const string Ingest = """
+        graph ingest : t.base;
+        input items : CapabilityRow;
+        nodes Item on i with (rule = "authored", accept = "create, delete", update = "k, a, d, status") = items | project i = identity("item", capId), k = capId, a = name, d = owner, status;
+        edges Under from i to p with (rule = "authored") = items | project i = identity("item", capId), p = identity("item", parentId);
+        """;
 
-    /// <summary>The lens of each step kind: its statements, the type it emits, and whether it declares putput.</summary>
-    static readonly Dictionary<string, (string Rule, string Body, string Policy)> Lenses = new()
+    const string Filtered = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" and i.status != \"gone\" project i;";
+    const string Retiring = "let newItem = (k:string) { print k = k, d = \"none\", status = \"live\" };\nlet goneItem = () { print status = \"gone\" };";
+    const string RetiringRule = "rule = \"items\", accept = \"create, delete\", update = \"a\", onCreate = \"newItem\", onDelete = \"goneItem\"";
+
+    /// <summary>The lens of each step kind: its lets and its step.</summary>
+    static readonly Dictionary<string, string> Lenses = new()
     {
-        ["filter"] = ("lens", Filtered + "\n    emit entity V from shown identity i set { a: i.a };", Retiring),
-        ["match"] = ("lens putput", "let shown = match master (i: base.Item);\n    emit entity V from shown identity i set { a: i.a };", "accept update(a);"),
-        ["literal"] = ("lens", Filtered + "\n    emit entity V from shown identity i set { a: i.a, tag: \"seen\" };", Retiring),
-        ["map"] = ("lens", "let shown = match master (i: base.Item) |> select { i: i, a: i.a };\n    emit entity V from shown identity i set { a: a };", "accept update(a);"),
+        ["filter"] = $"{Filtered}\n{Retiring}\nnodes V on i with ({RetiringRule}) = shown | project i = i.id, a = i.a;",
+        ["match"] = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i;\nnodes V on i with (rule = \"items\", update = \"a\") = shown | project i = i.id, a = i.a;",
+        ["literal"] = $"{Filtered}\n{Retiring}\nnodes V on i with ({RetiringRule}) = shown | project i = i.id, a = i.a, tag = \"seen\";",
+        ["map"] = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i = i.id, a = i.a;\nnodes V on i with (rule = \"items\", update = \"a\") = shown | project i, a;",
     };
 
-    static SourceFile[] Files(string step, string? rule = null) =>
+    static SourceFile[] Files(string step) =>
     [
-        new("t.base.sattle", Base), new("t.view.sattle", $$"""
+        new("t.base.sattle", Base), new("t.base.ingest.kql", Ingest),
+        new("t.view.sattle", """
             module t.view @ 1.0.0;
             import t.base @ 1.0.0 sha256:… as base;
             entity V { a: Text; tag?: Text; }
-            projection v view output t.view {
-              in master: graph base;
-              rule items {{rule ?? Lenses[step].Rule}} {
-                {{Lenses[step].Body}}
-                {{Lenses[step].Policy}}
-              }
-            }
+            """),
+        new("t.view.v.kql", "graph v : t.view;\ninput master : t.base;\n" + Lenses[step] + "\n"),
+        new("t.space.sattle", """
+            module t.space @ 1.0.0;
+            import t.base @ 1.0.0 sha256:… as base;
+            import t.view @ 1.0.0 sha256:… as view;
             space s {
               source items adapter "sattle.authoring" rows base.CapabilityRow;
               master graph master = base.ingest(items: items);
-              graph view = v(master: master);
+              graph view = view.v(master: master);
             }
             """),
     ];
@@ -61,8 +63,7 @@ public class LensLawTests
     static SpaceHost Host(string step, int seed)
     {
         var files = Files(step);
-        var loaded = SpaceHost.LoadDefinitions(files);
-        var h = new SpaceHost(files, new HostOptions { Cluster = "synth" }, loaded);
+        var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         var rnd = new Random(seed);
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         for (var i = 0; i < rnd.Next(3, 7); i++) { rw.Begin(); rw.Text("capId", "k" + i); rw.Text("name", "a" + rnd.Next(10)); rw.Text("owner", "d" + rnd.Next(10)); rw.Text("status", rnd.Next(4) == 0 ? "gone" : "live"); }
@@ -137,31 +138,5 @@ public class LensLawTests
         }
         // the map renames the field it keeps, which the inverse of the emit does not follow: its updates are refused by the staged check, never applied wrong
         if (step == "map") Assert.Equal(0, accepted); else Assert.True(accepted > 0, $"{step}: no edit accepted, {rejected} rejected");
-    }
-
-    /// <summary>PutPut where the rule declares it: two updates one after the other leave the master as the second update alone does.</summary>
-    [Theory]
-    [InlineData(1)] [InlineData(2)] [InlineData(3)]
-    public void PutPut_holds_where_the_rule_declares_it(int seed)
-    {
-        using var twice = Host("match", seed); using var once = Host("match", seed);
-        Assert.True(twice.Engine.Graph("view").Typed.Rules.Single().PutPut);
-        var e = twice.Engine.Graph("view").State.Entities.OrderBy(x => x.Id, StringComparer.Ordinal).First();
-        var (a0, a1, a2) = (A(e), A(e) + "x", A(e) + "y");
-        twice.ApplyEdits("view", Edit(twice, new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, a0, false), ["after"] = Ent(e.Id, a1, false) }));
-        twice.ApplyEdits("view", Edit(twice, new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, a1, false), ["after"] = Ent(e.Id, a2, false) }));
-        once.ApplyEdits("view", Edit(once, new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, a0, false), ["after"] = Ent(e.Id, a2, false) }));
-        Assert.Equal(once.Engine.Master.State.Digest(), twice.Engine.Master.State.Digest());
-        Assert.Equal(once.Engine.Graph("view").State.Digest(), twice.Engine.Graph("view").State.Digest());
-    }
-
-    [Theory]
-    [InlineData("filter", true)]          // the view leaves d and status out and accepts delete
-    [InlineData("match", false)]          // no delete accepted
-    public void A_lens_with_a_complement_that_accepts_delete_cannot_declare_putput(string step, bool refused)
-    {
-        var res = new Catalog().Load(Files(step, "lens putput"), updatePins: true);
-        Assert.Equal(refused, res.Diagnostics.Any(d => d.IsError && d.Code == "PutPut" && d.Message.Contains("d, status", StringComparison.Ordinal)));
-        if (!refused) Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
     }
 }

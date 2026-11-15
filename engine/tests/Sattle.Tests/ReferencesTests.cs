@@ -11,18 +11,19 @@ public class ReferencesTests
 {
     static string Estate => EstateTests.EstateDir;
 
-    /// <summary>A projection that emits only the `Calls` relationships of the master: its endpoints are pods of the master, none of them an entity of this graph.</summary>
+    /// <summary>A module whose projection `calls` emits only the `Calls` relationships of the master: its endpoints are pods of the master, none of them an entity of this graph.</summary>
     const string CallsView = """
         module acme.callsview @ 1.0.0;
         import sattle.infra @ 1.0.0 sha256:… as infra;
         import acme.ops     @ 1.0.0 sha256:… as ops;
+        """;
 
-        projection calls view forward output infra {
-          in master: graph ops;
-          retain 4;
-          let calls = match master (a: infra.Pod)-[:infra.Calls]->(b: infra.Pod);
-          emit relationship infra.Calls from calls key c: a -> b;
-        }
+    const string Calls = """
+        graph calls : sattle.infra with (history = 4);
+        input master : acme.ops;
+
+        edges Calls from a to b with (key = "c") = graph("master")
+            | graph-match (x)-[k]->(y) where labels(x) has "Pod" and labels(k) has "Calls" and labels(y) has "Pod" project a = x.id, b = y.id;
         """;
 
     static List<SourceFile> Files()
@@ -31,7 +32,7 @@ public class ReferencesTests
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")).Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
             .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
-        files.Add(new SourceFile("acme.callsview.sattle", CallsView));
+        files.AddRange([new SourceFile("acme.callsview.sattle", CallsView), new SourceFile("acme.callsview.calls.kql", Calls)]);
         return files;
     }
 

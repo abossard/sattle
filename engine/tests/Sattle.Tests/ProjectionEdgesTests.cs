@@ -255,14 +255,14 @@ public class ProjectionEdgesTests
 
     // ---- the image is a function: policy for a node with two images, composition of two lifts, ratio and state of a lifted edge -------------
 
-    static Engine RunWith(string dir, string? module, string? moduleText, string? graphLine)
+    static Engine RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graphLine)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         var space = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
         if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
         files[i] = files[i] with { Text = space };
-        if (module is not null) files.Add(new SourceFile(module + ".sattle", moduleText!));
+        files.AddRange(moduleFiles);
         var cat = new Catalog(new KqlSource()); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var id = cat.Spaces.Keys.Single();
@@ -277,24 +277,27 @@ public class ProjectionEdgesTests
         import sattle.infra @ 1.0.0 sha256:… as infra;
         import acme.ops     @ 1.0.0 sha256:… as ops;
         import acme.biz     @ 1.0.0 sha256:… as biz;
+        """;
 
-        projection oneStep view forward output biz {
-          in master: graph ops;
-          in authored: graph ops;
-          retain 4;
-          let realized = match authored (s: infra.Service)-[:ops.Realizes]->(c: ops.Capability) |> where c.status != "retired";
-          let fromImage = realized |> select { sa: s, ca: c };
-          let toImage = realized |> select { sb: s, cb: c };
-          let calls = match master (a: infra.Pod)-[k:infra.Calls]->(b: infra.Pod), (a)-[:infra.Backs]->(s: infra.Service), (b)-[:infra.Backs]->(t: infra.Service);
-          let withFrom = join calls, fromImage on s == sa;
-          let ends = join withFrom, toImage on t == sb;
-          let edges = ends |> where ca != cb;
-          emit relationship biz.DependsOn from edges key one: ca -> cb;
-          let windows = edges
-            |> series master k.flows, k.drops within 24h
-            |> rollup by { ca: ca, cb: cb } combine { flows: sum(flows), drops: sum(drops) };
-          emit update relationship biz.DependsOn from windows key one: ca -> cb set { callFlows: flows, callDrops: drops };
-        }
+    const string OneStepGraph = """
+        graph oneStep : acme.biz with (history = 4);
+        input master : acme.ops;
+        input authored : acme.ops;
+
+        let realized = graph("authored")
+            | graph-match (s)-[r]->(c) where labels(r) has "Realizes" and c.status != "retired"
+              project service = s.id, capability = c.id;
+        let edges = graph("master")
+            | graph-match (a)-[k]->(b), (a)-[x]->(s), (b)-[y]->(t)
+              where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" and labels(x) has "Backs" and labels(s) has "Service" and labels(y) has "Backs" and labels(t) has "Service"
+              project k = k.id, s = s.id, t = t.id
+            | join kind=inner (realized | project sa = service, ca = capability) on $left.s == $right.sa
+            | join kind=inner (realized | project sb = service, cb = capability) on $left.t == $right.sb
+            | where ca != cb;
+        edges DependsOn from ca to cb with (key = "one") = edges | project ca, cb;
+        extend edges DependsOn from ca to cb with (key = "one") = edges
+            | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project k = id, windowStart, property, value) on k
+            | summarize callFlows = sumif(value, property == "flows"), callDrops = sumif(value, property == "drops") by ca, cb, windowStart;
         """;
 
     [Theory]
@@ -305,7 +308,7 @@ public class ProjectionEdgesTests
         var dir = Copy([.. realizes.Split(',')], extraWebToDb, null);
         try
         {
-            var e = RunWith(dir, "acme.onestep", OneStep, "graph oneStep = extra.oneStep(master: master, authored: authored);");
+            var e = RunWith(dir, "acme.onestep", [new SourceFile("acme.onestep.sattle", OneStep), new SourceFile("acme.onestep.oneStep.kql", OneStepGraph)], "graph oneStep = extra.oneStep(master: master, authored: authored);");
             foreach (var prop in new[] { "callFlows", "callDrops" })
             {
                 var twoSteps = Summed(e, "capabilities", prop, id => CapName(e, id));

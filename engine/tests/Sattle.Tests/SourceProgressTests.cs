@@ -20,13 +20,17 @@ public class SourceProgressTests
         import sattle.infra @ 1.0.0 sha256:… as infra;
         entity PodSignal { k: Text label; state?: Text; }
         identity podSignal for PodSignal version "1" { k: Text by exact; }
-        /// The warning signal of each pod: on at one window with an event, off after two without, silent when its source has not reported.
-        projection quiet view forward output t.quiet {
-          in master: graph ops;
-          let s = match master (p: infra.Pod) |> series master p.warnings fill 0 within 10m ttl 3m |> select { c: p.name, windowStart: windowStart, v: warnings, noData: noData }
-            |> threshold v by { c: c } above 1 for 1 then "on" below 0 for 2 then "off" initial "off" nodata then "silent" as state;
-          emit entity PodSignal from s identity podSignal(k: c) set { k: c, state: state };
-        }
+        """;
+
+    const string Quiet = """
+        graph quiet : t.quiet with (description = "The warning signal of each pod: on at one window with an event, off after two without, silent when its source has not reported.");
+        input master : acme.ops;
+
+        let s = graph("master") | graph-match (p) where labels(p) has "Pod" project p = p.id, c = p.name
+            | join kind=inner (telemetry_filled("master", 10m, 3m, 0.0) | where property == "warnings" | project p = id, windowStart, property, value, noData) on p
+            | project c, windowStart, value, above = 1.0, enterAfter = 1, below = 0.0, exitAfter = 2, noData
+            | invoke hysteresis("on", "off", "off", "silent");
+        nodes PodSignal on sig = s | project sig = identity("podSignal", c), k = c, state;
         """;
 
     static List<SourceFile> Files()
@@ -38,7 +42,7 @@ public class SourceProgressTests
         text = text.Insert(firstImport, "import t.quiet @ 1.0.0 sha256:… as quiet;\n");
         text = text[..text.LastIndexOf('}')] + "  graph quiet = quiet.quiet(master: master);\n}\n";
         files[space] = files[space] with { Text = text };
-        files.Add(new SourceFile("t.quiet.sattle", View));
+        files.AddRange([new SourceFile("t.quiet.sattle", View), new SourceFile("t.quiet.quiet.kql", Quiet)]);
         return files;
     }
 

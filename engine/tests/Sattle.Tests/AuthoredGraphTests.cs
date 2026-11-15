@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
+using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -18,50 +19,61 @@ public class AuthoredGraphTests
         /// the row shapes of the authoring adapter
         rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
         rows RealizesRow { capId: Text; cluster: Text; namespace: Text; service: Text; }
-        projection ingest ingestion output t.base {
-          in obs: rows RealizesRow;
-          rule observed readonly "what was observed" {
-            emit entity Seen from obs identity seen(name: service) set { name: service };
-          }
-        }
-        projection authored ingestion output t.base {
-          in items: rows CapabilityRow;
-          rule written bijective {
-            emit entity Item from items identity item(k: capId) set { k: capId, a: name, d: owner, status: status };
-            emit relationship Under from items key under: item(k: capId) -> item(k: parentId);
-          }
-        }
         """;
 
-    static string View(string space) => $$"""
+    const string Ingest = """
+        graph ingest : t.base;
+        input obs : RealizesRow;
+        nodes Seen on s with (rule = "observed", description = "what was observed") = obs | project s = identity("seen", service), name = service;
+        """;
+
+    const string Authored = """
+        graph authored : t.base;
+        input items : CapabilityRow;
+        nodes Item on i with (rule = "written", accept = "create, delete", update = "k, a, d, status") = items | project i = identity("item", capId), k = capId, a = name, d = owner, status;
+        edges Under from i to p with (rule = "written") = items | project i = identity("item", capId), p = identity("item", parentId);
+        """;
+
+    const string View = """
         module t.view @ 1.0.0;
         import t.base @ 1.0.0 sha256:… as base;
         entity V { a: Text; }
-        projection v view output t.view {
-          in authored: graph base;
-          rule items lens {
-            let shown = match authored (i: base.Item);
-            emit entity V from shown identity i set { a: i.a };
-            accept update(a);
-          }
-        }
+        """;
+
+    const string Lens = """
+        graph v : t.view;
+        input authored : t.base;
+        let shown = graph("authored") | graph-match (i) where labels(i) has "Item" project i;
+        nodes V on i with (rule = "items", update = "a") = shown | project i = i.id, a = i.a;
+        """;
+
+    static string Space(string graphs) => $$"""
+        module t.space @ 1.0.0;
+        import t.base @ 1.0.0 sha256:… as base;
+        import t.view @ 1.0.0 sha256:… as view;
         space s {
           source items adapter "sattle.authoring" rows base.CapabilityRow;
           source obs adapter "sattle.authoring" rows base.RealizesRow;
-          {{space}}
+          {{graphs}}
         }
         """;
 
     const string Graphs = """
         master graph master = base.ingest(obs: obs);
           graph authored = base.authored(items: items);
-          graph view = v(authored: authored);
+          graph view = view.v(authored: authored);
         """;
+
+    /// <summary>The definitions: the base module with `types` added, its two ingestion projections with `observed` and `written` added, the lens view and the space with `graphs`.</summary>
+    static SourceFile[] Files(string types = "", string observed = "", string written = "", string graphs = Graphs) =>
+    [
+        new("t.base.sattle", Base + "\n" + types), new("t.base.ingest.kql", Ingest + "\n" + observed), new("t.base.authored.kql", Authored + "\n" + written),
+        new("t.view.sattle", View), new("t.view.v.kql", Lens), new("t.space.sattle", Space(graphs)),
+    ];
 
     static SpaceHost Host()
     {
-        SourceFile[] files = [new("t.base.sattle", Base), new("t.view.sattle", View(Graphs))];
-        var h = new SpaceHost(files, new HostOptions { Cluster = "synth" });
+        var h = new SpaceHost(Files(), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         foreach (var k in new[] { "k1", "k2" }) { rw.Begin(); rw.Text("capId", k); rw.Text("name", "a-" + k); rw.Text("owner", "d"); rw.Text("status", "live"); }
         h.Ingest("items", rw.Build()!, 1);
@@ -114,44 +126,39 @@ public class AuthoredGraphTests
     /// <summary>What a graph other than the master that ingests may not do: share a source, link identities, write telemetry.</summary>
     [Theory]
     [InlineData("a source bound twice", "", "", "bound by more than one graph")]
-    [InlineData("a link in authored", "identity seen for Seen", "identity itemName for Item version \"1\" { name: Text by exact; }\nequivalence itemKeyIsName between item, itemName assert threshold 1.0;\nidentity seen for Seen", "links no identities")]
-    [InlineData("telemetry in authored", "entity Seen { name: Text; }", "entity Seen { name: Text; }\nentity Level { k: Text; level?: Decimal telemetry gauge max every 60s; }\nidentity level for Level version \"1\" { k: Text by exact; }\nrows LevelRow { k: Text; time: Instant; v: Decimal; }", "writes no telemetry")]
-    public void A_graph_other_than_the_master_that_ingests_is_refused_what_belongs_to_the_master(string what, string from, string to, string message)
+    [InlineData("a link in authored", "identity itemName for Item version \"1\" { name: Text by exact; }\nequivalence itemKeyIsName between item, itemName assert threshold 1.0;\n",
+        "link itemKeyIsName from i to n with (rule = \"linked\", confidence = 1.0, description = \"names\") = items | project i = identity(\"item\", capId), n = identity(\"itemName\", name);\n", "links no identities")]
+    [InlineData("telemetry in authored", "entity Level { k: Text; level?: Decimal telemetry gauge max every 60s; }\nidentity level for Level version \"1\" { k: Text by exact; }\nrows LevelRow { k: Text; time: Instant; v: Decimal; }\n",
+        "input levels : LevelRow;\nnodes Level on l with (rule = \"levels\", description = \"levels\") = levels | summarize level = max(v) by k, windowStart = bin(['time'], 60s) | project l = identity(\"level\", k), windowStart, k, level;\n", "writes no telemetry")]
+    public void A_graph_other_than_the_master_that_ingests_is_refused_what_belongs_to_the_master(string what, string types, string written, string message)
     {
-        var text = from.Length == 0 ? Base : Base.Replace(from, to);
-        if (what == "a link in authored")
-            text = text.Replace("    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }",
-                "    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }\n  rule linked readonly \"names\" {\n    link itemKeyIsName from items left item(k: capId) right itemName(name: name) confidence 1.0;\n  }");
-        if (what == "telemetry in authored")
-            text = text.Replace("    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }",
-                "    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }\n  rule levels readonly \"levels\" {\n    let w = levels |> window on time width 60s late revise;\n    emit entity Level from w identity level(k: k) set { k: k, level: v };\n  }").Replace("  in items: rows CapabilityRow;", "  in items: rows CapabilityRow;\n  in levels: rows LevelRow;");
         var graphs = what switch
         {
-            "a source bound twice" => "master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items);\n  graph again = base.authored(items: items);\n  graph view = v(authored: authored);",
+            "a source bound twice" => "master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items);\n  graph again = base.authored(items: items);\n  graph view = view.v(authored: authored);",
             // these rows come from no adapter: the space is only loaded, never run
-            "telemetry in authored" => "source levels adapter \"test\" rows base.LevelRow;\n  master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items, levels: levels);\n  graph view = v(authored: authored);",
+            "telemetry in authored" => "source levels adapter \"test\" rows base.LevelRow;\n  master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items, levels: levels);\n  graph view = view.v(authored: authored);",
             _ => Graphs,
         };
-        SourceFile[] files = [new("t.base.sattle", text), new("t.view.sattle", View(graphs))];
-        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(files));
+        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs), new KqlSource()));
         Assert.True(e.Message.Contains(message, StringComparison.Ordinal), $"{what}: {e.Message}");
     }
 
-    /// <summary>An edge that `authored` emits from an entity it does not create: its end is not deferred when another ingestion projection of the module and output creates
-    /// that type, as `ingest` creates `Seen`; it is when nothing creates it, or only a view does.</summary>
+    /// <summary>An edge that `authored` makes from a node it does not make: its end is not deferred when another ingestion projection of the module and output makes
+    /// that type, as `ingest` makes `Seen`; it is when nothing makes it, or only a view does.</summary>
     [Theory]
     [InlineData("a sibling ingestion projection creates the type", "Seen", "seen", false, false)]
     [InlineData("no projection creates the type", "Loose", "loose", false, true)]
     [InlineData("only a view creates the type", "Loose", "loose", true, true)]
     public void An_edge_end_that_a_sibling_ingestion_projection_creates_is_not_deferred(string what, string endType, string identity, bool view, bool deferred)
     {
-        var text = Base
-            .Replace("identity seen for Seen version \"1\" { name: Text by exact; }", $"identity seen for Seen version \"1\" {{ name: Text by exact; }}\nentity Loose {{ name: Text; }}\nidentity loose for Loose version \"1\" {{ name: Text by exact; }}\nrelationship Marks ({endType}) -> (Item);")
-            .Replace("    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }",
-                $"    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }}\n  rule marks readonly \"marks\" {{\n    emit relationship Marks from items key marks: {identity}(name: owner) -> item(k: capId);\n  }}");
-        if (view) text += "\nprojection looseView view output t.base {\n  in g: graph t.base;\n  rule made readonly \"loose\" {\n    let x = match g (i: Item);\n    emit entity Loose from x identity loose(name: i.k) set { name: i.k };\n  }\n}\n";
-        Assert.Contains("rule marks readonly", text);
-        var res = new Catalog().Load([new SourceFile("t.base.sattle", text), new SourceFile("t.view.sattle", View(Graphs))], updatePins: true);
+        var types = $"entity Loose {{ name: Text; }}\nidentity loose for Loose version \"1\" {{ name: Text by exact; }}\nrelationship Marks ({endType}) -> (Item);\n";
+        var marks = $"edges Marks from m to i with (rule = \"marks\", description = \"marks\") = items | project m = identity(\"{identity}\", owner), i = identity(\"item\", capId);\n";
+        SourceFile[] files = [.. Files(types, written: marks), .. view ? new[] { new SourceFile("t.base.looseView.kql", """
+            graph looseView : t.base;
+            input g : t.base;
+            nodes Loose on l with (rule = "made", description = "loose") = graph("g") | graph-match (i) where labels(i) has "Item" project l = identity("loose", i.k), name = i.k;
+            """) } : []];
+        var res = new Catalog(new KqlSource()).Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         Assert.Equal(deferred, res.Diagnostics.Any(d => d.Code == "EndpointDeferred"));
         _ = what;
@@ -161,16 +168,12 @@ public class AuthoredGraphTests
     [Fact]
     public void A_graph_that_ingests_follows_a_merge()
     {
-        var linked = Base
-            .Replace("identity seen for Seen", "entity Note { n?: Text; }\nidentity noteKey for Note version \"1\" { k: Text by exact; }\nidentity noteName for Note version \"1\" { name: Text by exact; }\nequivalence noteKeyIsName between noteKey, noteName assert threshold 1.0;\nidentity seen for Seen")
-            .Replace("emit entity Seen from obs identity seen(name: service) set { name: service };",
-                "emit entity Seen from obs identity seen(name: service) set { name: service };\n    link noteKeyIsName from obs left noteKey(k: capId) right noteName(name: service) confidence 1.0;")
-            .Replace("    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }",
-                "    emit relationship Under from items key under: item(k: capId) -> item(k: parentId);\n  }\n  rule notes readonly \"a note per item, by key and by name\" {\n    emit entity Note from items identity noteKey(k: capId);\n    emit entity Note from items identity noteName(name: name);\n  }");
-        Assert.Contains("link noteKeyIsName", linked);
-        Assert.Contains("rule notes readonly", linked);
-        SourceFile[] files = [new("t.base.sattle", linked), new("t.view.sattle", View(Graphs))];
-        using var h = new SpaceHost(files, new HostOptions { Cluster = "synth" });
+        var files = Files(
+            "entity Note { n?: Text; }\nidentity noteKey for Note version \"1\" { k: Text by exact; }\nidentity noteName for Note version \"1\" { name: Text by exact; }\nequivalence noteKeyIsName between noteKey, noteName assert threshold 1.0;\n",
+            "link noteKeyIsName from k to n with (rule = \"observed\", confidence = 1.0) = obs | project k = identity(\"noteKey\", capId), n = identity(\"noteName\", service);\n",
+            "nodes Note on n with (rule = \"notes\", description = \"a note per item, by key and by name\") = items | project n = identity(\"noteKey\", capId);\n"
+            + "nodes Note on n with (rule = \"notes\") = items | project n = identity(\"noteName\", name);\n");
+        using var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
         int Notes() => h.Engine.Graph("authored").State.Entities.Count(e => Ids.Name(e.Type) == "Note");
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         rw.Begin(); rw.Text("capId", "k1"); rw.Text("name", "a-k1"); rw.Text("owner", "d"); rw.Text("status", "live");

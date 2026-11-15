@@ -69,7 +69,7 @@ public class HostDefectTests
         Assert.NotNull(Assert.Single(restored.Writers).Layout);
     }
 
-    /// <summary>Review: Drafts.cs:283, :126. A draft is compared with its base. Check, preview and refactor compare it with the head, so after another commit an untouched draft reports that commit as its own change (the module reverted).</summary>
+    /// <summary>Review: Drafts.cs:283, :126. A draft is compared with its base. Check and preview compare it with the head, so after another commit an untouched draft reports that commit as its own change (the module reverted).</summary>
     [Fact]
     public void An_untouched_draft_reports_no_change_after_another_commit()
     {

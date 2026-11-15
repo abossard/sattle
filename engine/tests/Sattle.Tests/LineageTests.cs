@@ -157,20 +157,26 @@ public class LineageTests
 
     // ---- elements emitted from a group ----------------------------------------------------------------------------------------------
 
-    /// <summary>The service dependencies of the master written as a quotient through `group by`: one edge per pair of services, made of every pod call between them.</summary>
+    /// <summary>The service dependencies of the master written as a quotient through `summarize`: one edge per pair of services, made of every pod call between them.</summary>
     const string ByGroup = """
         module acme.bygroup @ 1.0.0;
         import sattle.infra @ 1.0.0 sha256:… as infra;
         import acme.ops     @ 1.0.0 sha256:… as ops;
         import acme.svc     @ 1.0.0 sha256:… as svc;
+        """;
 
-        projection pairs view forward output svc {
-          in master: graph ops;
-          retain 4;
-          let calls = match master (a: infra.Pod)-[c:infra.Calls]->(b: infra.Pod), (a)-[:infra.Backs]->(s: infra.Service), (b)-[:infra.Backs]->(t: infra.Service) |> where s != t;
-          let perPair = calls |> group by { s: s, t: t } aggregate { n: count() };
-          emit relationship svc.DependsOn from perPair key pair: s -> t;
-        }
+    const string Pairs = """
+        graph pairs : acme.svc with (history = 4);
+        input master : acme.ops;
+
+        let backing = graph("master") | graph-match (p)-[k]->(v) where labels(k) has "Backs" project pod = p.id, service = v.id;
+        edges DependsOn from s to t with (key = "pair") = graph("master")
+            | graph-match (a)-[c]->(b) where labels(c) has "Calls" project c = c.id, fromPod = a.id, toPod = b.id
+            | join kind=inner (backing | project fromPod = pod, s = service) on fromPod
+            | join kind=inner (backing | project toPod = pod, t = service) on toPod
+            | where s != t
+            | summarize n = count() by s, t
+            | project s, t;
         """;
 
     [Fact]
@@ -179,7 +185,7 @@ public class LineageTests
         var files = EstateFiles();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
-        files.Add(new SourceFile("acme.bygroup.sattle", ByGroup));
+        files.AddRange([new SourceFile("acme.bygroup.sattle", ByGroup), new SourceFile("acme.bygroup.pairs.kql", Pairs)]);
         var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
         using (h)
         {
