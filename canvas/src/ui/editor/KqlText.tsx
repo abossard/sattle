@@ -141,9 +141,10 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
   const [cursor, setCursor] = useState<number | null>(null);
   const [notation, setNotation] = useState<"steps" | "outline" | "wires">("steps");
   const [rowsBy, setRowsBy] = useState<{ status: "idle" | "busy" } | { status: "ready"; by: Map<string, string> } | { status: "error"; message: string }>({ status: "idle" });
+  const [forms, setForms] = useState<string[] | undefined>(undefined);
   useEffect(() => {
     let gone = false;
-    setState({ status: "loading" }); setReading(null); setRowsBy({ status: "idle" });
+    setState({ status: "loading" }); setReading(null); setRowsBy({ status: "idle" }); setForms(undefined);
     port.kqlText(projection, draft).then(({ text }) => {
       if (gone || !host.current) return;
       const follow = EditorView.updateListener.of((u) => { if (u.docChanged) setDoc(u.state.doc.toString()); if (u.selectionSet || u.docChanged) setCursor(u.state.selection.main.head); });
@@ -153,6 +154,15 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
     }, (e: Error) => !gone && setState({ status: "error", message: e.message }));
     return () => { gone = true; view.current?.destroy(); view.current = null; };
   }, [port, projection, draft]);
+  // the forms a new statement starts with: what the engine completes at the start of a statement after the last one
+  const hasReading = !!reading;
+  useEffect(() => {
+    if (!hasReading || forms || !view.current) return;
+    let gone = false;
+    const before = view.current.state.doc.toString().trimEnd(), at = before.endsWith(";") ? `${before}\n` : `${before};\n`;
+    port.kqlComplete(projection, at, at.length).then((c) => { if (!gone) setForms(c.items.filter((i) => i.kind === "step").map((i) => i.insert ?? i.text)); }, () => {});
+    return () => { gone = true; };
+  }, [hasReading, forms, port, projection]);
   const problems = reading?.analysis.diagnostics.length ?? null;
   // a visual edit goes in like typing: one transaction on the text, so typing and Steps share one undo history
   const change = (changes: Change[], select: Place | null) => {
@@ -216,9 +226,9 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
             <Tab value="steps">Steps</Tab><Tab value="outline">Outline</Tab><Tab value="wires">Wires</Tab>
           </TabList>
           <div className={s.pane} role="tabpanel" aria-label={notation}>
-            {notation === "steps" && <KqlSteps reading={reading} selected={cursor} busy={!reading || reading.text !== doc} rows={rowsBy.status === "ready" && stored ? rowsBy.by : null} onSelect={select} onChanges={change} />}
-            {notation === "outline" && <KqlOutline reading={reading} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
-            {notation === "wires" && <KqlWires reading={reading} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
+            {notation === "steps" && <KqlSteps reading={reading} forms={forms} selected={cursor} busy={!reading || reading.text !== doc} rows={rowsBy.status === "ready" && stored ? rowsBy.by : null} onSelect={select} onChanges={change} />}
+            {notation === "outline" && <KqlOutline reading={reading} forms={forms} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
+            {notation === "wires" && <KqlWires reading={reading} forms={forms} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
           </div>
         </div>
       </div>

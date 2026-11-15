@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import type { Analysis, Place } from "../../src/editor/kql";
-import { add, addBy, addSetting, addWhere, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, starter, type List, startersFor } from "../../src/editor/kql-edit";
+import { add, addBy, addSetting, addStatement, addWhere, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, starter, type List, startersFor } from "../../src/editor/kql-edit";
 
 const rec = JSON.parse(String(gunzipSync(readFileSync("tests/fixtures/kql.json.gz")))) as { files: { projection: string; text: string; analyse: Analysis }[] };
 const files = rec.files.map((f) => [f.projection, f.text, listsOf(f.analyse)] as const);
@@ -114,5 +114,14 @@ describe("absent parts and new operators", () => {
     ["a let, after a telemetry join", { kind: "let", operators: [{ kind: "rows" }, { kind: "telemetry-join" }] }, ["where", "project", "summarize", "distinct"]],
   ] as const)("the new operators of %s", (_what, statement, want) => {
     expect(startersFor(statement)).toEqual(want);
+  });
+
+  it.each([
+    ["the graph line, which owns its `;`", "graph g : m;\n", [[0, 12]], "graph g : m;\nnodes T on k = x;\n", [13, 29]],
+    ["a let, which leaves its `;` outside", "graph g : m;\nlet x = a;\n", [[0, 12], [13, 22]], "graph g : m;\nlet x = a;\nnodes T on k = x;\n", [24, 40]],
+  ] as const)("a new statement after %s ends with one `;`", (_what, text, items, want, select) => {
+    const e = addStatement(text, { id: "statements", sep: ";", items: items.map((p) => [...p] as Place) }, "nodes T on k = x");
+    expect(apply(text, e.changes)).toBe(want);
+    expect(e.select).toEqual(select);
   });
 });

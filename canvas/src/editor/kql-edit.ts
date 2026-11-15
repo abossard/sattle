@@ -114,6 +114,18 @@ export function add(text: string, list: List, k: number, body: string, joint = j
   return { changes: [{ from: p, to: p, insert: body + joint }], select: itemIn(body, p) };
 }
 
+/**
+ * A new statement at the end of the file (the list rule's add on the statements list), in one of the forms the engine completes at a statement's
+ * start. The graph line and an input own their `;`, the other statements leave it outside: after one that owns it the new statement owns its
+ * own, after one that does not the joint brings it.
+ */
+export function addStatement(text: string, statements: List, body: string): Edit {
+  const last = statements.items[statements.items.length - 1];
+  const owns = text.slice(last[0], last[1]).trimEnd().endsWith(";");
+  const e = add(text, statements, statements.items.length, owns ? `${body};` : body, owns ? "\n" : ";\n");
+  return { changes: e.changes, select: e.select && [e.select[0], e.select[0] + body.length] };
+}
+
 /** Move item i to position k of the list without it (k = i puts it back). Its body and joint go with it. */
 export function move(text: string, list: List, i: number, k: number): Edit {
   const { body, joint } = carried(text, list, i);

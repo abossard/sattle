@@ -5,12 +5,14 @@ import { Button, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Text
 import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular, Edit16Regular } from "@fluentui/react-icons";
 import { useState } from "react";
 import type { Analysis, Place } from "../../editor/kql";
-import { add, addBy, addWhere, columnFor, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
+import { add, addBy, addStatement, addWhere, columnFor, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
 
 export interface Reading { text: string; analysis: Analysis }
 /** What every notation is given, and its two ways out: a place to select, text changes. */
 export interface NotationProps {
   reading: Reading | null; selected: number | null; busy: boolean;
+  /** the forms a statement starts with (`nodes`, `let`, ...), as the engine completes them at a statement's start; absent until known */
+  forms?: readonly string[];
   onSelect(place: Place): void; onChanges(changes: Change[], select: Place | null): void;
 }
 interface Props extends NotationProps {
@@ -53,7 +55,22 @@ function Actions({ text, list, i, what, onChanges, onEdit }: { text: string; lis
   );
 }
 
-export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }: Props) {
+/** A new statement at the end of the file: pick the form it starts with, write the rest, Enter adds it. Every notation shows this. */
+export function AddStatement({ reading, busy, forms, onChanges }: Pick<NotationProps, "reading" | "busy" | "forms" | "onChanges">) {
+  const [value, setValue] = useState<string | null>(null);
+  const statements = reading ? listsOf(reading.analysis).find((l) => l.id === "statements") : undefined;
+  if (!reading || !statements || !forms?.length) return null;
+  const done = () => { const e = addStatement(reading.text, statements, value!.trim()); setValue(null); onChanges(e.changes, e.select); };
+  return value === null
+    ? <Menu>
+        <MenuTrigger disableButtonEnhancement><Button size="small" appearance="subtle" icon={<Add16Regular />} disabled={busy}>Add a statement</Button></MenuTrigger>
+        <MenuPopover><MenuList>{forms.map((f) => <MenuItem key={f} onClick={() => setValue(`${f} `)}>{f}</MenuItem>)}</MenuList></MenuPopover>
+      </Menu>
+    : <Input size="small" aria-label="Text of the new statement" autoFocus value={value} onChange={(_, d) => setValue(d.value)}
+        onKeyDown={(e) => { e.stopPropagation(); if (e.key === "Enter" && value.trim() && !busy) done(); else if (e.key === "Escape") setValue(null); }} onBlur={() => setValue(null)} />;
+}
+
+export function KqlSteps({ reading, selected, busy, forms, rows, onSelect, onChanges }: Props) {
   const s = useStyles();
   const [editing, setEditing] = useState<{ place: Place; value: string } | null>(null);
   if (!reading) return <Text>Waiting for the engine's outline of the text…</Text>;
@@ -115,6 +132,7 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
           </div>
         );
       })}
+      <AddStatement reading={reading} busy={busy} forms={forms} onChanges={onChanges} />
     </div>
   );
 }

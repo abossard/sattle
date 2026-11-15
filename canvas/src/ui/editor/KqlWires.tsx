@@ -6,10 +6,10 @@ import { Field, Select, Text, makeStyles, mergeClasses, tokens } from "@fluentui
 import { useMemo } from "react";
 import { set } from "../../editor/kql-edit";
 import { CARD_H, CARD_W, targetsOf, wiresOf } from "../../editor/kql-wires";
-import type { NotationProps } from "./KqlSteps";
+import { AddStatement, type NotationProps } from "./KqlSteps";
 
 const useStyles = makeStyles({
-  root: { display: "grid", gridTemplateRows: "minmax(0, 1fr) auto", minHeight: 0, height: "100%", rowGap: tokens.spacingVerticalS },
+  root: { display: "grid", gridTemplateRows: "minmax(0, 1fr) auto auto", minHeight: 0, height: "100%", rowGap: tokens.spacingVerticalS },
   busy: { opacity: 0.6 },
   scroll: { overflow: "auto", minHeight: 0, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1 },
   sheet: { position: "relative" },
@@ -32,7 +32,7 @@ const useStyles = makeStyles({
   panel: { display: "flex", flexWrap: "wrap", columnGap: tokens.spacingHorizontalM, rowGap: tokens.spacingVerticalXS, alignItems: "end" },
 });
 
-export function KqlWires({ reading, selected, busy, onSelect, onChanges }: NotationProps) {
+export function KqlWires({ reading, selected, busy, forms, onSelect, onChanges }: NotationProps) {
   const s = useStyles();
   const layout = useMemo(() => (reading ? wiresOf(reading.analysis) : null), [reading]);
   if (!reading || !layout) return <Text>Waiting for the engine's outline of the text…</Text>;
@@ -74,6 +74,7 @@ export function KqlWires({ reading, selected, busy, onSelect, onChanges }: Notat
           ))}
         </div>
       )}
+      <div><AddStatement reading={reading} busy={busy} forms={forms} onChanges={onChanges} /></div>
     </div>
   );
 }

@@ -8,7 +8,7 @@ import type { Place } from "../../editor/kql";
 import { add, listsOf, newOperatorAt, remove, set, starter, startersFor, type Column } from "../../editor/kql-edit";
 import { outlineRows, type OutlineRow } from "../../editor/kql-outline";
 import { useViewSize } from "../../editors/view-size";
-import type { NotationProps } from "./KqlSteps";
+import { AddStatement, type NotationProps } from "./KqlSteps";
 
 const ROW_H = 28, OVERSCAN = 20;
 
@@ -26,7 +26,7 @@ const oneLine = (t: string) => t.replace(/\s+/g, " ").trim();
 /** What a row is called to a screen reader and in its buttons. */
 const nameOf = (r: OutlineRow) => `${r.kind}${r.label ? ` ${r.label}` : ""}`;
 
-export function KqlOutline({ reading, selected, busy, onSelect, onChanges, window: given }: NotationProps & { /** rows in view, when the caller knows it */ window?: number }) {
+export function KqlOutline({ reading, selected, busy, forms, onSelect, onChanges, window: given }: NotationProps & { /** rows in view, when the caller knows it */ window?: number }) {
   const s = useStyles();
   const all = useMemo(() => (reading ? outlineRows(reading.analysis) : []), [reading]);
   // operators start closed: the tree first shows the statements and their pipelines
@@ -116,6 +116,7 @@ export function KqlOutline({ reading, selected, busy, onSelect, onChanges, windo
           })}
         </FlatTree>
       </div>
+      <AddStatement reading={reading} busy={busy} forms={forms} onChanges={onChanges} />
     </div>
   );
 }
