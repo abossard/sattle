@@ -11,9 +11,7 @@
     "typecheck": "tsc --noEmit",
     "perf": "node scripts/perf-cdp.mjs",
     "a11y": "node scripts/a11y-cdp.mjs",
-    "walkthroughs": "node scripts/walkthroughs-cdp.mjs",
     "document-live": "node scripts/document-live-cdp.mjs",
-    "sync-palette": "node scripts/sync-palette.mjs",
     "demo": "node scripts/make-demo.mjs"
   },
   "dependencies": {

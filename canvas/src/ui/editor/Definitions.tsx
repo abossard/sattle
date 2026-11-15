@@ -7,10 +7,31 @@ import type { EditorSession } from "../../editor/session";
 import { constraintKinds, constraintParams } from "../../editor/structures";
 import { dispatch } from "../../state/store";
 import type { Command } from "../../state/types";
-import { AddRow, ofKind } from "./Properties";
+import type { Graph } from "../../core/graph";
 
 const useStyles = makeStyles({ col: { display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM }, row: { display: "flex", columnGap: tokens.spacingHorizontalS, alignItems: "center", flexWrap: "wrap" }, grow: { flexGrow: 1 } });
 const run = (cmd: Command) => dispatch({ type: "editor/do", cmd });
+const prop = (g: Graph, id: string, name: string) => { const v = g.entity(id)?.props[name]; return v ? valueText(v) : ""; };
+/** The entities of a type as select options, named `module.name`. */
+const ofKind = (g: Graph, type: string) => [...g.entities()].filter((e) => e.type === type).map((e) => ({ value: e.id, label: `${e.id.slice(2, e.id.indexOf("/"))}.${prop(g, e.id, "name") || e.id.slice(e.id.lastIndexOf(":") + 1)}` })).sort((a, b) => a.label.localeCompare(b.label));
+
+/** A row of fields and a button that adds what they hold. */
+function AddRow({ fields, cta, onAdd }: { fields: { key: string; label: string; options?: { value: string; label: string; disabled?: boolean }[]; placeholder?: string }[]; cta: string; onAdd: (v: Record<string, string>) => void }) {
+  const s = useStyles();
+  const [v, setV] = useState<Record<string, string>>({});
+  return (
+    <div className={s.row}>
+      {fields.map((f) => (
+        <Field key={f.key} label={f.label} className={s.grow}>
+          {f.options
+            ? <Select value={v[f.key] ?? ""} onChange={(_, d) => setV({ ...v, [f.key]: d.value })}><option value="">(choose)</option>{f.options.map((o) => <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>)}</Select>
+            : <Input value={v[f.key] ?? ""} placeholder={f.placeholder} onChange={(_, d) => setV({ ...v, [f.key]: d.value })} />}
+        </Field>
+      ))}
+      <Button onClick={() => { onAdd(v); setV({}); }}>{cta}</Button>
+    </div>
+  );
+}
 
 function ConstraintForm({ session, module }: { session: EditorSession; module: string }) {
   const s = useStyles();

@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react"
 import type { Place } from "../../editor/kql";
 import { add, listsOf, newOperatorAt, remove, set, starter, startersFor, type Column } from "../../editor/kql-edit";
 import { outlineRows, type OutlineRow } from "../../editor/kql-outline";
-import { useViewSize } from "../../editors/view-size";
+import { useViewSize } from "./view-size";
 import { AddStatement, type NotationProps } from "./KqlSteps";
 
 const ROW_H = 28, OVERSCAN = 20;

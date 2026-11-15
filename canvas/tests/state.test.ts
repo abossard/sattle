@@ -24,10 +24,9 @@ describe("reducer", () => {
     ["a live connection means live data", { type: "feed/connection", status: { state: "live", detail: "x", gapsFilled: 0, reconnects: 0 } }, (s) => s.freshness, "live"],
     ["a resync is announced", { type: "feed/resync", reason: "event gap" }, (s) => s.freshness, "resyncing"],
     ["a filter change merges into the graph's filter", { type: "filter/set", graph: "master", filter: { search: "pod", hiddenTypes: ["Pod"] } }, (s) => [s.filters.master.search, s.filters.master.hiddenTypes, s.filters.master.layout], ["pod", ["Pod"], "force"]],
-    ["editor selection clears an unfinished wire", { type: "editor/select", ids: ["a"] }, (s) => [s.editor.selected, s.editor.wiring], [["a"], null]],
     ["editor summary merges", { type: "editor/summary", patch: { revision: "4", notice: "n" } }, (s) => [s.editor.revision, s.editor.notice], ["4", "n"]],
   ])("%s", (_, action, pick, expected) => {
-    const s0 = base({ filters: { master: emptyFilter() }, editor: { ...initialState().editor, wiring: "w" } });
+    const s0 = base({ filters: { master: emptyFilter() } });
     if (action.type === "feed/patch") expect(reduce(s0, action)).toBe(s0);
     else expect(pick(reduce(s0, action))).toEqual(expected);
   });

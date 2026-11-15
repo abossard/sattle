@@ -7,8 +7,6 @@ import { Graph } from "../../src/core/graph";
 import { Catalog } from "../../src/core/catalog";
 import { TelemetryStore } from "../../src/core/telemetry";
 import { resolvePatchTimes } from "../../src/core/time-axis";
-import { addValuesRowEdits } from "../../src/editor/commands";
-import { parseExpr } from "../../src/editor/expr";
 import { parsePalette } from "../../src/editor/palette";
 import { contains, ent, text } from "../../src/editor/patches";
 import { initialState, reduce } from "../../src/state/reducer";
@@ -28,23 +26,6 @@ describe("tree-model.ts:51 severity mixes two scales", () => {
     const order = ["ra", "rb", "rc"].map((id) => m.nodes.get(id)!).sort(severityCompare).map((n) => n.id);
     expect(order[0], "Region A is Unhealthy and must come first").toBe("ra");
     expect(order.indexOf("rc")).toBeGreaterThan(order.indexOf("rb"));
-  });
-});
-
-describe("commands.ts:199 child ids come from the child count", () => {
-  it("a row added after a middle row was deleted gets an id that no row has", () => {
-    const op = "d:m/projection:p/op:v";
-    const rows = [0, 2].flatMap((n) => [ent(`${op}/row:#${n}`, "RowValue", {}), contains(op, `${op}/row:#${n}`, "row", n)]);
-    const g = Graph.fromSnapshot({
-      version: ver("1", "catalog"),
-      entities: [ent("d:m/projection:p", "Projection", {}), ent(op, "Values", { name: text("v") }), ...rows.filter((e) => e.kind === "entity")].map((e) => (e as unknown as { after: never }).after),
-      relationships: rows.filter((e) => e.kind === "relationship").map((e) => (e as unknown as { after: never }).after),
-    });
-    const r = addValuesRowEdits(g, op, [{ name: "a", src: "1" }], parsePalette({ operators: [], functions: [] }));
-    expect(r.ok).toBe(true);
-    const ids = r.ok ? r.value.filter((e) => e.kind === "entity").map((e) => (e as { id: string }).id) : [];
-    expect(ids.filter((id) => g.entity(id)), "an id that already exists would be rejected by the engine").toEqual([]);
-    void Catalog;
   });
 });
 
@@ -120,14 +101,6 @@ describe("graph.ts:81-88 edges parked while the stub cap was reached", () => {
     g.putEntity(plain(last));
     expect(g.edgeDst[g.edgeSlot.get(`r${total - 1}`)!], "the endpoint arrived: the edge must be drawn").toBe(g.nodeSlot.get(last));
   });
-});
-
-describe("editor/expr.ts:14-38 the editor's parser rejects syntax the engine prints", () => {
-  it.each([
-    ["text concatenation", 'a ++ "x"'],
-    ["a duration literal", "t > 5m"],
-    ["a duration literal in hours", "age < 24h"],
-  ])("%s", (_, src) => expect(parseExpr(src).ok, src).toBe(true));
 });
 
 describe("state/reducer.ts:28 the rejected counter", () => {

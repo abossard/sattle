@@ -25,7 +25,7 @@ const seed = () => {
   };
 };
 
-/** The editor over an engine in memory, with the module `m`, one projection and one operator on screen. */
+/** The editor over an engine in memory, with the module `m` and one projection. */
 /**
  * The dialog that the click opened. It is looked for with `hidden: true`: the modal management of the component library (tabster) hides the
  * other parts of the page from assistive technology with `aria-hidden` and does it after a delay, and on a busy machine a dialog opened right
@@ -41,9 +41,9 @@ async function openEditor() {
   (runtime.ws!.source as unknown as { catalogGraph: string }).catalogGraph = "catalog";
   runtime.ws!.histories.set("catalog", new History({ version: { tenant: "demo", graph: "catalog", revision: "1" }, entities: [], relationships: [] }));
   runtime.session = await EditorSession.open(eng.svc);
-  dispatch({ type: "editor/summary", patch: { status: "ready", message: "", draft: "d1", base: "11", revision: "0", version: 1, module: "m", projection: P, selected: [OP], diagnostics: [] } });
+  dispatch({ type: "editor/summary", patch: { status: "ready", message: "", draft: "d1", base: "11", revision: "0", version: 1, module: "m", projection: P, diagnostics: [] } });
   dispatch({ type: "ui/view", view: "editor" });
-  await screen.findByRole("group", { name: /Projection graph/ });
+  await screen.findByRole("tablist", { name: "Draft details" });
   return eng;
 }
 
@@ -58,41 +58,6 @@ describe("ui/EditorView.tsx:113 the Text tab", () => {
     await user.click(screen.getByRole("tab", { name: "Problems" }));          // blur, well inside the debounce
     await new Promise((r) => setTimeout(r, 900));
     expect(eng.calls.checkText, "the blur cancelled the pending check: the edit never reached the engine").toBeGreaterThan(0);
-  }, 30000);
-});
-
-describe("ui/EditorView.tsx:374-418 the root key handler", () => {
-  it("Delete or Backspace on a focused button does not delete the selected operators", async () => {
-    const user = userEvent.setup();
-    const eng = await openEditor();
-    const before = eng.calls.applyPatch;
-    const zoom = await screen.findByRole("button", { name: "Zoom in" });
-    act(() => zoom.focus());
-    await user.keyboard("{Backspace}");
-    await new Promise((r) => setTimeout(r, 200));
-    expect(eng.calls.applyPatch, "a focused button swallowed the key and the operator went").toBe(before);
-  }, 30000);
-
-  it("Enter on a focused button presses it", async () => {
-    const user = userEvent.setup();
-    await openEditor();
-    const add = await screen.findByRole("button", { name: /^Add/ });
-    act(() => add.focus());
-    await user.keyboard("{Enter}");
-    expect(await screen.findByRole("dialog", { hidden: true }, { timeout: 15000 }), "the handler took Enter for 'edit properties'").toBeTruthy();
-  }, 30000);
-});
-
-describe("the keys of the canvas on a focused operator", () => {
-  // the operators are role=button for a screen reader; the keys the canvas offers (A adds, W connects) are meant for them, unlike those of a toolbar button
-  it("A on a focused operator opens the add dialog", async () => {
-    const user = userEvent.setup();
-    await openEditor();
-    const node = document.querySelector<HTMLElement>("[data-node]");
-    expect(node, "the operator is drawn").toBeTruthy();
-    act(() => node!.focus());
-    await user.keyboard("a");
-    expect(await screen.findByRole("dialog", { hidden: true }, { timeout: 15000 })).toBeTruthy();
   }, 30000);
 });
 

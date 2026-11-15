@@ -34,13 +34,11 @@ export function reduce(s: State, a: Action): State {
     case "ui/announce": return { ...s, announcement: a.text };
     case "select/element": return { ...s, selection: a.selection, announcement: a.selection ? `Selected ${a.selection.kind} ${a.selection.id} in ${a.selection.graph}` : "Selection cleared" };
     case "editor/summary": return { ...s, editor: { ...s.editor, ...a.patch } };
-    case "editor/select": return { ...s, editor: { ...s.editor, selected: a.ids, wiring: null } };
-    case "editor/projection": return { ...s, editor: { ...s.editor, module: a.module, projection: a.projection, selected: [], wiring: null, preview: null } };
-    case "editor/wiring": return { ...s, editor: { ...s.editor, wiring: a.from } };
-    case "editor/dismiss": return { ...s, editor: { ...s.editor, ...(a.what === "preview" ? { preview: null } : a.what === "notice" ? { notice: "" } : a.what === "pending" ? { pending: null } : { releaseDiff: null }) } };
+    case "editor/projection": return { ...s, editor: { ...s.editor, module: a.module, projection: a.projection, preview: null } };
+    case "editor/dismiss": return { ...s, editor: { ...s.editor, ...(a.what === "preview" ? { preview: null } : a.what === "notice" ? { notice: "" } : { releaseDiff: null }) } };
     // the engine and the session answer these; effects report with editor/summary
     case "editor/open": return { ...s, editor: { ...emptyEditor(), status: "opening" } };
-    case "editor/do": case "editor/gesture": case "editor/undo": case "editor/redo": case "editor/commit": case "editor/discard": case "editor/preview": case "editor/releases": case "editor/diffRelease": return s;
+    case "editor/do": case "editor/undo": case "editor/redo": case "editor/commit": case "editor/discard": case "editor/preview": case "editor/releases": case "editor/diffRelease": return s;
     case "pane/command": return s;
     case "hover/element": return { ...s, hover: a.selection };
     case "time/seek": return { ...s, time: { ...s.time, now: a.t, following: a.t >= s.time.last } };

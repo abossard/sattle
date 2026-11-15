@@ -34,6 +34,8 @@ export function fakeEngine(seed: { entities?: Snapshot["entities"]; relationship
       files.set(file, text); rev++;
       return { revision: String(rev), ok: true, diagnostics: [], modules: { m: { text: `rev ${rev}` } } };
     },
+    // the editor opens a projection's KQL text: this engine serves none, and the editor says so
+    kqlText: async () => { throw new EngineError("UnknownModule", "no KQL text in this engine", 404); },
   } as unknown as EditorService;
   return { svc, g, calls, files, get rev() { return rev; }, set rev(r: number) { rev = r; } };
 }

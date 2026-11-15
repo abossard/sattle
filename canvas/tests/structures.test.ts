@@ -3,7 +3,7 @@ import { Graph } from "../src/core/graph";
 import type { Edit } from "../src/core/model";
 import { parsePalette } from "../src/editor/palette";
 import { ent, rel, text } from "../src/editor/patches";
-import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addRuleSetEdits, addValueRoleEdits, bindParamEdits, governsEdits, newProjectionEdits, policyProp, setCreateKeyEdits, setPolicyEdits, setRulePropEdits, setValueRoleEdits, valueSegment } from "../src/editor/structures";
+import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjectionEdits, setValueRoleEdits, valueSegment } from "../src/editor/structures";
 
 const M = "d:m";
 const E = (e: Edit) => e as Extract<Edit, { kind: "entity" }>;
@@ -68,12 +68,11 @@ describe("constraints from the palette's kinds", () => {
   });
 });
 
-describe("equivalence policies, value roles and rule programs", () => {
-  it("a policy lists its two domains in order, takes its mode from the palette, and an operator applies it", () => {
+describe("equivalence policies and value roles", () => {
+  it("a policy lists its two domains in order and takes its mode from the palette", () => {
     const r = addEquivalenceEdits(g, M, "eq", "assert", "1", [`${M}/identity:a`, `${M}/identity:b`], palette);
     expect(r.ok && R(r.value[1]).after!.props.ordinal).toEqual({ kind: "integer", value: "0" });
     expect(r.ok && R(r.value[2]).after!.props.ordinal).toEqual({ kind: "integer", value: "1" });
-    expect(setPolicyEdits(g, `${M}/projection:p/op:l`, `${M}/equivalence:eq`).map((e) => (e as { id: string }).id.replace(/d:m\//g, ""))).toEqual(["projection:p/op:l|policy|equivalence:eq"]);
   });
   it.each([["the same domain twice", "assert", [`${M}/identity:a`, `${M}/identity:a`]], ["one domain", "assert", [`${M}/identity:a`]], ["an unknown domain", "assert", [`${M}/identity:a`, `${M}/identity:z`]], ["a mode the palette does not list", "guess", [`${M}/identity:a`, `${M}/identity:b`]]])("refuses %s", (_, mode, between) => expect(addEquivalenceEdits(g, M, "eq", mode, "1", between, palette).ok).toBe(false));
 
@@ -91,40 +90,6 @@ describe("equivalence policies, value roles and rule programs", () => {
     expect(E(setValueRoleEdits(g, `${M}/prop:status`, "danger")[0]).after!.props.role).toEqual(text("danger"));
   });
 
-  it.each([["accept", "create, delete", { kind: "list", items: [text("create"), text("delete")] }], ["onDelete", "set", text("set")], ["putput", "true", { kind: "boolean", value: true }]] as const)("rule property %s is typed by the palette", (name, raw, want) => {
-    const e = setRulePropEdits(g, `${M}/projection:p/rule:r`, name, raw, palette);
-    expect(e.ok && E(e.value[0]).after!.props[name]).toEqual(want);
-  });
-  it.each([["onDelete", "keep"], ["putput", "maybe"], ["nope", "x"]])("refuses %s = %s", (name, raw) => expect(setRulePropEdits(g, `${M}/projection:p/rule:r`, name, raw, palette).ok).toBe(false));
-  it("an empty value removes the property; policy names map to property names", () => {
-    const e = setRulePropEdits(g, `${M}/projection:p/rule:r`, "accept", " ", palette);
-    expect(e.ok && E(e.value[0]).after!.props.accept).toBeUndefined();
-    expect([policyProp("on delete"), policyProp("on create"), policyProp("accept")]).toEqual(["onDelete", "onCreate", "accept"]);
-  });
-  it("create key, defaults and governs", () => {
-    const rule = `${M}/projection:p/rule:r`;
-    expect(ids(setCreateKeyEdits(g, rule, `${M}/identity:a`))).toEqual(["projection:p/rule:r|createKey|identity:a"]);
-    expect(setCreateKeyEdits(g, rule, `${M}/prop:status`).ok).toBe(false);
-    const d = addRuleSetEdits(g, rule, "createDefault", `${M}/prop:status`, '"active"', palette);
-    expect(ids(d)[0]).toBe("projection:p/rule:r/createDefault:status");
-    expect(governsEdits(g, rule, `${M}/projection:p/op:l`, true).ok).toBe(true);
-    expect(governsEdits(g, rule, `${M}/projection:p/op:l`, false).ok).toBe(false);
-  });
-});
-
-describe("binding a parameter of an existing projection", () => {
-  const gb = (() => {
-    const base = mk(ent("d:sp/space:s/binding:x.n", "Binding", { value: { kind: "integer", value: "1" } }), ent("d:m/projection:p/port:n", "Port"));
-    const snap = base.toSnapshot();
-    const rels = [rel("d:sp/space:s/binding:x.n", "bindsPort", "d:m/projection:p/port:n"), rel("d:m/projection:p/port:n", "valueKind", "d:sattle.kernel/builtin:Integer")].map((e) => R(e).after!);
-    return Graph.fromSnapshot({ ...snap, relationships: rels });
-  })();
-  it("changes the literal, typed by the port's value kind", () => {
-    const r = bindParamEdits(gb, "d:sp/space:s/binding:x.n", "3");
-    expect(r.ok && E(r.value[0]).after!.props.value).toEqual({ kind: "integer", value: "3" });
-    expect(r.ok && E(r.value[0]).before!.props.value).toEqual({ kind: "integer", value: "1" });
-  });
-  it.each([["a value of the wrong kind", "d:sp/space:s/binding:x.n", "three"], ["something that is not a binding", "d:m/projection:p/port:n", "3"]])("refuses %s", (_, id, v) => expect(bindParamEdits(gb, id, v).ok).toBe(false));
 });
 
 describe("a new projection and its place in the space", () => {

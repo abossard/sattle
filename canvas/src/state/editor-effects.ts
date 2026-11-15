@@ -2,16 +2,10 @@
 // (which asks the engine and records undo), and report what the author must see as `editor/summary`.
 import { Graph } from "../core/graph";
 import type { Edit, Patch } from "../core/model";
-import { addValuesRowEdits, addExprItemEdits, addNamedEdits, addSetEdits, setOfTypeEdits, addPatternEdgeEdits, addPatternNodeEdits, addReadEdits, addRuleEdits, paramEdits, pasteEdits, setExprEdits, setRuleClassEdits, unwireEdits, wireEdits, type Result } from "../editor/commands";
 import { removeEdits } from "../editor/patches";
-import { setRefEdits } from "../editor/refs";
-import { addBindingEdits, setPortDefaultEdits, addValueRoleEdits, bindParamEdits, setValueRoleEdits, newProjectionEdits, addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addRuleSetEdits, governsEdits, setCreateKeyEdits, setPolicyEdits, setRulePropEdits } from "../editor/structures";
-import { paramOf } from "../editor/palette";
+import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjectionEdits, setValueRoleEdits, type Result } from "../editor/structures";
 import { EditorService } from "../editor/service";
 import { EditorSession, type Outcome } from "../editor/session";
-import { compose } from "../editing/gestures";
-import { remember } from "../editing/draft";
-import { sessionDraft } from "../editing/session-draft";
 import { runtime } from "./runtime";
 import { ENGINE_URL } from "./sources";
 import type { Action, Command, EditorState, ReleaseDiff, State } from "./types";
@@ -63,50 +57,26 @@ async function open(dispatch: Dispatch): Promise<void> {
 
 const need = <T,>(r: Result<T>): T => { if (!r.ok) throw new Error(r.reason); return r.value; };
 
-function plan(cmd: Command, s: EditorSession, st: State): { edits: Edit[]; label: string; select?: string[] } | null {
-  const g = s.graph, pal = s.palette, proj = st.editor.projection;
+function plan(cmd: Command, s: EditorSession): { edits: Edit[]; label: string } | null {
+  const g = s.graph, pal = s.palette;
   switch (cmd.t) {
-    case "delete": return { edits: removeEdits(g, cmd.ids), label: `delete ${cmd.ids.length} element${cmd.ids.length === 1 ? "" : "s"}`, select: [] };
-    case "wire": return { edits: wireEdits(cmd.from, cmd.to), label: "connect" };
-    case "unwire": return { edits: unwireEdits(g, cmd.key), label: "disconnect" };
-    case "param": { const p = paramOf(pal, g.entity(cmd.id)?.type ?? "", cmd.name); if (!p) throw new Error(`${cmd.name} is not a parameter of this element`); return { edits: need(paramEdits(g, cmd.id, p, cmd.value)), label: `set ${cmd.name}` }; }
-    case "expr": return { edits: need(setExprEdits(g, cmd.id, cmd.slot, cmd.src, pal)), label: `set ${cmd.slot}` };
-    case "named": return { edits: need(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, pal, cmd.extra, s.placeholders)), label: `add ${cmd.name}` };
-    case "set": return { edits: need(addSetEdits(g, cmd.id, cmd.property, cmd.src, pal, cmd.slot ?? "set")), label: "set property" };
-    case "ref": return { edits: need(setRefEdits(g, cmd.id, cmd.rel, cmd.target)), label: `set ${cmd.rel}` };
-    case "ofType": return { edits: need(setOfTypeEdits(g, cmd.id, cmd.type)), label: "set type" };
+    case "delete": return { edits: removeEdits(g, cmd.ids), label: `delete ${cmd.ids.length} element${cmd.ids.length === 1 ? "" : "s"}` };
     case "newProjection": return { edits: need(newProjectionEdits(g, cmd.spec, pal)), label: `new projection ${cmd.spec.name}` };
-    case "valuesRow": return { edits: need(addValuesRowEdits(g, cmd.id, cmd.cells, pal)), label: "add row" };
     case "rowType": return { edits: need(addRowTypeEdits(g, `d:${cmd.module}`, cmd.name, pal)), label: `add rows ${cmd.name}` };
     case "field": return { edits: need(addFieldEdits(g, cmd.rows, cmd.name, cmd.kind, cmd.optional, pal)), label: `add field ${cmd.name}` };
     case "constraint": return { edits: need(addConstraintEdits(g, `d:${cmd.module}`, cmd.kind, cmd.target, cmd.properties, cmd.severity, cmd.attrs, pal)), label: `add ${cmd.kind} constraint` };
     case "equivalence": return { edits: need(addEquivalenceEdits(g, `d:${cmd.module}`, cmd.name, cmd.mode, cmd.threshold, cmd.between, pal)), label: `add equivalence ${cmd.name}` };
-    case "policy": return { edits: setPolicyEdits(g, cmd.id, cmd.policy), label: "set policy" };
-    case "ruleProp": return { edits: need(setRulePropEdits(g, cmd.id, cmd.name, cmd.value, pal)), label: `set ${cmd.name}` };
-    case "createKey": return { edits: need(setCreateKeyEdits(g, cmd.id, cmd.domain)), label: "set create key" };
-    case "governs": return { edits: need(governsEdits(g, cmd.id, cmd.target, cmd.on)), label: cmd.on ? "govern" : "stop governing" };
-    case "ruleSet": return { edits: need(addRuleSetEdits(g, cmd.id, cmd.slot, cmd.property, cmd.src, pal)), label: `add ${cmd.slot}` };
-    case "read": return { edits: need(addReadEdits(g, cmd.id, cmd.path, cmd.slot ?? "read", s.placeholders)), label: "add read" };
-    case "exprAdd": return { edits: need(addExprItemEdits(g, cmd.id, cmd.slot, cmd.src, pal)), label: `add to ${cmd.slot}` };
     case "valueRole": return { edits: need(addValueRoleEdits(g, cmd.property, cmd.value, cmd.role, pal)), label: `role of ${cmd.value}` };
     case "setValueRole": return { edits: setValueRoleEdits(g, cmd.id, cmd.role), label: "change role" };
-    case "bindNew": return { edits: need(addBindingEdits(g, cmd.port, cmd.graph, cmd.value)), label: "bind parameter" };
-    case "portDefault": return { edits: need(setPortDefaultEdits(g, cmd.port, cmd.value)), label: "set default" };
-    case "bindParam": return { edits: need(bindParamEdits(g, cmd.binding, cmd.value)), label: "bind parameter" };
-    case "patternNode": return { edits: need(addPatternNodeEdits(g, cmd.id, cmd.variable, cmd.type)), label: `add node ${cmd.variable}` };
-    case "patternEdge": return { edits: need(addPatternEdgeEdits(g, cmd.id, cmd.variable, cmd.from, cmd.to, cmd.type)), label: "add edge" };
-    case "rule": return { edits: need(addRuleEdits(g, proj, cmd.name, cmd.cls, cmd.reason, cmd.governs)), label: `add rule ${cmd.name}`, select: [`${proj}/rule:${cmd.name}`] };
-    case "ruleClass": return { edits: setRuleClassEdits(g, cmd.id, cmd.cls), label: "set rule class" };
-    case "paste": { if (!runtime.clipboard.length) throw new Error("nothing copied"); return { edits: pasteEdits(g, proj, runtime.clipboard), label: "paste" }; }
     default: return null;
   }
 }
 
 export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<void> {
   const s = runtime.session;
-  const report = (o: Outcome | null, select?: string[]) => {
+  const report = (o: Outcome | null) => {
     if (!s) return;
-    dispatch({ type: "editor/summary", patch: { ...summary(s), notice: o && !o.ok && o.error !== "nothing to change" ? o.error : "", ...(select ? { selected: select } : {}) } });
+    dispatch({ type: "editor/summary", patch: { ...summary(s), notice: o && !o.ok && o.error !== "nothing to change" ? o.error : "" } });
   };
   try {
     switch (a.type) {
@@ -157,35 +127,11 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
         dispatch({ type: "editor/summary", patch: { committed: `Committed catalog revision ${done.catalogRevision}${done.modules.length ? ` (${done.modules.join(", ")})` : ""}` } });
         return;
       }
-      case "editor/gesture": {
-        // a gesture of one of the notations: composed on a copy of the draft (editing/gestures.ts), sent as one patch, one undo step
-        if (!s || !st) return;
-        dispatch({ type: "editor/summary", patch: { busy: "edit" } });
-        const composed = await compose(s.graph, s.palette, st.editor.projection, a.gesture, sessionDraft(s).skeleton, s.placeholders);
-        if (!composed.ok) { dispatch({ type: "editor/summary", patch: { ...summary(s), notice: composed.reason } }); return; }
-        const applied = composed.value.edits.length ? await s.apply(composed.value.edits, composed.value.label) : null;
-        if (!applied || applied.ok) remember(s.placeholders, composed.value.placeholders);
-        report(applied, composed.value.select.length ? composed.value.select : undefined);
-        return;
-      }
       case "editor/do": {
         if (!s || !st) return;
         const cmd = a.cmd;
         dispatch({ type: "editor/summary", patch: { busy: cmd.t } });
         switch (cmd.t) {
-          case "copy": runtime.clipboard = cmd.ids; dispatch({ type: "editor/summary", patch: { busy: "", notice: `Copied ${cmd.ids.length} operator${cmd.ids.length === 1 ? "" : "s"}` } }); return;
-          case "addOperator": {
-            const base = cmd.name || cmd.kind.toLowerCase();
-            let name = base;
-            for (let i = 2; s.graph.entity(`${st.editor.projection}/op:${name}`); i++) name = `${base}${i}`;
-            // parameters the palette gives a default start at it, not at the skeleton's placeholder
-            const defaults = Object.fromEntries((s.palette.operators.find((o) => o.kind === cmd.kind)?.params ?? []).filter((x) => x.default !== undefined).map((x) => [x.name, x.default!]));
-            const p = await s.svc.skeleton(s.draft.draft, cmd.kind, st.editor.projection, name, defaults);
-            const added = await s.apply(p.edits, `add ${cmd.kind}`);
-            if (added.ok) for (const id of p.placeholders) s.placeholders.add(id); // what the next real entry of a slot replaces
-            report(added, [`${st.editor.projection}/op:${name}`]);
-            return;
-          }
           case "text": { const head = headGraph(); report(head ? await s.applyText(cmd.module, cmd.text, head) : null); return; }
           case "restore": {
             const applied = await s.svc.restore(s.draft.draft, cmd.digest);
@@ -193,32 +139,12 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
             report(null);
             return;
           }
-          case "refactor": {
-            const r = await s.svc.refactor(s.draft.draft, cmd.req);
-            runtime.refactoring = { plan: r, label: cmd.req.kind };
-            dispatch({ type: "editor/summary", patch: { busy: "", pending: summarizePatch(cmd.req.kind, "", "", r.patch) } });
-            return;
-          }
-          case "applyRefactor": {
-            const pending = runtime.refactoring;
-            if (!pending) return;
-            runtime.refactoring = null;
-            const o = await s.applyRefactoring(pending.plan, pending.label);
-            dispatch({ type: "editor/summary", patch: { pending: null } });
-            report(o, []);
-            return;
-          }
           default: {
-            const p = plan(cmd, s, st);
+            const p = plan(cmd, s);
             if (!p) return;
             const o = await s.apply(p.edits, p.label);
-            report(o, p.select);
+            report(o);
             if (cmd.t === "newProjection" && o.ok) dispatch({ type: "editor/projection", module: cmd.spec.module, projection: `d:${cmd.spec.module}/projection:${cmd.spec.name}` });
-            if (cmd.t === "paste") {
-              // select the pasted operators
-              const added = p.edits.filter((e) => e.kind === "entity" && e.before === null && /\/op:[^/]+$/.test((e as { id: string }).id) && !(e as { id: string }).id.includes("#")).map((e) => (e as { id: string }).id);
-              dispatch({ type: "editor/select", ids: added });
-            }
             return;
           }
         }

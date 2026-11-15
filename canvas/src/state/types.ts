@@ -4,9 +4,8 @@
 import type { Patch } from "../core/model";
 import type { Rejection } from "../core/validate";
 import type { ConnectionStatus, EngineDiagnostic, TelemetryBatch } from "../source/types";
-import type { IdentityEffect, RefactorRequest, Release } from "../editor/service";
+import type { IdentityEffect, Release } from "../editor/service";
 import type { ProjectionSpec } from "../editor/structures";
-import type { Gesture } from "../editing/gestures";
 
 export type View = "data" | "space" | "editor" | "ontology";
 export type ThemeName = "light" | "dark" | "contrast";
@@ -43,8 +42,6 @@ export interface EditorState {
   /** bumped by every change of the draft graph, so views re-read it from the runtime */
   version: number;
   module: string; projection: string;
-  selected: string[];
-  wiring: string | null;
   undo: string[]; redo: string[];
   diagnostics: EngineDiagnostic[];
   busy: string;
@@ -52,54 +49,23 @@ export interface EditorState {
   textVersion: number;
   releases: Release[];
   releaseDiff: ReleaseDiff | null;
-  /** a refactoring the engine planned, waiting for the author to apply or drop it */
-  pending: ReleaseDiff | null;
   preview: PreviewSummary | null;
   headRevision: string;
   committed: string;
 }
-export const emptyEditor = (): EditorState => ({ status: "idle", message: "", draft: "", base: "", revision: "", version: 0, module: "", projection: "", selected: [], wiring: null, undo: [], redo: [], diagnostics: [], busy: "", notice: "", textVersion: 0, releases: [], releaseDiff: null, pending: null, preview: null, headRevision: "", committed: "" });
+export const emptyEditor = (): EditorState => ({ status: "idle", message: "", draft: "", base: "", revision: "", version: 0, module: "", projection: "", undo: [], redo: [], diagnostics: [], busy: "", notice: "", textVersion: 0, releases: [], releaseDiff: null, preview: null, headRevision: "", committed: "" });
 
 /** Everything an author can do to the draft. Effects turn a command into catalog edits, the engine checks them, the session records them for undo. */
 export type Command =
-  | { t: "addOperator"; kind: string; name?: string }
   | { t: "delete"; ids: string[] }
-  | { t: "wire"; from: string; to: string }
-  | { t: "unwire"; key: string }
-  | { t: "param"; id: string; name: string; value: string }
-  | { t: "expr"; id: string; slot: string; src: string }
-  | { t: "named"; id: string; slot: string; childType: string; name: string; src: string; extra?: Record<string, string> }
-  | { t: "set"; id: string; slot?: string; property: string; src: string }
-  | { t: "ofType"; id: string; type: string }
-  | { t: "ref"; id: string; rel: string; target: string }
   | { t: "newProjection"; spec: ProjectionSpec }
-  | { t: "valuesRow"; id: string; cells: { name: string; src: string }[] }
   | { t: "rowType"; module: string; name: string }
   | { t: "field"; rows: string; name: string; kind: string; optional: boolean }
   | { t: "constraint"; module: string; kind: string; target: string; properties: string[]; severity: string; attrs: Record<string, string> }
   | { t: "equivalence"; module: string; name: string; mode: string; threshold: string; between: string[] }
-  | { t: "policy"; id: string; policy: string }
-  | { t: "ruleProp"; id: string; name: string; value: string }
   | { t: "valueRole"; property: string; value: string; role: string }
   | { t: "setValueRole"; id: string; role: string }
-  | { t: "exprAdd"; id: string; slot: string; src: string }
-  | { t: "bindParam"; binding: string; value: string }
-  | { t: "bindNew"; port: string; graph: string; value: string }
-  | { t: "portDefault"; port: string; value: string }
-  | { t: "createKey"; id: string; domain: string }
-  | { t: "governs"; id: string; target: string; on: boolean }
-  | { t: "ruleSet"; id: string; slot: string; property: string; src: string }
-  | { t: "read"; id: string; slot?: string; path: string }
-  | { t: "patternNode"; id: string; variable: string; type: string }
-  | { t: "patternEdge"; id: string; variable: string; from: string; to: string; type: string }
-  | { t: "rule"; name: string; cls: string; reason: string; governs: string[] }
-  | { t: "ruleClass"; id: string; cls: string }
-  | { t: "copy"; ids: string[] }
-  | { t: "paste" }
   | { t: "text"; module: string; text: string }
-  /** plan a refactoring: the engine answers a patch, shown to the author before it is applied */
-  | { t: "refactor"; req: RefactorRequest }
-  | { t: "applyRefactor" }
   | { t: "restore"; digest: string };
 
 export interface State {
@@ -147,12 +113,9 @@ export type Action =
   // editor
   | { type: "editor/open" }
   | { type: "editor/summary"; patch: Partial<EditorState> }
-  | { type: "editor/select"; ids: string[] }
   | { type: "editor/projection"; module: string; projection: string }
-  | { type: "editor/wiring"; from: string | null }
   | { type: "editor/do"; cmd: Command }
   /** what an author did in one of the notations (editors/Workbench): composed into one patch and one undo step */
-  | { type: "editor/gesture"; gesture: Gesture }
   | { type: "editor/undo" }
   | { type: "editor/redo" }
   | { type: "editor/commit"; version?: string }
@@ -160,7 +123,7 @@ export type Action =
   | { type: "editor/preview"; graphs?: string[] }
   | { type: "editor/releases"; module: string }
   | { type: "editor/diffRelease"; from: string; to: string }
-  | { type: "editor/dismiss"; what: "preview" | "notice" | "releaseDiff" | "pending" }
+  | { type: "editor/dismiss"; what: "preview" | "notice" | "releaseDiff" }
   // interaction
   | { type: "ui/view"; view: View }
   | { type: "ui/theme"; theme: ThemeName }

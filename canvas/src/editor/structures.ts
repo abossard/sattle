@@ -1,16 +1,17 @@
-// Module-level declarations and rule programs as catalog edits: row types with fields, constraints, equivalence policies, value roles,
-// and the parts of a rule. Pure: graph and palette in, edits (or a reason) out. The slots, types, parameters, constraint kinds, modes
-// and value kinds all come from `GET /palette` (engine 3.2: declarations, rowTypes, equivalencePolicies, rules, valueRoles); an engine
+// Module-level declarations as catalog edits: row types with fields, constraints, equivalence policies, value roles, and a new projection's
+// place in the graph space. Pure: graph and palette in, edits (or a reason) out. The slots, types, parameters, constraint kinds, modes
+// and value kinds all come from `GET /palette` (engine 3.2: declarations, rowTypes, equivalencePolicies, valueRoles); an engine
 // that does not describe them gets a message, not a guess. Only the relationship names that connect the parts (`constrains`,
-// `onProperty`, `between`, `createKey`, `governs`, `valueKind`) are written here, because the palette names slots but not relationships.
+// `onProperty`, `between`, `valueKind`) are written here, because the palette names slots but not relationships.
 import { Catalog } from "../core/catalog";
 import type { Graph } from "../core/graph";
 import type { Edit } from "../core/model";
 import type { GraphValue } from "../core/wire-types";
-import { addSetEdits, type Result } from "./commands";
 import { contains, ent, rel, setPropEdit, text } from "./patches";
 import type { Palette, PaletteDeclaration, PaletteParam } from "./palette";
 
+/** A computed edit, or the reason it cannot be made. */
+export type Result<T> = { ok: true; value: T } | { ok: false; reason: string };
 const ok = <T,>(value: T): Result<T> => ({ ok: true, value });
 const no = (reason: string): Result<never> => ({ ok: false, reason });
 const nameOk = (n: string) => /^[A-Za-z_][\w]*$/.test(n);
@@ -115,12 +116,6 @@ export function addEquivalenceEdits(g: Graph, module: string, name: string, mode
   if (!props.ok) return props;
   return ok([ent(id, d.value.type, { name: text(name), ...props.value }), ...between.map((b, i) => rel(id, "between", b, { ordinal: { kind: "integer", value: String(i) } })), contains(module, id, d.value.slot)]);
 }
-/** An operator applies an equivalence policy (`policy` relationship); replaces the current one, or removes it with an empty id. */
-export function setPolicyEdits(g: Graph, op: string, policy: string): Edit[] {
-  const old = [...g.relationships()].filter((r) => r.source === op && r.type === "policy").map((r): Edit => ({ kind: "relationship", id: r.id, before: r, after: null }));
-  return [...old, ...(policy ? [rel(op, "policy", policy)] : [])];
-}
-
 // ---- value roles ----
 /** The last id segment of a value, as the engine writes it (`Ids.ValueSegment`): text escaped, numbers and booleans tagged. */
 export function valueSegment(v: GraphValue): string {
@@ -148,32 +143,6 @@ export function addValueRoleEdits(g: Graph, property: string, raw: string, role:
   return ok([ent(id, slot.type, { value: t.value, role: text(role) }), contains(property, id, slot.slot)]);
 }
 export const setValueRoleEdits = (g: Graph, id: string, role: string): Edit[] => [setPropEdit(g, id, "role", text(role))];
-
-// ---- rule programs ----
-/** Rule properties the class defines through its policies (`on delete` is the property `onDelete`). */
-export const policyProp = (policy: string): string => policy.replace(/\s+(\w)/g, (_, c: string) => c.toUpperCase());
-/** Set a rule property typed by the palette's rule parameters; an empty value removes it. */
-export function setRulePropEdits(g: Graph, rule: string, name: string, raw: string, palette: Palette): Result<Edit[]> {
-  const p = palette.rules?.params.find((x) => x.name === name);
-  if (!p) return no(`the engine's palette has no rule parameter ${name}`);
-  if (!raw.trim()) return ok([setPropEdit(g, rule, name, null)]);
-  const v = typedValue(p, raw);
-  return v.ok ? ok([setPropEdit(g, rule, name, v.value)]) : v;
-}
-export function setCreateKeyEdits(g: Graph, rule: string, domain: string): Result<Edit[]> {
-  if (domain && g.entity(domain)?.type !== "IdentityDomain") return no("choose an identity domain");
-  const old = [...g.relationships()].filter((r) => r.source === rule && r.type === "createKey").map((r): Edit => ({ kind: "relationship", id: r.id, before: r, after: null }));
-  return ok([...old, ...(domain ? [rel(rule, "createKey", domain)] : [])]);
-}
-/** A property set by a lens program (the rule's `SetProperty` slots: `createDefault`, `deleteSet`). */
-export const addRuleSetEdits = (g: Graph, rule: string, slot: string, property: string, src: string, palette: Palette): Result<Edit[]> => addSetEdits(g, rule, property, src, palette, slot);
-
-/** A rule governs (or stops governing) an operator or projection port. */
-export function governsEdits(g: Graph, rule: string, target: string, on: boolean): Result<Edit[]> {
-  if (on) return g.entity(target) ? ok([rel(rule, "governs", target)]) : no("unknown target");
-  const r = [...g.relationships()].find((x) => x.source === rule && x.type === "governs" && x.target === target);
-  return r ? ok([{ kind: "relationship", id: r.id, before: r, after: null }]) : no("the rule does not govern this");
-}
 
 // ---- a new projection and its place in the graph space ----
 export interface ProjectionSpec {
@@ -245,35 +214,4 @@ export function newProjectionEdits(g: Graph, spec: ProjectionSpec, palette: Pale
     if (val) bind(p.port, { value: val.value }, []);
   }
   return ok(edits);
-}
-
-/** The literal a parameter binding of a space holds, typed by the parameter port's value kind (`Binding.value`). */
-export function bindParamEdits(g: Graph, binding: string, raw: string): Result<Edit[]> {
-  const b = g.entity(binding);
-  if (!b || b.type !== "Binding") return no("not a binding");
-  const port = [...g.relationships()].find((r) => r.source === binding && r.type === "bindsPort")?.target;
-  const kind = last([...g.relationships()].find((r) => r.source === port && r.type === "valueKind")?.target ?? "Text");
-  const v = typedValue({ name: "value", kind, required: true }, raw);
-  return v.ok ? ok([setPropEdit(g, binding, "value", v.value)]) : v;
-}
-
-/** A graph of the space starts binding a parameter port that had only its default: the binding holds the literal. */
-export function addBindingEdits(g: Graph, port: string, graph: string, raw: string): Result<Edit[]> {
-  if (g.entity(port)?.type !== "Port") return no("not a port");
-  if (g.entity(graph)?.type !== "Graph") return no("not a graph of the space");
-  const space = graph.slice(0, graph.indexOf("/graph:"));
-  const b = `${space}/binding:${last(graph)}.${last(port)}`;
-  if (g.entity(b)) return no("this graph already binds the parameter");
-  const kind = last([...g.relationships()].find((r) => r.source === port && r.type === "valueKind")?.target ?? "Text");
-  const v = typedValue({ name: "value", kind, required: true }, raw);
-  if (!v.ok) return v;
-  return ok([ent(b, "Binding", { value: v.value }), contains(space, b, "binding"), rel(b, "bindsPort", port)]);
-}
-/** The default of a parameter port, typed by its value kind; empty removes it. */
-export function setPortDefaultEdits(g: Graph, port: string, raw: string): Result<Edit[]> {
-  if (g.entity(port)?.type !== "Port") return no("not a port");
-  if (!raw.trim()) return ok([setPropEdit(g, port, "default", null)]);
-  const kind = last([...g.relationships()].find((r) => r.source === port && r.type === "valueKind")?.target ?? "Text");
-  const v = typedValue({ name: "default", kind, required: true }, raw);
-  return v.ok ? ok([setPropEdit(g, port, "default", v.value)]) : v;
 }

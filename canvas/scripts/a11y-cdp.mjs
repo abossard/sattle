@@ -287,44 +287,12 @@ const onCanvas = await evaluate(`document.activeElement.classList.contains('grap
 results.keyboard.push({ name: "canvas focusable", ok: onCanvas });
 if (!onCanvas) fail.push("canvas host is not focusable");
 
-// the editor, keyboard only: the canvas takes focus, arrows select, A opens the add dialog, W starts wiring, Escape cancels, Ctrl+Z undoes
+// the editor: the KQL text of the projection (note 11) with CodeMirror and the engine's answers, in each theme, the notations beside it,
+// the definitions tab, and Ctrl+S opening the commit dialog with focus inside
 await open(ENGINE, "editor", "light");
-const sel = () => state("editor.selected.length");
-await evaluate(`document.querySelector('[aria-label^="Projection graph"]').focus()`);
-await key("ArrowRight");
-results.keyboard.push({ name: "editor: arrow selects an operator", selected: await sel(), ok: (await sel()) === 1 });
-if ((await sel()) !== 1) fail.push("editor: arrow key did not select an operator");
-await key("ArrowRight"); await key("ArrowRight");
-await key("w");
-const wiring = await state("editor.wiring");
-results.keyboard.push({ name: "editor: W starts connecting", wiring: !!wiring, ok: !!wiring });
-await key("Escape");
-if (await state("editor.wiring")) fail.push("editor: Escape did not cancel connecting");
-await key("a"); await sleep(500);
-const dlg = await evaluate(`!!document.querySelector('[role=dialog]') && document.activeElement.closest('[role=dialog]') !== null`);
-results.keyboard.push({ name: "editor: A opens the add dialog with focus inside", ok: dlg });
-if (!dlg) fail.push("editor: A did not open the add dialog");
-await runAxe("editor add dialog");
-await key("Escape"); await sleep(500);
-await dispatch({ type: "editor/do", cmd: { t: "addOperator", kind: "Filter", name: "kbd1" } }); await sleep(1200);
-const before = await state("editor.undo.length");
-await evaluate(`document.querySelector('[aria-label^="Projection graph"]').focus()`);
-await key("z", { ctrl: true }); await sleep(1200);
-const after = await state("editor.undo.length");
-results.keyboard.push({ name: "editor: Ctrl+Z undoes", before, after, ok: after === before - 1 });
-if (after !== before - 1) fail.push(`editor: Ctrl+Z did not undo (${before} -> ${after})`);
-await runAxe("editor after edits");
-// the rule program, the definitions tab and the keyboard marquee
-await dispatch({ type: "editor/select", ids: [await evaluate(`window.__sattle.session.catalog.projectionGraph(window.__sattle.store.getState().editor.projection).nodes.find(n=>n.kind==="rule")?.id ?? ""`)].filter(Boolean) });
-await sleep(500);
-await runAxe("editor rule program");
-if (!(await clickText("[role=tab]", "Definitions"))) fail.push("editor: no Definitions tab");
-await sleep(500);
-await runAxe("editor definitions");
-// the KQL text of the projection (note 11, stage a): CodeMirror with the engine's answers, in each theme
-if (!(await clickText("[role=tab]", "KQL text"))) fail.push("editor: no KQL text tab");
+for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector(".cm-editor")`)); i++) await sleep(250);
+if (!(await evaluate(`!!document.querySelector(".cm-editor")`))) fail.push("editor: the KQL text did not open");
 else {
-  for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector(".cm-editor")`)); i++) await sleep(250);
   await sleep(1500);
   for (const theme of ["light", "dark", "contrast"]) { await dispatch({ type: "ui/theme", theme }); await sleep(300); await runAxe(`editor KQL text (${theme})`); }
   await dispatch({ type: "ui/theme", theme: "light" });
@@ -336,15 +304,17 @@ else {
     await runAxe(`editor KQL ${notation}`);
   }
   await clickText("[aria-label='Notation beside the text'] [role=tab]", "Steps");
-  await clickText("[role=tab]", "Canvas"); await sleep(500);
 }
-await evaluate(`document.querySelector('[aria-label^="Projection graph"]').focus()`);
-await key("Escape"); await key("m");
-for (let i = 0; i < 4; i++) { await key("ArrowRight"); await key("ArrowDown"); }
-await key("Enter");
-const marq = await sel();
-results.keyboard.push({ name: "editor: M, arrows and Enter select a region", selected: marq, ok: marq >= 1 });
-if (marq < 1) fail.push("editor: keyboard marquee selected nothing");
+if (!(await clickText("[role=tab]", "Definitions"))) fail.push("editor: no Definitions tab");
+await sleep(500);
+await runAxe("editor definitions");
+await evaluate(`document.querySelector('[aria-label="Draft details"] [role=tab]')?.focus()`);
+await key("s", { ctrl: true }); await sleep(500);
+const commit = await evaluate(`!!document.querySelector('[role=dialog]') && document.activeElement.closest('[role=dialog]') !== null`);
+results.keyboard.push({ name: "editor: Ctrl+S opens the commit dialog with focus inside", ok: commit });
+if (!commit) fail.push("editor: Ctrl+S did not open the commit dialog");
+await runAxe("editor commit dialog");
+await key("Escape"); await sleep(300);
 
 // color by property: the legend and its control
 await open(SOURCE, "data", "light");
