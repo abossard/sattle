@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 import type { Analysis, Place } from "../../src/editor/kql";
-import { add, addBy, addSetting, addWhere, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, starter, type List } from "../../src/editor/kql-edit";
+import { add, addBy, addSetting, addWhere, apply, cardsOf, carried, itemAt, listsOf, mapPos, move, remove, set, starter, type List, startersFor } from "../../src/editor/kql-edit";
 
 const rec = JSON.parse(String(gunzipSync(readFileSync("tests/fixtures/kql.json.gz")))) as { files: { projection: string; text: string; analyse: Analysis }[] };
 const files = rec.files.map((f) => [f.projection, f.text, listsOf(f.analyse)] as const);
@@ -101,9 +101,18 @@ describe("absent parts and new operators", () => {
   });
 
   it.each([
-    ["where", "where isnotempty(name)"], ["project", "project call, name, flows"], ["extend", "extend name_copy = name"],
-    ["summarize", "summarize n = count() by name"], ["distinct", "distinct call, name, flows"],
-  ] as const)("a new %s names only the columns before it", (kind, want) => {
-    expect(starter(kind, [{ name: "call", element: "infra.Calls" }, { name: "name", type: "string" }, { name: "flows", type: "long", telemetry: true }])).toBe(want);
+    ["where", "where isnotempty(name)"], ["project", "project call, name"], ["extend", "extend name_copy = name"],
+    ["summarize", "summarize n = count() by name"], ["distinct", "distinct call, name"],
+  ] as const)("a new %s names only the columns before it that it may name, not an identity or telemetry column", (kind, want) => {
+    expect(starter(kind, [{ name: "node", type: "string", identity: true }, { name: "call", element: "infra.Calls" }, { name: "name", type: "string" }, { name: "flows", type: "long", telemetry: true }])).toBe(want);
+  });
+
+  it.each([
+    ["a let", { kind: "let", operators: [{ kind: "graph-match" }] }, ["where", "project", "extend", "summarize", "distinct"]],
+    ["a step, before its last operator", { kind: "nodes", operators: [{ kind: "graph-match" }, { kind: "project" }] }, ["where", "project", "extend", "summarize", "distinct"]],
+    ["a step of one operator, as its last", { kind: "nodes", operators: [{ kind: "graph-match" }] }, ["where"]],
+    ["a let, after a telemetry join", { kind: "let", operators: [{ kind: "rows" }, { kind: "telemetry-join" }] }, ["where", "project", "summarize", "distinct"]],
+  ] as const)("the new operators of %s", (_what, statement, want) => {
+    expect(startersFor(statement)).toEqual(want);
   });
 });

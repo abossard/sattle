@@ -158,16 +158,23 @@ export function cardsOf(a: Analysis): Map<string, string> {
 }
 
 // ---- new operators and absent parts (the contract's stage b, "absent parts") ----
-export interface Column { name: string; type?: string | null; element?: string | null; telemetry?: boolean | null }
+export interface Column { name: string; type?: string | null; element?: string | null; telemetry?: boolean | null; identity?: boolean | null }
 export const STARTER_KINDS = ["where", "project", "extend", "summarize", "distinct"] as const;
 export type StarterKind = (typeof STARTER_KINDS)[number];
 
-/** Text for a new operator after one with these columns, that reads without error: it names only columns that are there. */
+/** The columns an operator after these may name: not an identity column (only a step's sink reads it), not a telemetry one (only aggregates do). */
+const nameable = (columns: Column[]) => columns.filter((c) => !c.identity && !c.telemetry);
+/** The column a new operator names first, as a `by` or a condition: a string that is not an element's id, else any it may name. */
+export function columnFor(columns: Column[]): string | undefined {
+  const named = nameable(columns), plain = named.filter((c) => !c.element);
+  return (plain.find((c) => c.type === "string") ?? plain[0] ?? named[0])?.name;
+}
+
+/** Text for a new operator after one with these columns, that reads without error: it names only columns that are there and it may name. */
 export function starter(kind: StarterKind, columns: Column[]): string | null {
-  const plain = columns.filter((c) => !c.element);
-  const first = (plain.find((c) => c.type === "string") ?? plain[0] ?? columns[0])?.name;
+  const first = columnFor(columns);
   if (!first) return null;
-  const all = columns.map((c) => c.name).join(", ");
+  const all = nameable(columns).map((c) => c.name).join(", ");
   switch (kind) {
     case "where": return `where isnotempty(${first})`;
     case "project": return `project ${all}`;
@@ -208,12 +215,16 @@ export function addSetting(step: { head?: Place | null; settings?: { place: Plac
 }
 
 /** Where a new operator of a statement goes: at the end of a `let`; in a step, before its last operator, whose columns feed the step's sink. */
-export function newOperatorAt(statement: { kind?: string; operators?: unknown[] }): number {
+export function newOperatorAt(statement: { kind?: string; operators?: readonly unknown[] }): number {
   const n = statement.operators?.length ?? 0;
   return statement.kind !== "let" && n > 1 ? n - 1 : n;
 }
-/** The new operators that fit at `newOperatorAt`: any kind, except as a step's last operator, where only a `where` keeps the sink's columns. */
-export function startersFor(statement: { kind?: string; operators?: unknown[] }): StarterKind[] {
-  const n = statement.operators?.length ?? 0;
-  return statement.kind !== "let" && newOperatorAt(statement) === n ? ["where"] : [...STARTER_KINDS];
+/**
+ * The new operators that fit at `newOperatorAt`: any kind, except as a step's last operator, where only a `where` keeps the sink's columns, and
+ * after a telemetry join, where an `extend` would keep its rows of several properties unsummarized, which the engine refuses.
+ */
+export function startersFor(statement: { kind?: string; operators?: readonly { kind?: string }[] }): StarterKind[] {
+  const n = statement.operators?.length ?? 0, k = newOperatorAt(statement);
+  if (statement.kind !== "let" && k === n) return ["where"];
+  return statement.operators?.[k - 1]?.kind === "telemetry-join" ? STARTER_KINDS.filter((s) => s !== "extend") : [...STARTER_KINDS];
 }

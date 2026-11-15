@@ -5,7 +5,7 @@ import { Button, Input, Menu, MenuItem, MenuList, MenuPopover, MenuTrigger, Text
 import { Add16Regular, ArrowDown16Regular, ArrowUp16Regular, Delete16Regular, Edit16Regular } from "@fluentui/react-icons";
 import { useState } from "react";
 import type { Analysis, Place } from "../../editor/kql";
-import { add, addBy, addWhere, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
+import { add, addBy, addWhere, columnFor, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
 
 export interface Reading { text: string; analysis: Analysis }
 interface Props {
@@ -61,7 +61,6 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
   const opsOf = (i: number) => lists.find((l) => l.id === `statements.${i}.operators`);
   type Op = { kind: string; columns?: Column[]; parts?: { by?: unknown[]; where?: unknown; pattern?: unknown[] } };
   const kinds = (analysis.statements as { kind: string; operators?: Op[] }[]) ?? [];
-  const firstColumn = (cols: Column[] = []) => (cols.find((c) => !c.element && c.type === "string") ?? cols.find((c) => !c.element) ?? cols[0])?.name;
   const field = (place: Place, what: string) => editing && editing.place === place
     ? <Input size="small" aria-label={`Text of ${what}`} autoFocus value={editing.value} onClick={(e) => e.stopPropagation()} onChange={(_, d) => setEditing({ place, value: d.value })}
         onKeyDown={(e) => { if (e.key === "Enter") { const ed = set([place], editing.value); onChanges(ed.changes, ed.select); setEditing(null); } else if (e.key === "Escape") setEditing(null); }}
@@ -101,7 +100,7 @@ export function KqlSteps({ reading, selected, busy, rows, onSelect, onChanges }:
                       <span className={s.kind}>{kind}</span>
                       {field(p, `${kind} of ${what}`)}
                       <span className={s.rows}>{rows?.get(id) ? `${rows.get(id)} rows` : ""}
-                        {kind === "summarize" && !kinds[i]?.operators?.[j]?.parts?.by?.length && firstColumn(kinds[i]?.operators?.[j - 1]?.columns) && <Button size="small" appearance="subtle" onClick={(e) => { e.stopPropagation(); const ed = addBy((analysis.statements as never[])[i]["operators"][j], firstColumn(kinds[i]?.operators?.[j - 1]?.columns)!); if (ed) onChanges(ed.changes, ed.select); }}>Add by</Button>}
+                        {kind === "summarize" && !kinds[i]?.operators?.[j]?.parts?.by?.length && columnFor(kinds[i]?.operators?.[j - 1]?.columns ?? []) && <Button size="small" appearance="subtle" onClick={(e) => { e.stopPropagation(); const ed = addBy((analysis.statements as never[])[i]["operators"][j], columnFor(kinds[i]?.operators?.[j - 1]?.columns ?? [])!); if (ed) onChanges(ed.changes, ed.select); }}>Add by</Button>}
                         {kind === "graph-match" && !kinds[i]?.operators?.[j]?.parts?.where && <Button size="small" appearance="subtle" onClick={(e) => { e.stopPropagation(); const ed = addWhere((analysis.statements as never[])[i]["operators"][j], "true"); if (ed) onChanges(ed.changes, ed.select); }}>Add where</Button>}
                       </span>
                       <Actions text={text} list={ops} i={j} what={`${kind} of ${what}`} onChanges={onChanges} onEdit={() => setEditing({ place: p, value: text.slice(p[0], p[1]) })} />
