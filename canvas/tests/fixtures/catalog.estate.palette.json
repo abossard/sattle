@@ -1,5 +1,5 @@
 {
- "kernelDigest": "sha256:df107fbdf074b95e5bfca837afbc1bf3948b05ebf45f9288c40c3940abe920a1",
+ "kernelDigest": "sha256:dde19e7f32847164dbf4b78e5d0b53987ca35552b566c1c96377fdfd29792cb2",
  "version": "3",
  "operators": [
   {
@@ -562,144 +562,6 @@
    "telemetry": false
   },
   {
-   "kind": "Fixpoint",
-   "supported": true,
-   "role": "linear",
-   "container": "Projection",
-   "slot": "op",
-   "ports": [
-    {
-     "name": "seed",
-     "direction": "in",
-     "kind": "rows"
-    },
-    {
-     "name": "out",
-     "direction": "out",
-     "kind": "rows"
-    }
-   ],
-   "params": [
-    {
-     "name": "maxFacts",
-     "kind": "Integer",
-     "required": true,
-     "quantity": "count",
-     "unit": "facts"
-    },
-    {
-     "name": "maxIterations",
-     "kind": "Integer",
-     "required": true,
-     "quantity": "count",
-     "unit": "iterations"
-    }
-   ],
-   "references": [
-    {
-     "name": "over",
-     "targets": [
-      "Port"
-     ],
-     "required": true,
-     "multiplicity": "1",
-     "scope": "step",
-     "meaning": "the output port of the last operator of the step: the relation that is iterated"
-    }
-   ],
-   "slots": [
-    {
-     "name": "relation",
-     "children": [
-      "RowType"
-     ],
-     "multiplicity": "?",
-     "ordered": false,
-     "childTypes": [
-      {
-       "type": "RowType",
-       "params": [
-        {
-         "name": "name",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "description",
-         "kind": "Text",
-         "required": false
-        }
-       ],
-       "references": []
-      }
-     ]
-    },
-    {
-     "name": "op",
-     "children": [
-      "Operator"
-     ],
-     "multiplicity": "*",
-     "ordered": false,
-     "childTypes": [
-      {
-       "type": "Operator",
-       "params": [],
-       "references": []
-      }
-     ]
-    },
-    {
-     "name": "port",
-     "children": [
-      "Port"
-     ],
-     "multiplicity": "*",
-     "ordered": false,
-     "childTypes": [
-      {
-       "type": "Port",
-       "params": [
-        {
-         "name": "name",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "direction",
-         "kind": "Text",
-         "required": true,
-         "values": [
-          "in",
-          "out"
-         ]
-        },
-        {
-         "name": "kind",
-         "kind": "Text",
-         "required": true,
-         "values": [
-          "rows",
-          "graph",
-          "param"
-         ]
-        },
-        {
-         "name": "default",
-         "kind": "Any",
-         "required": false
-        }
-       ],
-       "references": []
-      }
-     ]
-    }
-   ],
-   "strategy": "bounded unrolling: distinct(R union step(R)) repeated maxIterations times from distinct(seed); every operator is incremental",
-   "sink": false,
-   "telemetry": false
-  },
-  {
    "kind": "Group",
    "supported": true,
    "role": "linear",
@@ -770,9 +632,13 @@
           "any",
           "all",
           "mean",
-          "weightedMean",
           "last"
          ]
+        },
+        {
+         "name": "row",
+         "kind": "Text",
+         "required": false
         }
        ],
        "references": []
@@ -917,317 +783,6 @@
     }
    ],
    "strategy": "bilinear delta over per-side hash indexes on the equality keys; residual predicate on the joined rows",
-   "sink": false,
-   "telemetry": false
-  },
-  {
-   "kind": "Lift",
-   "supported": true,
-   "role": "lift",
-   "container": "Projection",
-   "slot": "op",
-   "ports": [
-    {
-     "name": "edges",
-     "direction": "in",
-     "kind": "graph"
-    },
-    {
-     "name": "map",
-     "direction": "in",
-     "kind": "graph"
-    },
-    {
-     "name": "out",
-     "direction": "out",
-     "kind": "rows"
-    }
-   ],
-   "params": [
-    {
-     "name": "within",
-     "kind": "Integer",
-     "required": true,
-     "default": "86400000000000",
-     "quantity": "duration",
-     "unit": "ns",
-     "literal": "<integer><ms|s|m|h>",
-     "example": "24h"
-    },
-    {
-     "name": "images",
-     "kind": "Text",
-     "required": false,
-     "values": [
-      "reject",
-      "each"
-     ]
-    },
-    {
-     "name": "selfLoops",
-     "kind": "Text",
-     "required": true,
-     "default": "drop",
-     "values": [
-      "drop",
-      "keep"
-     ]
-    }
-   ],
-   "references": [
-    {
-     "name": "ofType",
-     "targets": [
-      "EntityType",
-      "RelationshipType"
-     ],
-     "required": true,
-     "multiplicity": "1",
-     "scope": "outputOntology",
-     "meaning": "the relationship type the lifted edges are written as"
-    },
-    {
-     "name": "liftEdge",
-     "targets": [
-      "RelationshipType"
-     ],
-     "required": true,
-     "multiplicity": "1",
-     "scope": "inputGraph",
-     "meaning": "the relationship type that is lifted (in the graph the lift reads its edges from)"
-    },
-    {
-     "name": "liftVia",
-     "targets": [
-      "RelationshipType"
-     ],
-     "required": true,
-     "multiplicity": "1",
-     "scope": "inputGraph",
-     "meaning": "the mapping relationship from a node to its image (in the graph the lift reads the mapping from)"
-    }
-   ],
-   "slots": [
-    {
-     "name": "carry",
-     "children": [
-      "Assign"
-     ],
-     "multiplicity": "*",
-     "ordered": true,
-     "childTypes": [
-      {
-       "type": "Assign",
-       "params": [
-        {
-         "name": "target",
-         "kind": "Text",
-         "required": true
-        }
-       ],
-       "references": []
-      }
-     ],
-     "value": {
-      "kind": "fieldRef",
-      "roots": [],
-      "offers": "the telemetry properties of the lower relationship type (the edge type of the lift, in the ontology of the edge graph)"
-     }
-    },
-    {
-     "name": "derive",
-     "children": [
-      "Assign"
-     ],
-     "multiplicity": "*",
-     "ordered": true,
-     "childTypes": [
-      {
-       "type": "Assign",
-       "params": [
-        {
-         "name": "target",
-         "kind": "Text",
-         "required": true
-        }
-       ],
-       "references": []
-      }
-     ],
-     "value": {
-      "kind": "expr",
-      "roots": [],
-      "offers": "the columns of the windows: the carried and the derived properties"
-     }
-    },
-    {
-     "name": "keep",
-     "children": [
-      "Assign"
-     ],
-     "multiplicity": "*",
-     "ordered": true,
-     "childTypes": [
-      {
-       "type": "Assign",
-       "params": [
-        {
-         "name": "target",
-         "kind": "Text",
-         "required": true
-        }
-       ],
-       "references": []
-      }
-     ],
-     "value": {
-      "kind": "fieldRef",
-      "roots": [
-       "src",
-       "dst"
-      ],
-      "offers": "src.p or dst.p: the data properties of the image type (the target type of the mapping relationship)"
-     }
-    },
-    {
-     "name": "when",
-     "children": [
-      "Expr"
-     ],
-     "multiplicity": "?",
-     "ordered": false,
-     "childTypes": [
-      {
-       "type": "Expr",
-       "params": [],
-       "references": []
-      }
-     ],
-     "value": {
-      "kind": "expr",
-      "roots": [
-       "node",
-       "image"
-      ],
-      "offers": "node.p or image.p: the properties of the mapped node and of its image"
-     }
-    },
-    {
-     "name": "state",
-     "children": [
-      "LiftState"
-     ],
-     "multiplicity": "*",
-     "ordered": true,
-     "childTypes": [
-      {
-       "type": "LiftState",
-       "params": [
-        {
-         "name": "target",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "of",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "above",
-         "kind": "Decimal",
-         "required": true,
-         "quantity": "value",
-         "unit": "unit of the thresholded value"
-        },
-        {
-         "name": "enterAfter",
-         "kind": "Integer",
-         "required": true,
-         "quantity": "count",
-         "unit": "windows"
-        },
-        {
-         "name": "high",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "below",
-         "kind": "Decimal",
-         "required": true,
-         "quantity": "value",
-         "unit": "unit of the thresholded value"
-        },
-        {
-         "name": "exitAfter",
-         "kind": "Integer",
-         "required": true,
-         "quantity": "count",
-         "unit": "windows"
-        },
-        {
-         "name": "low",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "initial",
-         "kind": "Text",
-         "required": true
-        }
-       ],
-       "references": []
-      }
-     ]
-    },
-    {
-     "name": "port",
-     "children": [
-      "Port"
-     ],
-     "multiplicity": "*",
-     "ordered": false,
-     "childTypes": [
-      {
-       "type": "Port",
-       "params": [
-        {
-         "name": "name",
-         "kind": "Text",
-         "required": true
-        },
-        {
-         "name": "direction",
-         "kind": "Text",
-         "required": true,
-         "values": [
-          "in",
-          "out"
-         ]
-        },
-        {
-         "name": "kind",
-         "kind": "Text",
-         "required": true,
-         "values": [
-          "rows",
-          "graph",
-          "param"
-         ]
-        },
-        {
-         "name": "default",
-         "kind": "Any",
-         "required": false
-        }
-       ],
-       "references": []
-      }
-     ]
-    }
-   ],
-   "strategy": "lowered at check time to Match, Join, Group, Filter, Series, Rollup, Map, Threshold and the emits of the lifted relationship: every strategy of those operators applies, and lineage names every lower element",
    "sink": false,
    "telemetry": false
   },
@@ -1829,9 +1384,13 @@
           "any",
           "all",
           "mean",
-          "weightedMean",
           "last"
          ]
+        },
+        {
+         "name": "row",
+         "kind": "Text",
+         "required": false
         }
        ],
        "references": []
@@ -2388,19 +1947,7 @@
      "kind": "rows"
     }
    ],
-   "params": [
-    {
-     "name": "conflict",
-     "kind": "Text",
-     "required": true,
-     "values": [
-      "requireEqual",
-      "preferFirst",
-      "preferLast",
-      "preserveEvidence"
-     ]
-    }
-   ],
+   "params": [],
    "references": [],
    "slots": [
     {
@@ -2449,7 +1996,7 @@
      ]
     }
    ],
-   "strategy": "linear: concatenation of both inputs' signed rows (conflict policy preserveEvidence only)",
+   "strategy": "linear: concatenation of both inputs' signed rows",
    "sink": false,
    "telemetry": false
   },
@@ -2795,18 +2342,6 @@
    ]
   },
   {
-   "name": "weightedMean",
-   "supported": true,
-   "contexts": [
-    {
-     "operator": "Group",
-     "inputs": "numeric data value and a numeric data weight: weightedMean(value, weight)",
-     "output": "Decimal",
-     "requires": null
-    }
-   ]
-  },
-  {
    "name": "last",
    "supported": true,
    "contexts": [
@@ -2858,18 +2393,6 @@
     "meaning": "the relationship type the sink writes (not abstract)"
    }
   ],
-  "Fixpoint": [
-   {
-    "name": "over",
-    "targets": [
-     "Port"
-    ],
-    "required": true,
-    "multiplicity": "1",
-    "scope": "step",
-    "meaning": "the output port of the last operator of the step: the relation that is iterated"
-   }
-  ],
   "IdOf": [
    {
     "name": "domain",
@@ -2880,39 +2403,6 @@
     "multiplicity": "1",
     "scope": "module",
     "meaning": "the identity domain that computes the id"
-   }
-  ],
-  "Lift": [
-   {
-    "name": "ofType",
-    "targets": [
-     "EntityType",
-     "RelationshipType"
-    ],
-    "required": true,
-    "multiplicity": "1",
-    "scope": "outputOntology",
-    "meaning": "the relationship type the lifted edges are written as"
-   },
-   {
-    "name": "liftEdge",
-    "targets": [
-     "RelationshipType"
-    ],
-    "required": true,
-    "multiplicity": "1",
-    "scope": "inputGraph",
-    "meaning": "the relationship type that is lifted (in the graph the lift reads its edges from)"
-   },
-   {
-    "name": "liftVia",
-    "targets": [
-     "RelationshipType"
-    ],
-    "required": true,
-    "multiplicity": "1",
-    "scope": "inputGraph",
-    "meaning": "the mapping relationship from a node to its image (in the graph the lift reads the mapping from)"
    }
   ],
   "Link": [
@@ -2979,8 +2469,7 @@
     "targets": [
      "EmitEntity",
      "EmitRelationship",
-     "Link",
-     "Lift"
+     "Link"
     ],
     "required": true,
     "multiplicity": "+",
@@ -3408,8 +2897,7 @@
          "targets": [
           "EmitEntity",
           "EmitRelationship",
-          "Link",
-          "Lift"
+          "Link"
          ],
          "required": true,
          "multiplicity": "+",
@@ -3774,8 +3262,7 @@
     "targets": [
      "EmitEntity",
      "EmitRelationship",
-     "Link",
-     "Lift"
+     "Link"
     ],
     "required": true,
     "multiplicity": "+",

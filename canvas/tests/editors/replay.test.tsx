@@ -14,9 +14,9 @@ import { build, Hands, unbuildable, WAYS } from "./drive";
 import { mount } from "./harness";
 import { positional, prepare, REFERENCES, walk } from "./references";
 
-// The two small ones run with the suite (a few seconds per notation); all five with REPLAY=all (some minutes).
+// The small one runs with the suite (a few seconds per notation); all five with REPLAY=all (some minutes).
 const all = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.REPLAY === "all";
-const chosen = REFERENCES.filter(([title]) => all || title === "series with threshold" || title === "fixpoint closure");
+const chosen = REFERENCES.filter(([title]) => all || title === "series with threshold");
 
 const counts: Record<string, Record<string, string>> = {};
 describe.each(chosen)("%s", (title, file) => {

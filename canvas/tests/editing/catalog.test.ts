@@ -35,16 +35,7 @@ it("the catalog holds the projections the editors are meant for", () => {
   expect(projections.length).toBeGreaterThanOrEqual(5);
   expect(rowSets.length).toBeGreaterThan(50);
   const kinds = new Set([...docs.values()].flatMap((d) => allSteps(d).map((s) => s.kind)));
-  for (const k of ["Match", "Filter", "Group", "Map", "Series", "Rollup", "Threshold", "Lift", "EmitEntity", "EmitRelationship"]) expect([...kinds]).toContain(k);
-});
-
-it("a lift is one step with its clauses as entries, as the definition has one statement for it", () => {
-  const doc = docs.get("d:acme.svc/projection:serviceDeps")!;
-  const lift = doc.statements.find((s) => s.name === "dependsOn")!;
-  expect(lift.steps.map((s) => s.kind)).toEqual(["Lift"]);
-  expect(lift.steps[0].inputs.map((i) => `${i.port} from ${i.fromName}`)).toEqual(["edges from master", "map from master"]);
-  expect(lift.steps[0].slots.find((s) => s.name === "state")!.entries.map((e) => e.text)).toEqual(["status of dropRatio above 0.05 enterAfter 3 high degraded below 0.02 exitAfter 3 low ok initial ok"]);
-  expect(lift.readers.sort()).toEqual(["groupOut", "serviceOut"]);
+  for (const k of ["Match", "Filter", "Group", "Map", "Series", "Rollup", "Threshold", "EmitEntity", "EmitRelationship"]) expect([...kinds]).toContain(k);
 });
 
 it("a parameter the kernel gained shows in the rows with no change here: an optional one as a place to add it, also on an entry", async () => {
