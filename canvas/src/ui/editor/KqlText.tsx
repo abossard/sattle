@@ -6,14 +6,16 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { linter, lintGutter, setDiagnostics, type Diagnostic } from "@codemirror/lint";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView, hoverTooltip, keymap, lineNumbers, type Tooltip } from "@codemirror/view";
-import { Button, MessageBar, MessageBarBody, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
+import { Button, MessageBar, MessageBarBody, Spinner, Tab, TabList, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { tags } from "@lezer/highlight";
 import { useEffect, useRef, useState } from "react";
 import { completionOf, diagnosticsOf, digestOf, hoverLines, kqlLanguage, type Analysis, type Completion, type Depth, type Hover, type Place } from "../../editor/kql";
 import { add, cardsOf, listsOf, type Change } from "../../editor/kql-edit";
 import { matchOf } from "../../editor/kql-example";
 import type { Graph } from "../../core/graph";
+import { KqlOutline } from "./KqlOutline";
 import { KqlSteps, type Reading } from "./KqlSteps";
+import { KqlWires } from "./KqlWires";
 
 /** What the editor asks of the engine: the KQL calls of the editor service. */
 export interface KqlPort {
@@ -115,6 +117,8 @@ const useStyles = makeStyles({
   grow: { flexGrow: 1 },
   body: { display: "grid", gridTemplateColumns: "minmax(0, 1.3fr) minmax(300px, 1fr)", columnGap: tokens.spacingHorizontalM, minHeight: 0, "@media (max-width: 1000px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(50vh, 1fr) auto" } },
   host: { minHeight: 0, border: `1.5px solid ${tokens.colorNeutralForeground1}`, backgroundColor: tokens.colorNeutralBackground1, overflow: "hidden" },
+  side: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0, rowGap: tokens.spacingVerticalXS },
+  pane: { display: "flex", flexDirection: "column", minHeight: 0 },
 });
 
 type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ text: string }> };
@@ -135,6 +139,7 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
   const [reading, setReading] = useState<Reading | null>(null);
   const [doc, setDoc] = useState("");
   const [cursor, setCursor] = useState<number | null>(null);
+  const [notation, setNotation] = useState<"steps" | "outline" | "wires">("steps");
   const [rowsBy, setRowsBy] = useState<{ status: "idle" | "busy" } | { status: "ready"; by: Map<string, string> } | { status: "error"; message: string }>({ status: "idle" });
   useEffect(() => {
     let gone = false;
@@ -206,7 +211,16 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
       {state.status === "error" && <MessageBar intent="warning"><MessageBarBody>{state.message}</MessageBarBody></MessageBar>}
       <div className={s.body} hidden={state.status !== "ready"}>
         <div ref={host} className={s.host} />
-        <KqlSteps reading={reading} selected={cursor} busy={!reading || reading.text !== doc} rows={rowsBy.status === "ready" && stored ? rowsBy.by : null} onSelect={select} onChanges={change} />
+        <div className={s.side}>
+          <TabList size="small" selectedValue={notation} onTabSelect={(_, d) => setNotation(d.value as typeof notation)} aria-label="Notation beside the text">
+            <Tab value="steps">Steps</Tab><Tab value="outline">Outline</Tab><Tab value="wires">Wires</Tab>
+          </TabList>
+          <div className={s.pane} role="tabpanel" aria-label={notation}>
+            {notation === "steps" && <KqlSteps reading={reading} selected={cursor} busy={!reading || reading.text !== doc} rows={rowsBy.status === "ready" && stored ? rowsBy.by : null} onSelect={select} onChanges={change} />}
+            {notation === "outline" && <KqlOutline reading={reading} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
+            {notation === "wires" && <KqlWires reading={reading} selected={cursor} busy={!reading || reading.text !== doc} onSelect={select} onChanges={change} />}
+          </div>
+        </div>
       </div>
     </div>
   );

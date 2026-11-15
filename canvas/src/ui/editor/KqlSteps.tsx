@@ -8,11 +8,14 @@ import type { Analysis, Place } from "../../editor/kql";
 import { add, addBy, addWhere, columnFor, listsOf, move, newOperatorAt, remove, set, starter, startersFor, type Change, type Column, type List } from "../../editor/kql-edit";
 
 export interface Reading { text: string; analysis: Analysis }
-interface Props {
+/** What every notation is given, and its two ways out: a place to select, text changes. */
+export interface NotationProps {
   reading: Reading | null; selected: number | null; busy: boolean;
+  onSelect(place: Place): void; onChanges(changes: Change[], select: Place | null): void;
+}
+interface Props extends NotationProps {
   /** rows after each card, by card id (`cardsOf`), for the text as stored; absent until asked */
   rows: Map<string, string> | null;
-  onSelect(place: Place): void; onChanges(changes: Change[], select: Place | null): void;
 }
 
 const useStyles = makeStyles({

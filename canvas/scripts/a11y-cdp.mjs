@@ -328,6 +328,14 @@ else {
   await sleep(1500);
   for (const theme of ["light", "dark", "contrast"]) { await dispatch({ type: "ui/theme", theme }); await sleep(300); await runAxe(`editor KQL text (${theme})`); }
   await dispatch({ type: "ui/theme", theme: "light" });
+  // the other notations beside the text: Outline (a tree) and Wires (cards and the reads of the statement at the cursor)
+  for (const notation of ["Outline", "Wires"]) {
+    if (!(await clickText("[aria-label='Notation beside the text'] [role=tab]", notation))) { fail.push(`editor: no ${notation} tab beside the KQL text`); continue; }
+    await sleep(800);
+    if (notation === "Wires") { await clickText("[aria-label^='Inputs, lets and steps'] button", "let"); await sleep(300); }
+    await runAxe(`editor KQL ${notation}`);
+  }
+  await clickText("[aria-label='Notation beside the text'] [role=tab]", "Steps");
   await clickText("[role=tab]", "Canvas"); await sleep(500);
 }
 await evaluate(`document.querySelector('[aria-label^="Projection graph"]').focus()`);
