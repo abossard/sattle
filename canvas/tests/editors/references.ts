@@ -1,5 +1,5 @@
-// The five reference projections of the research note (09, section 1), each with the recorded walkthrough that rebuilds it, and how
-// a test gets one to build after: the original, and an empty twin of it.
+// The reference projections of the research note (09, section 1) that the engine still has (Lift and Fixpoint are gone), each with the
+// recorded walkthrough that rebuilds it, and how a test gets one to build after: the original, and an empty twin of it.
 import type { ProjectionDoc } from "../../src/editing/doc";
 import { docOf, perform, type DraftPort } from "../../src/editing/draft";
 import type { Command } from "../../src/state/types";
@@ -7,10 +7,9 @@ import type { Command } from "../../src/state/types";
 export interface Walk { name: string; module: string; original?: string; graphs: string[]; commands: { label: string; cmd: Command }[] }
 const files = import.meta.glob("../walkthroughs/*.json", { eager: true, import: "default" }) as Record<string, Walk>;
 export const walk = (file: string): Walk => files[`../walkthroughs/${file}.json`];
-/** The five reference projections of the research note (09, section 1), by the walkthrough that rebuilds each. */
+/** The reference projections of the research note (09, section 1), by the walkthrough that rebuilds each. */
 export const REFERENCES: [string, string][] = [
-  ["deployment health", "deployment-health"], ["service tree with lift", "lift-service-tree"], ["workload health", "workload-health"],
-  ["series with threshold", "series-threshold-aggregates"], ["fixpoint closure", "fixpoint-closure"],
+  ["deployment health", "deployment-health"], ["workload health", "workload-health"], ["series with threshold", "series-threshold-aggregates"],
 ];
 
 /**

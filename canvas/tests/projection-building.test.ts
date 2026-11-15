@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { Catalog } from "../src/core/catalog";
 import { Graph } from "../src/core/graph";
 import type { Edit } from "../src/core/model";
-import { addNamedEdits, addParamChildEdits, addRuleEdits, durationText, paramEdits, paramValue, wireEdits } from "../src/editor/commands";
+import { addNamedEdits, addRuleEdits, durationText, paramEdits, paramValue } from "../src/editor/commands";
 import { parseExpr } from "../src/editor/expr";
 import { incompleteOperators } from "../src/editor/incomplete";
 import { aggregateAllowed, paramOf, parsePalette } from "../src/editor/palette";
@@ -43,38 +42,13 @@ describe("expressions an author types for every operator", () => {
 
 describe("relationships to definitions elsewhere", () => {
   const g = build(ent(P, "Projection"), ...op("e", "EmitEntity", [["in", "in"]]), ent("d:h/entity:A", "EntityType"), ent("d:h/entity:B", "EntityType"), rel(`${P}/op:e`, "ofType", "d:h/entity:A"));
-  it.each([["EmitEntity", ["ofType"]], ["Traverse", ["ofType"]], ["Link", ["policy"]], ["Fixpoint", ["over"]], ["Lift", ["ofType", "liftEdge", "liftVia"]], ["Filter", []]])("%s holds %j", (kind, rels) => expect(refsOf(kind).map((r) => r.rel)).toEqual(rels));
+  it.each([["EmitEntity", ["ofType"]], ["Traverse", ["ofType"]], ["Link", ["policy"]], ["Filter", []]])("%s holds %j", (kind, rels) => expect(refsOf(kind).map((r) => r.rel)).toEqual(rels));
   it("pointing it elsewhere replaces what it pointed at, an empty target removes it, an unknown target is refused", () => {
     const moved = setRefEdits(g, `${P}/op:e`, "ofType", "d:h/entity:B");
     expect(moved.ok && moved.value.map((e) => [e.kind, (e as { id: string }).id.split("|").pop(), (e as { after: unknown }).after === null])).toEqual([["relationship", "d:h/entity:A", true], ["relationship", "d:h/entity:B", false]]);
     const cleared = setRefEdits(g, `${P}/op:e`, "ofType", "");
     expect(cleared.ok && cleared.value).toHaveLength(1);
     expect(setRefEdits(g, `${P}/op:e`, "ofType", "d:h/entity:Nope").ok).toBe(false);
-  });
-});
-
-describe("fixpoints are loops of operators", () => {
-  const wired = (pairs: [string, string][], over: string | null) => build(
-    ent(P, "Projection"),
-    ...op("seed", "Match", [["out", "out"]]), ...op("fp", "Fixpoint", [["seed", "in"], ["out", "out"]]),
-    ...op("side", "Match", [["out", "out"]]), ...op("j", "Join", [["left", "in"], ["right", "in"], ["out", "out"]]),
-    ...op("m", "Map", [["in", "in"], ["out", "out"]]), ...op("after", "Filter", [["in", "in"], ["out", "out"]]),
-    ...pairs.flatMap(([a, b]) => wireEdits(`${P}/op:${a.split(".")[0]}/port:${a.split(".")[1]}`, `${P}/op:${b.split(".")[0]}/port:${b.split(".")[1]}`)),
-    ...(over ? [rel(`${P}/op:fp`, "over", `${P}/op:${over}/port:out`)] : []),
-  );
-  const flow: [string, string][] = [["seed.out", "fp.seed"], ["fp.out", "j.left"], ["side.out", "j.right"], ["j.out", "m.in"], ["fp.out", "after.in"]];
-  const short = (id: string) => id.slice(id.lastIndexOf(":") + 1);
-  it("the step is every operator between the fixpoint and its step result; the seed, a side input and what follows are outside", () => {
-    const [loop] = new Catalog(wired(flow, "m")).projectionGraph(P).loops!;
-    expect([short(loop.fixpoint), loop.members.map(short).sort(), short(loop.result!)]).toEqual(["fp", ["j", "m"], "m"]);
-  });
-  it("an arc from the step result back to the fixpoint is drawn", () => {
-    const dg = new Catalog(wired(flow, "m")).projectionGraph(P);
-    expect(dg.edges.filter((e) => e.kind === "over").map((e) => [short(e.from), short(e.to)])).toEqual([["m", "fp"]]);
-  });
-  it("without a step result there is no loop members, only the fixpoint", () => {
-    const [loop] = new Catalog(wired(flow, null)).projectionGraph(P).loops ?? [];
-    expect(loop).toBeUndefined();
   });
 });
 

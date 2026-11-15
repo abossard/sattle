@@ -126,7 +126,7 @@ function valuesOf(e: EntryDoc): Record<string, string> {
 const shapeOf = (palette: DraftPort["palette"], kind: string, sl: SlotDoc, e: EntryDoc) =>
   entryShape(palette, kind, sl.name, e.expr !== null ? sl.children.find((t) => entryShape(palette, kind, sl.name, t)) ?? "" : e.type);
 
-/** The entries of `doc` that no notation can add: their type has no shape (the body of a fixpoint, a constant row). Empty when the whole projection can be built. */
+/** The entries of `doc` that no notation can add: their type has no shape (a constant row). Empty when the whole projection can be built. */
 export function unbuildable(doc: ProjectionDoc, palette: DraftPort["palette"]): string[] {
   return [...new Set(doc.statements.flatMap((st) => st.steps.flatMap((s) => s.slots.flatMap((sl) => sl.entries.filter((e) => !shapeOf(palette, s.kind, sl, e)).map((e) => `${s.kind}.${sl.name}: ${e.type}`)))))];
 }

@@ -55,8 +55,6 @@ const useStyles = makeStyles({
   portNo: { opacity: 0.25 },
   marquee: { fill: tokens.colorBrandBackground2, fillOpacity: 0.3, stroke: tokens.colorBrandStroke1, strokeDasharray: "4 3" },
   note: { fill: tokens.colorNeutralBackground1, stroke: tokens.colorNeutralForeground2, strokeWidth: 1, strokeDasharray: "3 2" },
-  loop: { fill: "none", stroke: tokens.colorNeutralForeground2, strokeWidth: 1, strokeDasharray: "2 4" },
-  overEdge: { fill: "none", stroke: tokens.colorBrandForeground1, strokeWidth: 2, strokeDasharray: "7 4" },
   group: { fill: "none", stroke: tokens.colorNeutralForeground3, strokeDasharray: "8 3 2 3", strokeWidth: 1 },
 });
 
@@ -129,17 +127,10 @@ export function EditorCanvas(p: Props) {
     }
     setDrag(null);
   };
-  const lines: { id: string; d: string; kind: "wire" | "bind" | "over"; sel: boolean }[] = [];
+  const lines: { id: string; d: string; kind: "wire" | "bind"; sel: boolean }[] = [];
   for (const e of p.dg.edges) {
     const a = nodes.get(e.from), b = nodes.get(e.to);
     if (!a || !b) continue;
-    if (e.kind === "over") {
-      // the step result goes back to the fixpoint: a dashed arc under the loop
-      const from = portPos(a, e.fromPort, "out"), to = portPos(b, "out", "out");
-      const low = Math.max(from.y, to.y) + 70;
-      lines.push({ id: e.id, d: `M${from.x},${from.y} C${from.x + 60},${low} ${to.x + 60},${low} ${to.x},${to.y}`, kind: "over", sel: false });
-      continue;
-    }
     const from = e.kind === "wire" ? portPos(a, e.fromPort, "out") : { x: pos(a.id).x + NODE_W / 2, y: pos(a.id).y + rowH(a) };
     const to = e.kind === "wire" ? portPos(b, e.toPort, "in") : { x: pos(b.id).x + NODE_W / 2, y: pos(b.id).y };
     lines.push({ id: e.id, d: e.kind === "wire" ? wirePath(from, to) : `M${from.x},${from.y} L${to.x},${to.y}`, kind: e.kind === "wire" ? "wire" : "bind", sel: e.kind === "wire" && (p.selected.includes(a.id) || p.selected.includes(b.id)) });
@@ -162,14 +153,7 @@ export function EditorCanvas(p: Props) {
           const x0 = Math.min(...ats.map((a) => a.at.x)) - 14, y0 = Math.min(...ats.map((a) => a.at.y)) - 26, x1 = Math.max(...ats.map((a) => a.at.x + NODE_W)) + 14, y1 = Math.max(...ats.map((a) => a.at.y + rowH(a.n!))) + 14;
           return <g key={g.id}><rect className={s.group} x={x0} y={y0} width={x1 - x0} height={y1 - y0} /><text className={s.line} x={x0 + 8} y={y0 + 16}>Group: {g.label}</text></g>;
         })}
-        {(p.dg.loops ?? []).map((lp) => {
-          const ms = [lp.fixpoint, ...lp.members].map((m) => ({ at: pos(m), n: nodes.get(m) })).filter((x) => x.n);
-          if (!ms.length) return null;
-          const x0 = Math.max(2, Math.min(...ms.map((a) => a.at.x)) - 16), y0 = Math.max(2, Math.min(...ms.map((a) => a.at.y)) - 34), x1 = Math.max(...ms.map((a) => a.at.x + NODE_W)) + 16, y1 = Math.max(...ms.map((a) => a.at.y + rowH(a.n!))) + 86;
-          const fp = nodes.get(lp.fixpoint)!;
-          return <g key={lp.fixpoint} role="group" aria-label={`Loop of ${fp.title}: ${lp.members.length} step operators repeat until nothing new is derived`}><rect className={s.loop} x={x0} y={y0} width={x1 - x0} height={y1 - y0} /><text className={s.line} x={x0 + 10} y={y0 + 14}>{`↻ loop of ${fp.title}${fp.props.maxIterations ? `, at most ${fp.props.maxIterations} rounds` : ""} `}</text></g>;
-        })}
-        {lines.map((l) => <path key={l.id} d={l.d} className={`${l.kind === "wire" ? s.wire : l.kind === "over" ? s.overEdge : s.bind} ${l.sel ? s.wireSel : ""}`} />)}
+        {lines.map((l) => <path key={l.id} d={l.d} className={`${l.kind === "wire" ? s.wire : s.bind} ${l.sel ? s.wireSel : ""}`} />)}
         {p.dg.nodes.map((n, idx) => {
           const at = pos(n.id), h = rowH(n), sel = p.selected.includes(n.id), flag = p.flagged.get(n.id);
           // input ports with names (a join's left and right) are labelled inside the card, so the text starts to the right of the labels

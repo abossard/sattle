@@ -265,4 +265,4 @@ export function withStatements(inner: DraftPort): DraftPort & { lowered(): Graph
 // 4. lowering at check and at plan time, with the use each operator came from, so diagnostics, lineage and the plan name the use
 //    and its parameter (`lower` and its `from`);
 // 5. a text form of a declaration and of a use, parsed and printed (nothing here: a use has no canonical text);
-// 6. names a template brings in kept apart from the author's (`expand` prefixes them with the name of the use, as `lift` does today).
+// 6. names a template brings in kept apart from the author's (`expand` prefixes them with the name of the use).

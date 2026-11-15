@@ -16,7 +16,6 @@ export const SHORTCUTS: Shortcut[] = [
   { keys: "A", does: "Add an operator (opens the quick-add list)", where: "Projection editor" },
   { keys: "W", does: "Wire the selected output to an input (pick the target, Enter to connect)", where: "Projection editor" },
   { keys: "Ctrl+A", does: "Select all operators", where: "Projection editor" },
-  { keys: "L", does: "Select the loop of the fixpoint (it and its step operators) that has the selection", where: "Projection editor" },
   { keys: "M", does: "Select a region: arrow keys resize it from the selected operator (Shift for fine steps), Enter selects what it touches, Escape cancels", where: "Projection editor" },
   { keys: "Ctrl+G", does: "Move the selection into a new projection", where: "Projection editor" },
   { keys: "Ctrl+S", does: "Name and commit the draft", where: "Projection editor" },

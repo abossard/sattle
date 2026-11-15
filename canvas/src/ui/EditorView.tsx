@@ -402,13 +402,6 @@ export function EditorView() {
       else if (k === "escape") { stop(); setMarquee(null); announce("Region selection cancelled"); }
       return;
     }
-    if (k === "l" && !mod) {
-      stop();
-      const loop = (dg.loops ?? []).find((l) => l.fixpoint === ed.selected[0] || l.members.includes(ed.selected[0]));
-      if (loop) { dispatch({ type: "editor/select", ids: [loop.fixpoint, ...loop.members] }); announce(`Loop selected: the fixpoint and ${loop.members.length} step operators`); }
-      else announce("Select a fixpoint or one of its step operators first");
-      return;
-    }
     if (k === "m" && !mod) {
       stop();
       const at = positions.get(ed.selected[0] ?? "") ?? { x: 20, y: 20 };

@@ -4,7 +4,7 @@
 import { Graph } from "./graph";
 import type { Entity, Rel } from "./model";
 import { valueText } from "./model";
-import type { DefEdge, DefGraph, DefLoop, DefNode } from "./def-graph";
+import type { DefEdge, DefGraph, DefNode } from "./def-graph";
 
 export type DirectionClass = "forward" | "readonly" | "bijective" | "lens" | "sync";
 export const DIRECTION_CLASSES: DirectionClass[] = ["forward", "readonly", "bijective", "lens", "sync"];
@@ -144,20 +144,12 @@ export class Catalog {
       case "Union": return [`union, conflict ${text(e, "conflict")}`];
       case "Distinct": return ["distinct rows"];
       case "Traverse": return [`via ${ofType ? this.name(ofType) : "?"} ${text(e, "direction")} depth ${text(e, "minDepth")} .. ${text(e, "maxDepth")}`, `from ${text(e, "start")} as ${text(e, "target")}`];
-      case "Fixpoint": return [`repeat the step, at most ${text(e, "maxIterations")} rounds`];
       case "Values": return [`${this.children(id, "row").length} constant rows`];
       case "Window": return [`on ${text(e, "timestampField")}`, `width ${durationText(text(e, "width"))}, late ${text(e, "late")}`];
       case "Series": return [`read ${this.children(id, "read").map((r) => this.expr(r)).join(", ")}`, `within ${durationText(text(e, "within"))}`];
       case "Threshold": return [`${text(e, "target")} above ${text(e, "above")} for ${text(e, "enterAfter")} then ${text(e, "high")}`, `below ${text(e, "below")} for ${text(e, "exitAfter")} then ${text(e, "low")}`];
       case "EmitEntity": return [`entity ${ofType ? t(ofType) : "?"} (${text(e, "mode")})`, ...this.children(id, "id").map((i) => this.expr(i)), ...sets()];
       case "EmitRelationship": return [`relationship ${ofType ? t(ofType) : "?"} (${text(e, "mode")}, key ${text(e, "key")})`, `${this.children(id, "source").map((i) => this.expr(i)).join("")} → ${this.children(id, "target").map((i) => this.expr(i)).join("")}`, ...sets()];
-      case "Lift": {
-        const via = this.targets(id, "liftVia")[0], from = this.targets(id, "liftEdge")[0];
-        const states = this.children(id, "state").map((x) => { const st = this.entity(x); return `state ${text(st, "target")} of ${text(st, "of")} above ${text(st, "above")} for ${text(st, "enterAfter")} then ${JSON.stringify(text(st, "high"))} below ${text(st, "below")} for ${text(st, "exitAfter")} then ${JSON.stringify(text(st, "low"))}`; });
-        const when = this.children(id, "when").map((w) => `when ${this.expr(w)}`);
-        const flags = [text(e, "images") ? `images ${text(e, "images")}` : "", text(e, "selfLoops") && text(e, "selfLoops") !== "drop" ? `selfloops ${text(e, "selfLoops")}` : "", text(e, "within") && text(e, "within") !== "86400000000000" ? `within ${durationText(text(e, "within"))}` : ""].filter(Boolean);
-        return [`${ofType ? t(ofType) : "?"} from ${from ? t(from) : "?"} via ${via ? t(via) : "?"}`, ...when, ...assigns("carry", "carry "), ...assigns("keep", "keep "), ...assigns("derive", "derive "), ...states, ...(flags.length ? [flags.join(", ")] : [])];
-      }
       case "Link": return [`${this.children(id, "left").map((i) => this.expr(i)).join("")} ≡ ${this.children(id, "right").map((i) => this.expr(i)).join("")}`];
       default: return [];
     }
@@ -185,7 +177,7 @@ export class Catalog {
       const ps = ports(opId);
       nodes.push({
         id: opId, kind: "operator", opKind: op.type, title: text(op, "name") || segName(opId), lines: this.describeOp(opId),
-        inputs: ps.filter((x) => x.dir === "in").map((x) => x.name), outputs: ps.filter((x) => x.dir === "out").map((x) => x.name), props: { kind: op.type, ...(op.type === "Fixpoint" ? { maxIterations: text(op, "maxIterations") } : {}) }, ref: opId,
+        inputs: ps.filter((x) => x.dir === "in").map((x) => x.name), outputs: ps.filter((x) => x.dir === "out").map((x) => x.name), props: { kind: op.type }, ref: opId,
       } as DefNode);
       for (const x of ps) portOwner.set(x.id, { node: opId, name: x.name });
       // inner operators (name#0) are pieces of a let binding; they are listed as operators too
@@ -209,23 +201,7 @@ export class Catalog {
         edges.push({ id: `wire:${pid}>${target}`, kind: "wire", from: own.node, fromPort: own.name, to: to.node, toPort: to.name, wireKey: `${pid}>${target}` });
       }
     }
-    // fixpoints: the `over` relationship points at the port that carries the step result; the step is every operator on a wire path from the
-    // fixpoint's out port to that operator, which the canvas draws as a loop region
-    const loops: DefLoop[] = [];
-    for (const n of nodes) {
-      if (n.kind !== "operator") continue;
-      const overPort = this.targets(n.id, "over")[0];
-      if (!overPort) continue;
-      const to = portOwner.get(overPort);
-      if (to) edges.push({ id: `over:${n.id}>${overPort}`, kind: "over", from: to.node, fromPort: to.name, to: n.id, toPort: "out" });
-      const next = new Map<string, string[]>(), prev = new Map<string, string[]>();
-      for (const e of edges) if (e.kind === "wire") { next.set(e.from, [...(next.get(e.from) ?? []), e.to]); prev.set(e.to, [...(prev.get(e.to) ?? []), e.from]); }
-      const reach = (start: string, adj: Map<string, string[]>) => { const seen = new Set<string>(); const st = [start]; while (st.length) { const x = st.pop()!; for (const y of adj.get(x) ?? []) if (!seen.has(y) && y !== n.id) { seen.add(y); st.push(y); } } return seen; };
-      const down = reach(n.id, next), up = to ? reach(to.node, prev) : new Set<string>();
-      const members = [...down].filter((m) => m === to?.node || up.has(m));
-      loops.push({ fixpoint: n.id, members, result: to?.node ?? null, resultPort: overPort });
-    }
-    return { loops, nodes, edges, direction: { mode: info.direction === "forward" || info.direction === "readonly" ? "forward-only" : "bidirectional", rules: info.rules.length, label: `${DIRECTION[info.direction].glyph} ${info.direction}` } };
+    return { nodes, edges, direction: { mode: info.direction === "forward" || info.direction === "readonly" ? "forward-only" : "bidirectional", rules: info.rules.length, label: `${DIRECTION[info.direction].glyph} ${info.direction}` } };
   }
 
   /** Nearest catalog element id that is a card or wire of a graph, for a diagnostic focus that points deeper into the tree. */

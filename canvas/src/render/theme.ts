@@ -81,5 +81,5 @@ export function edgeColorForType(type: string, theme: Theme): number {
 
 export const OPERATOR_ROLE: Record<string, keyof typeof HUES_DARK> = {
   input: "input", match: "input", filter: "rule", map: "rule", join: "rule", union: "rule", distinct: "rule", group: "rule", traverse: "rule",
-  window: "rule", fixpoint: "rule", emitEntity: "identity", emitRelationship: "identity",
+  window: "rule", emitEntity: "identity", emitRelationship: "identity",
 };

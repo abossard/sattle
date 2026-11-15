@@ -96,10 +96,6 @@ export type Operator =
       kind: "emitRelationship"; identityRule: string; source: Expression; target: Expression; type: Id;
       properties: PropertyAssignment[]; retypeCollision: ConflictPolicy;
     })
-  | (OpBase & {
-      kind: "fixpoint"; relation: string; row: RowType; body: Operator[]; wires: Wire[]; result: Id;
-      finiteDomainBinding: string; maximumFacts: number; maximumIterations: number;
-    })
   | (OpBase & { kind: "window"; timestampField: string; widthNanoseconds: number; latePolicy: "ignore" | "revise" | "reject" });
 export type OperatorKind = Operator["kind"];
 

@@ -67,7 +67,7 @@ export function paramValue(p: PaletteParam, raw0: string): Result<GraphValue> {
   }
 }
 export const paramEdits = (g: Graph, id: string, p: PaletteParam, raw: string): Result<Edit[]> => {
-  // an optional parameter that is emptied is not set at all (`images` of a lift: absent means the mapping must be a function)
+  // an optional parameter that is emptied is not set at all
   if (raw.trim() === "" && !p.required) return ok(g.entity(id)?.props[p.name] ? [setPropEdit(g, id, p.name, null)] : []);
   const v = paramValue(p, raw);
   return v.ok ? ok([setPropEdit(g, id, p.name, v.value)]) : v;
@@ -162,7 +162,7 @@ export function addNamedEdits(g: Graph, op: string, slot: string, childType: str
   }
   const id = `${op}/${slot}:${name}`;
   if (g.entity(id) && !placeholderChildren(g, op, slot, placeholders).includes(id)) return no(`${name} already exists in ${slot}`);
-  // a slot whose children hold a path (the carried properties of a lift, the values it keeps) takes a field, not an expression
+  // a slot whose children hold a path takes a field, not an expression
   const value = slotOf(palette, g.entity(op)?.type ?? "", slot)?.value;
   if (value?.kind === "fieldRef") {
     const parsed = parseExpr(src);
@@ -315,24 +315,3 @@ export function statementNames(g: Graph, ids: string[]): string[] {
 }
 export { subtreeIds };
 
-/**
- * A child that is made of parameters (a `LiftState`): a node `<op>/<slot>:<key>` typed `childType` with a property per parameter the palette lists for it,
- * contained in the slot. `key` is the child's target (the property the state sets). Every required parameter is needed, and each is typed by the palette.
- */
-export function addParamChildEdits(g: Graph, op: string, slot: string, childType: string, key: string, values: Record<string, string>, palette: Palette): Result<Edit[]> {
-  if (!nameOk(key)) return no("a name is letters, digits and _");
-  const sl = slotOf(palette, g.entity(op)?.type ?? "", slot);
-  const ct = sl?.childTypes?.find((c) => c.type === childType);
-  if (!ct) return no(`${slot} has no ${childType}`);
-  const id = `${op}/${slot}:${key}`;
-  if (g.entity(id)) return no(`${key} already exists in ${slot}`);
-  const props: Record<string, GraphValue> = {};
-  for (const p of ct.params) {
-    const raw = p.name === "target" ? key : (values[p.name] ?? p.default ?? "").trim();
-    if (raw === "") { if (p.required) return no(`${p.name} is needed`); continue; }
-    const v = paramValue(p, raw);
-    if (!v.ok) return v;
-    props[p.name] = v.value;
-  }
-  return ok([ent(id, childType, props), contains(op, id, slot, sl?.ordered ? nextOrdinal(new Catalog(g), op, slot) : undefined)]);
-}

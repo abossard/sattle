@@ -20,7 +20,7 @@ export interface FieldDoc { name: string; value: string; kind: string; required:
  */
 export interface RefDoc { rel: string; label: string; to: string; scope?: string; required: boolean; target: string | null; targetName: string }
 
-/** `liftEdge` as an author reads it: `lift edge`. */
+/** `minHops` as an author reads it: `min hops`. */
 const words = (name: string): string => name.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 
 /**

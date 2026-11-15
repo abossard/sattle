@@ -330,16 +330,6 @@ else {
   await dispatch({ type: "ui/theme", theme: "light" });
   await clickText("[role=tab]", "Canvas"); await sleep(500);
 }
-// a lift (engine 3.13): its card and its panel (parameters with defaults, the three relationship types, carry, keep, derive, state and when)
-const liftOp = await evaluate(`(() => { const c = window.__sattle.session.catalog; for (const p of c.projections()) for (const o of c.children(p.id, "op")) if (window.__sattle.session.graph.entity(o)?.type === "Lift") return JSON.stringify([p.module, p.id, o]); return ""; })()`);
-if (liftOp) {
-  const [lm, lp, lo] = JSON.parse(liftOp);
-  await dispatch({ type: "editor/projection", module: lm, projection: lp }); await sleep(600);
-  await dispatch({ type: "editor/select", ids: [lo] }); await sleep(800);
-  const panel = await evaluate(`document.querySelector("#editor-props")?.textContent ?? ""`);
-  for (const want of ["within", "images", "selfLoops", "Relationship type lifted to", "Lower relationship type", "Mapping relationship type", "carry", "keep", "derive", "state"]) if (!panel.includes(want)) fail.push(`editor lift: the panel does not show ${want}`);
-  await runAxe("editor lift");
-} else results.axe.push({ name: "editor lift", skipped: "the engine's catalog has no Lift" });
 await evaluate(`document.querySelector('[aria-label^="Projection graph"]').focus()`);
 await key("Escape"); await key("m");
 for (let i = 0; i < 4; i++) { await key("ArrowRight"); await key("ArrowDown"); }
@@ -363,7 +353,7 @@ console.log(JSON.stringify(results.axe.map((r) => ({ name: r.name, violations: r
 for (const r of results.axe) if (r.violations) console.log(JSON.stringify(r.detail));
 console.log(JSON.stringify(results.keyboard));
 if (results.roles) console.log(JSON.stringify(results.roles));
-// a check that was skipped (the engine has no document graph, no Lift, ...) was not made: it is not a pass. A11Y_ALLOW_SKIP=1 accepts skips for a run without the engine.
+// a check that was skipped (the engine has no document graph, ...) was not made: it is not a pass. A11Y_ALLOW_SKIP=1 accepts skips for a run without the engine.
 const skipped = results.axe.filter((r) => r.skipped);
 if (skipped.length) console.log(`a11y: ${skipped.length} check(s) SKIPPED, not passed:\n${skipped.map((r) => `  ${r.name}: ${r.skipped}`).join("\n")}`);
 console.log(fail.length ? `FAILED (${fail.length}):\n${fail.join("\n")}` : skipped.length ? "a11y: the checks that ran passed, others were skipped" : "a11y: all checks passed");

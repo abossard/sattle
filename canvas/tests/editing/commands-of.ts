@@ -23,7 +23,7 @@ export function entryCommand(step: StepDoc, slot: SlotDoc, e: EntryDoc): Command
     case "SetProperty": return ref(e, "property")?.target ? { t: "set", id, slot: slot.name, property: ref(e, "property")!.target!, src: value(e) } : null;
     case "PatternNode": return ref(e, "ofType")?.target ? { t: "patternNode", id, variable: e.key, type: ref(e, "ofType")!.target! } : null;
     case "PatternEdge": return { t: "patternEdge", id, variable: field(e, "var"), from: ref(e, "from")!.targetName, to: ref(e, "to")!.targetName, type: ref(e, "ofType")!.target! };
-    default: return e.fields.some((f) => f.name === "target") && !e.parts.length && !e.refs.length ? { t: "child", id, slot: slot.name, childType: e.type, key: field(e, "target"), params: Object.fromEntries(e.fields.filter((f) => f.value !== "").map((f) => [f.name, f.value])) } : null;
+    default: return null;
   }
 }
 

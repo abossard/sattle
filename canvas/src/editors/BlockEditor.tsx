@@ -57,11 +57,10 @@ const useStyles = makeStyles({
   source: { borderLeftColor: tokens.colorPaletteBlueBorderActive },
   linear: { borderLeftColor: tokens.colorPaletteTealBorderActive },
   telemetry: { borderLeftColor: tokens.colorPalettePurpleBorderActive },
-  lift: { borderLeftColor: tokens.colorPaletteMarigoldBorderActive },
   sink: { borderLeftColor: tokens.colorPaletteGreenBorderActive },
 });
-type RoleClass = "source" | "linear" | "telemetry" | "lift" | "sink";
-const ROLES: readonly string[] = ["source", "linear", "telemetry", "lift", "sink"];
+type RoleClass = "source" | "linear" | "telemetry" | "sink";
+const ROLES: readonly string[] = ["source", "linear", "telemetry", "sink"];
 const STEP_PAD = 10, STACK_PAD = 60, LINE = 28;
 
 export interface BlockProps extends EditorProps { /** height of the view, when the caller knows it (tests, measurements) */ viewport?: number }

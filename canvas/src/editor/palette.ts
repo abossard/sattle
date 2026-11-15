@@ -77,11 +77,11 @@ export function parsePalette(raw0: unknown): Palette {
 }
 
 /** Groups in the order an author builds a projection: sources, linear steps, telemetry steps, sinks. */
-export const ROLE_ORDER = ["source", "linear", "telemetry", "lift", "sink"];
-export const ROLE_LABEL: Record<string, string> = { source: "Sources", linear: "Transform", telemetry: "Telemetry", lift: "Lift to a higher level", sink: "Emit" };
+export const ROLE_ORDER = ["source", "linear", "telemetry", "sink"];
+export const ROLE_LABEL: Record<string, string> = { source: "Sources", linear: "Transform", telemetry: "Telemetry", sink: "Emit" };
 export const scalarFunctions = (p: Palette): Set<string> => new Set(p.functions.filter((f) => f.role === "scalar").map((f) => f.name));
 
-/** The palette's description of a parameter of an operator, or of a child of one of its slots (a `LiftState` has nine): found by the owner's node type. */
+/** The palette's description of a parameter of an operator, or of a child of one of its slots: found by the owner's node type. */
 export function paramOf(p: Palette, ownerType: string, name: string): PaletteParam | undefined {
   const op = p.operators.find((o) => o.kind === ownerType);
   if (op) return op.params.find((x) => x.name === name);

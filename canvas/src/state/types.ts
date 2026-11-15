@@ -69,7 +69,6 @@ export type Command =
   | { t: "param"; id: string; name: string; value: string }
   | { t: "expr"; id: string; slot: string; src: string }
   | { t: "named"; id: string; slot: string; childType: string; name: string; src: string; extra?: Record<string, string> }
-  | { t: "child"; id: string; slot: string; childType: string; key: string; params: Record<string, string> }
   | { t: "set"; id: string; slot?: string; property: string; src: string }
   | { t: "ofType"; id: string; type: string }
   | { t: "ref"; id: string; rel: string; target: string }

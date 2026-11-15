@@ -62,7 +62,7 @@ export function columnsByStep(schemas: readonly OperatorSchema[], steps: readonl
 
 /**
  * The rows after each step of a projection, by step id, from the operators of the previewed graphs. A step that the engine plans
- * as several operators (a lift, whose parts it names `dependsOn__edges`) is shown by the operator of its own id, else by the last of
+ * as several operators (whose parts it names like `dependsOn__edges`) is shown by the operator of its own id, else by the last of
  * its parts; an operator no step stands for is left out.
  */
 export function rowsByStep(operators: readonly OperatorRows[], steps: readonly string[], reading: (op: string) => CellReading = () => ({})): Map<string, StepRows> {

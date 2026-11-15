@@ -9,7 +9,7 @@ import { DIRECTION_CLASSES, type Catalog } from "../../core/catalog";
 import type { Graph } from "../../core/graph";
 import { valueText } from "../../core/model";
 import { canWire, durationText, isDuration } from "../../editor/commands";
-import { aggregateAllowed, type PaletteOperator, type PaletteParam, type PaletteSlot } from "../../editor/palette";
+import { aggregateAllowed, type PaletteOperator, type PaletteSlot } from "../../editor/palette";
 import type { EditorSession } from "../../editor/session";
 import { dispatch } from "../../state/store";
 import type { Command } from "../../state/types";
@@ -45,28 +45,6 @@ export function AddRow({ fields, cta, onAdd }: { fields: { key: string; label: s
 
 export const ofKind = (g: Graph, type: string) => [...g.entities()].filter((e) => e.type === type).map((e) => ({ value: e.id, label: `${e.id.slice(2, e.id.indexOf("/"))}.${prop(g, e.id, "name") || e.id.slice(e.id.lastIndexOf(":") + 1)}` })).sort((a, b) => a.label.localeCompare(b.label));
 
-/** Children that are made of parameters (a lift's `state`): each with its parameters as fields, typed by the palette, and a row to add one. */
-function ParamChildren({ slot, c, g, id }: { slot: PaletteSlot; c: Catalog; g: Graph; id: string }) {
-  const s = useStyles();
-  const ct = slot.childTypes?.[0];
-  if (!ct) return <Text size={200}>{slot.name} ({slot.children.join(", ")}) has no editor in the panel yet.</Text>;
-  const label = (p: PaletteParam) => `${p.name}${isDuration(p) ? " (duration)" : p.unit ? ` (${p.unit})` : ""}`;
-  return (
-    <div className={s.col}><Text weight="semibold">{slot.name}</Text>
-      {c.children(id, slot.name).map((k) => (
-        <div key={k} className={s.col} role="group" aria-label={`${slot.name} ${prop(g, k, "target")}`}>
-          <div className={s.row}><Text className={s.grow} weight="semibold">{prop(g, k, "target")}</Text><Button size="small" icon={<Delete20Regular />} aria-label={`Remove ${slot.name} ${prop(g, k, "target")}`} onClick={() => run({ t: "delete", ids: [k] })} /></div>
-          {ct.params.filter((p) => p.name !== "target").map((p) => p.values
-            ? <Field key={p.name} label={label(p)}><Select value={prop(g, k, p.name)} onChange={(_, d) => run({ t: "param", id: k, name: p.name, value: d.value })}>{p.values.map((x) => <option key={x}>{x}</option>)}</Select></Field>
-            : <CommitInput key={p.name} label={`${label(p)}${p.required ? "" : " (optional)"}`} value={prop(g, k, p.name)} onCommit={(v) => run({ t: "param", id: k, name: p.name, value: v })} />)}
-        </div>
-      ))}
-      <AddRow cta={`Add ${slot.name}`} fields={ct.params.map((p) => ({ key: p.name, label: p.name === "target" ? "Property it sets" : label(p), placeholder: p.example ?? p.default, ...(p.values ? { options: p.values.map((x) => ({ value: x, label: x })) } : {}) }))}
-        onAdd={(v) => run({ t: "child", id, slot: slot.name, childType: ct.type, key: v.target ?? "", params: Object.fromEntries(Object.entries(v).filter(([k]) => k !== "target")) })} />
-    </div>
-  );
-}
-
 function Slot({ op, slot, c, g, id, session }: { op: PaletteOperator; slot: PaletteSlot; c: Catalog; g: Graph; id: string; session: EditorSession }) {
   const s = useStyles();
   const kids = c.children(id, slot.name);
@@ -87,7 +65,6 @@ function Slot({ op, slot, c, g, id, session }: { op: PaletteOperator; slot: Pale
     const cur = kids.length ? c.expr(kids[0]) : "";
     return <CommitInput label={`${slot.name}${slot.multiplicity === "1" ? " (required)" : ""}${slot.value ? ` (${slot.value.offers})` : ""}`} value={cur} placeholder={kind === "IdOf" ? "id domain(component: expr)" : "expression, for example s != t"} onCommit={(v) => run({ t: "expr", id, slot: slot.name, src: v })} />;
   }
-  if (kind === "LiftState") return <ParamChildren slot={slot} c={c} g={g} id={id} />;
   if (kind === "Assign" || kind === "Aggregate") {
     return (
       <div className={s.col}><Text weight="semibold">{slot.name}{slot.multiplicity === "+" ? " (at least one)" : ""}</Text>
@@ -137,18 +114,6 @@ function Slot({ op, slot, c, g, id, session }: { op: PaletteOperator; slot: Pale
     return (
       <div className={s.col}><Text weight="semibold">{slot.name}</Text>{list((k) => prop(g, k, "path"))}
         <AddRow cta="Add" fields={[{ key: "path", label: "Field", placeholder: "c.flows" }]} onAdd={(v) => run({ t: "read", id, slot: slot.name, path: v.path ?? "" })} />
-      </div>
-    );
-  }
-  // a fixpoint: the engine infers the relation's columns from the seed, and its step operators are the siblings between its `out` port and
-  // the step result (`over`), listed here and selected together with the loop
-  if (kind === "RowType") return <Text size={200}>{slot.name}: the columns are inferred from the input; nothing to enter.</Text>;
-  if (kind === "Operator") {
-    const loop = (c.projectionGraph(id.slice(0, id.lastIndexOf("/op:"))).loops ?? []).find((l) => l.fixpoint === id);
-    return (
-      <div className={s.col}><Text weight="semibold">Step operators</Text>
-        {loop?.members.length ? loop.members.map((m) => <Text key={m}>{c.name(m)}</Text>) : <Text size={200}>None yet: wire operators from this fixpoint's output and point the step result at the last of them.</Text>}
-        {loop && <Button onClick={() => dispatch({ type: "editor/select", ids: [id, ...loop.members] })}>Select the loop</Button>}
       </div>
     );
   }
@@ -226,18 +191,6 @@ function ParamBindings({ session, port }: { session: EditorSession; port: string
   );
 }
 
-/** Output ports of the operators that read the fixpoint's `out` (directly or through other operators): where the step can end. */
-function outPortsAfter(session: EditorSession, fixpoint: string): { value: string; label: string }[] {
-  const g = session.graph, c = session.catalog;
-  const owner = (p: string) => p.slice(0, p.lastIndexOf("/"));
-  const wires = [...g.relationships()].filter((r) => r.type === "wire");
-  const seen = new Set<string>([fixpoint]);
-  const stack = [fixpoint];
-  while (stack.length) { const x = stack.pop()!; for (const w of wires) if (owner(w.source) === x && !seen.has(owner(w.target))) { seen.add(owner(w.target)); stack.push(owner(w.target)); } }
-  seen.delete(fixpoint);
-  return [...seen].flatMap((o) => c.children(o, "port").filter((p) => g.entity(p)?.props.direction && valueText(g.entity(p)!.props.direction) === "out").map((p) => ({ value: p, label: `${c.name(o)}.${c.name(p)}` })));
-}
-
 export function Properties({ session, selected, projection, diagnostics }: { session: EditorSession; selected: string[]; projection: string; diagnostics: { focus: string; message: string; severity: string }[] }) {
   const s = useStyles();
   const g = session.graph, c = session.catalog;
@@ -281,14 +234,13 @@ export function Properties({ session, selected, projection, diagnostics }: { ses
           {refsOf(op.kind).length > 0 && (
             <AccordionItem value="refs"><AccordionHeader>References</AccordionHeader><AccordionPanel className={s.col}>
               {refsOf(op.kind).map((r) => {
-                const options = r.to === "OutPort" ? outPortsAfter(session, id) : ofKind(g, r.to);
+                const options = ofKind(g, r.to);
                 return (
                   <Field key={r.rel} label={`${r.label}${r.required ? " (required)" : ""}`}>
                     <Select value={c.targets(id, r.rel)[0] ?? ""} onChange={(_, d) => run({ t: "ref", id, rel: r.rel, target: d.value })}><option value="">{r.required ? "(choose)" : "(none)"}</option>{options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</Select>
                   </Field>
                 );
               })}
-              {op.kind === "Fixpoint" && <Button onClick={() => dispatch({ type: "editor/select", ids: (c.projectionGraph(projection).loops ?? []).find((l) => l.fixpoint === id)?.members.concat(id) ?? [id] })}>Select the loop</Button>}
             </AccordionPanel></AccordionItem>
           )}
           <AccordionItem value="slots"><AccordionHeader>Expressions and contents</AccordionHeader><AccordionPanel className={s.col}>

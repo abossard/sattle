@@ -2,7 +2,7 @@
 // (which asks the engine and records undo), and report what the author must see as `editor/summary`.
 import { Graph } from "../core/graph";
 import type { Edit, Patch } from "../core/model";
-import { addParamChildEdits, addValuesRowEdits, addExprItemEdits, addNamedEdits, addSetEdits, setOfTypeEdits, addPatternEdgeEdits, addPatternNodeEdits, addReadEdits, addRuleEdits, paramEdits, pasteEdits, setExprEdits, setRuleClassEdits, unwireEdits, wireEdits, type Result } from "../editor/commands";
+import { addValuesRowEdits, addExprItemEdits, addNamedEdits, addSetEdits, setOfTypeEdits, addPatternEdgeEdits, addPatternNodeEdits, addReadEdits, addRuleEdits, paramEdits, pasteEdits, setExprEdits, setRuleClassEdits, unwireEdits, wireEdits, type Result } from "../editor/commands";
 import { removeEdits } from "../editor/patches";
 import { setRefEdits } from "../editor/refs";
 import { addBindingEdits, setPortDefaultEdits, addValueRoleEdits, bindParamEdits, setValueRoleEdits, newProjectionEdits, addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addRuleSetEdits, governsEdits, setCreateKeyEdits, setPolicyEdits, setRulePropEdits } from "../editor/structures";
@@ -70,7 +70,6 @@ function plan(cmd: Command, s: EditorSession, st: State): { edits: Edit[]; label
     case "wire": return { edits: wireEdits(cmd.from, cmd.to), label: "connect" };
     case "unwire": return { edits: unwireEdits(g, cmd.key), label: "disconnect" };
     case "param": { const p = paramOf(pal, g.entity(cmd.id)?.type ?? "", cmd.name); if (!p) throw new Error(`${cmd.name} is not a parameter of this element`); return { edits: need(paramEdits(g, cmd.id, p, cmd.value)), label: `set ${cmd.name}` }; }
-    case "child": return { edits: need(addParamChildEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.key, cmd.params, pal)), label: `add ${cmd.key}` };
     case "expr": return { edits: need(setExprEdits(g, cmd.id, cmd.slot, cmd.src, pal)), label: `set ${cmd.slot}` };
     case "named": return { edits: need(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, pal, cmd.extra, s.placeholders)), label: `add ${cmd.name}` };
     case "set": return { edits: need(addSetEdits(g, cmd.id, cmd.property, cmd.src, pal, cmd.slot ?? "set")), label: "set property" };
@@ -179,7 +178,7 @@ export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<vo
             const base = cmd.name || cmd.kind.toLowerCase();
             let name = base;
             for (let i = 2; s.graph.entity(`${st.editor.projection}/op:${name}`); i++) name = `${base}${i}`;
-            // parameters the palette gives a default (a lift's `within`) start at it, not at the skeleton's placeholder
+            // parameters the palette gives a default start at it, not at the skeleton's placeholder
             const defaults = Object.fromEntries((s.palette.operators.find((o) => o.kind === cmd.kind)?.params ?? []).filter((x) => x.default !== undefined).map((x) => [x.name, x.default!]));
             const p = await s.svc.skeleton(s.draft.draft, cmd.kind, st.editor.projection, name, defaults);
             const added = await s.apply(p.edits, `add ${cmd.kind}`);

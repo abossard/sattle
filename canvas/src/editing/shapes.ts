@@ -11,7 +11,7 @@ export interface EntryShape { fields: ShapeField[]; command(step: string, values
 
 const second = (fn: string): string => ({ last: "order", weightedMean: "weight" } as Record<string, string>)[fn] ?? "";
 
-/** The shape of a new `childType` entry in `slot` of an operator of `kind`, or null when entries of that type are not added by hand (ports, the body of a fixpoint). */
+/** The shape of a new `childType` entry in `slot` of an operator of `kind`, or null when entries of that type are not added by hand (ports). */
 export function entryShape(palette: Palette, kind: string, slot: string, childType: string): EntryShape | null {
   const s = slotOf(palette, kind, slot);
   if (!s || !s.children.includes(childType)) return null;
@@ -40,14 +40,6 @@ export function entryShape(palette: Palette, kind: string, slot: string, childTy
         fields: [{ key: "from", label: "from", kind: "name" }, { key: "to", label: "to", kind: "name" }, { key: "type", label: "relationship type", kind: "ref", refTo: "RelationshipType" }, { key: "variable", label: "variable", kind: "name", optional: true }],
         command: (id, v) => ({ t: "patternEdge", id, variable: v.variable ?? "", from: v.from, to: v.to, type: v.type }),
       };
-    default: {
-      // an entry made of parameters only and named by its target (the state of a lift): one field per parameter the palette lists
-      const params = s.childTypes?.find((c) => c.type === childType)?.params ?? [];
-      if (!params.some((p) => p.name === "target")) return null;
-      return {
-        fields: params.map((p): ShapeField => ({ key: p.name, label: p.name, kind: p.values ? "choice" : p.name === "target" ? "name" : "text", optional: !p.required, values: p.values })),
-        command: (id, v) => ({ t: "child", id, slot, childType, key: v.target, params: v }),
-      };
-    }
+    default: return null;
   }
 }

@@ -3,7 +3,7 @@
 import type { Graph } from "../core/graph";
 import type { Edit } from "../core/model";
 import {
-  addExprItemEdits, addNamedEdits, addParamChildEdits, addPatternEdgeEdits, addPatternNodeEdits, addReadEdits, addRuleEdits, addSetEdits,
+  addExprItemEdits, addNamedEdits, addPatternEdgeEdits, addPatternNodeEdits, addReadEdits, addRuleEdits, addSetEdits,
   addValuesRowEdits, canWire, paramEdits, setExprEdits, setOfTypeEdits, unwireEdits, wireEdits, type Result,
 } from "../editor/commands";
 import { paramOf, type Palette } from "../editor/palette";
@@ -34,7 +34,6 @@ export function plan(g: Graph, palette: Palette, projection: string, cmd: Comman
       const p = paramOf(palette, g.entity(cmd.id)?.type ?? "", cmd.name);
       return p ? from(paramEdits(g, cmd.id, p, cmd.value), `set ${cmd.name}`) : { ok: false, reason: `${cmd.name} is not a parameter of this element` };
     }
-    case "child": return from(addParamChildEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.key, cmd.params, palette), `add ${cmd.key}`);
     case "expr": return from(setExprEdits(g, cmd.id, cmd.slot, cmd.src, palette), `set ${cmd.slot}`);
     case "exprAdd": return from(addExprItemEdits(g, cmd.id, cmd.slot, cmd.src, palette), `add to ${cmd.slot}`);
     case "named": return from(addNamedEdits(g, cmd.id, cmd.slot, cmd.childType, cmd.name, cmd.src, palette, cmd.extra, placeholders), `add ${cmd.name}`);
