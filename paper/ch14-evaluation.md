@@ -49,7 +49,7 @@ The authors' runs took place at nine successive states of the software; from the
 
 ## 14.3 What was tested
 
-- **Engine.** Fifteen modules of definitions, loaded from text and checked with no error and no warning. Adapters for every source of 14.2. 19 of the 20 operator kinds (Ch. 5; `Delta` is missing), aggregates per context, parameters, levels written with `lift`, rules `lens` and `bijective` with backward edits (Ch. 8), identity merge with a survivor that does not depend on the order (Ch. 1), references for missing ends (Ch. 3). Stores in memory, on SQLite and on Cosmos DB (the last against the emulator only), the journal and state seals (Ch. 11). A live input that resumes from the journal (Ch. 10; not run, its loop tested with a fake source). The examples: the workload model (Ch. 7), deployment health and its report (Ch. 2, 12), the service and capability levels (Ch. 5).
+- **Engine.** Fifteen modules of definitions, loaded from text and checked with no error and no warning. Adapters for every source of 14.2. 17 of the 18 operator kinds (Ch. 5; `Delta` is missing), aggregates per context, parameters, levels written with joins, rules `lens` and `bijective` with backward edits (Ch. 8), identity merge with a survivor that does not depend on the order (Ch. 1), references for missing ends (Ch. 3). Stores in memory, on SQLite and on Cosmos DB (the last against the emulator only), the journal and state seals (Ch. 11). A live input that resumes from the journal (Ch. 10; not run, its loop tested with a fake source). The examples: the workload model (Ch. 7), deployment health and its report (Ch. 2, 12), the service and capability levels (Ch. 5).
 - **Viewer** (Ch. 12): views of data, space, ontology and documents, the editor of projections, colors from value roles, highlight across levels, stubs, folding of supporting elements.
 - **Test counts.** At the last state, from set A: 670 of 670 tests of the engine in every category, and 149 of 149 cases of the comparison with the independent implementation (14.6), all 21 tests of formerly known defects passing. At the ninth state, the authors: 579 tests without the cloud emulator (463 by default, 96 slow, 20 on the recordings), no failure; set A reports 598 of 598 with the emulator at that state. Viewer: the authors ran 643 tests, no failure; set A reports 672 at a later state.
 
@@ -98,7 +98,7 @@ An earlier check by the engine's developers, on an earlier state: the `flows` an
 Every numbered statement of the paper has a status: proved, proved relative to a cited theorem, proved under a named premise, or tested only. The inventory gives each one. Tests can support a proof, never replace it. They are of three kinds.
 
 - **Seeded random tests.** A generator produces random cases from fixed seeds, 4,000 cases per property, so a run can be repeated exactly. They cover the algebra of changes and the versions of a graph (Ch. 3, 4), with one caveat: the generator keeps only changes that the prototype itself accepts, so a wrong rejection cannot be seen.
-- **Comparison with an independent implementation.** A second, simple program computes every result from scratch, from the definitions of this paper. The prototype's step-by-step result is compared with it on generated inputs, in 32 small worlds, under every way of cutting the input into batches and with reordering inside a batch. This tests Theorems 6.1 and 6.2 per kind of operator. `Lift` and `Fixpoint` are not covered independently, because the simple program uses the prototype's own translation of them. A `Group` keyed by an identity that merges has no case (Ch. 6, 6.6).
+- **Comparison with an independent implementation.** A second, simple program computes every result from scratch, from the definitions of this paper. The prototype's step-by-step result is compared with it on generated inputs, in 32 small worlds, under every way of cutting the input into batches and with reordering inside a batch. This tests Theorems 6.1 and 6.2 per kind of operator. A `Group` keyed by an identity that merges has no case (Ch. 6, 6.6).
 - **Example tests** on small inputs and on the two recordings.
 
 The appendix (A.8) lists which test exercises which statement.
@@ -116,7 +116,7 @@ Ch. 13 (13.6) gives the status of each hypothesis. This section adds the detail 
 
 ## 14.8 Where the prototype differs from the design
 
-Each chapter ends with what the prototype does differently. Taken together, the differences that matter most for the claims are: `Delta`, `sync` rules and the page seal are not built; `Fixpoint` is a bounded unrolling; the history of an element and the carry policy of a definition edit are not built; the age of retention of measurements is a setting of the running engine, not a declaration (Def. 7.13); a document has no truncation; and the Cosmos store has never run against a real account. Ch. 15 (15.2) lists every limit in one table.
+Each chapter ends with what the prototype does differently. Taken together, the differences that matter most for the claims are: `Delta`, `sync` rules and the page seal are not built; the language has no recursion over rows; the history of an element and the carry policy of a definition edit are not built; the age of retention of measurements is a setting of the running engine, not a declaration (Def. 7.13); a document has no truncation; and the Cosmos store has never run against a real account. Ch. 15 (15.2) lists every limit in one table.
 
 ## 14.9 Threats to validity
 
@@ -127,7 +127,7 @@ Each chapter ends with what the prototype does differently. Taken together, the 
 
 **Internal.**
 - Mostly one run per figure. The ten-run sets report median, minimum, maximum and an interval. **No set of runs had a machine without other load**: the load average was between 14 and 115, and 239 during one set of three restarts. A status is therefore scoped to that load (Ch. 13, 13.5). For an upper bound on time, load can only raise times, so a pass under load holds all the more, and a failure under load is weak evidence; the one failure, H7 on the emulator, is also on a store that is not the target.
-- The random tests are by the same authors as the proofs. Their generators are seeded and test the engine's own types. The independent implementation is a check that does not share the step-by-step strategy, but it shares the translation of `Lift` and `Fixpoint`.
+- The random tests are by the same authors as the proofs. Their generators are seeded and test the engine's own types. The independent implementation is a check that does not share the step-by-step strategy.
 - Several statements were checked on fixtures and on real recordings, not on randomly generated projections.
 - How the premise B3 was found rests on comparing exported graphs, not on instrumenting the engine. That the survivor rule removes the dependence on order in general is Proposition 1.8; its tests are one synthetic input and two recordings. The causes behind B1 and B2 were found by set B. For a time the suite had no targeted tests of B1 and B2, and only the tests on the recordings guarded them.
 - From the tenth state of the software on, the figures at the current state are set A's: the people who direct the work also verify it, and the authors' check is a reading of code and tests.
@@ -141,7 +141,7 @@ Each chapter ends with what the prototype does differently. Taken together, the 
 
 **Conclusions.**
 - Statuses use the rule of Ch. 13 as written, with its scope. A single run stays a single run, whether far from its target (H9) or far inside it (H2, H6). The three supported statuses are inside their targets by a factor of about 77 for H5 on SQLite (records that make a version), about 2 for H8 on its worst run, and about 5.7 for H10 with a seal on its worst run and 1.5 without, all under load, and each is for one configuration. H8 is the closest to its target. H7 has two labels on the emulator from two sets, which says that the emulator's figure is not a property of the design.
-- Evidence that the engine matches the paper is limited to the listed tests. Where there is no test (`sync` rules, a stack of lenses, provenance semirings, `Delta`, `Fixpoint` on cyclic input), the claims stand as proofs only. Several statements rest on proofs with example tests or none: Proposition 1.8, Proposition 5.7, Proposition 5.9, Propositions 7.7 and 7.8, Proposition 9.11, Propositions 10.7 and 10.8, Propositions 11.9 and 11.10, Proposition 12.10, and the premises B1 to B3 of Theorem 6.2. The health states on the second recording show the roll-up working; they do not show that the cluster was unhealthy.
+- Evidence that the engine matches the paper is limited to the listed tests. Where there is no test (`sync` rules, a stack of lenses, provenance semirings, `Delta`, recursion), the claims stand as proofs only. Several statements rest on proofs with example tests or none: Proposition 1.8, Proposition 5.7, Proposition 5.9, Propositions 7.7 and 7.8, Proposition 9.11, Propositions 10.7 and 10.8, Propositions 11.9 and 11.10, Proposition 12.10, and the premises B1 to B3 of Theorem 6.2. The health states on the second recording show the roll-up working; they do not show that the cluster was unhealthy.
 
 ## 14.10 What is open
 
@@ -152,11 +152,11 @@ Sorted by gate. The two items that define gates 1b and 1c, a stated claim of exp
 | 1a | a generator of orders of arrival of keys for premise B3; identity merge across projections that run at the same time; Def. 7.6 stated on logical time | Theorems 1.7, 6.2, 7.3; Proposition 1.8 |
 | 1a | the history of an element, the carry policy, rebuild, provenance semirings, the cost of a definition edit (H11) | Ch. 9 |
 | 1a | a stack of lenses; a lens over `Join` | Theorem 8.3 |
-| 1a | refactoring on other modules and on generated projections | Proposition 5.7 |
-| 1a | levels: the image checked to be a function when data arrive; lifting and its lowering on generated graphs and over more than two levels; capabilities in a real recording | Ch. 5, 5.8 |
+| 1a | refactoring: any test, and a check of its premises | Proposition 5.7 |
+| 1a | levels: the image checked to be a function when data arrive; lifting on generated graphs and over more than two levels; capabilities in a real recording | Ch. 5, 5.8 |
 | 1a | an independent check of the canonical encoder; digests on other platforms; reuse of pod names; merge across projections | Ch. 1, 2, 10 |
 | 1b | aggregates of `Rollup` over a gauge and over a running total evaluated on data; `weightedMean` and `last` over a gauge built or removed from Def. 5.6 | Ch. 5 |
-| 1b | `sync` rules; `Delta`; `Fixpoint` on cyclic input with the condition F5 checked; a measured cost of `Join` | Ch. 6, 8; H14 |
+| 1b | `sync` rules; `Delta`; a measured cost of `Join` | Ch. 6, 8; H14 |
 | 1c | the Cosmos store on a real account: times, cost of the 32 requests per version, the path for large commits, the lease | Ch. 11; H3, H5, H7 |
 | 1c | the ten-run figures on a machine without other load and on the reference machine; ten runs for the other hypotheses; H5 and H10 with the whole health model; H10 with a kill during input, with new data, and on Cosmos | every status of Ch. 13 |
 | 1c, 2c | the length of history at which a seal starts to pay (between 1.2 and 4.1 hours here); a journal cut inside an entry; damage to a seal that keeps its digests; a seal another build can read; live resume and live reproduction on a real stream | H10; Propositions 10.7, 10.8, 11.9, 11.10 |

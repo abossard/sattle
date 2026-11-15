@@ -61,10 +61,10 @@ In words: GetPut says that putting back an unchanged view changes nothing. PutGe
 | `Match` | lens | complement: the unmatched part of the input graph |
 | `Filter` | lens | complement: the rows that fail. An edited row must still satisfy the predicate |
 | `Map` | iso if every input field appears exactly once, as a field reference or as an argument of a one-to-one function with an inverse, and no output is a literal; lens if fields are dropped or repeated, or outputs are literals (edits must keep them); none if an output uses a function that is not one-to-one | a function that is not one-to-one loses information |
-| `Union` | lens for `preferFirst` or `preferLast`, and for any policy when the inputs have different types; none otherwise | the input a row came from must be known |
+| `Union` | lens when the inputs have different types; none otherwise | the input a row came from must be known |
 | `EmitEntity`, `EmitRelationship` | iso if the id is a field reference or `IdOf` over field references and every set value is a field reference; lens if some set values are literals (edits must keep them); none otherwise | identity is never edited. Computed values lose information |
 | `Join` | none in version 1 | an update through a join is ambiguous unless the keys are analysed |
-| `Distinct`, `Group`, `Rollup`, `Traverse`, `Window`, `Fixpoint`, `Values`, `Link`, `Series`, `Delta`, `Threshold` | none | many rows give one, derived paths, constants, evidence, measurements over time |
+| `Distinct`, `Group`, `Rollup`, `Traverse`, `Window`, `Values`, `Link`, `Series`, `Delta`, `Threshold` | none | many rows give one, derived paths, constants, evidence, measurements over time |
 
 `IdOf` over field references is inverted through the binding set of Ch. 1 (Def. 1.10): from the id back to the key that names it. If an entity has several keys in that domain, the edit is rejected `AmbiguousKey` and changes nothing.
 
@@ -173,7 +173,7 @@ The proof below has been read, and no program has checked it. There can be no te
 
 ## 8.5 What the prototype does and does not do
 
-**What is built.** The classes `readonly`, `bijective` and `lens`; backward edits sent to the owning rule; the staged check of Theorem 8.5; and rejections with their reasons. The class `sync` and its correspondences are not built: the engine stores no correspondence graph and has no forward and backward translations, and a `sync` rule is refused with an error. The inverse of an ingestion rule is derived only for one entity sink and one relationship sink over one authored rows port; any other ingestion graph is `NotEditable`. `Join` is not a lens step; inside a `readonly` rule it is built and does not touch the backward path. Every `Union` of the prototype is `none`, since only `preserveEvidence` is built, so no lens contains a `Union`. The base of an edit is the versions of the graphs on its path, without the ingestion sequence of 8.4.
+**What is built.** The classes `readonly`, `bijective` and `lens`; backward edits sent to the owning rule; the staged check of Theorem 8.5; and rejections with their reasons. The class `sync` and its correspondences are not built: the engine stores no correspondence graph and has no forward and backward translations, and a `sync` rule is refused with an error. The inverse of an ingestion rule is derived only for one entity sink and one relationship sink over one authored rows port; any other ingestion graph is `NotEditable`. `Join` is not a lens step; inside a `readonly` rule it is built and does not touch the backward path. Every `Union` of the prototype is `none`, so no lens contains a `Union`. The base of an edit is the versions of the graphs on its path, without the ingestion sequence of 8.4.
 
 **One lens exists**, the capability view of the running example. A second rule of the same module is a lens over the hierarchy of capabilities, and the rule that counts services is `readonly`.
 

@@ -158,7 +158,7 @@ The proof has been read, not checked by a program. The engine checks SL1 only th
 | join, match of several nodes | bilinear | at worst `O(\|DB\|·\|Δ\|)` | both integrals |
 | group with sum or count | linear per group, plus distinct | `O(\|Δ\|)` per touched group | state per group |
 | group with min or max | needs a multiset per group | `O(\|Δ\| log n)` | multiset per group |
-| traverse, fixpoint | nested streams | by iterations | in proportion to the iterations |
+| traverse | nested streams | by iterations | in proportion to the iterations |
 
 **Fact 11.2 (what breaks "work in proportion to the change", lit).** With an index on the join key, the cost of `I(a) × Δb` is the sum of the numbers of matches of the keys in `Δb`. A flow that touches a *hub*, an element with very many edges (the name service, the entry point of a cluster, the Kubernetes interface), joins its whole neighbourhood. For conjunctive queries without self-joins, constant time per update with constant delay between answers exists exactly for the *q-hierarchical* queries; for the others, no algorithm has time per update `O(n^{1/2−ε})` together with delay `O(n^{1−ε})` between answers, under a standard conjecture of complexity theory, the OMv conjecture ([berkholz2017], [henzinger2015]). A pattern of two steps `(a)-[x]->(b)-[y]->(c)` reduced to `(a, c)` is not q-hierarchical. The checker should therefore classify the patterns it maintains and attach limits that depend on degree, instead of promising `O(|Δ|)`. This is not built.
 

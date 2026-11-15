@@ -361,7 +361,7 @@ An optional check in stage 1: run the batch form of each KQL projection on a sma
 
 **Risks.**
 - **Ownership.** KQL is Microsoft's and has no formal specification. Kusto.Language's source is Apache-2.0 and can be forked (the NuGet package itself comes under Microsoft's SDK license terms), but the language evolves where Microsoft takes it. Mitigation: the profile pins the subset we use, and the comparison against Kusto finds drift.
-- **Different meaning in places.** `join` defaults to `innerunique`; `count_distinct` is marked preview; `dcount` and `take_any` are not deterministic; graph models keep duplicate edges. The profile refuses or redefines each one and says so in its error messages.
+- **Different meaning in places.** `join` defaults to `innerunique`; `dcount` and `take_any` are not deterministic; graph models keep duplicate edges. The profile refuses or redefines each one and says so in its error messages.
 - **Paths.** `graph-match` with variable-length edges enumerates paths. The engine maintains only reachability, so projecting the edges of a path is refused.
 - **Keywords.** Ontology names that are KQL keywords (`kind`, `order`) must be quoted. Renaming them in the ontologies avoids this.
 - **More text for small projections.** Joins that `lift` hid are written out, so the service tree grows from 30 to 34 lines, and type tests are long (`where labels(x) has "Service"`).
@@ -429,7 +429,6 @@ The engine keeps every result up to date as data changes, and gives the same res
 | `join` without a kind | state the kind of every join: join kind=inner (KQL's default, innerunique, drops duplicate rows of the left side) |
 | `join kind=leftouter` and the other kinds | join kind=leftouter is not in the profile: write union and summarize, or kind=inner |
 | `dcount` | dcount is an estimate that may vary between runs: write distinct ... \| summarize n = count() |
-| `count_distinct` | count_distinct is a preview function: write distinct ... \| summarize n = count() |
 | `take_any` | take_any picks an arbitrary value: write min, max or arg_max |
 | `now()`, `ago()` anywhere but `where time > ago(span)` | in a projection now() and ago() mean the data's time, the newest input time, never the wall clock; they are accepted only where the engine keeps the result up to date: where time > ago(24h), and the look-back of telemetry |
 | the edges of a path in `project` | the edges of a path are not kept: every path would be listed, which is not kept up to date; project the two ends |

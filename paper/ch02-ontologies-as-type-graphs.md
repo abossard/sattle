@@ -40,7 +40,7 @@ All three levels use one model of a graph (Ch. 3): entities, relationships betwe
 
 **Definition 2.1 (kernel, catalog).** The *kernel* is a finite graph `K` of definition elements, built into the program together with its digest (Def. 1.5). The *catalog* of a customer is a graph whose content is the customer's definitions. A definition is changed like any graph: by a change that is checked and recorded as a new version (Ch. 3, Ch. 4).
 
-**Definition 2.2 (the kernel's vocabulary).** `K` declares 3 abstract and 54 concrete node types and 46 edge types. An *abstract* type cannot be the type of a node; it groups others. The concrete types fall into six groups:
+**Definition 2.2 (the kernel's vocabulary).** `K` declares 3 abstract and 51 concrete node types and 43 edge types. An *abstract* type cannot be the type of a node; it groups others. The concrete types fall into six groups:
 
 | Group | Node types | What they describe |
 |---|---|---|
@@ -48,10 +48,10 @@ All three levels use one model of a graph (Ch. 3): entities, relationships betwe
 | ontology | `EntityType`, `RelationshipType`, `PropertyType`, `Extension`, `Constraint`, `ValueKind`, `ValueRole` | types and their properties |
 | identity | `IdentityDomain`, `KeyComponent`, `EquivalencePolicy` | how entities are named (Ch. 1, Def. 1.7) |
 | rows | `RowType`, `Field` | the shape of the records a source reader delivers (Ch. 10) |
-| projections | `Projection`, `Port`, `Rule`, `Function`, the 20 operator kinds, `LiftState`, expression kinds | how graphs are computed (Ch. 5) |
+| projections | `Projection`, `Port`, `Rule`, `Function`, the 18 operator kinds, expression kinds | how graphs are computed (Ch. 5) |
 | spaces | `GraphSpace`, `Graph`, `Source`, `Binding` | which graphs exist together and what feeds them (Ch. 3, Ch. 5) |
 
-The 20 operator kinds are a closed set: `Match`, `Filter`, `Map`, `Join`, `Union`, `Distinct`, `Retain`, `Group`, `Traverse`, `Window`, `Fixpoint`, `Values`, `Lift`, `EmitEntity`, `EmitRelationship`, `Link`, and the four that read measurements: `Series`, `Rollup`, `Delta`, `Threshold`. Chapter 5 defines each. Among the edge types are `contains` (a node owns another), `imports` (a module uses a release of another), `extends` (a type is a subtype of another), `hasProperty` (a type has a property), `sourceType` and `targetType` (the allowed ends of a relationship type), and `valueKind` (the kind of a property, Ch. 1, Def. 1.2). Every edge goes from a node to a node.
+The 18 operator kinds are a closed set: `Match`, `Filter`, `Map`, `Join`, `Union`, `Distinct`, `Retain`, `Group`, `Traverse`, `Window`, `Values`, `EmitEntity`, `EmitRelationship`, `Link`, and the four that read measurements: `Series`, `Rollup`, `Delta`, `Threshold`. Chapter 5 defines each. Among the edge types are `contains` (a node owns another), `imports` (a module uses a release of another), `extends` (a type is a subtype of another), `hasProperty` (a type has a property), `sourceType` and `targetType` (the allowed ends of a relationship type), and `valueKind` (the kind of a property, Ch. 1, Def. 1.2). Every edge goes from a node to a node.
 
 *Example:* the definition "an entity type `Service` with a text property `name`" is three nodes and two edges of the catalog: an `EntityType` node `Service`, a `PropertyType` node `name`, a `ValueKind` node for text, an edge `hasProperty` from `Service` to `name`, and an edge `valueKind` from `name` to text.
 
@@ -95,7 +95,7 @@ An empty set of allowed source or target types means "any type".
 |---|---|---|
 | add an entity or relationship type | compatible | compatible |
 | remove a type | breaking if referenced | breaking if referenced |
-| add an optional property | compatible, under (N) | compatible |
+| add an optional property | compatible | compatible |
 | add a required property, or make an optional one required | compatible, except for an editable rule that may create the type (P5, Ch. 5, Def. 5.7): breaking | breaking |
 | make a required property optional | breaking (readers must allow absence) | compatible |
 | remove a property | breaking if read | breaking if set |
@@ -103,11 +103,9 @@ An empty set of allowed source or target types means "any type".
 | allow more values, or more endpoint types | compatible, with a warning | compatible |
 | allow fewer values | compatible | breaking |
 | allow fewer endpoint types | breaking if a pattern uses a type that left the set, else compatible | breaking |
-| add a supertype | compatible, under (N); if a property gained this way is required, as "add a required property" | breaking if a supertype gained this way has a required property, else compatible |
+| add a supertype | compatible; if a property gained this way is required, as "add a required property" | breaking if a supertype gained this way has a required property, else compatible |
 | change a description | compatible | compatible |
 | change the components or the normalization of an identity domain | breaking; needs a migration of bindings (Ch. 1, Theorem 1.6) | |
-
-(N) is the *name condition*: for every `lift` statement of the reader (Ch. 5, 5.8), the set of measurement properties that the lifted type and the lower relationship type share by name is the same before and after. A `lift` carries those properties without being told, so a property added below under a name that the lifted type already uses would change what the statement does without changing its text.
 
 A release that changes only descriptions is a patch release. A release with only compatible changes is a minor release. Anything else is a major release. A release that declares a smaller step than its changes need is rejected.
 
@@ -156,36 +154,33 @@ This is a finite check, not a theorem with a proof. The prototype runs it each t
 
 *Limits.* That two machines with different processors and operating systems compute the same digests has not been tested.
 
-**Theorem 2.5 (compatible changes keep projections well typed).** Let `D` be a projection that type-checks (Ch. 5, 5.2) in the closure `Σ` of an old release. Let `Σ'` be the closure after a definition change in which every changed fact is compatible, by the table of Def. 2.9, on the side on which `D` uses it (reader for `Match`, `Traverse`, `Series` and the edit rules of an editable rule; writer for emits), and the name condition (N) holds for every `lift` of `D`. Then `D` type-checks in `Σ'`.
+**Theorem 2.5 (compatible changes keep projections well typed).** Let `D` be a projection that type-checks (Ch. 5, 5.2) in the closure `Σ` of an old release. Let `Σ'` be the closure after a definition change in which every changed fact is compatible, by the table of Def. 2.9, on the side on which `D` uses it (reader for `Match`, `Traverse`, `Series` and the edit rules of an editable rule; writer for emits). Then `D` type-checks in `Σ'`.
 
 The proof uses the typing rules of Ch. 5; a reader may come back to it after that chapter.
 
-*Proof.* A type-check of `D` is a finite tree of rule applications. A condition of a rule concerns a sub-tree, or the definition of `D` alone, or it *asks the closure* a question. Going through the rules of Ch. 5, every question has one of four forms.
+*Proof.* A type-check of `D` is a finite tree of rule applications. A condition of a rule concerns a sub-tree, or the definition of `D` alone, or it *asks the closure* a question. Going through the rules of Ch. 5, every question has one of three forms.
 - (i) *Is something there*: a type or identity domain is in the closure; `p ∈ props_Σ(T)`; `T₁` is a subtype of `T₂`; an endpoint type `T` is allowed by the endpoint set `S` of a relationship type.
 - (ii) *An attribute of a declaration that is there*: the kind, item kind, unit, role, time behavior, combine rule or period of a property; whether a type is abstract; the components and normalizations of an identity domain; whether a property is required.
 - (iii) *A test over all required properties of a type*: a create emit sets every required property with a value that is always present; an editable rule that may create the type covers every required property (P5).
-- (iv) *A default chosen by name*: the measurement properties that a `lift` carries without being told.
 
 Step 1. If no answer changes, the same tree type-checks in `Σ'`. So it is enough to show for each row that a compatible change either changes no answer, or changes one only as in step 2.
 
 Step 2 (presence may only become stronger). Write `R ⊑ R'` if the rows `R` and `R'` have the same fields with the same kinds and roles, and every field that is always present in `R'` is always present in `R`. If an operator type-checks with inputs `R̄'` and output `R'_out`, and `R̄ ⊑ R̄'`, then it type-checks with inputs `R̄` and an output `R_out ⊑ R'_out`. This can be read off the rules of Ch. 5: no rule requires a field to be possibly absent; the rules that require a field to be always present are then satisfied more easily; and the rules that compute presence do so monotonically in their inputs. By induction along the operators, which have no cycle, a field that becomes always present at a `Match` leaves `D` well typed.
 
 Step 3, row by row.
-- *Add a type.* Facts are only added. (i) answers only grow: membership, properties and subtypes, and an endpoint test with an unchanged `S` keeps its witnesses. (ii) is unchanged for existing declarations. (iii) is unchanged, because a new type gives no property to an old one. (iv) is unchanged, since the two types of a `lift` keep their properties.
-- *Add an optional property.* (i) and (ii) as before. (iii) is unchanged, the property being optional. (iv) is unchanged by (N).
+- *Add a type.* Facts are only added. (i) answers only grow: membership, properties and subtypes, and an endpoint test with an unchanged `S` keeps its witnesses. (ii) is unchanged for existing declarations. (iii) is unchanged, because a new type gives no property to an old one.
+- *Add an optional property.* (i) and (ii) as before. (iii) is unchanged, the property being optional.
 - *Add a required property, or make one required, for a reader.* (i) as before. (iii) grows, and a reader asks (iii) only through P5, which the row excludes. (ii): for a property that becomes required, a read now gives "always present" where it gave "possibly absent", which is step 2.
 - *Make a required property optional, for a writer.* (iii) shrinks, so a test over all required properties still holds. A writer does not read presence.
 - *Allow more values.* No type-check looks at the allowed values, which constrain data only (C7). *Allow more endpoint types.* `S` grows or becomes "any", so every endpoint test stays true.
 - *Allow fewer values, for a reader.* Nothing is asked. *Allow fewer endpoint types, for a reader whose patterns use no removed type.* Every witness of an endpoint test is still in `S`.
-- *Add a supertype, for a reader.* Subtypes and properties grow, (ii) is unchanged, (iv) by (N); a required property gained this way is the row above. *For a writer, when no supertype gained has a required property*, (iii) is unchanged, and the rest is as for a reader.
+- *Add a supertype, for a reader.* Subtypes and properties grow, (ii) is unchanged; a required property gained this way is the row above. *For a writer, when no supertype gained has a required property*, (iii) is unchanged, and the rest is as for a reader.
 - *Change a description.* No type-check reads a description. ∎
 
 *Why the table needs its exceptions.* Three rows had a simpler form in an earlier version of this paper, and each was false:
 - *Fewer endpoint types was compatible for readers.* Take `relationship R (A | B) -> (C)` and a reader with the pattern `(x: B)-[:R]->(y: C)`. If `R` is narrowed to `(A) -> (C)`, with `A` and `B` unrelated, the endpoint test for `B` fails and the `Match` no longer type-checks.
 - *A new supertype was compatible for writers.* Take `entity T { name: Text; }` and a writer that creates `T` setting `name`. If `T` gains the supertype `U`, and `U` has a required property `owner`, the create misses a required property.
 - *A new required property was compatible for every reader.* An editable rule over `T` that may create `T` must give every required property a value (P5). A new required property has none.
-The name condition is needed as well: if a reader lifts `Calls` to a type that declares a measurement property `latency` combined by "last", then adding an optional `latency` to `Calls` makes the `lift` carry it, and the checker refuses to carry a property combined by "last".
-
 *Limits.* The theorem says what a program that classifies changes must compute. Such a program is not built. Re-checking every dependent projection after a change stays the authority.
 
 **Theorem 2.6 (a migration does not rewrite history).** After a migration is committed as version `r`, every earlier version `G_{r'}`, `r' < r`, is unchanged, and the ontology of `G_r` is release `B`.
@@ -220,5 +215,5 @@ On a recording of a real cluster the projection finds 22 workloads; one of them,
 ## 2.6 What the prototype does differently
 
 - **Not built:** the program that classifies changes (Def. 2.9), migrations (Def. 2.10), the checks K7 and K8, and identity data as graph nodes (Def. 2.12). Bindings are a table that only grows (Ch. 1).
-- **Kernel in the prototype:** the 54 concrete types and 46 edge types of Def. 2.2 are those the prototype's tests count. The research review on which the kernel is based had 50 types, 18 operator kinds and 37 edge types; the prototype added value roles, kinds, labels, the operators `Retain` and `Lift`, and the node type that holds the state clause of a `lift`.
+- **Kernel in the prototype:** the 51 concrete types and 43 edge types of Def. 2.2 are those the prototype's tests count. The research review on which the kernel is based had 50 types, 18 operator kinds and 37 edge types; the prototype added value roles, kinds, labels and the operator `Retain`, and removed the operator `Fixpoint`. An operator `Lift` with a node type for its state clause was added and removed again (Ch. 5, 5.8).
 - **Sources** declare the shape of their records, not a digest of it, so a definition change does not require rebuilding a source reader.

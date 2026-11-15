@@ -121,7 +121,7 @@ Fixed once here. Chapters add no symbols without adding them here. Terms are def
 | `bid` | block id (Def. 12.5) |
 | `D1` to `D37` | deviations found by the prototype (Ch. 14, 14.8) |
 | `W = (E, ρ, Σ, f, d)`, `α`, `β`, `μ_i`, `Q(k, r)` | symbols local to Ch. 13 (workload model of Def. 13.1, cost coefficients, rates) and Ch. 11 (a point read); inside those chapters they replace the general meanings of `E`, `ρ`, `Σ`, `f` and `Q` |
-| `F1`, `F5` | premises: F1 of Theorem 3.5, F5 of Theorem 6.5 (finite domain of a fixpoint) |
+| `F1`, `F5` | premises: F1 of Theorem 3.5, F5 of Theorem 6.5 (finite domain of a recursion) |
 | A to E | evidence classes (Ch. 14, 14.1) |
 
 ## Added for the revision of the prototype status (Ch. 4, 5, 7, 9, 10, 12)
@@ -150,7 +150,7 @@ Named premises. A premise is a property that the model does not give; the statem
 | `LR1` to `LR4` | premises of Proposition 10.8 (live resume) |
 | `J1` to `J3`, `SL1` | premises of Propositions 11.9 and 11.10 (journal, state seal). `SL1` was called S1 before; S1 to S5 are the store properties of Def. 11.9 and S1 to S4 the space judgments of Def. 5.8 |
 | `V1` to `V3`, `F1` to `F3`, `L1` to `L4` | conditions local to Ch. 8, 8.4: of a v1 grammar, of a translatable source graph, of a triple of the language. `F1` there is not the premise F1 of Theorem 3.5 |
-| (N), (Q1) to (Q4) | the name condition and the four forms of consulting a closure, local to Theorem 2.5 |
+| (i) to (iii) | the three forms of consulting a closure, local to Theorem 2.5 |
 
 | Symbol | Meaning |
 |---|---|

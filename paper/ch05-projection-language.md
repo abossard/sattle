@@ -2,7 +2,7 @@
 
 **Question.** How is a graph computed from other graphs and from the records of sources, and what can be checked about such a computation before it runs?
 
-**What you can state at the end.** A *projection* is a definition: a typed network of operators taken from a fixed list of twenty kinds. It is checked when it is loaded. In a projection that passes the check, the value of a measurement can reach the structure of a graph only through one operator, the threshold; whether a measurement exists can reach it through the support of a windowed relation, and that channel is named and bounded. A projection that summarizes a graph is a level of abstraction over it: it maps nodes to nodes and lifts the edges with them, and lifting keeps totals and composes. One statement, `lift`, writes such a level.
+**What you can state at the end.** A *projection* is a definition: a typed network of operators taken from a fixed list of eighteen kinds. It is checked when it is loaded. In a projection that passes the check, the value of a measurement can reach the structure of a graph only through one operator, the threshold; whether a measurement exists can reach it through the support of a windowed relation, and that channel is named and bounded. A projection that summarizes a graph is a level of abstraction over it: it maps nodes to nodes and lifts the edges with them, and lifting keeps totals and composes. Such a level is written with the operators the language already has.
 
 This chapter uses identity (Ch. 1); types, the kernel, the catalog, modules, releases and ontologies (Ch. 2, Def. 2.1, 2.4 and 2.5); the graph space (Ch. 3) and patches (Ch. 4). As in Ch. 0 (Def. 0.7), a *measurement* is one value and *telemetry* the series of measurements attached to an element; a *telemetry property* holds such a series, and the typing rules write its role `tele`. What a projection means as a function, and how it is computed step by step, is Ch. 6. Which rules may be edited backwards is Ch. 8.
 
@@ -12,9 +12,9 @@ This chapter uses identity (Ch. 1); types, the kernel, the catalog, modules, rel
 
 A projection is a graph in the catalog (Ch. 2, Def. 2.1). Its nodes are ports, operators and rules. Its output is a derived graph (Ch. 3, Def. 3.11).
 
-**Definition 5.1 (projection).** A projection has a *purpose*: `ingestion` (it builds the master graph from rows), `view`, `migration` or `verification`. It has a number `retain` of pieces of evidence kept per element (Ch. 9), an *output ontology* (the module whose types it writes), ports, operators and rules. A projection without rules is *forward*: its output can only be computed, never edited (Ch. 8). Operators and the wires between them form a directed acyclic graph, except inside the body of a `Fixpoint`. A projection may carry a *description*, a text written before it whose first sentence stands alone as a caption of the graph it produces; like value roles, kinds and labels (Ch. 2) it is for people and is not read by evaluation.
+**Definition 5.1 (projection).** A projection has a *purpose*: `ingestion` (it builds the master graph from rows), `view`, `migration` or `verification`. It has a number `retain` of pieces of evidence kept per element (Ch. 9), an *output ontology* (the module whose types it writes), ports, operators and rules. A projection without rules is *forward*: its output can only be computed, never edited (Ch. 8). Operators and the wires between them form a directed acyclic graph. A projection may carry a *description*, a text written before it whose first sentence stands alone as a caption of the graph it produces; like value roles, kinds and labels (Ch. 2) it is for people and is not read by evaluation.
 
-**Definition 5.2 (port, wire, port signature).** A *port* has a name, a *mode* `in` or `out`, and a *kind* `rows` or `graph`. A rows port reads records of a declared shape, a `RowType` (Ch. 2). A graph port reads a graph and names the module of types it expects. A *wire* joins a producing port (an `in` port of the projection, an `out` port of an operator, or the internal `rec` port of a `Fixpoint`) to a consuming port of the same kind. Each operator kind has a fixed **port signature** in the kernel:
+**Definition 5.2 (port, wire, port signature).** A *port* has a name, a *mode* `in` or `out`, and a *kind* `rows` or `graph`. A rows port reads records of a declared shape, a `RowType` (Ch. 2). A graph port reads a graph and names the module of types it expects. A *wire* joins a producing port (an `in` port of the projection or an `out` port of an operator) to a consuming port of the same kind. Each operator kind has a fixed **port signature** in the kernel:
 
 | Operator | In ports | Out ports | Kind of computation (Ch. 6) |
 |---|---|---|---|
@@ -25,21 +25,16 @@ A projection is a graph in the catalog (Ch. 2, Def. 2.1). Its nodes are ports, o
 | `Union` | `in0 … in(n-1)`, `n ≥ 2` | `out` | linear |
 | `Group`, `Rollup` | `in` | `out` | per key |
 | `Traverse` | `graph` (graph), `in` | `out` | bilinear, bounded |
-| `Fixpoint` | `seed`; internal `next` | `out`; internal `rec` | recursive |
 | `Values` | none | `out` | constant |
 | `Series` | `graph` (graph), `in` | `out` | reads measurements |
 | `Delta`, `Threshold` | `in` | `out` | with state per key |
 | `EmitEntity`, `EmitRelationship`, `Link` | `in` | none: they write the output | linear |
 
-`Lift` (5.8) is not in the table, because it is replaced by operators of the table before it runs.
-
 *Example:* the service graph in operators. A `Match` reads the master graph and returns one row per pair (pod `p`, service `s`) with `p Backs s`. An `EmitEntity` writes one `ServiceNode` per service `s`. A second `Match` returns one row per call `p₁ Calls p₂`, two `Join`s with the first rows add the services of `p₁` and `p₂`, a `Filter` drops calls inside one service, and an `EmitRelationship` writes `DependsOn` between the two services.
 
 **Definition 5.3 (the operators and their parameters).** The operator kinds are the closed set of Ch. 2 (Def. 2.2). Their parameters are:
-- `Union.conflict ∈ {requireEqual, preferFirst, preferLast, preserveEvidence}`;
 - `Traverse.direction ∈ {out, in, either}`, `minDepth`, `maxDepth ≤ 16`;
 - `Window.timestampField`, `width`, and what to do with a late row, `late ∈ {ignore, revise, reject}`;
-- `Fixpoint.maxFacts`, `maxIterations`;
 - `EmitEntity.mode` and `EmitRelationship.mode ∈ {create, update}`, and `EmitRelationship.key`, the rule that names the relationship (Def. 5.9);
 - `Series.within`, the look-back;
 - `Delta.target`;
@@ -102,9 +97,6 @@ A *row type* `R` is a finite map from field names to field types. A row type has
 (Threshold) W(R) = P, keys data, value : tele⟨gauge or delta, P⟩, above > below,
            enterAfter ≥ 1, exitAfter ≥ 1, high, low, initial text literals
            ⟹  keys ∪ {target : (Text, req, data)}
-(Fixpoint) seed : R_rel; body over rec : R_rel yields next : R_rel; body operators in
-           {Match, Filter, Map, Join, Union(requireEqual), Distinct, Traverse}; no IdOf in the body;
-           every Ent field originates from the finite port `over`; maxFacts, maxIterations > 0
 (EmitEntity) T ∈ Σout, not abstract; id : Ent⟨T'⟩; each set p := e has p ∈ props_Σout(T), κ ≤ kind(p),
            every required property set for create, a required property takes a req value,
            ρ ⊑ role(p); for telemetry p: W(R) = period(p)
@@ -118,7 +110,7 @@ A *row type* `R` is a finite map from field names to field types. A row type has
 *Example:* in the service graph, the `Filter` that drops calls inside one service compares two `Ent⟨Service⟩` fields, so its predicate has role `data` and the rule (Filter) is satisfied. A filter "keep calls with more than 100 flows" written over the raw `flows` property would not pass E-Prop, because a measurement is read only through `Series`.
 
 **Definition 5.7 (wires and projection checks).**
-- W1 every consuming port has exactly one incoming wire; W2 a wire joins ports of the same kind; W3 the type of the consuming port is the type of the producing port; W4 outside `Fixpoint` bodies the operators form no cycle; W5 every operator that writes output can be reached from an `in` port or a `Values` operator, and an unused `out` port is a warning.
+- W1 every consuming port has exactly one incoming wire; W2 a wire joins ports of the same kind; W3 the type of the consuming port is the type of the producing port; W4 the operators form no cycle; W5 every operator that writes output can be reached from an `in` port or a `Values` operator, and an unused `out` port is a warning.
 - P1 every type written is in `Σ_out`.
 - P2 *ownership*: if a rule of an editable class (bijective, lens or sync, Ch. 8) sets a property `p` of a type `T` or writes a relationship type `Rt`, no other rule of the projection sets `(T, p)` or writes `Rt`; and such rules set no measurement property and contain no measurement operator on the paths to what they write.
 - P3 each rule satisfies the direction check of Ch. 8.
@@ -139,7 +131,7 @@ That two keys of two domains denote one entity is evidence, not an automatic uni
 
 *Example:* Kubernetes names a pod by its *uid*, a unique id that Kubernetes gives each object; the network observer names it by namespace and pod name. A `Link` from the Kubernetes record, which carries both, merges the two ids of that pod with confidence 1. A merge is permanent, so the key must not be reused for another pod. A pod name can be reused when a pod is recreated, which Ch. 10 (10.4) states as a limit; an address alone is reused so often that Ch. 10 keys it with a time-bounded lease and never links it this way.
 
-**Definition 5.10 (collision policy).** When retyping `r` from type `A` to `B` would give the triple `(s, t, B)` that another relationship `r'` already holds, nothing is to be chosen: Def. 6.4 decides, the relationship with the smaller id is present, and the other is absent and reported. For `Union.conflict`: `requireEqual`, `preferFirst` and `preferLast` are defined only for rows with a key. Under `requireEqual` two different values for one key give no value and a reported conflict; as in Def. 5.19 and 6.4, nothing fails. `preferFirst` and `preferLast` choose by the order of the ports. `preserveEvidence` keeps every input row, the sum of the inputs, so a conflict stays visible as evidence. A `Union` of rows without a key has no other policy. Inside the body of a `Fixpoint` (Theorem 6.5) the rows have no key, and `Union(requireEqual)` there is set union. Only `preserveEvidence` is built (5.9).
+**Definition 5.10 (collision policy).** When retyping `r` from type `A` to `B` would give the triple `(s, t, B)` that another relationship `r'` already holds, nothing is to be chosen: Def. 6.4 decides, the relationship with the smaller id is present, and the other is absent and reported. A `Union` has no policy either: it is the sum of the signed rows of its inputs, so two inputs that give one key different values both stay visible as evidence, and the sinks that write them meet the conflict rule of Def. 6.4.
 
 ## 5.4 Theorems
 
@@ -178,7 +170,7 @@ The theorem is proved below under KS. KS is a property of the program, not of th
 - `Traverse`: adds a reached element, an integer depth, and read columns by E-Prop.
 - `Series`: adds the two window bounds and one value per read property, of the declared kind (KS).
 - `Delta`: a difference of two values of one kind (KS). `Threshold`: the target is one of the two text literals `high` and `low`.
-- `Values`: rows of literals. `Fixpoint`: the unrolling is a composition of the operators above and a `Union` (Ch. 6). `Lift`: replaced by the operators above before typing (5.8).
+- `Values`: rows of literals.
 
 By induction over a topological order of the operator graph (W4), every row that reaches a sink is sound for the sink's input type.
 
@@ -280,7 +272,6 @@ The following operators have this text, which the printer writes canonically (te
 | `let j = join a, b on <expr>;` | equalities between a left and a right expression, other conjuncts are a residual filter. Both inputs are data rows with distinct column names. Rejected: clashing columns, a condition with no equality |
 | `let u = union a, b;` and `\|> distinct` | `Union` needs the same columns of the same types. `Distinct` is set semantics over signed rows, rows with a weight as in Ch. 4 (Def. 4.6) |
 | `\|> traverse g via Rel out\|in\|either depth 0 .. 8 from c as d` | adds the columns `d`, `d_depth` and the demanded read columns `d.prop`. Depth at most 16. Rejected: a bad depth, an unknown start |
-| `let r = fixpoint seed via <pipeline that reads r> max 8;` | the step must produce the columns of the relation. `max` is the unrolling bound (Ch. 6) |
 | `values { a: 1 }, { a: 2 }` | constant rows of one shape, emitted once when the graph first evaluates |
 | `\|> retain on time for 24h` | `Retain` on the required data Instant column `time`, age a duration. Rejected: a field that is not a required data Instant, an age that is not positive, windowed input rows |
 | `mean(x)`, `any(b)`, `all(b)`, `last(value, order)`, `weightedMean(value, weight)` | aggregates; `last` takes an ordering expression |
@@ -339,28 +330,26 @@ Reading with the judgments: `Match` types `a, b` as `Ent⟨Pod⟩`, `c` as `Rel�
 
 ## 5.7 Refactoring
 
-A *refactoring* changes how definitions are arranged without changing what they compute. A projection is a graph (Ch. 2, Def. 2.1), so a refactoring is a patch on the catalog. Three refactorings are defined, each as a function of the canonical text of the projections of **one module** that returns a patch for a draft and the new text of the module (Ch. 4, 4.6). Nothing changes until the patch is applied to a draft and the draft is committed.
+A *refactoring* changes how definitions are arranged without changing what they compute. Three refactorings are named here. Each is an edit of the text of the projections of **one module**, made by a person in a draft (Ch. 4, 4.6); nothing changes until the draft is committed. The prototype has no operation that plans a refactoring or checks its premises: a refactoring is an ordinary edit of the text, and the check of a projection (5.2) is all that is applied to it.
 
 **Definition 5.12 (refactoring).**
-- `extract(P, S, n)` moves the statements `S` of projection `P` into a new projection `n`, with its own output graph in the space (named after the parent graph and `n`) bound to the parent's arguments. `S` names top-level `let` chains, sinks (`emit.k`, `k` counting the emits of `P` in canonical order) and whole rules. Lets used only by `S` move with it. The ports `n` uses are copied. An update sink moves only together with the create sink of its type.
+- `extract(P, S, n)` moves the statements `S` of projection `P` into a new projection `n`, with its own output graph in the space (named after the parent graph and `n`) bound to the parent's arguments. `S` is a set of top-level statements and sinks of `P`. Statements used only by `S` move with it. `n` declares the ports and parameters it uses. An update sink moves only together with the create sink of its type.
 - `inline(n, P)` is the reverse. The graph of `n` is removed from the space.
-- `moveRule(P, Q, r)` moves rule `r` and the lets only it uses between two existing projections.
+- `moveRule(P, Q, r)` moves rule `r` and the statements only it uses between two existing projections.
 
 *Example:* in the service graph, `extract` of the statements that write `DependsOn` moves them into a new projection with its own graph. The services stay in the old graph, the dependencies are now in the new one.
 
 **Definition 5.13 (output union).** For the state of a graph space, `Out` is the multiset of all element facts `(id, type, endpoints, properties)` and all telemetry windows `(element id, property id, window start, value)` of all graphs of the space, with the graph name forgotten.
 
-**Proposition 5.7 (refactoring preserves outputs).** Let a refactoring of Def. 5.12 be accepted, its patch applied to a draft and the draft committed. Call the sinks it moves `M`, the other sinks of the giving projection `K_P`, and the sinks that the receiving projection had before `K_Q` (empty for `extract`). Under the premises R0 to R5, `Out` after the commit equals `Out` before it.
+**Proposition 5.7 (refactoring preserves outputs).** Let a refactoring of Def. 5.12 be made in a draft and the draft committed. Call the sinks it moves `M`, the other sinks of the giving projection `K_P`, and the sinks that the receiving projection had before `K_Q` (empty for `extract`). Under the premises R0 to R5, `Out` after the commit equals `Out` before it.
 - **R0 (full replay).** Making the change active evaluates the changed projections on the whole recorded input (Ch. 9, 9.5), not on a bounded retained part of it.
-- **R1 (closed selection).** No statement that stays reads a moved one, and no moved statement reads one that stays. The prototype enforces it.
-- **R2 (copied ports and parameters).** The receiving projection has the ports and parameters that the moved statements use, bound to the same graphs and literals. The prototype copies them.
-- **R3 (disjoint keys).** No element key, no uniqueness tuple `(source, target, type)` and no telemetry key receives a fragment from a sink of `M` and also from a sink of `K_P` or of `K_Q`. The prototype enforces only one part, at the level of types: an update sink moves only with the create sink of its type. **It does not check R3.**
-- **R4 (no reader of what moves).** No graph of the space reads, through a graph port, an element that a sink of `M` emits: not from the giving graph before the commit and not from the receiving graph after it. The prototype does not check it: a reader of the parent graph is not rewired.
+- **R1 (closed selection).** No statement that stays reads a moved one, and no moved statement reads one that stays.
+- **R2 (copied ports and parameters).** The receiving projection has the ports and parameters that the moved statements use, bound to the same graphs and literals.
+- **R3 (disjoint keys).** No element key, no uniqueness tuple `(source, target, type)` and no telemetry key receives a fragment from a sink of `M` and also from a sink of `K_P` or of `K_Q`.
+- **R4 (no reader of what moves).** No graph of the space reads, through a graph port, an element that a sink of `M` emits: not from the giving graph before the commit and not from the receiving graph after it.
 - **R5 (one output ontology).** The giving and the receiving projection have the same output ontology module. True for `extract` and `inline` by construction; for `moveRule` it is a premise.
 
-Separately, `inline` after `extract` of the same selection restores the text of the module; that is a property of the two functions, tested on samples and not proved.
-
-The proposition is proved below under R0 to R5. R1 and R2 are enforced by the prototype, R5 holds by construction for two of the three refactorings, and R3 and R4 are premises on the definitions and their data that nothing checks.
+The proposition is a statement about the language, and it is proved below under R0 to R5. All six are premises. The check of a projection catches part of R1 and R2: a moved statement that reads a statement left behind, or a port or parameter that the receiving projection does not declare, makes the check fail. A port bound to another graph or a parameter bound to another literal passes it, and nothing checks R0, R3, R4 or R5. No test of the prototype exercises the proposition (5.9).
 
 *Proof.* Let `F_s` be the Z-set of fragments of a sink `s` (Def. 6.3), that is the signed delta (Ch. 4, Def. 4.6) of the facts it writes.
 *Step 1: every sink keeps its fragments.* The fragments of a sink are a function of the rows at the in-ports of its operator subtree and of its parameters (Def. 6.3, Proposition 5.4). By R1 the subtree of a moved sink moves whole, and by R2 its ports are bound to the same graphs and its parameters to the same literals. By R4 no graph that a subtree reads changes its content, and graphs upstream of the two projections are untouched. By R0 and Theorem 6.3 the evaluation after the commit is the evaluation of the recorded input, so by induction along the graph space (S3) every sink `s` of the space has the same `F_s` at every position as before. Ids inside the fragments are unchanged: entity ids come from identity domains (Def. 1.9), and `rid` has the output ontology module as its only scope (Def. 5.9), which R5 keeps. Closed windows are computed inside the subtree, so the telemetry fragments are unchanged too.
@@ -375,19 +364,15 @@ The proposition is proved below under R0 to R5. R1 and R2 are enforced by the pr
 - *Without R0.* With a bounded retained set (Def. 9.4), the new graph is built from the retained inputs only and lacks what older inputs produced (Theorem 9.2).
 - *Without R5.* `moveRule` into a projection with another output ontology changes every `rid` of the moved relationship sinks.
 
-**What the prototype refuses.** A refactoring is refused, and nothing changes, when a kept statement reads a moved one or the reverse (R1); when an update sink is selected without the create sink of its type; when a selected name does not exist; when the projection that builds the master graph would be split; when the selection is a statement inside a rule; when the named projection does not exist; or when the refactoring would touch two modules.
-
-*Measured.* Ten test cases on the sample definitions: two extractions out of the projection of the capability level, after which the output union is equal and `inline` restores the output union and the text exactly; one move of a rule between two stacked projections, after which the output union is equal; seven of the eight refusals above are raised (the one for two modules is not tested); and one extraction that copies the parameters it uses. All on one module. Not tested: other modules, generated projections, a violation of R3, R4 or R5, and what happens to lineage records and version numbers (the activation writes the new graph's content and the old graph's loss as patches).
-
-*Readers of the parent graph.* A refactoring copies the parameters that the moved statements use and binds them in the space (Def. 5.14). A graph that reads the parent graph is not rewired: it sees only what the parent kept. A refactoring can therefore be accepted and still change what a downstream graph computes. That is premise R4.
+*Readers of the parent graph.* A refactoring declares the parameters that the moved statements use and binds them in the space (Def. 5.14). A graph that reads the parent graph is not rewired: it sees only what the parent kept. A refactoring can therefore be accepted and still change what a downstream graph computes. That is premise R4.
 
 *Why the relationship id has no graph in it.* If the id of a relationship contained the id of its graph, `extract` would change the ids of every moved relationship, and the output union would differ by construction. Def. 5.9 therefore scopes relationship ids by the module of the output ontology and the key rule.
 
 ## 5.8 Levels of abstraction: a projection lifts the edges with the nodes
 
-A projection that summarizes a graph is an abstraction of it. Several nodes of the graph below become one node of the level above, and the edges between the nodes below become edges between their images. A level that lifted only the nodes would be a list, not a graph: the service graph has dependencies because pods call pods, and a map of business capabilities has dependencies because services depend on services. The language has one statement for this, `lift`. This section fixes what a level means, so that it can be stated, tested and composed, and shows that the statement adds nothing new: before it runs, it is replaced by operators the language already has.
+A projection that summarizes a graph is an abstraction of it. Several nodes of the graph below become one node of the level above, and the edges between the nodes below become edges between their images. A level that lifted only the nodes would be a list, not a graph: the service graph has dependencies because pods call pods, and a map of business capabilities has dependencies because services depend on services. This section fixes what a level means, so that it can be stated, tested and composed, and shows that a level needs no operator of its own: it is written with operators the language already has.
 
-**Definition 5.16 (level, image).** Let `B` be a graph, the graph below, with nodes `V_B` and a set `E_B` of directed edges of one relationship type; an edge `e` has a source `s(e)` and a target `t(e)`. A *level* over `B` is a graph `L` with nodes `V_L` and an *image*, a partial function `f : V_B ⇀ V_L`. A node outside `dom f` has no image. The image is data and not code: a relationship of some graph (a pod backs a service, a service realizes a capability) or a computed key (a service belongs to the group of its namespace). A computed key is a function by construction. A relationship is a function only if no node has two of them; where the data may hold two, the statement must say what happens to such a node (below, "The image must be a function").
+**Definition 5.16 (level, image).** Let `B` be a graph, the graph below, with nodes `V_B` and a set `E_B` of directed edges of one relationship type; an edge `e` has a source `s(e)` and a target `t(e)`. A *level* over `B` is a graph `L` with nodes `V_L` and an *image*, a partial function `f : V_B ⇀ V_L`. A node outside `dom f` has no image. The image is data and not code: a relationship of some graph (a pod backs a service, a service realizes a capability) or a computed key (a service belongs to the group of its namespace). A computed key is a function by construction. A relationship is a function only if no node has two of them; where the data may hold two, the projection must say what happens to such a node (below, "The image must be a function").
 
 **Definition 5.17 (lifted edges, fibre).** The lifted edge set of `E_B` under `f` is
 
@@ -414,88 +399,38 @@ The same statement is false for a ratio averaged over a fibre, which is why Def.
 **Proposition 5.12 (lifting composes).** Let `f : V_B ⇀ V_L` and `g : V_L ⇀ V_M`. Lifting `E_B` under `f` and the result under `g` gives the edge set that lifting `E_B` under `g ∘ f` gives. The fibre of an edge `(u, v)` of the upper level under `g ∘ f` is the disjoint union of the fibres `E_B(x, y)` over the edges `(x, y)` in its fibre under `g`, so lifted counters, the ratios recomputed from them and, for equal thresholds and window width, the states derived from them are the same on both routes.
 *Proof.* An edge below is dropped on the first route iff `f` gives its ends one image or `g` gives the images one image, or an end leaves the domain on the way; that is iff `g ∘ f` gives its ends one image or is undefined on an end. Sums over a disjoint union are sums of sums. ∎
 
-Consequence: a level may read the level below it and need not read the master again, which is how the capability level is written. Def. 5.18 has no look-back; written as `lift` statements the two routes agree for equal `within`, because a level holds the windows that its own look-back reads.
+Consequence: a level may read the level below it and need not read the master again, which is how the capability level is written. Def. 5.18 has no look-back; written with series that read a look-back, the two routes agree for equal look-backs, because a level holds the windows that its own look-back reads.
 
-**The statement.** One `lift` per level, in a forward projection or a `readonly` rule, a rule whose output cannot be edited back (Ch. 8):
-
-```
-lift NAME as REL from GRAPH EDGETYPE via GRAPH MAPPING
-  [when e]  [carry p = q, ...]  [keep c = src.p, ...]  [derive p = e, ...]
-  [state p of m above A for N then "x" below B for M then "y" initial "z"]
-  [images reject|each]  [selfloops keep]  [within D];
-```
-
-| Part | Meaning in the terms of Def. 5.16 to 5.18 | Default |
-|---|---|---|
-| `from GRAPH EDGETYPE` | `E_B`: the relationship type of the lower graph that is lifted. `GRAPH` is a graph port of the projection | required |
-| `via GRAPH MAPPING` | the image `f`: a relationship type whose target is the image. Nodes of the two graphs are matched by identity (the same entity id) | required |
-| `as REL`, `NAME` | the lifted relationship type of the output ontology; one relationship per pair of images, keyed by `NAME` (Def. 5.9) | required |
-| `when e` | restricts `dom f` to images that satisfy `e` (`image.status != "retired"`) | every image counts |
-| `images reject` or `images each` | what happens to a node with several images: it is outside `dom f`, or it counts for each image | `reject`; see the checker rule below |
-| `selfloops keep` | keeps the pairs with `f(s(e)) = f(t(e))`, which Def. 5.17 drops | dropped |
-| `carry p = q` | the counter `q` of the edges below is combined over the fibre per window into `p`, with the combine rule that `p` declares (`sum`, `min`, `max`, `mean`) | telemetry properties that `REL` and `EDGETYPE` share by name and kind are carried |
-| `derive p = e` | a property computed per window from the carried ones: the recomputed ratio of Def. 5.18, a rate | none |
-| `state p of m above … below … initial …` | the state of Def. 5.18: a threshold with hysteresis over a carried or derived property `m` (5.5) | none |
-| `keep c = src.p` (or `dst.p`) | a data property of the source or target image kept on the windows, so that a later `rollup` can group by it | none |
-| `within D` | the look-back of the series the windows are read from | 24 h |
-
-The statement lifts edges. The nodes of a level are emitted by ordinary `emit entity` statements, because a level may hold nodes that no edge reaches (a service that no pod backs). Its result is also a relation `NAME` with the columns `src`, `dst`, `windowStart` and the kept, carried and derived properties, which later statements read.
-
-The two levels of the prototype's definitions:
-
-```
-lift dependsOn as DependsOn from master infra.Calls via master infra.Backs
-  keep cluster = src.cluster, namespace = src.namespace
-  derive dropRatio = if(flows > 0, drops / flows, 0.0), flowRate = rate(flows)
-  state status of dropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok"
-  images each;
-
-lift dependsOn as DependsOn from tree svc.DependsOn via master ops.Realizes
-  when image.status != "retired"
-  carry callFlows = flows, callDrops = drops
-  derive callDropRatio = if(callFlows > 0, callDrops / callFlows, 0.0)
-  state callStatus of callDropRatio above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok";
-```
-
-The first lifts pod calls to service dependencies, the second lifts service dependencies to capability dependencies and reads the first level, not the master (Proposition 5.12). The lifted properties of the second have their own names (`callFlows`, not `flows`), because a property name that two modules declare is served qualified and the names of the level below must not change. Written as ordinary statements the two levels take 46 lines; as `lift` statements they take 18.
-
-**The image must be a function, or the statement must say otherwise.** Propositions 5.10 (c) and 5.11 need `f` to be a function: if a node below has two images, each pair of images gets an edge and the edge below is counted in each. The checker enforces a choice.
-- *Declared.* If the ontology declares the mapping a function (`constraint cardinality Realizes per source 0 .. 1`), no `images` clause is needed. A conformance check reports data that breaks the constraint and an edit that adds a second image is rejected. Ingestion does not check it, so recorded data can still hold a node with two images; the default `images reject` then leaves that node out of `dom f`. The image the lift uses is a function by construction, and the propositions hold.
-- *Stated.* If the mapping is not declared a function, the statement must carry an `images` clause, or the checker refuses it. `images reject` gives the same guarantee as above. `images each` gives up conservation on purpose: the service level says `images each` for `Backs`, so a pod that backs two services counts for both, each image gets the full count, and sums over the images can exceed the total below. Propositions 5.10 (c) and 5.11 hold for that level only on data in which every pod backs at most one service.
-
-**Lowering.** `Lift` is an operator kind of the kernel (the twentieth, Ch. 2, Def. 2.2), so a `lift` statement is a node of the definition graph with the slots `when`, `carry`, `keep`, `derive` and `state`, the ports `edges`, `map` and `out`, and the edges `liftEdge`, `liftVia` and `ofType`. The catalog keeps the node, and the printer writes it back with only the clauses that differ from the defaults. It has no evaluation rule of its own. When the projection is checked, the node is replaced, in a copy of the graph, by the operators it stands for (this is called *lowering*):
+**How a level is written.** With the operators of 5.1, in the text of the projection, one level per projection:
 
 | Step | Operators |
 |---|---|
-| edges below, and the mapping | `Match` of `EDGETYPE`; `Match` of `MAPPING`, with a `Filter` for `when` |
-| `images reject` | `Group` that counts the images per node, `Join`, `Filter` on a count of one |
-| both ends to their images | two `Join`s; a `Filter` that drops the self-loops |
-| the lifted edge | `EmitRelationship`, row by row |
-| lifted telemetry | `Series` over the carried properties within `within`, `Rollup` by the pair of images and the kept values, `Map` for the derived properties, `EmitRelationship` as an update |
-| each `state` | `Threshold` and an update |
+| the edges below, and the mapping | `Match` of the lower relationship type; `Match` of the mapping, with a `Filter` where some images do not count (a retired capability) |
+| both ends to their images | two `Join`s with the mapping; a `Filter` that drops the pairs with one image (the self-loops) |
+| the lifted edge | `EmitRelationship`, row by row, keyed by the pair of images (Def. 5.9) |
+| lifted telemetry | `Series` over the counters of the edges below, `Rollup` by the pair of images and window with `sum`, `Map` for the recomputed ratio, `EmitRelationship` as an update |
+| a state | `Threshold` over the recomputed ratio, and an update |
 
-The generated operators are written as text and go through the ordinary parser, checker and lowering. Two consequences.
-- *What follows from the lowering, with no new argument.* Everything that is stated for those operators holds for a lift, because after lowering nothing else is there: the typing rules of 5.2, the incremental strategies and batch invariance (Theorems 6.1 and 6.2), replay determinism (Theorem 6.3), retention (Proposition 5.9), the crossing of the value of a measurement to data through `Threshold` only (5.5), and the supports of Theorem 5.3, and lineage, which is complete because the lifted edge is a row-level emit (Ch. 9, 9.5). Each holds as strongly as it does for the operators, no more.
-- *What does not follow and is tested.* That the lowering implements Def. 5.17 and 5.18 is not proved: it is a property of the text that the lowering generates. It is tested by equality with the statements it replaced and by one test per clause (below). A test that compares a lift with the two definitions directly on generated graphs does not exist yet. Propositions 5.10 to 5.12 are statements about the definitions and stay proved whatever the lowering does; they describe the prototype exactly as far as the lowering is correct.
+The nodes of a level are emitted by ordinary entity emits, because a level may hold nodes that no edge reaches (a service that no pod backs). The prototype's definitions write two levels this way: pod calls lifted to service dependencies, and service dependencies lifted to capability dependencies, reading the service level and not the master (Proposition 5.12). The lifted properties of the second have their own names (`callFlows`, not `flows`), because a property name that two modules declare is served qualified and the names of the level below must not change.
 
-**What the checker refuses**, naming the statement: a mapping that is neither declared a function nor given an `images` policy; an edge type, mapping type or lifted type that is not in the ontology of its graph; a `carry` whose target or source is not a telemetry property, or whose kinds differ; a combine rule other than `sum`, `min`, `max` or `mean`; a `derive` target that is not telemetry; a `state` that names a measure as its target, or a source that is neither carried nor derived; a `keep` that is not `src.p` or `dst.p` of a data property of the image; a lift in a `lens` or `bijective` rule, because its edges cannot be edited back; and whatever the generated operators fail to check. A refactoring treats a lift like a `let` that reads only graph ports (5.7).
+**The image must be a function, or the projection must say otherwise.** Propositions 5.10 (c) and 5.11 need `f` to be a function: if a node below has two images, each pair of images gets an edge and the edge below is counted in each.
+- *Declared.* If the ontology declares the mapping a function (`constraint cardinality Realizes per source 0 .. 1`), a conformance check reports data that breaks the constraint and an edit that adds a second image is rejected. Ingestion does not check it, so recorded data can still hold a node with two images. The capability level therefore also joins with the number of images per node and keeps the nodes with one: the image it uses is a function by construction, and the propositions hold.
+- *Not declared.* The service level reads `Backs`, which is not declared a function, and has no such join: a pod that backs two services counts for both, each image gets the full count, and sums over the images can exceed the total below. Propositions 5.10 (c) and 5.11 hold for that level only on data in which every pod backs at most one service.
 
-**In the viewer.** The editor of the viewer can build a `lift` statement without text, and rebuilds the two levels with it, in 82 and 67 editing steps, equal to the written definitions (Ch. 12, 12.4).
+**What follows, with no new argument.** A level is ordinary operators, so everything that is stated for them holds for it: the typing rules of 5.2, the incremental strategies and batch invariance (Theorems 6.1 and 6.2), replay determinism (Theorem 6.3), retention (Proposition 5.9), the crossing of the value of a measurement to data through `Threshold` only (5.5), the supports of Theorem 5.3, and lineage, which is complete because the lifted edge is a row-level emit (Ch. 9, 9.5). What does not follow is that a given text implements Def. 5.17 and 5.18: that is a property of each projection's text, and it is tested (below). Propositions 5.10 to 5.12 are statements about the definitions and stay proved whatever a text does.
+
+An earlier version of the prototype had a statement `lift` that was expanded into these operators before it ran. It was removed: the operators say the same, and a statement of its own was one more concept to learn and to check.
 
 **Three levels on the synthetic estate.** The synthetic estate is a small recording written by a program, with invented names, in which every source and every operator has data (Ch. 14). On it the master graph has 47 entities and 48 relationships, among them pods with `Calls` edges; the service level `serviceTree` has 4 entities and 5 relationships, with `DependsOn` from `web` to `api` and from `api` to `db`; the capability level `capabilities` has 4 entities and 4 relationships, 2 `Under` (the authored hierarchy) and 2 `DependsOn` lifted from the service level (Storefront to Ordering, Ordering to Data platform). On the two real captures `capabilities` is empty: capabilities are authored data, and no source of those captures recorded any.
 
-**Tests.** The authors read these tests and did not run them; the runs are among those of Ch. 14 that they did not repeat.
-- *The statement equals what it replaced* (36 cases). The definitions with `lift` give the same entities, relationships, properties, measurement values and state digest as the definitions written out by hand, on the synthetic estate, on the small samples and on the 17-minute real recording. The digest of the lifted graphs is the same for batches of 1, 50 and 100,000 records.
-- *Each clause:* the lifted flows are exactly the flows of the edges whose ends have one image each and different ones (four variants); `images` chooses between leaving out a node with two images and counting it for each; `selfloops` drops or keeps the calls inside one image; `when` decides which images count; `within` sets the look-back; kept values ride on the windows. The printer gives back the text it parsed and names only what differs from the defaults. Sixteen refusals of the checker, each naming the statement and the reason.
-- *The properties* (28 cases, written before the statement and unchanged by it): every graph of the space whose types include relationship types has relationships on the estate, with two reasoned exceptions; six variants of the estate for Def. 5.17 and 5.18; composition against a one-step lift in two cases (Proposition 5.12); the ratio and the state of a lifted edge with values; a service with two images.
-- *Around it:* the editor's description of the statement, a draft edit and a preview of a lift; a rule with a lift moves between stacked projections, and a lift alone cannot be extracted away from its readers; a lifted edge names every edge of its fibre, both ends and both images, forward and reverse (Ch. 9).
+**Tests.** The authors read these tests and did not run them; the runs are among those of Ch. 14 that they did not repeat. 29 cases: every graph of the space whose types include relationship types has relationships on the estate, with two reasoned exceptions; the flows out of the service groups equal, in every window, the flows out of their services; six variants of the estate for Def. 5.17 and 5.18 (self-loops, ends without an image, parallel edges, a retired capability); composition against a one-step lift in two cases (Proposition 5.12); the ratio and the state of a lifted edge with values; a service with two images. A lifted edge names every edge of its fibre, both ends and both images, forward and reverse (Ch. 9).
 
-**What is tested and what is not.** Tested on examples: Proposition 5.10 (a) and (c) and Proposition 5.11, Proposition 5.12 in two cases, the recomputed ratio and the derived state, every clause of the statement, and the equality of the lowering with hand-written statements on three inputs. Not tested: anything on generated graphs or images; composition over more than two levels; a pod that backs two services under `images each` on the service level itself (the clause is tested on the capability level).
+**What is tested and what is not.** Tested on examples: Proposition 5.10 (a) and (c) and Proposition 5.11, Proposition 5.12 in two cases, and the recomputed ratio and the derived state. Not tested: anything on generated graphs or images; composition over more than two levels; a pod that backs two services on the service level.
 
 ## 5.9 What the prototype does differently
 
-- **Operators.** 19 of the 20 operator kinds are built. `Delta` is not, because no property in the definitions or the recordings is a running total. `Match` has no patterns of variable length. `Fixpoint` is computed as a bounded unrolling of its body (Ch. 6). `Union` has only the conflict policy `preserveEvidence`; the other three are refused with an error that names the rule and its position.
+- **Operators.** 17 of the 18 operator kinds are built. `Delta` is not, because no property in the definitions or the recordings is a running total. `Match` has no patterns of variable length. Recursion over rows is not expressible: reach over the relationships of a graph is a `Traverse` with its depth bounds (Ch. 6).
 - **Aggregates over measurements.** The prototype is stricter than Def. 5.6: `weightedMean` and `last` are allowed only over data, not over a `gauge`, and `mean` in a `Rollup` needs a `gauge`. The checker refuses the other cases with a message.
 - **Retention** of evidence uses `Retain` with an age of 24 hours in the rules that write evidence. The age is a choice, not a result.
-- **The `lift` statement** has no clauses for fill and no data yet.
+- **Refactoring** (5.7) has no operation of its own and no test; the three refactorings are edits of the text, and their premises are not checked.
 - **Tests** of the typing rules are examples of refused projections, each with the rule it breaks and its position; type soundness on generated projections is not tested.
