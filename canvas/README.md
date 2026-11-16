@@ -45,6 +45,23 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 
 An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a `.kql` file (research note 11), and the editor edits that text.
 
+The phase of the editor (`src/state/editor-phase.ts`); a draft session is open only in `ready`:
+
+```mermaid
+stateDiagram-v2
+  [*] --> closed
+  closed --> opening: open
+  opening --> ready: opened
+  opening --> failed: failed
+  failed --> opening: open
+  ready --> opening: open
+  state ready {
+    [*] --> idle
+    idle --> working: start (undo, redo, preview, commit, store, command)
+    working --> idle: done of the same work
+  }
+```
+
 - **KQL text** (`src/ui/editor/KqlText.tsx`): CodeMirror 6 with the engine's errors, completion and hover (`/kql/analyse`, `/kql/complete`, `/kql/hover`). "Store in draft" stores the text (`PUT /drafts/{id}/text/{module.projection.kql}`); "Show rows" previews the stored text and puts the rows after each operator under its card.
 - **Notations beside the text**: Steps, Outline and Wires (`src/ui/editor/Kql*.tsx`). Each is a pure view of the engine's outline of the text; every edit it makes is a list of text changes from the editing module (`src/editor/kql-edit.ts`), so typing and visual edits share one undo history. Each has "Add a statement": a form the engine completes at a statement's start, then the rest of the statement. By example: a picked element of a graph the projection reads becomes a `let` with the `graph-match` that finds its like.
 - **Draft details** below: Problems (the engine's check), Text (a module of the draft as the engine prints it, edited as text and checked; the space module holds the bindings of the graphs, parameter values such as `workloadNamespace: "shop"` among them), Definitions (row types with fields, constraints, equivalence policies, value roles), Versions and preview (releases, compare, restore into the draft; preview of the output graphs with counts, scope, the diff against the live graphs and the previewed graph drawn).
@@ -83,7 +100,23 @@ The graph carries data as well as structure. Telemetry is time-indexed, high rat
 `EngineSource` (`src/source/engine.ts`, wire details in `engine-protocol.ts`) implements `GraphSource` over `engine/PROTOCOL.md` version 3; the editor side is `src/editor/service.ts`.
 
 - History over HTTP from immutable URLs, then one WebSocket subscription `{op: "subscribe", graphs, after: seq}` for all graphs. Every record is validated against the contract schemas; invalid records and protocol errors appear in the Rejected list.
-- Reconnect with backoff (0.5, 1, 2, 5 s), resume after the last sequence number, a skipped revision filled over HTTP, `gap` and `AheadOfHead` trigger a resync (reload from a snapshot), `SlowConsumer` reconnects, `activation` resets stored telemetry and reads it again.
+The link of the stream (`Link` in `src/source/engine-stream.ts`, a pure `transition(state, event)`):
+
+```mermaid
+stateDiagram-v2
+  [*] --> none
+  none --> connecting: a graph's history is in
+  connecting --> open: socketOpened
+  connecting --> waiting: socketClosed
+  open --> waiting: socketClosed, SlowConsumer
+  waiting --> connecting: reconnectDue, after 0.5, 1, 2, 5 s
+  open --> ended: wsEnd
+  ended --> closed: dispose
+  closed --> [*]
+  note right of closed: dispose closes from any state, socketUnavailable leads to unavailable (history only)
+```
+
+- On reconnect the stream resumes after the last sequence number, a skipped revision filled over HTTP, `gap` and `AheadOfHead` trigger a resync (reload from a snapshot), `SlowConsumer` reconnects, `activation` resets stored telemetry and reads it again.
 - Lineage: selecting a derived element reads `/graphs/{g}/lineage?element=` and highlights its sources in the other graphs.
 - The `catalog` graph is served like any other, with the kernel as its ontology; the editor reads it through `src/core/catalog.ts` (modules, types, identity domains, projections, operators, ports, wires, rules with direction class).
 

@@ -28,40 +28,40 @@ flowchart TB
   ENG -.->|"replay --out: static files"| CV
 ```
 
-- **Semi-structured data in**: each record arrives in an envelope ([format](lab/CAPTURE-FORMAT.md)); an adapter turns it into typed rows.
-- **Domain knowledge**: ontology modules say what exists, how it relates, and which key identifies it, so records of many sources become one entity.
-- **Rules**: a projection is a KQL file of rules that reads graphs and writes one graph; the graph space binds them.
-- **Always up to date**: each input change becomes a patch to every graph it reaches, the same input gives the same graphs whatever the batching.
+- Identity domains of the ontology modules make one entity of what several sources report about one thing.
+- The same input gives the same graphs, whatever the batching. Envelope format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md).
 
 One change, from the cluster to the screen:
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant K as Kubernetes API
+  participant K as cluster<br/>Kubernetes API, Hubble
   participant F as forwarder<br/>eh-forward.mjs
-  participant H as Event Hub<br/>sattle-ingest
-  participant L as live input<br/>Live.cs
-  participant S as SpaceHost<br/>Host.cs
-  participant R as replay driver<br/>Replay.cs
-  participant E as Engine<br/>Engine.cs
-  participant W as server /ws<br/>Server.cs
-  participant C as canvas<br/>engine.ts, store
+  participant H as hub<br/>Event Hub sattle-ingest
+  participant L as live input<br/>LiveInput.cs, Live.cs
+  participant A as adapters<br/>Adapters.cs
+  participant P as projections<br/>Engine.cs, Operators.cs
+  participant R as revision commit<br/>Engine.Committed, Host.OnCommit
+  participant W as WebSocket<br/>Server.cs /ws
+  participant C as canvas<br/>engine.ts, engine-stream.ts
   K->>F: watch event: a pod changed
-  F->>H: envelope (source, capturedAt, seq, key, payload)
-  H->>L: PartitionReceiver.ReceiveBatchAsync
-  L->>S: LiveEnvelope(source, text, position)
-  S->>S: journal the envelope, record stream.ndjson
-  S->>R: Process(envelope)
-  R->>R: adapter.Consume: typed rows
-  R->>E: rows on flush, Advance(λ) from capturedAt
-  E->>E: each projection turns the changed rows into changed elements
-  E-->>S: Committed(graph, patch), once per changed graph
-  S->>W: Publish {type: "patch", graph, patch}
-  W->>C: WebSocket message
-  C->>C: feed/patch: apply to the graph, redraw the views
-  Note over K,L: live with serve --live (issue 70), the demo replays capture files instead (serve CAPTURE --speed N)
+  F->>H: envelope as the event body
+  L->>H: Read(after): PartitionReceiver.ReceiveBatchAsync
+  H-->>L: LiveEvent(text, position)
+  L->>L: SpaceHost.LiveEnvelope: journal, record stream.ndjson
+  L->>A: Replay.Process: adapter.Consume(envelope)
+  A-->>L: typed rows
+  L->>P: LiveFlush (every 2 s or when idle): rows, Advance(λ)
+  P->>P: each projection turns changed rows into changed elements
+  P->>R: net edits of each graph
+  R->>R: revision n+1 of the graph
+  R->>W: Publish {type: "patch", graph, patch}
+  W->>C: message
+  C->>C: transition, emit, dispatch feed/patch, redraw
+  Note over K,L: a recording takes the hub's place: serve CAPTURE --speed N, or replay of stream.ndjson
 ```
+
 
 This repository is research in progress: a white paper, a working engine, a canvas, and a lab that captured real Azure data. [Status](#status) says what is proven and what is not.
 
@@ -78,6 +78,8 @@ dotnet build engine/src/Sattle.Cli -c Release
 ```bash
 npm --prefix canvas install
 ```
+
+Steps 1 and 2 in one command, with the walkthrough printed: `scripts/demo-replay.sh`.
 
 ### 1. Start the engine
 
