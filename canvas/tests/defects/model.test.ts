@@ -223,3 +223,40 @@ describe("app/timeline.ts the shared timeline scrubbed back", () => {
     expect(hub.time, "the values followed the newest window while the graphs show second 10").toBe(10);
   });
 });
+
+describe("app/timeline.ts the catalog and new values while the space shows a time (batch 2 review)", () => {
+  it("a catalog patch is applied at once: definitions are not scrubbed by data time, and later catalog patches still apply", async () => {
+    const { Workspace } = await import("../../src/app/workspace");
+    const { History } = await import("../../src/app/history");
+    const { seekTime } = await import("../../src/state/ws-ops");
+    const { darkTheme } = await import("../../src/render/theme");
+    const ws = new Workspace({} as never, darkTheme, () => {});
+    (ws as unknown as { info: unknown }).info = { graphs: [{ id: "catalog", role: "catalog" }, { id: "a", role: "master" }] };
+    const cat = new History({ version: ver("1", "catalog"), entities: [], relationships: [] });
+    const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
+    ws.histories.set("catalog", cat); ws.histories.set("a", a);
+    a.append(patch("1", "2", [addN(plain("x"))]), 10);
+    a.append(patch("2", "3", [addN(plain("y"))]), 20);
+    seekTime(ws, 10, {});
+    ws.applyPatch("catalog", patch("1", "2", [addN(plain("m"))]), 30);
+    seekTime(ws, 20, {});
+    ws.applyPatch("catalog", patch("2", "3", [addN(plain("n"))]), 40);
+    expect([cat.cursor, cat.atHead, !!cat.graph.entity("m"), !!cat.graph.entity("n")], "the catalog patch kept while scrubbed back is never applied").toEqual([2, true, true, true]);
+  });
+  it("values whose hub is made while the space shows a time show that time, not the newest window", async () => {
+    const { Workspace } = await import("../../src/app/workspace");
+    const { History } = await import("../../src/app/history");
+    const { seekTime } = await import("../../src/state/ws-ops");
+    const { darkTheme } = await import("../../src/render/theme");
+    const ws = new Workspace({} as never, darkTheme, () => {});
+    (ws as unknown as { info: unknown }).info = { graphs: [{ id: "a", role: "master" }] };
+    const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
+    ws.histories.set("a", a);
+    a.append(patch("1", "2", [addN(plain("x"))]), 10);
+    a.append(patch("2", "3", [addN(plain("y"))]), 20);
+    seekTime(ws, 10, {});
+    const hub = ws.hubFor("a");
+    hub.ingest({ graph: "a", tick: 15, t: 15, target: "node", property: "cpu", values: Float32Array.of(0.9) });
+    expect(hub.time, "a hub made while scrubbed back followed the newest window").toBe(10);
+  });
+});

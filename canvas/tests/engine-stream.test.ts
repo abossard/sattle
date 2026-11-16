@@ -176,3 +176,17 @@ describe("the end of the stream", () => {
     expect(twice.effects.at(-1), "the backoff grows while it does not open").toEqual({ k: "reconnect", attempt: 2 });
   });
 });
+
+describe("a second end of the stream (batch 2 review)", () => {
+  it("changes nothing and says nothing again", () => {
+    const ended = run([{ t: "wsEnd" }], live().state).state;
+    expect(kinds(run([{ t: "wsEnd" }], ended).effects)).toEqual([]);
+  });
+});
+
+describe("a socket that cannot be made (batch 2 review)", () => {
+  it("keeps the error in the status while it waits to try again", () => {
+    const r = run([{ t: "socketClosed", why: "The URL is invalid" }], live().state);
+    expect(r.effects[0]).toMatchObject({ k: "status", state: "reconnecting", detail: "The URL is invalid; reconnecting (attempt 1)" });
+  });
+});

@@ -1,6 +1,6 @@
 // Telemetry state of one graph: the quantized store, the displayed tick, and the metric chosen for each visual channel.
 // Tick k is aligned with revision k, so one tick drives both the telemetry frame and the structural revision.
-import { shownTime, type Timeline } from "./timeline";
+import { LIVE, shownTime, type Timeline } from "./timeline";
 import type { Graph } from "../core/graph";
 import { TelemetryStore, dequantize, warnByte } from "../core/telemetry";
 import type { Meter, TelemetryBatch, TelemetryFeed } from "../source/types";
@@ -21,8 +21,8 @@ export class TelemetryHub {
   flow = true;
   /** displayed time in seconds */
   time = 0;
-  /** true while the displayed time follows the newest window */
-  follow = true;
+  /** the space's timeline (timeline.ts): following, the displayed time moves with the newest window */
+  timeline: Timeline = LIVE;
   hasData = false;
   private snapNodeIds: (string | undefined)[];
   private snapEdgeIds: (string | undefined)[];
@@ -67,13 +67,13 @@ export class TelemetryHub {
     const g = this.graph;
     this.store.ingest(b, (target, id) => (target === "node" ? g.nodeSlot.get(id) : g.edgeSlot.get(id)), Math.max(g.nodes.length, g.edges.length) + 16);
     this.hasData = true;
-    if (this.follow && b.t > this.time) this.time = b.t;
+    if (this.timeline.k === "live" && b.t > this.time) this.time = b.t;
     this.emit();
   }
 
   /** Show the values of the time the space shows; following, the newest window as it arrives. */
   show(tl: Timeline): void {
-    this.follow = tl.k === "live";
+    this.timeline = tl;
     this.time = shownTime(tl, this.store.lastTime);
     this.emit();
   }

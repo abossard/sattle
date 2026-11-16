@@ -114,7 +114,8 @@ export class Workspace {
     const h = this.histories.get(graph);
     if (!h) return;
     const before = h.problems.length;
-    const step = h.append(patch, time, this.timeline.k === "live");
+    // definitions are configuration, not scrubbed by data time: a catalog patch always applies
+    const step = h.append(patch, time, this.timeline.k === "live" || this.graphInfo(graph)?.role === "catalog");
     for (let i = before; i < h.problems.length; i++) {
       const p = h.problems[i];
       this.dispatch({ type: "feed/rejected", at: Date.now(), rejection: { source: graph, where: `patch ${p.patch}`, errors: [p.reason, ...(p.conflicts ?? []).slice(0, 3).map((c) => `${c.key}: ${c.message}`)] } });
@@ -195,6 +196,7 @@ export class Workspace {
     if (!hub) {
       const h = this.histories.get(graph)!;
       hub = new TelemetryHub(h.graph, { meters: [], defaults: {} }, 241);
+      hub.show(this.timeline);
       this.hubs.set(graph, hub);
       this.panes.get(graph)?.attachTelemetry(hub);
     }

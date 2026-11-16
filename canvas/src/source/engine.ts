@@ -215,7 +215,7 @@ export class EngineSource implements GraphSource {
     const WS = this.opts.WebSocket ?? globalThis.WebSocket;
     if (!WS) { this.step({ t: "socketUnavailable" }); return; }
     let ws: WebSocket;
-    try { ws = new WS(this.url(ENGINE_ENDPOINTS.ws).replace(/^http/, "ws")); } catch { this.step({ t: "socketClosed" }); return; }
+    try { ws = new WS(this.url(ENGINE_ENDPOINTS.ws).replace(/^http/, "ws")); } catch (e) { this.step({ t: "socketClosed", why: (e as Error).message }); return; }
     this.ws = ws;
     ws.onopen = () => {
       // resume after the last sequence number seen; the engine sends what was missed, or a gap notice when its history no longer reaches back

@@ -22,12 +22,12 @@ describe("TelemetryHub", () => {
     const hub = new TelemetryHub(graph(), feed);
     hub.ingest(dense(0, "edge", "requests", [100, 400]));
     hub.ingest(dense(1, "edge", "requests", [200, 300]));
-    expect(hub.hasData && hub.time === 1 && hub.follow).toBe(true);
+    expect(hub.hasData && hub.time === 1 && hub.timeline.k === "live").toBe(true);
     const f = hub.frame("edge", 0)!;
     expect(f[0]).toBe(quantize(meters[0], 200));
     expect(hub.frame("edge", 1)![1]).toBe(quantize(meters[0], 300)); // flow channel uses the same metric by default
     hub.show({ k: "at", t: 0 });
-    expect(hub.follow).toBe(false);
+    expect(hub.timeline.k).toBe("at");
     expect(hub.frame("edge", 0)![0]).toBe(quantize(meters[0], 100));
   });
   it("channels can be switched off or remapped without touching the data", () => {

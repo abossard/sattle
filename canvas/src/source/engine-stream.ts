@@ -64,8 +64,8 @@ export type Event =
   | { t: "meta"; graph: string; gen: number; meta: GraphMeta }
   | { t: "retry"; graph: string; gen: number }
   | { t: "socketOpened" }
-  /** the socket closed or could not be made */
-  | { t: "socketClosed" }
+  /** the socket closed or could not be made (`why`: the error that kept it from being made) */
+  | { t: "socketClosed"; why?: string }
   /** the backoff after a drop is over */
   | { t: "reconnectDue" }
   /** this environment has no WebSocket */
@@ -159,11 +159,12 @@ function step(s: StreamState, e: Event): Out {
     case "socketClosed": {
       if (s.link.k !== "open" && s.link.k !== "connecting") return out(s);
       const attempt = (s.link.k === "connecting" ? s.link.attempt : 0) + 1;
-      return out({ ...s, link: { k: "waiting", attempt } }, { k: "status", state: "reconnecting", detail: `connection closed; reconnecting (attempt ${attempt})` }, { k: "reconnect", attempt });
+      return out({ ...s, link: { k: "waiting", attempt } }, { k: "status", state: "reconnecting", detail: `${e.why ?? "connection closed"}; reconnecting (attempt ${attempt})` }, { k: "reconnect", attempt });
     }
     case "reconnectDue": return s.link.k === "waiting" ? out({ ...s, link: { k: "connecting", attempt: s.link.attempt } }, { k: "status", state: "reconnecting", detail: `reconnecting, attempt ${s.link.attempt}` }, { k: "openSocket" }) : out(s);
     case "socketUnavailable": return out({ ...s, link: { k: "unavailable" } }, { k: "status", state: "closed", detail: "no WebSocket in this environment; history only" });
-    case "wsEnd": return out({ ...s, link: { k: "ended" } }, { k: "closeSocket" }, { k: "status", state: "ended", detail: "the engine ended the stream" }, ...all.map((graph): Effect => ({ k: "emit", graph, event: { type: "end" } })));
+    case "wsEnd": if (s.link.k === "ended") return out(s);
+      return out({ ...s, link: { k: "ended" } }, { k: "closeSocket" }, { k: "status", state: "ended", detail: "the engine ended the stream" }, ...all.map((graph): Effect => ({ k: "emit", graph, event: { type: "end" } })));
     case "wsError": {
       const effects: Effect[] = [{ k: "reject", where: e.code, errors: [e.message || e.code] }];
       if (e.code === "SlowConsumer") effects.push({ k: "closeSocket" }); // the reconnect resumes with `after`
