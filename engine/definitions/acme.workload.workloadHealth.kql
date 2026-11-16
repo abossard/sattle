@@ -46,10 +46,20 @@ let warnings = graph("master")
     | where rtype == "pod"
     | invoke windowsOf("warnings", 0.0);
 extend nodes ComponentSignal on sig = warnings | summarize events = sum(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, events;
+// the dropped calls of a pod, per window, over all its calls to other pods: the pod that sends calls a network policy drops is to blame, not the pods it calls
+let dropped = graph("master")
+    | graph-match (p)-[call]->(q) where labels(p) has "Pod" and labels(call) has "Calls" and labels(q) has "Pod" and p.namespace == workloadNamespace
+      project m = call.id, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), meter = "drops"
+    | join kind=inner (rules) on $left.meter == $right.rmeter
+    | where rtype == "pod"
+    | invoke windowsOf("drops", 0.0)
+    | summarize raw = sum(raw), v = sum(v), silent = countif(noData), n = count() by ekey, rid, severity, meter, windowStart, above, enterAfter, below, exitAfter
+    | project ekey, rid, severity, meter, windowStart, raw, v, above, enterAfter, below, exitAfter, noData = silent == n;
+extend nodes ComponentSignal on sig = dropped | summarize events = sum(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, events;
 
 // ---- the signals of the components and their severity: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on ----
 let comps = graph("structure") | graph-match (c) where labels(c) has "Component" project c = c.id, ck = c.key;
-let measured = union (resourceReadings | invoke signalsOf()), (nodeReadings | invoke signalsOf()), (warnings | invoke signalsOf())
+let measured = union (resourceReadings | invoke signalsOf()), (nodeReadings | invoke signalsOf()), (warnings | invoke signalsOf()), (dropped | invoke signalsOf())
     | project sk = ekey, rid, meter, signalSeverity = severity, signalState = state, sev = iff(state == "on", severity + 1, iff(state == "nodata", 1, 0))
     | join kind=inner (comps) on $left.sk == $right.ck;
 nodes ComponentSignal on sig = measured

@@ -42,10 +42,15 @@ NS=$(cd lab && azd env get-value SATTLE_EVENTHUB_NAMESPACE)
 ```
 
 ```bash
-engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$NS" --group sattle-engine --from latest --overlay lab/captures/space-overlay.sattle --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
+CL=$(KUBECONFIG=lab/.kube/config kubectl -n kube-system get configmap cilium-config -o jsonpath='{.data.cluster-name}')
+```
+
+```bash
+engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$NS" --group sattle-engine --from latest --cluster "$CL" --overlay lab/captures/space-overlay.sattle --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
 ```
 
 - No state until the forwarder starts (step 2): its relist is the whole cluster.
+- `--cluster` is the name Hubble gives the cluster (Cilium's `cluster-name`): Kubernetes rows get the same name, so the pods a flow names are the pods the Kubernetes rows describe. Without it the engine takes the name of the newest file capture, and no call reaches a pod.
 - Same command again: resumes from the journaled position and catches up in seconds.
 - Ctrl-C or SIGTERM prints the state digest. `sattle replay tmp/live-stream/demo --no-flush --late-horizon 3 --overlay lab/captures/space-overlay.sattle --cluster <cluster>` gives the same digest.
 - `curl -s localhost:5080/space | jq .input.lag`: events and seconds behind the hub.
@@ -61,7 +66,7 @@ pkill -TERM -f eh-forward.mjs
 cd lab/capture && node eh-forward.mjs --namespace "$(cd .. && azd env get-value SATTLE_EVENTHUB_NAMESPACE)" --kubeconfig ../.kube/config --authoring ../demo/signal-rules.ndjson
 ```
 
-- `lab/demo/signal-rules.ndjson`: pod warnings, node CPU and node drop rate. Without them every state in `workload` is Unknown.
+- `lab/demo/signal-rules.ndjson`: pod warnings, dropped calls of a pod, node CPU and node drop rate. Without them every state in `workload` is Unknown.
 - States settle after one to two minutes (60 s windows).
 
 ## 3. Canvas
@@ -89,6 +94,16 @@ KUBECONFIG=lab/.kube/config kubectl -n sattle-demo rollout undo deploy/db
 ```
 
 - Healthy again within seconds.
+
+The intruder: it backs no Service and calls db and api, which the network policies drop. It is in the workload under its deployment, and its dropped calls are its own signal (`pod-drops`):
+
+- Tree, "Only where something is wrong": workload, intruder deployment, intruder pod. The victims db and api stay Healthy.
+
+```bash
+KUBECONFIG=lab/.kube/config kubectl -n sattle-demo scale deploy/intruder --replicas=0
+```
+
+- Healthy when the pod has gone (about 30 s). With `--replicas=1` the new pod is Unhealthy about 80 s after it is ready.
 
 A workload with no ready pod:
 

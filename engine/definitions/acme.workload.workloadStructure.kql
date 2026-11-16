@@ -44,6 +44,39 @@ nodes Cluster on azureResource = clusters | project azureResource, key = tolower
 let poolsOfCluster = pooled | join kind=inner (clusters) on $left.one == $right.one2;
 edges MemberOf from nodePool to azureResource with (key = "poolInCluster") = poolsOfCluster | project nodePool = identity("nodePool", cluster, pool), azureResource;
 
+// the pods of the namespace that back no Service (a batch job, a client, an intruder) belong to the workload too, under their deployment, so what they do counts
+let deployedPods = graph("master")
+    | graph-match (pod)-[c]->(deployment) where labels(pod) has "Pod" and labels(c) has "ControlledBy" and labels(deployment) has "Deployment" and deployment.namespace == workloadNamespace
+      project pid = pod.id, did = deployment.id, backs = 0;
+let backingPods = graph("master")
+    | graph-match (pod)-[b]->(service), (pod)-[c]->(deployment)
+      where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and labels(c) has "ControlledBy" and labels(deployment) has "Deployment" and service.namespace == workloadNamespace
+      project pid = pod.id, did = deployment.id, backs = 1;
+let unbackedIds = union deployedPods, backingPods | summarize backs = max(backs) by pid | where backs == 0;
+let unbacked = graph("master")
+    | graph-match (pod)-[c]->(deployment) where labels(pod) has "Pod" and labels(c) has "ControlledBy" and labels(deployment) has "Deployment" and deployment.namespace == workloadNamespace
+      project pod, deployment, upid = pod.id
+    | join kind=inner (unbackedIds) on $left.upid == $right.pid;
+nodes WorkloadPod on pod = unbacked
+    | project pod, key = strcat("pod/", pod.cluster, "/", pod.namespace, "/", pod.name), ['kind'] = "pod", name = pod.name, cluster = pod.cluster, namespace = pod.namespace;
+edges Contains from deployment to pod with (key = "deploymentUnbackedPod") = unbacked | project deployment, pod;
+let unbackedHosted = graph("master")
+    | graph-match (pod)-[ro]->(node) where labels(pod) has "Pod" and labels(ro) has "RunsOn" and labels(node) has "Node" and pod.namespace == workloadNamespace
+      project pod, node, hpid = pod.id
+    | join kind=inner (unbackedIds) on $left.hpid == $right.pid;
+nodes WorkloadNode on node = unbackedHosted
+    | project node, key = strcat("node/", node.cluster, "/", node.name), ['kind'] = "node", name = node.name, cluster = node.cluster, pool = node.pool;
+edges HostedOn from pod to node with (key = "runsOnUnbacked") = unbackedHosted | project pod, node;
+// a deployment none of whose pods backs a Service is a part of the workload itself
+let unservedIds = union deployedPods, backingPods | summarize served = max(backs) by did | where served == 0;
+let unserved = graph("master")
+    | graph-match (deployment) where labels(deployment) has "Deployment" and deployment.namespace == workloadNamespace
+      project deployment, udid = deployment.id, cluster = deployment.cluster, namespace = deployment.namespace
+    | join kind=inner (unservedIds) on $left.udid == $right.did;
+nodes WorkloadDeployment on deployment = unserved
+    | project deployment, key = strcat("deploy/", cluster, "/", namespace, "/", deployment.name), ['kind'] = "deployment", name = deployment.name, cluster, namespace, replicas = deployment.replicas;
+edges Contains from workload to deployment with (key = "workloadDeployment") = unserved | project workload = identity("workload", cluster, namespace), deployment;
+
 // ---- the resources of the subscription by the name they are reached by, and the private endpoints by their address ----
 let suffixes = datatable(stype:string, suffix:string) [
     "microsoft.cache/redis", ".redis.cache.windows.net",
@@ -220,6 +253,7 @@ extend edges TalksTo from caller to callee with (key = "talks") = podCalls
 // ---- the roll-up edges: assignment component is affected by what it contains and by what it depends on ----
 edges Affects from workload to service with (key = "affectsWorkload") = services | project workload = identity("workload", cluster, namespace), service;
 edges Affects from service to deployment with (key = "affectsService") = placed | project service, deployment;
+edges Affects from workload to deployment with (key = "affectsWorkloadDeployment") = unserved | project workload = identity("workload", cluster, namespace), deployment;
 edges Affects from from to targetService with (key = "affectsDependent") = toService | project from, targetService;
 edges Affects from from to azureResource with (key = "affectsUser") = toResource | project from, azureResource;
 edges Affects from service to azureResource with (key = "affectsStandIn") = backed | project service, azureResource;

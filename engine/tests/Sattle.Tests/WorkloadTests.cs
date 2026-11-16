@@ -183,6 +183,60 @@ public class WorkloadTests
         _ = pods;
     }
 
+    /// <summary>#95: a pod of the namespace that backs no Service (here `probe`, a client like the lab's intruder) is part of the workload under its deployment, and the calls of it that are dropped (by a network policy) are its own signal: the caller is to blame, not the pods it calls. The estate gets a deployment `probe` with one pod on node-a, calls from it to api-5c9-1 every 5 s in minutes 1 to 3, and the rule `pod-drops`; the replay stops at 10:04:30, before scenario A.</summary>
+    [Theory]
+    [InlineData("FORWARDED", "pod:probe-6f8-1=Healthy, deployment:probe=Healthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
+    [InlineData("DROPPED", "pod:probe-6f8-1=Unhealthy, deployment:probe=Unhealthy, workload:shop=Unhealthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
+    public void A_pod_that_backs_no_Service_is_in_the_workload_and_its_dropped_calls_blame_it(string verdict, string expected)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-probe-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(EstateTests.EstateDir, "*", SearchOption.AllDirectories))
+            {
+                var rel = Path.GetRelativePath(EstateTests.EstateDir, f); if (rel.StartsWith("space", StringComparison.Ordinal)) continue;
+                var target = Path.Combine(dir, rel); Directory.CreateDirectory(Path.GetDirectoryName(target)!); File.Copy(f, target);
+            }
+            static string At(double sec) => T0.AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+            static string Line(string source, double sec, string key, object payload) => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = source, ["capturedAt"] = At(sec), ["seq"] = 0, ["key"] = key, ["meta"] = null, ["payload"] = payload });
+            File.WriteAllLines(Path.Combine(dir, "kubernetes", "probe.ndjson"),
+            [
+                Line("kubernetes-watch", 0.3, "kubernetes-watch/ADDED/Deployment/dep-probe/950", new { type = "ADDED", @object = new { kind = "Deployment", spec = new { replicas = 1 }, metadata = new { name = "probe", uid = "dep-probe", @namespace = "shop", resourceVersion = "950" } } }),
+                Line("kubernetes-watch", 1.5, "kubernetes-watch/ADDED/Pod/uid-probe-6f8-1/951", new { type = "ADDED", @object = new
+                {
+                    kind = "Pod", spec = new { nodeName = "node-a" },
+                    status = new { phase = "Running", conditions = new[] { new { type = "Ready", status = "True" } }, containerStatuses = new[] { new { restartCount = 0 } } },
+                    metadata = new { name = "probe-6f8-1", uid = "uid-probe-6f8-1", @namespace = "shop", resourceVersion = "951", ownerReferences = new[] { new { kind = "ReplicaSet", name = "probe-6f8" } } },
+                } }),
+            ]);
+            File.WriteAllLines(Path.Combine(dir, "hubble", "probe.ndjson"), Enumerable.Range(0, 36).Select(i => 60 + i * 5.0).Select(sec => Line("hubble", sec + 0.007, $"hubble/probe-{sec}", new
+            {
+                flow = new { time = At(sec + 0.007), uuid = $"probe-{sec}", verdict, source = new { @namespace = "shop", cluster_name = "synth", pod_name = "probe-6f8-1" }, destination = new { @namespace = "shop", cluster_name = "synth", pod_name = "api-5c9-1" } },
+                node_name = "node-a", time = At(sec + 0.007),
+            })));
+            File.WriteAllLines(Path.Combine(dir, "authoring", "probe.ndjson"),
+                [Line("authoring", 0.8, "authoring/signalRule/pod-drops", new { kind = "signalRule", id = "pod-drops", type = "pod", meter = "drops", above = 5, enterAfter = 1, below = 0, exitAfter = 2, severity = 2, invert = false })]);
+            var cat = Repo.LoadExamples(out _);
+            var space = cat.Spaces.Keys.Single();
+            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
+            {
+                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(270).ToUnixTimeMilliseconds() * 1_000_000,
+            }).Run(dir);
+            var structure = engine.Graph("workloadStructure").State;
+            Assert.Contains("shop -> probe", Edges(structure, "Contains"));
+            Assert.Contains("probe -> probe-6f8-1", Edges(structure, "Contains"));
+            Assert.Contains("probe-6f8-1 -> node-a", Edges(structure, "HostedOn"));
+            var states = States(engine);
+            foreach (var pair in expected.Split(", "))
+            {
+                var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
+                Assert.True(states.TryGetValue(component, out var actual) && actual == state, $"{verdict}: {component} is {(states.TryGetValue(component, out var a) ? a : "absent")}, expected {state}");
+            }
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+
     [Fact]
     public void An_observed_call_carries_no_failure_API_Management_needs_api_and_not_the_other_way()
     {
