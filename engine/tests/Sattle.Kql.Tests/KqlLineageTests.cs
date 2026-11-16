@@ -44,7 +44,7 @@ public class KqlLineageTests
     [InlineData("serviceTree", "acme.svc.serviceDeps.kql", "sha256:47c68a129a57d6e6514d4a5e9e53cf17498f8608f487da53023974d2f41f6087")]
     [InlineData("capabilities", "acme.biz.capabilityView.kql", "sha256:afe1c2100ce3f61453de58e193e0083cf5ecb880d38e69e45fedb6eef62183a0")]
     [InlineData("healthTree", "acme.treehealth.healthTree.kql", "sha256:539861486c14affda672b4bd83e1345d94fc68549963eb9a19a16d25102d7440")]
-    [InlineData("workloadStructure", "acme.workload.workloadStructure.kql", "sha256:62eca1949e7f8b83f0f90d370b8a3f36d029869947e551994aa06af3c2007513")]
+    [InlineData("workloadStructure", "acme.workload.workloadStructure.kql", "sha256:8ed7d36e532e2d778489cae26a6f78c583a0710e7b4667c3eb013e099ff2d5c7")]
     public void Every_element_names_the_pinned_sources_under_the_column_names_of_the_KQL_text(string graph, string kql, string pinned)
     {
         var text = File.ReadAllText(Path.Combine(Definitions, kql));

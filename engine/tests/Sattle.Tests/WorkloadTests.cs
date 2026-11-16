@@ -246,6 +246,101 @@ public class WorkloadTests
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
+    // ---- when pods, endpoints and flows go away (#102) ----
+
+    /// <summary>The estate with the lines `keep` lets through and the extra lines per file, replayed up to `seconds` after 10:00.</summary>
+    static Engine Changed(Func<string, bool> keep, (string File, string[] Lines)[] extra, int seconds)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-changed-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(EstateTests.EstateDir, "*.ndjson", SearchOption.AllDirectories))
+            {
+                var target = Path.Combine(dir, Path.GetRelativePath(EstateTests.EstateDir, f)); Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                File.WriteAllLines(target, File.ReadLines(f).Where(keep));
+            }
+            foreach (var (file, lines) in extra) File.AppendAllLines(Path.Combine(dir, file), lines);
+            var cat = Repo.LoadExamples(out _);
+            var space = cat.Spaces.Keys.Single();
+            var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
+            {
+                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(seconds).ToUnixTimeMilliseconds() * 1_000_000,
+            }).Run(dir);
+            return engine;
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
+    }
+    static string Record(string source, double sec, string key, object payload) => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
+        { ["v"] = 1, ["source"] = source, ["capturedAt"] = T0.AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture), ["seq"] = 0, ["key"] = key, ["meta"] = null, ["payload"] = payload });
+    static string Watch(double sec, string type, string kind, string uid, int version, object obj) => Record("kubernetes-watch", sec, $"kubernetes-watch/{type}/{kind}/{uid}/{version}", new { type, @object = obj });
+    static HashSet<string> KeyEdges(Graph g, string type) =>
+        [.. g.Rels.Where(r => Ids.Name(r.Type) == type).Select(r => (g.Entity(r.Source) is { } s ? P(s, "key") : r.Source) + " -> " + (g.Entity(r.Target) is { } t ? P(t, "key") : r.Target))];
+
+    /// <summary>A Deployment stays in the workload whatever happens to its pods. At 10:02 the api EndpointSlice empties ("leave"), or api is scaled to 0: its pods deleted, the slice emptied ("scale0"); with "return" a pod is back in the slice at 10:03.
+    /// A Deployment none of whose pods is in a Service's EndpointSlices is under the workload instead of its Service (not ready pods stay in the slice, so this takes pods without an address); one scaled to 0 keeps its node with no pods and is Unknown. Either way the Service has nothing left under it and is Unknown until a pod is back. The replay stops at 10:03:30, before scenario A; api-5c9-2 is first seen at 10:05:30.</summary>
+    [Theory]
+    [InlineData("leave", "ns/synth/shop -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "svc/synth/shop/api -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Unknown, workload:shop=Healthy")]
+    [InlineData("scale0", "ns/synth/shop -> deploy/synth/shop/api", "svc/synth/shop/api -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "deployment:api=Unknown, service:api=Unknown, workload:shop=Healthy")]
+    [InlineData("return", "svc/synth/shop/api -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "ns/synth/shop -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Healthy, workload:shop=Healthy")]
+    public void A_deployment_stays_in_the_workload_when_its_pods_leave_the_EndpointSlice_or_it_is_scaled_to_0(string change, string contained, string notContained, string expected)
+    {
+        object Slice(params (string Address, string Pod)[] endpoints) => new
+        {
+            kind = "EndpointSlice", endpoints = endpoints.Select(e => new { addresses = new[] { e.Address }, targetRef = new { kind = "Pod", uid = e.Pod } }).ToArray(),
+            metadata = new { name = "api-slice", uid = "slice-api", resourceVersion = "980", @namespace = "shop", labels = new Dictionary<string, string> { ["kubernetes.io/service-name"] = "api" } },
+        };
+        object Pod(string name, string node) => new
+        {
+            kind = "Pod", spec = new { nodeName = node, serviceAccountName = "api" }, status = new { phase = "Running" },
+            metadata = new { name, uid = "uid-" + name, resourceVersion = "981", @namespace = "shop", ownerReferences = new[] { new { kind = "ReplicaSet", name = "api-5c9" } } },
+        };
+        List<string> lines = [Watch(120, "MODIFIED", "EndpointSlice", "slice-api", 980, Slice())];
+        if (change == "scale0")
+            lines.AddRange([
+                Watch(120.1, "MODIFIED", "Deployment", "dep-api", 982, new { kind = "Deployment", spec = new { replicas = 0 }, metadata = new { name = "api", uid = "dep-api", resourceVersion = "982", @namespace = "shop" } }),
+                Watch(120.2, "DELETED", "Pod", "uid-api-5c9-1", 983, Pod("api-5c9-1", "node-a")),
+                Watch(120.2, "DELETED", "Pod", "uid-api-5c9-2", 984, Pod("api-5c9-2", "node-b")),
+            ]);
+        if (change == "return") lines.Add(Watch(180, "MODIFIED", "EndpointSlice", "slice-api", 985, Slice(("10.0.1.1", "uid-api-5c9-1"))));
+        using var engine = Changed(_ => true, [("kubernetes/changes.ndjson", [.. lines])], 210);
+        var contains = KeyEdges(engine.Graph("workloadStructure").State, "Contains");
+        foreach (var edge in contained.Split(',')) Assert.Contains(edge, contains);
+        foreach (var edge in notContained.Split(',')) Assert.DoesNotContain(edge, contains);
+        var states = States(engine);
+        foreach (var pair in expected.Split(", "))
+        {
+            var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
+            Assert.True(states.TryGetValue(component, out var actual) && actual == state, $"{change}: {component} is {actual ?? "absent"}, expected {state}");
+        }
+    }
+
+    /// <summary>The dropped calls of a pod (rule `pod-drops`) when its calls stop and when Hubble goes silent, both at 10:01. A pod that stops calling while Hubble reports has 0 dropped calls in every window, so its signal is off; when Hubble is silent the signal is in no data once a closed window is five minutes past its last flow (from 10:08 with a minute of lateness), and the pods it does not measure are not. The replay stops at `seconds` after 10:00; scenario C (web-7d4-3 crash-looping from 10:08) is why the silent cases look at web-7d4-1 and web-7d4-2.</summary>
+    [Theory]
+    [InlineData("web-7d4-3 stops calling", 450, "pod:web-7d4-3=Healthy, pod:web-7d4-1=Healthy, pod:api-5c9-1=Healthy", "web-7d4-3", "off")]
+    [InlineData("Hubble silent for 3 minutes", 240, "pod:web-7d4-1=Healthy, pod:web-7d4-2=Healthy, pod:api-5c9-1=Healthy", "web-7d4-1", "off")]
+    [InlineData("Hubble silent for more than 5 minutes", 540, "pod:web-7d4-1=No data, pod:web-7d4-2=No data, pod:api-5c9-1=Healthy", "web-7d4-1", "nodata", Skip = "#105: a source silent as a whole covers no more windows, so the signals it feeds keep their last state (here off, still at 10:18) instead of going to no data (Def. 7.16)")]
+    public void A_pod_whose_calls_stop_is_healthy_and_one_Hubble_stopped_reporting_on_is_in_no_data(string change, int seconds, string expected, string pod, string signalState)
+    {
+        bool Keep(string line)
+        {
+            if (!line.Contains("\"source\":\"hubble\"", StringComparison.Ordinal)) return true;
+            var flow = System.Text.Json.JsonDocument.Parse(line).RootElement;
+            if (DateTimeOffset.Parse(flow.GetProperty("capturedAt").GetString()!, System.Globalization.CultureInfo.InvariantCulture) < T0.AddSeconds(60)) return true;
+            return change.StartsWith("web-7d4-3", StringComparison.Ordinal) && !line.Contains("\"pod_name\":\"web-7d4-3\"", StringComparison.Ordinal);
+        }
+        var rule = Record("authoring", 0.8, "authoring/signalRule/pod-drops", new { kind = "signalRule", id = "pod-drops", type = "pod", meter = "drops", above = 5, enterAfter = 1, below = 0, exitAfter = 2, severity = 2, invert = false });
+        using var engine = Changed(Keep, [("authoring/pod-drops.ndjson", [rule])], seconds);
+        var states = States(engine);
+        foreach (var pair in expected.Split(", "))
+        {
+            var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
+            Assert.True(states.TryGetValue(component, out var actual) && actual == state, $"{change}: {component} is {actual ?? "absent"}, expected {state}");
+        }
+        var signal = engine.Graph("workload").State.Entities.Single(e => P(e, "componentKey") == "pod/synth/shop/" + pod && P(e, "rule") == "pod-drops");
+        Assert.Equal(signalState, P(signal, "signalState"));
+    }
+
     [Fact]
     public void An_observed_call_carries_no_failure_API_Management_needs_api_and_not_the_other_way()
     {
