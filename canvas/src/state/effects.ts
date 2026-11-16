@@ -8,7 +8,6 @@ import { runtime } from "./runtime";
 import { SOURCES } from "./sources";
 import type { Action, GraphSummary, State, TelemetryState, ThemeName } from "./types";
 import { endSession, run as runEditor } from "./editor-effects";
-import { applyFilter, applyHighlight, seekTime } from "./ws-ops";
 
 export type Dispatch = (a: Action) => void;
 export const rendererTheme = (t: ThemeName) => (t === "light" ? lightTheme : darkTheme);
@@ -16,7 +15,7 @@ export const rendererTheme = (t: ThemeName) => (t === "light" ? lightTheme : dar
 /** Summaries keep their version while nothing changed, so panels that select it do not re-render at the summary rate. */
 export function summaries(ws: Workspace): GraphSummary[] {
   return ws.info.graphs.map((g) => {
-    const h = ws.histories.get(g.id)!;
+    const h = ws.history(g.id)!;
     const next = { id: g.id, role: g.role, direction: g.direction, editable: g.editable, head: h.revisionAt(h.length), patches: h.length, nodes: h.graph.nodeCount, edges: h.graph.edgeCount, cursor: h.cursor };
     const prev = runtime.versions.get(g.id);
     const same = prev && prev.head === next.head && prev.patches === next.patches && prev.nodes === next.nodes && prev.edges === next.edges && prev.cursor === next.cursor;
@@ -32,7 +31,7 @@ const telemetryOf = (hub: TelemetryHub): TelemetryState => ({
   node: { ring: hub.node.ring ?? "", size: hub.node.size ?? "", state: hub.node.state ?? "" },
   meters: [...hub.store.metersOf("node"), ...hub.store.metersOf("edge")].map((m) => ({ id: m.id, target: m.target, label: m.label, unit: m.unit, warn: m.warn, min: m.min, max: m.max })),
 });
-export const telemetrySummary = (ws: Workspace): Record<string, TelemetryState> => Object.fromEntries([...ws.hubs].map(([g, hub]) => [g, telemetryOf(hub)]));
+export const telemetrySummary = (ws: Workspace): Record<string, TelemetryState> => Object.fromEntries(ws.info.graphs.flatMap((g) => { const hub = ws.hub(g.id); return hub ? [[g.id, telemetryOf(hub)]] : []; }));
 
 function bump(graph: string): void { const v = runtime.versions.get(graph); if (v) v.version++; }
 
@@ -75,7 +74,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
     case "source/opening": if (!a.resync) endSession(); void openSource(a.id, s, dispatch); break;
     case "feed/patch":
       ws?.applyPatch(a.graph, a.patch, a.time);
-      if (ws) applyHighlight(ws, a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step
+      if (ws) ws.highlight(a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step
       throttle("data", 100, () => { if (runtime.ws === ws && ws) { reportData(ws, dispatch); reportTime(ws, dispatch); } });
       break;
     case "feed/telemetry":
@@ -83,7 +82,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
       throttle("time", 250, () => { if (runtime.ws === ws && ws) { reportTime(ws, dispatch); reportData(ws, dispatch); } });
       break;
     case "feed/meta": ws?.applyMeta(a.graph, a.meta); bump(a.graph); break;
-    case "feed/telemetryReset": ws?.hubs.get(a.graph)?.reset(); bump(a.graph); break;
+    case "feed/telemetryReset": ws?.hub(a.graph)?.reset(); bump(a.graph); break;
     // panes report changes (layout, telemetry applied, lineage loaded) far more often than panels need to look: at most 4 per second
     case "data/touched": throttle(`touched:${a.graph}`, 250, () => { if (runtime.ws === ws && ws) { bump(a.graph); reportData(ws, dispatch); } }); break;
     case "feed/resync": if (s.sourceId) setTimeout(() => dispatch({ type: "source/opening", id: s.sourceId, resync: true }), 0); break;
@@ -94,7 +93,7 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
     case "ui/theme": ws?.setTheme(rendererTheme(a.theme)); break;
     case "select/element": ws?.select(a.selection); break;
     case "pane/command": {
-      const pane = ws?.panes.get(a.graph);
+      const pane = ws?.pane(a.graph);
       if (!pane) break;
       if (a.command === "fit") pane.fit();
       else if (a.command === "relayout") pane.runLayout(pane.layoutKind, pane.layoutKind === "layered");
@@ -108,18 +107,17 @@ export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
       }
       break;
     }
-    case "time/seek": if (ws) { seekTime(ws, a.t, s.filters); reportTime(ws, dispatch); reportData(ws, dispatch); } break;
+    case "time/seek": if (ws) { ws.seek(a.t, s.filters); reportTime(ws, dispatch); reportData(ws, dispatch); } break;
     case "filter/set": {
-      const pane = ws?.panes.get(a.graph);
-      if (ws && pane) {
+      if (ws) {
         const f = { ...s.filters[a.graph], ...a.filter };
-        applyFilter(pane, f, a.filter);
-        if ("hlMode" in a.filter || "hlSince" in a.filter) applyHighlight(ws, a.graph, f);
+        ws.applyFilter(a.graph, f, a.filter);
+        if ("hlMode" in a.filter || "hlSince" in a.filter) ws.highlight(a.graph, f);
       }
       break;
     }
     case "telemetry/set": {
-      const hub = ws?.hubs.get(a.graph);
+      const hub = ws?.hub(a.graph);
       if (!hub) break;
       const c = a.change;
       if (c.enabled !== undefined) hub.enabled = c.enabled;

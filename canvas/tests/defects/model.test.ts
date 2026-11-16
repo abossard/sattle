@@ -10,6 +10,10 @@ import { resolvePatchTimes } from "../../src/core/time-axis";
 import { parsePalette } from "../../src/editor/palette";
 import { contains, ent, text } from "../../src/editor/patches";
 import { initialState, reduce } from "../../src/state/reducer";
+
+/** the workspace's own maps, filled by hand where a test builds a space without a source */
+const histories = (ws: unknown) => (ws as { histories: Map<string, unknown> }).histories;
+const hubs = (ws: unknown) => (ws as { hubs: Map<string, unknown> }).hubs;
 import type { Meter, TelemetryBatch, TelemetryFeed } from "../../src/source/types";
 import { addN, ent as plain, patch, rel, ver } from "../helpers";
 import { treeGraph, treeHints, treeSpec } from "../fixtures/tree-graph";
@@ -116,16 +120,15 @@ describe("workspace.ts:113 a live patch while the shared timeline is scrubbed ba
   it("a graph that has nothing newer than the scrubbed time stays where the timeline says", async () => {
     const { Workspace } = await import("../../src/app/workspace");
     const { History } = await import("../../src/app/history");
-    const { seekTime } = await import("../../src/state/ws-ops");
     const { darkTheme } = await import("../../src/render/theme");
     const ws = new Workspace({} as never, darkTheme, () => {});
     (ws as unknown as { info: unknown }).info = { graphs: [{ id: "a", role: "master" }, { id: "b", role: "master" }] };
     const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
     const b = new History({ version: ver("1", "b"), entities: [], relationships: [] });
-    ws.histories.set("a", a); ws.histories.set("b", b);
+    histories(ws).set("a", a); histories(ws).set("b", b);
     a.append(patch("1", "2", [addN(plain("x"))]), 10);
     a.append(patch("2", "3", [addN(plain("y"))]), 20);
-    seekTime(ws, 10, {});                       // the user scrubs back to second 10: a shows its first patch, b its snapshot
+    ws.seek(10, {});                       // the user scrubs back to second 10: a shows its first patch, b its snapshot
     expect(a.cursor).toBe(1);
     ws.applyPatch("b", patch("1", "2", [addN(plain("z"))]), 30);   // live: b gets a patch from second 30
     expect(b.cursor, "b jumped to now while the timeline shows second 10").toBe(ws.cursorAt("b", 10));
@@ -194,31 +197,29 @@ describe("app/timeline.ts the shared timeline scrubbed back", () => {
     (ws as unknown as { info: unknown }).info = { graphs: [{ id: "a", role: "master" }, { id: "b", role: "master" }] };
     const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
     const b = new History({ version: ver("1", "b"), entities: [], relationships: [] });
-    ws.histories.set("a", a); ws.histories.set("b", b);
+    histories(ws).set("a", a); histories(ws).set("b", b);
     a.append(patch("1", "2", [addN(plain("x"))]), 10);
     a.append(patch("2", "3", [addN(plain("y"))]), 20);
     return { ws, a, b };
   };
   it("a live patch is kept for later and never applied to the graph and taken back", async () => {
-    const { seekTime } = await import("../../src/state/ws-ops");
     const { ws, b } = await space();
-    seekTime(ws, 10, {});
+    ws.seek(10, {});
     let applied = 0;
     const apply = b.graph.apply.bind(b.graph);
     b.graph.apply = (p) => { applied++; return apply(p); };
     ws.applyPatch("b", patch("1", "2", [addN(plain("z"))]), 30);
     expect([applied, b.cursor, b.length], "the patch was applied and then inverted").toEqual([0, 0, 1]);
-    seekTime(ws, 30, {});
+    ws.seek(30, {});
     expect(b.graph.entity("z"), "at the newest time it shows").toBeTruthy();
   });
   it("telemetry that arrives while the space shows a time does not move the time of the values", async () => {
-    const { seekTime } = await import("../../src/state/ws-ops");
     const { TelemetryHub } = await import("../../src/app/telemetry-hub");
     const { ws, a } = await space();
     const hub = new TelemetryHub(a.graph, { meters: [{ id: "cpu", target: "node", label: "CPU", unit: "", min: 0, max: 1 }], dt: 1, ticks: 1, maxTicks: 1, fetch: async () => ({ batches: [] }), defaults: { edge: { width: "", flow: "", state: "" }, node: { ring: "cpu", size: "cpu", state: "cpu" } } } as never);
-    ws.hubs.set("a", hub);
+    hubs(ws).set("a", hub);
     hub.ingest({ graph: "a", tick: 5, t: 5, target: "node", property: "cpu", values: Float32Array.of(0.5) });
-    seekTime(ws, 10, {});                       // the graphs show second 10 of 20; the values' newest window is second 5
+    ws.seek(10, {});                       // the graphs show second 10 of 20; the values' newest window is second 5
     hub.ingest({ graph: "a", tick: 15, t: 15, target: "node", property: "cpu", values: Float32Array.of(0.9) });
     expect(hub.time, "the values followed the newest window while the graphs show second 10").toBe(10);
   });
@@ -228,33 +229,31 @@ describe("app/timeline.ts the catalog and new values while the space shows a tim
   it("a catalog patch is applied at once: definitions are not scrubbed by data time, and later catalog patches still apply", async () => {
     const { Workspace } = await import("../../src/app/workspace");
     const { History } = await import("../../src/app/history");
-    const { seekTime } = await import("../../src/state/ws-ops");
     const { darkTheme } = await import("../../src/render/theme");
     const ws = new Workspace({} as never, darkTheme, () => {});
     (ws as unknown as { info: unknown }).info = { graphs: [{ id: "catalog", role: "catalog" }, { id: "a", role: "master" }] };
     const cat = new History({ version: ver("1", "catalog"), entities: [], relationships: [] });
     const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
-    ws.histories.set("catalog", cat); ws.histories.set("a", a);
+    histories(ws).set("catalog", cat); histories(ws).set("a", a);
     a.append(patch("1", "2", [addN(plain("x"))]), 10);
     a.append(patch("2", "3", [addN(plain("y"))]), 20);
-    seekTime(ws, 10, {});
+    ws.seek(10, {});
     ws.applyPatch("catalog", patch("1", "2", [addN(plain("m"))]), 30);
-    seekTime(ws, 20, {});
+    ws.seek(20, {});
     ws.applyPatch("catalog", patch("2", "3", [addN(plain("n"))]), 40);
     expect([cat.cursor, cat.atHead, !!cat.graph.entity("m"), !!cat.graph.entity("n")], "the catalog patch kept while scrubbed back is never applied").toEqual([2, true, true, true]);
   });
   it("values whose hub is made while the space shows a time show that time, not the newest window", async () => {
     const { Workspace } = await import("../../src/app/workspace");
     const { History } = await import("../../src/app/history");
-    const { seekTime } = await import("../../src/state/ws-ops");
     const { darkTheme } = await import("../../src/render/theme");
     const ws = new Workspace({} as never, darkTheme, () => {});
     (ws as unknown as { info: unknown }).info = { graphs: [{ id: "a", role: "master" }] };
     const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
-    ws.histories.set("a", a);
+    histories(ws).set("a", a);
     a.append(patch("1", "2", [addN(plain("x"))]), 10);
     a.append(patch("2", "3", [addN(plain("y"))]), 20);
-    seekTime(ws, 10, {});
+    ws.seek(10, {});
     const hub = ws.hubFor("a");
     hub.ingest({ graph: "a", tick: 15, t: 15, target: "node", property: "cpu", values: Float32Array.of(0.9) });
     expect(hub.time, "a hub made while scrubbed back followed the newest window").toBe(10);

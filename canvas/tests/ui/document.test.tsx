@@ -7,6 +7,7 @@ import { dispatch } from "../../src/state/store";
 import type { GraphSummary } from "../../src/state/types";
 import { DocumentView } from "../../src/ui/DocumentView";
 import { violations } from "./helpers";
+import { fakeWorkspace } from "../helpers";
 
 afterEach(() => { cleanup(); runtime.ws = null; });
 
@@ -16,7 +17,7 @@ const MD: Record<string, string> = {
 };
 function fake(cursor: { at: number }, asked: string[], fail = false) {
   runtime.ws = {
-    histories: new Map([["r", { get cursor() { return cursor.at; }, revisionAt: (i: number) => String(i) }]]),
+    ...fakeWorkspace({ r: { get cursor() { return cursor.at; }, revisionAt: (i: number) => String(i) } }),
     source: { document: async (_g: string, rev?: string) => { asked.push(String(rev)); if (fail) throw new Error("engine down"); return { revision: String(rev), digest: `sha256:${rev}`.padEnd(30, "0"), markdown: MD[String(rev)] ?? "\n" }; } },
   } as never;
 }

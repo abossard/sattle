@@ -3,20 +3,18 @@
 import { Link, Subtitle2, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { useMemo } from "react";
 import { buildTree, explainNode } from "../app/tree-model";
-import type { Workspace } from "../app/workspace";
 import { dispatch } from "../state/store";
 import { StateBadge } from "./TreeView";
-import { useGraphSummary } from "./common";
+import { useRevision } from "./common";
 
 const useStyles = makeStyles({ list: { listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalXS }, row: { display: "flex", columnGap: tokens.spacingHorizontalS, alignItems: "baseline", flexWrap: "wrap" } });
 const go = (graph: string, id: string) => dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
 
-export function WhyState({ ws, graph, id }: { ws: Workspace; graph: string; id: string }) {
+export function WhyState({ graph, id }: { graph: string; id: string }) {
   const s = useStyles();
-  const version = useGraphSummary(graph)?.version;
-  const info = ws.graphInfo(graph), hist = ws.histories.get(graph);
-  const model = useMemo(() => (hist && info?.tree ? buildTree(hist.graph, info.tree, info.presentation ?? []) : null), [hist, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const why = model && hist ? explainNode(hist.graph, model, id) : null;
+  const rev = useRevision(graph);
+  const model = useMemo(() => (rev?.info.tree ? buildTree(rev.graph, rev.info.tree, rev.info.presentation ?? []) : null), [rev]);
+  const why = model && rev ? explainNode(rev.graph, model, id) : null;
   const n = model?.nodes.get(id);
   if (!model || !n || !why) return null;
   return (

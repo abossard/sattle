@@ -9,6 +9,15 @@ import { parsePalette } from "../src/editor/palette";
 import { add, fakeEngine, names, restoresTo } from "./fixtures/editor-fake";
 
 describe("editor session", () => {
+  it.each<[string, (s: EditorSession) => Promise<unknown>, boolean]>([
+    ["an edit whose answer carries a new text", (s) => s.apply(add(1), "add 1"), true],
+    ["an edit refused before the engine", (s) => s.apply([], "nothing"), false],
+  ])("the texts are a new object exactly when a text changed, and the old one stays as it was: %s", async (_, act, changed) => {
+    const s = await EditorSession.open(fakeEngine().svc);
+    const before = s.texts, was = { ...before };
+    await act(s);
+    expect([s.texts !== before, before]).toEqual([changed, was]);
+  });
   it("applies edits to the draft and the browser copy, undo and redo are inverse patches", async () => {
     const eng = fakeEngine();
     const s = await EditorSession.open(eng.svc);

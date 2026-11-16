@@ -1,6 +1,6 @@
 // Plain serializable state of the application and the named actions that change it.
 // Large mutable data (graphs, histories, telemetry frames, GL scenes) lives in `runtime`, never in this state; components
-// that read it select a version counter from the state, so a change to the data re-renders them exactly once.
+// read a graph through `useRevision` (ui/common.tsx), one frozen object per version counter of the state, so a change re-renders them once.
 import type { Patch } from "../core/model";
 import type { Rejection } from "../core/validate";
 import type { ConnectionStatus, EngineDiagnostic, TelemetryBatch } from "../source/types";

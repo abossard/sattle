@@ -4,7 +4,7 @@ import {
   Badge, Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Select, Spinner, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Textarea, Toolbar, ToolbarButton, ToolbarDivider, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Checkmark12Regular, ArrowRedo20Regular, ArrowUndo20Regular, Eye20Regular, Keyboard20Regular, Save20Regular } from "@fluentui/react-icons";
-import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
 import { Graph } from "../core/graph";
@@ -44,6 +44,7 @@ const store = (key: string) => { try { return JSON.parse(localStorage.getItem(ke
 const save = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage unavailable */ } };
 const run = (cmd: Command) => dispatch({ type: "editor/do", cmd });
 const short = (d: string) => d.replace("sha256:", "").slice(0, 10);
+const NO_TEXTS: Readonly<Record<string, string>> = {};
 const working = (ed: EditorState) => (ed.phase.t === "ready" ? ed.phase.work : null);
 
 
@@ -52,25 +53,28 @@ const working = (ed: EditorState) => (ed.phase.t === "ready" ? ed.phase.work : n
 function TextPanel() {
   const s = useStyles();
   const ed = useStore((x) => x.editor);
-  const session = runtime.session;
-  const mods = useMemo(() => Object.keys(session?.texts ?? {}).filter((m) => !m.startsWith("sattle.kernel")), [ed.textVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the session's texts are a new object whenever one changed (the store's textVersion moves with them and renders this again)
+  const texts = runtime.session?.texts ?? NO_TEXTS;
+  const mods = useMemo(() => Object.keys(texts).filter((m) => !m.startsWith("sattle.kernel")), [texts]);
   const [module, setModule] = useState(ed.module);
   const [text, setText] = useState("");
   const focused = useRef(false);
   useEffect(() => setModule(ed.module), [ed.module]);
-  useEffect(() => { if (!focused.current) setText(session?.texts[module] ?? ""); }, [ed.textVersion, module]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!focused.current) setText(texts[module] ?? ""); }, [texts, module]);
+  // what the author typed is sent 700 ms after the last key; an answer that arrives meanwhile does not send it again
+  const typedDiffers = useEffectEvent((typed: string) => typed !== (texts[module] ?? ""));
   useEffect(() => {
-    if (!focused.current || text === (session?.texts[module] ?? "")) return;
+    if (!focused.current || !typedDiffers(text)) return;
     const t = setTimeout(() => run({ t: "text", module, text }), 700);
     return () => clearTimeout(t);
-  }, [text]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [text, module]);
   return (
     <div className={s.pad}>
       <div className={s.bar}>
-        <Field label="Module" orientation="horizontal"><Select value={module} onChange={(_, d) => { setModule(d.value); setText(session?.texts[d.value] ?? ""); }}>{mods.map((m) => <option key={m}>{m}</option>)}</Select></Field>
+        <Field label="Module" orientation="horizontal"><Select value={module} onChange={(_, d) => { setModule(d.value); setText(texts[d.value] ?? ""); }}>{mods.map((m) => <option key={m}>{m}</option>)}</Select></Field>
         <Text size={200}>The text is the draft printed canonically. Edits are checked by the engine and become one undo step.</Text>
       </div>
-      <Textarea className={s.mono} resize="vertical" rows={12} aria-label={`Text of module ${module}`} value={text} onFocus={() => { focused.current = true; }} onBlur={() => { focused.current = false; if (text !== (session?.texts[module] ?? "")) run({ t: "text", module, text }); /* the pending edit is sent now, not lost with the timer */ else setText(session?.texts[module] ?? text); }} onChange={(_, d) => setText(d.value)} textarea={{ style: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre" } }} />
+      <Textarea className={s.mono} resize="vertical" rows={12} aria-label={`Text of module ${module}`} value={text} onFocus={() => { focused.current = true; }} onBlur={() => { focused.current = false; if (text !== (texts[module] ?? "")) run({ t: "text", module, text }); /* the pending edit is sent now, not lost with the timer */ else setText(texts[module] ?? text); }} onChange={(_, d) => setText(d.value)} textarea={{ style: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre" } }} />
     </div>
   );
 }
@@ -264,7 +268,7 @@ export function EditorView() {
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
           {p && <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeKqlText(`${p.module}.${p.name}.kql`, text, dispatch)}
-            picked={picked && runtime.ws?.histories.get(picked.graph) ? { graph: picked.graph, data: runtime.ws.histories.get(picked.graph)!.graph, ids: [picked.id] } : null} /></Suspense>}
+            picked={picked && runtime.ws?.history(picked.graph) ? { graph: picked.graph, data: runtime.ws.history(picked.graph)!.graph, ids: [picked.id] } : null} /></Suspense>}
           {ed.notice && <div style={{ position: "absolute", left: 36, right: 36, top: 36 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}
         </div>

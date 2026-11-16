@@ -7,7 +7,7 @@ import { ROLE_GLYPH, ROLE_WORD } from "../app/color-by";
 import { KIND_WORD } from "./EdgeKinds";
 import { attentionPaths, defaultOpen, expandBelow, hierarchyChoices, isWrong, treeOf, typeAhead, visibleRows, type HierarchyChoice, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
 import { dispatch, useStore } from "../state/store";
-import { useGraphSummary, useWorkspace } from "./common";
+import { useRevision } from "./common";
 
 const ROW_H = 32;
 const OVERSCAN = 30;
@@ -47,16 +47,15 @@ export function TreeView({ graph }: { graph: string }) {
   const only = useReader().only;
   /** the description of a row marked "shown above", read after its name */
   const aboveHint = useId();
-  const ws = useWorkspace(graph);
-  const version = useGraphSummary(graph)?.version;
+  const rev = useRevision(graph);
+  const version = rev?.version;
   const sel = useStore((x) => x.selection);
-  const info = ws?.graphInfo(graph);
-  const hist = ws?.histories.get(graph);
+  const hist = rev?.history;
   // what makes the hierarchy: by cause when the graph has a roll-up (the relation its state was computed from), else the kind of edge the ontology
   // declares (composition when it says nothing); the other kinds can be chosen
   const [choice, setChoice] = useState<HierarchyChoice | null>(null);
-  const choices = useMemo(() => (hist && info ? hierarchyChoices(hist.graph, info) : []), [hist, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  const made = useMemo(() => (hist && info ? treeOf(hist.graph, info, choice) : undefined), [hist, info, choice, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  const choices = useMemo(() => (rev ? hierarchyChoices(rev.graph, rev.info) : []), [rev]);
+  const made = useMemo(() => (rev ? treeOf(rev.graph, rev.info, choice) : undefined), [rev, choice]);
   const model = made?.model ?? null;
   const kind = made?.choice ?? "composition";
   const [expanded, setExpanded] = useState<Set<string> | null>(null);
@@ -98,10 +97,11 @@ export function TreeView({ graph }: { graph: string }) {
   const view = useMemo(() => ({ expanded: expanded ?? new Set<string>(), onlyWrong, query, sort, showHidden }), [expanded, onlyWrong, query, sort, showHidden]);
   const { rows, matches } = useMemo(() => (model ? visibleRows(model, view) : { rows: [] as TreeRow[], matches: new Set<string>() }), [model, view]);
   const change = useMemo(() => {
-    if (!hist || hist.cursor === 0) return new Map<string, string>();
-    const c = hist.changesBetween(hist.cursor - 1, hist.cursor);
+    const h = rev?.history;
+    if (!h || h.cursor === 0) return new Map<string, string>();
+    const c = h.changesBetween(h.cursor - 1, h.cursor);
     return new Map([...c.entities].map(([id, x]) => [id, CHANGE_WORD[x.kind]]));
-  }, [hist, version, model]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev]);
 
   // a row is its place in the tree (an element under two parents has two rows); it opens and closes its element
   const items: HeadlessFlatTreeItemProps[] = useMemo(() => rows.map((r) => ({ value: r.key, parentValue: r.parentKey ?? undefined, itemType: r.hasChildren && !r.shownAbove ? "branch" as const : "leaf" as const })), [rows]);
@@ -111,7 +111,8 @@ export function TreeView({ graph }: { graph: string }) {
   const tree = useHeadlessFlatTree_unstable(items, { openItems, onOpenChange: (_, d) => { const r = rows[byKey.get(String(d.value)) ?? -1]; if (r) toggle(r.node.id, d.open); } });
 
   const start = Math.max(0, Math.floor(top / ROW_H) - OVERSCAN), end = Math.min(rows.length, Math.ceil((top + height) / ROW_H) + OVERSCAN);
-  const visibleItems = useMemo(() => [...tree.items()].slice(start, end), [tree, start, end, openItems, rows]); // eslint-disable-line react-hooks/exhaustive-deps
+  // `tree` is made again whenever its items or the open rows change, so it is all this depends on
+  const visibleItems = useMemo(() => [...tree.items()].slice(start, end), [tree, start, end]);
 
   const indexOf = (key: string) => byKey.get(key) ?? -1;
   const select = (id: string) => dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });

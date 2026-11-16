@@ -31,7 +31,7 @@ describe("axe: no violations", () => {
     await screen.findByRole("grid", { name: /Nodes of the graph/ });
     const ws = runtime.ws!;
     const graph = useStore.getState().activeGraph;
-    const id = ws.histories.get(graph)!.graph.entities().next().value!.id;
+    const id = ws.history(graph)!.graph.entities().next().value!.id;
     dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
     await screen.findByRole("heading", { level: 2, name: /./ });
     expect(await violations()).toEqual([]);

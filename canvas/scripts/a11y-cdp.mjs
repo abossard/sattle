@@ -104,7 +104,7 @@ for (const theme of ["light", "dark", "contrast"]) {
 // no visible label is an internal id (the engine's element ids are hashes): the text of every view of the default source and the labels its canvases draw.
 // The Inspector shows an id on purpose, and nothing is selected here.
 const ID_PATTERN = "\\b[a-z]{1,3}:[a-z0-9]{20,}\\b";
-const idsShown = () => evaluate(`(() => { const re = new RegExp(${JSON.stringify(ID_PATTERN)}); const bad = []; const text = document.body.innerText; const m = re.exec(text); if (m) bad.push("text: " + m[0]); for (const [g, p] of window.__sattle.ws.panes) for (const l of p.labelsShown()) if (re.test(l)) bad.push(g + ": " + l); return bad.slice(0, 5); })()`);
+const idsShown = () => evaluate(`(() => { const re = new RegExp(${JSON.stringify(ID_PATTERN)}); const bad = []; const text = document.body.innerText; const m = re.exec(text); if (m) bad.push("text: " + m[0]); for (const g of window.__sattle.ws.info.graphs.map((x) => x.id)) { const p = window.__sattle.ws.pane(g); if (p) for (const l of p.labelsShown()) if (re.test(l)) bad.push(g + ": " + l); } return bad.slice(0, 5); })()`);
 for (const view of ["space", "data", "ontology"]) {
   await open("demo", view, "light");
   const graphs = view === "data" ? await evaluate(`window.__sattle.ws.info.graphs.filter((g) => g.role !== "catalog").map((g) => g.id)`) : [""];
@@ -139,10 +139,10 @@ for (const theme of ["light", "dark", "contrast"]) {
   await showGraphTab();
   await sleep(3000); await settle();
   const info = JSON.parse(await evaluate(`(() => {
-    const ws = window.__sattle.ws, g = ${JSON.stringify(ROLES_GRAPH)}, pane = ws.panes.get(g), gi = ws.graphInfo(g);
+    const ws = window.__sattle.ws, g = ${JSON.stringify(ROLES_GRAPH)}, pane = ws.pane(g), gi = ws.graphInfo(g);
     const hinted = new Set((gi.presentation ?? []).map((h) => h.property));
     const typed = new Set(gi.ontology.entityTypes.filter((t) => t.properties.some((p) => hinted.has(p.value))).map((t) => t.id.value));
-    let expected = 0; for (const e of ws.histories.get(g).graph.entities()) if (typed.has(e.type)) expected++;
+    let expected = 0; for (const e of ws.history(g).graph.entities()) if (typed.has(e.type)) expected++;
     const cv = [...document.querySelectorAll("canvas")].map((c) => c.getBoundingClientRect()).sort((a, b) => b.width * b.height - a.width * a.height)[0];
     return JSON.stringify({ legend: pane.legendOfTarget("node"), hinted: [...hinted], expected, rect: { x: Math.round(cv.x), y: Math.round(cv.y), w: Math.round(cv.width), h: Math.round(cv.height) }, setting: window.__sattle.store.getState().filters[g]?.colorNodes ?? "@default" });
   })()`));
@@ -189,10 +189,10 @@ for (const theme of ["light", "dark", "contrast"]) {
     // what the selection reaches in each graph, below it (lower) and above it (upper): tiles that are a list or a count have no pane to count in
     return JSON.parse(await evaluate(`(() => { const c = window.__sattle.ws.closure(${JSON.stringify(sel)}); const n = {}; for (const [g, s] of [...c.lower, ...c.upper]) n[g] = (n[g] ?? 0) + s.size; return JSON.stringify(n); })()`));
   };
-  const lifted = await evaluate(`[...window.__sattle.ws.histories.get("capabilities").graph.relationships()].find((r) => r.type.endsWith("DependsOn"))?.id ?? ""`);
+  const lifted = await evaluate(`[...window.__sattle.ws.history("capabilities").graph.relationships()].find((r) => r.type.endsWith("DependsOn"))?.id ?? ""`);
   const down = await reach({ graph: "capabilities", kind: "relationship", id: lifted });
   if (!(down.serviceTree > 0 && down.master > 0)) fail.push(`${name}: selecting a lifted edge highlights ${JSON.stringify(down)}, expected elements in serviceTree and master`);
-  const service = await evaluate(`[...window.__sattle.ws.histories.get("master").graph.entities()].find((e) => e.type === "Service")?.id ?? ""`);
+  const service = await evaluate(`[...window.__sattle.ws.history("master").graph.entities()].find((e) => e.type === "Service")?.id ?? ""`);
   const up = await reach({ graph: "master", kind: "entity", id: service });
   for (const g of ["serviceTree", "workloadStructure", "workload"]) if (!(up[g] > 0)) fail.push(`${name}: selecting a master service highlights ${up[g] ?? 0} elements in ${g}`);
   results.keyboard.push({ name: "abstraction highlight", lifted: down, service: up, ok: true });
@@ -201,7 +201,7 @@ for (const theme of ["light", "dark", "contrast"]) {
   await showGraphTab();
   await sleep(2500);
   // the ontology declares which edges are support (engine 3.17): the elements that only support others are left out and counted on what they support
-  const grouped = JSON.parse(await evaluate(`(() => { const p = window.__sattle.ws.panes.get("workload"); return JSON.stringify({ hiddenKinds: p ? [...p.hiddenKinds()] : [], counted: p ? p.labelsShown().filter((l) => /\\(\\+\\d+\\)/.test(l)).length : 0 }); })()`));
+  const grouped = JSON.parse(await evaluate(`(() => { const p = window.__sattle.ws.pane("workload"); return JSON.stringify({ hiddenKinds: p ? [...p.hiddenKinds()] : [], counted: p ? p.labelsShown().filter((l) => /\\(\\+\\d+\\)/.test(l)).length : 0 }); })()`));
   if (!grouped.hiddenKinds.includes("support") || !(grouped.counted > 0)) fail.push(`${name}: the supporting elements of workload are not left out and counted (${JSON.stringify(grouped)})`);
   await runAxe(`${name} workload collapsed`);
   // telemetry of the default source (static meters and windows): the lifted edges carry callDropRatio, the panel offers it
@@ -212,7 +212,7 @@ for (const theme of ["light", "dark", "contrast"]) {
   await runAxe(`${name} telemetry`);
   // a selection whose lineage is partial says so in the Inspector, and a complete one does not
   await dispatch({ type: "ui/view", view: "space" });
-  const partialSel = { graph: "treeStructure", kind: "entity", id: await evaluate(`(async () => { const ws = window.__sattle.ws; for (const e of ws.histories.get("treeStructure").graph.entities()) { const l = await ws.source.lineage("treeStructure", e.id); if (l && l.complete === false) return e.id; } return ""; })()`) };
+  const partialSel = { graph: "treeStructure", kind: "entity", id: await evaluate(`(async () => { const ws = window.__sattle.ws; for (const e of ws.history("treeStructure").graph.entities()) { const l = await ws.source.lineage("treeStructure", e.id); if (l && l.complete === false) return e.id; } return ""; })()`) };
   await dispatch({ type: "select/element", selection: partialSel }); await sleep(2500);
   const inspector = await evaluate(`document.querySelector('aside[aria-label="Inspector"]')?.textContent ?? ""`);
   if (!partialSel.id || !/The highlight is partial/.test(inspector)) fail.push(`${name}: the Inspector does not say the highlight is partial for ${partialSel.id || "(none found)"}`);

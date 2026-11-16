@@ -35,14 +35,16 @@ export function Timeline({ graph, compact = false }: { graph: string; compact?: 
   const points = ws?.axisPoints() ?? [0];
   const index = Math.max(0, countAtOrBefore(points, time.now) - 1);
   const go = (i: number) => dispatch({ type: "time/seek", t: points[Math.max(0, Math.min(i, points.length - 1))] });
+  // playing steps to the next point every 300 ms; at the last point it stops
+  const next = index < points.length - 1 ? points[index + 1] : null;
   useEffect(() => {
     if (!playing) return;
-    if (index >= points.length - 1) { setPlaying(false); return; }
-    const t = setTimeout(() => go(index + 1), 300);
+    if (next === null) { setPlaying(false); return; }
+    const t = setTimeout(() => dispatch({ type: "time/seek", t: next }), 300);
     return () => clearTimeout(t);
-  }); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [playing, next]);
   if (!ws) return null;
-  const hist = ws.histories.get(graph);
+  const hist = ws.history(graph);
   if (!hist) return null;
   const pt = ws.patchTimes(graph);
   const rev = hist.revisionAt(hist.cursor);

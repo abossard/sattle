@@ -82,11 +82,11 @@ describe("state/effects.ts:75 reloads and abandoned loads", () => {
     await settle(200);
     const fast = runtime.ws!;
     // keep the fast source's own history from moving: it also ends with one patch, so compare with what it delivered itself
-    const own = fast.histories.get("tree")!.patches.length;
+    const own = fast.history("tree")!.patches.length;
     release();                                             // the abandoned load wakes up, subscribes and its patch arrives
     await settle(300);
     expect(runtime.ws, "the workspace is still the fast one").toBe(fast);
-    expect(fast.histories.get("tree")!.patches.length, "the old source delivered a second copy of its patch into the new workspace").toBe(own);
+    expect(fast.history("tree")!.patches.length, "the old source delivered a second copy of its patch into the new workspace").toBe(own);
     expect(useStore.getState().rejections.length, "and the second copy is reported as a rejection").toBe(0);
   }, 30000);
 

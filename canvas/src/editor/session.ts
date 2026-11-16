@@ -15,16 +15,30 @@ export interface Step { label: string; edits: Edit[] }
 export type Outcome = { ok: true; applied: Applied } | { ok: false; error: string; code?: string; element?: string };
 
 export class EditorSession {
-  readonly undoStack: Step[] = [];
-  readonly redoStack: Step[] = [];
-  diagnostics: EngineDiagnostic[] = [];
-  /** canonical text per module, as of the last answer */
-  texts: Record<string, string> = {};
-  /** bumped by every change of the graph, so views can tell */
-  version = 0;
+  readonly #undo: Step[] = [];
+  readonly #redo: Step[] = [];
+  #diagnostics: EngineDiagnostic[] = [];
+  #texts: Readonly<Record<string, string>> = {};
+  #version = 0;
+  #schemas: Record<string, import("./service").OperatorSchema[]> = {};
+  #graph: Graph;
+  #revision: string;
   private cat: { version: number; catalog: Catalog } | null = null;
 
-  private constructor(readonly svc: EditorService, readonly palette: Palette, public draft: Draft, public graph: Graph, public revision: string) {}
+  private constructor(readonly svc: EditorService, readonly palette: Palette, readonly draft: Draft, graph: Graph, revision: string) { this.#graph = graph; this.#revision = revision; }
+
+  /** the browser's copy of the draft's catalog graph; only the session changes it */
+  get graph(): Graph { return this.#graph; }
+  get revision(): string { return this.#revision; }
+  /** bumped by every change of the graph, so views can tell */
+  get version(): number { return this.#version; }
+  get diagnostics(): readonly EngineDiagnostic[] { return this.#diagnostics; }
+  /** canonical text per module, as of the last answer: a new object whenever a text changed, never changed in place */
+  get texts(): Readonly<Record<string, string>> { return this.#texts; }
+  /** engine 3.21: the columns after each operator, by projection id, from the last check or patch answer that carried them */
+  get schemas(): Readonly<Record<string, readonly import("./service").OperatorSchema[]>> { return this.#schemas; }
+  get undoStack(): readonly Step[] { return this.#undo; }
+  get redoStack(): readonly Step[] { return this.#redo; }
 
   static async open(svc: EditorService, base?: string): Promise<EditorSession> {
     const [palette, draft] = await Promise.all([svc.palette(), svc.createDraft(base)]);
@@ -36,23 +50,21 @@ export class EditorSession {
   }
 
   get catalog(): Catalog {
-    if (!this.cat || this.cat.version !== this.version) this.cat = { version: this.version, catalog: new Catalog(this.graph) };
+    if (!this.cat || this.cat.version !== this.#version) this.cat = { version: this.#version, catalog: new Catalog(this.#graph) };
     return this.cat.catalog;
   }
-  get ok(): boolean { return !this.diagnostics.some((d) => d.severity === "error"); }
-
-  /** engine 3.21: the columns after each operator, by projection id, from the last check or patch answer that carried them */
-  schemas: Record<string, import("./service").OperatorSchema[]> = {};
+  get ok(): boolean { return !this.#diagnostics.some((d) => d.severity === "error"); }
 
   private absorb(a: Pick<Applied, "diagnostics" | "modules" | "schemas">): void {
-    this.diagnostics = a.diagnostics;
-    if (a.schemas) this.schemas = a.schemas;
-    for (const [m, v] of Object.entries(a.modules)) if (v.text !== undefined) this.texts[m] = v.text;
+    this.#diagnostics = a.diagnostics;
+    if (a.schemas) this.#schemas = a.schemas;
+    const changed = Object.entries(a.modules).filter(([m, v]) => v.text !== undefined && v.text !== this.#texts[m]);
+    if (changed.length) this.#texts = { ...this.#texts, ...Object.fromEntries(changed.map(([m, v]) => [m, v.text!])) };
   }
 
   private patchOf(edits: Edit[]): Patch {
-    const v = (rev: string) => ({ tenant: this.graph.version?.tenant ?? "", graph: this.graph.version?.graph ?? "catalog", revision: rev });
-    return { from: v(this.revision), to: v(String(Number(this.revision) + 1)), projection: "catalog", profile: "extensionalFinite", edits, cause: { inputs: [], configurationVersion: "0" } };
+    const v = (rev: string) => ({ tenant: this.#graph.version?.tenant ?? "", graph: this.#graph.version?.graph ?? "catalog", revision: rev });
+    return { from: v(this.#revision), to: v(String(Number(this.#revision) + 1)), projection: "catalog", profile: "extensionalFinite", edits, cause: { inputs: [], configurationVersion: "0" } };
   }
 
   /**
@@ -71,11 +83,11 @@ export class EditorSession {
     if (edits.length === 0) return { ok: false, error: "nothing to change" };
     const patch = this.patchOf(edits);
     try {
-      const applied = await this.svc.applyPatch(this.draft.draft, patch, this.revision);
-      const res = this.graph.apply(patch);
+      const applied = await this.svc.applyPatch(this.draft.draft, patch, this.#revision);
+      const res = this.#graph.apply(patch);
       if (!res.ok) { await this.resyncNow(); return { ok: false, error: `the browser copy of the draft was out of step (${res.conflicts[0]?.message}); reloaded it` }; }
-      this.revision = applied.revision;
-      this.version++;
+      this.#revision = applied.revision;
+      this.#version++;
       this.absorb(applied);
       return { ok: true, applied };
     } catch (e) {
@@ -89,26 +101,26 @@ export class EditorSession {
     const edits = coalesce(all);
     const r = await this.send(edits);
     if (r.ok) {
-      this.undoStack.push({ label, edits });
-      if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
-      this.redoStack.length = 0;
+      this.#undo.push({ label, edits });
+      if (this.#undo.length > MAX_UNDO) this.#undo.shift();
+      this.#redo.length = 0;
     }
     return r;
   }
   undo(): Promise<Outcome | null> { return this.serial(() => this.undoNow()); }
   private async undoNow(): Promise<Outcome | null> {
-    const step = this.undoStack[this.undoStack.length - 1];
+    const step = this.#undo[this.#undo.length - 1];
     if (!step) return null;
     const r = await this.send(invertEdits(step.edits));
-    if (r.ok) { this.undoStack.pop(); this.redoStack.push(step); }
+    if (r.ok) { this.#undo.pop(); this.#redo.push(step); }
     return r;
   }
   redo(): Promise<Outcome | null> { return this.serial(() => this.redoNow()); }
   private async redoNow(): Promise<Outcome | null> {
-    const step = this.redoStack[this.redoStack.length - 1];
+    const step = this.#redo[this.#redo.length - 1];
     if (!step) return null;
     const r = await this.send(step.edits);
-    if (r.ok) { this.redoStack.pop(); this.undoStack.push(step); }
+    if (r.ok) { this.#redo.pop(); this.#undo.push(step); }
     return r;
   }
 
@@ -118,7 +130,7 @@ export class EditorSession {
    */
   change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: { name: string; text: string } } | null): Promise<Outcome | null> {
     return this.serial(async () => {
-      const c = compose(this.graph);
+      const c = compose(this.#graph);
       if (!c) return null;
       const stored = c.file ? await this.storeKqlNow(c.file.name, c.file.text) : null;
       if (stored && !stored.ok) return stored;
@@ -132,15 +144,15 @@ export class EditorSession {
       const applied = await this.svc.restore(this.draft.draft, digest);
       const edits = applied.patch.edits;
       // an empty patch still moves the revision: the browser copy follows it, or the next edit starts from a revision the engine has left
-      const r = this.graph.apply(applied.patch);
+      const r = this.#graph.apply(applied.patch);
       if (!r.ok) await this.resyncNow();
       if (edits.length) {
-        this.undoStack.push({ label: "restore release", edits });
-        if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
-        this.redoStack.length = 0;
+        this.#undo.push({ label: "restore release", edits });
+        if (this.#undo.length > MAX_UNDO) this.#undo.shift();
+        this.#redo.length = 0;
       }
-      this.revision = applied.revision;
-      this.version++;
+      this.#revision = applied.revision;
+      this.#version++;
       this.absorb(applied);
     });
   }
@@ -155,7 +167,7 @@ export class EditorSession {
   commit(module: string, version: string | undefined, head: Graph, expectedCatalogRevision: string): Promise<{ catalogRevision: string; modules: string[] }> {
     return this.serial(async () => {
       if (version) {
-        const t = this.texts[module] ?? "";
+        const t = this.#texts[module] ?? "";
         const re = /^(module\s+\S+\s*@\s*)\S+?(\s*;)/m;
         if (!re.test(t)) throw new Error("the module header was not found in the text");
         const next = t.replace(re, `$1${version}$2`);
@@ -175,7 +187,7 @@ export class EditorSession {
   storeKql(file: string, text: string): Promise<Outcome> { return this.serial(() => this.storeKqlNow(file, text)); }
   private async storeKqlNow(file: string, text: string): Promise<Outcome> {
     try {
-      const applied = await this.svc.setDraftText(this.draft.draft, file, text, this.revision);
+      const applied = await this.svc.setDraftText(this.draft.draft, file, text, this.#revision);
       await this.resyncNow();
       return { ok: true, applied };
     } catch (e) {
@@ -187,9 +199,9 @@ export class EditorSession {
   resync(): Promise<void> { return this.serial(() => this.resyncNow()); }
   private async resyncNow(): Promise<void> {
     const snap = await this.svc.snapshot(this.draft.draft);
-    this.graph = Graph.fromSnapshot(snap);
-    this.revision = snap.version.revision;
-    this.version++;
+    this.#graph = Graph.fromSnapshot(snap);
+    this.#revision = snap.version.revision;
+    this.#version++;
     this.absorb(await this.svc.check(this.draft.draft));
   }
 
@@ -200,11 +212,11 @@ export class EditorSession {
   applyText(module: string, text: string, head: Graph): Promise<Outcome> { return this.serial(() => this.applyTextNow(module, text, head)); }
   private async applyTextNow(module: string, text: string, head: Graph): Promise<Outcome> {
     const checked = await this.svc.checkText(module, text);
-    if (!checked.ok || !checked.patch) { this.diagnostics = checked.diagnostics; return { ok: false, error: checked.diagnostics[0]?.message ?? "the engine rejects this text" }; }
+    if (!checked.ok || !checked.patch) { this.#diagnostics = checked.diagnostics; return { ok: false, error: checked.diagnostics[0]?.message ?? "the engine rejects this text" }; }
     const parsed = Graph.fromSnapshot(head.toSnapshot());
     const r = parsed.apply(checked.patch);
     if (!r.ok) return { ok: false, error: "the checked patch does not apply to the catalog head" };
-    const change = diffGraphs(this.graph, parsed);
+    const change = diffGraphs(this.#graph, parsed);
     // the edited module is replaced by what its text says. The modules the text affects (their import pins are rewritten) are not: `parsed`
     // comes from the committed catalog, so everything the draft added there (the graphs and bindings of a new projection live in the space
     // module) would read as removed. Of those modules only the check patch's own edits are taken, rebased on the draft's current state.
@@ -215,7 +227,7 @@ export class EditorSession {
     for (const e of checked.patch.edits) {
       if (e.kind !== "entity" && e.kind !== "relationship") continue;
       if (own(e.id) || !touched.has(moduleOfId(e.id))) continue;
-      const before = e.kind === "entity" ? this.graph.entity(e.id) ?? null : this.graph.rel(e.id) ?? null;
+      const before = e.kind === "entity" ? this.#graph.entity(e.id) ?? null : this.#graph.rel(e.id) ?? null;
       if (!before && !e.after) continue;
       (e.kind === "entity" ? ents : rels).push({ ...e, before } as Edit);
     }

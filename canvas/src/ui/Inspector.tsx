@@ -8,7 +8,6 @@ import { formatValue } from "../app/telemetry-hub";
 import type { Workspace } from "../app/workspace";
 import { dispatch, useStore } from "../state/store";
 import type { Selection } from "../state/types";
-import { styleOf } from "../state/ws-ops";
 import { roleColor, TypeGlyph, useWorkspace } from "./common";
 import { WhyState } from "./WhyState";
 
@@ -21,7 +20,7 @@ const go = (graph: string, id: string, kind: Selection["kind"]) => {
 };
 
 const ElementLink = ({ ws, graph, id, edge = false }: { ws: Workspace; graph: string; id: string; edge?: boolean }) => {
-  const g = ws.histories.get(graph)?.graph;
+  const g = ws.history(graph)?.graph;
   const stub = g?.stubSlot.get(id);
   const el = edge ? g?.rel(id) : g?.entity(id) ?? (stub !== undefined ? g?.nodes[stub] : undefined);
   const text = el && g ? g.label(el) : id;
@@ -39,17 +38,17 @@ export function Inspector() {
   useStore((x) => x.time.now);
   if (!ws) return null;
   if (!sel) return <div className={s.col}><Subtitle2 as="h2">Inspector</Subtitle2><Text>Select a node or edge. The same entity is highlighted in every graph of the space.</Text></div>;
-  const hist = ws.histories.get(sel.graph);
+  const hist = ws.history(sel.graph);
   if (!hist) return null;
-  const pane = ws.panes.get(sel.graph);
+  const pane = ws.pane(sel.graph);
   const stubSlot = sel.kind === "entity" ? hist.graph.stubSlot.get(sel.id) : undefined;
   const el = sel.kind === "entity" ? hist.graph.entity(sel.id) ?? (stubSlot !== undefined ? hist.graph.nodes[stubSlot] : undefined) : hist.graph.rel(sel.id);
-  const reference = stubSlot !== undefined ? ws.references.get(sel.graph)?.get(sel.id) : undefined;
+  const reference = stubSlot !== undefined ? ws.reference(sel.graph, sel.id) : undefined;
   const change = pane?.highlight ? (sel.kind === "entity" ? pane.highlight.entities.get(sel.id) : pane.highlight.relationships.get(sel.id)) : undefined;
   const subject = el ?? change?.before ?? null;
   const role = ws.graphInfo(sel.graph)?.role ?? "";
   const rel = ws.related(sel);
-  const li = ws.lineageInfo.get(`${sel.graph}|${sel.kind}|${sel.id}`);
+  const li = ws.lineageOf(sel);
   const partial = ws.partialOf(sel);
   const g = hist.graph;
   const slot = stubSlot ?? (el && !isRel(el) ? g.nodeSlot.get(el.id) : undefined);
@@ -60,7 +59,7 @@ export function Inspector() {
   }
   return (
     <div className={s.col}>
-      <Subtitle2 as="h2">{subject ? <><TypeGlyph {...styleOf(ws, sel.graph, subject.type)} /> {g.label(subject)}</> : sel.id}</Subtitle2>
+      <Subtitle2 as="h2">{subject ? <><TypeGlyph {...ws.styleOf(sel.graph, subject.type)} /> {g.label(subject)}</> : sel.id}</Subtitle2>
       <div><Badge color={roleColor(role)} appearance="outline">{sel.graph}</Badge> <code className={s.mono}>{sel.id}</code></div>
       {!el && change?.kind === "removed" && <Text>Removed in this revision. Showing the state before the change.</Text>}
       {el && isRel(el) && <Text><ElementLink ws={ws} graph={sel.graph} id={el.source} /> → <ElementLink ws={ws} graph={sel.graph} id={el.target} /></Text>}
@@ -93,7 +92,7 @@ export function Inspector() {
           </Tree>
         </>
       )}
-      {sel.kind === "entity" && ws.graphInfo(sel.graph)?.tree && <WhyState ws={ws} graph={sel.graph} id={sel.id} />}
+      {sel.kind === "entity" && ws.graphInfo(sel.graph)?.tree && <WhyState graph={sel.graph} id={sel.id} />}
       <Subtitle2 as="h3">Shared identity and lineage</Subtitle2>
       {[...rel.identity].map(([graph, keys]) => <Text key={graph}><Badge appearance="outline" color={roleColor(ws.graphInfo(graph)?.role ?? "")}>{graph}</Badge> {[...keys].slice(0, 6).map((k) => <ElementLink key={k} ws={ws} graph={graph} id={k.slice(2)} edge={k.startsWith("e:")} />)}</Text>)}
       {(partial.below.length > 0 || partial.aboveIn.length > 0 || partial.cutOff) && (
@@ -108,16 +107,16 @@ export function Inspector() {
       {li && (
         <KV rows={[["projection", li.projection ?? ""], ["emitted by", li.sink ?? ""], ...(li.rule ? [["rule", `${li.rule}${li.direction ? ` (${li.direction})` : ""}`] as [string, string]] : []), ["operators", li.operators.join(" → ")], ["sources", `${li.sources.length} of ${li.sourceCount}${li.complete ? "" : " (not complete)"}`], ...(li.groupKey ? [["group key", JSON.stringify(li.groupKey)] as [string, string]] : [])]} />
       )}
-      {!rel.identity.size && !rel.sourceList.length && <Text>{ws.corr.size ? "This element has no counterpart in another graph." : "This source provides no correspondence data. Only entities with the same id are linked."}</Text>}
+      {!rel.identity.size && !rel.sourceList.length && <Text>{ws.hasCorrespondences ? "This element has no counterpart in another graph." : "This source provides no correspondence data. Only entities with the same id are linked."}</Text>}
       <Series ws={ws} sel={sel} />
     </div>
   );
 }
 
 function Series({ ws, sel }: { ws: Workspace; sel: Selection }) {
-  const hub = ws.hubs.get(sel.graph);
+  const hub = ws.hub(sel.graph);
   if (!hub?.hasData) return null;
-  const g = ws.histories.get(sel.graph)!.graph;
+  const g = ws.history(sel.graph)!.graph;
   const target = sel.kind === "entity" ? "node" : "edge";
   const slot = target === "node" ? g.nodeSlot.get(sel.id) : g.edgeSlot.get(sel.id);
   const meters = hub.store.metersOf(target);

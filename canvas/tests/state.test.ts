@@ -4,7 +4,7 @@ import { initialState, reduce } from "../src/state/reducer";
 import { dispatch, useStore } from "../src/state/store";
 import type { Action, State } from "../src/state/types";
 import { emptyFilter } from "../src/state/types";
-import { addN, ent, patch } from "./helpers";
+import { addN, ent, patch, fakeWorkspace } from "./helpers";
 import { editorTransition, type EditorEvent, type EditorPhase } from "../src/state/editor-phase";
 import { EditorSession } from "../src/editor/session";
 import type { Preview } from "../src/editor/service";
@@ -54,7 +54,7 @@ describe("effects: server pushes are applied to the runtime in the order they ar
   it("consecutive patches append in order, a gap is rejected and shows up in the state", async () => {
     const ws = runtime.ws!;
     const graph = useStore.getState().activeGraph;
-    const h = ws.histories.get(graph)!;
+    const h = ws.history(graph)!;
     const head = h.revisionAt(h.length);
     const n = Number(head);
     const mk = (from: number, to: number, id: string) => ({ ...patch(String(from), String(to), [addN(ent(id, "Service"))]), from: { ...h.snapshot.version, revision: String(from) }, to: { ...h.snapshot.version, revision: String(to) } });
@@ -74,7 +74,7 @@ describe("effects: server pushes are applied to the runtime in the order they ar
   it("telemetry frames never reach the state", () => {
     const ws = runtime.ws!;
     const graph = useStore.getState().activeGraph;
-    const hub = ws.hubs.get(graph);
+    const hub = ws.hub(graph);
     const s0 = useStore.getState();
     dispatch({ type: "feed/telemetry", graph, batch: { graph, tick: 1, t: 1, target: "node", property: hub?.store.metersOf("node")[0]?.id ?? "cpu", values: new Float32Array(0), ids: [] } });
     expect(useStore.getState().graphs).toBe(s0.graphs);
@@ -83,7 +83,7 @@ describe("effects: server pushes are applied to the runtime in the order they ar
 
   it("selecting dispatches through the runtime and back", () => {
     const graph = useStore.getState().activeGraph;
-    const id = runtime.ws!.histories.get(graph)!.graph.entities().next().value!.id;
+    const id = runtime.ws!.history(graph)!.graph.entities().next().value!.id;
     dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
     expect(runtime.ws!.selection).toEqual({ graph, kind: "entity", id });
     expect(useStore.getState().selection!.id).toBe(id);
@@ -121,7 +121,7 @@ describe("editor flow: an answer of an ended session is dropped", () => {
     Object.assign(eng.svc, { releases: () => releases.p, commit: () => commit.p, discard: async () => {} });
     const ws = runtime.ws;
     // the catalog head a commit is checked against
-    runtime.ws = { source: { catalogGraph: "catalog" }, histories: new Map([["catalog", { graph: new Graph(), length: 0, revisionAt: () => "11" }]]) } as never;
+    runtime.ws = { source: { catalogGraph: "catalog" }, ...fakeWorkspace({ catalog: { graph: new Graph(), length: 0, revisionAt: () => "11" } }) } as never;
     runtime.session = await EditorSession.open(eng.svc);
     dispatch({ type: "editor/event", event: { t: "open" } });
     dispatch({ type: "editor/event", event: { t: "opened" } });

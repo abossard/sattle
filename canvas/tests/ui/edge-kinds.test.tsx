@@ -13,7 +13,7 @@ import { KIND_WORD, KindSample, kindsOf } from "../../src/ui/EdgeKinds";
 import { FiltersPanel } from "../../src/ui/Filters";
 import { TreeView } from "../../src/ui/TreeView";
 import { ont } from "../fixtures/engine-fake";
-import { ent, rel, ver } from "../helpers";
+import { ent, rel, ver, fakeWorkspace } from "../helpers";
 import { violations } from "./helpers";
 
 afterEach(() => { cleanup(); runtime.ws = null; });
@@ -38,7 +38,7 @@ describe("a sample of each kind", () => {
 
 const fakeWs = (graph: Graph, kinds: Record<string, EdgeKind>, tree?: TreeSpec) => ({
   graphInfo: () => ({ id: "g", role: "projection", descriptor: {}, ontology: ont("o"), inputs: [], edgeKinds: kinds, tree }),
-  histories: new Map([["g", { graph, length: 0 }]]), panes: new Map(), hubs: new Map(),
+  ...fakeWorkspace({ g: { graph, length: 0 } }),
 }) as never;
 const hubGraph = () => Graph.fromSnapshot({ version: ver("1"), entities: [ent("a"), ent("b")], relationships: Object.keys(edgeKinds).map((t) => rel(`r-${t}`, "a", "b", t)) });
 
@@ -97,7 +97,7 @@ describe("the tree chooses which kind is the hierarchy", () => {
   });
   const ws = () => ({
     graphInfo: () => ({ id: "g", role: "projection", descriptor: {}, ontology: { ...ont("o"), relationshipTypes: ["Contains", "Needs"].map((t) => ({ id: { value: t }, sourceTypes: [{ value: "Row" }], targetTypes: [{ value: "Row" }], properties: [] })) }, inputs: [], edgeKinds: kinds, tree }),
-    histories: new Map([["g", { graph: g, length: 0, cursor: 0, patches: [] }]]), panes: new Map(), hubs: new Map(), select() {},
+    ...fakeWorkspace({ g: { graph: g, length: 0, cursor: 0, patches: [] } }), select() {},
   }) as never;
   const rows = () => screen.getAllByRole("treeitem").map((r) => r.textContent ?? "");
   it("opens on composition and offers the other kinds; choosing dependency nests by it", async () => {

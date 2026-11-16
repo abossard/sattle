@@ -24,7 +24,7 @@ describe("a tile of the graph space of the default source", () => {
     await openApp("demo", "space");
     const t = await tile(id);
     const ws = runtime.ws!;
-    const line = describeGraph(ws.graphInfo(id)!, typesHeld(ws.histories.get(id)!.graph));
+    const line = describeGraph(ws.graphInfo(id)!, typesHeld(ws.history(id)!.graph));
     expect(line.length).toBeGreaterThan(10);
     expect(isInternalId(line) || isInternalId(t.textContent ?? ""), `${id}: ${t.textContent?.slice(0, 200)}`).toBe(false);
     // the line may be followed by what the tile leaves out
@@ -61,7 +61,7 @@ describe("a tile of the graph space of the default source", () => {
 describe("what elements are called in the default source", () => {
   it.each(GRAPHS)("%s: every element has a label and none is an internal id", async (id) => {
     await openApp("demo", "space");
-    const g = runtime.ws!.histories.get(id)!.graph;
+    const g = runtime.ws!.history(id)!.graph;
     const labels = [...g.entities()].map((e) => g.label(e));
     expect(labels.length).toBeGreaterThan(0);
     for (const l of labels) { expect(l.trim(), id).not.toBe(""); expect(isInternalId(l), `${id}: ${l}`).toBe(false); }

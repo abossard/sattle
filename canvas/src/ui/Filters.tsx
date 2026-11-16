@@ -8,24 +8,22 @@ import { KIND_WORD, KindSample, kindsOf } from "./EdgeKinds";
 import { DEFAULT_COLORING, ROLE_GLYPH, ROLE_WORD, coloringLabel, legendOf, propertiesOf, resolveColoring, type Target } from "../app/color-by";
 import { roleCss } from "../app/roles";
 import { SUPPORT_GROUPING, resolveGrouping } from "../app/graph-view-model";
-import { typeCountsOf, styleOf, valueCountsOf } from "../state/ws-ops";
-import { TypeGlyph, useGraphSummary, useWorkspace } from "./common";
+import { TypeGlyph, useRevision } from "./common";
 
 const useStyles = makeStyles({ col: { display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS }, row: { display: "flex", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap" } });
 const set = (graph: string, filter: Partial<FilterState>) => dispatch({ type: "filter/set", graph, filter });
 
 /** One target (nodes or edges): which property colors it, and the legend with counts, roles and glyphs. */
 export function ColorControl({ graph, target, setting }: { graph: string; target: Target; setting: string }) {
-  const ws = useWorkspace(graph);
-  const version = useGraphSummary(graph)?.version;
-  const info = ws?.graphInfo(graph);
-  const coloring = info ? resolveColoring(info, target, setting) : null;
+  const rev = useRevision(graph);
+  const coloring = useMemo(() => (rev ? resolveColoring(rev.info, target, setting) : null), [rev, target, setting]);
   const legend = useMemo(() => {
-    if (!ws || !coloring) return [];
-    const { counts, missing, hint } = valueCountsOf(ws, graph, coloring, target);
+    if (!rev || !coloring) return [];
+    const { counts, missing, hint } = rev.ws.valueCounts(rev.id, coloring, target);
     return legendOf(counts, missing, hint, roleCss);
-  }, [ws, graph, target, coloring?.property, coloring?.hint, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!ws || !info) return null;
+  }, [rev, coloring, target]);
+  if (!rev) return null;
+  const info = rev.info;
   const props = [...propertiesOf(info.ontology, target)].sort();
   const hinted = resolveColoring(info, target, DEFAULT_COLORING);
   const label = target === "node" ? "Nodes" : "Edges";
@@ -63,17 +61,19 @@ export function parseDecimal(typed: string | undefined): number | undefined {
 
 export function FiltersPanel({ graph }: { graph: string }) {
   const s = useStyles();
-  const ws = useWorkspace(graph);
+  const rev = useRevision(graph);
+  const ws = rev?.ws;
   const f = useStore((x) => x.filters[graph]) ?? emptyFilter();
   const tel = useStore((x) => x.telemetry[graph]);
   const info = ws?.graphInfo(graph);
   const [search, setSearch] = useState(f.search);
-  useEffect(() => { const t = setTimeout(() => { if (search !== f.search) set(graph, { search }); }, 160); return () => clearTimeout(t); }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+  // a filter that changed elsewhere (Clear filters, another graph) resets `search` below, and that cancels a send pending here
+  useEffect(() => { const t = setTimeout(() => { if (search !== f.search) set(graph, { search }); }, 160); return () => clearTimeout(t); }, [search, graph, f.search]);
   useEffect(() => setSearch(f.search), [graph, f.search]);
-  const counts = useMemo(() => (ws ? typeCountsOf(ws, graph) : new Map<string, number>()), [ws, graph, ws?.histories.get(graph)?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const counts = useMemo(() => (rev ? rev.ws.typeCounts(rev.id) : new Map<string, number>()), [rev]);
   if (!ws || !info) return null;
-  const pane = ws.panes.get(graph);
-  const relTypes = [...new Set([...ws.histories.get(graph)!.graph.relationships()].map((r) => r.type))].sort();
+  const pane = ws.pane(graph);
+  const relTypes = [...new Set([...ws.history(graph)!.graph.relationships()].map((r) => r.type))].sort();
   const propKeys = [...new Set(info.ontology.properties.map((p) => p.id.value))];
   const support = resolveGrouping(info, SUPPORT_GROUPING);
   const grouped = !!resolveGrouping(info, f.grouping);
@@ -104,7 +104,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
         <AccordionPanel className={s.col}>
           {[...counts].sort((a, b) => b[1] - a[1]).map(([t, n]) => (
             <Checkbox key={t} checked={!f.hiddenTypes.includes(t)} onChange={(_, d) => set(graph, { hiddenTypes: d.checked ? f.hiddenTypes.filter((x) => x !== t) : [...f.hiddenTypes, t] })}
-              label={<span style={{ display: "inline-flex", alignItems: "center", columnGap: 6 }}><TypeGlyph {...styleOf(ws, graph, t)} />{t} <Text size={200}>({n})</Text></span>} />
+              label={<span style={{ display: "inline-flex", alignItems: "center", columnGap: 6 }}><TypeGlyph {...ws.styleOf(graph, t)} />{t} <Text size={200}>({n})</Text></span>} />
           ))}
         </AccordionPanel>
       </AccordionItem>

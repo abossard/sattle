@@ -14,7 +14,7 @@ import type { Work } from "./editor-phase";
 import type { Dispatch } from "./effects";
 
 const summary = (s: EditorSession): Partial<EditorState> => ({
-  draft: s.draft.draft, base: s.draft.baseRevision, revision: s.revision, version: s.version, diagnostics: s.diagnostics,
+  draft: s.draft.draft, base: s.draft.baseRevision, revision: s.revision, version: s.version, diagnostics: [...s.diagnostics],
   undo: s.undoStack.slice(-5).map((x) => x.label).reverse(), redo: s.redoStack.slice(-5).map((x) => x.label).reverse(), textVersion: s.version,
 });
 
@@ -66,8 +66,8 @@ export function summarizePatch(label: string, from: string, to: string, p: Patch
   return { label, from, to, ...count, items };
 }
 
-const headRevision = (): string => { const ws = runtime.ws; const id = ws?.source.catalogGraph; const h = id ? ws!.histories.get(id) : undefined; return h ? h.revisionAt(h.length) : ""; };
-const headGraph = (): Graph | null => { const ws = runtime.ws; const id = ws?.source.catalogGraph; return id ? ws!.histories.get(id)!.graph : null; };
+const headRevision = (): string => { const ws = runtime.ws; const id = ws?.source.catalogGraph; const h = id ? ws!.history(id) : undefined; return h ? h.revisionAt(h.length) : ""; };
+const headGraph = (): Graph | null => { const ws = runtime.ws; const id = ws?.source.catalogGraph; return id ? ws!.history(id)!.graph : null; };
 
 async function open(dispatch: Dispatch): Promise<void> {
   // effects run before the reducer: what is dispatched here, before the first await, would be overwritten by `editor/open` ("opening") that is still to be reduced

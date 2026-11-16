@@ -10,7 +10,7 @@ import { runtime } from "../state/runtime";
 import { rendererTheme } from "../state/effects";
 import { dispatch, useStore } from "../state/store";
 import { webgl2Available } from "./CanvasHost";
-import { useWorkspace } from "./common";
+import { useRevision, useWorkspace } from "./common";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(240px, 320px) minmax(0, 1fr)", minHeight: 0, height: "100%", "@media (max-width: 800px)": { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(300px, 1fr)" } },
@@ -50,16 +50,18 @@ export function OntologyView() {
   const theme = useStore((x) => x.theme);
   const catalogId = useStore((x) => x.catalog);
   const active = useStore((x) => x.activeGraph);
-  const catVersion = useStore((x) => x.graphs.find((g) => g.id === x.catalog)?.version);
+  const cat = useRevision(catalogId);
+  const catVersion = cat?.version;
   const [graphId, setGraphId] = useState(active);
   const [moduleName, setModuleName] = useState("");
   const [texts, setTexts] = useState(new Map<string, string>());
   const [picked, setPicked] = useState<string | null>(null);
   const stage = useRef<HTMLDivElement>(null);
   const paneRef = useRef<DataPane | null>(null);
-  const catalog = useMemo(() => (ws && catalogId ? new Catalog(ws.histories.get(catalogId)!.graph) : null), [ws, catalogId, catVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+  const catalog = useMemo(() => (cat ? new Catalog(cat.graph) : null), [cat]);
   const modules = useMemo(() => catalog?.modules().filter((m) => m.name !== "sattle.kernel") ?? [], [catalog]);
   const module = modules.find((m) => m.name === moduleName) ?? modules.find((m) => m.name === "acme.ops") ?? modules[0];
+  const shownModule = module?.name;
   useEffect(() => { void ws?.source.definitions?.modules().then((ms) => setTexts(new Map(ms.map((m) => [m.module, m.text])))).catch(() => {}); }, [ws, catVersion]);
   const content = useMemo(() => (!ws ? null : catalog && module ? fromModule(catalog, module.id, module.name) : fromOntology(ws, ws.graphInfo(graphId) ? graphId : active)), [ws, catalog, module, graphId, active]);
   useEffect(() => {
@@ -67,12 +69,12 @@ export function OntologyView() {
     const info = ws.graphInfo(catalog ? catalogId : graphId)!;
     const host = document.createElement("div");
     stage.current.replaceChildren(host);
-    const pane = new DataPane({ ...info, id: `ontology ${module?.name ?? graphId}`, inputs: [] }, new History(content.graph.toSnapshot()), host, rendererTheme(theme),
+    const pane = new DataPane({ ...info, id: `ontology ${shownModule ?? graphId}`, inputs: [] }, new History(content.graph.toSnapshot()), host, rendererTheme(theme),
       { select: (sel) => { pane.setSelection(sel); setPicked(sel?.id ?? null); }, hover: () => {}, activate: () => {}, changed: () => {}, announce: (text) => dispatch({ type: "ui/announce", text }), key: () => false });
-    pane.layoutDirection = "right"; pane.view.allEdgeLabels = true; pane.start({ layout: "layered" });
+    pane.view.allEdgeLabels = true; pane.start({ layout: "layered" }, "right");
     paneRef.current = pane;
     return () => { pane.dispose(); paneRef.current = null; };
-  }, [ws, content, theme]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ws, content, theme, catalog, catalogId, graphId, shownModule]);
   if (!ws || !content) return null;
   const pick = (id: string) => { setPicked(id); const p = paneRef.current; if (p) { p.setSelection({ graph: p.info.id, kind: "entity", id }); p.focusSelection(); } };
   return (

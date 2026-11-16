@@ -37,7 +37,7 @@ describe("the default source: the engine's output on the estate", () => {
   it("a lifted edge stands for the lower edges and nodes down to the master, and a master node is part of what is above it", async () => {
     await openApp("demo", "space");
     const ws = runtime.ws!;
-    const lifted = [...ws.histories.get("capabilities")!.graph.relationships()].find((r) => r.type.endsWith("DependsOn"))!;
+    const lifted = [...ws.history("capabilities")!.graph.relationships()].find((r) => r.type.endsWith("DependsOn"))!;
     const edge = { graph: "capabilities", kind: "relationship", id: lifted.id } as const;
     ws.select(edge);
     await vi.waitFor(() => expect(ws.closure(edge).lower.get("master")?.size ?? 0).toBeGreaterThan(0));
@@ -46,7 +46,7 @@ describe("the default source: the engine's output on the estate", () => {
     expect([...(lower.get("master") ?? [])].some((k) => k.startsWith("e:")), "the master edges the lifted edge aggregates").toBe(true);
     expect([...(lower.get("master") ?? [])].some((k) => k.startsWith("n:"))).toBe(true);
 
-    const service = [...ws.histories.get("master")!.graph.entities()].find((e) => e.type === "Service")!;
+    const service = [...ws.history("master")!.graph.entities()].find((e) => e.type === "Service")!;
     const node = { graph: "master", kind: "entity", id: service.id } as const;
     ws.select(node);
     await vi.waitFor(() => expect(["serviceTree", "workloadStructure", "workload"].filter((g) => !(ws.closure(node).upper.get(g)?.size))).toEqual([]));
@@ -62,7 +62,7 @@ describe("the default source: the engine's output on the estate", () => {
     await vi.waitFor(() => expect(ws.partialOf(state).below.map((b) => b.graph)).toContain("treeStructure"));
     expect(ws.partialOf(state).cutOff).toBe(false);
 
-    const lifted = [...ws.histories.get("capabilities")!.graph.relationships()].find((r) => r.type.endsWith("DependsOn"))!;
+    const lifted = [...ws.history("capabilities")!.graph.relationships()].find((r) => r.type.endsWith("DependsOn"))!;
     const edge = { graph: "capabilities", kind: "relationship", id: lifted.id } as const;
     ws.select(edge);
     await vi.waitFor(() => expect(ws.closure(edge).lower.get("master")?.size ?? 0).toBeGreaterThan(0));
@@ -85,7 +85,7 @@ describe("the default source: the engine's output on the estate", () => {
     for (const t of ws.axisPoints()) {
       await act(async () => { dispatch({ type: "time/seek", t }); });
       // the tree has rendered the revision the timeline shows: its count of nodes is that revision's
-      const model = treeOf(ws.histories.get("workload")!.graph, info)?.model;
+      const model = treeOf(ws.history("workload")!.graph, info)?.model;
       if (model) await waitFor(() => { const bar = screen.queryByRole("group", { name: "Tree controls" }); if (bar) expect(bar.textContent).toContain(` ${model.nodes.size.toLocaleString()} nodes`); });
       const shown = screen.queryByRole("tree", { name: "Tree of workload" });
       for (const r of shown ? within(shown).getAllByRole("treeitem") : []) for (const m of (r.textContent ?? "").matchAll(/state (Healthy|No data|Degraded|Unhealthy|Unknown),/g)) seen.add(m[1]);

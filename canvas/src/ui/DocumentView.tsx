@@ -39,7 +39,7 @@ function Block({ b, compact }: { b: DocBlock; compact: boolean }) {
 export function DocumentView({ graph, compact = false }: { graph: string; compact?: boolean }) {
   const s = useStyles();
   const ws = useWorkspace(graph);
-  const hist = ws?.histories.get(graph);
+  const hist = ws?.history(graph);
   const revision = hist ? hist.revisionAt(hist.cursor) : undefined;
   // the document with the graph it belongs to: another graph at the same revision number is another document
   const [held, setHeld] = useState<{ graph: string; doc: DocumentText | null } | null>(null);

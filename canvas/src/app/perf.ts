@@ -1,9 +1,8 @@
 // Performance harness, exposed as window.__perf. Used for the measurements recorded in PERF.md.
 import type { Workspace } from "./workspace";
-import { seekPane as seekPane0, seekTime as seekTime0 } from "../state/ws-ops";
 import { useStore } from "../state/store";
-const seekPane = (ws: Workspace, g: string, i: number) => seekPane0(ws, g, i, useStore.getState().filters[g]);
-const seekTime = (ws: Workspace, t: number) => seekTime0(ws, t, useStore.getState().filters);
+const seekPane = (ws: Workspace, g: string, i: number) => ws.seekGraph(g, i, useStore.getState().filters[g]);
+const seekTime = (ws: Workspace, t: number) => ws.seek(t, useStore.getState().filters);
 
 export interface FrameStats { cpuMs?: number; labelMs?: number; maxLabelMs?: number; maxCpuMs?: number; maxFrameMs?: number; frames: number; seconds: number; fps: number; p50: number; p95: number; p99: number; max: number; over20ms: number }
 
@@ -109,11 +108,11 @@ export function installPerf(getWs: () => Workspace | null, graph: () => string):
     },
     /** replay all patches forward from revision 0, timing incremental application */
     async patchReplay(): Promise<{ patches: number; edits: number; applyAvgMs: number; applyMaxMs: number; relayouts: number; positionsChanged: number }> {
-      const ws = getWs()!; const g = graph(); const hist = ws.histories.get(g)!; const p = pane();
+      const ws = getWs()!; const g = graph(); const hist = ws.history(g)!; const p = pane();
       seekPane(ws, g, 0);
       await new Promise((r) => setTimeout(r, 50));
       const before = new Float32Array(p.scene.positions.subarray(0, p.graph.nodes.length * 2));
-      const jobs = p.layoutClient.busy;
+      const jobs = p.layoutBusy;
       const times: number[] = [];
       let edits = 0;
       for (let i = 1; i <= hist.length; i++) {
@@ -126,14 +125,14 @@ export function installPerf(getWs: () => Workspace | null, graph: () => string):
       let moved = 0;
       for (let i = 0; i < before.length; i += 2) if (Number.isFinite(before[i]) && (p.scene.positions[i] !== before[i] || p.scene.positions[i + 1] !== before[i + 1])) moved++;
       void jobs;
-      return { patches: hist.length, edits, applyAvgMs: +(times.reduce((a, b) => a + b, 0) / times.length).toFixed(3), applyMaxMs: +Math.max(...times).toFixed(3), relayouts: p.layoutClient.busy ? 1 : 0, positionsChanged: moved };
+      return { patches: hist.length, edits, applyAvgMs: +(times.reduce((a, b) => a + b, 0) / times.length).toFixed(3), applyMaxMs: +Math.max(...times).toFixed(3), relayouts: p.layoutBusy ? 1 : 0, positionsChanged: moved };
     },
     /**
      * Telemetry at `hz` ticks per second on every node and edge, with the camera idle, panning, or zoomed in with flow pulses on.
      * Needs the synth-100k-stream source (simulated stream). Reports frame statistics and the per-tick costs.
      */
     async telemetry(hz = 10, ms = 6000, mode: "idle" | "pan" | "zoomed" = "pan"): Promise<Record<string, unknown>> {
-      const ws = getWs()!; const p = pane(); const v = p.view; const hub = ws.hubs.get(graph())!;
+      const ws = getWs()!; const p = pane(); const v = p.view; const hub = ws.hub(graph())!;
       const ctl = ws.source.controls!;
       v.fit(false);
       if (mode === "zoomed") { v.zoomBy(14); }
@@ -156,7 +155,7 @@ export function installPerf(getWs: () => Workspace | null, graph: () => string):
     },
     /** scrub through the stored telemetry window while panning; measures frame time with a tick change every frame */
     async scrub(ms = 4000): Promise<FrameStats> {
-      const ws = getWs()!; const g = graph(); const hub = ws.hubs.get(g)!; const v = pane().view;
+      const ws = getWs()!; const g = graph(); const hub = ws.hub(g)!; const v = pane().view;
       v.fit(false);
       const times = hub.store.frameTimes();
       return sampled(() => drive(ms, (i) => { seekTime(ws, times[Math.floor((Math.sin(i / 25) + 1) / 2 * (times.length - 1))]); v.panBy(Math.sin(i / 40) * 8, 0); }));

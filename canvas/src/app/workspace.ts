@@ -1,34 +1,33 @@
 // Workspace: one opened GraphSource with a History and a lazily created DataPane per graph.
 // Owns selection and cross-graph highlighting (shared identity and correspondences).
-import { LIVE, type Timeline } from "./timeline";
+import { LIVE, timelineAt, type Timeline } from "./timeline";
 import { nameGraph } from "../core/naming";
 import type { Correspondence, GraphInfo, GraphSource, Reference, SpaceInfo } from "../source/types";
 import { stubEntity } from "../core/reference";
 import { DataPane, type PaneEvents, type Selection } from "./data-pane";
-import type { Action } from "../state/types";
+import type { Action, FilterState } from "../state/types";
 import { History } from "./history";
 import { TelemetryHub } from "./telemetry-hub";
 import { mergeTimes, resolvePatchTimes, revisionCursorAt } from "../core/time-axis";
 import type { Theme } from "../render/theme";
+import { tally, type Coloring, type Target } from "./color-by";
 
 export class Workspace {
   info!: SpaceInfo;
-  readonly histories = new Map<string, History>();
-  readonly panes = new Map<string, DataPane>();
-  readonly corr = new Map<string, Correspondence[]>();
-  readonly hubs = new Map<string, TelemetryHub>();
+  private readonly histories = new Map<string, History>();
+  private readonly panes = new Map<string, DataPane>();
+  private readonly corr = new Map<string, Correspondence[]>();
+  private readonly hubs = new Map<string, TelemetryHub>();
   /** sourceKey "graph|key" -> derived targets */
   private derivedOf = new Map<string, { graph: string; key: string }[]>();
   private targetSources = new Map<string, { graph: string; key: string }[]>();
   /** per graph: why its dangling endpoints are missing, as the engine says (read at the head once the graphs are loaded) */
-  readonly references = new Map<string, Map<string, Reference>>();
-  selection: Selection | null = null;
+  private readonly references = new Map<string, Map<string, Reference>>();
+  private selected: Selection | null = null;
   /** whether the space follows the newest data or shows a time on the shared axis (seconds): see timeline.ts */
-  timeline: Timeline = LIVE;
+  private shownAt: Timeline = LIVE;
   private unsub: (() => void)[] = [];
   loadMs = 0;
-  hosts = new Map<string, HTMLElement>();
-  onKeyHook: (ev: KeyboardEvent) => boolean = () => false;
 
   /** `dispatch` receives every event the source pushes, in order; the effects of the store apply them back through `apply*`. */
   constructor(readonly source: GraphSource, public theme: Theme, private readonly dispatch: (a: Action) => void) {}
@@ -115,7 +114,7 @@ export class Workspace {
     if (!h) return;
     const before = h.problems.length;
     // definitions are configuration, not scrubbed by data time: a catalog patch always applies
-    const step = h.append(patch, time, this.timeline.k === "live" || this.graphInfo(graph)?.role === "catalog");
+    const step = h.append(patch, time, this.shownAt.k === "live" || this.graphInfo(graph)?.role === "catalog");
     for (let i = before; i < h.problems.length; i++) {
       const p = h.problems[i];
       this.dispatch({ type: "feed/rejected", at: Date.now(), rejection: { source: graph, where: `patch ${p.patch}`, errors: [p.reason, ...(p.conflicts ?? []).slice(0, 3).map((c) => `${c.key}: ${c.message}`)] } });
@@ -123,8 +122,8 @@ export class Workspace {
     const pane = this.panes.get(graph);
     if (step) pane?.applyStep(step);
     // the space shows a time: the patch is kept, and the graph shows what that time holds (the patch too, if it is from before it)
-    else if (this.timeline.k === "at") {
-      const target = this.cursorAt(graph, this.timeline.t);
+    else if (this.shownAt.k === "at") {
+      const target = this.cursorAt(graph, this.shownAt.t);
       if (h.cursor !== target) pane?.applySteps(h.seek(target));
     }
   }
@@ -154,14 +153,13 @@ export class Workspace {
     void this.loadReferences(graph);
     const info = this.info.graphs.find((g) => g.id === graph)!;
     const host = document.createElement("div");
-    this.hosts.set(graph, host);
     const events: PaneEvents = {
       select: (sel) => this.dispatch({ type: "select/element", selection: sel }),
       hover: (sel) => this.dispatch({ type: "hover/element", selection: sel }),
       activate: () => {},
       changed: () => this.dispatch({ type: "data/touched", graph }),
       announce: (text) => this.dispatch({ type: "ui/announce", text }),
-      key: (ev) => this.onKeyHook(ev),
+      key: () => false,
     };
     p = new DataPane(info, this.histories.get(graph)!, host, this.theme, events, this.hubs.get(graph) ?? null);
     this.panes.set(graph, p);
@@ -196,7 +194,7 @@ export class Workspace {
     if (!hub) {
       const h = this.histories.get(graph)!;
       hub = new TelemetryHub(h.graph, { meters: [], defaults: {} }, 241);
-      hub.show(this.timeline);
+      hub.show(this.shownAt);
       this.hubs.set(graph, hub);
       this.panes.get(graph)?.attachTelemetry(hub);
     }
@@ -205,11 +203,80 @@ export class Workspace {
 
   graphInfo(id: string): GraphInfo | undefined { return this.info.graphs.find((g) => g.id === id); }
 
+  // ---- what the views read ----
+  /** the history of a graph: its graph at the cursor and its patches */
+  history(graph: string): History | undefined { return this.histories.get(graph); }
+  /** the pane of a graph once it is shown */
+  pane(graph: string): DataPane | undefined { return this.panes.get(graph); }
+  hub(graph: string): TelemetryHub | undefined { return this.hubs.get(graph); }
+  get timeline(): Timeline { return this.shownAt; }
+  get selection(): Selection | null { return this.selected; }
+  /** why a dangling endpoint is missing, as the engine says */
+  reference(graph: string, id: string): Reference | undefined { return this.references.get(graph)?.get(id); }
+  lineageOf(sel: Selection): import("../source/types").Lineage | undefined { return this.lineageInfo.get(`${sel.graph}|${sel.kind}|${sel.id}`); }
+  get hasCorrespondences(): boolean { return this.corr.size > 0; }
+
+  /** Count of entities per type in a graph at its cursor. */
+  typeCounts(graph: string): Map<string, number> {
+    const m = new Map<string, number>();
+    const g = this.histories.get(graph)!.graph;
+    for (const e of g.entities()) m.set(e.type, (m.get(e.type) ?? 0) + 1);
+    for (const e of g.stubs()) m.set(e.type, (m.get(e.type) ?? 0) + 1);
+    return m;
+  }
+
+  /** Shape and color of a type as the canvas draws it (a neutral circle when there is no pane). */
+  styleOf(graph: string, type: string): { shape: string; color: string } {
+    const pane = this.panes.get(graph);
+    return pane ? { shape: pane.shapeName(type), color: pane.colorCss(type) } : { shape: "circle", color: "#8ec8ff" };
+  }
+
+  /** Counts per colored value over the nodes or the edges (see `tally`), how many have none, and the hint that maps the values to roles. */
+  valueCounts(graph: string, c: Coloring, target: Target = "node"): ReturnType<typeof tally> {
+    const g = this.histories.get(graph)!.graph;
+    return tally(c, target === "node" ? g.entities() : g.relationships());
+  }
+
+  // ---- time and what the panes show ----
+  /** Move one graph to `target` patches applied. */
+  seekGraph(graph: string, target: number, fs: FilterState | undefined): void {
+    const steps = this.histories.get(graph)!.seek(target);
+    const pane = this.panes.get(graph);
+    if (pane) { pane.applySteps(steps); this.highlight(graph, fs); }
+  }
+
+  /** Move the whole space to time t: every graph shows the revision and the telemetry frame valid at that instant. */
+  seek(t: number, filters: Record<string, FilterState>): void {
+    this.shownAt = timelineAt(this.axisPoints(), t);
+    for (const hub of this.hubs.values()) if (hub.hasData) hub.show(this.shownAt);
+    for (const g of this.info.graphs) {
+      if (g.role === "catalog") continue; // definitions are configuration, not scrubbed by data time
+      const target = this.cursorAt(g.id, t);
+      if (this.histories.get(g.id)!.cursor !== target) this.seekGraph(g.id, target, filters[g.id]);
+    }
+  }
+
+  /** The change highlight a graph's filter asks for: the last step, everything since a revision, or none. */
+  highlight(graph: string, fs: FilterState | undefined): void {
+    const hist = this.histories.get(graph);
+    const pane = this.panes.get(graph);
+    if (!hist || !pane) return;
+    const mode = fs?.hlMode ?? "step";
+    if (mode === "off" || (hist.cursor === 0 && mode === "step")) pane.setHighlight(null);
+    else if (mode === "since") pane.setHighlight(hist.changesBetween(Math.min(fs!.hlSince, hist.cursor), hist.cursor));
+    else pane.setHighlight(hist.changesBetween(hist.cursor - 1, hist.cursor));
+  }
+
+  /** Apply the parts of a graph's filter state that changed to its pane. */
+  applyFilter(graph: string, f: FilterState, changed: Partial<FilterState>): void {
+    this.panes.get(graph)?.applyFilter(f, changed);
+  }
+
   setTheme(t: Theme): void { this.theme = t; for (const p of this.panes.values()) p.setTheme(t); }
 
   // ---- selection ----
   select(sel: Selection | null): void {
-    this.selection = sel;
+    this.selected = sel;
     for (const [id, pane] of this.panes) pane.setSelection(sel && sel.graph === id ? sel : null);
     this.updateCross();
     if (sel) void this.loadAbstraction(sel);
@@ -252,10 +319,10 @@ export class Workspace {
   }
 
   updateCross(): void {
-    const rel = this.selection ? this.related(this.selection) : null;
-    const abs = this.selection ? this.closure(this.selection) : null;
+    const rel = this.selected ? this.related(this.selected) : null;
+    const abs = this.selected ? this.closure(this.selected) : null;
     for (const [id, pane] of this.panes) {
-      if (this.selection?.graph === id) { pane.setCross({ nodes: new Set(), edges: new Set() }, { nodes: new Set(), edges: new Set() }); continue; }
+      if (this.selected?.graph === id) { pane.setCross({ nodes: new Set(), edges: new Set() }, { nodes: new Set(), edges: new Set() }); continue; }
       const take = (m: Map<string, Set<string>> | undefined, p: "n:" | "e:") => new Set([...(m?.get(id) ?? [])].filter((k) => k.startsWith(p)).map((k) => k.slice(2)));
       const above = (p: "n:" | "e:") => new Set([...take(rel?.identity, p), ...take(abs?.upper, p)]);
       const below = (p: "n:" | "e:") => new Set([...take(rel?.sources, p), ...take(abs?.lower, p)]);
@@ -282,7 +349,7 @@ export class Workspace {
   async loadAbstraction(sel: Selection): Promise<void> {
     const BUDGET = 400;
     this.cutOff.delete(`${sel.graph}|${sel.kind}|${sel.id}`);
-    const here = () => !!this.selection && this.selection.graph === sel.graph && this.selection.id === sel.id;
+    const here = () => !!this.selected && this.selected.graph === sel.graph && this.selected.id === sel.id;
     const role = (g: string) => this.graphInfo(g)?.role;
     const keyOf = (kind: "entity" | "relationship", id: string) => (kind === "entity" ? "n:" : "e:") + id;
     let budget = BUDGET;
@@ -359,7 +426,7 @@ export class Workspace {
     for (const e of [mine, ...[...upper].flatMap(([graph, keys]) => [...keys].map((k) => ({ graph, kind: kindOf(k), id: k.slice(2) })))]) for (const g of this.reverseInfo.get(`${e.graph}|${e.kind}|${e.id}`)?.incompleteIn ?? []) above.add(g);
     return { below, aboveIn: [...above].sort(), cutOff: this.cutOff.has(`${sel.graph}|${sel.kind}|${sel.id}`) };
   }
-  readonly lineageInfo = new Map<string, import("../source/types").Lineage>();
+  private readonly lineageInfo = new Map<string, import("../source/types").Lineage>();
 
   describe(sel: Selection): string {
     const h = this.histories.get(sel.graph);

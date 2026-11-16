@@ -43,8 +43,8 @@ function Status() {
   const st = { load: useStore((x) => x.load), conn: useStore((x) => x.connection), active: useStore((x) => x.activeGraph), graphs: useStore((x) => x.graphs) };
   useStore((x) => x.time.now);
   const ws = runtime.ws;
-  const pane = ws?.panes.get(st.active);
-  const hub = ws?.hubs.get(st.active);
+  const pane = ws?.pane(st.active);
+  const hub = ws?.hub(st.active);
   const frames = pane?.view.frameTimes.slice(-60) ?? [];
   const avg = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : 0;
   const g = st.graphs.find((x) => x.id === st.active);

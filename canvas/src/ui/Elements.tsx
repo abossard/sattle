@@ -6,8 +6,7 @@ import { ROLE_GLYPH, ROLE_WORD, colorValueOf, coloringLabel, resolveColoring } f
 import { emptyFilter } from "../state/types";
 import type { Entity, Rel } from "../core/model";
 import { dispatch, useStore } from "../state/store";
-import { styleOf } from "../state/ws-ops";
-import { TypeGlyph, useWorkspace } from "./common";
+import { TypeGlyph, useRevision } from "./common";
 
 const useStyles = makeStyles({ col: { display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS, padding: tokens.spacingHorizontalM, minHeight: 0, overflow: "auto" } });
 const LIMIT = 300;
@@ -15,22 +14,22 @@ type Row = { id: string; type: string; name: string; detail: string; value: stri
 
 export function ElementsPanel({ graph }: { graph: string }) {
   const s = useStyles();
-  const ws = useWorkspace(graph);
+  const rev = useRevision(graph);
+  const ws = rev?.ws;
   const sel = useStore((x) => x.selection);
   const [kind, setKind] = useState<"entity" | "relationship">("entity");
   const [q, setQ] = useState("");
   // a sorted list is sorted before it is cut: the first rows by that order, not by slot
   const [sort, setSort] = useState<{ column: keyof Row; dir: "ascending" | "descending" } | null>(null);
-  const g = ws?.histories.get(graph)?.graph;
-  const filters = useStore((x) => x.filters[graph]) ?? emptyFilter();
-  const info = ws?.graphInfo(graph);
-  const coloring = info ? resolveColoring(info, kind === "entity" ? "node" : "edge", kind === "entity" ? filters.colorNodes : filters.colorEdges) : null;
+  const g = rev?.graph;
+  const setting = useStore((x) => (kind === "entity" ? x.filters[graph]?.colorNodes : x.filters[graph]?.colorEdges)) ?? (kind === "entity" ? emptyFilter().colorNodes : emptyFilter().colorEdges);
+  const coloring = useMemo(() => (rev ? resolveColoring(rev.info, kind === "entity" ? "node" : "edge", setting) : null), [rev, kind, setting]);
   const prop = coloring?.property ?? "";
-  /** the colored property's value with its role glyph and word: the grid shows what the color says */
-  const valueOf = (props: Record<string, import("../core/wire-types").GraphValue>): string => { const v = coloring ? colorValueOf(coloring, props) : undefined; if (!v) return prop ? "(no value)" : ""; return `${v.text}${v.role ? ` ${ROLE_GLYPH[v.role]} ${ROLE_WORD[v.role]}` : ""}`; };
-  const version = useStore((x) => x.graphs.find((y) => y.id === graph)?.version);
   const { rows, total } = useMemo(() => {
-    if (!g) return { rows: [] as Row[], total: 0 };
+    if (!rev) return { rows: [] as Row[], total: 0 };
+    const g = rev.graph;
+    /** the colored property's value with its role glyph and word: the grid shows what the color says */
+    const valueOf = (props: Record<string, import("../core/wire-types").GraphValue>): string => { const v = coloring ? colorValueOf(coloring, props) : undefined; if (!v) return coloring?.property ? "(no value)" : ""; return `${v.text}${v.role ? ` ${ROLE_GLYPH[v.role]} ${ROLE_WORD[v.role]}` : ""}`; };
     const out: Row[] = [];
     const cut = !sort; // without a sort order the first rows in slot order will do; with one, every row is needed to know which come first
     let n = 0;
@@ -61,12 +60,13 @@ export function ElementsPanel({ graph }: { graph: string }) {
       out.length = Math.min(out.length, LIMIT);
     }
     return { rows: out, total: n };
-  }, [g, q, kind, sel, version, prop, sort]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev, q, kind, sel, graph, coloring, sort]);
+  const valueLabel = coloring ? coloringLabel(coloring) : prop;
   const columns: TableColumnDefinition<Row>[] = useMemo(() => [
-    createTableColumn<Row>({ columnId: "type", compare: (a, b) => a.type.localeCompare(b.type), renderHeaderCell: () => "Type", renderCell: (r) => <TableCellLayout media={ws ? <TypeGlyph {...styleOf(ws, graph, r.type)} /> : undefined}>{r.type}</TableCellLayout> }),
+    createTableColumn<Row>({ columnId: "type", compare: (a, b) => a.type.localeCompare(b.type), renderHeaderCell: () => "Type", renderCell: (r) => <TableCellLayout media={ws ? <TypeGlyph {...ws.styleOf(graph, r.type)} /> : undefined}>{r.type}</TableCellLayout> }),
     createTableColumn<Row>({ columnId: "name", compare: (a, b) => a.name.localeCompare(b.name), renderHeaderCell: () => (kind === "entity" ? "Name" : "Source → target"), renderCell: (r) => <TableCellLayout truncate>{r.name}</TableCellLayout> }),
-    ...(prop ? [createTableColumn<Row>({ columnId: "value", compare: (a, b) => a.value.localeCompare(b.value), renderHeaderCell: () => (coloring ? coloringLabel(coloring) : prop), renderCell: (r) => <TableCellLayout truncate>{r.value}</TableCellLayout> })] : []),
-  ], [ws, graph, kind, prop]);
+    ...(prop ? [createTableColumn<Row>({ columnId: "value", compare: (a, b) => a.value.localeCompare(b.value), renderHeaderCell: () => valueLabel, renderCell: (r) => <TableCellLayout truncate>{r.value}</TableCellLayout> })] : []),
+  ], [ws, graph, kind, prop, valueLabel]);
   if (!ws || !g) return null;
   const selected = sel && sel.graph === graph && sel.kind === kind ? new Set([sel.id]) : new Set<string>();
   return (

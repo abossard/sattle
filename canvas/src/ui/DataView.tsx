@@ -10,8 +10,7 @@ import { hasHierarchyEdges, hasTreeRows, tileRows, treeOf, treeRowCount } from "
 import { ROLE_GLYPH } from "../app/color-by";
 import { edgelessNotice } from "../app/graph-view-model";
 import { countsByType, describeGraph, isolatedNodes, purposesOf, tileKind, tileThinsIsolated, typesHeld } from "../app/tile";
-import { DirectionBadge, TypeGlyph, roleColor, useGraphSummary, useWorkspace } from "./common";
-import { styleOf } from "../state/ws-ops";
+import { DirectionBadge, TypeGlyph, roleColor, useGraphSummary, useRevision, useWorkspace } from "./common";
 import { ElementsPanel } from "./Elements";
 import { FiltersPanel } from "./Filters";
 import { Inspector } from "./Inspector";
@@ -76,7 +75,7 @@ export function DataView() {
   if (!ws || !info) return null;
   const isDoc = info.document === true && !!ws.source.document;
   // a graph whose ontology marks a hierarchy opens as a tree, a document graph as a document; the graph is the other tab
-  const hist = ws.histories.get(active);
+  const hist = ws.history(active);
   const isTree = !isDoc && !!info.tree && !!hist && hasTreeRows(hist.graph, info.tree);
   const first = isDoc ? "document" : "tree";
   const mode = isDoc || isTree ? shown[active] ?? first : "graph";
@@ -108,16 +107,13 @@ export function DataView() {
  */
 function TreeTile({ graph }: { graph: string }) {
   const s = useStyles();
-  const ws = useWorkspace(graph);
-  const version = useGraphSummary(graph)?.version;
-  const info = ws?.graphInfo(graph);
-  const g = ws?.histories.get(graph)?.graph;
+  const rev = useRevision(graph);
   // the tree the Tree tab opens on: by cause when the graph has a roll-up
   const { rows, more, wrong, total } = useMemo(() => {
-    const m = g && info ? treeOf(g, info)?.model : undefined;
+    const m = rev ? treeOf(rev.graph, rev.info)?.model : undefined;
     if (!m) return { rows: [], more: 0, wrong: 0, total: 0 };
     return { ...tileRows(m), wrong: [...m.nodes.values()].filter((n) => (n.rolled ?? n.own)?.role === "warning" || (n.rolled ?? n.own)?.role === "danger").length, total: m.nodes.size };
-  }, [g, info, version]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rev]);
   if (!rows.length) return null;
   return (
     <div className={s.notice} tabIndex={0} role="region" aria-label={`Top of the hierarchy of ${graph}`}>
@@ -143,11 +139,10 @@ function TreeTile({ graph }: { graph: string }) {
 /** The master as a count of what was observed: its types with how many of each, and what relates them. */
 function SummaryTile({ graph }: { graph: string }) {
   const s = useStyles();
-  const ws = useWorkspace(graph);
-  const version = useGraphSummary(graph)?.version;
-  const g = ws?.histories.get(graph)?.graph;
-  const counts = useMemo(() => (g ? countsByType(g) : null), [g, version]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!ws || !counts) return null;
+  const rev = useRevision(graph);
+  const counts = useMemo(() => (rev ? countsByType(rev.graph) : null), [rev]);
+  if (!rev || !counts) return null;
+  const ws = rev.ws;
   const word = (t: string) => t.slice(t.lastIndexOf(".") + 1);
   const part = (list: [string, number][], max: number) => ({ shown: list.slice(0, max), more: list.length - Math.min(list.length, max) });
   const ents = part(counts.entities, 12), rels = part(counts.relationships, 8);
@@ -155,7 +150,7 @@ function SummaryTile({ graph }: { graph: string }) {
     <div className={s.notice} tabIndex={0} role="region" aria-label={`What ${graph} holds`}>
       <Text size={200} weight="semibold">What was observed</Text>
       <ul className={s.list} style={{ listStyle: "none", paddingLeft: 0 }} aria-label={`Elements of ${graph} by type`}>
-        {ents.shown.map(([t, n]) => <li key={t} style={{ display: "flex", columnGap: 8, alignItems: "center" }}><TypeGlyph {...styleOf(ws, graph, t)} /><Text size={200}>{word(t)}</Text><Text size={200} style={{ marginLeft: "auto" }}>{n}</Text></li>)}
+        {ents.shown.map(([t, n]) => <li key={t} style={{ display: "flex", columnGap: 8, alignItems: "center" }}><TypeGlyph {...ws.styleOf(graph, t)} /><Text size={200}>{word(t)}</Text><Text size={200} style={{ marginLeft: "auto" }}>{n}</Text></li>)}
       </ul>
       {ents.more > 0 && <Text size={200}>and {ents.more} more types</Text>}
       <Text size={200} weight="semibold">Related by</Text>
@@ -170,7 +165,7 @@ function NoticeTile({ graph }: { graph: string }) {
   const ws = useWorkspace(graph);
   const sum = useGraphSummary(graph);
   const info = ws?.graphInfo(graph);
-  const g = ws?.histories.get(graph)?.graph;
+  const g = ws?.history(graph)?.graph;
   if (!ws || !info || !sum || !g) return null;
   const notice = edgelessNotice(info.role, sum.nodes, sum.edges, info.ontology.relationshipTypes.map((t) => t.id.value));
   const held = [...g.entities()].slice(0, 12).map((e) => g.label(e));
@@ -192,15 +187,15 @@ export function SpaceView() {
   const [rows, setRows] = useState(false);
   if (!ws) return null;
   const catalog = ws.info.graphs.find((x) => x.role === "catalog");
-  const purpose = purposesOf(catalog ? ws.histories.get(catalog.id)?.graph : undefined);
-  const subtitle = (id: string): string => { const info = ws.graphInfo(id), g = ws.histories.get(id)?.graph; return info && g ? describeGraph(info, typesHeld(g), purpose) : ""; };
+  const purpose = purposesOf(catalog ? ws.history(catalog.id)?.graph : undefined);
+  const subtitle = (id: string): string => { const info = ws.graphInfo(id), g = ws.history(id)?.graph; return info && g ? describeGraph(info, typesHeld(g), purpose) : ""; };
   const kindOf = (g: { id: string; nodes: number; edges: number }) => {
-    const info = ws.graphInfo(g.id), graph = ws.histories.get(g.id)?.graph;
+    const info = ws.graphInfo(g.id), graph = ws.history(g.id)?.graph;
     const rows = info?.tree && graph && hasTreeRows(graph, info.tree) && hasHierarchyEdges(graph, info.tree) ? treeRowCount(graph, info.tree) : 0;
     return info ? tileKind(info, g, !!ws.source.document, rows) : "graph";
   };
   /** what the picture leaves out: nodes no edge reaches are not drawn in a tile of a graph that has others */
-  const leftOut = (id: string): string => { const graph = ws.histories.get(id)?.graph; return graph && kindOf(graphs.find((x) => x.id === id)!) === "graph" && tileThinsIsolated(graph) ? ` ${isolatedNodes(graph)} ${isolatedNodes(graph) === 1 ? "element without relationships is" : "elements without relationships are"} not drawn.` : ""; };
+  const leftOut = (id: string): string => { const graph = ws.history(id)?.graph; return graph && kindOf(graphs.find((x) => x.id === id)!) === "graph" && tileThinsIsolated(graph) ? ` ${isolatedNodes(graph)} ${isolatedNodes(graph) === 1 ? "element without relationships is" : "elements without relationships are"} not drawn.` : ""; };
   return (
     <div className={s.root}>
       <aside className={s.side} aria-label="Search, filters and element list of the active graph"><SidePanel graph={active} /></aside>

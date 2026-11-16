@@ -36,7 +36,7 @@ const log = (k, v) => console.log(JSON.stringify({ [k]: v }));
 log("gpu", await evaluate(`(()=>{const c=document.createElement('canvas').getContext('webgl2');const e=c.getExtension('WEBGL_debug_renderer_info');return e?c.getParameter(e.UNMASKED_RENDERER_WEBGL):'n/a'})()`));
 // wait for the layout worker to finish
 for (let i = 0; i < 300; i++) {
-  const s = await evaluate(`(()=>{const w=window.__sattle?.ws; if(!w) return null; const ps=[...w.panes.values()]; return ps.length?{running:ps.some(p=>p.layoutRunning),ms:ps.map(p=>Math.round(p.lastLayoutMs)),n:ps.map(p=>p.graph.nodeCount),e:ps.map(p=>p.graph.edgeCount)}:null})()`);
+  const s = await evaluate(`(()=>{const w=window.__sattle?.ws; if(!w) return null; const ps=w.info.graphs.map(g=>w.pane(g.id)).filter(Boolean); return ps.length?{running:ps.some(p=>p.layoutRunning),ms:ps.map(p=>Math.round(p.lastLayoutMs)),n:ps.map(p=>p.graph.nodeCount),e:ps.map(p=>p.graph.edgeCount)}:null})()`);
   if (s && !s.running) { log("loaded", s); break; }
   await sleep(500);
 }

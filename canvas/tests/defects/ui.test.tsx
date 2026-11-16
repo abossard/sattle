@@ -14,6 +14,7 @@ import { fakeEngine } from "../fixtures/editor-fake";
 import { ont } from "../fixtures/engine-fake";
 import { TreeSource } from "../fixtures/tree-source";
 import { openApp } from "../ui/helpers";
+import { fakeWorkspace } from "../helpers";
 
 beforeAll(() => { SOURCES.push({ id: "tree-review", label: "Tree", make: () => new TreeSource() }); });
 
@@ -43,7 +44,7 @@ async function openEditor() {
   await openApp("tree-review", "data");
   // the catalog head the Text tab compares against
   (runtime.ws!.source as unknown as { catalogGraph: string }).catalogGraph = "catalog";
-  runtime.ws!.histories.set("catalog", new History({ version: { tenant: "demo", graph: "catalog", revision: "1" }, entities: [], relationships: [] }));
+  (runtime.ws as unknown as { histories: Map<string, unknown> }).histories.set("catalog", new History({ version: { tenant: "demo", graph: "catalog", revision: "1" }, entities: [], relationships: [] }));
   runtime.session = await EditorSession.open(eng.svc);
   dispatch({ type: "editor/event", event: { t: "open" } });
   dispatch({ type: "editor/event", event: { t: "opened" } });
@@ -141,7 +142,7 @@ describe("ui/DocumentView.tsx:42-56 switching between two document graphs at the
     const { DocumentView } = await import("../../src/ui/DocumentView");
     const hist = { cursor: 1, revisionAt: (i: number) => String(i) };
     runtime.ws = {
-      histories: new Map([["r", hist], ["s", hist]]),
+      ...fakeWorkspace({ r: hist, s: hist }),
       source: { document: (g: string, rev?: string) => g === "s" ? new Promise(() => {}) : Promise.resolve({ revision: String(rev), digest: "sha256:".padEnd(30, "0"), markdown: "# Report of r\n" }) },
     } as never;
     const ui = (g: string) => <FluentProvider theme={webLightTheme}><DocumentView graph={g} /></FluentProvider>;
@@ -166,7 +167,7 @@ describe("ui/Elements.tsx:40 the list is cut at 300 rows before it is sorted", (
       entities: [...Array.from({ length: 400 }, (_, i) => plain(`n${i}`, "Service", { name: `m${String(i).padStart(3, "0")}` })), plain("last", "Service", { name: "a-first-by-name" })],
       relationships: [],
     });
-    runtime.ws = { histories: new Map([["g", { graph: g }]]), panes: new Map(), graphInfo: () => undefined } as never;
+    runtime.ws = { ...fakeWorkspace({ g: { graph: g } }), graphInfo: () => ({ id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] }) } as never;
     try {
       const user = userEvent.setup();
       render(<FluentProvider theme={webLightTheme}><ElementsPanel graph="g" /></FluentProvider>);
@@ -184,7 +185,7 @@ describe("ui/Filters.tsx:157 a warning threshold typed with a decimal comma", ()
     const { FiltersPanel } = await import("../../src/ui/Filters");
     const { Graph } = await import("../../src/core/graph");
     const graph = Graph.fromSnapshot({ version: { tenant: "demo", graph: "g", revision: "1" }, entities: [], relationships: [] });
-    runtime.ws = { graphInfo: () => ({ id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] }), histories: new Map([["g", { graph, length: 0 }]]), panes: new Map(), hubs: new Map() } as never;
+    runtime.ws = { graphInfo: () => ({ id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] }), ...fakeWorkspace({ g: { graph, length: 0 } }) } as never;
     dispatch({ type: "data/summary", graphs: [], telemetry: { g: { hasData: true, enabled: true, flow: false, edge: { width: "", flow: "", state: "" }, node: { ring: "cpu", size: "cpu", state: "cpu" }, meters: [{ id: "cpu", target: "node", label: "CPU", unit: "", min: 0, max: 1, warn: 0.5 }] } } });
     try {
       const user = userEvent.setup();
@@ -209,9 +210,12 @@ describe("ui/Filters.tsx:140 Clear filters on a tree", () => {
     const graph = Graph.fromSnapshot({ version: { tenant: "demo", graph: "g", revision: "1" }, entities: [], relationships: [] });
     // the pane as the filters see it (jsdom has no WebGL, so no real pane): it records what it is told to show; every other call does nothing
     const views: { layout?: string }[] = [];
-    const state = { info: { id: "g", ontology: ont("o") }, setView(v: { layout?: string }) { views.push(v); } };
+    const state = { info: { id: "g", ontology: ont("o") } };
     const pane = new Proxy(state as Record<string | symbol, unknown>, { get: (t, k) => (k in t ? t[k] : () => undefined), set: (t, k, v) => { t[k] = v; return true; } });
-    runtime.ws = { graphInfo: () => ({ id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] }), histories: new Map([["g", { graph, length: 0, cursor: 0, changesBetween: () => null }]]), panes: new Map([["g", pane]]), hubs: new Map() } as never;
+    const info = { id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] };
+    runtime.ws = { ...fakeWorkspace({ g: { graph, length: 0, cursor: 0, changesBetween: () => null } }), info: { graphs: [info] }, graphInfo: () => info, pane: () => pane,
+      // what the pane is told: the layout, when the change names it
+      applyFilter: (_: string, f: { layout: string }, changed: object) => { if ("layout" in changed) views.push({ layout: f.layout }); } } as never;
     try {
       const user = userEvent.setup();
       dispatch({ type: "filter/set", graph: "g", filter: { layout: "force" } });

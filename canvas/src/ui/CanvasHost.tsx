@@ -4,7 +4,6 @@ import { useEffect, useRef } from "react";
 import { runtime } from "../state/runtime";
 import { useStore } from "../state/store";
 import { emptyFilter, type FilterState } from "../state/types";
-import { applyFilter } from "../state/ws-ops";
 import { edgelessNotice } from "../app/graph-view-model";
 import { useGraphSummary, useWorkspace } from "./common";
 import "./canvas.css";
@@ -39,7 +38,7 @@ export function CanvasHost({ graph, focus = false, tile = false }: { graph: stri
     const empty = emptyFilter();
     const changed = f ? Object.fromEntries(Object.entries(f).filter(([k, v]) => JSON.stringify(v) !== JSON.stringify(empty[k as keyof FilterState]))) : {};
     // the coloring and the grouping always apply: their defaults come from the ontology, which a default filter state does not mention
-    if (f) applyFilter(pane, f, { ...changed, colorNodes: f.colorNodes, colorEdges: f.colorEdges, grouping: f.grouping });
+    if (f) pane.applyFilter(f, { ...changed, colorNodes: f.colorNodes, colorEdges: f.colorEdges, grouping: f.grouping });
     pane.setView({ tile, hiddenKinds: f?.hiddenKinds ?? null, showRestated: f?.showRestated ?? false });
     pane.fit(false);
     if (focus) host.focus({ preventScroll: true });

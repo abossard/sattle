@@ -16,3 +16,9 @@ export const delN = (e: Entity): Edit => ({ kind: "entity", id: e.id, before: e,
 export const setN = (a: Entity, b: Entity): Edit => ({ kind: "entity", id: a.id, before: a, after: b });
 export const addE = (r: Rel): Edit => ({ kind: "relationship", id: r.id, before: null, after: r });
 export const delE = (r: Rel): Edit => ({ kind: "relationship", id: r.id, before: r, after: null });
+
+/** A stand-in for the workspace a view reads: the histories by graph id; every other read is empty unless `more` gives it. */
+export const fakeWorkspace = (histories: Record<string, unknown>, more: object = {}): object => ({
+  history: (g: string) => histories[g], pane: () => undefined, hub: () => undefined, highlight: () => {}, applyFilter: () => {},
+  typeCounts: () => new Map(), styleOf: () => ({ shape: "circle", color: "#8ec8ff" }), valueCounts: () => ({ counts: new Map(), missing: 0 }), ...more,
+});
