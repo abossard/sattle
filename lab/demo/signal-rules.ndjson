@@ -1,0 +1,6 @@
+{"kind":"signalRule","id":"cpu-high","type":"microsoft.containerservice/managedclusters","meter":"node_cpu_usage_percentage","above":70,"enterAfter":3,"below":60,"exitAfter":3,"severity":1,"invert":false}
+{"kind":"signalRule","id":"cpu-critical","type":"microsoft.containerservice/managedclusters","meter":"node_cpu_usage_percentage","above":90,"enterAfter":3,"below":80,"exitAfter":3,"severity":2,"invert":false}
+{"kind":"signalRule","id":"node-drops","type":"node","meter":"cilium_drop_rate","above":5,"enterAfter":2,"below":2,"exitAfter":2,"severity":1,"invert":false}
+{"kind":"signalRule","id":"node-drops-critical","type":"node","meter":"cilium_drop_rate","above":50,"enterAfter":2,"below":20,"exitAfter":2,"severity":2,"invert":false}
+{"kind":"signalRule","id":"pod-warnings","type":"pod","meter":"warnings","above":1,"enterAfter":1,"below":0,"exitAfter":2,"severity":1,"invert":false}
+{"kind":"signalRule","id":"pod-warnings-critical","type":"pod","meter":"warnings","above":2,"enterAfter":1,"below":0,"exitAfter":2,"severity":2,"invert":false}

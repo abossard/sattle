@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 // Unattended live feed: Hubble flows, Kubernetes watch events and metrics polls into one single-partition hub
 // as envelopes. With --mirror-hubble the flows are also written to the hubble hub. Stream semantics: see CAPTURE-FORMAT.md.
-// usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble]
+// usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble] [--authoring FILE]
+//   --authoring FILE  one authoring record per line (signal rules, policies, curations), sent as `authoring` envelopes at every start
 //   env HUBBLE_FILTER  observe filter flags, default "--namespace sattle-demo --namespace demo"
 //   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60), QUEUE_MAX_MB per hub (64)
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { parseArgs, promisify } from 'node:util';
 import { AzureCliCredential } from '@azure/identity';
 import { azureMetricsPoller, cachedToken, nextPollMs } from './lib/azure-metrics-poll.mjs';
@@ -19,6 +21,7 @@ const { values: a } = parseArgs({
   options: {
     namespace: { type: 'string' }, hub: { type: 'string', default: 'sattle-ingest' }, kubeconfig: { type: 'string' }, seconds: { type: 'string' },
     'no-hubble': { type: 'boolean' }, 'no-metrics': { type: 'boolean' }, 'mirror-hubble': { type: 'boolean' }, 'debug-start-rv': { type: 'string' },
+    authoring: { type: 'string' },
   },
 });
 const here = new URL('.', import.meta.url).pathname;
@@ -52,6 +55,9 @@ const forwardLine = (source) => (line) => { // a line from a child: JSON native 
   let rec; try { rec = JSON.parse(line); } catch { badLines++; return; }
   emit(source, rec);
 };
+
+// ---- authoring records: the rules of the model travel in the stream, so an engine that reads from this start has them
+if (a.authoring) for (const line of readFileSync(a.authoring, 'utf8').split('\n')) if (line.trim()) emit('authoring', JSON.parse(line));
 
 // ---- lifecycle
 let stopping = false;

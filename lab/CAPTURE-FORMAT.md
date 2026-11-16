@@ -34,7 +34,7 @@ Run `capture/eh-forward.mjs` (needs `kubectl`, `hubble`, `az` logged in; Entra o
 
 | Hub | Written by | Partitions | Body |
 |---|---|---|---|
-| `sattle-ingest` | `eh-forward.mjs` | 1 | one envelope per event, as UTF-8 JSON text |
+| `sattle-ingest` | `eh-forward.mjs` | 1 | one envelope per event: its UTF-8 JSON text, which the Node SDK encodes as a JSON string (a reader parses the body, then the string) |
 | `sattle-hubble` | `eh-forward.mjs --mirror-hubble` | 2 (only partition 0 is used) | the `hubble` envelopes of `sattle-ingest`, nothing else. Empty unless the forwarder runs with `--mirror-hubble`. |
 | `sattle-activity` | Azure diagnostic setting | 2 | `{"records":[...]}`, Activity Log in diagnostic-settings schema (`category`, `operationName` string, `time`, `resultType`, `identity`, `properties`, `correlationId`, `callerIpAddress`, `resourceId`). Differs from the camelCase management API `EventData` in `activity-log/`. One event carries several records. |
 | `sattle-aks` | Azure diagnostic setting | 2 | `{"records":[...]}`, categories `kube-audit-admin` and `cluster-autoscaler`. `properties.log` is the Kubernetes audit event as a JSON string. Delivery lags the cluster by minutes. |
