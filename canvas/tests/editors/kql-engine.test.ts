@@ -1,7 +1,7 @@
 // The KQL text through a real engine's draft (note 11, stage d): a text stored in a draft and committed is what the space holds afterwards and
 // what a new draft reads, and the other projection files keep their text. Commits the edit and then the original back, so the engine ends as
 // it began; it writes no file unless the engine was started with --write-definitions.
-// Runs only with an engine: ENGINE=http://127.0.0.1:5080 npx vitest run tests/editors/kql-engine.test.ts
+// Runs on the engine that tests/engine-global-setup.ts starts (ENGINE=http://127.0.0.1:5080 uses one that already runs).
 import { describe, expect, it } from "vitest";
 import type { Analysis } from "../../src/editor/kql";
 import { add, addBy, apply, columnFor, listsOf, newOperatorAt, starter, startersFor, type Column } from "../../src/editor/kql-edit";
@@ -14,7 +14,7 @@ const projection = "acme.biz.capabilityView", file = `${projection}.kql`;
 const before = "let images = realized | join kind=inner (realized | summarize n = count() by service | where n == 1) on service | project service, capability;";
 const after = "let images = realized | project service, capability | join kind=inner (realized | summarize n = count() by service | where n == 1) on service;";
 
-describe.skipIf(!ENGINE)("a projection's KQL text through the engine's draft", () => {
+describe("a projection's KQL text through the engine's draft", () => {
   it("store, commit and reload give the edited file exactly, and the other files keep their text", async () => {
     const svc = new EditorService(ENGINE!);
     const others = ["acme.svc.serviceDeps", "acme.workload.workloadHealth", "acme.ops.ingest"];

@@ -4,7 +4,7 @@
 // statement), each on the engine's reading of the text so far. The text is stored in a draft, its graph bound in the space as the original's
 // is, and previewed beside the original's graph: the state digests are equal. The three notations give the same text; it is committed and a new
 // draft reads it back. The engine keeps a committed twin until it restarts (an engine without --write-definitions writes no file).
-// Runs only with an engine: ENGINE=http://127.0.0.1:5094 npx vitest run tests/editors/kql-references.test.tsx
+// Runs on the engine that tests/engine-global-setup.ts starts (ENGINE=http://127.0.0.1:5094 uses one that already runs).
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -55,7 +55,7 @@ async function digests(svc: EditorService, s: EditorSession, r: KqlReference) {
 
 afterEach(cleanup);
 
-describe.skipIf(!ENGINE)("the reference projections built in each notation from an empty graph line", () => {
+describe("the reference projections built in each notation from an empty graph line", () => {
   describe.each(KQL_REFERENCES.map((r) => [r.title, r] as const))("%s", (_title, r) => {
     const projection = `${r.module}.${twinOf(r)}`, built = new Map<string, string>();
 
