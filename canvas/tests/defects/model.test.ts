@@ -128,7 +128,7 @@ describe("workspace.ts:113 a live patch while the shared timeline is scrubbed ba
     seekTime(ws, 10, {});                       // the user scrubs back to second 10: a shows its first patch, b its snapshot
     expect(a.cursor).toBe(1);
     ws.applyPatch("b", patch("1", "2", [addN(plain("z"))]), 30);   // live: b gets a patch from second 30
-    expect(b.cursor, "b jumped to now while the timeline shows second 10").toBe(ws.cursorAt("b", ws.time));
+    expect(b.cursor, "b jumped to now while the timeline shows second 10").toBe(ws.cursorAt("b", 10));
   });
 });
 
@@ -167,5 +167,59 @@ describe("tree-model.ts:228 the tree by cause with everything open", () => {
     expect(visibleRows(m, { expanded: new Set(nodes.keys()), onlyWrong: false, query: "", sort: "label" }).rows.map((r) => r.key)).toEqual(rows.map((r) => r.key));
     expect(rows.filter((r) => r.expanded).map((r) => r.node.id).sort()).toEqual([...nodes.keys()].sort());
     for (const r of rows.filter((x) => x.shownAbove)) expect(rows.find((x) => x.key === r.shownAbove)?.node.id).toBe(r.node.id);
+  });
+});
+
+describe("core/catalog.ts:250 the ontology of a module in the editor, a relationship type with an empty source or target list", () => {
+  it("is drawn from and to the node 'any type', as the ontology picture draws it", async () => {
+    const { Catalog, moduleOntologyGraph } = await import("../../src/core/catalog");
+    const { coalesce } = await import("../../src/editor/patches");
+    const m = "d:m", pod = "d:m/entity:Pod", links = "d:m/rel:Links", mentions = "d:m/rel:Mentions";
+    const edits = coalesce([ent(m, "Module", { name: text("m") }), ent(pod, "EntityType", { name: text("Pod") }), ent(links, "RelationshipType", { name: text("Links") }), ent(mentions, "RelationshipType", { name: text("Mentions") }),
+      contains(m, pod, "entity"), contains(m, links, "rel"), contains(m, mentions, "rel"), { kind: "relationship", id: `${mentions}|targetType|${pod}`, before: null, after: { id: `${mentions}|targetType|${pod}`, source: mentions, target: pod, type: "targetType", props: {} } } as never]);
+    const g = Graph.fromSnapshot({ version: ver("1", "catalog"), entities: edits.filter((e) => e.kind === "entity").map((e) => e.after as never), relationships: edits.filter((e) => e.kind === "relationship").map((e) => e.after as never) });
+    const o = moduleOntologyGraph(new Catalog(g), m);
+    const name = (id: string) => String((o.entity(id)?.props.name as { value: string } | undefined)?.value);
+    expect([...o.relationships()].map((r) => `${r.type}: ${name(r.source)} -> ${name(r.target)}`).sort(), "a type without a source or target list draws nothing").toEqual(["Links: any type -> any type", "Mentions: any type -> Pod"]);
+  });
+});
+
+// Code review 2 (paper/research/12-code-review-2.md, design: Live | At(t)): whether the space follows now or shows a time is one value.
+describe("app/timeline.ts the shared timeline scrubbed back", () => {
+  const space = async () => {
+    const { Workspace } = await import("../../src/app/workspace");
+    const { History } = await import("../../src/app/history");
+    const { darkTheme } = await import("../../src/render/theme");
+    const ws = new Workspace({} as never, darkTheme, () => {});
+    (ws as unknown as { info: unknown }).info = { graphs: [{ id: "a", role: "master" }, { id: "b", role: "master" }] };
+    const a = new History({ version: ver("1", "a"), entities: [], relationships: [] });
+    const b = new History({ version: ver("1", "b"), entities: [], relationships: [] });
+    ws.histories.set("a", a); ws.histories.set("b", b);
+    a.append(patch("1", "2", [addN(plain("x"))]), 10);
+    a.append(patch("2", "3", [addN(plain("y"))]), 20);
+    return { ws, a, b };
+  };
+  it("a live patch is kept for later and never applied to the graph and taken back", async () => {
+    const { seekTime } = await import("../../src/state/ws-ops");
+    const { ws, b } = await space();
+    seekTime(ws, 10, {});
+    let applied = 0;
+    const apply = b.graph.apply.bind(b.graph);
+    b.graph.apply = (p) => { applied++; return apply(p); };
+    ws.applyPatch("b", patch("1", "2", [addN(plain("z"))]), 30);
+    expect([applied, b.cursor, b.length], "the patch was applied and then inverted").toEqual([0, 0, 1]);
+    seekTime(ws, 30, {});
+    expect(b.graph.entity("z"), "at the newest time it shows").toBeTruthy();
+  });
+  it("telemetry that arrives while the space shows a time does not move the time of the values", async () => {
+    const { seekTime } = await import("../../src/state/ws-ops");
+    const { TelemetryHub } = await import("../../src/app/telemetry-hub");
+    const { ws, a } = await space();
+    const hub = new TelemetryHub(a.graph, { meters: [{ id: "cpu", target: "node", label: "CPU", unit: "", min: 0, max: 1 }], dt: 1, ticks: 1, maxTicks: 1, fetch: async () => ({ batches: [] }), defaults: { edge: { width: "", flow: "", state: "" }, node: { ring: "cpu", size: "cpu", state: "cpu" } } } as never);
+    ws.hubs.set("a", hub);
+    hub.ingest({ graph: "a", tick: 5, t: 5, target: "node", property: "cpu", values: Float32Array.of(0.5) });
+    seekTime(ws, 10, {});                       // the graphs show second 10 of 20; the values' newest window is second 5
+    hub.ingest({ graph: "a", tick: 15, t: 15, target: "node", property: "cpu", values: Float32Array.of(0.9) });
+    expect(hub.time, "the values followed the newest window while the graphs show second 10").toBe(10);
   });
 });

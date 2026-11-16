@@ -41,7 +41,8 @@ export function reduce(s: State, a: Action): State {
     case "editor/do": case "editor/undo": case "editor/redo": case "editor/commit": case "editor/discard": case "editor/preview": case "editor/releases": case "editor/diffRelease": return s;
     case "pane/command": return s;
     case "hover/element": return { ...s, hover: a.selection };
-    case "time/seek": return { ...s, time: { ...s.time, now: a.t, following: a.t >= s.time.last } };
+    // whether the space follows now is the workspace's (timeline.ts); its `time/changed` says so
+    case "time/seek": return { ...s, time: { ...s.time, now: a.t } };
     case "time/changed": return { ...s, time: { now: a.now, following: a.following, first: a.first, last: a.last } };
     case "filter/set": return { ...s, filters: { ...s.filters, [a.graph]: { ...(s.filters[a.graph] ?? emptyFilter()), ...a.filter } } };
     case "telemetry/set": {

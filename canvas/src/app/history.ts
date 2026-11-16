@@ -25,13 +25,13 @@ export class History {
   get atHead(): boolean { return this.cursor === this.patches.length; }
   revisionAt(i: number): string { return i === 0 ? this.snapshot.version.revision : this.patches[i - 1].to.revision; }
 
-  /** Add a patch received from a source. When the cursor is at the head the patch is applied immediately. */
-  append(patch: Patch, time?: number): StepResult | null {
+  /** Add a patch received from a source. With `follow` (the space follows the newest data) and the cursor at the head it is applied at once. */
+  append(patch: Patch, time?: number, follow = true): StepResult | null {
     if (patch.from.revision !== this.tailRevision) {
       this.problems.push({ patch: this.patches.length + 1, reason: `patch starts at revision ${patch.from.revision}, expected ${this.tailRevision}` });
       return null;
     }
-    if (this.atHead) {
+    if (follow && this.atHead) {
       const res = this.graph.apply(patch);
       if (!res.ok) { this.problems.push({ patch: this.patches.length + 1, reason: "preconditions failed", conflicts: res.conflicts }); return null; }
       this.patches.push(patch);

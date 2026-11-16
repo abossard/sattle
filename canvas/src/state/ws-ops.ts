@@ -3,6 +3,7 @@ import type { DataPane } from "../app/data-pane";
 import type { Workspace } from "../app/workspace";
 import { resolveColoring, tally, type Coloring, type Target } from "../app/color-by";
 import { SUPPORT_GROUPING, resolveGrouping } from "../app/graph-view-model";
+import { timelineAt } from "../app/timeline";
 import type { FilterState } from "./types";
 
 export function seekPane(ws: Workspace, graph: string, target: number, fs: FilterState | undefined): void {
@@ -14,10 +15,8 @@ export function seekPane(ws: Workspace, graph: string, target: number, fs: Filte
 
 /** Move the whole space to time t: every graph shows the revision and the telemetry frame valid at that instant. */
 export function seekTime(ws: Workspace, t: number, filters: Record<string, FilterState>): void {
-  const points = ws.axisPoints();
-  ws.time = t;
-  ws.following = t >= points[points.length - 1];
-  for (const hub of ws.hubs.values()) if (hub.hasData) hub.setTime(t);
+  ws.timeline = timelineAt(ws.axisPoints(), t);
+  for (const hub of ws.hubs.values()) if (hub.hasData) hub.show(ws.timeline);
   for (const g of ws.info.graphs) {
     if (g.role === "catalog") continue; // definitions are configuration, not scrubbed by data time
     const hist = ws.histories.get(g.id)!;

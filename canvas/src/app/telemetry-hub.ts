@@ -1,5 +1,6 @@
 // Telemetry state of one graph: the quantized store, the displayed tick, and the metric chosen for each visual channel.
 // Tick k is aligned with revision k, so one tick drives both the telemetry frame and the structural revision.
+import { shownTime, type Timeline } from "./timeline";
 import type { Graph } from "../core/graph";
 import { TelemetryStore, dequantize, warnByte } from "../core/telemetry";
 import type { Meter, TelemetryBatch, TelemetryFeed } from "../source/types";
@@ -70,9 +71,10 @@ export class TelemetryHub {
     this.emit();
   }
 
-  setTime(t: number): void {
-    this.time = t;
-    this.follow = t >= this.store.lastTime;
+  /** Show the values of the time the space shows; following, the newest window as it arrives. */
+  show(tl: Timeline): void {
+    this.follow = tl.k === "live";
+    this.time = shownTime(tl, this.store.lastTime);
     this.emit();
   }
 

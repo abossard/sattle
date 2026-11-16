@@ -40,13 +40,11 @@ export class EngineSource implements GraphSource {
   private heads = new Map<string, string>();
   /** what the stream is: see engine-stream.ts */
   private stream: StreamState = initialStream([], undefined);
-  private retryTimers = new Set<ReturnType<typeof setTimeout>>();
+  /** the backoff timers of retries and reconnects */
+  private timers = new Set<ReturnType<typeof setTimeout>>();
   /** graphs whose immutable history up to the opening head was read */
   private filled = new Set<string>();
   private ws: WebSocket | null = null;
-  private closed = false;
-  private retry = 0;
-  private timer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
 
   /** `base` may be relative (a dev proxy such as /engine) or absolute. */
@@ -154,14 +152,10 @@ export class EngineSource implements GraphSource {
       case "emit": this.emit(f.graph, f.event); return;
       case "status": if (f.gapFilled) this.status.gapsFilled++; this.setStatus(f.state ?? this.status.state, f.detail); return;
       case "reject": this.reject({ source: this.base, where: f.where, errors: f.errors }); return;
-      case "openSocket": this.ensureSocket(); return;
+      case "openSocket": this.openSocket(); return;
       case "closeSocket": this.ws?.close(); return;
-      case "retry": {
-        const delays = this.opts.backoff ?? [500, 1000, 2000, 5000];
-        const t = setTimeout(() => { this.retryTimers.delete(t); this.step({ t: "retry", graph: f.graph, gen: f.gen }); }, delays[Math.min(f.attempt - 1, delays.length - 1)]);
-        this.retryTimers.add(t);
-        return;
-      }
+      case "retry": this.after(f.attempt, { t: "retry", graph: f.graph, gen: f.gen }); return;
+      case "reconnect": this.status.reconnects++; this.after(f.attempt, { t: "reconnectDue" }); return;
       case "readPatches": void this.readPatches(f.graph, f.gen, f.why, f.after); return;
       case "readTelemetry": void this.readTelemetry(f.graph, f.gen, f.why, f.from); return;
       case "readMeta": void this.readMeta(f.graph, f.gen); return;
@@ -208,35 +202,29 @@ export class EngineSource implements GraphSource {
     } catch (e) { this.reject({ source: this.base, where: `ontology of ${graph}`, errors: [(e as Error).message] }); }
   }
 
-  // ---- socket with reconnect ----
-  private ensureSocket(): void {
-    if (this.closed || this.ws) return;
-    const WS = this.opts.WebSocket ?? globalThis.WebSocket;
-    if (!WS) { this.setStatus("closed", "no WebSocket in this environment; history only"); return; }
-    this.setStatus(this.retry ? "reconnecting" : "connecting", this.retry ? `reconnecting, attempt ${this.retry}` : "connecting");
-    let ws: WebSocket;
-    try { ws = new WS(this.url(ENGINE_ENDPOINTS.ws).replace(/^http/, "ws")); } catch (e) { this.scheduleReconnect((e as Error).message); return; }
-    this.ws = ws;
-    ws.onopen = () => {
-      const resumed = this.retry > 0;
-      this.retry = 0;
-      // resume after the last sequence number seen; the engine sends what was missed, or a gap notice when its history no longer reaches back
-      ws.send(subscribeMessage([...this.sinks.keys()], this.stream.seq));
-      this.step({ t: "socketOpened", resumed });
-    };
-    ws.onmessage = (ev) => this.onMessage(String(ev.data));
-    ws.onclose = () => { this.ws = null; this.step({ t: "socketClosed" }); if (!this.closed && this.status.state !== "ended") this.scheduleReconnect("connection closed"); };
-    ws.onerror = () => { /* onclose follows */ };
+  /** An event of the stream after the `attempt`-th backoff delay: one table for a read's retry and a reconnect. */
+  private after(attempt: number, e: StreamInput): void {
+    const delays = this.opts.backoff ?? [500, 1000, 2000, 5000];
+    const t = setTimeout(() => { this.timers.delete(t); this.step(e); }, delays[Math.min(attempt - 1, delays.length - 1)]);
+    this.timers.add(t);
   }
 
-  private scheduleReconnect(why: string): void {
-    if (this.closed) return;
-    const delays = this.opts.backoff ?? [500, 1000, 2000, 5000];
-    const d = delays[Math.min(this.retry, delays.length - 1)];
-    this.retry++;
-    this.status.reconnects++;
-    this.setStatus("reconnecting", `${why}; retry in ${d} ms`);
-    this.timer = setTimeout(() => { this.timer = null; this.ensureSocket(); }, d);
+  // ---- the socket: made and closed here, its life (when to reconnect, whether it is wanted) is the stream's `link` ----
+  private openSocket(): void {
+    if (this.ws) return;
+    const WS = this.opts.WebSocket ?? globalThis.WebSocket;
+    if (!WS) { this.step({ t: "socketUnavailable" }); return; }
+    let ws: WebSocket;
+    try { ws = new WS(this.url(ENGINE_ENDPOINTS.ws).replace(/^http/, "ws")); } catch { this.step({ t: "socketClosed" }); return; }
+    this.ws = ws;
+    ws.onopen = () => {
+      // resume after the last sequence number seen; the engine sends what was missed, or a gap notice when its history no longer reaches back
+      ws.send(subscribeMessage([...this.sinks.keys()], this.stream.seq));
+      this.step({ t: "socketOpened" });
+    };
+    ws.onmessage = (ev) => this.onMessage(String(ev.data));
+    ws.onclose = () => { if (this.ws === ws) this.ws = null; this.step({ t: "socketClosed" }); };
+    ws.onerror = () => { /* onclose follows */ };
   }
 
   /** A socket message becomes an event of the stream; what does not parse is reported and dropped. */
@@ -342,10 +330,8 @@ export class EngineSource implements GraphSource {
   }
 
   dispose(): void {
-    this.closed = true;
-    for (const t of this.retryTimers) clearTimeout(t);
-    this.retryTimers.clear();
-    if (this.timer) clearTimeout(this.timer);
+    for (const t of this.timers) clearTimeout(t);
+    this.timers.clear();
     this.step({ t: "dispose" }); // the generations move on (what was in flight delivers nothing), the socket closes, the status says closed
   }
 }

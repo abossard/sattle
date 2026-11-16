@@ -242,13 +242,20 @@ export function moduleOntologyGraph(c: Catalog, moduleId: string): Graph {
     }
     return id;
   };
+  const anyType = (): string => {
+    const id = `${moduleId}|*`;
+    if (!entities.has(id)) entities.set(id, { id, type: "AnyType", props: { name: txt("any type"), module: txt(mod), properties: txt(""), abstract: txt("") } });
+    return id;
+  };
   const o = c.ontology(moduleId);
   for (const t of o.entityTypes) typeNode(t);
   for (const r of o.relationshipTypes) {
     const name = c.name(r);
     const props = c.targets(r, "hasProperty").map((p) => c.name(p)).join(", ");
-    for (const s of c.targets(r, "sourceType")) for (const t of c.targets(r, "targetType")) {
-      rels.push({ id: `${r}|${s}>${t}`, source: typeNode(s), target: typeNode(t), type: name, props: { properties: txt(props) } });
+    // an empty source or target list allows every type: such an end is the one node "any type" (as in the ontology picture)
+    const ends = (slot: string) => { const ids = c.targets(r, slot); return ids.length ? ids.map(typeNode) : [anyType()]; };
+    for (const s of ends("sourceType")) for (const t of ends("targetType")) {
+      rels.push({ id: `${r}|${s}>${t}`, source: s, target: t, type: name, props: { properties: txt(props) } });
     }
     for (const sup of c.targets(r, "extends")) void sup; // relationship type inheritance is shown in the text
   }

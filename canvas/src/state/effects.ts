@@ -1,5 +1,6 @@
 // Effects: the only code that touches the runtime. Each action is applied to the workspace in the order it is dispatched,
 // then the pure reducer folds it into the serializable state. Frequent actions (patches, telemetry) only schedule a throttled summary.
+import { shownTime } from "../app/timeline";
 import { Workspace } from "../app/workspace";
 import type { TelemetryHub } from "../app/telemetry-hub";
 import { lightTheme, darkTheme } from "../render/theme";
@@ -45,8 +46,7 @@ function throttle(key: string, ms: number, fn: () => void): void {
 function reportTime(ws: Workspace, dispatch: Dispatch): void {
   const points = ws.axisPoints();
   const last = points[points.length - 1];
-  if (ws.following) ws.time = last;
-  dispatch({ type: "time/changed", now: ws.time, following: ws.following, first: points[0], last });
+  dispatch({ type: "time/changed", now: shownTime(ws.timeline, last), following: ws.timeline.k === "live", first: points[0], last });
 }
 const reportData = (ws: Workspace, dispatch: Dispatch): void => dispatch({ type: "data/summary", graphs: summaries(ws), telemetry: telemetrySummary(ws) });
 

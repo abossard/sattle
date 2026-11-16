@@ -31,8 +31,16 @@ describe("the tree of the demo workload, reached by scrubbing", () => {
     // an open element shows its children at its first row; a later row of it says so, and Enter there goes to the first
     const later = within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database");
     expect(later.map((r) => /shown above/.test(r.textContent ?? ""))).toEqual([false, true]);
+    const hint = document.getElementById(later[1].getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent, "the later row says, for a reader, where its children are and what Enter does").toMatch(/first row.*Enter/);
+    expect(later[0].hasAttribute("aria-describedby")).toBe(false);
+    const first = () => within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database")[0];
     later[1].focus();
     await user.keyboard("{Enter}");
-    await waitFor(() => expect(document.activeElement).toBe(within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database")[0]));
+    await waitFor(() => expect(document.activeElement).toBe(first()));
+    // a click on the mark goes there too
+    first().blur();
+    await user.click(within(within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database")[1]).getByText("shown above"));
+    await waitFor(() => expect(document.activeElement).toBe(first()));
   }, 60000);
 });

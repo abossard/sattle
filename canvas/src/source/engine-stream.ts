@@ -43,9 +43,16 @@ export interface StreamState {
   seq: string | undefined;
   /** the engine's logical time (epoch seconds) from the newest `time` message: the commit time of live patches */
   logicalTime: number;
-  socketOpen: boolean;
-  closed: boolean;
+  /** where the socket is: one value, so a late answer cannot bring back a socket the engine ended or the view closed */
+  link: Link;
 }
+
+/**
+ * The socket's life. `none`: the history is still read. `connecting`: asked for, `attempt` 0 the first time, n after n drops in a row.
+ * `waiting`: dropped, opened again when its backoff is over. `ended`: the engine ended the stream, `unavailable`: no WebSocket here (both:
+ * reads that are in flight still deliver, nothing reconnects, retries or speaks for the connection). `closed`: the view closed it; nothing counts.
+ */
+export type Link = { k: "none" } | { k: "connecting"; attempt: number } | { k: "open" } | { k: "waiting"; attempt: number } | { k: "ended" } | { k: "unavailable" } | { k: "closed" };
 
 export type Why = "history" | "reconnect" | "retry" | "activation" | "gap-in-stream";
 
@@ -56,8 +63,13 @@ export type Event =
   | { t: "readFailed"; graph: string; gen: number; why: Why; error: string }
   | { t: "meta"; graph: string; gen: number; meta: GraphMeta }
   | { t: "retry"; graph: string; gen: number }
-  | { t: "socketOpened"; resumed: boolean }
+  | { t: "socketOpened" }
+  /** the socket closed or could not be made */
   | { t: "socketClosed" }
+  /** the backoff after a drop is over */
+  | { t: "reconnectDue" }
+  /** this environment has no WebSocket */
+  | { t: "socketUnavailable" }
   | { t: "wsPatch"; graph: string; patch: Patch; seq?: string }
   | { t: "wsTelemetry"; graph: string; batch: TelemetryBatch; seq?: string }
   | { t: "wsTime"; logicalTime: number }
@@ -79,11 +91,13 @@ export type Effect =
   /** try the read again after the `attempt`-th backoff delay */
   | { k: "retry"; graph: string; gen: number; attempt: number }
   | { k: "openSocket" }
-  | { k: "closeSocket" };
+  | { k: "closeSocket" }
+  /** open the socket again after the `attempt`-th backoff delay (the same delays as a read's retry) */
+  | { k: "reconnect"; attempt: number };
 
 export const initialStream = (graphs: { id: string; revision: string | undefined; telemetry: boolean }[], seq: string | undefined): StreamState => ({
   graphs: Object.fromEntries(graphs.map((g) => [g.id, { gen: 0, lastRevision: g.revision, lastWindow: undefined, telemetry: g.telemetry, subscribed: false, reading: false, parked: null, failures: 0, historySeq: undefined }])),
-  space: graphs.map((g) => g.id), seq, logicalTime: NaN, socketOpen: false, closed: false,
+  space: graphs.map((g) => g.id), seq, logicalTime: NaN, link: { k: "none" },
 });
 
 type Out = { state: StreamState; effects: Effect[] };
@@ -98,35 +112,58 @@ function deliver(s: StreamState, graph: string, g: GraphStream, patch: Patch, li
 /** The reads of a graph start: the patches after the last revision, then the telemetry (the continuation is in the patches' result). */
 function startRead(s: StreamState, graph: string, why: Why): Out {
   const g = s.graphs[graph];
-  if (!g || g.reading || s.closed) return out(s);
+  if (!g || g.reading || s.link.k === "closed") return out(s);
   return out(withGraph(s, graph, { ...g, reading: true }), { k: "readPatches", graph, gen: g.gen, why, after: g.lastRevision ?? "0" });
 }
 
 /** The graph's state is replaced: the generation moves on and what was in flight or held is dropped. */
 const replaced = (g: GraphStream): GraphStream => ({ ...g, gen: g.gen + 1, reading: false, parked: null, failures: 0 });
 
+/** After the end (or without a socket) what a read brings is still delivered, but nothing speaks for the connection, retries or reconnects. */
+const QUIET: ReadonlySet<Effect["k"]> = new Set(["status", "retry", "openSocket", "reconnect"]);
+
 export function transition(s: StreamState, e: Event): Out {
+  const r = step(s, e);
+  const quiet = s.link.k === "ended" || s.link.k === "unavailable";
+  return quiet ? { state: r.state, effects: r.effects.filter((f) => !QUIET.has(f.k)) } : r;
+}
+
+/** The socket is wanted (a graph's history is in): asked for once. */
+function connect(s: StreamState): Out {
+  return s.link.k === "none" ? out({ ...s, link: { k: "connecting", attempt: 0 } }, { k: "status", state: "connecting", detail: "connecting" }, { k: "openSocket" }) : out(s);
+}
+
+function step(s: StreamState, e: Event): Out {
   if (e.t === "dispose") {
-    if (s.closed) return out(s);
+    if (s.link.k === "closed") return out(s);
     const graphs = Object.fromEntries(Object.entries(s.graphs).map(([id, g]) => [id, replaced(g)]));
-    return out({ ...s, graphs, closed: true, socketOpen: false }, { k: "closeSocket" }, { k: "status", state: "closed", detail: "closed" });
+    return out({ ...s, graphs, link: { k: "closed" } }, { k: "closeSocket" }, { k: "status", state: "closed", detail: "closed" });
   }
-  if (s.closed) return out(s);
+  if (s.link.k === "closed") return out(s);
   const all = Object.keys(s.graphs).filter((id) => s.graphs[id].subscribed);
   switch (e.t) {
     case "seq": return out(s.seq === undefined || BigInt(e.seq) > BigInt(s.seq) ? { ...s, seq: e.seq } : s);
     case "subscribed": { const g = s.graphs[e.graph]; return g ? startRead(withGraph(s, e.graph, { ...g, subscribed: true }), e.graph, "history") : out(s); }
     case "wsTime": return out({ ...s, logicalTime: e.logicalTime });
     case "socketOpened": {
+      // a socket that opens when none is wanted any more (the stream ended meanwhile) is closed again
+      if (s.link.k !== "connecting") return out(s, { k: "closeSocket" });
+      const resumed = s.link.attempt > 0;
       const behind = Object.values(s.graphs).some((g) => g.failures > 0);
-      const effects: Effect[] = [{ k: "status", state: behind ? "reconnecting" : "live", detail: behind ? "connected, catching up" : e.resumed ? "reconnected" : "connected" }];
-      let next: StreamState = { ...s, socketOpen: true };
+      const effects: Effect[] = [{ k: "status", state: behind ? "reconnecting" : "live", detail: behind ? "connected, catching up" : resumed ? "reconnected" : "connected" }];
+      let next: StreamState = { ...s, link: { k: "open" } };
       // after a reconnect the stream resumes after the last sequence number, and what it skipped is read over HTTP
-      if (e.resumed) for (const id of all) { const r = startRead(next, id, "reconnect"); next = r.state; effects.push(...r.effects); }
+      if (resumed) for (const id of all) { const r = startRead(next, id, "reconnect"); next = r.state; effects.push(...r.effects); }
       return { state: next, effects };
     }
-    case "socketClosed": return out({ ...s, socketOpen: false });
-    case "wsEnd": return out(s, { k: "status", state: "ended", detail: "the engine ended the stream" }, ...all.map((graph): Effect => ({ k: "emit", graph, event: { type: "end" } })));
+    case "socketClosed": {
+      if (s.link.k !== "open" && s.link.k !== "connecting") return out(s);
+      const attempt = (s.link.k === "connecting" ? s.link.attempt : 0) + 1;
+      return out({ ...s, link: { k: "waiting", attempt } }, { k: "status", state: "reconnecting", detail: `connection closed; reconnecting (attempt ${attempt})` }, { k: "reconnect", attempt });
+    }
+    case "reconnectDue": return s.link.k === "waiting" ? out({ ...s, link: { k: "connecting", attempt: s.link.attempt } }, { k: "status", state: "reconnecting", detail: `reconnecting, attempt ${s.link.attempt}` }, { k: "openSocket" }) : out(s);
+    case "socketUnavailable": return out({ ...s, link: { k: "unavailable" } }, { k: "status", state: "closed", detail: "no WebSocket in this environment; history only" });
+    case "wsEnd": return out({ ...s, link: { k: "ended" } }, { k: "closeSocket" }, { k: "status", state: "ended", detail: "the engine ended the stream" }, ...all.map((graph): Effect => ({ k: "emit", graph, event: { type: "end" } })));
     case "wsError": {
       const effects: Effect[] = [{ k: "reject", where: e.code, errors: [e.message || e.code] }];
       if (e.code === "SlowConsumer") effects.push({ k: "closeSocket" }); // the reconnect resumes with `after`
@@ -231,9 +268,9 @@ export function transition(s: StreamState, e: Event): Out {
 function finishRead(s: StreamState, graph: string, why: Why, effects: Effect[]): Out {
   const g = s.graphs[graph];
   const done = withGraph(s, graph, { ...g, reading: false, failures: 0 });
-  if (why === "history") return { state: done, effects: [...effects, { k: "emit", graph, event: { type: "caught-up" } }, { k: "openSocket" }] };
+  if (why === "history") { const c = connect(done); return { state: c.state, effects: [...effects, { k: "emit", graph, event: { type: "caught-up" } }, ...c.effects] }; }
   const wasBehind = g.failures > 0;
   const stillBehind = Object.entries(done.graphs).some(([, x]) => x.failures > 0);
-  if (wasBehind && !stillBehind && s.socketOpen) effects.push({ k: "status", state: "live", detail: "caught up" });
+  if (wasBehind && !stillBehind && s.link.k === "open") effects.push({ k: "status", state: "live", detail: "caught up" });
   return { state: done, effects };
 }

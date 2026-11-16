@@ -2,7 +2,7 @@
 // graph is about. Each row says the element, its own and rolled-up state (glyph and word, never color alone), its children by state and how many pieces of
 // support and cross relationships it has. The tree opens on the paths to what is wrong; the keyboard works on the whole list, not only on the rows in view.
 import { Badge, Button, FlatTree, FlatTreeItem, MessageBar, MessageBarBody, SearchBox, Select, Switch, Text, TreeItemLayout, makeStyles, tokens, useHeadlessFlatTree_unstable, type HeadlessFlatTreeItemProps } from "@fluentui/react-components";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { ROLE_GLYPH, ROLE_WORD } from "../app/color-by";
 import { KIND_WORD } from "./EdgeKinds";
 import { attentionPaths, defaultOpen, expandBelow, hierarchyChoices, isWrong, treeOf, typeAhead, visibleRows, type HierarchyChoice, type StateCell, type TreeNode, type TreeRow } from "../app/tree-model";
@@ -44,6 +44,9 @@ const CHANGE_WORD = { added: "added", changed: "changed", removed: "removed" } a
 
 export function TreeView({ graph }: { graph: string }) {
   const s = useStyles();
+  const only = useReader().only;
+  /** the description of a row marked "shown above", read after its name */
+  const aboveHint = useId();
   const ws = useWorkspace(graph);
   const version = useGraphSummary(graph)?.version;
   const sel = useStore((x) => x.selection);
@@ -174,6 +177,7 @@ export function TreeView({ graph }: { graph: string }) {
         <span className={s.grow} />
         <Text size={200} role="status">{rows.length.toLocaleString()} rows · {model.nodes.size.toLocaleString()} nodes · {wrongCount.toLocaleString()} where something is wrong{query.trim() ? ` · ${matches.size.toLocaleString()} found` : ""}</Text>
       </div>
+      <span id={aboveHint} className={only}>Its children are shown at its first row. Enter or Right goes there; Space only selects.</span>
       <div className={s.scroll} ref={scroller} onScroll={(e) => setTop(e.currentTarget.scrollTop)} onKeyDownCapture={onKeyDown}>
         {rows.length === 0 ? <MessageBar intent="info"><MessageBarBody>{query.trim() || onlyWrong ? "Nothing matches." : "The graph has no elements."}</MessageBarBody></MessageBar> : (
           <div style={{ paddingTop: start * ROW_H, paddingBottom: Math.max(0, rows.length - end) * ROW_H }}>
@@ -185,13 +189,13 @@ export function TreeView({ graph }: { graph: string }) {
                 const changed = change.get(n.id);
                 const through = n.through.map((c) => model.nodes.get(c)?.label ?? c);
                 return (
-                  <FlatTreeItem {...item.getTreeItemProps()} key={r.key} data-row-id={r.key} aria-selected={selected === n.id} onClick={(e) => { e.preventDefault(); select(n.id); }}
+                  <FlatTreeItem {...item.getTreeItemProps()} key={r.key} data-row-id={r.key} aria-selected={selected === n.id} aria-describedby={r.shownAbove ? aboveHint : undefined} onClick={(e) => { e.preventDefault(); select(n.id); }}
                     style={{ height: ROW_H, backgroundColor: selected === n.id ? tokens.colorSubtleBackgroundSelected : undefined }}>
                     <TreeItemLayout aside={
                       <span className={s.cell}>
                         {n.origin && <Badge size="small" appearance="filled" color={n.rolled?.role === "warning" ? "warning" : "danger"} title="Where the problem starts: its own state is as bad as its rolled-up state"><span aria-hidden="true">⚑ </span>origin</Badge>}
                         {through.length > 0 && <Text size={200} title={`${n.rolled?.value ?? "Wrong"} through ${through.join(", ")}`}>through {through.join(", ")}</Text>}
-                        {r.shownAbove && <Badge size="small" appearance="outline" title="Its children are shown at its first row above; Enter or Right goes there"><span aria-hidden="true">↑ </span>shown above</Badge>}
+                        {r.shownAbove && <Badge size="small" appearance="outline" title="Its children are shown at its first row above; a click, Enter or Right goes there" onClick={(e) => { e.preventDefault(); e.stopPropagation(); select(n.id); goTo(indexOf(r.shownAbove!)); }}><span aria-hidden="true">↑ </span>shown above</Badge>}
                         {n.parents.length > 1 && <Badge size="small" appearance="outline" title={`The same element, under ${n.parents.length} parents`}><span aria-hidden="true">⧉ </span>same element, under {n.parents.length}</Badge>}
                         {n.counts.map((c) => <span key={c.value} title={`${c.n} ${c.value} (${ROLE_WORD[c.role]})`}><Text size={200}><span aria-hidden="true">{ROLE_GLYPH[c.role]}</span>{c.n} {c.value}</Text></span>)}
                         {n.supporting > 0 && <Badge size="small" appearance="outline" title={`${n.supporting} supporting elements`}>{n.supporting} supporting</Badge>}

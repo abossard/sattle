@@ -14,18 +14,18 @@ function run(events: Event[], from: StreamState = fresh()) {
   return { state, effects };
 }
 const kinds = (fx: Effect[]) => fx.map((f) => f.k === "emit" ? `emit ${f.event.type}` : f.k === "status" ? `status ${f.state ?? "same"}` : f.k);
-const live = (extra: Event[] = []) => run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [] }, { t: "socketOpened", resumed: false }, ...extra]);
+const live = (extra: Event[] = []) => run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [] }, { t: "socketOpened" }, ...extra]);
 
 describe("the history of a graph", () => {
   it("reads the patches after the revision it holds, then the telemetry, then says it is caught up and asks for the socket", () => {
     const r = run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [win(100)] }]);
-    expect(kinds(r.effects)).toEqual(["readPatches", "emit patch", "readTelemetry", "emit telemetry", "emit caught-up", "openSocket"]);
+    expect(kinds(r.effects)).toEqual(["readPatches", "emit patch", "readTelemetry", "emit telemetry", "emit caught-up", "status connecting", "openSocket"]);
     expect(r.effects[0]).toMatchObject({ after: "1" });
     expect(r.state.graphs.g).toMatchObject({ lastRevision: "2", lastWindow: 100, reading: false });
   });
   it("a graph without telemetry is caught up after its patches", () => {
     const r = run([{ t: "subscribed", graph: "h" }, { t: "patches", graph: "h", gen: 0, why: "history", patches: [] }]);
-    expect(kinds(r.effects)).toEqual(["readPatches", "emit caught-up", "openSocket"]);
+    expect(kinds(r.effects)).toEqual(["readPatches", "emit caught-up", "status connecting", "openSocket"]);
   });
   it("patches the graph already holds are not delivered again", () => {
     const r = run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [patch("0", "1", []), patch("1", "2", [])] }]);
@@ -62,7 +62,7 @@ describe("the generation of a graph", () => {
     expect(r.effects.filter((f) => f.k === "emit" && f.event.type === "resync").length).toBe(1);
   });
   it("after dispose nothing happens", () => {
-    const r = run([{ t: "dispose" }, { t: "wsPatch", graph: "g", patch: patch("1", "2", []) }, { t: "socketOpened", resumed: true }, { t: "subscribed", graph: "g" }]);
+    const r = run([{ t: "dispose" }, { t: "wsPatch", graph: "g", patch: patch("1", "2", []) }, { t: "socketOpened" }, { t: "subscribed", graph: "g" }]);
     expect(kinds(r.effects)).toEqual(["closeSocket", "status closed"]);
   });
 });
@@ -132,12 +132,13 @@ describe("a catch-up that fails", () => {
 
 describe("the socket", () => {
   it("opened again after a drop reads what was missed for every graph that is followed", () => {
-    const r = run([{ t: "socketOpened", resumed: true }], live().state);
+    const r = run([{ t: "socketClosed" }, { t: "reconnectDue" }, { t: "socketOpened" }], live().state);
     expect(r.effects.filter((f) => f.k === "readPatches").map((f) => (f as { graph: string }).graph)).toEqual(["g"]);
-    expect(r.effects[0]).toMatchObject({ k: "status", state: "live", detail: "reconnected" });
+    expect(r.effects.find((f) => f.k === "status" && f.state === "live")).toMatchObject({ detail: "reconnected" });
   });
   it("opened while a graph is behind says it is catching up, not live", () => {
-    const r = run([{ t: "socketOpened", resumed: false }], live([{ t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }]).state);
+    const behind = run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [] }, { t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }]);
+    const r = run([{ t: "socketOpened" }], behind.state);
     expect(r.effects[0]).toMatchObject({ state: "reconnecting" });
   });
   it.each<[string, Event, string[]]>([
@@ -147,4 +148,31 @@ describe("the socket", () => {
     ["ahead of the head", { t: "wsError", code: "AheadOfHead", message: "" }, ["reject", "emit resync"]],
   ])("%s", (_, e, want) => expect(kinds(run([e], live().state).effects.slice(-want.length))).toEqual(want));
   it("a gap forgets the sequence number: the next subscription asks for snapshots", () => expect(run([{ t: "wsGap", firstSeq: "9" }], live().state).state.seq).toBeUndefined());
+});
+
+// Code review 2 (paper/research/12-code-review-2.md, design: the canvas engine stream): the end of the stream is a state of the machine.
+describe("the end of the stream", () => {
+  const behindThenEnded = () => live([{ t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }, { t: "wsEnd" }]);
+  it("a catch-up that answers after the end still delivers what it read, and says nothing about the connection", () => {
+    const r = run([{ t: "retry", graph: "g", gen: 0 }, { t: "patches", graph: "g", gen: 0, why: "retry", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "retry", batches: [] }], behindThenEnded().state);
+    expect(kinds(r.effects), "a late 'caught up' overwrote 'ended'").toEqual(["readPatches", "emit patch", "readTelemetry"]);
+  });
+  it("a read that fails after the end is not tried again", () => {
+    const r = run([{ t: "retry", graph: "g", gen: 0 }, { t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }], behindThenEnded().state);
+    expect(kinds(r.effects)).toEqual(["readPatches", "reject"]);
+  });
+  it("the socket closing after the end is not reconnected; one that opens late is closed", () => {
+    const ended = run([{ t: "wsEnd" }], live().state).state;
+    expect(kinds(run([{ t: "socketClosed" }], ended).effects)).toEqual([]);
+    expect(kinds(run([{ t: "socketOpened" }], ended).effects)).toEqual(["closeSocket"]);
+  });
+  it("a socket that drops while the stream runs waits its backoff, opens again and reads what it missed", () => {
+    const dropped = run([{ t: "socketClosed" }], live().state);
+    expect(kinds(dropped.effects)).toEqual(["status reconnecting", "reconnect"]);
+    expect(dropped.effects[1]).toEqual({ k: "reconnect", attempt: 1 });
+    const back = run([{ t: "reconnectDue" }, { t: "socketOpened" }], dropped.state);
+    expect(kinds(back.effects)).toEqual(["status reconnecting", "openSocket", "status live", "readPatches"]);
+    const twice = run([{ t: "reconnectDue" }, { t: "socketClosed" }], dropped.state);
+    expect(twice.effects.at(-1), "the backoff grows while it does not open").toEqual({ k: "reconnect", attempt: 2 });
+  });
 });

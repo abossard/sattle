@@ -1,5 +1,6 @@
 // Workspace: one opened GraphSource with a History and a lazily created DataPane per graph.
 // Owns selection and cross-graph highlighting (shared identity and correspondences).
+import { LIVE, type Timeline } from "./timeline";
 import { nameGraph } from "../core/naming";
 import type { Correspondence, GraphInfo, GraphSource, Reference, SpaceInfo } from "../source/types";
 import { stubEntity } from "../core/reference";
@@ -22,10 +23,8 @@ export class Workspace {
   /** per graph: why its dangling endpoints are missing, as the engine says (read at the head once the graphs are loaded) */
   readonly references = new Map<string, Map<string, Reference>>();
   selection: Selection | null = null;
-  /** displayed time on the shared axis, seconds */
-  time = 0;
-  /** true while the shared time follows the newest data */
-  following = true;
+  /** whether the space follows the newest data or shows a time on the shared axis (seconds): see timeline.ts */
+  timeline: Timeline = LIVE;
   private unsub: (() => void)[] = [];
   loadMs = 0;
   hosts = new Map<string, HTMLElement>();
@@ -115,17 +114,17 @@ export class Workspace {
     const h = this.histories.get(graph);
     if (!h) return;
     const before = h.problems.length;
-    const step = h.append(patch, time);
+    const step = h.append(patch, time, this.timeline.k === "live");
     for (let i = before; i < h.problems.length; i++) {
       const p = h.problems[i];
       this.dispatch({ type: "feed/rejected", at: Date.now(), rejection: { source: graph, where: `patch ${p.patch}`, errors: [p.reason, ...(p.conflicts ?? []).slice(0, 3).map((c) => `${c.key}: ${c.message}`)] } });
     }
     const pane = this.panes.get(graph);
-    if (step && pane) pane.applyStep(step);
-    // the shared timeline is scrubbed back: a live patch must not move the graph to now, it stays where the timeline shows it
-    if (step && !this.following) {
-      const target = this.cursorAt(graph, this.time);
-      if (h.cursor !== target) { const steps = h.seek(target); pane?.applySteps(steps); }
+    if (step) pane?.applyStep(step);
+    // the space shows a time: the patch is kept, and the graph shows what that time holds (the patch too, if it is from before it)
+    else if (this.timeline.k === "at") {
+      const target = this.cursorAt(graph, this.timeline.t);
+      if (h.cursor !== target) pane?.applySteps(h.seek(target));
     }
   }
 

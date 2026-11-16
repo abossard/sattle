@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, screen, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { runtime } from "../../src/state/runtime";
 import { dispatch, useStore } from "../../src/state/store";
@@ -80,8 +80,13 @@ describe("the default source: the engine's output on the estate", () => {
     // the states are the engine's: at the head the workload has no data; in earlier revisions parts of it failed, and their rows say so
     expect(items[0].textContent, "the workload at the head").toMatch(/^shop workload.*state No data, unknown$/);
     const seen = new Set<string>();
-    for (const t of runtime.ws!.axisPoints()) {
+    const { treeOf } = await import("../../src/app/tree-model");
+    const ws = runtime.ws!, info = ws.graphInfo("workload")!;
+    for (const t of ws.axisPoints()) {
       await act(async () => { dispatch({ type: "time/seek", t }); });
+      // the tree has rendered the revision the timeline shows: its count of nodes is that revision's
+      const model = treeOf(ws.histories.get("workload")!.graph, info)?.model;
+      if (model) await waitFor(() => { const bar = screen.queryByRole("group", { name: "Tree controls" }); if (bar) expect(bar.textContent).toContain(` ${model.nodes.size.toLocaleString()} nodes`); });
       const shown = screen.queryByRole("tree", { name: "Tree of workload" });
       for (const r of shown ? within(shown).getAllByRole("treeitem") : []) for (const m of (r.textContent ?? "").matchAll(/state (Healthy|No data|Degraded|Unhealthy|Unknown),/g)) seen.add(m[1]);
     }

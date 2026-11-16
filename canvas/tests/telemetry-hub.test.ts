@@ -26,7 +26,7 @@ describe("TelemetryHub", () => {
     const f = hub.frame("edge", 0)!;
     expect(f[0]).toBe(quantize(meters[0], 200));
     expect(hub.frame("edge", 1)![1]).toBe(quantize(meters[0], 300)); // flow channel uses the same metric by default
-    hub.setTime(0);
+    hub.show({ k: "at", t: 0 });
     expect(hub.follow).toBe(false);
     expect(hub.frame("edge", 0)![0]).toBe(quantize(meters[0], 100));
   });
