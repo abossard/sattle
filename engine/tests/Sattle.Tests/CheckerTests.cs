@@ -100,6 +100,41 @@ public class CheckerTests
         Assert.True(errors.Any(e => e.Code == code && e.Message.Contains(says, StringComparison.Ordinal)), $"{what}: expected {code} saying \"{says}\", found {(errors.Count == 0 ? "no error" : string.Join("; ", errors.Select(e => e.ToString())))}");
     }
 
+    /// <summary>A view with a window (in the base), a roll-up, the last aggregates of one row and a join of two row sets: each a form that KQL writes.</summary>
+    static readonly Lazy<Graph> Written = new(() =>
+    {
+        var (catalog, errors) = Load(View(Loaded("c = k")
+            + "nodes Out on o = " + Items + " | summarize n = count() by g | summarize arg_max(n, g) by c = g | project o = identity(\"out\", c), k = c;\n"
+            + "extend nodes Out on o = " + Items + " | join kind=inner (graph(\"master\") | graph-match (x) where labels(x) has \"Other\" project g = x.k, ok = x.k) on g | project o = identity(\"out\", k), flag = ok;\n", LoadType));
+        Assert.Empty(errors);
+        return catalog.Graph;
+    });
+
+    static Entity First(Graph g, string type, Func<Entity, bool>? where = null) => g.Entities.First(e => Ids.Name(e.Type) == type && (where?.Invoke(e) ?? true));
+    static List<Edit> Set(Entity e, Props props) => [Edit.Change(e, e with { Props = props })];
+
+    /// <summary>The forms no KQL text writes (#81) and what refuses each when its facts come another way: the kernel refuses a late policy other than revise and a no-data rule on a roll-up, the checker a last without its row mark and a join condition that is no key.</summary>
+    public static TheoryData<string, Func<Graph, List<Edit>>, bool, string, string> Unwritable => new()
+    {
+        { "a window that ignores late rows", g => { var w = First(g, "Window"); return Set(w, w.Props.With(Ids.KProp("late"), Value.Text("ignore"))); }, true, "Enum", "late = \"ignore\" is not one of revise" },
+        { "a roll-up that gives no data when one member has none", g => { var r = First(g, "Rollup"); return Set(r, r.Props.With(Ids.KProp("nodata"), Value.Text("any"))); }, true, "UnknownProperty", "nodata is not declared for Rollup" },
+        { "a last without its row mark", g => { var a = First(g, "Aggregate", e => e.Props.Text(Ids.KProp("fn")) == "last"); return Set(a, a.Props.Without(Ids.KProp("row"))); }, false, "Unsupported", "last needs a row mark" },
+        { "a join condition that reads the left rows only", g =>
+            {
+                var join = First(g, "Join");
+                return [.. g.Entities.Where(e => Ids.Name(e.Type) == "FieldRef" && e.Id.StartsWith(join.Id + "/", StringComparison.Ordinal)).SelectMany(f => Set(f, f.Props.With(Ids.KProp("path"), Value.Text("k"))))];
+            }, false, "Join", "a join condition is equalities between a left and a right expression" },
+    };
+
+    [Theory, MemberData(nameof(Unwritable))]
+    public void A_form_that_KQL_cannot_write_is_refused_when_its_facts_come_another_way(string what, Func<Graph, List<Edit>> edit, bool kernel, string code, string says)
+    {
+        var g = Written.Value.Clone();
+        Assert.Null(g.Apply(edit(g)));
+        var found = kernel ? Conformance.Check(g, OntologyView.Build(g, [Ids.KernelModule])) : new ProjectionChecker(g).Check("d:v/projection:v").Diagnostics;
+        Assert.True(found.Any(d => d.IsError && d.Code == code && d.Message.Contains(says, StringComparison.Ordinal)), $"{what}: expected {code} saying \"{says}\", found {string.Join("; ", found.Select(d => d.ToString()))}");
+    }
+
     /// <summary>Def. 7.15: a window can only be known to be covered when a source feeds the property. A fill of a property that nothing writes is refused when the space is activated.</summary>
     [Fact]
     public void A_fill_of_a_property_that_no_source_feeds_is_refused_at_activation()
