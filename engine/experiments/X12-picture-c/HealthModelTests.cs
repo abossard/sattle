@@ -48,26 +48,81 @@ public class HealthModelTests(ITestOutputHelper output)
     public void Impact_per_link_is_kept_in_the_service_form_by_one_proxy_per_other_impact(string fixture, int minReady)
     {
         using var engine = Replay(fixture, minReady, program: false);
-        var service = engine.Graph("service").State;
-        var ents = service.Entities.ToDictionary(e => e.Id);
-        string Name(string id) => Text(ents[id], "name")!;
-        var edges = service.Rels.Select(r => $"{Name(r.Source)} -> {Name(r.Target)}").ToHashSet();
-        Assert.Equal(["api--limited Limited", "storefront--limited Limited"],
-            service.Entities.Where(e => Prop(e, "proxy") is BooleanValue { B: true }).Select(e => $"{Text(e, "name")} {Text(e, "impact")}").Order(StringComparer.Ordinal));
-        Assert.All(new[] { "storefront", "api" }, k => Assert.Equal("Standard", Text(service.Entities.Single(e => Text(e, "name") == k), "impact")));
+        var (proxies, edges) = ServiceForm(engine);
+        Assert.Equal(["api--limited Limited", "storefront--limited Limited"], proxies);
         Assert.Subset(edges, new HashSet<string> { "browse -> storefront", "order -> storefront--limited", "storefront--limited -> storefront", "orders -> api", "storefront -> api--limited", "api--limited -> api" });
         Assert.DoesNotContain("order -> storefront", edges);
         Assert.DoesNotContain("storefront -> api", edges);
-        Assert.All(ents.Values, e => Assert.Matches("^[a-zA-Z0-9][a-zA-Z0-9-]{1,258}[a-zA-Z0-9]$", Text(e, "name")));
-        var shop = service.Entities.Single(e => Text(e, "name") == "shop");
-        Assert.Equal((99, "Sev1"), ((int)((IntegerValue)Prop(shop, "healthObjective")!).N, Text(shop, "unhealthyAlert")));
+        AssertServiceRuleGivesTheRollup(engine, fixture, minReady);
+    }
 
-        // the service's rule: a parent is the worst over its children, each through its own impact; an entity without children keeps its own state (a resource's from deployment health)
+    /// <summary>reporting is asked for Limited by browse and Suppressed by shop, no parent asks for Standard; web is asked for Standard by storefront, Limited by order and Suppressed by shop.
+    /// Each keeps Standard and gets one proxy for each impact other than Standard, and the service's rule still gives every authored entity the state of the roll-up.</summary>
+    [Theory]
+    [InlineData("estate", 0)]
+    [InlineData("deploy-health", 1)]
+    public void Limited_and_Suppressed_on_one_child_and_all_three_impacts_on_one_child_get_one_proxy_per_impact_other_than_Standard(string fixture, int minReady)
+    {
+        using var engine = Replay(fixture, minReady, program: false,
+            Link(30, "browse", "reporting", "Limited"), Link(31, "order", "web", "Limited"), Link(32, "shop", "web", "Suppressed"));
+        var (proxies, edges) = ServiceForm(engine);
+        Assert.Equal(["api--limited Limited", "reporting--limited Limited", "reporting--suppressed Suppressed", "storefront--limited Limited", "web--limited Limited", "web--suppressed Suppressed"], proxies);
+        Assert.Subset(edges, new HashSet<string> {
+            "browse -> reporting--limited", "shop -> reporting--suppressed", "reporting--limited -> reporting", "reporting--suppressed -> reporting",
+            "storefront -> web", "order -> web--limited", "shop -> web--suppressed", "web--limited -> web", "web--suppressed -> web" });
+        Assert.DoesNotContain(edges, e => e is "browse -> reporting" or "shop -> reporting" or "order -> web" or "shop -> web");
+        AssertServiceRuleGivesTheRollup(engine, fixture, minReady);
+    }
+
+    /// <summary>The real fields an authored entity may carry reach its entity in the service form.</summary>
+    [Fact]
+    public void The_real_fields_of_an_authored_entity_reach_the_service_form()
+    {
+        using var engine = Replay("deploy-health", 0, program: false);
+        var by = engine.Graph("service").State.Entities.ToDictionary(e => Text(e, "name")!);
+        long Int(string k, string f) => (long)((IntegerValue)Prop(by[k], f)!).N;
+        Assert.Equal((99L, 400L, 0L, "Sev3", "Sev1"), (Int("shop", "healthObjective"), Int("shop", "canvasX"), Int("shop", "canvasY"), Text(by["shop"], "degradedAlert"), Text(by["shop"], "unhealthyAlert")));
+        Assert.Equal(new BooleanValue(true), Prop(by["database"], "resourceHealth"));
+        Assert.Null(Prop(by["shop"], "resourceHealth"));
+    }
+
+    /// <summary>An authored key that ends like a proxy name would name the same service entity as a proxy, so its entity and its links are refused.</summary>
+    [Theory]
+    [InlineData("web--limited")]
+    [InlineData("Api--Suppressed")]
+    public void An_authored_key_that_ends_like_a_proxy_name_is_refused(string key)
+    {
+        using var engine = Replay("deploy-health", 0, program: false,
+            Row(30, $"entity/{key}", $$"""{"kind":"entity","key":"{{key}}","name":"x","role":"component","ignoreUnknown":true}"""), Link(31, "shop", key, "Standard"));
+        Assert.DoesNotContain(engine.Graph("model").State.Entities, e => Text(e, "key") == key);
+        Assert.Equal(9, engine.Graph("model").State.Entities.Count());
+        Assert.Equal(10, engine.Graph("model").State.Rels.Count());
+        Assert.Equal(11, engine.Graph("service").State.Entities.Count());
+    }
+
+    /// <summary>The proxies as "name impact" and the relationships as "parent -> child", by service name; every name matches the service's name pattern.</summary>
+    static (List<string> Proxies, HashSet<string> Edges) ServiceForm(Engine engine)
+    {
+        var service = engine.Graph("service").State;
+        var ents = service.Entities.ToDictionary(e => e.Id);
+        Assert.All(ents.Values, e => Assert.Matches("^[a-zA-Z0-9][a-zA-Z0-9-]{1,258}[a-zA-Z0-9]$", Text(e, "name")));
+        foreach (var k in service.Entities.Where(e => Prop(e, "proxy") is not BooleanValue { B: true }).Select(e => Text(e, "name")))
+            if (service.Entities.Any(e => Text(e, "name")!.StartsWith(k + "--", StringComparison.Ordinal))) Assert.Equal("Standard", Text(service.Entities.Single(e => Text(e, "name") == k), "impact"));
+        return ([.. service.Entities.Where(e => Prop(e, "proxy") is BooleanValue { B: true }).Select(e => $"{Text(e, "name")} {Text(e, "impact")}").Order(StringComparer.Ordinal)],
+            service.Rels.Select(r => $"{Text(ents[r.Source], "name")} -> {Text(ents[r.Target], "name")}").ToHashSet());
+    }
+
+    /// <summary>The service's rule over the service form: a parent is the worst over its children, each through its own impact; an entity without children keeps its own state
+    /// (a resource's from deployment health). It gives every authored entity the state that the roll-up with impact on the link gives it.</summary>
+    void AssertServiceRuleGivesTheRollup(Engine engine, string fixture, int minReady)
+    {
+        var service = engine.Graph("service").State;
+        var ents = service.Entities.ToDictionary(e => e.Id);
         var own = engine.Graph("modelStates").State.Entities.ToDictionary(e => Text(e, "key")!, e => Text(e, "state") ?? "Unknown");
         var kids = service.Rels.ToLookup(r => r.Source, r => r.Target);
         string State(string id)
         {
-            if (!kids[id].Any()) return Prop(ents[id], "proxy") is BooleanValue { B: true } ? "Unknown" : own[Name(id)];
+            if (!kids[id].Any()) return own[Text(ents[id], "name")!];
             var ignore = Prop(ents[id], "ignoreUnknown") is BooleanValue { B: true };
             var worst = kids[id].Select(k => Counted(Text(ents[k], "impact")!, State(k), ignore)).Max();
             return worst switch { 3 => "Unhealthy", 2 => "Degraded", 0 => "Healthy", _ => "Unknown" };
@@ -79,18 +134,24 @@ public class HealthModelTests(ITestOutputHelper output)
         foreach (var (k, v) in rolled) Assert.Equal((k, v), (k, got[k]));
     }
 
-    /// <summary>The roll-up's severity of a child for its parent: Unhealthy 3, Degraded 2, Healthy 0, Unknown 1 or not counted (-1) where the parent ignores Unknown; Limited one level milder, Suppressed not counted.</summary>
+    /// <summary>The roll-up's severity of a child for its parent: Unhealthy 3, Degraded 2, Healthy 0, Unknown 1 or not counted (-1) where the parent ignores Unknown; Limited one level milder.
+    /// Suppressed reduces the child's impact to none: the child is not counted, and it does not make the parent healthy.</summary>
     static int Counted(string impact, string state, bool ignoreUnknown)
     {
         var v = state switch { "Unhealthy" => 3, "Degraded" => 2, "Healthy" => 0, _ => ignoreUnknown ? -1 : 1 };
         return impact switch { "Suppressed" => -1, "Limited" => v switch { 3 => 2, 2 => 0, _ => v }, _ => v };
     }
 
+    static string Row(int seq, string key, string payload) =>
+        $$"""{"v":1,"source":"healthmodel","capturedAt":"2026-01-01T10:00:00.700Z","seq":{{seq}},"key":"healthmodel/{{key}}","meta":null,"payload":{{payload}}}""";
+    static string Link(int seq, string parent, string child, string impact) =>
+        Row(seq, $"link/{parent}/{child}", $$"""{"kind":"link","parent":"{{parent}}","child":"{{child}}","impact":"{{impact}}"}""");
+
     static Value? Prop(Entity e, string name) => e.Props.Items.FirstOrDefault(p => Ids.Name(p.Key) == name).Value;
     static string? Text(Entity e, string name) => Prop(e, name) is TextValue t ? t.S : null;
 
-    /// <summary>Replays the fixture and the authored model with the settings of `sattle replay`; the model with resource states and the roll-up read from KQL text or from program graphs.</summary>
-    static Engine Replay(string fixture, int minReady, bool program)
+    /// <summary>Replays the fixture and the authored model, with extra authored rows appended, with the settings of `sattle replay`; the model with resource states and the roll-up read from KQL text or from program graphs.</summary>
+    static Engine Replay(string fixture, int minReady, bool program, params string[] extra)
     {
         var src = Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", fixture);
         var dir = Directory.CreateTempSubdirectory("x12-healthmodel-").FullName;
@@ -102,6 +163,7 @@ public class HealthModelTests(ITestOutputHelper output)
                 Directory.CreateDirectory(Path.GetDirectoryName(to)!);
                 File.Copy(f, to);
             }
+            File.AppendAllLines(Path.Combine(dir, "healthmodel", "model.ndjson"), extra);
             var files = Catalog.ReadDirectory(Path.Combine(Root, "engine", "definitions")).ToList();
             if (fixture == "estate") files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(dir, "space", "acme.space.sattle")) } : f)];
             files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = WithModel(f.Text, minReady) } : f)];
@@ -154,12 +216,15 @@ public sealed class ModelAdapter : ISourceAdapter
     ];
     public bool Handles(string s) => s == "healthmodel";
 
+    static bool ProxyLike(string? key) => key is not null && (key.EndsWith("--limited", StringComparison.OrdinalIgnoreCase) || key.EndsWith("--suppressed", StringComparison.OrdinalIgnoreCase));
     static string? S(JsonElement p, string name) => p.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     public void Consume(Envelope e, IRowSink sink)
     {
         var p = e.Payload;
-        if (S(p, "kind") == "entity" && S(p, "key") is { } key && S(p, "name") is { } name && S(p, "role") is "root" or "flow" or "component" or "resource"
+        if (ProxyLike(S(p, "key")) || ProxyLike(S(p, "parent")) || ProxyLike(S(p, "child")))
+            sink.Rejected("healthmodel", "a key that ends like a proxy name of the service form (--limited or --suppressed)");
+        else if (S(p, "kind") == "entity" && S(p, "key") is { } key && S(p, "name") is { } name && S(p, "role") is "root" or "flow" or "component" or "resource"
             && p.TryGetProperty("ignoreUnknown", out var ig) && ig.ValueKind is JsonValueKind.True or JsonValueKind.False)
         {
             var w = sink.Begin("ModelEntityRow"); w.Begin(1);
