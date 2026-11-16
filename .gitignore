@@ -9,3 +9,6 @@ lab/.env
 **/obj/
 .DS_Store
 engine/out/
+# Work folders and live runs: their recordings and stores hold real subscription ids, pod names and IPs.
+/tmp/
+/out/
