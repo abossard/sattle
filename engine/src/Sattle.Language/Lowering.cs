@@ -182,6 +182,7 @@ public sealed class Lowering
                         var p = new List<(string, Value)> { ("name", T(r.Name)), ("abstract", Value.Boolean(r.Abstract)) };
                         if (r.Doc is not null) p.Add(("description", T(r.Doc)));
                         if (r.Hierarchy) p.Add(("hierarchy", Value.Boolean(true)));
+                        if (r.Rollup) p.Add(("rollup", Value.Boolean(true)));
                         if (r.Kind is not null) p.Add(("kind", T(r.Kind)));
                         var id = b.Contain(mid, "rel", seg, "RelationshipType", null, [.. p]); Reg(id, r.Pos);
                         if (r.Super is not null && Resolve(r.Super, "rel") is { } sid) b.Edge(id, "extends", sid);

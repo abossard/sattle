@@ -73,7 +73,7 @@ public static class KernelTable
     [
         T("!Declaration | name:T description:T?"), T("!Operator | name:T"), T("!Expr |"),
         T("Module | name:T description:T?"), T("Release | version:T digest:T revision:T status:T"),
-        T("EntityType : Declaration | abstract:B"), T("RelationshipType : Declaration | abstract:B hierarchy:B? kind:T?"),
+        T("EntityType : Declaration | abstract:B"), T("RelationshipType : Declaration | abstract:B hierarchy:B? rollup:B? kind:T?"),
         T("PropertyType : Declaration | nullable:B unit:T? role:T temporality:T? combine:T? period:I? treeRole:T?"), T("ValueRole | value:Any role:T"),
         T("Extension : Declaration |"),
         T("Constraint : Declaration | kind:T severity:T values:L? min:D? max:D? pattern:T? side:T?"),
@@ -344,5 +344,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:5c78260a657ccdca585e901a211e47b1bd902bda6f5976449d3f9e73b98aa0de";
+    public const string CompiledDigest = "sha256:d7491eded4c5663553d0589e588492ce6b99006cc93fb0aec5a0e2933e5059c3";
 }

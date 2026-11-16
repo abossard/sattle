@@ -147,6 +147,7 @@ public sealed class Printer(Graph g, string module)
         if (d.Target(id, "extends") is { } s) sb.Append(" : ").Append(Ref(s));
         sb.Append(" (").Append(string.Join(" | ", d.Targets(id, "sourceType").Select(Ref))).Append(") -> (").Append(string.Join(" | ", d.Targets(id, "targetType").Select(Ref))).Append(')');
         if (d.Bool(id, "hierarchy")) sb.Append(" hierarchy");
+        if (d.Bool(id, "rollup")) sb.Append(" rollup");
         if (d.Text(id, "kind") is { } kind) sb.Append(" kind ").Append(kind);
         Members(id, "");
         sb.Append('\n');

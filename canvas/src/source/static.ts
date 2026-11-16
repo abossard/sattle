@@ -73,7 +73,7 @@ export class StaticSource implements GraphSource {
       const snap = await this.loadSnapshot(files.snapshot);
       if (!ontology || !snap) continue;
       this.snapshots.set(e.id, snap.snapshot);
-      graphs.push({ id: e.id, role: e.role, descriptor: snap.descriptor, ontology, presentation: loaded!.hints.length ? loaded!.hints : undefined, tree: loaded!.tree ?? undefined, edgeKinds: Object.keys(loaded!.kinds).length ? loaded!.kinds : undefined, labels: Object.keys(loaded!.labels).length ? loaded!.labels : undefined, definition: e.definition, inputs: e.inputs, inputPorts: e.ports, description: files.description || undefined, document: files.document && files.documentJson ? true : undefined });
+      graphs.push({ id: e.id, role: e.role, descriptor: snap.descriptor, ontology, presentation: loaded!.hints.length ? loaded!.hints : undefined, tree: loaded!.tree ?? undefined, edgeKinds: Object.keys(loaded!.kinds).length ? loaded!.kinds : undefined, labels: Object.keys(loaded!.labels).length ? loaded!.labels : undefined, restating: loaded!.restating.length ? loaded!.restating : undefined, definition: e.definition, inputs: e.inputs, inputPorts: e.ports, description: files.description || undefined, document: files.document && files.documentJson ? true : undefined });
       if (files.patches) this.patches.set(e.id, await this.loadPatches(files.patches));
     }
     if (manifest.telemetry) {
@@ -89,11 +89,11 @@ export class StaticSource implements GraphSource {
   }
 
   /** The ontology and its value roles (engine 3.2): the roles are read out first, the contract schema forbids them in the ontology. */
-  private async loadOntology(rel: string): Promise<{ ontology: OntologyDefinition; hints: PresentationHint[]; tree: TreeSpec | null; kinds: Record<string, EdgeKind>; labels: Record<string, string> } | null> {
-    const { hints, tree, kinds, labels, ontology } = readPresentation(await this.json(rel));
+  private async loadOntology(rel: string): Promise<{ ontology: OntologyDefinition; hints: PresentationHint[]; tree: TreeSpec | null; kinds: Record<string, EdgeKind>; labels: Record<string, string>; restating: string[] } | null> {
+    const { hints, tree, kinds, labels, restating, ontology } = readPresentation(await this.json(rel));
     const r = checkOntology(ontology);
     if (!r.ok) { this.reject(rel, "ontology", r.errors); return null; }
-    return { ontology: r.value, hints, tree, kinds, labels };
+    return { ontology: r.value, hints, tree, kinds, labels, restating };
   }
 
   private async loadSnapshot(rel: string): Promise<{ snapshot: Snapshot; descriptor: GraphDescriptorWire } | null> {

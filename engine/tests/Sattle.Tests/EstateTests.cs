@@ -205,6 +205,7 @@ public class EstateTests
         var tree = h.Ontology("healthTree");
         var contains = tree["relationshipTypes"]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1] == "Contains")!;
         Assert.Equal((true, "composition"), (contains["hierarchy"]!.GetValue<bool>(), contains["kind"]!.GetValue<string>()));      // two fields: a hierarchy is a composition, a composition need not be a hierarchy
+        Assert.Equal(["Affects"], onto["relationshipTypes"]!.AsArray().Where(t => t!["rollup"]?.GetValue<bool>() == true).Select(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1]));      // engine 3.49: the roll-up edge restates the others
         Assert.Null(h.Ontology("master")["relationshipTypes"]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>() == "NoType")!["kind"]);
         var graphs = h.SpaceInfo()["graphs"]!.AsArray().Where(g => g!["role"]!.GetValue<string>() != "catalog").ToList();
         Assert.All(graphs, g => Assert.False(string.IsNullOrWhiteSpace(g!["description"]?.GetValue<string>()), $"graph {g["id"]} has no description"));

@@ -231,6 +231,7 @@ public class HealthTreeTests
         var rels = onto["relationshipTypes"]!.AsArray().Where(x => x!["hierarchy"] is not null).ToDictionary(x => x!["id"]!["value"]!.GetValue<string>(), x => x!["hierarchy"]!.GetValue<bool>());
         bool Marked(string name) => rels.Single(kv => kv.Key == name || kv.Key.EndsWith("." + name, StringComparison.Ordinal) && kv.Key.StartsWith("acme.tree", StringComparison.Ordinal)).Value;
         Assert.True(Marked("Contains")); Assert.False(Marked("Rolls")); Assert.False(Marked("EvidenceFor"));
+        Assert.All(onto["relationshipTypes"]!.AsArray().Where(x => x!["id"]!["value"]!.GetValue<string>() != "NoType"), x => Assert.False(x!["rollup"]!.GetValue<bool>()));      // engine 3.49: the tree declares no roll-up type
         var state = onto["properties"]!.AsArray().Single(p => p!["id"]!["value"]!.GetValue<string>() == "rolledState")!;
         Assert.Equal("Degraded:warning,Healthy:ok,Unhealthy:danger,Unknown:unknown", string.Join(",", state["presentation"]!.AsArray().Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order()));
     }

@@ -52,7 +52,7 @@ relationship DependsOn (WorkloadService) -> (WorkloadService | PlatformResource)
 /// A gateway that sends requests to a service needs it (API Management and its backend).
 relationship Exposes (PlatformResource) -> (WorkloadService) kind dependency;
 /// The roll-up edge, read from source to target: the source is affected by the target, so a failure of the target makes the source worse (a workload is affected by its services, a service by its deployments and by what it depends on). Dependency and composition produce it; the communication edge TalksTo does not.
-relationship Affects (Component) -> (Component) kind dependency;
+relationship Affects (Component) -> (Component) rollup kind dependency;
 relationship EvidenceFor (DependencyEvidence) -> (WorkloadService) kind support;
 relationship Measures (ComponentSignal) -> (Component) kind support;
 

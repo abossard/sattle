@@ -19,6 +19,8 @@ export interface GraphInfo {
   edgeKinds?: Record<string, EdgeKind>;
   /** engine 3.17: per entity type, the property that names an element; a type that declares none is absent */
   labels?: Record<string, string>;
+  /** engine 3.49: the relationship types the ontology marks `rollup`: their edges restate edges of other types (a roll-up edge such as `Affects`) */
+  restating?: string[];
   /** definition of the projection that produces this graph (projection graphs only) */
   definition?: ProjectionDefinition;
   /** graphs this graph is derived from */
@@ -37,7 +39,7 @@ export interface GraphInfo {
 }
 
 /** What a graph says about itself that an activation can change. */
-export type GraphMeta = Pick<GraphInfo, "ontology" | "presentation" | "tree" | "edgeKinds" | "labels">;
+export type GraphMeta = Pick<GraphInfo, "ontology" | "presentation" | "tree" | "edgeKinds" | "labels" | "restating">;
 
 export interface SpaceInfo { id: string; graphs: GraphInfo[] }
 

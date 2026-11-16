@@ -59,4 +59,8 @@ describe("what an ontology declares for viewers (engine 3.17): the kind of a rel
     const r = readPresentation(raw([{ id: id("R"), sourceTypes: [], targetTypes: [], properties: [], kind: "composition", hierarchy: false }], [{ id: id("Pod"), properties: [], label: id("name") }]));
     expect(JSON.stringify(r.ontology)).not.toMatch(/"kind"|"label"|"hierarchy"/);
   });
+  it.each<[unknown, string[]]>([[true, ["R"]], [false, []], [undefined, []], ["yes", []]])("a type marked rollup %j restates others: %j (engine 3.49)", (rollup, want) => {
+    const r = readPresentation(raw([{ id: id("R"), sourceTypes: [], targetTypes: [], properties: [], kind: "dependency", hierarchy: false, rollup }]));
+    expect([r.restating, /"rollup"/.test(JSON.stringify(r.ontology))]).toEqual([want, false]);
+  });
 });

@@ -144,7 +144,7 @@ public sealed record TeleMod(string Temporality, string Combine, long PeriodNs);
 
 public abstract record Decl(string? Doc, Pos Pos);
 public sealed record EntityDecl(bool Abstract, string Name, string? Was, List<Ref> Supers, List<Member> Members, string? Doc, Pos Pos) : Decl(Doc, Pos);
-public sealed record RelDecl(bool Abstract, string Name, string? Was, Ref? Super, List<Ref> Sources, List<Ref> Targets, List<Member> Members, string? Doc, Pos Pos, bool Hierarchy = false, string? Kind = null) : Decl(Doc, Pos);
+public sealed record RelDecl(bool Abstract, string Name, string? Was, Ref? Super, List<Ref> Sources, List<Ref> Targets, List<Member> Members, string? Doc, Pos Pos, bool Hierarchy = false, string? Kind = null, bool Rollup = false) : Decl(Doc, Pos);
 public sealed record ExtendDecl(Ref Target, List<Member> Members, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record ConstraintDecl(string? Name, string Kind, Ref Target, string? Prop, string[] Values, decimal? Min, decimal? Max, string? Pattern, string? Side, long CardMin, long CardMax, string[] KeyProps, bool Warning, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record KeyComp(string Name, string Kind, string? Canonicalizer, Pos Pos);
@@ -242,9 +242,9 @@ public sealed class Parser
                     var name = Ident(); var was = TryWord("was") ? Ident() : null;
                     Ref? sup = TrySym(":") ? RefP() : null;
                     Sym("("); var src = RefAlt(); Sym(")"); Sym("->"); Sym("("); var tgt = RefAlt(); Sym(")");
-                    var hierarchy = TryWord("hierarchy");
+                    var hierarchy = TryWord("hierarchy"); var rollup = TryWord("rollup");
                     var kind = TryWord("kind") ? (Cur.Kind == T.Ident && RelationshipKinds.All.Contains(Cur.Text) ? Next().Text : throw Err("expected a relationship kind: " + string.Join(", ", RelationshipKinds.All))) : null;
-                    return new RelDecl(abs, name, was, sup, src, tgt, MembersOrSemi(), doc, pos, hierarchy, kind);
+                    return new RelDecl(abs, name, was, sup, src, tgt, MembersOrSemi(), doc, pos, hierarchy, kind, rollup);
                 }
             case "extend": { var t = RefP(); return new ExtendDecl(t, Members(), doc, pos); }
             case "constraint": return Constraint(doc, pos);

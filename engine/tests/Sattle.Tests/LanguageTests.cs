@@ -145,6 +145,19 @@ public class LanguageTests
         Assert.Contains(diags, d => d.Code == code || (code == "K11" && d.Code == "ValueKind"));
     }
 
+    [Theory]
+    [InlineData("kind dependency;", false)]
+    [InlineData("rollup kind dependency;", true)]
+    [InlineData("hierarchy rollup kind composition;", true)]
+    public void The_rollup_marker_says_a_relationship_type_restates_others_and_prints_back(string tail, bool rollup)
+    {
+        var (cat, res) = Mutated("acme.tree.sattle", "relationship Rolls (Element) -> (Element) kind dependency;", "relationship Rolls (Element) -> (Element) " + tail);
+        Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
+        var rolls = Ids.Child(Ids.Module("acme.tree"), "rel", "Rolls");
+        Assert.Equal(rollup, new DefView(cat.Graph).Bool(rolls, "rollup"));
+        Assert.Contains("relationship Rolls (Element) -> (Element) " + tail.TrimEnd(';'), Printer.Print(cat.Graph, "acme.tree"));
+    }
+
     [Fact]
     public void Was_clause_keeps_the_old_id()
     {

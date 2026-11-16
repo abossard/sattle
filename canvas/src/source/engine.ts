@@ -83,7 +83,7 @@ export class EngineSource implements GraphSource {
     const graphs: GraphInfo[] = [];
     const seed: { id: string; revision: string | undefined; telemetry: boolean }[] = [];
     for (const g of this.doc.graphs) {
-      const { hints, tree, kinds, labels, ontology: rawOntology } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(g.id))));
+      const { hints, tree, kinds, labels, restating, ontology: rawOntology } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(g.id))));
       const ont = checkOntology(rawOntology);
       if (!ont.ok) {
         this.reject({ source: ENGINE_ENDPOINTS.ontology(g.id), where: `ontology of ${g.id}`, errors: ont.errors });
@@ -94,7 +94,7 @@ export class EngineSource implements GraphSource {
       const snap = await this.genesis(g.id);
       if (!snap) continue;
       graphs.push({
-        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, description: g.description, inputs: g.inputs, direction: g.direction, editable: g.editable, document: g.document || undefined,
+        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined, description: g.description, inputs: g.inputs, direction: g.direction, editable: g.editable, document: g.document || undefined,
         projectionName: g.projection ?? undefined,
       });
       seed.push({ id: g.id, revision: snap.snapshot.version.revision, telemetry: g.role !== "catalog" });
@@ -195,10 +195,10 @@ export class EngineSource implements GraphSource {
   /** An activation can change the ontology of a graph and the roles of its values: read them again and tell the workspace. */
   private async readMeta(graph: string, gen: number): Promise<void> {
     try {
-      const { hints, tree, kinds, labels, ontology: raw } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(graph))));
+      const { hints, tree, kinds, labels, restating, ontology: raw } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(graph))));
       const ont = checkOntology(raw);
       if (!ont.ok) { this.reject({ source: ENGINE_ENDPOINTS.ontology(graph), where: `ontology of ${graph}`, errors: ont.errors }); return; }
-      this.step({ t: "meta", graph, gen, meta: { ontology: ont.value as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined } });
+      this.step({ t: "meta", graph, gen, meta: { ontology: ont.value as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined } });
     } catch (e) { this.reject({ source: this.base, where: `ontology of ${graph}`, errors: [(e as Error).message] }); }
   }
 

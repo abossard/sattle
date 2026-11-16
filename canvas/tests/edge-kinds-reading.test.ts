@@ -18,7 +18,7 @@ const ends: Record<string, [string[], string[]]> = {
 const ontology = { ...ont("o"), relationshipTypes: Object.entries(ends).map(([id, [s, t]]) => ({ id: { value: id }, sourceTypes: s.map((value) => ({ value })), targetTypes: t.map((value) => ({ value })), properties: [] })) };
 const rows = ["Workload", "Service", "Deployment", "Pod"];
 const tree: TreeSpec = { hierarchy: { relationship: "Contains", childIsSource: false }, edgeRoles: {}, state: Object.fromEntries(rows.concat("Resource", "Node").map((t) => [t, { rolledUp: "state" }])), types: rows };
-const info = { id: "w", role: "projection", descriptor: {}, ontology, inputs: [], tree, edgeKinds: kinds, presentation: [{ property: "state", roles: { Healthy: "ok", Degraded: "warning", Unhealthy: "danger" } }] } as unknown as GraphInfo;
+const info = { id: "w", role: "projection", descriptor: {}, ontology, inputs: [], tree, edgeKinds: kinds, restating: ["Affects"], presentation: [{ property: "state", roles: { Healthy: "ok", Degraded: "warning", Unhealthy: "danger" } }] } as unknown as GraphInfo;
 
 const types: Record<string, string> = { shop: "Workload", web: "Service", api: "Service", database: "Service", webd: "Deployment", pod: "Pod", node: "Node", pool: "Pool", cluster: "Cluster", cache: "Resource", pg: "Resource", pe: "Resource", vnet: "Resource", apim: "Resource", sig: "Signal" };
 const edges: [string, string, string][] = [
@@ -36,8 +36,8 @@ const workload = (states: Record<string, string> = {}, rollup = false) => Graph.
 });
 
 describe("edges that restate others", () => {
-  it("a type every edge of which runs beside an edge of three or more other types is a restatement; one beside a single other type is not", () => {
-    expect([...restatingTypes(workload({}, true))]).toEqual(["Affects"]);
+  it.each<[string[] | undefined, string[]]>([[["Affects"], ["Affects"]], [undefined, []]])("the types the ontology marks rollup (%j), not read from the edges", (restating, want) => {
+    expect([...restatingTypes({ restating })]).toEqual(want);
   });
 });
 

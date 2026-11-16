@@ -350,7 +350,7 @@ export class DataPane {
     this.kindCounts = new Map();
     for (const r of g.relationships()) this.countKind(r.type, 1);
     this.model = this.modelNow();
-    this.restated = this.info.edgeKinds ? restatingTypes(g) : new Set();
+    this.restated = restatingTypes(this.info);
     this.blame = blamePath(g, this.info, this.restated);
     this.computeVisibility();
     for (let i = 0; i < g.nodes.length; i++) this.writeNode(i);

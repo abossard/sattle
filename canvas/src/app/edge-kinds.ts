@@ -1,4 +1,4 @@
-// What the declared kinds of edge (engine 3.17) say about how to read a graph: which edges restate others, which compositions stack the graph from
+// What the declared kinds of edge (engine 3.17) and the roll-up marker (engine 3.49) say about how to read a graph: which edges restate others, which compositions stack the graph from
 // top to bottom and which belong to the side of what a part depends on, and where the elements on that side go. Pure: graph and ontology in, data out.
 import type { Graph } from "../core/graph";
 import { valueText, type Entity } from "../core/model";
@@ -8,23 +8,10 @@ import type { GraphInfo } from "../source/types";
 type Kinds = Readonly<Record<string, EdgeKind>>;
 
 /**
- * Relationship types that restate others: every edge of the type runs beside an edge of another type between the same two elements, and it does so
- * beside three or more other types (a roll-up edge such as `Affects` repeats the containment, the dependencies and the memberships it follows). They
- * are left out by default; nothing is lost, the edges they restate are drawn. The engine declares no such mark; this is read from the edges.
+ * Relationship types that restate others, as the ontology declares them (engine 3.49, `rollup`): a roll-up edge such as `Affects` repeats the
+ * containment, the dependencies and the memberships it follows. They are left out by default; nothing is lost, the edges they restate are drawn.
  */
-export function restatingTypes(g: Graph): Set<string> {
-  const between = new Map<string, Set<string>>();
-  const pair = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`);
-  for (const r of g.relationships()) { const k = pair(r.source, r.target); const s = between.get(k); if (s) s.add(r.type); else between.set(k, new Set([r.type])); }
-  const covered = new Map<string, { all: boolean; by: Set<string> }>();
-  for (const r of g.relationships()) {
-    const c = covered.get(r.type) ?? { all: true, by: new Set<string>() };
-    const others = [...between.get(pair(r.source, r.target))!].filter((t) => t !== r.type);
-    if (!others.length) c.all = false; else for (const t of others) c.by.add(t);
-    covered.set(r.type, c);
-  }
-  return new Set([...covered].filter(([, c]) => c.all && c.by.size >= 3).map(([t]) => t));
-}
+export const restatingTypes = (info: Pick<GraphInfo, "restating">): Set<string> => new Set(info.restating ?? []);
 
 /**
  * The two axes of a graph with declared kinds. `vertical`: the hierarchy and every composition whose target is no element something depends on
@@ -113,13 +100,15 @@ export interface CauseLink { parent: string; child: string; edge: string }
  * the hierarchy as declared, and every other composition and dependency with the source as the one whose state takes in the target's (what a part
  * needs, what it is made of, what a gateway exposes). Communication and support take no part. `types`: the relationship types of the links.
  */
-export function causeLinks(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds">, restated: ReadonlySet<string> = restatingTypes(g)): { types: Set<string>; links: CauseLink[] } {
+export function causeLinks(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "restating">, restated: ReadonlySet<string> = restatingTypes(info)): { types: Set<string>; links: CauseLink[] } {
   const spec = info.tree;
   if (!spec) return { types: new Set(), links: [] };
   const kinds: Kinds = info.edgeKinds ?? {};
   const structural = (t: string) => kinds[t] === "composition" || kinds[t] === "dependency";
   const hier = (t: string) => t === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(t);
-  const rollup = [...restated].filter(structural);
+  const present = new Set<string>();
+  for (const r of g.relationships()) present.add(r.type);
+  const rollup = [...restated].filter((t) => structural(t) && present.has(t));
   const types = new Set<string>();
   for (const r of g.relationships()) if (rollup.length ? rollup.includes(r.type) : !restated.has(r.type) && (hier(r.type) || structural(r.type))) types.add(r.type);
   const links: CauseLink[] = [];
@@ -161,7 +150,7 @@ function stateRole(e: { type: string; props: Record<string, unknown> }, spec: Tr
  * state, an element whose state is a warning or a danger and that takes in no wrong one (`causeLinks`). The path is every wrong element above a blamed
  * one along the links, and the edges between them. `skip`: types that restate others (see `restatingTypes`).
  */
-export function blamePath(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology" | "presentation">, skip: ReadonlySet<string> = restatingTypes(g)): { blamed: Set<string>; nodes: Set<string>; edges: Set<string> } {
+export function blamePath(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology" | "presentation" | "restating">, skip: ReadonlySet<string> = restatingTypes(info)): { blamed: Set<string>; nodes: Set<string>; edges: Set<string> } {
   const out = { blamed: new Set<string>(), nodes: new Set<string>(), edges: new Set<string>() };
   const spec = info.tree;
   if (!spec || !Object.keys(spec.state).length) return out;

@@ -213,7 +213,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
             ["relationshipTypes"] = new JsonArray([.. new[] { (JsonNode)new JsonObject { ["id"] = Id("NoType"), ["sourceTypes"] = new JsonArray(), ["targetTypes"] = new JsonArray(), ["properties"] = new JsonArray() } }.Concat(types.Where(t => t.IsRel).OrderBy(t => t.Id, StringComparer.Ordinal).Select(t => (JsonNode)new JsonObject
             {
                 ["id"] = Id(TypeName(t.Id)), ["sourceTypes"] = new JsonArray([.. t.Sources.OrderBy(x => x, StringComparer.Ordinal).Select(s => (JsonNode)Id(TypeName(s)))]), ["targetTypes"] = new JsonArray([.. t.Targets.OrderBy(x => x, StringComparer.Ordinal).Select(s => (JsonNode)Id(TypeName(s)))]), ["properties"] = Names(view.PropsOf(t.Id).Keys),
-                ["hierarchy"] = new DefView(catalog.Graph).Bool(t.Id, "hierarchy"), ["kind"] = new DefView(catalog.Graph).Text(t.Id, "kind"),
+                ["hierarchy"] = new DefView(catalog.Graph).Bool(t.Id, "hierarchy"), ["rollup"] = new DefView(catalog.Graph).Bool(t.Id, "rollup"), ["kind"] = new DefView(catalog.Graph).Text(t.Id, "kind"),
             }))]),
         };
     }

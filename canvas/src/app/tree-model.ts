@@ -295,7 +295,7 @@ export type HierarchyChoice = EdgeKind | "cause";
  * (`causeLinks`), one row for every element of a type with a state; the other relationships are counted, support as support and the rest as links.
  * Undefined for a graph without states.
  */
-export function causeTree(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "presentation">): { spec: TreeSpec; links: ReturnType<typeof causeLinks> } | undefined {
+export function causeTree(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "presentation" | "restating">): { spec: TreeSpec; links: ReturnType<typeof causeLinks> } | undefined {
   const base = info.tree;
   if (!base || !Object.keys(base.state).length) return undefined;
   const links = causeLinks(g, info);
