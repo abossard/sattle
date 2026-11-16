@@ -37,6 +37,58 @@ public class HealthModelTests(ITestOutputHelper output)
         Assert.Equal(kql.StateDigest(), graph.StateDigest());
     }
 
+    /// <summary>The service stores impact on the child entity and none on a relationship. In the example storefront and api are each asked for Standard by one parent and
+    /// Limited by another; each keeps Standard and gets one proxy for Limited between it and the parent that asks for Limited. The service's rule (impact read from the child entity)
+    /// over the service form gives every authored entity the state that the roll-up with impact on the link gives it.</summary>
+    [Theory]
+    [InlineData("estate", 0)]
+    [InlineData("estate", 2)]
+    [InlineData("deploy-health", 0)]
+    [InlineData("deploy-health", 1)]
+    public void Impact_per_link_is_kept_in_the_service_form_by_one_proxy_per_other_impact(string fixture, int minReady)
+    {
+        using var engine = Replay(fixture, minReady, program: false);
+        var service = engine.Graph("service").State;
+        var ents = service.Entities.ToDictionary(e => e.Id);
+        string Name(string id) => Text(ents[id], "name")!;
+        var edges = service.Rels.Select(r => $"{Name(r.Source)} -> {Name(r.Target)}").ToHashSet();
+        Assert.Equal(["api--limited Limited", "storefront--limited Limited"],
+            service.Entities.Where(e => Prop(e, "proxy") is BooleanValue { B: true }).Select(e => $"{Text(e, "name")} {Text(e, "impact")}").Order(StringComparer.Ordinal));
+        Assert.All(new[] { "storefront", "api" }, k => Assert.Equal("Standard", Text(service.Entities.Single(e => Text(e, "name") == k), "impact")));
+        Assert.Subset(edges, new HashSet<string> { "browse -> storefront", "order -> storefront--limited", "storefront--limited -> storefront", "orders -> api", "storefront -> api--limited", "api--limited -> api" });
+        Assert.DoesNotContain("order -> storefront", edges);
+        Assert.DoesNotContain("storefront -> api", edges);
+        Assert.All(ents.Values, e => Assert.Matches("^[a-zA-Z0-9][a-zA-Z0-9-]{1,258}[a-zA-Z0-9]$", Text(e, "name")));
+        var shop = service.Entities.Single(e => Text(e, "name") == "shop");
+        Assert.Equal((99, "Sev1"), ((int)((IntegerValue)Prop(shop, "healthObjective")!).N, Text(shop, "unhealthyAlert")));
+
+        // the service's rule: a parent is the worst over its children, each through its own impact; an entity without children keeps its own state (a resource's from deployment health)
+        var own = engine.Graph("modelStates").State.Entities.ToDictionary(e => Text(e, "key")!, e => Text(e, "state") ?? "Unknown");
+        var kids = service.Rels.ToLookup(r => r.Source, r => r.Target);
+        string State(string id)
+        {
+            if (!kids[id].Any()) return Prop(ents[id], "proxy") is BooleanValue { B: true } ? "Unknown" : own[Name(id)];
+            var ignore = Prop(ents[id], "ignoreUnknown") is BooleanValue { B: true };
+            var worst = kids[id].Select(k => Counted(Text(ents[k], "impact")!, State(k), ignore)).Max();
+            return worst switch { 3 => "Unhealthy", 2 => "Degraded", 0 => "Healthy", _ => "Unknown" };
+        }
+        var rolled = engine.Graph("rollup3").State.Entities.ToDictionary(e => Text(e, "key")!, e => Text(e, "state"));
+        var got = rolled.Keys.ToDictionary(k => k, k => State(service.Entities.Single(e => Text(e, "name") == k).Id));
+        output.WriteLine($"{fixture} minReady {minReady}: " + string.Join(", ", got.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key} {kv.Value}")));
+        Assert.Equal(9, rolled.Count);
+        foreach (var (k, v) in rolled) Assert.Equal((k, v), (k, got[k]));
+    }
+
+    /// <summary>The roll-up's severity of a child for its parent: Unhealthy 3, Degraded 2, Healthy 0, Unknown 1 or not counted (-1) where the parent ignores Unknown; Limited one level milder, Suppressed not counted.</summary>
+    static int Counted(string impact, string state, bool ignoreUnknown)
+    {
+        var v = state switch { "Unhealthy" => 3, "Degraded" => 2, "Healthy" => 0, _ => ignoreUnknown ? -1 : 1 };
+        return impact switch { "Suppressed" => -1, "Limited" => v switch { 3 => 2, 2 => 0, _ => v }, _ => v };
+    }
+
+    static Value? Prop(Entity e, string name) => e.Props.Items.FirstOrDefault(p => Ids.Name(p.Key) == name).Value;
+    static string? Text(Entity e, string name) => Prop(e, name) is TextValue t ? t.S : null;
+
     /// <summary>Replays the fixture and the authored model with the settings of `sattle replay`; the model with resource states and the roll-up read from KQL text or from program graphs.</summary>
     static Engine Replay(string fixture, int minReady, bool program)
     {
@@ -67,7 +119,7 @@ public class HealthModelTests(ITestOutputHelper output)
         finally { Directory.Delete(dir, recursive: true); }
     }
 
-    /// <summary>The space with the authored model as two sources, the model with resource states on deployment health, and the roll-up stacked three times.</summary>
+    /// <summary>The space with the authored model as two sources, the model with resource states on deployment health, the roll-up stacked three times, and the model in the form the service stores it.</summary>
     static string WithModel(string space, int minReady)
     {
         var text = space.Replace("dh.deploymentHealth(master: master)", $"dh.deploymentHealth(master: master, minReady: {minReady})");
@@ -82,19 +134,22 @@ public class HealthModelTests(ITestOutputHelper output)
               graph rollup1 = hm.rollup(model: modelStates);
               graph rollup2 = hm.rollup(model: rollup1);
               graph rollup3 = hm.rollup(model: rollup2);
+              graph service = hm.service(model: model);
             }
             """;
     }
 }
 
-/// <summary>Authored rows of the health model, envelopes of source `healthmodel`: payload `{ "kind": "entity", "key", "name", "role", "ignoreUnknown", "cluster"?, "namespace"?, "deployment"? }` or `{ "kind": "link", "parent", "child", "impact" }`.</summary>
+/// <summary>Authored rows of the health model, envelopes of source `healthmodel`: payload `{ "kind": "entity", "key", "name", "role", "ignoreUnknown", "cluster"?, "namespace"?, "deployment"?, "healthObjective"?, "canvasX"?, "canvasY"?, "degradedAlert"?, "unhealthyAlert"?, "resourceHealth"? }` or `{ "kind": "link", "parent", "child", "impact" }`.</summary>
 public sealed class ModelAdapter : ISourceAdapter
 {
     public string Id => "x12.healthmodel";
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
         new("ModelEntityRow", [RowDef.F("key", "Text"), RowDef.F("name", "Text"), RowDef.F("role", "Text"), RowDef.F("ignoreUnknown", "Boolean"),
-            RowDef.F("cluster", "Text", true), RowDef.F("namespace", "Text", true), RowDef.F("deployment", "Text", true)]),
+            RowDef.F("cluster", "Text", true), RowDef.F("namespace", "Text", true), RowDef.F("deployment", "Text", true),
+            RowDef.F("healthObjective", "Integer", true), RowDef.F("canvasX", "Integer", true), RowDef.F("canvasY", "Integer", true),
+            RowDef.F("degradedAlert", "Text", true), RowDef.F("unhealthyAlert", "Text", true), RowDef.F("resourceHealth", "Boolean", true)]),
         new("ModelLinkRow", [RowDef.F("parent", "Text"), RowDef.F("child", "Text"), RowDef.F("impact", "Text")]),
     ];
     public bool Handles(string s) => s == "healthmodel";
@@ -110,6 +165,9 @@ public sealed class ModelAdapter : ISourceAdapter
             var w = sink.Begin("ModelEntityRow"); w.Begin(1);
             w.Text("key", key); w.Text("name", name); w.Text("role", S(p, "role")); w.Int(w.Col("ignoreUnknown"), ig.ValueKind == JsonValueKind.True ? 1 : 0);
             w.Text("cluster", S(p, "cluster")); w.Text("namespace", S(p, "namespace")); w.Text("deployment", S(p, "deployment"));
+            foreach (var f in new[] { "healthObjective", "canvasX", "canvasY" }) if (p.TryGetProperty(f, out var n) && n.TryGetInt64(out var v)) w.Int(w.Col(f), v);
+            w.Text("degradedAlert", S(p, "degradedAlert")); w.Text("unhealthyAlert", S(p, "unhealthyAlert"));
+            if (p.TryGetProperty("resourceHealth", out var rh) && rh.ValueKind is JsonValueKind.True or JsonValueKind.False) w.Int(w.Col("resourceHealth"), rh.ValueKind == JsonValueKind.True ? 1 : 0);
         }
         else if (S(p, "kind") == "link" && S(p, "parent") is { } parent && S(p, "child") is { } child && S(p, "impact") is "Standard" or "Limited" or "Suppressed")
         {

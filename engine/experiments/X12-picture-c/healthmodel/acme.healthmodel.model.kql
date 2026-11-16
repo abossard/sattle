@@ -4,5 +4,6 @@ graph model : acme.healthmodel with (
 input entities : ModelEntityRow;
 input links : ModelLinkRow;
 
-nodes ModelEntity on e with (rule = "authoredEntities") = entities | project e = identity("modelEntity", key), key, name, role, ignoreUnknown, cluster, namespace, deployment;
+nodes ModelEntity on e with (rule = "authoredEntities") = entities | project e = identity("modelEntity", key), key, name, role, ignoreUnknown, cluster, namespace, deployment,
+      healthObjective, canvasX, canvasY, degradedAlert, unhealthyAlert, resourceHealth;
 edges HasChild from p to c with (rule = "authoredLinks") = links | project p = identity("modelEntity", parent), c = identity("modelEntity", child), impact;
