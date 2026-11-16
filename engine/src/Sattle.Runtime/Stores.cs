@@ -296,6 +296,7 @@ public sealed class SqliteGraphStore : IDurableStore
 
     public SqliteGraphStore(string path)
     {
+        if (Path.GetDirectoryName(Path.GetFullPath(path)) is { } dir) Directory.CreateDirectory(dir);
         var cs = new SqliteConnectionStringBuilder { DataSource = path, Mode = SqliteOpenMode.ReadWriteCreate, Pooling = false }.ToString();
         db = new SqliteConnection(cs);
         db.Open();

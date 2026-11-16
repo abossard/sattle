@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Azure.Identity;
 using Azure.Messaging.EventHubs;
 using Azure.Messaging.EventHubs.Consumer;
+using Azure.Messaging.EventHubs.Primitives;
 using Sattle.Core;
 using Sattle.Runtime;
 
@@ -21,23 +22,36 @@ static class Live
         return name.Length > 0 ? name : throw new ArgumentException($"no Event Hubs namespace found in resource group {rg}; pass --eh-namespace");
     }
 
-    /// <summary>Event Hubs as a live source: one partition, positions by sequence number (`{"partition":"0","sequenceNumber":123}`), Entra auth.</summary>
-    sealed class EventHubsSource(EventHubConsumerClient client, string hub, string? from) : ILiveSource
+    /// <summary>Event Hubs as a live source: one partition, positions by sequence number (`{"partition":"0","sequenceNumber":123}`), Entra auth. Reads in batches with a partition receiver, so a cancellation ends the read at the next batch.</summary>
+    sealed class EventHubsSource(string group, string fqns, string hub, Azure.Core.TokenCredential credential, string? from) : ILiveSource
     {
         public string Id => "eventhub:" + hub;
+        /// <summary>How far the space is behind the newest event of the partition (events, seconds of enqueued time), once the first batch arrived.</summary>
+        public (long Events, double Seconds)? Lag { get; private set; }
         public IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct)
         {
-            var ids = client.GetPartitionIdsAsync(ct).GetAwaiter().GetResult();
+            string[] ids;
+            var client = new EventHubConsumerClient(group, fqns, hub, credential);
+            try { ids = client.GetPartitionIdsAsync(ct).GetAwaiter().GetResult(); } finally { client.CloseAsync(CancellationToken.None).Wait(TimeSpan.FromSeconds(5)); }
             if (ids.Length != 1) Console.Error.WriteLine($"warning: hub has {ids.Length} partitions; only a single partition gives a total order, reading partition {ids[0]}");
             var partition = ids[0]; long last = -1;
             if (after is not null && JsonNode.Parse(after) is { } p) { partition = p["partition"]!.GetValue<string>(); last = long.Parse(p["sequenceNumber"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture); }
             var pos = last >= 0 ? EventPosition.FromSequenceNumber(last, isInclusive: false) : from switch { "earliest" => EventPosition.Earliest, _ => EventPosition.Latest };
             Console.WriteLine($"live: {hub} partition {partition} from {(last >= 0 ? "sequence number " + last : from ?? "latest")}");
-            foreach (var pe in client.ReadEventsFromPartitionAsync(partition, pos, new ReadEventOptions { MaximumWaitTime = TimeSpan.FromMilliseconds(500) }, ct).ToBlockingEnumerable(ct))
+            var receiver = new PartitionReceiver(group, partition, pos, fqns, hub, credential, new PartitionReceiverOptions { PrefetchCount = 1000, TrackLastEnqueuedEventProperties = true });
+            try
             {
-                if (pe.Data is null) { yield return null; continue; }
-                yield return new LiveEvent(pe.Data.EventBody.ToString(), new JsonObject { ["partition"] = partition, ["sequenceNumber"] = pe.Data.SequenceNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) }.ToJsonString());
+                while (true)
+                {
+                    var batch = receiver.ReceiveBatchAsync(500, TimeSpan.FromMilliseconds(500), ct).GetAwaiter().GetResult().ToList();
+                    if (batch.Count == 0) { yield return null; continue; }
+                    var newest = receiver.ReadLastEnqueuedEventProperties();
+                    if (newest.SequenceNumber is { } ns && newest.EnqueuedTime is { } nt) Lag = (ns - batch[^1].SequenceNumber, Math.Max(0, (nt - batch[^1].EnqueuedTime).TotalSeconds));
+                    foreach (var e in batch)
+                        yield return new LiveEvent(e.EventBody.ToString(), new JsonObject { ["partition"] = partition, ["sequenceNumber"] = e.SequenceNumber.ToString(System.Globalization.CultureInfo.InvariantCulture) }.ToJsonString());
+                }
             }
+            finally { receiver.CloseAsync(CancellationToken.None).Wait(TimeSpan.FromSeconds(5)); }
         }
     }
 
@@ -66,23 +80,24 @@ static class Live
         var recordPath = Path.Combine(outDir, "live", "stream.ndjson");
         var seconds = long.TryParse(o.Get("seconds"), out var sv) ? sv : o.Duration("seconds", 0) / 1_000_000_000;
         FileRecording? rec = null; var started = DateTimeOffset.UtcNow;
+        var source = new EventHubsSource(group, fqns, hub, new AzureCliCredential(), o.Get("from"));
         host.LiveStatus = () => new JsonObject
         {
             ["hubs"] = new JsonArray(hub), ["namespace"] = ns, ["position"] = host.SourcePosition("eventhub:" + hub) is { } p ? JsonNode.Parse(p) : null, ["record"] = recordPath, ["events"] = (rec?.Count ?? 0).ToString(),
-            ["lag"] = new JsonObject { ["events"] = (rec?.Count ?? 0).ToString() },
+            ["lag"] = source.Lag is { } lag ? new JsonObject { ["events"] = lag.Events.ToString(System.Globalization.CultureInfo.InvariantCulture), ["seconds"] = lag.Seconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) } : null,
         };
-        var client = new EventHubConsumerClient(group, fqns, hub, new AzureCliCredential());
         var cts = new CancellationTokenSource();
         if (seconds > 0) cts.CancelAfter(TimeSpan.FromSeconds(seconds));
-        Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
+        // Ctrl-C and SIGTERM stop the input, which then prints the state digest and ends the process
+        using var onInt = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGINT, c => { c.Cancel = true; cts.Cancel(); });
+        using var onTerm = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; cts.Cancel(); });
         using var record = new FileRecording(recordPath); rec = record;
-        var source = new EventHubsSource(client, hub, o.Get("from"));
         LiveCounts counts;
         try { counts = LiveInput.Run(host, source, Program.ReplayOptionsOf(o, cluster), cts.Token, record); }
         catch (OperationCanceledException) { counts = new LiveCounts(record.Count, 0, 0); host.LiveFlush(); }
         Console.WriteLine($"live stopped after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0} s: {counts.Consumed:N0} events, {counts.Duplicates} duplicate(s), {counts.Rejected} rejected, position {host.SourcePosition("eventhub:" + hub)}");
         Console.WriteLine($"state digest {host.StateDigest()}");
         Console.WriteLine($"replay with: sattle replay {outDir} --no-flush --late-horizon 3 --cluster {cluster}   (add the same --advance-every and --lateness if the live run set them)");
-        if (seconds > 0) Environment.Exit(0);
+        Environment.Exit(0);   // stopped by --seconds or Ctrl-C: the server goes with the input
     }
 }

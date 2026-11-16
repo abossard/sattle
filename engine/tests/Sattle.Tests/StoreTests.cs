@@ -202,6 +202,23 @@ public class StoreConformanceTests
         Assert.Equal(1, s2.BindingCount("t"));
     }
 
+    /// <summary>`--store sqlite=DIR/space.db` for a first run: the folders on the path are created.</summary>
+    [Theory]
+    [InlineData(1)] [InlineData(3)]
+    public void A_sqlite_store_in_folders_that_do_not_exist_yet_creates_them(int depth)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "sattle-test-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine([root, .. Enumerable.Range(0, depth - 1).Select(i => "d" + i), "space.db"]);
+        try
+        {
+            using (var s = new SqliteGraphStore(path))
+                s.Commit(new CommitBatch(G, 0, [P(0, Edit.Create(E("a", "T1", "x")))], [Frontier.Empty], []));
+            using var again = new SqliteGraphStore(path);
+            Assert.Equal(1, again.Head(G).Head);
+        }
+        finally { Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools(); Directory.Delete(root, true); }
+    }
+
     /// <summary>Several store instances over one backing store, as several writers on one database are.</summary>
     sealed class Backing(string kind) : IDisposable
     {

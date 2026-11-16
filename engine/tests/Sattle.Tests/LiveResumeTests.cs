@@ -97,6 +97,34 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         Assert.Equal(rows, r.InputRows);
     }
 
+    /// <summary>The Node forwarder's Event Hubs SDK encodes the envelope text as a JSON string: the reader takes the envelope out of it, so the state, the input rows and the recording are those of plain envelopes.</summary>
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public void Bodies_sent_as_JSON_strings_end_in_the_state_of_plain_envelopes(bool encoded)
+    {
+        var events = Events();
+        var (digest, rows) = Uninterrupted.Value;
+        var bodies = encoded ? events.Select(e => System.Text.Json.JsonSerializer.Serialize(e)).ToList() : events;
+        var recording = new Recording(Path.Combine(Path.GetTempPath(), "sattle-body-" + Guid.NewGuid().ToString("N") + ".ndjson"));
+        try
+        {
+            using var d = new RestartTests.Durable("memory");
+            using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
+            var counts = LiveInput.Run(h, new FakeSource(bodies), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
+            Assert.Equal(new LiveCounts(events.Count, 0, 0), counts);
+            Assert.Equal((digest, rows), (h.StateDigest(), h.InputRows));
+            Assert.Equal(events, recording.Lines);
+        }
+        finally { File.Delete(recording.Path); }
+    }
+
+    [Theory]
+    [InlineData("{\"v\":1}", "{\"v\":1}")]                    // the envelope itself
+    [InlineData("\"{\\\"v\\\":1}\"", "{\"v\":1}")]          // the envelope as a JSON string
+    [InlineData("\"not closed", "\"not closed")]               // no JSON string: kept, the host rejects it
+    [InlineData("not json at all", "not json at all")]
+    public void The_envelope_text_of_a_body(string body, string envelope) => Assert.Equal(envelope, LiveInput.EnvelopeText(body));
+
     [Fact]
     public void A_record_that_is_not_an_envelope_is_rejected_and_its_position_is_kept()
     {
@@ -128,6 +156,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
 
     sealed class Recording(string path) : ILiveRecording
     {
+        public string Path => path;
         public readonly List<string> Lines = [];
         public long Count => Lines.Count;
         public void Append(string text) { Lines.Add(text); File.AppendAllLines(path, [text]); }
