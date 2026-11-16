@@ -16,7 +16,7 @@ This repository is research in progress. It holds a white paper, a working engin
 
 ## Getting started
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) and Node.js 22 or newer. Every step runs on the synthetic estate that ships with the repository, an invented Kubernetes and Azure workload. No cloud account is needed.
+You need the [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0) and Node.js 22 or newer. Every step runs on the synthetic estate that ships with the repository, an invented Kubernetes and Azure workload. No cloud account is needed.
 
 ### 1. Look at the graphs
 
@@ -41,7 +41,7 @@ dotnet build engine/src/Sattle.Cli -c Release
 ```
 
 ```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --port 5080
+dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll serve engine/tests/Sattle.Tests/fixtures/estate --cluster synth --port 5080
 ```
 
 - Keep the canvas running and open http://localhost:5173/#source=engine. The same graphs, now computed and pushed by the engine.
@@ -57,7 +57,7 @@ Projections are written in KQL, the query language of Azure Data Explorer and Lo
 ### 4. Change a projection and see the effect
 
 ```bash
-dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth
+dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth
 ```
 
 - It prints the elements of each graph and a state digest, which ends in `b2eb`.
@@ -225,7 +225,7 @@ Research notes behind the paper:
 
 ## The engine
 
-.NET 10. Start at [engine/README.md](engine/README.md).
+.NET 11. Start at [engine/README.md](engine/README.md).
 
 | Part | Where |
 | --- | --- |
