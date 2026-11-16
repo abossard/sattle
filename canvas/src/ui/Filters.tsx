@@ -137,7 +137,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
           <Field label="Property"><Select value={f.propKey} onChange={(_, d) => set(graph, { propKey: d.value })}><option value="">(none)</option>{propKeys.map((k) => <option key={k}>{k}</option>)}</Select></Field>
           <Field label="Operator"><Select value={f.propOp} onChange={(_, d) => set(graph, { propOp: d.value as FilterState["propOp"] })}><option>equals</option><option>contains</option><option>not equals</option></Select></Field>
           <Field label="Value"><Input value={f.propValue} onChange={(_, d) => set(graph, { propValue: d.value })} /></Field>
-          <Button onClick={() => { set(graph, emptyFilter()); }}>Clear filters</Button>
+          <Button onClick={() => { const { layout: _, ...cleared } = emptyFilter(); set(graph, cleared); }}>Clear filters</Button>
         </AccordionPanel>
       </AccordionItem>
       <AccordionItem value="focus">

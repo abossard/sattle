@@ -28,5 +28,11 @@ describe("the tree of the demo workload, reached by scrubbing", () => {
     const tree = await screen.findByRole("tree", { name: "Tree of workload" });
     await waitFor(() => expect(within(tree).getAllByRole("treeitem").filter((r) => /origin/.test(r.textContent ?? "")).map(labelOf)).toEqual(expect.arrayContaining(["pg-shop", "web-7d4-3"])));
     expect(row(tree, "database").textContent).toMatch(/through pg-shop.*same element, under 2/);
+    // an open element shows its children at its first row; a later row of it says so, and Enter there goes to the first
+    const later = within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database");
+    expect(later.map((r) => /shown above/.test(r.textContent ?? ""))).toEqual([false, true]);
+    later[1].focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(document.activeElement).toBe(within(tree).getAllByRole("treeitem").filter((r) => labelOf(r) === "database")[0]));
   }, 60000);
 });

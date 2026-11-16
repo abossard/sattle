@@ -336,6 +336,8 @@ export class DataPane {
   /** Rebuild every instance from the graph. Used on load and when filters, grouping or theme change. */
   refreshAll(): void {
     const g = this.graph, s = this.scene;
+    this.kindCounts = new Map();
+    for (const r of g.relationships()) this.countKind(r.type, 1);
     this.hiddenNow = this.hiddenKinds();
     this.restated = this.info.edgeKinds ? restatingTypes(g) : new Set();
     this.blame = blamePath(g, this.info, this.restated);
@@ -381,14 +383,13 @@ export class DataPane {
   private kindOf(type: string): EdgeKind | undefined { return this.info.edgeKinds?.[type]; }
 
   /** The kinds that have at least one edge now. */
-  presentKinds(): Set<EdgeKind> {
-    const kinds = new Set<EdgeKind>(), seen = new Set<string>();
-    for (const r of this.graph.relationships()) { if (seen.has(r.type)) continue; seen.add(r.type); const k = this.kindOf(r.type); if (k) kinds.add(k); }
-    return kinds;
-  }
+  presentKinds(): Set<EdgeKind> { return new Set([...this.kindCounts].filter(([, n]) => n > 0).map(([k]) => k)); }
+  /** edges per kind: counted on a full pass and moved by each step, so the kinds hidden by default follow a patch without a pass over the edges */
+  private kindCounts = new Map<EdgeKind, number>();
+  private countKind(type: string | undefined, by: number): void { const k = type === undefined ? undefined : this.kindOf(type); if (k) this.kindCounts.set(k, (this.kindCounts.get(k) ?? 0) + by); }
   /** The kinds drawn without: the person's choice, or the default of the place. */
   hiddenKinds(): ReadonlySet<EdgeKind> { return new Set(this.userHiddenKinds ?? defaultHiddenKinds(this.tile, this.presentKinds())); }
-  /** the kinds hidden as of the last full pass: a patch draws its edges by it (reading them again for every edge would cost the graph per edge) */
+  /** the kinds hidden as of the last full pass: a patch draws its edges by it; a step that changes them makes a full pass */
   private hiddenNow: ReadonlySet<EdgeKind> = new Set();
   /** relationship types that restate others (see `restatingTypes`), as of the last full pass, and whether the person asked to see them */
   private restated: ReadonlySet<string> = new Set();
@@ -471,6 +472,7 @@ export class DataPane {
     let structural = false;
     for (const step of steps) {
       const res: Extract<ApplyResult, { ok: true }> = step.result;
+      for (const c of res.changes.relationships.values()) { this.countKind(c.before?.type, -1); this.countKind(c.after?.type, 1); }
       for (const [id, slot] of res.removedSlots) this.lastPos.set(id, [s.positions[2 * slot], s.positions[2 * slot + 1]]);
       const added: number[] = [];
       for (const [id, c] of res.changes.entities) {
@@ -501,8 +503,11 @@ export class DataPane {
       structural ||= [...res.changes.entities.values(), ...res.changes.relationships.values()].some((c) => c.kind !== "changed");
     }
     s.positionsDirty = true; s.positionsVersion++;
-    if (full) this.refreshAll();
-    else s.nodeCount = Math.max(s.nodeCount, g.nodes.length);
+    // the selection is held by id: a slot it flagged may now hold another element
+    if (this.selection && structural) this.flagSelection();
+    const hidden = this.hiddenKinds();
+    if (full || hidden.size !== this.hiddenNow.size || [...hidden].some((k) => !this.hiddenNow.has(k))) this.refreshAll();
+    else { s.nodeCount = Math.max(s.nodeCount, g.nodes.length); if (this.selection && structural) this.updateHot(); }
     if (this.legendStale) this.recolor();
     this.updateMatches();
     this.view.requestRender();
@@ -594,6 +599,12 @@ export class DataPane {
   // ---- selection, hover, search ----
   setSelection(sel: Selection | null): void {
     this.selection = sel && sel.graph === this.info.id ? sel : null;
+    this.flagSelection();
+    if (this.focusDepth > 0) this.refreshAll(); else this.updateHot();
+  }
+
+  /** The flags of the selection and what it relates to, found by id. */
+  private flagSelection(): void {
     const g = this.graph;
     const nodeSel: number[] = [], related: number[] = [], edgeSel: number[] = [], edgeRel: number[] = [];
     if (this.selection?.kind === "entity") {
@@ -611,7 +622,6 @@ export class DataPane {
     this.flushNodeLayer(St.Related, related.filter((x) => !nodeSel.includes(x)).slice(0, 4000));
     this.flushEdgeLayer(St.Selected, edgeSel);
     this.flushEdgeLayer(St.Related, edgeRel.slice(0, 6000));
-    if (this.focusDepth > 0) this.refreshAll(); else this.updateHot();
   }
 
   private onHover(item: Pick | null): void {

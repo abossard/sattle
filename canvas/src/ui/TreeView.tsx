@@ -101,7 +101,7 @@ export function TreeView({ graph }: { graph: string }) {
   }, [hist, version, model]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // a row is its place in the tree (an element under two parents has two rows); it opens and closes its element
-  const items: HeadlessFlatTreeItemProps[] = useMemo(() => rows.map((r) => ({ value: r.key, parentValue: r.parentKey ?? undefined, itemType: r.hasChildren ? "branch" as const : "leaf" as const })), [rows]);
+  const items: HeadlessFlatTreeItemProps[] = useMemo(() => rows.map((r) => ({ value: r.key, parentValue: r.parentKey ?? undefined, itemType: r.hasChildren && !r.shownAbove ? "branch" as const : "leaf" as const })), [rows]);
   const openItems = useMemo(() => new Set(rows.filter((r) => r.expanded).map((r) => r.key)), [rows]);
   const byKey = useMemo(() => new Map(rows.map((r, i) => [r.key, i])), [rows]);
   const toggle = (id: string, open: boolean) => setOpen((cur) => { const n = new Set(cur ?? []); if (open) n.add(id); else n.delete(id); return n; });
@@ -141,9 +141,10 @@ export function TreeView({ graph }: { graph: string }) {
       case "End": return handled(() => goTo(rows.length - 1));
       case "PageDown": return handled(() => goTo(Math.min(rows.length - 1, i + Math.max(1, Math.floor(height / ROW_H) - 1))));
       case "PageUp": return handled(() => goTo(Math.max(0, i - Math.max(1, Math.floor(height / ROW_H) - 1))));
-      case "ArrowRight": return handled(() => { if (!r.hasChildren) return; if (!r.expanded) toggle(r.node.id, true); else goTo(i + 1); });
+      case "ArrowRight": return handled(() => { if (r.shownAbove) goTo(indexOf(r.shownAbove)); else if (!r.hasChildren) return; else if (!r.expanded) toggle(r.node.id, true); else goTo(i + 1); });
       case "ArrowLeft": return handled(() => { if (r.expanded) toggle(r.node.id, false); else if (r.parentKey) { const p = indexOf(r.parentKey); if (p >= 0) goTo(p); } });
-      case "Enter": case " ": return handled(() => select(r.node.id));
+      case "Enter": return handled(() => { select(r.node.id); if (r.shownAbove) goTo(indexOf(r.shownAbove)); });
+      case " ": return handled(() => select(r.node.id));
       case "*": return handled(() => model && setOpen((cur) => new Set([...(cur ?? []), ...expandBelow(model, r.node.id)])));
       default:
         if (e.key.length === 1 && /\S/.test(e.key)) {
@@ -190,6 +191,7 @@ export function TreeView({ graph }: { graph: string }) {
                       <span className={s.cell}>
                         {n.origin && <Badge size="small" appearance="filled" color={n.rolled?.role === "warning" ? "warning" : "danger"} title="Where the problem starts: its own state is as bad as its rolled-up state"><span aria-hidden="true">⚑ </span>origin</Badge>}
                         {through.length > 0 && <Text size={200} title={`${n.rolled?.value ?? "Wrong"} through ${through.join(", ")}`}>through {through.join(", ")}</Text>}
+                        {r.shownAbove && <Badge size="small" appearance="outline" title="Its children are shown at its first row above; Enter or Right goes there"><span aria-hidden="true">↑ </span>shown above</Badge>}
                         {n.parents.length > 1 && <Badge size="small" appearance="outline" title={`The same element, under ${n.parents.length} parents`}><span aria-hidden="true">⧉ </span>same element, under {n.parents.length}</Badge>}
                         {n.counts.map((c) => <span key={c.value} title={`${c.n} ${c.value} (${ROLE_WORD[c.role]})`}><Text size={200}><span aria-hidden="true">{ROLE_GLYPH[c.role]}</span>{c.n} {c.value}</Text></span>)}
                         {n.supporting > 0 && <Badge size="small" appearance="outline" title={`${n.supporting} supporting elements`}>{n.supporting} supporting</Badge>}

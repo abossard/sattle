@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { runtime } from "../../src/state/runtime";
-import { dispatch } from "../../src/state/store";
+import { dispatch, useStore } from "../../src/state/store";
 import { openApp, violations } from "./helpers";
 
 // the default source is static files of the engine's output: serve them to fetch from the public directory
@@ -77,7 +77,16 @@ describe("the default source: the engine's output on the estate", () => {
     const items = within(tree).getAllByRole("treeitem");
     expect(items.length).toBeGreaterThan(0);
     expect(items.every((r) => r.getAttribute("aria-level") && r.textContent)).toBe(true);
-    expect(items.some((r) => /state (Healthy|No data|Degraded|Unhealthy)/.test(r.textContent ?? ""))).toBe(true);
+    // the states are the engine's: at the head the workload has no data; in earlier revisions parts of it failed, and their rows say so
+    expect(items[0].textContent, "the workload at the head").toMatch(/^shop workload.*state No data, unknown$/);
+    const seen = new Set<string>();
+    for (const t of runtime.ws!.axisPoints()) {
+      await act(async () => { dispatch({ type: "time/seek", t }); });
+      const shown = screen.queryByRole("tree", { name: "Tree of workload" });
+      for (const r of shown ? within(shown).getAllByRole("treeitem") : []) for (const m of (r.textContent ?? "").matchAll(/state (Healthy|No data|Degraded|Unhealthy|Unknown),/g)) seen.add(m[1]);
+    }
+    await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.last }); });
+    expect([...seen].filter((x) => x === "Degraded" || x === "Unhealthy").sort(), "no revision shows a failing part").toEqual(["Degraded", "Unhealthy"]);
     expect(within(screen.getByRole("tablist", { name: "How to show this graph" })).getAllByRole("tab")[0].textContent).toBe("Tree");
     expect(await violations()).toEqual([]);
   }, 30000);

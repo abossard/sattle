@@ -14,10 +14,10 @@ vi.mock("../../src/layout/client", () => ({ LayoutClient: class { lastMs = 0; ru
 
 import { DataPane } from "../../src/app/data-pane";
 import { History } from "../../src/app/history";
-import { Ex } from "../../src/render/scene";
+import { Ex, St } from "../../src/render/scene";
 import { darkTheme } from "../../src/render/theme";
 import type { GraphInfo } from "../../src/source/types";
-import { addE, addN, ent, patch, rel, ver } from "../helpers";
+import { addE, addN, delN, ent, patch, rel, ver } from "../helpers";
 
 const info = { id: "g", role: "master", descriptor: {}, ontology: { types: [] }, inputs: [] } as unknown as GraphInfo;
 const events = { select() {}, hover() {}, activate() {}, changed() {}, announce() {}, key: () => false };
@@ -52,5 +52,31 @@ describe("data-pane.ts:417 flag writes drop the reference bit", () => {
     expect(scene(p).nodeExtra(slot) & Ex.Reference, "precondition: drawn as a reference before the hover").toBeTruthy();
     (p as unknown as { onHover(i: unknown): void }).onHover({ kind: "node", slot });
     expect(scene(p).nodeExtra(slot) & Ex.Reference, "the hover rewrote the flags without the reference bit").toBeTruthy();
+  });
+});
+
+// Code review 2 (paper/research/12-code-review-2.md, defect 28), the canvas view.
+describe("data-pane.ts:339 the kinds hidden by default", () => {
+  it("follow a patch that brings the first edges of a kind: a support edge is left out, as on a full pass", () => {
+    const kinded = { ...info, edgeKinds: { Calls: "communication", Measures: "support" } } as unknown as GraphInfo;
+    const h = new History({ version: ver("1"), entities: [ent("a"), ent("b")], relationships: [rel("r", "a", "b", "Owns")] });
+    const p = new DataPane(kinded, h, document.createElement("div"), darkTheme, events as never); p.refreshAll();
+    p.applyStep(h.append(patch("1", "2", [addN(ent("s")), addE(rel("m", "s", "a", "Measures")), addE(rel("c", "a", "b", "Calls"))]))!);
+    expect([...p.hiddenKinds()], "precondition: the default now leaves out support").toEqual(["support"]);
+    expect(scene(p).edgeVisible(h.graph.edgeSlot.get("m")!), "the incremental path drew it by the kinds of the last full pass").toBe(false);
+  });
+});
+
+describe("data-pane.ts:595 the selection", () => {
+  it("does not stay on a slot that a removed element left and another took", () => {
+    const h = new History({ version: ver("1"), entities: [ent("a"), ent("b")], relationships: [] });
+    const p = pane(h);
+    p.setSelection({ kind: "entity", graph: "g", id: "a" });
+    const slot = h.graph.nodeSlot.get("a")!;
+    p.applyStep(h.append(patch("1", "2", [delN(ent("a"))]))!);
+    p.applyStep(h.append(patch("2", "3", [addN(ent("c"))]))!);
+    expect(h.graph.nodeSlot.get("c"), "precondition: c took the slot a left").toBe(slot);
+    const selected = (p as unknown as { nodeFlags: { members_(bit: number): Set<number> } }).nodeFlags.members_(St.Selected);
+    expect([...selected], "c is drawn selected").toEqual([]);
   });
 });

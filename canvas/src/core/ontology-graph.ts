@@ -5,6 +5,7 @@ import type { Entity, Props, Rel } from "./model";
 import type { OntologyDefinition } from "./wire-types";
 
 const text = (value: string) => ({ kind: "text" as const, value });
+const ANY = "*";
 
 export function ontologyGraph(o: OntologyDefinition, withProperties = true): Graph {
   const entities: Entity[] = [];
@@ -16,13 +17,16 @@ export function ontologyGraph(o: OntologyDefinition, withProperties = true): Gra
     const props: Props = { name: text(t.id.value), properties: text(t.properties.map((p) => p.value).join(", ")) };
     entities.push({ id: `type:${t.id.value}`, type: "EntityType", props });
   }
+  // an empty source or target list allows every type (the engine checks no end then): such an end is the one node "any type"
+  const ends = (ids: { value: string }[]) => (ids.length ? ids.map((i) => i.value) : [ANY]);
   for (const rt of o.relationshipTypes) {
     if (rt.id.value === o.noRelationshipType.value) continue;
     const props: Props = { name: text(rt.id.value), properties: text(rt.properties.map((p) => p.value).join(", ")) };
-    for (const s of rt.sourceTypes) for (const t of rt.targetTypes) {
-      rels.push({ id: `rel:${rt.id.value}:${s.value}>${t.value}`, source: `type:${s.value}`, target: `type:${t.value}`, type: rt.id.value, props });
+    for (const s of ends(rt.sourceTypes)) for (const t of ends(rt.targetTypes)) {
+      rels.push({ id: `rel:${rt.id.value}:${s}>${t}`, source: `type:${s}`, target: `type:${t}`, type: rt.id.value, props });
     }
   }
+  if (rels.some((r) => r.source === `type:${ANY}` || r.target === `type:${ANY}`)) entities.push({ id: `type:${ANY}`, type: "AnyType", props: { name: text("any type"), properties: text("") } });
   if (withProperties) {
     for (const p of o.properties) {
       entities.push({

@@ -131,3 +131,41 @@ describe("workspace.ts:113 a live patch while the shared timeline is scrubbed ba
     expect(b.cursor, "b jumped to now while the timeline shows second 10").toBe(ws.cursorAt("b", ws.time));
   });
 });
+
+// Code review 2 (paper/research/12-code-review-2.md, defect 28), the canvas view.
+describe("core/ontology-graph.ts:22 a relationship type with an empty source or target list", () => {
+  it("is drawn from and to the node 'any type', as the engine reads an empty list as every type", async () => {
+    const { ontologyGraph } = await import("../../src/core/ontology-graph");
+    const { ont } = await import("../fixtures/engine-fake");
+    const o = { ...ont("o"), relationshipTypes: [...ont("o").relationshipTypes, { id: { value: "Mentions" }, sourceTypes: [], targetTypes: [{ value: "Pod" }], properties: [] }, { id: { value: "Links" }, sourceTypes: [], targetTypes: [], properties: [] }] } as never;
+    const g = ontologyGraph(o, false);
+    const ends = (id: string) => String((g.entity(id)?.props.name as { value: string } | undefined)?.value);
+    expect([...g.relationships()].map((r) => `${r.type}: ${ends(r.source)} -> ${ends(r.target)}`).sort(), "a type without a source or target list draws nothing").toEqual(["Links: any type -> any type", "Mentions: any type -> Pod"]);
+  });
+});
+
+describe("editor/service.ts:43 an absent cell in the rows after an operator", () => {
+  it("stays absent instead of becoming the text \"null\"", async () => {
+    const { parseOperatorRows } = await import("../../src/editor/service");
+    const [o] = parseOperatorRows([{ op: "o", columns: ["a", "b"], rows: "1", sample: [{ weight: "1", cells: { a: null, b: "null" } }] }]);
+    expect(o.sample[0].cells, "an absent value reads like the text null").toEqual({ b: "null" });
+  });
+});
+
+describe("tree-model.ts:228 the tree by cause with everything open", () => {
+  it("has a row per element under each parent, not one per simple path (8 services that all depend on each other)", async () => {
+    const { visibleRows } = await import("../../src/app/tree-model");
+    const services = Array.from({ length: 8 }, (_, i) => `s${i}`);
+    const node = (id: string, children: string[], parents: string[]) => ({ id, type: "Service", label: id, parent: parents[0] ?? null, parents, children, own: null, rolled: null, severity: 0, supporting: 0, cross: 0, curatedBy: null, critical: false, hidden: false, policy: null, counts: [], origin: false, through: [] });
+    const nodes = new Map([["shop", node("shop", services, [])], ...services.map((s) => [s, node(s, services.filter((x) => x !== s), ["shop", ...services.filter((x) => x !== s)])] as const)]);
+    const m = { nodes, roots: ["shop"], spec: treeSpec } as never;
+    const { rows } = visibleRows(m, { expanded: new Set(nodes.keys()), onlyWrong: false, query: "", sort: "label" });
+    // 8 under the shop, the first service shows its 7, the next one down its 6 and so on to s7, whose children are all on its path there; s7
+    // opens at its next row (under s5) with the one child left: 1 + 8 + 7 + ... + 1 + 1 rows for 64 edges (109,601 rows before)
+    expect(rows.length, `${rows.length} rows for ${nodes.size} elements`).toBe(1 + 8 + 7 + 6 + 5 + 4 + 3 + 2 + 1 + 1);
+    // the same rows each time, and every element shows its children once
+    expect(visibleRows(m, { expanded: new Set(nodes.keys()), onlyWrong: false, query: "", sort: "label" }).rows.map((r) => r.key)).toEqual(rows.map((r) => r.key));
+    expect(rows.filter((r) => r.expanded).map((r) => r.node.id).sort()).toEqual([...nodes.keys()].sort());
+    for (const r of rows.filter((x) => x.shownAbove)) expect(rows.find((x) => x.key === r.shownAbove)?.node.id).toBe(r.node.id);
+  });
+});

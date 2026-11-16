@@ -18,7 +18,7 @@ export interface Column { name: string; kind: string; type: string | null; unit:
 /** engine 3.21: the columns after each typed operator of a projection, in order, from a draft check or a draft patch */
 export interface OperatorSchema { op: string; name: string; kind: string; window: string | null; columns: Column[] }
 /** engine 3.21: the rows a physical operator holds after the replay of a preview (`include: ["rows"]`), with the first `rowLimit` of them */
-export interface OperatorRows { op: string; name: string; kind: string; columns: Column[]; rows: string; weight: string; sample: { weight: string; cells: Record<string, string> }[]; truncated: boolean }
+export interface OperatorRows { op: string; name: string; kind: string; columns: Column[]; rows: string; weight: string; /** a cell without a value has no key */ sample: { weight: string; cells: Record<string, string> }[]; truncated: boolean }
 
 const str = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 /** Columns as a check names them (objects), or as a preview with `include: ["rows"]` does (the names alone, as the live engine sends them): a name alone has no kind. */
@@ -40,7 +40,7 @@ export function parseSchemas(raw: unknown): Record<string, OperatorSchema[]> | u
 export function parseOperatorRows(list: unknown): OperatorRows[] {
   return (Array.isArray(list) ? list : []).map((x) => {
     const o = (x ?? {}) as Record<string, unknown>;
-    const sample = (Array.isArray(o.sample) ? o.sample : []).map((r) => { const s = (r ?? {}) as Record<string, unknown>; return { weight: String(s.weight ?? ""), cells: Object.fromEntries(Object.entries((s.cells ?? {}) as Record<string, unknown>).map(([k, v]) => [k, String(v)])) }; });
+    const sample = (Array.isArray(o.sample) ? o.sample : []).map((r) => { const s = (r ?? {}) as Record<string, unknown>; return { weight: String(s.weight ?? ""), cells: Object.fromEntries(Object.entries((s.cells ?? {}) as Record<string, unknown>).filter(([, v]) => v != null).map(([k, v]) => [k, String(v)])) }; });
     return { op: String(o.op ?? ""), name: String(o.name ?? ""), kind: String(o.kind ?? ""), columns: parseColumns(o.columns), rows: String(o.rows ?? "0"), weight: String(o.weight ?? "0"), sample, truncated: o.truncated === true };
   });
 }

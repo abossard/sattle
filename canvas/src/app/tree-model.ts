@@ -171,8 +171,11 @@ export const labelCompare = (a: TreeNode, b: TreeNode): number => a.label.locale
 export const severityCompare = (a: TreeNode, b: TreeNode): number => b.severity - a.severity || labelCompare(a, b);
 
 export interface TreeView { expanded: ReadonlySet<string>; onlyWrong: boolean; query: string; sort: "severity" | "label"; showHidden?: boolean }
-/** `key`: the row's place, the ids from its root down (an element under two parents has two rows); `parentKey` that of the row above it. */
-export interface TreeRow { key: string; parentKey: string | null; node: TreeNode; level: number; expanded: boolean; hasChildren: boolean; posInSet: number; setSize: number; match: boolean }
+/**
+ * `key`: the row's place, the ids from its root down (an element under two parents has two rows); `parentKey` that of the row above it.
+ * `shownAbove`: the key of the row where this open element shows its children, when that is an earlier row; this one shows none.
+ */
+export interface TreeRow { key: string; parentKey: string | null; node: TreeNode; level: number; expanded: boolean; hasChildren: boolean; posInSet: number; setSize: number; match: boolean; shownAbove: string | null }
 
 /** Only the ancestors: every element above each node along all its parents, not the node itself. */
 export function ancestorsOf(m: TreeModel, ids: Iterable<string>): Set<string> {
@@ -224,14 +227,20 @@ export function visibleRows(m: TreeModel, v: TreeView): { rows: TreeRow[]; match
   const rows: TreeRow[] = [];
   // an element curated to be hidden is left out with everything below it, unless asked for
   const shownNode = (n: TreeNode) => v.showHidden || !n.hidden;
-  // a row is opened by its element: opened once, it is open wherever the element appears; a walk never goes into an element already on its path
+  // a row is opened by its element, and an open element shows its children once, at its first row in this walk (depth first, children in the
+  // sort order, so the same rows each time); its later rows say where (as a dependency listing dedupes), so the rows stay about the number of
+  // edges instead of one per path. A walk never goes into an element already on its path.
+  const openedAt = new Map<string, string>();
   const walk = (ids: string[], level: number, parentKey: string | null, path: ReadonlySet<string>) => {
     const kids = ids.map((id) => m.nodes.get(id)!).filter((n) => !path.has(n.id) && shownNode(n) && (!include || include.has(n.id))).sort(compare);
     kids.forEach((n, i) => {
       const key = parentKey === null ? n.id : `${parentKey}\u001f${n.id}`;
       const shown = n.children.filter((c) => !path.has(c) && c !== n.id && shownNode(m.nodes.get(c)!) && (!include || include.has(c))).length;
-      const open = shown > 0 && (v.expanded.has(n.id) || !!reveal?.has(n.id));
-      rows.push({ key, parentKey, node: n, level, expanded: open, hasChildren: n.children.length > 0, posInSet: i + 1, setSize: kids.length, match: matches.has(n.id) });
+      const first = openedAt.get(n.id);
+      const wanted = shown > 0 && (v.expanded.has(n.id) || !!reveal?.has(n.id));
+      const open = wanted && first === undefined;
+      if (open) openedAt.set(n.id, key);
+      rows.push({ key, parentKey, node: n, level, expanded: open, hasChildren: n.children.length > 0, posInSet: i + 1, setSize: kids.length, match: matches.has(n.id), shownAbove: wanted && first !== undefined ? first : null });
       if (open) walk(n.children, level + 1, key, new Set([...path, n.id]));
     });
   };

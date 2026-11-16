@@ -52,15 +52,16 @@ describe("the workload tree by cause", () => {
     expect(labels(m, byLabel(m, "api", "service").through)).toEqual(["database"]);
     // the web needs the api, which needs the database: it is unhealthy through the api; its crash-looping pod does not make it so
     expect(labels(m, byLabel(m, "web", "service").through)).toEqual(["api"]);
-    // reached by two paths and more, under each, the same element
+    // reached by two paths and more, under each, the same element; its children show at its first row, the later rows say so
     expect([byLabel(m, "database").parents.length, byLabel(m, "api", "service").parents.length]).toEqual([2, 3]);
     expect(opened(m)).toEqual(expect.arrayContaining([
-      "shop > database > pg-shop Unhealthy origin",
-      "shop > api > database > pg-shop Unhealthy origin",
-      "shop > web > api > database > pg-shop Unhealthy origin",
-      "shop > web > web > web-7d4-3 Unhealthy origin",
       "apim-shop > api > database > pg-shop Unhealthy origin",
+      "shop > web > web > web-7d4-3 Unhealthy origin",
     ]));
+    expect(opened(m).filter((r) => r.includes("pg-shop")), "the origin is shown once, at the first row of what takes it in").toHaveLength(1);
+    const above = visibleRows(m, { expanded: defaultOpen(m, 40), onlyWrong: false, query: "", sort: "severity" }).rows.filter((r) => r.shownAbove)
+      .map((r) => `${r.key.split("\u001f").map((id) => m.nodes.get(id)!.label).join(" > ")} at ${r.shownAbove!.split("\u001f").map((id) => m.nodes.get(id)!.label).join(" > ")}`);
+    expect(above.sort()).toEqual(["shop > api at apim-shop > api", "shop > database at apim-shop > api > database", "shop > web > api at apim-shop > api"]);
   });
 
   it("the graph's flag marks the same elements as the tree's origins, at every revision", async () => {
