@@ -1,5 +1,5 @@
 // A document graph follows the event stream without a reload, in real Chrome over CDP. Start an engine that plays a capture slowly, for example
-//   dotnet engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll serve lab/fixtures --speed 2 --port 5080
+//   dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll serve lab/fixtures --speed 2 --port 5080
 // then the app (npm run dev) and run: node scripts/document-live-cdp.mjs [base-url]
 // The page is opened once and never reloaded. The script shows the first document graph of the space, waits for the engine to stop moving
 // (its head stays the same for a while) and checks that

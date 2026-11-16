@@ -33,7 +33,7 @@ export function problems(found, expect = EXPECT_EDGES) {
   return expect.flatMap((id) => !by.has(id) ? [`${id}: the engine wrote no such graph`] : by.get(id).relationships === 0 ? [`${id}: ${by.get(id).entities} nodes and no edges`] : []);
 }
 
-const BUILT = join(root, "engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll");
+const BUILT = join(root, "engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll");
 
 /** The newest modification time among the engine's sources and definitions (what a build of `engine/` is made from). */
 export function newestSource(dir = join(root, "engine")) {

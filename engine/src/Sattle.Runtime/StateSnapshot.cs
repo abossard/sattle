@@ -49,7 +49,7 @@ public static class StateSnapshot
     // ---- value tags ----
 
     const byte TStatic = 19;
-    const byte TNull = 0, TTrue = 1, TFalse = 2, TInt = 3, TLong = 4, TDec = 5, TDouble = 6, TString = 7, TRef = 8, TEnum = 9, TStruct = 10, TByte = 11, TShort = 12, TUInt = 13, TULong = 14, TChar = 15, TFloat = 16, TSByte = 17, TUShort = 18;
+    const byte TNull = 0, TTrue = 1, TFalse = 2, TInt = 3, TLong = 4, TDec = 5, TDouble = 6, TString = 7, TRef = 8, TEnum = 9, TStruct = 10, TByte = 11, TShort = 12, TUInt = 13, TULong = 14, TChar = 15, TFloat = 16, TSByte = 17, TUShort = 18, TNInt = 20, TNUInt = 21;
     const byte KClass = 1, KArray = 2, KList = 3, KDict = 4, KSet = 5, KQueue = 6, KStack = 7, KGraph = 8, KInterner = 9;
 
     // ---- singletons: `Props.Empty`, `Value.True` and the like are shared instances that other code compares by identity or counts on being unique ----
@@ -140,6 +140,8 @@ public static class StateSnapshot
                 case uint u: w.Write(TUInt); w.Write(u); return;
                 case ulong u: w.Write(TULong); w.Write(u); return;
                 case char c: w.Write(TChar); w.Write(c); return;
+                case nint n: w.Write(TNInt); w.Write((long)n); return;
+                case nuint n: w.Write(TNUInt); w.Write((ulong)n); return;
             }
             var t = v.GetType();
             if (!t.IsValueType && Singletons.Value.TryGetValue(v, out var single)) { w.Write(TStatic); V(TypeOf(single.Owner)); w.Write(single.Field); return; }
@@ -148,6 +150,7 @@ public static class StateSnapshot
             {
                 w.Write(TStruct); V(TypeOf(t));
                 var fs = Fields(t).ToList(); V(fs.Count);
+                if (fs.Any(f => f.FieldType == t)) throw new NotSupportedException($"value type {t} holds a field of its own type: it is written as a primitive or not at all");      // walking it would never end
                 foreach (var f in fs) { V(NameOf(Key(f))); Val(f.GetValue(v)); }
                 return;
             }
@@ -289,6 +292,8 @@ public static class StateSnapshot
                 case TUInt: return r.ReadUInt32();
                 case TULong: return r.ReadUInt64();
                 case TChar: return r.ReadChar();
+                case TNInt: return (nint)r.ReadInt64();
+                case TNUInt: return (nuint)r.ReadUInt64();
                 case TRef: return new RefVal(r.Read7BitEncodedInt());
                 case TStatic: { var t = types[r.Read7BitEncodedInt()]; var n = r.ReadString(); return t.GetField(n, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(null); }
                 case TEnum: { var t = types[r.Read7BitEncodedInt()]; return Enum.ToObject(t, r.ReadInt64()); }

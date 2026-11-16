@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 type Proc = { stdout: { on(e: "data", f: (b: { toString(): string }) => void): void }; stderr: { on(e: "data", f: (b: { toString(): string }) => void): void }; once(e: "exit", f: (code: number | null) => void): void; kill(): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
 const engineDir = fileURLToPath(new URL("../../engine/", import.meta.url));
-const cli = `${engineDir}src/Sattle.Cli`, dll = `${cli}/bin/Release/net10.0/sattle.dll`, fixture = `${engineDir}tests/Sattle.Tests/fixtures/estate`;
+const cli = `${engineDir}src/Sattle.Cli`, dll = `${cli}/bin/Release/net11.0/sattle.dll`, fixture = `${engineDir}tests/Sattle.Tests/fixtures/estate`;
 
 /** Serves the fixture; resolves with the address once the replay has finished, so a draft sees the whole space. */
 const serve = (): Promise<{ url: string; stop: () => void }> => new Promise((resolve, reject) => {

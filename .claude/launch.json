@@ -4,31 +4,31 @@
     {
       "name": "sattle-engine",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll", "serve", "lab/fixtures", "--port", "5080"],
+      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll", "serve", "lab/fixtures", "--port", "5080"],
       "port": 5080
     },
     {
       "name": "sattle-engine-capture",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll", "serve", "latest", "--port", "5080"],
+      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll", "serve", "latest", "--port", "5080"],
       "port": 5080
     },
     {
       "name": "sattle-engine-health",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll", "serve", "engine/tests/Sattle.Tests/fixtures/deploy-health", "--port", "5080"],
+      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll", "serve", "engine/tests/Sattle.Tests/fixtures/deploy-health", "--port", "5080"],
       "port": 5080
     },
     {
       "name": "sattle-engine-estate",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll", "serve", "engine/tests/Sattle.Tests/fixtures/estate", "--cluster", "synth", "--port", "5080"],
+      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll", "serve", "engine/tests/Sattle.Tests/fixtures/estate", "--cluster", "synth", "--port", "5080"],
       "port": 5080
     },
     {
       "name": "sattle-engine-capture-b",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net10.0/sattle.dll", "serve", "latest", "--port", "5081"],
+      "runtimeArgs": ["engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll", "serve", "latest", "--port", "5081"],
       "port": 5081
     },
     {

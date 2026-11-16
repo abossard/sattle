@@ -15,7 +15,7 @@ public class ProcessKillTests
 #else
         "Release",
 #endif
-        "net10.0", "sattle.dll");
+        "net11.0", "sattle.dll");
     static long Entries(string path)
     {
         try
