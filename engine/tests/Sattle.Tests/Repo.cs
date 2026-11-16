@@ -8,8 +8,6 @@ public static class Repo
 {
     public static string Root { get; } = FindRoot();
     public static string Definitions => Path.Combine(Root, "engine", "definitions");
-    /// <summary>The definitions as they were before the projections moved to KQL: every projection written in the engine's own notation, which only the tests of that notation and of the operators still read.</summary>
-    public static string SattleProjections => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     /// <summary>The folder of the local data (`fixtures`, `captures`): `lab` of the repository, or the folder the environment variable SATTLE_LAB names. With an empty folder the tests run as on a fresh clone, where neither is there.</summary>
     static string Lab => Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } folder ? folder : Path.Combine(Root, "lab");
     /// <summary>The scrubbed excerpt of a real capture. Its data files are generated locally and are not in the repository.</summary>
@@ -77,9 +75,4 @@ public static class Repo
         result = Examples.Value.Result;
         return Examples.Value.Cat;
     }
-
-    static readonly Lazy<Catalog> SattleExamples = new(() => { var cat = new Catalog(); cat.Load(Catalog.ReadDirectory(SattleProjections)); return cat; });
-
-    /// <summary>The definitions of `SattleProjections`, checked once per test run, for the tests of the engine's own notation.</summary>
-    public static Catalog LoadSattleExamples() => SattleExamples.Value;
 }

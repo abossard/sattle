@@ -1,33 +1,50 @@
 using Sattle.Core;
+using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>A Rollup aggregates telemetry, and what it may do depends on the temporality of the value: a delta (counts per window) sums, takes extremes, but has no mean; a gauge (a level) takes all four; a cumulative (a counter that only grows) takes none until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality.</summary>
+/// <summary>A Rollup aggregates telemetry, and what it may do depends on the temporality of the value: a delta (counts per window) sums and takes extremes; a gauge (a level) does too; a cumulative (a counter that only grows) does neither until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality. KQL combines telemetry windows with sum, min and max only.</summary>
 public class RollupTemporalityTests
 {
     const string Delta = "telemetry delta sum every 60s", Gauge = "telemetry gauge max every 60s", Cumulative = "telemetry cumulative last every 60s";
 
-    static readonly string[] Fns = ["sum", "min", "max", "mean", "count"];
-
-    /// <summary>`Calls.flows` declared with the temporality under test, rolled up in the service tree by every aggregate at once (one catalog load per temporality), each under the name `x_{fn}`; the diagnostics at that aggregate.</summary>
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<IReadOnlyList<Diagnostic>>> Loaded = new();
-
-    static IReadOnlyList<Diagnostic> Diagnostics(string temporality, string fn) =>
-        Loaded.GetOrAdd(temporality, t => new Lazy<IReadOnlyList<Diagnostic>>(() =>
-        {
-            var calls = string.Join(", ", Fns.Select(f => $"x_{f}: " + (f == "count" ? "count()" : $"{f}(flows)")));
-            var files = Catalog.ReadDirectory(Repo.SattleProjections).Select(f =>
-                f.Path.EndsWith("sattle.infra.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("flows?: Integer telemetry delta sum every 60s;", $"flows?: Integer {t};") } :
-                f.Path.EndsWith("acme.svc.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("  // telemetry: roll-up along the tree", $"  let depWindows = match master (a: infra.Pod)-[c:infra.Calls]->(b: infra.Pod) |> series master c.flows within 24h |> rollup by {{ a: a }} combine {{ {calls} }};\n  // telemetry: roll-up along the tree") } : f).ToList();
-            Assert.Contains(t, files.First(f => f.Path.EndsWith("sattle.infra.sattle", StringComparison.Ordinal)).Text);
-            return new Catalog().Load(files, updatePins: true).Diagnostics;
-        })).Value.Where(d => d.IsError && d.Focus.EndsWith($"/op:depWindows/agg:x_{fn}", StringComparison.Ordinal)).ToList();
+    /// <summary>`Item.hits` declared with the temporality under test, rolled up per item by `fn` in the view `t.view`; the checker's refusals of that aggregate.</summary>
+    static IReadOnlyList<Diagnostic> Diagnostics(string temporality, string fn)
+    {
+        SourceFile[] files =
+        [
+            new("t.sattle", $$"""
+                module t @ 1.0.0;
+                entity Item { k: Text; hits?: Integer {{temporality}}; }
+                entity Load { k: Text; x?: Integer telemetry delta sum every 60s; }
+                identity item for Item version "1" { k: Text by exact; }
+                identity load for Load version "1" { k: Text by exact; }
+                rows R { k: Text; }
+                """),
+            new("t.ingest.kql", "graph ingest : t;\ninput a : R;\nnodes Item on i with (rule = \"observed\", description = \"test\") = a | project i = identity(\"item\", k), k;\n"),
+            new("t.view.kql", "graph view : t;\ninput master : t;\n"
+                + "let items = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i = i.id, k = i.k;\n"
+                + "nodes Load on l = items | project l = identity(\"load\", k), k;\n"
+                + "extend nodes Load on l = items | join kind=inner (telemetry(\"master\", 3m) | where property == \"hits\" | project i = id, windowStart, property, value) on i\n"
+                + $"    | summarize x = {fn}(value) by k, windowStart | project l = identity(\"load\", k), windowStart, x;\n"),
+            new("s.sattle", """
+                module s @ 1.0.0;
+                import t @ 1.0.0 sha256:… as t;
+                space s {
+                  source a adapter "sattle.authoring" rows t.R;
+                  master graph master = t.ingest(a: a);
+                  graph view = t.view(master: master);
+                }
+                """),
+        ];
+        return [.. new Catalog(new KqlSource()).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError && d.Code == "Aggregate")];
+    }
 
     public static IEnumerable<object[]> Matrix() =>
         from t in new[] { ("delta", Delta), ("gauge", Gauge), ("cumulative", Cumulative) }
-        from fn in new[] { "sum", "min", "max", "mean" }
+        from fn in new[] { "sum", "min", "max" }
         select new object[] { t.Item1, t.Item2, fn };
 
     /// <summary>What the palette says is needed for the aggregate to be accepted over a value of this temporality.</summary>
@@ -54,21 +71,8 @@ public class RollupTemporalityTests
     public void Over_a_cumulative_value_the_refusal_says_to_apply_Delta_first(string fn)
     {
         var d = Assert.Single(Diagnostics(Cumulative, fn));
-        Assert.Equal("Aggregate", d.Code);
         Assert.Contains("Delta", d.Message);
+        Assert.Equal("t.view.kql", d.File);
         Assert.True(d.Line > 0);
-    }
-
-    [Fact]
-    public void A_mean_over_a_delta_is_refused_and_says_to_use_sum_but_over_a_gauge_it_is_accepted()
-    {
-        Assert.Contains("use sum", Assert.Single(Diagnostics(Delta, "mean")).Message);
-        Assert.Empty(Diagnostics(Gauge, "mean"));
-    }
-
-    [Fact]
-    public void Count_has_no_temporality_requirement()
-    {
-        foreach (var t in new[] { Delta, Gauge, Cumulative }) Assert.Empty(Diagnostics(t, "count"));
     }
 }

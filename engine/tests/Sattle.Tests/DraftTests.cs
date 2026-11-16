@@ -9,11 +9,13 @@ namespace Sattle.Tests;
 [Trait("Category", "Slow")]
 public class DraftTests
 {
-    const string Health = "d:acme.svc/projection:serviceDeps/op:dependsOn__state0";          // the threshold that gives a dependency of the service tree its status
+    const string Cardinality = "d:acme.svc/constraint:cardinality-Contains";          // a service is in exactly one group: `per target 1 .. 1`
+    const string FlowsOut = "d:acme.svc/prop:flowsOut";                               // the flows a service or a group sends, a delta telemetry property
+    const string Deps = "acme.svc.serviceDeps.kql";                                    // the service tree, with the threshold that gives a dependency its status
 
     static (SpaceHost H, string D) NewDraft()
     {
-        var h = HostTests.NewSattleHost();
+        var h = HostTests.NewHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         return (h, d);
     }
@@ -33,23 +35,20 @@ public class DraftTests
     }
     static JsonNode Dec(string v) => new JsonObject { ["kind"] = "decimal", ["value"] = v };
 
-    /// <summary>Code review 2, defect 7: a draft patch that the check cannot read is refused and not recorded, so the draft stays usable. Before, the patch was recorded first: an Integer beyond 64 bits answered 500, and so did every later check, preview and commit of that draft. Also the gap of defect 1: a patch that builds an expression in a circle is refused by name instead of overflowing the stack.</summary>
-    [Theory]
-    [InlineData("an integer beyond 64 bits")] [InlineData("an expression that contains itself")]
-    public void A_draft_patch_that_cannot_be_checked_is_refused_and_leaves_the_draft_as_it_was(string what)
+    /// <summary>The service tree's text with a threshold that never recovers: below 0.0 for 30 windows keeps the degraded state.</summary>
+    static string NeverRecovers(SpaceHost h)
+    {
+        var text = h.Definition(Deps);
+        Assert.Contains("below = 0.02, exitAfter = 3", text);
+        return text.Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
+    }
+
+    /// <summary>Code review 2, defect 7: a draft patch that the check cannot read is refused and not recorded, so the draft stays usable. Before, the patch was recorded first: an Integer beyond 64 bits answered 500, and so did every later check, preview and commit of that draft.</summary>
+    [Fact]
+    public void A_draft_patch_that_cannot_be_checked_is_refused_and_leaves_the_draft_as_it_was()
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
-        JsonNode patch;
-        if (what == "an integer beyond 64 bits") patch = SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
-        else
-        {
-            // a `contains` edge from a call back to itself, with the slot of one of its own arguments
-            var rels = h.DraftSnapshot(d)["extent"]!["relationships"]!.AsArray();
-            var arg = rels.First(r => r!["type"]!["value"]!.GetValue<string>() == "contains" && r["id"]!["value"]!.GetValue<string>().Contains("acme.svc") && r["properties"]!.AsArray().Any(p => p!["property"]!["value"]!.GetValue<string>() == "slot" && p["value"]!["value"]!.GetValue<string>() == "arg"))!;
-            var loop = arg.DeepClone(); var call = arg["source"]!["value"]!.GetValue<string>();
-            loop["id"] = new JsonObject { ["value"] = arg["id"]!["value"]!.GetValue<string>() + "-loop" }; loop["target"] = new JsonObject { ["value"] = call };
-            patch = new JsonObject { ["edits"] = new JsonArray(new JsonObject { ["kind"] = "relationship", ["id"] = loop["id"]!["value"]!.GetValue<string>(), ["after"] = loop }) };
-        }
+        var patch = SetProp(h, d, FlowsOut, "period", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
         var failure = Record.Exception(() => h.ApplyDraftPatch(d, patch, 0));
         Assert.True(failure is null or HostError, $"{failure?.GetType().Name}: {failure?.Message}");
         Assert.Equal(failure is null ? "1" : "0", h.DraftInfo(d)["revision"]!.GetValue<string>());
@@ -94,18 +93,18 @@ public class DraftTests
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         var rev0 = h.CatalogRevision;
-        var before = h.DraftText(d, "acme.svc");
-        var (doit, undo) = SetProp(h, d, Health, "above", Dec("0.5"));
+        var before = h.Definition("acme.svc");
+        var (doit, undo) = SetProp(h, d, Cardinality, "max", Dec("2"));
         var r1 = h.ApplyDraftPatch(d, doit, 0);
         Assert.True(r1["ok"]!.GetValue<bool>(), r1["diagnostics"]!.ToJsonString());
-        Assert.Contains("above 0.5 ", r1["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
+        Assert.Contains("per target 1 .. 2;", r1["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.True(r1["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
         var r2 = h.ApplyDraftPatch(d, undo, 1);                              // undo = the inverse patch, applied forward as revision 2
         Assert.Equal("2", r2["revision"]!.GetValue<string>());
-        Assert.Equal(before, h.DraftText(d, "acme.svc"));
+        Assert.Equal(before, r2["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.False(r2["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
         var r3 = h.ApplyDraftPatch(d, doit, 2);                              // redo
-        Assert.Contains("above 0.5 ", r3["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
+        Assert.Contains("per target 1 .. 2;", r3["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.Equal(rev0, h.CatalogRevision);                                // the committed log is untouched
         Assert.Equal(3, h.DraftPatches(d, 0).Count);
         // guards: the same patch twice is a conflict and changes nothing
@@ -118,10 +117,10 @@ public class DraftTests
     public void Invalid_structure_is_reported_by_definition_element_id()
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
-        var (bad, _) = SetProp(h, d, "d:acme.ops/projection:ingest/op:windowed", "late", new JsonObject { ["kind"] = "text", ["value"] = "bogus" });
+        var (bad, _) = SetProp(h, d, FlowsOut, "temporality", new JsonObject { ["kind"] = "text", ["value"] = "bogus" });
         var r = h.ApplyDraftPatch(d, bad, 0);
         Assert.False(r["ok"]!.GetValue<bool>());
-        Assert.Contains(r["diagnostics"]!.AsArray(), x => x!["severity"]!.GetValue<string>() == "error" && x["module"]!.GetValue<string>() == "acme.ops");
+        Assert.Contains(r["diagnostics"]!.AsArray(), x => x!["severity"]!.GetValue<string>() == "error" && x["module"]!.GetValue<string>() == "acme.svc");
     }
 
     [Fact]
@@ -130,7 +129,7 @@ public class DraftTests
         var (h, d) = NewDraft(); using var hostGuard = h;
         var originalDigest = h.Catalog.Modules["acme.svc"].Digest;
         var originalText = h.Definition("acme.svc");
-        var (doit, _) = SetProp(h, d, Health, "above", Dec("0.5"));
+        var (doit, _) = SetProp(h, d, Cardinality, "max", Dec("2"));
         h.ApplyDraftPatch(d, doit, 0);
         var res = h.CommitDraft(d, h.CatalogRevision);
         Assert.Equal("acme.svc", res["modules"]![0]!.GetValue<string>());
@@ -140,8 +139,8 @@ public class DraftTests
         Assert.Equal(2, rels.Count);
         Assert.Equal(originalDigest, rels[1]!["supersedes"]!.GetValue<string>());
         var diff = h.ReleaseDiff(originalDigest, h.Catalog.Modules["acme.svc"].Digest);
-        Assert.Single(diff["edits"]!.AsArray(), e => e!["id"]!["value"]!.GetValue<string>() == Health);
-        Assert.Contains("above 0.5 ", h.ReleaseText(h.Catalog.Modules["acme.svc"].Digest));
+        Assert.Single(diff["edits"]!.AsArray(), e => e!["id"]!["value"]!.GetValue<string>() == Cardinality);
+        Assert.Contains("per target 1 .. 2;", h.ReleaseText(h.Catalog.Modules["acme.svc"].Digest));
         Assert.Equal(originalText, h.ReleaseText(originalDigest));
         // restore the first release into a new draft and commit it: the digest comes back
         var d2 = h.CreateDraft(null)["draft"]!.GetValue<string>();
@@ -159,12 +158,7 @@ public class DraftTests
         HostTests.Drive(h);
         string Status() => h.Engine.Graph("serviceTree").State.Rels.Single(r => Ids.Name(r.Type) == "DependsOn").Props.Text("d:acme.svc/prop:status")!;
         Assert.Equal("ok", Status());
-        // never recover: below 0.0 for 30 windows keeps the degraded state
-        var text = h.DraftText(d, "acme.svc").Replace("below 0.02 for 3", "below 0.0 for 30");
-        var (doit, _) = SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "30" });
-        h.ApplyDraftPatch(d, doit, 0);
-        var (doit2, _) = SetProp(h, d, Health, "below", Dec("0.0"));
-        h.ApplyDraftPatch(d, doit2, 1);
+        Assert.True(h.SetDraftText(d, Deps, NeverRecovers(h), 0)["ok"]!.GetValue<bool>());
         var digest = h.StateDigest(); var seq = h.Seq; var heads = h.SpaceInfo()["graphs"]!.ToJsonString();
         var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "diff", "telemetry") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
@@ -189,7 +183,6 @@ public class DraftTests
         Assert.False(small["identity"]!["comparable"]!.GetValue<bool>());
         Assert.Null(small["identity"]!["difference"]);
         Assert.True(long.Parse(small["identity"]!["preview"]!["minted"]!.GetValue<string>()) < h.Engine.Identities.Minted);   // fewer inputs, fewer identities
-        _ = text;
     }
 
     [Fact]
@@ -199,7 +192,7 @@ public class DraftTests
         var with = h.Subscribe(null, true, null); var without = h.Subscribe(null, false, null);
         while (with.Messages.Reader.TryRead(out _)) { }
         while (without.Messages.Reader.TryRead(out _)) { }
-        var (doit, _) = SetProp(h, d, Health, "above", Dec("0.5"));
+        var (doit, _) = SetProp(h, d, Cardinality, "max", Dec("2"));
         h.ApplyDraftPatch(d, doit, 0);
         Assert.True(with.Messages.Reader.TryRead(out var m));
         Assert.Equal("draft", JsonNode.Parse(m)!["type"]!.GetValue<string>());
@@ -214,13 +207,13 @@ public class DraftTests
         var ops = r["schemas"]!["d:acme.svc/projection:serviceDeps"]!.AsArray();
         JsonNode Op(string n) => ops.Single(o => o!["name"]!.GetValue<string>() == n)!;
         JsonNode Col(JsonNode op, string n) => op["columns"]!.AsArray().Single(c => c!["name"]!.GetValue<string>() == n)!;
-        var s = Col(Op("services"), "s");
+        var s = Col(Op("services_1"), "s");
         Assert.Equal("Entity", s["kind"]!.GetValue<string>());
         Assert.EndsWith("Service", s["type"]!.GetValue<string>());
         Assert.Equal("data", s["role"]!.GetValue<string>());
-        Assert.Equal(["s", "pods"], Op("backed")["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()));
-        Assert.Equal("Integer", Col(Op("backed"), "pods")["kind"]!.GetValue<string>());
-        var flows = Col(Op("dependsOn"), "flows");
+        Assert.Equal(["service", "pods"], Op("serviceNode_1")["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()));
+        Assert.Equal("Integer", Col(Op("serviceNode_1"), "pods")["kind"]!.GetValue<string>());
+        var flows = Col(Op("flows_6"), "flows");
         Assert.Equal("telemetry", flows["role"]!.GetValue<string>());
         Assert.NotNull(flows["period"]);
         Assert.All(ops, o => Assert.StartsWith("d:acme.svc/projection:serviceDeps/op:", o!["op"]!.GetValue<string>()));
@@ -235,7 +228,7 @@ public class DraftTests
         HostTests.Drive(h);
         var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "rows"), ["rowLimit"] = rowLimit });
         var ops = p["graphs"]![0]!["operators"]!.AsArray();
-        var services = ops.Single(o => o!["name"]!.GetValue<string>() == "services")!;
+        var services = ops.Single(o => o!["name"]!.GetValue<string>() == "services_1")!;
         var live = h.Engine.Graph("serviceTree").State.Entities.Count(e => Ids.Name(e.Type) == "ServiceNode");
         Assert.Equal(live.ToString(), services["rows"]!.GetValue<string>());
         Assert.Equal(services["rows"]!.GetValue<string>(), services["weight"]!.GetValue<string>());       // each service once
@@ -257,15 +250,8 @@ public class DraftTests
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         HostTests.Drive(h);
-        const string Series = "d:acme.svc/projection:serviceDeps/op:dependsOn__windows#0";
-        var rev = 0L;
-        if (draft != "a threshold that never recovers")
-            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Series, "within", new JsonObject { ["kind"] = "integer", ["value"] = "7200000000000" }).Do, rev++)["ok"]!.GetValue<bool>());
-        else
-        {
-            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Health, "exitAfter", new JsonObject { ["kind"] = "integer", ["value"] = "30" }).Do, rev++)["ok"]!.GetValue<bool>());
-            Assert.True(h.ApplyDraftPatch(d, SetProp(h, d, Health, "below", Dec("0.0")).Do, rev++)["ok"]!.GetValue<bool>());
-        }
+        var text = draft == "a threshold that never recovers" ? NeverRecovers(h) : h.Definition(Deps).Replace("telemetry(\"master\", 24h)", "telemetry(\"master\", 2h)");
+        Assert.True(h.SetDraftText(d, Deps, text, 0)["ok"]!.GetValue<bool>());
         var p = h.Preview(d, new JsonObject { ["include"] = new JsonArray("counts") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
         var previewed = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());

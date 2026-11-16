@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Sattle.Core;
 using Sattle.Language;
@@ -6,58 +5,50 @@ using Sattle.Runtime;
 
 namespace Sattle.Kql.Tests;
 
-/// <summary>Lineage of the projections in KQL: an element names the elements it is made of, every one today's text names, and each role is the name
-/// the KQL text gives a column, or that name with a number when a join renames the right side's copy (`fromPod1`). The KQL text names the edges its
-/// patterns walk, so it may name more: only relationships.</summary>
+/// <summary>Lineage of the projections in KQL: what each element names is pinned by a digest, taken when the KQL text named every element
+/// the projections' former text named and beyond that only relationships. Each role is the name the KQL text gives a column, or that name with a
+/// number when a join renames the right side's copy (`fromPod1`).</summary>
 public class KqlLineageTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
-    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
-    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
-    /// <summary>The estate served with today's text and with every projection that has a `.kql` file loaded from it.</summary>
-    static readonly Lazy<(SpaceHost Today, SpaceHost Kql)> Hosts = new(() =>
+    /// <summary>The estate served with the projections of the `.kql` files.</summary>
+    static readonly Lazy<SpaceHost> Host = new(() =>
     {
-        var files = Catalog.ReadDirectory(SattleProjections).ToList();
-        var put = KqlFiles.Of(files, KqlFiles.ReadDirectory(Definitions));
-        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
-        return (Serve(files), Serve(put.Files));
-    });
-
-    static SpaceHost Serve(List<SourceFile> files)
-    {
-        var h = new SpaceHost(files, new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(Catalog.ReadDirectory(Definitions), new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000, Projections = new KqlSource() });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
         h.Finish();
         return h;
+    });
+
+    /// <summary>The digest of every element of a graph with the sources its lineage names, by kind, graph and element.</summary>
+    internal static string LineageDigest(SpaceHost h, string graph, out SortedSet<string> roles)
+    {
+        var ids = h.Engine.Graph(graph).State.Elements().Select(e => e switch { Entity en => en.Id, Rel r => r.Id, _ => null }).OfType<string>().Order(StringComparer.Ordinal).ToList();
+        Assert.NotEmpty(ids);
+        var found = new SortedSet<string>(StringComparer.Ordinal);
+        var lines = ids.Select(id =>
+        {
+            var sources = h.Lineage(graph, id, int.MaxValue - 1)["sources"]!.AsArray();
+            foreach (var s in sources) found.Add(s!["role"]!.GetValue<string>());
+            return id + "\t" + string.Join(",", sources.Select(s => s!["kind"]!.GetValue<string>() + ":" + s["graph"]!.GetValue<string>() + "/" + s["element"]!.GetValue<string>()).Order(StringComparer.Ordinal));
+        });
+        var digest = Digests.Of(string.Join("\n", lines));
+        roles = found;
+        return digest;
     }
 
-    static SortedSet<string> Named(JsonNode lineage, string? kind = null) => new(lineage["sources"]!.AsArray()
-        .Where(s => kind is null || s!["kind"]!.GetValue<string>() == kind)
-        .Select(s => s!["graph"]!.GetValue<string>() + "/" + s["element"]!.GetValue<string>()), StringComparer.Ordinal);
-
     [Theory]
-    [InlineData("serviceTree", "acme.svc.serviceDeps.kql")]
-    [InlineData("capabilities", "acme.biz.capabilityView.kql")]
-    [InlineData("healthTree", "acme.treehealth.healthTree.kql")]
-    [InlineData("workloadStructure", "acme.workload.workloadStructure.kql")]
-    public void Every_element_names_what_todays_text_names_and_beyond_that_only_relationships_under_the_column_names_of_the_KQL_text(string graph, string kql)
+    [InlineData("serviceTree", "acme.svc.serviceDeps.kql", "sha256:47c68a129a57d6e6514d4a5e9e53cf17498f8608f487da53023974d2f41f6087")]
+    [InlineData("capabilities", "acme.biz.capabilityView.kql", "sha256:afe1c2100ce3f61453de58e193e0083cf5ecb880d38e69e45fedb6eef62183a0")]
+    [InlineData("healthTree", "acme.treehealth.healthTree.kql", "sha256:539861486c14affda672b4bd83e1345d94fc68549963eb9a19a16d25102d7440")]
+    [InlineData("workloadStructure", "acme.workload.workloadStructure.kql", "sha256:62eca1949e7f8b83f0f90d370b8a3f36d029869947e551994aa06af3c2007513")]
+    public void Every_element_names_the_pinned_sources_under_the_column_names_of_the_KQL_text(string graph, string kql, string pinned)
     {
-        var (today, k) = Hosts.Value;
         var text = File.ReadAllText(Path.Combine(Definitions, kql));
-        var differ = new List<string>(); var roles = new SortedSet<string>(StringComparer.Ordinal);
-        var ids = today.Engine.Graph(graph).State.Elements().Select(e => e switch { Entity en => en.Id, Rel r => r.Id, _ => null }).OfType<string>().ToList();
-        Assert.NotEmpty(ids);
-        foreach (var id in ids)
-        {
-            var mine = k.Lineage(graph, id, int.MaxValue - 1);
-            var named = Named(today.Lineage(graph, id, int.MaxValue - 1));
-            if (!named.IsSubsetOf(Named(mine)) || !Named(mine, "entity").IsSubsetOf(named)) differ.Add(id);
-            foreach (var s in mine["sources"]!.AsArray()) roles.Add(s!["role"]!.GetValue<string>());
-        }
-        Assert.True(differ.Count == 0, $"{differ.Count} of {ids.Count} element(s) miss an element today's text names, or name another entity, e.g. {string.Join(", ", differ.Take(3))}");
+        Assert.Equal(pinned, LineageDigest(Host.Value, graph, out var roles));
         Assert.All(roles, r => Assert.Matches($@"\b{Regex.Escape(r.TrimEnd("0123456789".ToCharArray()))}\b", text));
     }
 
@@ -65,7 +56,7 @@ public class KqlLineageTests
     [Fact]
     public void A_lifted_capability_edge_is_made_by_the_rule_its_steps_name()
     {
-        var k = Hosts.Value.Kql;
+        var k = Host.Value;
         var edge = k.Engine.Graph("capabilities").State.Rels.First(r => Ids.Name(r.Type) == "DependsOn");
         Assert.Equal("lifted", k.Lineage("capabilities", edge.Id)["rule"]!.GetValue<string>());
     }

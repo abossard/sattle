@@ -10,8 +10,6 @@ public class KqlReviewRunTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
-    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
-    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
     static string FindRoot()
@@ -21,13 +19,17 @@ public class KqlReviewRunTests
         return d?.FullName ?? throw new InvalidOperationException("repository root not found");
     }
 
+    /// <summary>The definitions, checked once.</summary>
+    static readonly Lazy<Catalog> Examples = new(() => { var cat = new Catalog(new KqlSource()); cat.Load(Catalog.ReadDirectory(Definitions), updatePins: true); return cat; });
+
     /// <summary>The definitions with one projection in KQL given as text in place of its file: what the front end says, and what the catalog says of the text it printed (null when the front end refused).</summary>
     static (KqlFiles Put, Catalog? Catalog, List<Diagnostic> LoadErrors) Loaded(string file, string text)
     {
-        var put = KqlFiles.Of(Catalog.ReadDirectory(SattleProjections).ToList(), [new SourceFile(Path.Combine(Definitions, file), text)]);
+        var definitions = Catalog.ReadDirectory(Definitions); var path = Path.Combine(Definitions, file);
+        var put = KqlFiles.Of([.. definitions.Where(f => f.Path.EndsWith(".sattle", StringComparison.Ordinal))], [new SourceFile(path, text)], Examples.Value);
         if (!put.Ok) return (put, null, []);
-        var cat = new Catalog();
-        var res = cat.Load(put.Files, updatePins: true);
+        var cat = new Catalog(new KqlSource());
+        var res = cat.Load([.. put.Files, .. definitions.Where(f => f.Path.EndsWith(".kql", StringComparison.Ordinal) && f.Path != path)], updatePins: true);
         return (put, cat, [.. res.Diagnostics.Where(x => x.IsError)]);
     }
 

@@ -5,13 +5,12 @@ using Sattle.Runtime;
 
 namespace Sattle.Kql.Tests;
 
-/// <summary>Research 10, stage 1: a projection written in KQL gives the state of today's text on the synthetic estate and the recorded captures, and the engine runs the operators the front end wrote.</summary>
+/// <summary>Research 10, stage 1: a projection written in KQL gives the pinned state on the synthetic estate, and the engine runs the operators the front end wrote.
+/// Each state digest is pinned where the KQL text gave the state of the projections' former text.</summary>
 public class KqlProjectionTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
-    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
-    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
     [Fact]
@@ -19,55 +18,33 @@ public class KqlProjectionTests
         Assert.Equal("sha256:dde19e7f32847164dbf4b78e5d0b53987ca35552b566c1c96377fdfd29792cb2", Kernel.ComputeDigest());
 
     [Theory]
-    [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "the whole projection")]
-    [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "the whole projection")]
-    [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "the whole projection")]
-    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its editable views, which come in the second part of the edit stage")]
-    [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "the whole projection")]
-    [InlineData("acme.workload.workloadHealth.kql", "workload", "the whole projection")]
-    [InlineData("acme.treereport.healthReport.kql", "healthReport", "the whole projection")]
-    [InlineData("acme.tree.treeStructure.kql", "treeStructure", "the whole projection")]
-    [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
-    [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
-    [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
-    [InlineData("acme.ops.ingest.kql", "master", "the whole projection")]
-    public void A_projection_in_KQL_gives_the_state_of_its_text_on_the_estate(string kql, string graph, string compared) => SameState(Data(Estate), kql, graph, compared);
-
-    [Trait("Category", "Capture")]
-    [CaptureTheory]
-    [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "the whole projection")]
-    [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "the whole projection")]
-    [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "the whole projection")]
-    [InlineData("acme.biz.capabilityView.kql", "capabilities", "without its editable views, which come in the second part of the edit stage")]
-    [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "the whole projection")]
-    [InlineData("acme.workload.workloadHealth.kql", "workload", "the whole projection")]
-    [InlineData("acme.treereport.healthReport.kql", "healthReport", "the whole projection")]
-    [InlineData("acme.tree.treeStructure.kql", "treeStructure", "the whole projection")]
-    [InlineData("acme.tree.treeSignals.kql", "treeSignals", "the whole projection")]
-    [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "the whole projection")]
-    [InlineData("acme.treehealth.healthTree.kql", "healthTree", "the whole projection")]
-    [InlineData("acme.ops.ingest.kql", "master", "the whole projection")]
-    public void A_projection_in_KQL_gives_the_state_of_its_text_on_every_recorded_capture(string kql, string graph, string compared)
+    [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "sha256:88c3217f415ec347fb21b80ab8fe6773b5f6e5482da048ba1b8d19e068eff3d3")]
+    [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "sha256:11b2c14cea86e2639b79b1d7b7b551e06316fe9e7d60cbd74259fa2d8964bfd7")]
+    [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "sha256:a056444e9890092e38cce3c7a6d5f0f4ed2f54d2ae6bc08b465b2f6515b6b496")]
+    [InlineData("acme.biz.capabilityView.kql", "capabilities", "sha256:0f4b27b751f3b40c12aaf6c1ef7898d7484c3f4a7fda60c7106d032077f59082")]
+    [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "sha256:643d3daa51f2959585d1d193f35e265c5797f9b9205a139e60f1be614a4749ea")]
+    [InlineData("acme.workload.workloadHealth.kql", "workload", "sha256:73033bbc9ed5ef8b614bebf5c0d34b9cdd0ba7d22160d26152ade3109cd766ff")]
+    [InlineData("acme.treereport.healthReport.kql", "healthReport", "sha256:5bc31697f3bdde49fb1fe91a24e0aacf908e8eaff9d472860612d7f3456e4573")]
+    [InlineData("acme.tree.treeStructure.kql", "treeStructure", "sha256:f0fe8edc6448fa1acfa7374070576d12ebc66008098125f8b6f82e252df57f64")]
+    [InlineData("acme.tree.treeSignals.kql", "treeSignals", "sha256:ed034b16e9bd00ff3e6004030f841ea514c5b16db0fb0e4776528dfb3af2a21f")]
+    [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "sha256:bf8d153035d1ca92289337a0f4620c58eb6c83a02ab962fb97a061470d0be989")]
+    [InlineData("acme.treehealth.healthTree.kql", "healthTree", "sha256:5787d12669595d2c99b02a95eaba52b17080148ae7ee683d38f1b5c1d988f918")]
+    [InlineData("acme.ops.ingest.kql", "master", "sha256:a8ebc7b45962807b47f1286479139194e767ed1fbafba3826a836b1eef5b3d10")]
+    public void A_projection_in_KQL_gives_the_pinned_state_on_the_estate(string kql, string graph, string pinned)
     {
-        foreach (var dir in CaptureDirs) SameState(Data(dir), kql, graph, compared);
+        var path = Path.Combine(Definitions, kql);
+        var pid = Ids.Child(Ids.Module(kql[..kql[..^4].LastIndexOf('.')]), "projection", kql[..^4][(kql[..^4].LastIndexOf('.') + 1)..]);
+        var ops = new DefView(Defs.Value.Catalog.Graph).Children(pid, "op").ToList();
+        Assert.NotEmpty(ops);
+        Assert.All(ops, op => Assert.Equal(path, Defs.Value.Catalog.FileOf.GetValueOrDefault(op)));
+        var (digest, state) = Observe(Run(Defs.Value.Catalog, [graph]), graph);
+        Assert.NotEqual(0, state.Count);
+        Assert.Equal(pinned, digest);
     }
 
-    /// <summary>The graph a projection writes, element by element and window by window, from today's text and from the KQL text. `compared` names what of the projection the KQL text holds.</summary>
-    static void SameState(Recorded data, string kql, string graph, string compared)
-    {
-        var withKql = WithKql(data, kql);
-        var (want, wantGraph) = Observe(data.Today.Value, graph);
-        var (got, gotGraph) = Observe(Run(data, withKql, [graph]), graph);
-        if (data.Dir == Estate) Assert.NotEqual(0, wantGraph.Count);     // on the estate every graph has content; a real capture may hold none for a graph (no business capabilities)
-        var diff = Graph.Diff(wantGraph, gotGraph);
-        var tele = want.Windows.Except(got.Windows).Select(w => "  - " + w).Concat(got.Windows.Except(want.Windows).Select(w => "  + " + w)).ToList();
-        Assert.True(want.Digest == got.Digest, $"{Path.GetFileName(data.Dir)}, {compared}: {diff.Count} element(s) and {tele.Count} telemetry window(s) differ:\n"
-            + string.Join("\n", diff.Take(8).Select(e => $"  {e.Key}: {e.Before} -> {e.After}")) + "\n" + string.Join("\n", tele.Take(60)));
-    }
-
-    /// <summary>`sattle replay` replays the estate with the projections of the `.kql` files and ends in the state digest of today's text.</summary>
+    /// <summary>`sattle replay` replays the estate with the projections of the `.kql` files and ends in the estate's state digest.</summary>
     [Fact]
-    public void Replaying_the_projections_in_KQL_ends_in_the_state_digest_of_todays_text()
+    public void Replaying_the_projections_in_KQL_ends_in_the_state_digest_of_the_estate()
     {
         var output = new StringWriter(); var saved = Console.Out;
         Console.SetOut(output);
@@ -76,7 +53,7 @@ public class KqlProjectionTests
         finally { Console.SetOut(saved); }
         Assert.True(code == 0, output.ToString());
         var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
-        Assert.Equal(Data(Estate).Today.Value.StateDigest(), digest);
+        Assert.Equal("sha256:6b8c3048b610a935ae4e297a42dc8b774c1c1ddb8a02ae16343703333865b2eb", digest);
     }
 
     /// <summary>What the profile refuses, and that the message says what to write instead.</summary>
@@ -111,7 +88,7 @@ public class KqlProjectionTests
         var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
             + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
             + step + ";\n";
-        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
         Assert.False(low.Ok);
         Assert.Contains(low.Diagnostics, d => d.Code == "Profile" && d.Message.Contains(says, StringComparison.Ordinal));
     }
@@ -126,33 +103,9 @@ public class KqlProjectionTests
     public void The_graph_line_and_the_inputs_say_what_to_write(string head, string says)
     {
         var text = head + "nodes ServiceNode on service = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
-        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
         Assert.False(low.Ok);
         Assert.Contains(low.Diagnostics, d => d.Message.Contains(says, StringComparison.Ordinal));
-    }
-
-    /// <summary>The catalog of the definitions with one projection in KQL in place of today's text, as the catalog loads it with a KQL source.
-    /// Asserts that each operator of the projection has its place in the `.kql` file, and that the KQL text states what today's text states of the projection:
-    /// its purpose, history, description and inputs, so the module's statement of it can go.</summary>
-    static Catalog WithKql(Recorded data, string kql)
-    {
-        var path = Path.Combine(Definitions, kql);
-        var loaded = Load([.. data.Files, new SourceFile(path, File.ReadAllText(path))], new KqlSource());
-        var pid = Ids.Child(Ids.Module(kql[..kql[..^4].LastIndexOf('.')]), "projection", kql[..^4][(kql[..^4].LastIndexOf('.') + 1)..]);
-        var ops = new DefView(loaded.Graph).Children(pid, "op").ToList();
-        Assert.NotEmpty(ops);
-        Assert.All(ops, op => Assert.Equal(path, loaded.FileOf.GetValueOrDefault(op)));
-        var (stated, today) = (Stated(loaded.Graph, pid), Stated(data.Catalog.Graph, pid));
-        Assert.True(stated.Count == today.Count && stated.All(kv => today.TryGetValue(kv.Key, out var t) && Equals(t, kv.Value)),
-            $"the KQL text states other things of the projection than today's text:\n  {string.Join("\n  ", stated.Values.Where(e => !today.ContainsValue(e)))}\n  today: {string.Join("\n  ", today.Values.Where(e => !stated.ContainsValue(e)))}");
-        return loaded;
-    }
-
-    /// <summary>The projection node, its inputs and parameters, and what each of them expects (not the wires to the operators that read them).</summary>
-    static Dictionary<string, Element> Stated(Graph g, string pid)
-    {
-        var d = new DefView(g); var ports = d.Children(pid, "port").ToList();
-        return ports.SelectMany(p => g.OutRels(p).Select(g.Rel).OfType<Rel>().Where(r => Ids.Name(r.Type) != "wire")).Concat<Element>([g.Entity(pid)!, .. ports.Select(p => g.Entity(p)!)]).ToDictionary(e => e.Key.ToString()!);
     }
 
     /// <summary>A table function is written out once per distinct call: two equal calls share its operators.</summary>
@@ -166,7 +119,7 @@ public class KqlProjectionTests
             + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
             + "let busy = (T:(service:string, cluster:string, namespace:string, name:string)) { T | where name != \"idle\" };\n"
             + $"nodes ServiceNode on service = {query};\n";
-        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.svc");
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
         Assert.True(low.Ok, string.Join("\n", low.Diagnostics));
         Assert.Equal(filters, low.Facts.Elements().OfType<Entity>().Count(e => Ids.Name(e.Type) == "Filter"));
     }
@@ -178,7 +131,7 @@ public class KqlProjectionTests
         var text = "graph ingest : acme.ops;\ninput pods : k8s.PodRow;\n"
             + "let pods = pods | where isnotnull(phase);\n"
             + "nodes Pod on pod with (rule = \"observedPods\", description = \"observed by the Kubernetes adapter\") = pods | project pod = identity(\"podUid\", cluster, uid), cluster, namespace, name, phase, team = teamLabel, ready, serviceAccount;\n";
-        var low = KqlFrontEnd.Lower(text, Data(Estate).Catalog.Graph, "acme.ops");
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.ops");
         Assert.True(low.Ok, string.Join("\n", low.Diagnostics));
     }
 
@@ -187,7 +140,7 @@ public class KqlProjectionTests
     public void A_KQL_file_is_named_after_its_module_and_projection()
     {
         var path = Path.Combine(Definitions, "acme.svc.noSuchProjection.kql");
-        var res = new Catalog(new KqlSource()).Load([.. Data(Estate).Files, new SourceFile(path, "graph serviceDeps : acme.svc;\n")], updatePins: true);
+        var res = new Catalog(new KqlSource()).Load(With(path, "graph serviceDeps : acme.svc;\n"), updatePins: true);
         Assert.Contains(res.Diagnostics, d => d.IsError && d.File == path && d.Message.Contains("the graph line names serviceDeps, the file name noSuchProjection", StringComparison.Ordinal));
     }
 
@@ -198,7 +151,7 @@ public class KqlProjectionTests
     public void A_KQL_file_no_module_reads_is_an_error(string file, bool withSource)
     {
         var path = Path.Combine(Definitions, file);
-        var res = new Catalog(withSource ? new KqlSource() : null).Load([.. Data(Estate).Files, new SourceFile(path, File.ReadAllText(Path.Combine(Definitions, "acme.svc.serviceDeps.kql")))], updatePins: true);
+        var res = new Catalog(withSource ? new KqlSource() : null).Load(With(path, File.ReadAllText(Path.Combine(Definitions, "acme.svc.serviceDeps.kql"))), updatePins: true);
         Assert.Contains(res.Diagnostics, d => d.IsError && d.Code == "UnreadFile" && d.File == path);
     }
 
@@ -209,7 +162,7 @@ public class KqlProjectionTests
     {
         var text = "graph serviceNames : acme.svc with (description = \"The services of each namespace, by name.\", history = 2);\n"
             + "nodes ServiceNode on service = graph(\"ops\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
-        var g = Load([.. Data(Estate).Files, new SourceFile(Path.Combine(Definitions, "acme.svc.serviceNames.kql"), text)], new KqlSource()).Graph;
+        var g = Load(With(Path.Combine(Definitions, "acme.svc.serviceNames.kql"), text), new KqlSource()).Graph;
         var d = new DefView(g); var pid = Ids.Child(Ids.Module("acme.svc"), "projection", "serviceNames");
         Assert.Equal(("view", 2L, "The services of each namespace, by name."), (d.Text(pid, "purpose"), d.Int(pid, "retain"), d.Text(pid, "description")));
         Assert.Equal("acme.ops", Ids.ModuleOf(d.Target(Ids.Child(pid, "port", "ops"), "expects")!));
@@ -253,37 +206,17 @@ public class KqlProjectionTests
         var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
             + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
             + "nodes ServiceNode on service = services | project service, name = strcat(name, 5), cluster, namespace;\n";
-        var res = new Catalog(new KqlSource()).Load([.. Data(Estate).Files, new SourceFile(path, text)], updatePins: true);
+        var res = new Catalog(new KqlSource()).Load(With(path, text), updatePins: true);
         var mine = res.Diagnostics.Where(d => d.IsError && Ids.ModuleOf(d.Focus) == "acme.svc").ToList();
         Assert.NotEmpty(mine);
         Assert.All(mine, d => Assert.Equal((path, 4), (d.File, d.Line)));
     }
 
-    /// <summary>A recording to replay, the definitions `sattle replay` reads for it (for a real capture the local space overlay or its arguments file) and their catalog.</summary>
-    sealed record Recorded(string Dir, string Cluster, List<SourceFile> Files, Catalog Catalog)
-    {
-        /// <summary>Today's text replayed once for every graph a test compares.</summary>
-        public Lazy<Engine> Today { get; } = new(() => Run(new Recorded(Dir, Cluster, Files, Catalog), Catalog, ["serviceTree", "deploymentHealth", "deploymentReport", "capabilities", "workloadStructure", "workload", "healthReport", "treeStructure", "treeSignals", "treeRollup", "healthTree", "master"]));
-    }
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<Recorded>> Loaded = new();
+    /// <summary>The definitions and their catalog, checked once.</summary>
+    static readonly Lazy<(List<SourceFile> Files, Catalog Catalog)> Defs = new(() => { var files = Catalog.ReadDirectory(Definitions); return (files, Load(files, new KqlSource())); });
 
-    static Recorded Data(string dir) => Loaded.GetOrAdd(dir, d => new(() =>
-    {
-        var files = Catalog.ReadDirectory(SattleProjections).ToList();
-        var overlay = Path.Combine(Captures, "space-overlay.sattle");
-        if (d != Estate && File.Exists(overlay)) { var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)); files[i] = files[i] with { Text = File.ReadAllText(overlay) }; }
-        else if (d != Estate && Program.ArgumentsOf(d) is { } arguments) files = Program.WithArguments(files, arguments);
-        return new Recorded(d, d == Estate ? "synth" : Program.DetectCluster(d), files, Load(files));
-    })).Value;
-
-    static string Captures => Path.Combine(Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } lab ? lab : Path.Combine(Root, "lab"), "captures");
-    static IReadOnlyList<string> CaptureDirs => Program.Captures(Captures);
-
-    /// <summary>A theory on the recorded captures, skipped with the reason when there is none (they are not in the repository).</summary>
-    public sealed class CaptureTheoryAttribute : TheoryAttribute
-    {
-        public CaptureTheoryAttribute() { Skip = CaptureDirs.Count > 0 ? null : "no capture under lab/captures (the captures are not in the repository)"; }
-    }
+    /// <summary>The definitions with `text` as the file at `path`, in place of the file there or added.</summary>
+    static List<SourceFile> With(string path, string text) => [.. Defs.Value.Files.Where(f => f.Path != path), new SourceFile(path, text)];
 
     static Catalog Load(List<SourceFile> files, IProjectionSource? projections = null)
     {
@@ -293,23 +226,22 @@ public class KqlProjectionTests
         return cat;
     }
 
-    /// <summary>The graphs (and the graphs they read) after replaying a recording as `sattle replay` does.</summary>
-    static Engine Run(Recorded data, Catalog cat, string[] graphs)
+    /// <summary>The graphs (and the graphs they read) after replaying the estate as `sattle replay` does.</summary>
+    static Engine Run(Catalog cat, string[] graphs)
     {
         var space = cat.Spaces.Keys.Single();
-        var o = Program.Options.Parse(["replay", data.Dir, "--cluster", data.Cluster]);
+        var o = Program.Options.Parse(["replay", Estate, "--cluster", "synth"]);
         var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = Program.LateHorizonFor(o), Only = graphs.ToHashSet() });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(data.Cluster), Program.ReplayOptionsOf(o, data.Cluster)).Run(data.Dir);
+        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Program.ReplayOptionsOf(o, "synth")).Run(Estate);
         return engine;
     }
 
-    /// <summary>One graph's digest and telemetry windows (with the pair of a `mean` or `last` window), as the state digest reads them.</summary>
-    static ((string Digest, HashSet<string> Windows), Graph State) Observe(Engine engine, string graph)
+    /// <summary>One graph's digest over its state and telemetry windows (with the pair of a `mean` or `last` window), as the state digest reads them.</summary>
+    static (string Digest, Graph State) Observe(Engine engine, string graph)
     {
         var g = engine.Graph(graph); var mem = (InMemoryTelemetryStore)engine.Telemetry;
-        var windows = mem.Dump(g.Key).Select(w => $"{engine.Interner.Get(w.Element)} {engine.Interner.Get(w.Prop)} {w.Ws} {w.Value} {mem.AuxOf(g.Key, new WindowKey(w.Element, w.Prop, w.Ws))}").ToHashSet();
-        var digest = g.State.Digest() + "|" + string.Join("\n", windows.Order(StringComparer.Ordinal));
-        return ((digest, windows), g.State);
+        var windows = mem.Dump(g.Key).Select(w => $"{engine.Interner.Get(w.Element)} {engine.Interner.Get(w.Prop)} {w.Ws} {w.Value} {mem.AuxOf(g.Key, new WindowKey(w.Element, w.Prop, w.Ws))}");
+        return (Digests.Of(g.State.Digest() + "|" + string.Join("\n", windows.Order(StringComparer.Ordinal))), g.State);
     }
 
     static string FindRoot()

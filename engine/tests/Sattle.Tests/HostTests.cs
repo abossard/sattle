@@ -17,11 +17,6 @@ public class HostTests
     /// <summary>A host on the example definitions. The checked catalog is loaded once per test run (loading costs more than a host), every host gets its own engine and state.</summary>
     public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }, Shared.Value.Loaded);
 
-    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> SattleShared = new(() => { var f = Catalog.ReadDirectory(Repo.SattleProjections); return (f, SpaceHost.LoadDefinitions(f)); });
-
-    /// <summary>A host on the definitions with every projection in the engine's own notation (`Repo.SattleProjections`), for the tests of that notation and of the calls that edit it.</summary>
-    public static SpaceHost NewSattleHost() => new(SattleShared.Value.Files, new HostOptions { Cluster = "synth" }, SattleShared.Value.Loaded);
-
     /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
     {
@@ -53,7 +48,6 @@ public class HostTests
     }
 
     static string Text(string file) => File.ReadAllText(Path.Combine(Repo.Definitions, file));
-    static string SattleText(string module) => File.ReadAllText(Path.Combine(Repo.SattleProjections, module + ".sattle"));
 
     [Fact]
     public void Definitions_are_served_as_a_graph_with_the_kernel_as_ontology()
@@ -71,26 +65,6 @@ public class HostTests
         var g = new Graph();
         foreach (var p in h.Catalog.Log.Commits) g.Apply(p.Patch.Edits);
         Assert.True(g.SameAs(h.Catalog.Graph));
-    }
-
-    /// <summary>Code review 2, defect 1: a text nested deeper than the parser's limit is answered with a `Syntax` diagnostic. Before, 600 nested parentheses or 450 nested `if(` overflowed the stack, which ends the process. A text nested up to the limit is parsed as before.</summary>
-    [Theory]
-    [InlineData("paren", 50, false)] [InlineData("if", 50, false)]
-    [InlineData("paren", 101, true)] [InlineData("paren", 600, true)] [InlineData("if", 450, true)] [InlineData("paren", 20000, true)] [InlineData("if", 20000, true)]
-    [InlineData("row", 50, false)] [InlineData("row", 150, true)] [InlineData("row", 20000, true)]              // a row of operators nests one level each: 20,000 of them overflowed the stack in a later pass
-    public void A_text_nested_deeper_than_the_limit_is_a_diagnostic_and_never_a_stack_overflow(string shape, int depth, bool refused)
-    {
-        using var h = NewSattleHost();
-        var nested = shape == "paren"
-            ? new string('(', depth) + "workloadNamespace" + new string(')', depth)
-            : shape == "row" ? "workloadNamespace" + string.Concat(Enumerable.Repeat(" ++ \"x\"", depth))
-            : string.Concat(Enumerable.Repeat("if(true, ", depth)) + "workloadNamespace" + string.Concat(Enumerable.Repeat(", \"x\")", depth));
-        var text = SattleText("acme.workload");
-        var changed = text.Replace("where image.namespace == workloadNamespace", "where image.namespace == " + nested);
-        Assert.NotEqual(text, changed);
-        var answer = h.Check("acme.workload", changed);
-        Assert.Equal(!refused, answer["ok"]!.GetValue<bool>());
-        if (refused) Assert.Contains(answer["diagnostics"]!.AsArray(), d => d!["code"]!.GetValue<string>() == "Syntax" && d["message"]!.GetValue<string>().Contains($"nested deeper than {Parser.MaxNesting} levels"));
     }
 
     [Fact]

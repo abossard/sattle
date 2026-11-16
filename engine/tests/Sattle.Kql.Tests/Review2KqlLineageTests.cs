@@ -1,4 +1,3 @@
-using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
@@ -10,42 +9,23 @@ public class Review2KqlLineageTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
-    /// <summary>The definitions with every projection in the engine's own notation, as they were before the projections moved to KQL: today's text the KQL text is compared with.</summary>
-    static string SattleProjections => Path.Combine(Path.GetDirectoryName(Definitions)!, "tests", "Sattle.Tests", "fixtures", "sattle-projections");
     static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
-    static readonly Lazy<(SpaceHost Today, SpaceHost Kql)> Hosts = new(() =>
+    static readonly Lazy<SpaceHost> Host = new(() =>
     {
-        var files = Catalog.ReadDirectory(SattleProjections).ToList();
-        var put = KqlFiles.Of(files, KqlFiles.ReadDirectory(Definitions));
-        Assert.True(put.Ok, string.Join("\n", put.Diagnostics));
-        return (Serve(files), Serve(put.Files));
-    });
-
-    static SpaceHost Serve(List<SourceFile> files)
-    {
-        var h = new SpaceHost(files, new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(Catalog.ReadDirectory(Definitions), new HostOptions { Cluster = "synth", LateHorizonWindows = 1_000_000, Projections = new KqlSource() });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);
         h.Finish();
         return h;
-    }
+    });
 
-    static SortedSet<string> Named(JsonNode lineage) => new(lineage["sources"]!.AsArray().Select(s => s!["graph"]!.GetValue<string>() + "/" + s["element"]!.GetValue<string>()), StringComparer.Ordinal);
-
-    /// <summary>HEAD: the count blocks of the two reports name no source elements with the KQL text, today's text names every Workload or Element.</summary>
+    /// <summary>HEAD: the count blocks of the two reports name no source elements with the KQL text, the former text named every Workload or Element.
+    /// The digest is pinned where the KQL text named the same elements as the former text.</summary>
     [Theory]
-    [InlineData("deploymentReport")]
-    [InlineData("healthReport")]
-    public void Every_element_of_a_report_names_the_elements_it_is_made_of_as_with_todays_text(string graph)
-    {
-        var (today, k) = Hosts.Value;
-        var differ = new List<string>();
-        var ids = today.Engine.Graph(graph).State.Elements().Select(e => e switch { Entity en => en.Id, Rel r => r.Id, _ => null }).OfType<string>().ToList();
-        Assert.NotEmpty(ids);
-        foreach (var id in ids)
-            if (!Named(today.Lineage(graph, id, int.MaxValue - 1)).SetEquals(Named(k.Lineage(graph, id, int.MaxValue - 1)))) differ.Add(id);
-        Assert.True(differ.Count == 0, $"{differ.Count} of {ids.Count} element(s) name other elements, e.g. {string.Join(", ", differ.Take(3))}");
-    }
+    [InlineData("deploymentReport", "sha256:a791c70d7cf8de860594eefe75ca8431c02de82f7704ce70188210026a653f18")]
+    [InlineData("healthReport", "sha256:4186f26e6348b63a14e55b076260bcd5cde7b369484bd6ee22b54662741ceda8")]
+    public void Every_element_of_a_report_names_the_elements_it_is_made_of(string graph, string pinned) =>
+        Assert.Equal(pinned, KqlLineageTests.LineageDigest(Host.Value, graph, out _));
 
     static string FindRoot()
     {
