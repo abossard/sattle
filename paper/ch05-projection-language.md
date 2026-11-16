@@ -34,13 +34,13 @@ A projection is a graph in the catalog (Ch. 2, Def. 2.1). Its nodes are ports, o
 
 **Definition 5.3 (the operators and their parameters).** The operator kinds are the closed set of Ch. 2 (Def. 2.2). Their parameters are:
 - `Traverse.direction ∈ {out, in, either}`, `minDepth`, `maxDepth ≤ 16`;
-- `Window.timestampField`, `width`, and what to do with a late row, `late ∈ {ignore, revise, reject}`;
+- `Window.timestampField`, `width`, and what to do with a late row, `late = revise`: a row for a closed window inside the late horizon revises it (Ch. 7, Def. 7.6);
 - `EmitEntity.mode` and `EmitRelationship.mode ∈ {create, update}`, and `EmitRelationship.key`, the rule that names the relationship (Def. 5.9);
 - `Series.within`, the look-back;
 - `Delta.target`;
 - for `Threshold`: `above`, `enterAfter`, `high`, `below`, `exitAfter`, `low`, `initial`.
 
-Inside operators, *expressions* compute values: a field reference, a literal, a call of a builtin function, or `IdOf` (Def. 5.9). The builtin functions are fixed: comparisons, `And`, `Or`, `Not`, `Add`, `Subtract`, `Multiply`, `Divide`, `Negate`, `ToDecimal`, `Concat`, `Coalesce`, `IsPresent`, `If`, `Rate`, `InList`, `LowerInvariant`, `Trim`. There are no functions written by users, no reading of the program's own structure, and no access to anything outside the inputs.
+Inside operators, *expressions* compute values: a field reference, a literal, a call of a builtin function, or `IdOf` (Def. 5.9). The builtin functions are fixed: comparisons (equality of two values of one kind; order of two numbers or two instants, not of two texts), `And`, `Or`, `Not`, `Add`, `Subtract`, `Multiply`, `Divide`, `Negate`, `ToDecimal`, `Concat`, `Coalesce`, `IsPresent`, `If`, `Rate`, `InList`, `LowerInvariant`, `Trim`. There are no functions written by users, no reading of the program's own structure, and no access to anything outside the inputs.
 
 ## 5.2 Types
 
@@ -57,7 +57,7 @@ A *row type* `R` is a finite map from field names to field types. A row type has
 
 **Definition 5.5 (roles of computed values).** When an expression combines values: `data ⊔ ρ = ρ` (a computation with a measurement is a measurement); two measurement operands need the same period; and the time behavior follows Def. 5.6. For example `delta + delta = delta`, `delta ÷ delta = gauge`, `delta × data = delta`, and any arithmetic on a `cumulative` value is an error.
 
-**Definition 5.6 (time behavior of aggregates).** For aggregates over measurement fields: `sum`, `min` and `max` keep `gauge` and `delta` and refuse `cumulative` (apply `Delta` first); `mean` is allowed on `gauge` only and gives `gauge`; `count` gives `gauge`; `last` reads data and no measurement. `Rate` turns a `delta` of unit `u` and period `P` into a `gauge` of unit `u/s`. `Delta` turns `cumulative` into `delta`, starting again when the value drops. `Threshold` accepts `gauge` or `delta`. A property declared with `combine = mean` may be rolled up again only as a weighted mean written with two sums, `sum(value · weight) / sum(weight)`, with an explicit weight. The checker requires that the combine rule of a written measurement property equals the aggregate that produced its value.
+**Definition 5.6 (time behavior of aggregates).** For aggregates over measurement fields: `sum`, `min` and `max` keep `gauge` and `delta` and refuse `cumulative` (apply `Delta` first); `mean` is allowed on `gauge` only and gives `gauge`; `count` gives `gauge`; `last` reads data and no measurement, and names the row that orders it (KQL's `arg_max`). `Rate` turns a `delta` of unit `u` and period `P` into a `gauge` of unit `u/s`. `Delta` turns `cumulative` into `delta`, starting again when the value drops. `Threshold` accepts `gauge` or `delta`. A property declared with `combine = mean` may be rolled up again only as a weighted mean written with two sums, `sum(value · weight) / sum(weight)`, with an explicit weight. The checker requires that the combine rule of a written measurement property equals the aggregate that produced its value.
 
 *Example:* the calls per minute of two pods of `api` towards `db` are rolled up by `sum` into the calls of `api` towards `db`; both are `delta` with a period of one minute.
 
@@ -167,7 +167,7 @@ The theorem is proved below under KS. KS is a property of the program, not of th
 - `Distinct`, `Retain`: an output row is an input row. `Retain` drops a row without its time, a counted fault.
 - `Window`: adds `windowStart` and `windowEnd`, instants computed from the `ts` of the row.
 - `Group`, `Rollup`: a key is the value of its expression; an aggregate has the result kind of its signature (KS).
-- `Traverse`: adds a reached element, an integer depth, and read columns by E-Prop.
+- `Traverse`: adds a reached element and read columns by E-Prop. It adds no depth: which elements are reached is its whole answer.
 - `Series`: adds the two window bounds and one value per read property, of the declared kind (KS).
 - `Delta`: a difference of two values of one kind (KS). `Threshold`: the target is one of the two text literals `high` and `low`.
 - `Values`: rows of literals.
@@ -247,7 +247,7 @@ telemetry_filled("master", 30m, 5m, 0.0)
 | ... invoke hysteresis("on", "off", "off", "nodata")
 ```
 
-The look-back is `within`, the third argument is the time-to-live `ttl` after which a subject without a record is in no data, and the fourth gives a covered window without a record the constant `c`. A roll-up key is in no data when every member that has a record, stored, filled or marked no data, is in no data (Def. 7.16). The fourth argument of `hysteresis` is the value a `Threshold` gives such a key. The kernel has two variants that the text cannot write: a roll-up key that is in no data when one member is, and a `Threshold` that gives such a key no row. The checker refuses `fill` without `ttl`, `fill` on a gauge or a `cumulative` property, a `ttl` below one window width or above `within` less one window width, a `Threshold` over a series with `ttl` that has no `nodata` value, and a `nodata` value without a `ttl` upstream (Ch. 7, after Def. 7.16).
+The look-back is `within`, the third argument is the time-to-live `ttl` after which a subject without a record is in no data, and the fourth gives a covered window without a record the constant `c`. A roll-up key is in no data when every member that has a record, stored, filled or marked no data, is in no data (Def. 7.16). The fourth argument of `hysteresis` is the value a `Threshold` gives such a key. The kernel has one variant that the text cannot write, a `Threshold` that gives such a key no row. The checker refuses `fill` without `ttl`, `fill` on a gauge or a `cumulative` property, a `ttl` below one window width or above `within` less one window width, a `Threshold` over a series with `ttl` that has no `nodata` value, and a `nodata` value without a `ttl` upstream (Ch. 7, after Def. 7.16).
 
 ## 5.6 Concrete syntax
 
@@ -452,6 +452,7 @@ An earlier version of the prototype had a statement `lift` that was expanded int
 ## 5.9 What the prototype does differently
 
 - **Operators.** 17 of the 18 operator kinds are built. `Delta` is not, because no property in the definitions or the recordings is a running total. `Match` has no patterns of variable length. Recursion over rows is not expressible: reach over the relationships of a graph is a `Traverse` with its depth bounds (Ch. 6).
+- **KQL decides what the kernel has.** Parts of the kernel that no KQL text could write were removed rather than given a spelling of their own: the late policies `ignore` and `reject`, the aggregates `any` and `all`, a `last` without the row that orders it, a roll-up key in no data when one member is, the depth column of `Traverse`, a join condition that is not an equality between a left and a right column, and the order of two texts. A definition that still names one is refused by the checker or by the kernel's check of its values: a `last` without its row (`arg_max` always writes it), a join with another conjunct, `<` between two texts (Kusto refuses it before the engine sees the text), a `Rollup` with a property `nodata`. The four state digests of the recordings and fixtures did not change, since no projection wrote any of them. The kernel is smaller, and every part of it has a spelling in the text a person writes.
 - **Aggregates over measurements.** The prototype follows Def. 5.6 and refuses the other cases with a message. The text of a projection (5.6) writes `sum`, `min` and `max` over windows; `mean` over a `gauge` exists in the kernel and has no spelling in KQL.
 - **Retention** of evidence uses `Retain` with an age of 24 hours in the rules that write evidence. The age is a choice, not a result.
 - **Refactoring** (5.7) has no operation of its own and no test; the three refactorings are edits of the text, and their premises are not checked.

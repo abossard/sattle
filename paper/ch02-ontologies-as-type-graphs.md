@@ -126,13 +126,15 @@ A release that changes only descriptions is a patch release. A release with only
 - *composition*: one end is part of the other, or is carried by it;
 - *dependency*: the source needs the target to work, so a failure of the target reaches the source;
 - *support*: the source is a record about the target (a piece of evidence, a measurement) and not part of the system that is described.
-Separately, a relationship type may be declared a *hierarchy*: every element has at most one parent through it, so the relationships form a forest. A hierarchy is of kind composition, but a composition need not be a hierarchy. Nothing is inferred: a type that declares no kind has none.
-*Example:* "pod calls pod" is communication; "pod runs on node" is composition; "service A depends on service B" in a health model is dependency; "event concerns pod" is support.
+Separately, a relationship type may be declared a *hierarchy*: every element has at most one parent through it, so the relationships form a forest. A hierarchy is of kind composition, but a composition need not be a hierarchy. A relationship type may also be declared a *roll-up*: each of its edges restates what edges of other types already say, in the form a computation walks. A viewer can leave it out without losing anything, since the edges it restates are there, and can read along it why an element has the state it has. Nothing is inferred: a type that declares no kind has none, and a type that does not declare itself a roll-up is none, whatever its edges look like.
+*Example:* "pod calls pod" is communication; "pod runs on node" is composition; "service A depends on service B" in a health model is dependency; "event concerns pod" is support. In the workload model (Ch. 7, 7.4) `Contains` is a hierarchy of kind composition, and `Affects`, made from the containments and dependencies the health roll-up follows, is a roll-up of kind dependency:
+`relationship Contains (Workload | WorkloadService | WorkloadDeployment) -> (WorkloadService | WorkloadDeployment | WorkloadPod) hierarchy kind composition;`
+`relationship Affects (Component) -> (Component) rollup kind dependency;`
 
 **Definition 2.15 (label of an entity type).** An entity type may name one of its text properties as its *label*: the property that names an element of the type for a person. A subtype has its own label or that of its nearest supertype that declares one.
 *Example:* `name` is the label of `Pod`; for an event, its `reason` is a better label than its id.
 
-Value roles, kinds and labels are for people and for viewers. They are stored, written, digested and served like every definition, and nothing in the evaluation of a projection reads them (Proposition 2.7 for roles).
+Value roles, kinds, the two markers and labels are for people and for viewers. They are stored, written, digested and served like every definition, and nothing in the evaluation of a projection reads them (Proposition 2.7 for roles).
 
 ## 2.3 Theorems
 

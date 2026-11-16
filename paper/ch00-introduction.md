@@ -39,18 +39,21 @@ The model is a **graph**: a set of things, called *entities*, and directed links
 
 ```mermaid
 flowchart LR
-  S1["Azure<br/>resource lists"] --> R["typed rows"]
-  S2["Kubernetes<br/>pods, services"] --> R
-  S3["network observer<br/>who calls whom"] --> R
-  S4["measurements<br/>every minute"] --> R
+  S1["Azure<br/>resource lists"] --> V["envelopes<br/>recorded or live"]
+  S2["Kubernetes<br/>pods, services"] --> V
+  S3["network observer<br/>who calls whom"] --> V
+  S4["measurements<br/>every minute"] --> V
+  V -->|"adapters"| R["typed rows"]
   R --> M["master graph<br/>everything observed"]
   M --> P1["service level<br/>services and their<br/>dependencies"]
-  P1 --> P2["health model<br/>a few components,<br/>each with a state"]
+  M --> P2["workload model<br/>its parts, each with a state,<br/>and the part to blame"]
   classDef src fill:#4a3b6b,stroke:#c3b1e1,color:#ffffff
   classDef g fill:#1f4e79,stroke:#9cc3e6,color:#ffffff
   class S1,S2,S3,S4 src
-  class R,M,P1,P2 g
+  class V,R,M,P1,P2 g
 ```
+
+In the prototype the chain from input to screen has these names, the same in the paper, its glossary and the README files of the repository. A *source* emits native records; a forwarder that sends them to a stream, or a recording, wraps each in an *envelope*; an *adapter* turns envelopes into typed *rows*; *ontology modules* name the types and the identity domains that make one entity of what several sources report; *projections*, written as KQL text, compute the *graphs* of a *graph space* from the rows and from one another, working on the changes only; the *canvas* shows the graphs and follows a failure down to its *origin*, the part to blame (Ch. 7, 7.4). The same input gives the same graphs, however it is cut into batches.
 
 Seven terms carry the rest of the paper. Each has a number so that later chapters can point to it.
 
@@ -78,7 +81,7 @@ Seven terms carry the rest of the paper. Each has a number so that later chapter
 Four ideas follow from these terms. Each is the subject of later chapters.
 
 - **Observations are evidence, not facts.** Rules decide what the graph holds, and the graph remembers which observations support each element. When the support is withdrawn, the element goes (Ch. 9, 10).
-- **Levels of abstraction.** A projection that summarizes a graph is a higher level of it. It maps several nodes to one and lifts the edges with them: the dependency between two services is the lifted form of the calls between their pods (Ch. 5). The health model in the figure is such a level.
+- **Levels of abstraction.** A projection that summarizes a graph is a higher level of it. It maps several nodes to one and lifts the edges with them: the dependency between two services is the lifted form of the calls between their pods (Ch. 5). The service level and the workload model in the figure are such levels.
 - **Two planes.** Structure and measurements are kept apart. The value of a measurement reaches the structure only through one narrow door, a threshold with memory, so that a noisy number cannot make the graph flicker (Ch. 7). A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
 - **Definitions are data.** The types of entities, the rules for names and the projections are themselves graphs. Only a small fixed core is program code. A new kind of entity or a new view needs no new program (Ch. 2, 5).
 
