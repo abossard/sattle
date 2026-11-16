@@ -36,7 +36,7 @@ public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog
     public string ProjectionId { get; } = projectionId;
     public GraphKey Graph { get; } = graph;
     public OutputBuilder Out { get; } = output;
-    public long LateDropped, LateRejected, SkippedEmits;
+    public long LateDropped, SkippedEmits;
     /// <summary>The late horizon: how many widths after its end a closed window stays revisable. Null is no horizon: the window stays revisable while its telemetry is retained (a recording is finite, so a replay sets none).</summary>
     public long? LateHorizonFactor = 3;
     /// <summary>The retention of telemetry (Def. 7.13). A window is revisable for the smaller of this and the late horizon: a row for a window that is no longer kept must not write it again.</summary>
@@ -159,7 +159,7 @@ sealed class WindowOp : PhysOp
 
 // ---- aggregation -----------------------------------------------------------------------------------------
 
-/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns), for a key with more than one value of a `min` or `max` their extreme in the accumulator the aggregate has, and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max`, `last` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
+/// <summary>The state of a group operator (core step 3): one row of a `Table` per key, holding the key, the row count, one accumulator per sum, count or mean (a decimal in two 8-byte columns), for a key with more than one value of a `min` or `max` their extreme in the accumulator the aggregate has, and whether the key's aggregate was emitted. A slot is the row number. The values emitted last are not kept: an operator retracts a key's aggregate when it first touches the key in a step, before the step's rows change it. The multisets of `min`, `max` and `countDistinct` are tables of (slot, aggregate, value) with a weight, found through their arrangement by (slot, aggregate); a number is keyed by its value whatever its scale (2.5 and 2.50 are one entry, which keeps the digits it came with first).</summary>
 sealed class KeyTable
 {
     readonly int k, nL, nD, nIndex;
@@ -172,17 +172,15 @@ sealed class KeyTable
     readonly Table? longs;
     /// <summary>(slot, aggregate, value as a number, its digits): the values of a `min` or `max` over decimals.</summary>
     readonly Table? decimals;
-    /// <summary>(slot, aggregate, order and value as numbers, their digits): the rows of a `last`.</summary>
-    readonly Table? lasts;
-    /// <summary>The entries of one aggregate of one key's row, in each of the three tables.</summary>
-    readonly Arrangement? longsOf, decimalsOf, lastsOf;
+    /// <summary>The entries of one aggregate of one key's row, in each of the two tables.</summary>
+    readonly Arrangement? longsOf, decimalsOf;
     /// <summary>Per group of `last` aggregates that take their values from one row: (slot, order, the value of each member, which members have a value), then the digits of every number. One entry per distinct row of the group.</summary>
     readonly Table[] rowSets; readonly Arrangement[] rowSetsOf; readonly int[] rowMembers;
     /// <summary>Counts the changes of the row sets: what was read from one holds until the next change.</summary>
     public long RowChanges { get; private set; }
 
     /// <summary>`nIndex`: one more than the greatest index an aggregate's multiset is filed under.</summary>
-    public KeyTable(int k, int nL, int nD, int nIndex, bool longs, bool decimals, bool lasts, int[] rowMembers)
+    public KeyTable(int k, int nL, int nD, int nIndex, bool longs, bool decimals, int[] rowMembers)
     {
         this.rowMembers = rowMembers;
         rowSets = [.. rowMembers.Select(n => new Table([4, .. Enumerable.Repeat(8, 3 + 2 * n), .. Enumerable.Repeat(8, 2 + 2 * n)], keyColumns: 4 + 2 * n))];
@@ -193,7 +191,6 @@ sealed class KeyTable
         key = new long[k];
         if (longs) { this.longs = new Table([4, 4, 8], keyColumns: 3); longsOf = this.longs.Arrange(0, 1); }
         if (decimals) { this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4); decimalsOf = this.decimals.Arrange(0, 1); }
-        if (lasts) { this.lasts = new Table([4, 4, 8, 8, 8, 8, 8, 8, 8, 8], keyColumns: 6); lastsOf = this.lasts.Arrange(0, 1); }
     }
 
     public int Count => rows.Count;
@@ -278,17 +275,6 @@ sealed class KeyTable
         return n;
     }
     void SetD(int slot, int i, decimal v) { var (a, b) = Pack(v); rows.Set(slot, accD + 2 * i, a); rows.Set(slot, accD + 2 * i + 1, b); }
-    public void AddLast(int slot, int a, decimal ord, decimal val, long w)
-    {
-        var (o1, o2) = DecimalKey.Of(ord); var (v1, v2) = DecimalKey.Of(val);
-        var had = lasts!.Find([slot, a, o1, o2, v1, v2]) >= 0;
-        var row = lasts.Add([slot, a, o1, o2, v1, v2], w);
-        if (row >= 0 && !had)
-        {
-            var (p, q) = Pack(ord); var (x, y) = Pack(val);
-            lasts.Set(row, 6, p); lasts.Set(row, 7, q); lasts.Set(row, 8, x); lasts.Set(row, 9, y);
-        }
-    }
 
     /// <summary>The extreme of a `min` or `max` over integers; false when it has no value. One value is the extreme itself, of more the key's row holds it.</summary>
     public bool ExtremeL(int slot, int a, out long v)
@@ -325,15 +311,6 @@ sealed class KeyTable
     public bool RowHas(int set, int row, int member) => (rowSets[set].Get(row, 3 + 2 * rowMembers[set]) >> member & 1) != 0;
     public decimal RowValue(int set, int row, int member) { var n = rowMembers[set]; return Unpack(rowSets[set].Get(row, 6 + 2 * n + 2 * member), rowSets[set].Get(row, 7 + 2 * n + 2 * member)); }
 
-    /// <summary>The (order, value) rows of a `last`, in no particular order.</summary>
-    public List<(decimal Ord, decimal Val)> LastRows(int slot, int a)
-    {
-        var res = new List<(decimal, decimal)>();
-        for (var r = lastsOf!.First([slot, a]); r >= 0; r = lastsOf.Next(r))
-            res.Add((Unpack(lasts!.Get(r, 6), lasts!.Get(r, 7)), Unpack(lasts!.Get(r, 8), lasts!.Get(r, 9))));
-        return res;
-    }
-
     /// <summary>Whether a slot holds nothing: no rows, nothing emitted, every accumulator and multiset empty.</summary>
     bool Dead(int s)
     {
@@ -341,7 +318,7 @@ sealed class KeyTable
         for (var i = 0; i < nL; i++) if (L(s, i) != 0) return false;
         for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
         for (var a = 0; a < nIndex; a++)
-            if (longsOf?.First([s, a]) >= 0 || decimalsOf?.First([s, a]) >= 0 || lastsOf?.First([s, a]) >= 0) return false;
+            if (longsOf?.First([s, a]) >= 0 || decimalsOf?.First([s, a]) >= 0) return false;
         foreach (var of in rowSetsOf) if (of.First([s]) >= 0) return false;
         return true;
     }
@@ -350,10 +327,10 @@ sealed class KeyTable
     public void ReleaseIfDead(int slot) { if (Dead(slot)) rows.Add(KeyAt(slot), -1); }
 }
 
-enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, AnyAll, Last }
-sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bool Desc = false, int Index2 = -1, VExpr? Order = null, bool OutDec = false, bool All = false, bool ValueIsText = false, bool OrderIsText = false)
+enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, Last }
+sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bool Desc = false, int Index2 = -1, VExpr? Order = null, bool OutDec = false, bool ValueIsText = false)
 {
-    /// <summary>For a `last` that takes its value from one row with others: the row set, and its place among the members; -1 for any other aggregate.</summary>
+    /// <summary>For a `last`: the row set it takes its value from, and its place among the members; -1 for any other aggregate.</summary>
     public int RowSet { get; init; } = -1;
     public int Member { get; init; }
 }
@@ -361,7 +338,7 @@ sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bo
 /// <summary>Group (and the accumulation half of Rollup): per-key accumulators updated by signed weights (DBSP linear aggregates). Output is a retraction plus an insertion per touched key.</summary>
 abstract class AggregatingOp : PhysOp
 {
-    protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD, nLast; readonly bool hasLongs, hasDecimals; protected Column?[] orderCols = [];
+    protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD; readonly bool hasLongs, hasDecimals; protected Column?[] orderCols = [];
     protected readonly int[] outKeyCol, outAggCol;
     protected readonly long[] keyBuf;
     readonly Interner it;
@@ -369,24 +346,9 @@ abstract class AggregatingOp : PhysOp
     /// <summary>The key code of a cell: its 64-bit code, or the code of its number for a Decimal.</summary>
     protected long KeyCode(Column c, int row) => c.IsDec ? decimals.Code(c.D[row]) : c.L[row];
 
-    /// <summary>The winning (order, value) of a last aggregate: the greatest order, a tie goes to the greater value. Where the order or the value is text its code says nothing about its order, so those entries are compared by their text. Null when it has no rows.</summary>
-    (decimal Ord, decimal Val)? LastOf(KeyTable t, int slot, AggSpec s)
-    {
-        if (s.RowSet >= 0) return Winner(t, slot, s.RowSet) is >= 0 and var w && t.RowHas(s.RowSet, w, s.Member) ? (t.RowOrder(s.RowSet, w), t.RowValue(s.RowSet, w, s.Member)) : null;
-        var rows = t.LastRows(slot, s.Index2);
-        if (rows.Count == 0) return null;
-        var first = rows.Max();
-        if (!s.OrderIsText && !s.ValueIsText) return first;
-        int Text(decimal x, decimal y) => string.CompareOrdinal(it.Get((int)x), it.Get((int)y));
-        var best = first;
-        foreach (var k in rows)
-        {
-            if (!s.OrderIsText && k.Ord != first.Ord) continue;
-            var byOrder = s.OrderIsText ? Text(k.Ord, best.Ord) : 0;
-            if (byOrder > 0 || byOrder == 0 && (s.ValueIsText ? Text(k.Val, best.Val) : k.Val.CompareTo(best.Val)) > 0) best = k;
-        }
-        return best;
-    }
+    /// <summary>The (order, value) of a last aggregate: those of the row its row set takes. Null when that row has no value for it or the key has no row.</summary>
+    (decimal Ord, decimal Val)? LastOf(KeyTable t, int slot, AggSpec s) =>
+        Winner(t, slot, s.RowSet) is >= 0 and var w && t.RowHas(s.RowSet, w, s.Member) ? (t.RowOrder(s.RowSet, w), t.RowValue(s.RowSet, w, s.Member)) : null;
 
     /// <summary>The aggregates of each row set, in their order: the members whose values one row gives.</summary>
     readonly int[][] rowSets = [];
@@ -435,7 +397,7 @@ abstract class AggregatingOp : PhysOp
             }
         }
         keyExprs = [.. keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
-        var list = new List<AggSpec>(); int l = 0, d = 0, last = 0; var sets = new List<(string Mark, List<int> Members)>();
+        var list = new List<AggSpec>(); int l = 0, d = 0; var sets = new List<(string Mark, List<int> Members)>();
         foreach (var a in aggSpecs)
         {
             var v = a.Value is null ? null : ExprCompiler.Compile(a.Value, inLayout, cx.It, cx.Faults);
@@ -447,19 +409,14 @@ abstract class AggregatingOp : PhysOp
                 case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, d++, v, true)); break;
                 case "sum": list.Add(new AggSpec(AggKind.SumL, l++, v, false)); break;
                 case "mean": list.Add(new AggSpec(AggKind.Mean, d++, v, false, false, l++)); break;
-                case "any" or "all": list.Add(new AggSpec(AggKind.AnyAll, l++, v, false, false, l++, null, false, a.Fn == "all")); break;
                 case "last":
                     {
                         var order = ExprCompiler.Compile(a.Order!, inLayout, cx.It, cx.Faults);
-                        var spec = new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, a.Row is null ? last++ : -1, order, dec, false, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent, a.Order!.Type.Ty.Tag is Tag.Text or Tag.Ent);
-                        if (a.Row is { } mark)
-                        {
-                            var set = sets.FindIndex(x => x.Mark == mark);
-                            if (set < 0) { set = sets.Count; sets.Add((mark, [])); }
-                            spec = spec with { RowSet = set, Member = sets[set].Members.Count };
-                            sets[set].Members.Add(list.Count);
-                        }
-                        list.Add(spec); break;
+                        var set = sets.FindIndex(x => x.Mark == a.Row);
+                        if (set < 0) { set = sets.Count; sets.Add((a.Row!, [])); }
+                        list.Add(new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, -1, order, dec, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent) { RowSet = set, Member = sets[set].Members.Count });
+                        sets[set].Members.Add(list.Count - 1);
+                        break;
                     }
                 case "min" or "max" when dec: list.Add(new AggSpec(AggKind.ExtD, d++, v, true, a.Fn == "max")); hasDecimals = true; break;       // the accumulator holds the extreme of a key with more than one value
                 case "min" or "max": list.Add(new AggSpec(AggKind.ExtL, l++, v, false, a.Fn == "max")); hasLongs = true; break;
@@ -467,14 +424,14 @@ abstract class AggregatingOp : PhysOp
             }
         }
         _ = telemetryInput; it = cx.It;
-        aggs = [.. list]; nL = l; nD = d; nLast = last; rowSets = [.. sets.Select(x => x.Members.ToArray())];
+        aggs = [.. list]; nL = l; nD = d; rowSets = [.. sets.Select(x => x.Members.ToArray())];
         outKeyCol = [.. outKeyNames.Select(n => OutLayout.Index(n))];
         outAggCol = [.. aggSpecs.Select(a => OutLayout.Index(a.Target))];
         keyBuf = new long[keyExprs.Length + 1];
     }
 
     /// <summary>The state of a group operator with `k` key columns.</summary>
-    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(Math.Max(nL, nD), nLast), hasLongs, hasDecimals, nLast > 0, [.. rowSets.Select(m => m.Length)]);
+    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(nL, nD), hasLongs, hasDecimals, [.. rowSets.Select(m => m.Length)]);
 
     protected void Accumulate(KeyTable t, int slot, Batch b, Column?[] valueCols, int row, long w)
     {
@@ -509,34 +466,20 @@ abstract class AggregatingOp : PhysOp
                         t.AddL(slot, s.Index2, w);
                         break;
                     }
-                case AggKind.AnyAll:
-                    {
-                        var c = valueCols[a]!;
-                        if (c.P is not null && !c.P[row]) break;
-                        if (c.L[row] != 0) t.AddL(slot, s.Index, w);
-                        t.AddL(slot, s.Index2, w);
-                        break;
-                    }
                 case AggKind.Last:
                     {
-                        var c = valueCols[a]!; var o = orderCols[a]!;
-                        if (s.RowSet >= 0)
+                        // one entry per input row, added with the first member: the order and every member's value, absent ones marked
+                        var o = orderCols[a]!;
+                        if (s.Member != 0 || o.P is not null && !o.P[row]) break;
+                        var members = rowSets[s.RowSet];
+                        Span<decimal> values = stackalloc decimal[members.Length]; var has = 0L;
+                        for (var m = 0; m < members.Length; m++)
                         {
-                            // one entry per input row, added with the first member: the order and every member's value, absent ones marked
-                            if (s.Member != 0 || o.P is not null && !o.P[row]) break;
-                            var members = rowSets[s.RowSet];
-                            Span<decimal> values = stackalloc decimal[members.Length]; var has = 0L;
-                            for (var m = 0; m < members.Length; m++)
-                            {
-                                var mc = valueCols[members[m]]!;
-                                if (mc.P is not null && !mc.P[row]) continue;
-                                values[m] = mc.IsDec ? mc.D[row] : mc.L[row]; has |= 1L << m;
-                            }
-                            t.AddRow(slot, s.RowSet, o.IsDec ? o.D[row] : o.L[row], values, has, w);
-                            break;
+                            var mc = valueCols[members[m]]!;
+                            if (mc.P is not null && !mc.P[row]) continue;
+                            values[m] = mc.IsDec ? mc.D[row] : mc.L[row]; has |= 1L << m;
                         }
-                        if (c.P is not null && !c.P[row] || o.P is not null && !o.P[row]) break;
-                        t.AddLast(slot, s.Index2, o.IsDec ? o.D[row] : o.L[row], c.IsDec ? c.D[row] : c.L[row], w);
+                        t.AddRow(slot, s.RowSet, o.IsDec ? o.D[row] : o.L[row], values, has, w);
                         break;
                     }
                 case AggKind.Distinct:
@@ -557,7 +500,6 @@ abstract class AggregatingOp : PhysOp
         AggKind.Count or AggKind.SumL => t.L(slot, aggs[a].Index),
         AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Distinct => t.L(slot, aggs[a].Index2),
-        AggKind.AnyAll => aggs[a].All ? (t.L(slot, aggs[a].Index) == t.L(slot, aggs[a].Index2) ? 1 : 0) : (t.L(slot, aggs[a].Index) > 0 ? 1 : 0),
         AggKind.Last when !aggs[a].OutDec => LastOf(t, slot, aggs[a]) is { } l ? (long)l.Val : 0,
         _ => 0,
     };
@@ -574,7 +516,6 @@ abstract class AggregatingOp : PhysOp
         AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, out _),
         AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, out _),
         AggKind.Mean => t.L(slot, aggs[a].Index2) == 0,
-        AggKind.AnyAll => t.L(slot, aggs[a].Index2) == 0,
         AggKind.Last => LastOf(t, slot, aggs[a]) is null,
         _ => false,
     };
@@ -598,7 +539,7 @@ abstract class AggregatingOp : PhysOp
         for (var a = 0; a < aggs.Length; a++)
         {
             var col = bt.Cols[outAggCol[a]];
-            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.AnyAll or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
+            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
             if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
             else col.L[row] = AggL(t, slot, a);
         }
@@ -649,22 +590,22 @@ sealed class GroupOp : AggregatingOp
     }
 }
 
-/// <summary>Group over a Window whose key includes windowStart: windows close when the logical frontier passes windowEnd (research 03 section 10.1). Closed windows emit once; late rows follow the window's late policy.</summary>
+/// <summary>Group over a Window whose key includes windowStart: windows close when the logical frontier passes windowEnd (research 03 section 10.1). Closed windows emit once; a late row revises its closed window.</summary>
 sealed class WindowedGroupOp : AggregatingOp
 {
     sealed class W(KeyTable t, long end) { public KeyTable Table = t; public long End = end; public bool Closed; }
     readonly SortedDictionary<long, W> windows = [];
-    readonly long width; readonly string late; readonly int wsKey, outWs;
+    readonly long width; readonly int wsKey, outWs;
     readonly int[] keyOutNoWs;
     long frontier = long.MinValue;
     readonly int nKeys;
     readonly List<(W Win, long Ws)> revised = [];
     readonly string name;
 
-    public WindowedGroupOp(TGroup t, long width, string late, Layout inLayout, OpContext cx, bool withCompanions = false)
+    public WindowedGroupOp(TGroup t, long width, Layout inLayout, OpContext cx, bool withCompanions = false)
         : base(t, t.Keys.Where(k => !(k.Name == "windowStart")).ToList(), t.Aggs, inLayout, cx, [.. t.Keys.Where(k => k.Name != "windowStart").Select(k => k.Name)], false, withCompanions)
     {
-        this.width = width; this.late = late; name = t.Name;
+        this.width = width; name = t.Name;
         nKeys = keyExprs.Length;
         wsKey = inLayout.Index("windowStart");
         outWs = OutLayout.Index("windowStart");
@@ -692,15 +633,10 @@ sealed class WindowedGroupOp : AggregatingOp
                     if (!windows.TryGetValue(ws, out cur))
                     {
                         // beyond the allowed lateness the window's state is gone: a row for it is dropped, never a new window that would replace what was emitted
-                        if (cx.PastRevision(ws + width, width, frontier)) { if (late == "reject") cx.LateRejected++; else cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
+                        if (cx.PastRevision(ws + width, width, frontier)) { cx.LateDropped++; cur = null; curWs = long.MinValue; continue; }
                         cur = new W(NewTable(), ws + width); windows[ws] = cur; if (cur.End <= frontier) cur.Closed = true;
                     }
                     curWs = ws;
-                }
-                if (cur.Closed)
-                {
-                    if (late == "ignore") { cx.LateDropped++; continue; }
-                    if (late == "reject") { cx.LateRejected++; continue; }
                 }
                 var ok = true;
                 for (var i = 0; i < nKeys; i++) { if (keyCols[i].P is not null && !keyCols[i].P![row]) { ok = false; break; } keyBuf[i] = KeyCode(keyCols[i], row); }
@@ -758,14 +694,14 @@ sealed class RollupOp : AggregatingOp
     // ---- no data (Def. 7.16) ----
     /// <summary>Per key (without the window) of a roll-up over a Series with a time to live: the marker records of its members by window, per member the weight of its normal rows and of its marker records, and the window of the marker record the key has in the output. A member is a row of the input without its window and values (`TRollup.Members`).</summary>
     sealed class Silence { public long[] Key = []; public readonly SortedDictionary<long, long> Markers = []; public readonly Dictionary<string, (long Normal, long Marked)> Members = []; public long? Emitted; }
-    readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly bool any; readonly int[] memberCols = [];
+    readonly Dictionary<string, Silence>? silence; readonly int inNoData = -1, outNoData = -1; readonly int[] memberCols = [];
 
-    /// <summary>The key of a roll-up over a Series with a time to live is in no data iff every member that has a row has a marker record (`nodata any`: iff one has).</summary>
+    /// <summary>The key of a roll-up over a Series with a time to live is in no data iff every member that has a row has a marker record.</summary>
     public RollupOp(TRollup t, Layout inLayout, OpContext cx, bool withCompanions = false) : base(t, t.Keys, t.Aggs, inLayout, cx, [.. t.Keys.Select(k => k.Name)], true, withCompanions)
     {
         table = NewKeyTable(keyExprs.Length + 1);
         inWs = inLayout.Index("windowStart"); outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd"); period = t.PeriodNs;
-        if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); any = t.NoDataAny; memberCols = [.. t.Members!.Select(inLayout.Index)]; }
+        if (t.NoData) { silence = []; inNoData = inLayout.Index(TThreshold.NoDataColumn); outNoData = OutLayout.Index(TThreshold.NoDataColumn); memberCols = [.. t.Members!.Select(inLayout.Index)]; }
     }
 
     string Member(Batch b, int row) => string.Join(',', memberCols.Select(c => !b.Cols[c].Present(row) ? "" : b.Cols[c].IsDec ? "d" + decimals.Code(b.Cols[c].D[row]) : b.Cols[c].L[row].ToString(System.Globalization.CultureInfo.InvariantCulture)));
@@ -822,7 +758,7 @@ sealed class RollupOp : AggregatingOp
             foreach (var s in quiet.Distinct())
             {
                 var marked = s.Markers.Where(m => m.Value > 0).Select(m => (long?)m.Key).LastOrDefault();
-                var reporting = !any && s.Members.Values.Any(m => m.Normal > 0 && m.Marked <= 0);       // a member with rows that is not in no data
+                var reporting = s.Members.Values.Any(m => m.Normal > 0 && m.Marked <= 0);       // a member with rows that is not in no data
                 var want = marked is not null && !reporting ? marked : null;
                 if (want != s.Emitted)
                 {
@@ -1078,7 +1014,7 @@ sealed class DistinctOp : PhysOp
 
 // ---- join ------------------------------------------------------------------------------------------------
 
-/// <summary>Equi-join of two data inputs. Each side keeps its rows (with signed multiplicity) in a hash index on the join keys. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join. A residual predicate filters the joined rows.</summary>
+/// <summary>Equi-join of two data inputs. Each side keeps its rows (with signed multiplicity) in a hash index on the join keys. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join.</summary>
 sealed class JoinOp : PhysOp
 {
     readonly struct Cell(bool present, long l, decimal d) { public readonly bool Present = present; public readonly long L = l; public readonly decimal D = d; }
@@ -1095,14 +1031,13 @@ sealed class JoinOp : PhysOp
         public readonly Layout Layout = layout; public readonly VExpr[] Keys = keys; public readonly bool[] KeyDec = keyDec;
         public readonly Dictionary<Key, Dictionary<Key, Entry>> Index = [];
     }
-    readonly Side left, right; readonly VExpr? residual;
+    readonly Side left, right;
 
     public JoinOp(TJoin t, Layout lL, Layout rL, OpContext cx) : base(t)
     {
         VExpr[] C(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => ExprCompiler.Compile(e, l, cx.It, cx.Faults))];
         left = new Side(lL, C(t.Keys.Select(k => k.Left), lL), [.. t.Keys.Select(k => k.Left.Type.Ty.Tag == Tag.Decimal)]);
         right = new Side(rL, C(t.Keys.Select(k => k.Right), rL), [.. t.Keys.Select(k => k.Right.Type.Ty.Tag == Tag.Decimal)]);
-        residual = t.Residual is null ? null : ExprCompiler.Compile(t.Residual, OutLayout, cx.It, cx.Faults);
     }
 
     static Key? KeyOf(Side s, Column[] cols, int row)
@@ -1176,17 +1111,13 @@ sealed class JoinOp : PhysOp
         var bb = new BatchBuilder(OutLayout);
         Half(In(inputs, "left"), left, right, true, bb);
         Half(In(inputs, "right"), right, left, false, bb);
-        var res = bb.Build();
-        if (res is null || residual is null) return res;
-        var keep = residual.Eval(res); var sel = new int[res.N]; var n = 0;
-        for (var i = 0; i < res.N; i++) if (keep.Present(i) && keep.L[i] != 0) sel[n++] = i;
-        return n == 0 ? null : res.WithSelection(sel, n);
+        return bb.Build();
     }
 }
 
 // ---- traversal -------------------------------------------------------------------------------------------
 
-/// <summary>Bounded traversal: for every input row, the elements reachable from its start element over one relationship type, with the shortest depth. Input rows are kept per start element together with the reach last emitted for it. A row delta is joined with the old reach; a start is recomputed when a visited element or edge appears in the graph patch, and the difference between old and new reach is emitted once per row. Reached elements that are not in the graph are skipped (they appear when the entity does).</summary>
+/// <summary>Bounded traversal: for every input row, the elements reachable from its start element over one relationship type. Input rows are kept per start element together with the reach last emitted for it. A row delta is joined with the old reach; a start is recomputed when a visited element or edge appears in the graph patch, and the difference between old and new reach is emitted once per row. Reached elements that are not in the graph are skipped (they appear when the entity does).</summary>
 sealed class TraverseOp : PhysOp
 {
     readonly struct Cell(bool present, long l, decimal d) { public readonly bool Present = present; public readonly long L = l; public readonly decimal D = d; }
@@ -1198,10 +1129,10 @@ sealed class TraverseOp : PhysOp
         public override bool Equals(object? o) => o is RowKey k && Equals(k);
         public override int GetHashCode() { var h = new HashCode(); foreach (var x in v) h.Add(x); return h.ToHashCode(); }
     }
-    sealed class Reach { public List<(Entity E, int Depth)> Items = []; public HashSet<string> Touched = []; public string Signature = ""; }
+    sealed class Reach { public List<Entity> Items = []; public HashSet<string> Touched = []; public string Signature = ""; }
 
     readonly TTraverse t; readonly Interner it; readonly OntologyView view;
-    readonly int inN, startCol, reachedCol, depthCol;
+    readonly int inN, startCol, reachedCol;
     readonly (string PropId, int OutCol)[] reads;
     readonly Dictionary<long, Dictionary<RowKey, Row>> rows = [];
     readonly Dictionary<long, Reach> reach = [];
@@ -1210,7 +1141,7 @@ sealed class TraverseOp : PhysOp
     public TraverseOp(TTraverse t, Layout inL, OntologyView view, Interner it) : base(t)
     {
         this.t = t; this.it = it; this.view = view;
-        inN = inL.Count; startCol = inL.Index(t.Start); reachedCol = OutLayout.Index(t.Target); depthCol = OutLayout.Index(t.Target + "_depth");
+        inN = inL.Count; startCol = inL.Index(t.Start); reachedCol = OutLayout.Index(t.Target);
         reads = [.. t.Reads.Select(r => (r.PropId, OutLayout.Index(r.Col)))];
     }
 
@@ -1240,7 +1171,7 @@ sealed class TraverseOp : PhysOp
         for (var depth = 0; ; depth++)
         {
             foreach (var id in frontier.Order(StringComparer.Ordinal))
-                if (depth >= t.Min && g.Entity(id) is { } e) res.Items.Add((e, depth));
+                if (depth >= t.Min && g.Entity(id) is { } e) res.Items.Add(e);
             if (depth == t.Max) { foreach (var id in frontier) res.Touched.Add(id); break; }      // an entity that appears or changes at the last depth changes the reach
             var next = new List<string>();
             foreach (var id in frontier)
@@ -1254,11 +1185,11 @@ sealed class TraverseOp : PhysOp
             if (next.Count == 0) break;
             frontier = next;
         }
-        res.Signature = string.Join(";", res.Items.Select(x => x.E.Id + "@" + x.Depth + ":" + string.Join(",", reads.Select(r => x.E.Props.Get(r.PropId)?.ToString() ?? "-"))));
+        res.Signature = string.Join(";", res.Items.Select(x => x.Id + ":" + string.Join(",", reads.Select(r => x.Props.Get(r.PropId)?.ToString() ?? "-"))));
         return res;
     }
 
-    void Emit(BatchBuilder bb, Cell[] cells, (Entity E, int Depth) item, long weight)
+    void Emit(BatchBuilder bb, Cell[] cells, Entity item, long weight)
     {
         var row = bb.Add(weight); var b = bb.Batch;
         for (var c = 0; c < inN; c++)
@@ -1267,11 +1198,11 @@ sealed class TraverseOp : PhysOp
             if (!cells[c].Present) { bb.Absent(row, c); continue; }
             if (dst.IsDec) dst.D[row] = cells[c].D; else dst.L[row] = cells[c].L;
         }
-        b.Cols[reachedCol].L[row] = it.Intern(item.E.Id); b.Cols[depthCol].L[row] = item.Depth;
+        b.Cols[reachedCol].L[row] = it.Intern(item.Id);
         foreach (var (propId, outCol) in reads)
         {
             var col = b.Cols[outCol];
-            if (item.E.Props.TryGet(propId, out var v) && v is not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
+            if (item.Props.TryGet(propId, out var v) && v is not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
             else col.SetAbsent(row, b.N);
         }
     }

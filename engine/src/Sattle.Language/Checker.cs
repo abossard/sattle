@@ -257,7 +257,7 @@ public sealed class ProjectionChecker(Graph defs)
                     if (w <= 0) { Err("Window", op, "window width must be positive"); return null; }
                     if (R.Has("windowStart") || R.Has("windowEnd")) { Err("Window", op, "windowStart or windowEnd already exists"); return null; }
                     var inst = new FType(Ty.Instant, true, Role.Data);
-                    return new TWindow(name, op, inputs, R.With([new Col("windowStart", inst), new Col("windowEnd", inst)], w), ts, w, d.Text(op, "late") ?? "revise");
+                    return new TWindow(name, op, inputs, R.With([new Col("windowStart", inst), new Col("windowEnd", inst)], w), ts, w);
                 }
             case "Group":
                 {
@@ -327,10 +327,8 @@ public sealed class ProjectionChecker(Graph defs)
                     var inst = new FType(Ty.Instant, true, Role.Data);
                     var cols = kcols.Concat(carry).Concat([new Col("windowStart", inst), new Col("windowEnd", inst)]).Concat(aggs.Select(a => new Col(a.Target, a.Out))).ToList();
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
-                    var any = d.Text(op, "nodata") == "any";
-                    if (any && !marked) Err("Rollup", op, "a roll-up that gives no data when one member has none needs telemetry with a time to live (telemetry_filled) upstream");
                     if (marked) cols.Add(new Col(TThreshold.NoDataColumn, R.Find(TThreshold.NoDataColumn)!.T));
-                    return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, any, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
+                    return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
                 }
             case "Threshold":
                 {
@@ -397,11 +395,11 @@ public sealed class ProjectionChecker(Graph defs)
         var start = d.Text(op, "start") ?? ""; var target = d.Text(op, "target") ?? "";
         var sc = R.Find(start);
         if (sc is null || sc.T.Ty.Tag != Tag.Ent || sc.T.Ty.TypeId is null || sc.Origin is null) { Err("Traverse", op, $"traverse start '{start}' must be an element column of the input"); return null; }
-        if (target.Length == 0 || R.Has(target) || R.Has(target + "_depth")) { Err("Traverse", op, $"traverse output name '{target}' is empty or already a column"); return null; }
+        if (target.Length == 0 || R.Has(target)) { Err("Traverse", op, $"traverse output name '{target}' is empty or already a column"); return null; }
         var ends = dir switch { "out" => ti.Targets, "in" => ti.Sources, _ => ti.Targets.Union(ti.Sources).ToHashSet() };
         if (ends.Count != 1) { Err("Traverse", op, $"traverse over {ti.Name} {dir} reaches {(ends.Count == 0 ? "any type" : "several types")}; the reached type must be one entity type"); return null; }
         var reached = ends.First();
-        var cols = new List<Col>(R.Cols) { new(target, new FType(Ty.Ent(reached), true, Role.Data), name + ":" + target), new(target + "_depth", new FType(Ty.Int(), true, Role.Data)) };
+        var cols = new List<Col>(R.Cols) { new(target, new FType(Ty.Ent(reached), true, Role.Data), name + ":" + target) };
         var reads = new List<TRead>();
         foreach (var dem in demands.Where(x => x.StartsWith(name + "|", StringComparison.Ordinal)).OrderBy(x => x, StringComparer.Ordinal))
         {
@@ -427,7 +425,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (on is null) return null;
         if (on.Type.Ty.Tag != Tag.Boolean || !on.Type.Role.IsData) { Err("Join", op, $"join condition must be a Boolean, found {on.Type}"); return null; }
         var left = new HashSet<string>(l.Cols.Select(c => c.Name)); var right = new HashSet<string>(r.Cols.Select(c => c.Name));
-        var pairs = new List<(TExpr, TExpr)>(); var rest = new List<TExpr>();
+        var pairs = new List<(TExpr, TExpr)>();
         void Conj(TExpr x)
         {
             if (x is TCall { Fn: "And" } a) { foreach (var s in a.Args) Conj(s); return; }
@@ -441,12 +439,11 @@ public sealed class ProjectionChecker(Graph defs)
                     if (fq.IsSubsetOf(left) && fp.IsSubsetOf(right)) { pairs.Add((q, p)); return; }
                 }
             }
-            rest.Add(x);
+            Err("Join", op, "a join condition is equalities between a left and a right expression, joined by and; filter the joined rows with where");
         }
         Conj(on);
         if (pairs.Count == 0) { Err("Join", op, "join needs at least one equality between a left and a right expression (a cross product is not built)"); return null; }
-        TExpr? residual = rest.Count == 0 ? null : rest.Count == 1 ? rest[0] : new TCall("And", rest, on.Type);
-        return new TJoin(name, op, inputs, new Schema([.. l.Cols, .. r.Cols]), pairs, residual);
+        return new TJoin(name, op, inputs, new Schema([.. l.Cols, .. r.Cols]), pairs);
     }
 
     string Child(string parent, string slot) => d.Children(parent, slot).FirstOrDefault() ?? "";
@@ -502,16 +499,16 @@ public sealed class ProjectionChecker(Graph defs)
                         case "countDistinct": ft = new FType(Ty.Int(), true, Role.Data); break;
                         case "sum": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "sum needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
                         case "mean": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "mean needs a numeric argument"); else ft = new FType(Ty.Dec(), false, Role.Data); break;
-                        case "any" or "all": if (v.Type.Ty.Tag != Tag.Boolean) Err("Aggregate", a, $"{fn} needs a Boolean argument"); else ft = new FType(Ty.Boolean, false, Role.Data); break;
                         case "last":
-                            if (w is null) Err("Aggregate", a, "last needs an ordering: last(value, order)");
+                            if (row is null) Err("Unsupported", a, "last needs a row mark: the last aggregates of one row take their values from it (KQL writes them with arg_max)");
+                            else if (w is null) Err("Aggregate", a, "last needs an ordering: last(value, order)");
                             else if (!w.Type.Role.IsData || w.Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant)) Err("Aggregate", a, $"the ordering of last must be a data Integer, Decimal or Instant, found {w.Type}");
                             else if (v.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) Err("Aggregate", a, "last takes a value column, not an element");
-                            else if (row is not null && res.FirstOrDefault(x => x.Row == row) is { } first && !SameExpr(first.Order!, w)) Err("Aggregate", a, $"the last aggregates of row {row} take one row, so they have one ordering: {target} orders by another than {first.Target}");
+                            else if (res.FirstOrDefault(x => x.Row == row) is { } first && !SameExpr(first.Order!, w)) Err("Aggregate", a, $"the last aggregates of row {row} take one row, so they have one ordering: {target} orders by another than {first.Target}");
                             else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data);
                             break;
                         case "min" or "max": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, $"{fn} needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
-                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, any, all, last)"); break;
+                        default: Err("Unsupported", a, $"aggregate {fn} is not supported in this engine slice (count, countDistinct, sum, min, max, mean, last)"); break;
                     }
             }
             else
@@ -1047,7 +1044,7 @@ public sealed class ProjectionChecker(Graph defs)
                 return new TCall(fn, args, Bool(true, role));
             case "LessThan" or "LessOrEqual" or "GreaterThan" or "GreaterOrEqual":
                 if (!Arity(2, 2)) break;
-                if (args[0].Type.Ty != args[1].Type.Ty || args[0].Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant or Tag.Text)) { Err("E-Call", node, $"{fn} needs two ordered operands of one kind and unit, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
+                if (args[0].Type.Ty != args[1].Type.Ty || args[0].Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant)) { Err("E-Call", node, $"{fn} needs two ordered operands of one kind and unit, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
                 role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }
                 return new TCall(fn, args, Bool(true, role));
             case "And" or "Or":

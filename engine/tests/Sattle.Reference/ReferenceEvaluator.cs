@@ -210,13 +210,12 @@ public static class ReferenceEvaluator
         return null;
     }
 
-    /// <summary>Premise B2 and Def. 7.6: a row counts for its window unless the window was closed at the row's position and the policy does not revise, or the window was beyond the late horizon.</summary>
+    /// <summary>Premise B2 and Def. 7.6: a row counts for its window unless the window was beyond the late horizon; a row for a closed window revises it.</summary>
     static bool OnTime(TWindow w, Settings s, long windowStart, long? frontierAtPosition)
     {
         if (frontierAtPosition is not { } frontier) return true;
         var end = windowStart + w.WidthNs;
-        var closed = end <= frontier;
         var beyondHorizon = end + System.Int128.Min(s.Horizon(w.WidthNs), s.TelemetryRetentionNs) <= frontier;      // revisable for the smaller of the late horizon and the retention (Def. 7.13)
-        return !beyondHorizon && (!closed || w.Late == "revise");
+        return !beyondHorizon;
     }
 }

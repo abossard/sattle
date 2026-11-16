@@ -88,7 +88,7 @@ public sealed record TMatch(string Name, string Id, IReadOnlyDictionary<string, 
         Nodes.Where(n => Edges.Any(e => e.From == n.Var || e.To == n.Var) && !held.Any(t => isSubtype(t, n.TypeId))).Select(n => n.Var).ToHashSet(StringComparer.Ordinal);
 }
 public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Union", Inputs, Out);
-public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys, TExpr? Residual) : TOp(Name, Id, "Join", Inputs, Out);
+public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys) : TOp(Name, Id, "Join", Inputs, Out);
 public sealed record TTraverse(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, string RelTypeId, string Direction, long Min, long Max, string Start, string Target, IReadOnlyList<TRead> Reads) : TOp(Name, Id, "Traverse", Inputs, Out);
 public sealed record TValues(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<Value[]> Rows) : TOp(Name, Id, "Values", Inputs, Out);
 public sealed record TDistinct(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Distinct", Inputs, Out);
@@ -97,14 +97,14 @@ public sealed record TMap(string Name, string Id, IReadOnlyDictionary<string, Sr
 public sealed record TGroup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, bool ClosesWindows)
     : TOp(Name, Id, "Group", Inputs, Out);
 public sealed record TRetain(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long AgeNs) : TOp(Name, Id, "Retain", Inputs, Out);
-public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, string Late) : TOp(Name, Id, "Window", Inputs, Out);
+public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs) : TOp(Name, Id, "Window", Inputs, Out);
 /// <summary>`Fill`: the value a covered window without a stored record has (Def. 7.15), or null.</summary>
 public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
 /// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>
 public sealed record TSeries(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, IReadOnlyList<TSeriesRead> Reads, long WithinNs, long PeriodNs, string TargetVar, long? TtlNs = null)
     : TOp(Name, Id, "Series", Inputs, Out);
-/// <summary>`Members`: the columns of the input that tell the members of a key apart (its graph data columns, without the window). `NoData`: the input carries the `noData` column of a Series with a time to live; the roll-up leaves the records of members in no data out and marks a key whose members are all in no data (`NoDataAny`: one member suffices).</summary>
-public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs, bool NoData = false, bool NoDataAny = false, IReadOnlyList<string>? Members = null)
+/// <summary>`Members`: the columns of the input that tell the members of a key apart (its graph data columns, without the window). `NoData`: the input carries the `noData` column of a Series with a time to live; the roll-up leaves the records of members in no data out and marks a key whose members are all in no data.</summary>
+public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, long PeriodNs, bool NoData = false, IReadOnlyList<string>? Members = null)
     : TOp(Name, Id, "Rollup", Inputs, Out);
 public sealed record TThreshold(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Value, IReadOnlyList<(string Name, TExpr Value)> Keys, string Target,
     decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial,

@@ -75,7 +75,7 @@ public static class PlanCompiler
         }
     }
 
-    /// <summary>The Window whose windows a Group closes: the nearest one upstream of it (two windows of one width may have different late policies).</summary>
+    /// <summary>The Window whose windows a Group closes: the nearest one upstream of it.</summary>
     static TWindow WindowOf(TypedProjection tp, TOp op)
     {
         for (var cur = op; cur.Inputs.TryGetValue("in", out var src) && !src.IsPort;)
@@ -159,8 +159,8 @@ public static class PlanCompiler
                 case TGroup g when g.ClosesWindows:
                     {
                         var win = WindowOf(tp, g);
-                        op = new WindowedGroupOp(g, win.WidthNs, win.Late, inL, cx, withCompanions);
-                        strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, late policy {win.Late}");
+                        op = new WindowedGroupOp(g, win.WidthNs, inL, cx, withCompanions);
+                        strategies.Add($"{g.Name}: Group over windows, per-window hash accumulators, windows close on the logical frontier, a late row revises its window");
                         break;
                     }
                 case TGroup g: op = new GroupOp(g, inL, cx, from?.Cols, withCompanions); strategies.Add($"{g.Name}: Group, per-key accumulators updated by signed weights"); break;

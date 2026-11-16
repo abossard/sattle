@@ -84,20 +84,20 @@ public static class Denotation
         return new Relation(Names(m), ZSet.Of(rows));
     }
 
-    /// <summary>Bounded reach over the relationship facts of one type from the start element of each row: every element whose shortest distance d has min ≤ d ≤ max, with d. A reached id without an entity in the graph is passed through and not emitted.</summary>
+    /// <summary>Bounded reach over the relationship facts of one type from the start element of each row: every element whose shortest distance d has min ≤ d ≤ max. A reached id without an entity in the graph is passed through and not emitted.</summary>
     static Relation Traverse(TTraverse t, Relation rows, GraphFacts g, Func<string, string, bool> sub)
     {
         IEnumerable<string> Next(string id) =>
             g.Rels.Values.Where(r => sub(r.Type, t.RelTypeId)).SelectMany(r =>
                 (t.Direction is "out" or "either" && r.Source == id ? new[] { r.Target } : []).Concat(t.Direction is "in" or "either" && r.Target == id ? [r.Source] : []));
 
-        IEnumerable<(string Id, long Depth)> Reach(string start)
+        IEnumerable<string> Reach(string start)
         {
             var seen = ImmutableSortedSet.Create(StringComparer.Ordinal, start);
             var level = seen;
             for (long d = 0; d <= t.Max && level.Count > 0; d++)
             {
-                if (d >= t.Min) foreach (var id in level) yield return (id, d);
+                if (d >= t.Min) foreach (var id in level) yield return id;
                 var next = level.SelectMany(Next).Where(id => !seen.Contains(id)).ToImmutableSortedSet(StringComparer.Ordinal);
                 seen = seen.Union(next); level = next;
             }
@@ -108,10 +108,10 @@ public static class Denotation
             let start = rows.Reader(r.Row)(t.Start)
             where start is EntityValue
             from reached in Reach(((EntityValue)start).Id)
-            where g.Entities.ContainsKey(reached.Id)
+            where g.Entities.ContainsKey(reached)
             let named = Named(rows, r.Row)
-            select (Shape(t, With(named, [(t.Target, Value.Entity(reached.Id)), (t.Target + "_depth", Value.Integer(reached.Depth)),
-                .. t.Reads.Select(x => (x.Col, g.Entities[reached.Id].Props.TryGetValue(x.PropId, out var v) ? v : Value.Null))])), r.Weight);
+            select (Shape(t, With(named, [(t.Target, Value.Entity(reached)),
+                .. t.Reads.Select(x => (x.Col, g.Entities[reached].Props.TryGetValue(x.PropId, out var v) ? v : Value.Null))])), r.Weight);
         return new Relation(Names(t), ZSet.Of(result));
     }
 
@@ -164,7 +164,6 @@ public static class Denotation
             from r in right.Rows
             where Key(j.Keys.Select(k => k.Right), right.Reader(r.Row)) == lk
             let row = l.Row.AddRange(r.Row)
-            where j.Residual is null || True(Expressions.Eval(j.Residual, name => row[names.IndexOf(name)]))
             select (row, l.Weight * r.Weight);
         return new Relation(names, ZSet.Of(pairs));
     }
@@ -175,7 +174,7 @@ public static class Denotation
     static IReadOnlyList<(string Name, TExpr Value)> WithWindow(IReadOnlyList<(string Name, TExpr Value)> keys) => [.. keys, ("windowStart", new TField("windowStart", new FType(Ty.Instant, true, Role.Data)))];
 
     /// <summary>
-    /// Def. 7.16 for a roll-up: the records of members in no data are not aggregated, and a key is in no data iff every member that has a row is (`nodata any`: one of them).
+    /// Def. 7.16 for a roll-up: the records of members in no data are not aggregated, and a key is in no data iff every member that has a row is.
     /// A member is a row of the input without its window and values. The key in no data has one record, at the window of the markers, without values.
     /// </summary>
     static Relation RollupWithNoData(TRollup r, Relation rows)
@@ -190,7 +189,7 @@ public static class Denotation
             let markers = g.Where(x => Marked(x.Row)).ToList()
             let all = g.Select(x => Member(x.Row)).Distinct(StringComparer.Ordinal).Count()
             let marked = markers.Select(x => Member(x.Row)).Distinct(StringComparer.Ordinal).Count()
-            where marked > 0 && (r.NoDataAny || marked == all)
+            where marked > 0 && marked == all
             let read = rows.Reader(markers[0].Row)
             let start = Instant(read("windowStart"))
             select Shape(r, r.Keys.Select(k => (k.Name, Expressions.Eval(k.Value, read))).Concat(r.Aggs.Select(a => (a.Target, Value.Null)))
@@ -216,16 +215,10 @@ public static class Denotation
             yield return (a.Target + "#sum", n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value))));
             yield return (a.Target + "#count", n == 0 ? Value.Null : Value.Integer(n));
         }
-        else if (PairNames(a).Length > 0 && a.Row is not null)
-        {
-            var row = RowOf(a.Row, aggs, rows);
-            yield return (a.Target + "#order", row is null || Expressions.Eval(a.Value!, row) is NullValue ? Value.Null : Value.Decimal(Number(Expressions.Eval(a.Order!, row))));
-        }
         else if (PairNames(a).Length > 0)
         {
-            var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Order!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
-                .GroupBy(r => Canon.Of([r.Order, r.Value])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
-            yield return (a.Target + "#order", ordered.Length == 0 ? Value.Null : Value.Decimal(Number(ordered.Aggregate((x, y) => Canon.Compare(y.Order, x.Order) is var c && (c > 0 || c == 0 && Canon.Compare(y.Value, x.Value) > 0) ? y : x).Order)));
+            var row = RowOf(a.Row!, aggs, rows);
+            yield return (a.Target + "#order", row is null || Expressions.Eval(a.Value!, row) is NullValue ? Value.Null : Value.Decimal(Number(Expressions.Eval(a.Order!, row))));
         }
     }
 
@@ -284,25 +277,11 @@ public static class Denotation
                     var n = valued.Sum(r => r.Weight);
                     return n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value)) / n);
                 }
-            case "any" or "all":
-                {
-                    long present = valued.Sum(r => r.Weight), holds = valued.Where(r => True(r.Value)).Sum(r => r.Weight);
-                    return present == 0 ? Value.Null : Value.Boolean(a.Fn == "any" ? holds > 0 : holds == present);
-                }
-            case "last" when a.Row is not null:
-                {
-                    // the value of the one row the mark's aggregates share
-                    var value = RowOf(a.Row, aggs!, rows) is { } row ? Expressions.Eval(a.Value!, row) : Value.Null;
-                    return value is NullValue || !decimalOut ? value : Value.Decimal(Canon.Number(value));
-                }
             case "last":
                 {
-                    // the value with the greatest order; among equal orders the greatest value
-                    var ordered = valued.Select(r => (r.Value, Order: Expressions.Eval(a.Order!, r.Read), r.Weight)).Where(r => r.Order is not NullValue)
-                        .GroupBy(r => Canon.Of([r.Order, r.Value])).Where(g => g.Sum(r => r.Weight) > 0).Select(g => g.First()).ToArray();
-                    if (ordered.Length == 0) return Value.Null;
-                    var best = ordered.Aggregate((x, y) => Canon.Compare(y.Order, x.Order) is var c && (c > 0 || c == 0 && Canon.Compare(y.Value, x.Value) > 0) ? y : x);
-                    return decimalOut ? Value.Decimal(Canon.Number(best.Value)) : best.Value;
+                    // the value of the one row the mark's aggregates share
+                    var value = RowOf(a.Row!, aggs!, rows) is { } row ? Expressions.Eval(a.Value!, row) : Value.Null;
+                    return value is NullValue || !decimalOut ? value : Value.Decimal(Canon.Number(value));
                 }
             default: throw new Undefined($"aggregate {a.Fn}");
         }

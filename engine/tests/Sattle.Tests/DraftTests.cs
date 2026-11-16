@@ -65,7 +65,7 @@ public class DraftTests
         Assert.Equal(18, ops.Count);
         var window = ops.First(o => o!["kind"]!.GetValue<string>() == "Window")!;
         Assert.Equal(["in", "out"], window["ports"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
-        Assert.Equal(["ignore", "revise", "reject"], window["params"]!.AsArray().First(x => x!["name"]!.GetValue<string>() == "late")!["values"]!.AsArray().Select(x => x!.GetValue<string>()));
+        Assert.Equal(["revise"], window["params"]!.AsArray().First(x => x!["name"]!.GetValue<string>() == "late")!["values"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.True(window["supported"]!.GetValue<bool>());
         Assert.True(ops.First(o => o!["kind"]!.GetValue<string>() == "Values")!["supported"]!.GetValue<bool>());
         Assert.False(ops.First(o => o!["kind"]!.GetValue<string>() == "Delta")!["supported"]!.GetValue<bool>());

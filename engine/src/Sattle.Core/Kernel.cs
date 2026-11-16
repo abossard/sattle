@@ -87,7 +87,7 @@ public static class KernelTable
         T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I late:T"), T("Retain : Operator | timestampField:T age:I"),
         T("Values : Operator |"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
-        T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator | nodata:T?"), T("Delta : Operator | target:T"),
+        T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
         T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B?"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
@@ -154,11 +154,11 @@ public static class KernelTable
         ("Rule", "onDelete", ["remove", "set"]),
         ("ValueRole", "role", ["ok", "warning", "danger", "unknown", "neutral"]),
         ("Traverse", "direction", ["out", "in", "either"]),
-        ("Window", "late", ["ignore", "revise", "reject"]),
+        ("Window", "late", ["revise"]),
         ("EmitEntity", "mode", ["create", "update"]),
         ("EmitRelationship", "mode", ["create", "update"]),
         ("EmitRelationship", "retype", ["reject", "keepExisting", "takeNew"]),
-        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "any", "all", "mean", "last"]),
+        ("Aggregate", "fn", ["count", "countDistinct", "sum", "min", "max", "mean", "last"]),
         ("PatternNode", "side", ["source", "target"]),
         ("PatternEdge", "side", ["source", "target"]),
         ("Function", "role", ["scalar", "canonicalizer"]),
@@ -344,5 +344,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:dde19e7f32847164dbf4b78e5d0b53987ca35552b566c1c96377fdfd29792cb2";
+    public const string CompiledDigest = "sha256:5c78260a657ccdca585e901a211e47b1bd902bda6f5976449d3f9e73b98aa0de";
 }

@@ -191,7 +191,7 @@ Design stance: a **redux style** client. The server owns the committed state and
       "ports": [ { "name": "in", "direction": "in", "kind": "rows" }, { "name": "out", "direction": "out", "kind": "rows" } ],
       "params": [ { "name": "timestampField", "kind": "Text", "required": true },
                   { "name": "width", "kind": "Integer", "required": true, "unit": "ns" },
-                  { "name": "late", "kind": "Text", "required": true, "values": ["ignore","revise","reject"] } ],
+                  { "name": "late", "kind": "Text", "required": true, "values": ["revise"] } ],
       "slots": [ ],
       "strategy": "linear: window assignment", "sink": false, "telemetry": false } ],
   "ruleClasses": [ { "name": "lens", "params": ["putput"], "policies": ["accept","on create","on delete"] } ],
@@ -597,6 +597,14 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Palette.** `rules.policies` gives the settings of an editable rule in KQL (`accept`, `update`, `onCreate`, `onDelete`), and `ruleClasses` gives `lens` the policies `accept`, `update`, `onCreate` and `onDelete`.
 - **Diagnostics in KQL words** (codes unchanged): `nodes` and `edges` statements for a create emit, `extend nodes` and `extend edges` for an update emit, an editable rule (one with `accept` or `update`) for a bijective or lens rule, the look-back and time to live of `telemetry(...)` and `telemetry_filled(...)` for `within` and `ttl`, the fourth argument of `hysteresis` for a no-data state, `onCreate` and `onDelete` for the edit policies. Among them `P1`, `P2`, `P5`, `Set`, `Series`, `Threshold`, `Rollup`, `Join`, `Aggregate`, `EmitEntity`, `EmitRelationship`, `EndpointDeferred`, `IdentityOutsideSink` and `IdentityLinked`.
 - **Answers that change:** none of a replay; the graphs, state digests and module digests are the same.
+
+## Version 3.48: what no KQL text writes is gone (no change of the wire format)
+- **Kernel.** `Window.late` has one value, `revise`: a row for a closed window revises it, and a row for a window beyond the late horizon is dropped and counted as before. The values `ignore` and `reject` are gone. `Aggregate.fn` no longer has `any` and `all`. A `Rollup` has no property `nodata`: a key is in no data when every member that has a row is. The kernel digest is `sha256:5c78260a657ccdca585e901a211e47b1bd902bda6f5976449d3f9e73b98aa0de` (`GET /palette`, `kernelDigest`).
+- **Palette.** `GET /palette` lists the aggregates `count`, `countDistinct`, `sum`, `min`, `max`, `mean` and `last`, the parameter `late` of `Window` with the values `["revise"]`, and no parameter of `Rollup`. The context of `last` says that it is marked with its row; the strategy of `Join` names no residual predicate.
+- **Checker.** A `last` without `row` is refused (`Unsupported`, "last needs a row mark"); KQL writes every `last` through `arg_max`, with its mark. A conjunct of a join condition that is no equality between a left and a right expression is refused (`Join`); before, it filtered the joined rows. `<`, `<=`, `>` and `>=` take two Integers, Decimals or Instants; two Texts are refused (`E-Call`). Kusto refuses the order of two strings before the engine sees the text.
+- **Traverse.** Its rows have the reached element and the columns read from it, and no column `<target>_depth`. A shorter path to an element already reached changes no row; before, the row was retracted and emitted again with the new depth.
+- **Run.** `replay` prints the late rows dropped and no count of rejected ones. `sattle check --plan` says of a windowed `Group` that a late row revises its window, where it named the late policy.
+- **Answers that change.** None of a replay: the KQL front end writes none of the removed parts, so the graphs, state digests and module digests are the same. A catalog form with a removed value is refused by the kernel check of the property's values, a `Rollup` with `nodata` as `UnknownProperty`.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.

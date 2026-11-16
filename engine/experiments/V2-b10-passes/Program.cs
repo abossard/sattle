@@ -29,8 +29,8 @@ for (var pass = 0; pass < passes; pass++)
     }
     replay.FlushPending();
     if (pass == 0) { first = pf; last = pl; span = last - first; }
-    var rows = replay.Stats.Rows; var late = e.Graphs.Sum(g => g.Cx.LateDropped); var lateRej = e.Graphs.Sum(g => g.Cx.LateRejected);
+    var rows = replay.Stats.Rows; var late = e.Graphs.Sum(g => g.Cx.LateDropped);
     Console.WriteLine($"pass {pass + 1}: records fed {records:N0} (skipped as absolute-time {skipped:N0}); rows this pass: {string.Join(", ", rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value - prev.GetValueOrDefault(x.Key):N0}"))}");
-    Console.WriteLine($"        late rows dropped this pass {late - prevLate:N0} (total {late:N0}, rejected {lateRej:N0}); master {e.Master.State.EntityCount:N0} entities, {e.Master.State.RelCount:N0} relationships; logical span {(pl + offset - first) / 1e9 / 3600:F2} h; flow telemetry windows in master {((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key).Select(x => x.Ws).Distinct().Count():N0} distinct window starts");
+    Console.WriteLine($"        late rows dropped this pass {late - prevLate:N0} (total {late:N0}); master {e.Master.State.EntityCount:N0} entities, {e.Master.State.RelCount:N0} relationships; logical span {(pl + offset - first) / 1e9 / 3600:F2} h; flow telemetry windows in master {((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key).Select(x => x.Ws).Distinct().Count():N0} distinct window starts");
     prev = new Dictionary<string, long>(rows); prevLate = late;
 }

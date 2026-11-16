@@ -53,8 +53,7 @@ public static class ExprCompiler
                     var tags = c.Args.Select(a => a.Type.Ty.Tag).ToArray();
                     return c.Fn switch
                     {
-                        "Equal" or "NotEqual" => new VCmp(c.Fn, args[0], args[1], tags[0] == Tag.Decimal || tags[1] == Tag.Decimal, null),
-                        "LessThan" or "LessOrEqual" or "GreaterThan" or "GreaterOrEqual" => new VCmp(c.Fn, args[0], args[1], tags[0] == Tag.Decimal || tags[1] == Tag.Decimal, tags[0] is Tag.Text or Tag.Ent ? it : null),
+                        "Equal" or "NotEqual" or "LessThan" or "LessOrEqual" or "GreaterThan" or "GreaterOrEqual" => new VCmp(c.Fn, args[0], args[1], tags[0] == Tag.Decimal || tags[1] == Tag.Decimal),
                         "And" or "Or" => new VLogic(c.Fn, args),
                         "Not" => new VLogic("Not", args),
                         "Add" or "Subtract" or "Multiply" => new VArith(c.Fn, args[0], args[1], c.Type.Ty.Tag == Tag.Decimal, faults),
@@ -103,8 +102,8 @@ sealed class VLit : VExpr
     }
 }
 
-/// <summary>`text`: set when text is ordered. A code says whether two texts are equal, not which comes first, so an order comparison reads the texts.</summary>
-sealed class VCmp(string fn, VExpr a, VExpr b, bool dec, Interner? text) : VExpr
+/// <summary>Texts are compared only for equality: their codes say whether two are equal.</summary>
+sealed class VCmp(string fn, VExpr a, VExpr b, bool dec) : VExpr
 {
     readonly bool decCompare = dec;
     public override Column Eval(Batch batch)
@@ -122,7 +121,6 @@ sealed class VCmp(string fn, VExpr a, VExpr b, bool dec, Interner? text) : VExpr
                 var xv = x.IsDec ? x.D[i] : x.L[i]; var yv = y.IsDec ? y.D[i] : y.L[i];
                 c = xv.CompareTo(yv);
             }
-            else if (text is not null) c = string.CompareOrdinal(text.Get((int)x.L[i]), text.Get((int)y.L[i]));
             else c = x.L[i].CompareTo(y.L[i]);
             o.L[i] = fn switch { "Equal" => c == 0, "NotEqual" => c != 0, "LessThan" => c < 0, "LessOrEqual" => c <= 0, "GreaterThan" => c > 0, _ => c >= 0 } ? 1 : 0;
         }

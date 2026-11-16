@@ -15,7 +15,7 @@ public class KqlProjectionTests
 
     [Fact]
     public void The_kernel_is_the_one_the_contract_was_agreed_on() =>
-        Assert.Equal("sha256:dde19e7f32847164dbf4b78e5d0b53987ca35552b566c1c96377fdfd29792cb2", Kernel.ComputeDigest());
+        Assert.Equal("sha256:5c78260a657ccdca585e901a211e47b1bd902bda6f5976449d3f9e73b98aa0de", Kernel.ComputeDigest());
 
     [Theory]
     [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "sha256:88c3217f415ec347fb21b80ab8fe6773b5f6e5482da048ba1b8d19e068eff3d3")]
@@ -91,6 +91,18 @@ public class KqlProjectionTests
         var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
         Assert.False(low.Ok);
         Assert.Contains(low.Diagnostics, d => d.Code == "Profile" && d.Message.Contains(says, StringComparison.Ordinal));
+    }
+
+    /// <summary>Kusto orders no texts: a less-than between two texts is refused, so the engine compares texts only for equality.</summary>
+    [Fact]
+    public void A_text_ordered_with_less_than_is_refused()
+    {
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
+            + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
+            + "nodes ServiceNode on service = services | where name < \"m\";\n";
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
+        Assert.False(low.Ok);
+        Assert.Contains(low.Diagnostics, d => d.Code == "Kusto" && d.Message.Contains("not defined for the operand types string and string", StringComparison.Ordinal));
     }
 
     /// <summary>What the graph line and the input lines refuse, and that the message says what to write instead.</summary>

@@ -432,7 +432,7 @@ public class OperatorTests
     [Theory]
     [InlineData("", "a1,a2")]
     [InlineData(" | where k != \"a2\"", "a1")]
-    public void Join_follows_inserts_and_retractions_on_both_sides_and_applies_the_residual(string after, string expected)
+    public void Join_follows_inserts_and_retractions_on_both_sides_and_a_where_after_it_filters(string after, string expected)
     {
         using var e = Mini(Labelled, JoinSteps("$left.g == $right.tk", after));
         Items(e, 1, ("a1", "g1", 1, null, 1), ("a2", "g1", 2, null, 1), ("b1", "g2", 3, null, 1));

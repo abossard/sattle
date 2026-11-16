@@ -5,7 +5,7 @@ namespace Sattle.Tests;
 /// <summary>`/palette` says per aggregate where it may be used (`Group` over data, `Rollup` over telemetry).</summary>
 public class PaletteAggregateTests
 {
-    static readonly string[] All = ["count", "countDistinct", "sum", "min", "max", "mean", "any", "all", "last"];
+    static readonly string[] All = ["count", "countDistinct", "sum", "min", "max", "mean", "last"];
 
     [Fact]
     public void The_palette_carries_the_contexts_of_every_aggregate_and_marks_unlisted_ones_unsupported()

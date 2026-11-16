@@ -18,7 +18,7 @@ public static class Support
         ["Rollup"] = "per (key, window) accumulators",
         ["Threshold"] = "per-key state machine over ordered closed windows",
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
-        ["Join"] = "bilinear delta over per-side hash indexes on the equality keys; residual predicate on the joined rows",
+        ["Join"] = "bilinear delta over per-side hash indexes on the equality keys",
         ["Traverse"] = "per start element breadth-first reach, recomputed only when a visited element or edge changed; emits the difference",
         ["Union"] = "linear: concatenation of both inputs' signed rows",
         ["Distinct"] = "per-row multiplicity counts, set semantics over signed rows",
@@ -40,9 +40,7 @@ public static class Support
         ["min"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["max"] = [new("Group", "numeric data value", "same as the value"), new("Rollup", "numeric telemetry value", "same as the value", "not cumulative")],
         ["mean"] = [new("Group", "numeric data value", "Decimal"), new("Rollup", "numeric telemetry value", "Decimal", "gauge")],
-        ["any"] = [new("Group", "Boolean data value", "Boolean")],
-        ["all"] = [new("Group", "Boolean data value", "Boolean")],
-        ["last"] = [new("Group", "data value (not an element) and an ordering of data Integer, Decimal or Instant: last(value, order)", "same as the value")],
+        ["last"] = [new("Group", "data value (not an element) and an ordering of data Integer, Decimal or Instant, marked with its row: the last aggregates of one row take their values from it (arg_max)", "same as the value")],
     };
     public static readonly HashSet<string> Aggregates = [.. AggregateContexts.Keys];
     /// <summary>Constraint kinds: the entity or relationship type they constrain, the Constraint properties they use, and the text form.</summary>
