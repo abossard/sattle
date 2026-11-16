@@ -137,7 +137,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
           <Field label="Property"><Select value={f.propKey} onChange={(_, d) => set(graph, { propKey: d.value })}><option value="">(none)</option>{propKeys.map((k) => <option key={k}>{k}</option>)}</Select></Field>
           <Field label="Operator"><Select value={f.propOp} onChange={(_, d) => set(graph, { propOp: d.value as FilterState["propOp"] })}><option>equals</option><option>contains</option><option>not equals</option></Select></Field>
           <Field label="Value"><Input value={f.propValue} onChange={(_, d) => set(graph, { propValue: d.value })} /></Field>
-          <Button onClick={() => { const { layout: _, ...cleared } = emptyFilter(); set(graph, cleared); }}>Clear filters</Button>
+          <Button onClick={() => set(graph, emptyFilter())}>Clear filters</Button>
         </AccordionPanel>
       </AccordionItem>
       <AccordionItem value="focus">
@@ -147,7 +147,7 @@ export function FiltersPanel({ graph }: { graph: string }) {
             <Select value={String(f.focusDepth)} onChange={(_, d) => set(graph, { focusDepth: Number(d.value) })}>{[0, 1, 2, 3].map((d) => <option key={d} value={d}>{d === 0 ? "Off" : `${d} hop${d === 1 ? "" : "s"}`}</option>)}</Select>
           </Field>
           <Switch checked={f.focusDim} label="Dim everything else" onChange={(_, d) => set(graph, { focusDim: d.checked })} />
-          <Field label="Layout"><Select value={f.layout} onChange={(_, d) => set(graph, { layout: d.value as FilterState["layout"] })}><option value="force">Force directed</option><option value="layered">Layered (trees, DAGs)</option></Select></Field>
+          <Field label="Layout"><Select value={f.layout} onChange={(_, d) => set(graph, { layout: d.value as FilterState["layout"] })}><option value="auto">Automatic (layered for trees)</option><option value="force">Force directed</option><option value="layered">Layered (trees, DAGs)</option></Select></Field>
           <div className={s.row}><Button onClick={() => dispatch({ type: "pane/command", graph, command: "relayout" })}>Re-layout</Button><Button onClick={() => dispatch({ type: "pane/command", graph, command: "fit" })}>Fit</Button></div>
         </AccordionPanel>
       </AccordionItem>

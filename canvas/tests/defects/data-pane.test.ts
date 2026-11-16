@@ -38,7 +38,7 @@ describe("data-pane.ts:328 (:201) a patch that grows the graph", () => {
   it("search finds the new node", () => {
     const h = new History({ version: ver("1"), entities: [ent("a"), ent("b")], relationships: [] });
     const p = pane(h);
-    p.setFilter({ hiddenTypes: new Set(), prop: null, search: "zebra" });
+    p.setView({ filter: { hiddenTypes: new Set(), prop: null, search: "zebra" } });
     p.applyStep(h.append(patch("1", "2", [addN(ent("zebra"))]))!);
     expect([...((p as unknown as { matches: Set<number> }).matches)].length, "search skips nodes the pane never showed").toBe(1);
   });

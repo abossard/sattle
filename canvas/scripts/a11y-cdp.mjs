@@ -80,7 +80,7 @@ const open = async (source, view, theme) => {
   let ready = false;
   for (let i = 0; i < 150 && !ready; i++) { ready = (await evaluate(`window.__sattle.store.getState().load.status`)) === "ready"; if (!ready) await sleep(200); }
   if (!ready) die(`source "${source}" did not load: ${await evaluate(`window.__sattle.store.getState().load.message`)}`);
-  if (view === "editor") for (let i = 0; i < 50; i++) { if (await evaluate(`window.__sattle.store.getState().editor.status`) === "ready") break; await sleep(200); }
+  if (view === "editor") for (let i = 0; i < 50; i++) { if (await evaluate(`window.__sattle.store.getState().editor.phase.t`) === "ready") break; await sleep(200); }
   await dispatch({ type: "ui/theme", theme });
   await settle();
 };

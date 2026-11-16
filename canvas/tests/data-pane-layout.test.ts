@@ -14,13 +14,14 @@ vi.mock("../src/render/view", () => ({
 vi.mock("../src/layout/client", () => ({ LayoutClient: class { lastMs = 0; run(req: { kind: string; src: Int32Array; dst: Int32Array }) { requests.push(req); return { done: new Promise(() => {}) }; } cancel() {} dispose() {} } }));
 
 import { DataPane } from "../src/app/data-pane";
+import { emptyFilter, emptyPaneView, paneModel, sameDrawing, type PaneFacts, type PaneModel, type PaneView } from "../src/app/graph-view-model";
 import { History } from "../src/app/history";
 import { hasTreeRows } from "../src/app/tree-model";
 import { darkTheme } from "../src/render/theme";
 import { StaticSource } from "../src/source/static";
 import type { GraphInfo } from "../src/source/types";
 import type { TreeSpec } from "../src/source/presentation";
-import { ent, rel, ver } from "./helpers";
+import { addE, ent, patch, rel, ver } from "./helpers";
 import { ont } from "./fixtures/engine-fake";
 
 const events = { select() {}, hover() {}, activate() {}, changed() {}, announce() {}, key: () => false };
@@ -63,5 +64,58 @@ describe("the graphs of the default source", () => {
       const h = new History(await src.snapshot(g.id));
       if (g.tree && hasTreeRows(h.graph, g.tree)) expect(paneOf(g, h).layoutKind, g.id).toBe("layered");
     }
+  });
+});
+
+// Code review 2, change 6: the layout is "auto" or a kind the person chose, and one pure model decides what the pane draws by.
+describe("the layout the person chose, and automatic", () => {
+  it("a chosen layout holds; automatic gives the graph its own again", () => {
+    const pane = paneOf(info(spec(true)), world(true));
+    pane.start();
+    pane.setView({ layout: "force" });
+    expect(pane.layoutKind).toBe("force");
+    pane.setView({ layout: "auto" });
+    expect(pane.layoutKind, "a layout once chosen stays pinned after the choice is cleared").toBe("layered");
+  });
+});
+
+describe("automatic layout follows the graph", () => {
+  it("a pane made before the tree's rows switches to layered when a step brings them", () => {
+    const h = new History({ version: ver("1"), entities: [ent("p", "Node"), ent("c", "Node"), ent("x", "Other"), ent("y", "Other")], relationships: [] });
+    const pane = paneOf(info(spec(true)), h);
+    pane.start();
+    expect(pane.layoutKind).toBe("force");
+    pane.applyStep(h.append(patch("1", "2", [addE(rel("r0", "c", "p", "Contains"))]))!);
+    expect(pane.layoutKind, "the pane kept the layout of the revision it was made on").toBe("layered");
+  });
+});
+
+describe("paneModel", () => {
+  const facts = (over: Partial<PaneFacts> = {}): PaneFacts => ({ presentKinds: new Set(), tileThins: false, collapsed: false, treeState: false, autoLayout: "layered", ...over });
+  it.each<[string, Partial<PaneView>, Partial<PaneFacts>, (m: PaneModel) => unknown, unknown]>([
+    ["automatic takes the graph's layout", {}, {}, (m) => m.layout, "layered"],
+    ["a chosen layout wins over the graph's", { layout: "force" }, {}, (m) => m.layout, "force"],
+    ["nothing filtered: drawn element by element", {}, {}, (m) => m.whole, false],
+    ["a hidden type needs the whole graph", { filter: { ...emptyFilter(), hiddenTypes: new Set(["Pod"]) } }, {}, (m) => m.whole, true],
+    ["a focus needs the whole graph", { focusDepth: 1 }, {}, (m) => m.whole, true],
+    ["collapsed groups need the whole graph", {}, { collapsed: true }, (m) => m.whole, true],
+    ["support left out by default needs the whole graph", {}, { presentKinds: new Set(["dependency", "support"]) }, (m) => [m.whole, [...m.hiddenKinds]], [true, ["support"]]],
+    ["support the person drew is no whole pass", { hiddenKinds: [] }, { presentKinds: new Set(["dependency", "support"]) }, (m) => m.whole, false],
+    ["a tile thins isolated nodes only when the graph has others", { tile: true }, { tileThins: true }, (m) => [m.thinIsolated, m.whole], [true, true]],
+    ["the view of the graph never thins", { tile: false }, { tileThins: true }, (m) => m.thinIsolated, false],
+  ])("%s", (_, view, f, pick, expected) => {
+    expect(pick(paneModel({ ...emptyPaneView(), ...view }, facts(f)))).toEqual(expected);
+  });
+
+  it.each<[string, Partial<PaneView>, Partial<PaneView>, boolean]>([
+    ["the same view", {}, {}, true],
+    ["a search only marks matches", {}, { filter: { ...emptyFilter(), search: "x" } }, true],
+    ["another layout draws the same elements", {}, { layout: "force" }, true],
+    ["another kind left out", { hiddenKinds: [] }, { hiddenKinds: ["communication"] }, false],
+    ["a filter switched on", {}, { focusDepth: 2 }, false],
+    ["only the thinning differs (both need the whole graph)", { tile: true, focusDepth: 1 }, { tile: false, focusDepth: 1 }, false],
+  ])("sameDrawing: %s", (_, a, b, same) => {
+    const f = facts({ tileThins: true });
+    expect(sameDrawing(paneModel({ ...emptyPaneView(), ...a }, f), paneModel({ ...emptyPaneView(), ...b }, f))).toBe(same);
   });
 });

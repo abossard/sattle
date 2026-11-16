@@ -6,7 +6,7 @@ import { ent, text } from "../src/editor/patches";
 import { EngineError, type Applied, type EditorService } from "../src/editor/service";
 import { parsePalette } from "../src/editor/palette";
 
-import { add, fakeEngine, names } from "./fixtures/editor-fake";
+import { add, fakeEngine, names, restoresTo } from "./fixtures/editor-fake";
 
 describe("editor session", () => {
   it("applies edits to the draft and the browser copy, undo and redo are inverse patches", async () => {
@@ -33,8 +33,10 @@ describe("editor session", () => {
   });
 
   it("a restore that changes nothing is no undo step", async () => {
-    const s = await EditorSession.open(fakeEngine().svc);
-    await s.absorbRestore({ revision: "0", ok: true, diagnostics: [], modules: {}, patch: { from: { tenant: "t", graph: "catalog", revision: "0" }, to: { tenant: "t", graph: "catalog", revision: "0" }, projection: "catalog", profile: "extensionalFinite", edits: [], cause: { inputs: [], configurationVersion: "0" } } }, "restore release");
+    const eng = fakeEngine();
+    restoresTo(eng, { from: { tenant: "t", graph: "catalog", revision: "0" }, to: { tenant: "t", graph: "catalog", revision: "1" }, projection: "catalog", profile: "extensionalFinite", edits: [], cause: { inputs: [], configurationVersion: "0" } });
+    const s = await EditorSession.open(eng.svc);
+    await s.restore("sha256:r");
     expect(s.undoStack.length).toBe(0);
   });
 
@@ -66,8 +68,8 @@ describe("editor session", () => {
     // the engine adds E3 on its own (restore) and answers the patch it applied; the session joins it to the draft and can undo it
     const before = eng.rev;
     const restored = { from: { tenant: "t", graph: "catalog", revision: String(before) }, to: { tenant: "t", graph: "catalog", revision: String(before + 1) }, projection: "catalog", profile: "extensionalFinite" as const, edits: add(3), cause: { inputs: [], configurationVersion: "0" } };
-    await (eng.svc as unknown as { applyPatch: (...a: unknown[]) => Promise<unknown> }).applyPatch("d1", restored, String(before));
-    await s.absorbRestore({ revision: String(eng.rev), ok: true, diagnostics: [], modules: {}, patch: restored }, "restore release");
+    restoresTo(eng, restored);
+    await s.restore("sha256:r");
     expect(names(s.graph)).toEqual(["1", "3"]);
     await s.undo();
     expect(names(eng.g)).toEqual(["1"]);
@@ -109,5 +111,28 @@ describe("text applied over a draft that already holds graph edits", () => {
     expect(eng.files.get("m.p.kql")).toBe(ok ? "graph p : m;" : undefined);
     expect(s.revision).toBe(String(eng.rev));
     expect(s.undoStack.map((x) => x.label)).toEqual(["add 1"]);
+  });
+});
+
+// Code review 2, change 2: every engine call on a draft goes through the session's queue.
+describe("the session's queue", () => {
+  it.each(["preview", "commit", "discard", "restore"] as const)("%s waits for an edit in flight", async (call) => {
+    const eng = fakeEngine();
+    const s = await EditorSession.open(eng.svc);
+    const order: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const svc = eng.svc as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+    const apply = svc.applyPatch;
+    svc.applyPatch = async (...a) => { await gate; order.push("apply"); return apply(...a); };
+    svc.preview = async () => { order.push("preview"); return { scope: { rows: "0", totalRows: "0", complete: true, logicalTime: "" }, diagnostics: [], graphs: [], milliseconds: "0" }; };
+    svc.commit = async () => { order.push("commit"); return { catalogRevision: "12", modules: [] }; };
+    svc.discard = async () => { order.push("discard"); };
+    svc.restore = async () => { order.push("restore"); const r = String(eng.rev); return { revision: r, ok: true, diagnostics: [], modules: {}, patch: { from: { tenant: "t", graph: "catalog", revision: r }, to: { tenant: "t", graph: "catalog", revision: r }, projection: "catalog", profile: "extensionalFinite", edits: [], cause: { inputs: [], configurationVersion: "0" } } }; };
+    const edit = s.apply(add(1), "a");
+    const other = call === "preview" ? s.preview({}) : call === "commit" ? s.commit("m", undefined, new Graph(), "11") : call === "discard" ? s.discard() : s.restore("sha256:x");
+    release();
+    await Promise.all([edit, other]);
+    expect(order, "the call reached the engine before the edit it was started after").toEqual(["apply", call]);
   });
 });

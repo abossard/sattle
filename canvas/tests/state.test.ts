@@ -5,6 +5,11 @@ import { dispatch, useStore } from "../src/state/store";
 import type { Action, State } from "../src/state/types";
 import { emptyFilter } from "../src/state/types";
 import { addN, ent, patch } from "./helpers";
+import { editorTransition, type EditorEvent, type EditorPhase } from "../src/state/editor-phase";
+import { EditorSession } from "../src/editor/session";
+import type { Preview } from "../src/editor/service";
+import { fakeEngine } from "./fixtures/editor-fake";
+import { Graph } from "../src/core/graph";
 
 const base = (over: Partial<State> = {}): State => ({ ...initialState(), ...over });
 const sel = { graph: "master", kind: "entity" as const, id: "e1" };
@@ -23,7 +28,7 @@ describe("reducer", () => {
     ["a connection that is not live means stale data", { type: "feed/connection", status: { state: "reconnecting", detail: "x", gapsFilled: 0, reconnects: 1 } }, (s) => s.freshness, "stale"],
     ["a live connection means live data", { type: "feed/connection", status: { state: "live", detail: "x", gapsFilled: 0, reconnects: 0 } }, (s) => s.freshness, "live"],
     ["a resync is announced", { type: "feed/resync", reason: "event gap" }, (s) => s.freshness, "resyncing"],
-    ["a filter change merges into the graph's filter", { type: "filter/set", graph: "master", filter: { search: "pod", hiddenTypes: ["Pod"] } }, (s) => [s.filters.master.search, s.filters.master.hiddenTypes, s.filters.master.layout], ["pod", ["Pod"], "force"]],
+    ["a filter change merges into the graph's filter", { type: "filter/set", graph: "master", filter: { search: "pod", hiddenTypes: ["Pod"] } }, (s) => [s.filters.master.search, s.filters.master.hiddenTypes, s.filters.master.layout], ["pod", ["Pod"], "auto"]],
     ["editor summary merges", { type: "editor/summary", patch: { revision: "4", notice: "n" } }, (s) => [s.editor.revision, s.editor.notice], ["4", "n"]],
   ])("%s", (_, action, pick, expected) => {
     const s0 = base({ filters: { master: emptyFilter() } });
@@ -82,5 +87,91 @@ describe("effects: server pushes are applied to the runtime in the order they ar
     dispatch({ type: "select/element", selection: { graph, kind: "entity", id } });
     expect(runtime.ws!.selection).toEqual({ graph, kind: "entity", id });
     expect(useStore.getState().selection!.id).toBe(id);
+  });
+});
+
+// Code review 2, change 2: the editor flow as one state machine.
+describe("editor phase", () => {
+  const ready = (work: "undo" | "preview" | null = null): EditorPhase => ({ t: "ready", work });
+  it.each<[string, EditorPhase, EditorEvent, EditorPhase]>([
+    ["a closed editor opens", { t: "closed" }, { t: "open" }, { t: "opening" }],
+    ["a draft opened", { t: "opening" }, { t: "opened" }, ready()],
+    ["opening failed", { t: "opening" }, { t: "failed", message: "no engine" }, { t: "failed", message: "no engine" }],
+    ["a failure after the draft opened changes nothing", ready(), { t: "failed", message: "late" }, ready()],
+    ["a late opened after a failure changes nothing", { t: "failed", message: "x" }, { t: "opened" }, { t: "failed", message: "x" }],
+    ["try again", { t: "failed", message: "x" }, { t: "open" }, { t: "opening" }],
+    ["work starts", ready(), { t: "start", work: "preview" }, ready("preview")],
+    ["work ends", ready("preview"), { t: "done", work: "preview" }, ready()],
+    ["the end of work another start replaced is no end", ready("preview"), { t: "done", work: "undo" }, ready("preview")],
+    ["no work without a draft", { t: "opening" }, { t: "start", work: "undo" }, { t: "opening" }],
+    ["a new draft while work runs", ready("undo"), { t: "open" }, { t: "opening" }],
+  ])("%s", (_, from, event, to) => {
+    expect(editorTransition(from, event)).toEqual(to);
+  });
+});
+
+/** A promise and the function that settles it, for an engine call that answers when the test says. */
+const later = <T,>() => { let settle!: (v: T) => void; const p = new Promise<T>((r) => { settle = r; }); return { p, settle }; };
+const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+describe("editor flow: an answer of an ended session is dropped", () => {
+  it("a list of releases that answers after a commit is not shown in the next draft", async () => {
+    const eng = fakeEngine();
+    const releases = later<unknown[]>(), commit = later<{ catalogRevision: string; modules: string[] }>();
+    Object.assign(eng.svc, { releases: () => releases.p, commit: () => commit.p, discard: async () => {} });
+    const ws = runtime.ws;
+    // the catalog head a commit is checked against
+    runtime.ws = { source: { catalogGraph: "catalog" }, histories: new Map([["catalog", { graph: new Graph(), length: 0, revisionAt: () => "11" }]]) } as never;
+    runtime.session = await EditorSession.open(eng.svc);
+    dispatch({ type: "editor/event", event: { t: "open" } });
+    dispatch({ type: "editor/event", event: { t: "opened" } });
+    dispatch({ type: "editor/releases", module: "m" });
+    dispatch({ type: "editor/commit" });
+    await tick();
+    // no engine for the draft that opens after the commit: it fails to open, which is not what this test is about
+    runtime.ws = null;
+    commit.settle({ catalogRevision: "12", modules: ["m"] });
+    await tick(20);
+    releases.settle([{ module: "m", version: "1", digest: "sha256:old", catalogRevision: "11", supersedes: null }]);
+    await tick(20);
+    expect([useStore.getState().editor.releases, useStore.getState().editor.committed]).toEqual([[], "Committed catalog revision 12 (m)"]);
+    runtime.ws = ws;
+  });
+
+  it("a restore that answers after the draft was discarded changes nothing the author sees", async () => {
+    const eng = fakeEngine();
+    const restore = later<unknown>();
+    Object.assign(eng.svc, { restore: () => restore.p, discard: async () => {} });
+    const ws = runtime.ws;
+    runtime.ws = null;
+    runtime.session = await EditorSession.open(eng.svc);
+    dispatch({ type: "editor/event", event: { t: "open" } });
+    dispatch({ type: "editor/event", event: { t: "opened" } });
+    dispatch({ type: "editor/do", cmd: { t: "restore", digest: "sha256:r" } });
+    await tick();
+    dispatch({ type: "editor/discard" });
+    restore.settle({ revision: "1", ok: true, diagnostics: [], modules: {}, patch: patch("0", "1", [addN(ent("d:m/entity:E1"))]) });
+    await tick(20);
+    const ed = useStore.getState().editor;
+    expect([ed.revision, ed.undo, ed.phase.t], "the old draft's restore is reported over the new one").toEqual(["", [], "failed"]);
+    runtime.ws = ws;
+  });
+
+  it("a preview that answers after the draft was discarded shows nothing", async () => {
+    const eng = fakeEngine();
+    let answer!: (p: Preview) => void;
+    const svc = eng.svc as unknown as Record<string, unknown>;
+    svc.preview = () => new Promise<Preview>((r) => { answer = r; });
+    svc.discard = async () => {};
+    runtime.session = await EditorSession.open(eng.svc);
+    dispatch({ type: "editor/event", event: { t: "open" } });
+    dispatch({ type: "editor/event", event: { t: "opened" } });
+    dispatch({ type: "editor/preview" });
+    await new Promise((r) => setTimeout(r, 0));
+    dispatch({ type: "editor/discard" });
+    answer({ scope: { rows: "1", totalRows: "1", complete: true, logicalTime: "" }, diagnostics: [], graphs: [], milliseconds: "1" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect([useStore.getState().editor.preview, runtime.preview], "the old draft's preview is shown over the new one").toEqual([null, null]);
+    expect(useStore.getState().editor.phase.t).not.toBe("ready");
   });
 });

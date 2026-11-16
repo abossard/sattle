@@ -69,7 +69,7 @@ export function OntologyView() {
     stage.current.replaceChildren(host);
     const pane = new DataPane({ ...info, id: `ontology ${module?.name ?? graphId}`, inputs: [] }, new History(content.graph.toSnapshot()), host, rendererTheme(theme),
       { select: (sel) => { pane.setSelection(sel); setPicked(sel?.id ?? null); }, hover: () => {}, activate: () => {}, changed: () => {}, announce: (text) => dispatch({ type: "ui/announce", text }), key: () => false });
-    pane.layoutKind = "layered"; pane.layoutDirection = "right"; pane.view.allEdgeLabels = true; pane.start();
+    pane.layoutDirection = "right"; pane.view.allEdgeLabels = true; pane.start({ layout: "layered" });
     paneRef.current = pane;
     return () => { pane.dispose(); paneRef.current = null; };
   }, [ws, content, theme]); // eslint-disable-line react-hooks/exhaustive-deps

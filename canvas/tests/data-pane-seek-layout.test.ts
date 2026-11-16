@@ -104,7 +104,7 @@ describe("the layout of the workload graph after seeking", () => {
 describe("a seek is one batch", () => {
   it.each([["the view of the graph", false], ["a tile of the space", true]])("in %s, the scene equals the one step by step", async (_, tile) => {
     const { info, history } = await load("workload");
-    const panes = [history(), history()].map((h) => { h.seek(0); const p = new DataPane(info, h, document.createElement("div"), darkTheme, events as never); p.setTile(tile); p.start(); return { h, p }; });
+    const panes = [history(), history()].map((h) => { h.seek(0); const p = new DataPane(info, h, document.createElement("div"), darkTheme, events as never); p.setView({ tile }); p.start(); return { h, p }; });
     await flush();
     const [batch, single] = panes;
     batch.p.applySteps(batch.h.seek(batch.h.length));

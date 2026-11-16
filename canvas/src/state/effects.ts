@@ -7,7 +7,7 @@ import { lightTheme, darkTheme } from "../render/theme";
 import { runtime } from "./runtime";
 import { SOURCES } from "./sources";
 import type { Action, GraphSummary, State, TelemetryState, ThemeName } from "./types";
-import { run as runEditor } from "./editor-effects";
+import { endSession, run as runEditor } from "./editor-effects";
 import { applyFilter, applyHighlight, seekTime } from "./ws-ops";
 
 export type Dispatch = (a: Action) => void;
@@ -70,9 +70,9 @@ async function openSource(id: string, s: State, dispatch: Dispatch): Promise<voi
 
 export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
   const ws = runtime.ws;
-  if (a.type.startsWith("editor/") && a.type !== "editor/summary" && a.type !== "editor/projection" && a.type !== "editor/dismiss") { void runEditor(a, dispatch, s); return; }
+  if (a.type.startsWith("editor/") && a.type !== "editor/summary" && a.type !== "editor/event" && a.type !== "editor/projection" && a.type !== "editor/dismiss") { void runEditor(a, dispatch, s); return; }
   switch (a.type) {
-    case "source/opening": if (!a.resync) runtime.session = null; void openSource(a.id, s, dispatch); break;
+    case "source/opening": if (!a.resync) endSession(); void openSource(a.id, s, dispatch); break;
     case "feed/patch":
       ws?.applyPatch(a.graph, a.patch, a.time);
       if (ws) applyHighlight(ws, a.graph, s.filters[a.graph]); // the highlight mode the user chose, not always the last step

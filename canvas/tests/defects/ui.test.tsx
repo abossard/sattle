@@ -45,7 +45,9 @@ async function openEditor() {
   (runtime.ws!.source as unknown as { catalogGraph: string }).catalogGraph = "catalog";
   runtime.ws!.histories.set("catalog", new History({ version: { tenant: "demo", graph: "catalog", revision: "1" }, entities: [], relationships: [] }));
   runtime.session = await EditorSession.open(eng.svc);
-  dispatch({ type: "editor/summary", patch: { status: "ready", message: "", draft: "d1", base: "11", revision: "0", version: 1, module: "m", projection: P, diagnostics: [] } });
+  dispatch({ type: "editor/event", event: { t: "open" } });
+  dispatch({ type: "editor/event", event: { t: "opened" } });
+  dispatch({ type: "editor/summary", patch: { draft: "d1", base: "11", revision: "0", version: 1, module: "m", projection: P, diagnostics: [] } });
   dispatch({ type: "ui/view", view: "editor" });
   await screen.findByRole("tablist", { name: "Draft details" });
   return eng;
@@ -124,8 +126,9 @@ describe("state/editor-effects.ts:39 the Editor tab on a source without the engi
     runtime.session = null;
     dispatch({ type: "editor/open" });
     dispatch({ type: "ui/view", view: "editor" });
-    await waitFor(() => expect(useStore.getState().editor.status).not.toBe("opening"), { timeout: 3000 });
-    expect(useStore.getState().editor.message, "the error is overwritten and the tab spins forever").toMatch(/engine/i);
+    await waitFor(() => expect(useStore.getState().editor.phase.t).not.toBe("opening"), { timeout: 3000 });
+    const phase = useStore.getState().editor.phase;
+    expect(phase.t === "failed" ? phase.message : phase.t, "the error is overwritten and the tab spins forever").toMatch(/engine/i);
   }, 30000);
 });
 
@@ -198,22 +201,24 @@ describe("ui/Filters.tsx:157 a warning threshold typed with a decimal comma", ()
 
 // Code review 2 (paper/research/12-code-review-2.md, defect 28), the canvas view.
 describe("ui/Filters.tsx:140 Clear filters on a tree", () => {
-  it("leaves the layout to the graph: a tree laid out layered by default is not pinned to force", async () => {
+  it("gives the layout back to the graph: a tree laid out layered by default is not pinned to force", async () => {
     const { FluentProvider, webLightTheme } = await import("@fluentui/react-components");
     const { render, cleanup } = await import("@testing-library/react");
     const { FiltersPanel } = await import("../../src/ui/Filters");
     const { Graph } = await import("../../src/core/graph");
     const graph = Graph.fromSnapshot({ version: { tenant: "demo", graph: "g", revision: "1" }, entities: [], relationships: [] });
-    // the pane as the layout sees it (jsdom has no WebGL, so no real pane): laid out layered by its own choice; every other call does nothing
-    const state = { info: { id: "g", ontology: ont("o") }, layoutKind: "layered", userLayout: false, runLayout(kind: string) { state.layoutKind = kind; } };
+    // the pane as the filters see it (jsdom has no WebGL, so no real pane): it records what it is told to show; every other call does nothing
+    const views: { layout?: string }[] = [];
+    const state = { info: { id: "g", ontology: ont("o") }, setView(v: { layout?: string }) { views.push(v); } };
     const pane = new Proxy(state as Record<string | symbol, unknown>, { get: (t, k) => (k in t ? t[k] : () => undefined), set: (t, k, v) => { t[k] = v; return true; } });
     runtime.ws = { graphInfo: () => ({ id: "g", role: "master", descriptor: {}, ontology: ont("o"), inputs: [] }), histories: new Map([["g", { graph, length: 0, cursor: 0, changesBetween: () => null }]]), panes: new Map([["g", pane]]), hubs: new Map() } as never;
     try {
       const user = userEvent.setup();
+      dispatch({ type: "filter/set", graph: "g", filter: { layout: "force" } });
       render(<FluentProvider theme={webLightTheme}><FiltersPanel graph="g" /></FluentProvider>);
       await user.click(await screen.findByRole("button", { name: "Property filter" }));
       await user.click(await screen.findByRole("button", { name: "Clear filters" }));
-      expect([state.layoutKind, state.userLayout], "clearing the filters chose a force layout for the person").toEqual(["layered", false]);
+      expect([useStore.getState().filters.g.layout, views.at(-1)?.layout], "clearing the filters kept the layout the person had chosen").toEqual(["auto", "auto"]);
     } finally { cleanup(); runtime.ws = null; }
   });
 });

@@ -6,6 +6,7 @@ import type { Rejection } from "../core/validate";
 import type { ConnectionStatus, EngineDiagnostic, TelemetryBatch } from "../source/types";
 import type { IdentityEffect, Release } from "../editor/service";
 import type { ProjectionSpec } from "../editor/structures";
+import type { EditorEvent, EditorPhase } from "./editor-phase";
 
 export type View = "data" | "space" | "editor" | "ontology";
 export type ThemeName = "light" | "dark" | "contrast";
@@ -19,8 +20,8 @@ export interface GraphSummary {
   version: number;
 }
 
-export interface FilterState { search: string; hiddenTypes: string[]; propKey: string; propOp: "equals" | "contains" | "not equals"; propValue: string; focusDepth: number; grouping: string; focusDim: boolean; layout: "force" | "layered"; hlMode: "step" | "since" | "off"; hlSince: number; /** what colors nodes and edges: "@default" (the ontology's presentation hint when it has one), "" (type colors) or a property id */ colorNodes: string; colorEdges: string; /** edge kinds left out (engine 3.17); null: the default of the place the graph is shown (a tile leaves out communication and support) */ hiddenKinds: import("../source/presentation").EdgeKind[] | null; /** draw the relationship types that restate others (a roll-up edge beside what it rolls up); left out by default */ showRestated: boolean }
-export const emptyFilter = (): FilterState => ({ search: "", hiddenTypes: [], propKey: "", propOp: "equals", propValue: "", focusDepth: 0, grouping: "@support", focusDim: true, layout: "force", hlMode: "step", hlSince: 0, colorNodes: "@default", colorEdges: "@default", hiddenKinds: null, showRestated: false });
+export interface FilterState { search: string; hiddenTypes: string[]; propKey: string; propOp: "equals" | "contains" | "not equals"; propValue: string; focusDepth: number; grouping: string; focusDim: boolean; /** "auto": the layout the graph reads best in, decided again as it changes; a kind: the person chose it */ layout: "auto" | "force" | "layered"; hlMode: "step" | "since" | "off"; hlSince: number; /** what colors nodes and edges: "@default" (the ontology's presentation hint when it has one), "" (type colors) or a property id */ colorNodes: string; colorEdges: string; /** edge kinds left out (engine 3.17); null: the default of the place the graph is shown (a tile leaves out communication and support) */ hiddenKinds: import("../source/presentation").EdgeKind[] | null; /** draw the relationship types that restate others (a roll-up edge beside what it rolls up); left out by default */ showRestated: boolean }
+export const emptyFilter = (): FilterState => ({ search: "", hiddenTypes: [], propKey: "", propOp: "equals", propValue: "", focusDepth: 0, grouping: "@support", focusDim: true, layout: "auto", hlMode: "step", hlSince: 0, colorNodes: "@default", colorEdges: "@default", hiddenKinds: null, showRestated: false });
 
 export interface TelemetryState {
   hasData: boolean; enabled: boolean; flow: boolean;
@@ -37,23 +38,24 @@ export interface PreviewSummary {
 export interface ReleaseDiff { label: string; from: string; to: string; added: number; removed: number; changed: number; items: { kind: "added" | "removed" | "changed"; id: string; type: string }[] }
 
 export interface EditorState {
-  status: "idle" | "opening" | "ready" | "error"; message: string;
+  phase: EditorPhase;
   draft: string; base: string; revision: string;
   /** bumped by every change of the draft graph, so views re-read it from the runtime */
   version: number;
   module: string; projection: string;
   undo: string[]; redo: string[];
   diagnostics: EngineDiagnostic[];
-  busy: string;
+  /** a message to the author that outlives a phase change (a refused edit, a failed preview) */
   notice: string;
   textVersion: number;
   releases: Release[];
   releaseDiff: ReleaseDiff | null;
   preview: PreviewSummary | null;
   headRevision: string;
+  /** the last commit, said after the session it ended */
   committed: string;
 }
-export const emptyEditor = (): EditorState => ({ status: "idle", message: "", draft: "", base: "", revision: "", version: 0, module: "", projection: "", undo: [], redo: [], diagnostics: [], busy: "", notice: "", textVersion: 0, releases: [], releaseDiff: null, preview: null, headRevision: "", committed: "" });
+export const emptyEditor = (): EditorState => ({ phase: { t: "closed" }, draft: "", base: "", revision: "", version: 0, module: "", projection: "", undo: [], redo: [], diagnostics: [], notice: "", textVersion: 0, releases: [], releaseDiff: null, preview: null, headRevision: "", committed: "" });
 
 /** Everything an author can do to the draft. Effects turn a command into catalog edits, the engine checks them, the session records them for undo. */
 export type Command =
@@ -112,7 +114,8 @@ export type Action =
   | { type: "feed/connection"; status: ConnectionStatus }
   // editor
   | { type: "editor/open" }
-  | { type: "editor/summary"; patch: Partial<EditorState> }
+  | { type: "editor/summary"; patch: Partial<Omit<EditorState, "phase">> }
+  | { type: "editor/event"; event: EditorEvent }
   | { type: "editor/projection"; module: string; projection: string }
   | { type: "editor/do"; cmd: Command }
   /** what an author did in one of the notations (editors/Workbench): composed into one patch and one undo step */

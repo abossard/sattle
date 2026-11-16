@@ -39,6 +39,11 @@ export function fakeEngine(seed: { entities?: Snapshot["entities"]; relationship
   } as unknown as EditorService;
   return { svc, g, calls, files, get rev() { return rev; }, set rev(r: number) { rev = r; } };
 }
+/** The engine's restore of a release: it applies `patch` to the draft itself and answers it with the revision it reached. */
+export function restoresTo(eng: ReturnType<typeof fakeEngine>, patch: Patch): void {
+  const svc = eng.svc as unknown as Record<string, (...a: unknown[]) => Promise<unknown>>;
+  svc.restore = async () => { const applied = (await svc.applyPatch("d1", patch, String(eng.rev))) as Applied; return { ...applied, patch }; };
+}
 export const add = (n: number): Edit[] => [ent(`d:m/entity:E${n}`, "Entity", { name: text(`E${n}`) })];
 export const names = (g: Graph) => [...g.entities()].map((e) => e.id.slice(e.id.lastIndexOf("E") + 1)).sort((a, b) => Number(a) - Number(b));
 

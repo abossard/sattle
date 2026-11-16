@@ -68,8 +68,8 @@ const OPS: [string, Edit[][]][] = [
 ];
 const FILTERS: [string, (p: DataPane) => void][] = [
   ["no filter", () => {}],
-  ["a hidden type", (p) => p.setFilter({ ...emptyFilter(), hiddenTypes: new Set(["Node"]) })],
-  ["a search", (p) => p.setFilter({ ...emptyFilter(), search: "d" })],
+  ["a hidden type", (p) => p.setView({ filter: { ...emptyFilter(), hiddenTypes: new Set(["Node"]) } })],
+  ["a search", (p) => p.setView({ filter: { ...emptyFilter(), search: "d" } })],
 ];
 
 describe("a pane after a patch draws what a fresh pane draws from the same graph", () => {

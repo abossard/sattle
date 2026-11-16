@@ -7,7 +7,7 @@ import type { Edit, Patch } from "../core/model";
 import type { EngineDiagnostic } from "../source/types";
 import { coalesce, invertEdits } from "./patches";
 import type { Palette } from "./palette";
-import { EngineError, type Applied, type Draft, type EditorService } from "./service";
+import { EngineError, type Applied, type Draft, type EditorService, type Preview } from "./service";
 
 export const MAX_UNDO = 99;
 
@@ -55,7 +55,10 @@ export class EditorSession {
     return { from: v(this.revision), to: v(String(Number(this.revision) + 1)), projection: "catalog", profile: "extensionalFinite", edits, cause: { inputs: [], configurationVersion: "0" } };
   }
 
-  /** Commands one after the other: two started together (a double click on Undo) read the stack and the revision one after the other, not both from the same state. */
+  /**
+   * Every engine call on the draft, one after the other: two started together (a double click on Undo, a preview during an edit) read the stack
+   * and the revision one after the other, not both from the same state.
+   */
   private tail: Promise<unknown> = Promise.resolve();
   private serial<T>(fn: () => Promise<T>): Promise<T> {
     const run = this.tail.then(fn, fn);
@@ -109,22 +112,61 @@ export class EditorSession {
     return r;
   }
 
-  /** The engine applied a restore itself and answered the patch: it joins the draft like any other, so it can be undone. An empty patch is no step. */
-  absorbRestore(applied: Applied & { patch: Patch }, label: string): Promise<void> { return this.serial(() => this.absorbRestoreNow(applied, label)); }
-  private async absorbRestoreNow(applied: Applied & { patch: Patch }, label: string): Promise<void> {
-    const edits = applied.patch.edits;
-    // an empty patch still moves the revision: the browser copy follows it, or the next edit starts from a revision the engine has left
-    const r = this.graph.apply(applied.patch);
-    if (!r.ok) await this.resyncNow();
-    if (edits.length) {
-      this.undoStack.push({ label, edits });
-      if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
-      this.redoStack.length = 0;
-    }
-    this.revision = applied.revision;
-    this.version++;
-    this.absorb(applied);
+  /**
+   * A change composed from the draft when the queue reaches it: `compose` reads the graph then, so its edits start from the revision they apply to.
+   * With `file`, the projection file's text is stored first, in the same step (a new projection: its file, then its graph and bindings).
+   */
+  change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: { name: string; text: string } } | null): Promise<Outcome | null> {
+    return this.serial(async () => {
+      const c = compose(this.graph);
+      if (!c) return null;
+      const stored = c.file ? await this.storeKqlNow(c.file.name, c.file.text) : null;
+      if (stored && !stored.ok) return stored;
+      return c.edits.length ? this.applyNow(c.edits, c.label) : stored;
+    });
   }
+
+  /** Restore a release of a module into the draft: the engine applies it itself and answers the patch, which joins the draft as one undo step (an empty one is none). */
+  restore(digest: string): Promise<void> {
+    return this.serial(async () => {
+      const applied = await this.svc.restore(this.draft.draft, digest);
+      const edits = applied.patch.edits;
+      // an empty patch still moves the revision: the browser copy follows it, or the next edit starts from a revision the engine has left
+      const r = this.graph.apply(applied.patch);
+      if (!r.ok) await this.resyncNow();
+      if (edits.length) {
+        this.undoStack.push({ label: "restore release", edits });
+        if (this.undoStack.length > MAX_UNDO) this.undoStack.shift();
+        this.redoStack.length = 0;
+      }
+      this.revision = applied.revision;
+      this.version++;
+      this.absorb(applied);
+    });
+  }
+
+  /** Evaluate the draft without committing it (the engine replays the retained inputs into a fresh engine). */
+  preview(body: Parameters<EditorService["preview"]>[1]): Promise<Preview> { return this.serial(() => this.svc.preview(this.draft.draft, body)); }
+
+  /**
+   * Commit the draft. With `version`, the module header of `module` names it first (an edit of the text, checked by the engine); a text that
+   * does not check commits nothing. The session ends with a commit: nothing may follow it on this draft.
+   */
+  commit(module: string, version: string | undefined, head: Graph, expectedCatalogRevision: string): Promise<{ catalogRevision: string; modules: string[] }> {
+    return this.serial(async () => {
+      if (version) {
+        const t = this.texts[module] ?? "";
+        const re = /^(module\s+\S+\s*@\s*)\S+?(\s*;)/m;
+        if (!re.test(t)) throw new Error("the module header was not found in the text");
+        const next = t.replace(re, `$1${version}$2`);
+        if (next !== t) { const r = await this.applyTextNow(module, next, head); if (!r.ok) throw new Error(r.error); }
+      }
+      return this.svc.commit(this.draft.draft, expectedCatalogRevision);
+    });
+  }
+
+  /** Drop the draft on the engine once the calls before it are done; a failure is no error (the draft is gone either way for the author). */
+  discard(): Promise<void> { return this.serial(() => this.svc.discard(this.draft.draft).catch(() => {})); }
 
   /**
    * Store a projection file's text in the draft. The draft's facts follow from the text (a text that does not lower changes none, its errors

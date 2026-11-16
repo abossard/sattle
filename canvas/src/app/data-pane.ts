@@ -11,7 +11,7 @@ import { Ex, EdgeKindCode, EdgeStyle, Scene, St, parseColor } from "../render/sc
 import { KIND_EDGE_COLOR, type Theme, edgeColorForType, styleForType, type TypeStyle } from "../render/theme";
 import { GraphView, type Ghost, type Pick } from "../render/view";
 import {
-  FlagLayer, type Filter, type Grouping, computeAnchors, defaultHiddenKinds, detectGrouping, emptyFilter, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood,
+  FlagLayer, type Grouping, type LayoutKind, type PaneModel, type PaneView, computeAnchors, detectGrouping, emptyPaneView, entityMatchesProp, entityMatchesSearch, hiddenCounts, labelPadding, neighbourhood, paneModel, sameDrawing,
 } from "./graph-view-model";
 import type { History, StepResult } from "./history";
 import { hasHierarchyEdges, hasTreeRows, inHierarchy } from "./tree-model";
@@ -23,7 +23,7 @@ import { ROLE_GLYPH, colorValueOf, entryOf, legendOf, tally, type Coloring, type
 import { roleColors } from "./roles";
 
 export type Selection = { graph: string; kind: "entity" | "relationship"; id: string };
-export type LayoutKind = "force" | "layered";
+export type { LayoutKind } from "./graph-view-model";
 
 export interface PaneEvents {
   select(sel: Selection | null, additive: boolean): void;
@@ -45,21 +45,17 @@ export class DataPane {
   readonly view: GraphView;
   readonly layoutClient = new LayoutClient();
   graph: Graph;
-  filter: Filter = emptyFilter();
+  /** what the person chose (filters, focus, kinds, layout, tile), and what the pane draws by as of the last full pass */
+  private shown: PaneView = emptyPaneView();
+  private model: PaneModel;
+  /** the layout drawn now; `shown.layout` decides it */
   layoutKind: LayoutKind = "force";
   layoutDirection: "down" | "right" = "down";
   layoutRunning = false;
   layoutProgress = 0;
   lastLayoutMs = 0;
-  focusDepth = 0;                  // 0 = off
   grouping: Grouping | null = null;
   collapsed = new Set<number>();
-  focusDim = true;
-  /** the edge kinds the person left out (null: the default of the place the pane is shown) and whether the pane is a tile of the graph space */
-  private userHiddenKinds: EdgeKind[] | null = null;
-  private tile = false;
-  /** the tile leaves out the nodes without edges (set by the last full pass) */
-  private thinsIsolated = false;
   /** what colors nodes and edges (null: the type colors) and the legend each was computed with */
   /** `none`: no element carries a value of the property, so the type colors stay (a graph of structure does not turn grey for a state it does not hold) */
   private coloring: Record<Target, { c: Coloring; legend: LegendEntry[]; none: boolean } | null> = { node: null, edge: null };
@@ -91,7 +87,8 @@ export class DataPane {
   constructor(readonly info: GraphInfo, private readonly history: History, host: HTMLElement, private theme: Theme, private readonly ev: PaneEvents, hub: TelemetryHub | null = null) {
     this.graph = history.graph;
     nameGraph(this.graph, info.ontology, info.labels);
-    this.layoutKind = this.autoLayoutKind();
+    this.model = this.modelNow();
+    this.layoutKind = this.model.layout;
     this.view = new GraphView(host);
     this.view.setTheme(theme);
     this.view.setScene(this.scene);
@@ -148,8 +145,11 @@ export class DataPane {
   setTheme(t: Theme): void { this.theme = t; this.styles.clear(); this.view.setTheme(t); this.refreshAll(); this.recolor(); }
 
   // ---- loading and layout ----
-  start(): void {
+  /** `view`: what the pane shows from the start (the ontology view lays out layered, say) */
+  start(view: Partial<PaneView> = {}): void {
+    this.shown = { ...this.shown, ...view };
     this.refreshAll();
+    this.layoutKind = this.model.layout;
     // a large tree is unreadable leaf by leaf: group by its single relationship type and collapse the lowest level
     const types = this.relationshipTypes();
     if (this.layoutKind === "layered" && this.graph.nodeCount > 300 && types.length === 1) {
@@ -178,9 +178,6 @@ export class DataPane {
     }
     return "force";
   }
-  /** set when the person chose the layout (Filters): the pane then keeps it */
-  userLayout = false;
-
   runLayout(kind: LayoutKind = this.layoutKind, fitWhenDone = false): void {
     this.layoutKind = kind;
     const g = this.graph, sc = this.scene;
@@ -302,14 +299,13 @@ export class DataPane {
     const g = this.graph, n = g.nodes.length;
     this.ensureSized();
     const vis = this.vis;
-    const f = this.filter;
-    const focusSet = this.focusDepth > 0 && this.selection?.kind === "entity" && g.nodeSlot.has(this.selection.id)
-      ? neighbourhood(g, g.nodeSlot.get(this.selection.id)!, this.focusDepth) : null;
+    const f = this.shown.filter, depth = this.shown.focusDepth;
+    const focusSet = depth > 0 && this.selection?.kind === "entity" && g.nodeSlot.has(this.selection.id)
+      ? neighbourhood(g, g.nodeSlot.get(this.selection.id)!, depth) : null;
     // a tile leaves out the nodes no edge reaches when the graph has others: a ring of unconnected dots says nothing at that size
-    this.thinsIsolated = this.tile && tileThinsIsolated(g);
-    const thin = this.thinsIsolated;
+    const thin = this.model.thinIsolated;
     // with support left out, an element that only supports others (a signal, evidence) is left out too; what it supports counts it
-    const supportOnly = this.hiddenNow.has("support") ? this.supportOnlyNodes() : null;
+    const supportOnly = this.model.hiddenKinds.has("support") ? this.supportOnlyNodes() : null;
     this.supportCounts = new Map();
     if (supportOnly) for (const [slot, supported] of supportOnly) for (const t of supported) this.supportCounts.set(t, (this.supportCounts.get(t) ?? 0) + 1);
     for (let i = 0; i < n; i++) {
@@ -338,7 +334,7 @@ export class DataPane {
     const g = this.graph, s = this.scene;
     this.kindCounts = new Map();
     for (const r of g.relationships()) this.countKind(r.type, 1);
-    this.hiddenNow = this.hiddenKinds();
+    this.model = this.modelNow();
     this.restated = this.info.edgeKinds ? restatingTypes(g) : new Set();
     this.blame = blamePath(g, this.info, this.restated);
     this.computeVisibility();
@@ -388,33 +384,42 @@ export class DataPane {
   private kindCounts = new Map<EdgeKind, number>();
   private countKind(type: string | undefined, by: number): void { const k = type === undefined ? undefined : this.kindOf(type); if (k) this.kindCounts.set(k, (this.kindCounts.get(k) ?? 0) + by); }
   /** The kinds drawn without: the person's choice, or the default of the place. */
-  hiddenKinds(): ReadonlySet<EdgeKind> { return new Set(this.userHiddenKinds ?? defaultHiddenKinds(this.tile, this.presentKinds())); }
-  /** the kinds hidden as of the last full pass: a patch draws its edges by it; a step that changes them makes a full pass */
-  private hiddenNow: ReadonlySet<EdgeKind> = new Set();
+  hiddenKinds(): ReadonlySet<EdgeKind> { return this.modelNow().hiddenKinds; }
+  /** The pane model of the view and the graph as they are now (see `paneModel`). */
+  private modelNow(): PaneModel {
+    const g = this.graph;
+    return paneModel(this.shown, { presentKinds: this.presentKinds(), tileThins: this.shown.tile && tileThinsIsolated(g), collapsed: !!this.grouping && this.collapsed.size > 0, treeState: !!this.info.tree && Object.keys(this.info.tree.state).length > 0, autoLayout: this.autoLayoutKind() });
+  }
   /** relationship types that restate others (see `restatingTypes`), as of the last full pass, and whether the person asked to see them */
   private restated: ReadonlySet<string> = new Set();
-  private showRestated = false;
   /** the parts to blame and the way to them from the top (see `blamePath`), as of the last full pass */
   private blame: ReturnType<typeof blamePath> = { blamed: new Set(), nodes: new Set(), edges: new Set() };
   restatedTypes(): ReadonlySet<string> { return this.restated; }
-  setShowRestated(show: boolean): void { if (show !== this.showRestated) { this.showRestated = show; this.refreshAll(); } }
-  setKindFilter(hidden: EdgeKind[] | null): void {
-    if (JSON.stringify(hidden) === JSON.stringify(this.userHiddenKinds)) return;
-    this.userHiddenKinds = hidden;
-    this.refreshAll();
+  /**
+   * Show the graph as the person chose: the one way to change a filter, the focus, the edge kinds, the restated types, the layout or whether the pane
+   * is a tile (a tile of the graph space draws fewer kinds than the view of the graph until the person chooses). Only what the change reaches is redone.
+   */
+  setView(change: Partial<PaneView>): void {
+    const was = this.shown, next = { ...was, ...change };
+    this.shown = next;
+    const same = <K extends keyof PaneView>(k: K) => JSON.stringify(was[k]) === JSON.stringify(next[k]);
+    const sameTypes = was.filter.hiddenTypes.size === next.filter.hiddenTypes.size && [...next.filter.hiddenTypes].every((t) => was.filter.hiddenTypes.has(t));
+    const visible = sameTypes && JSON.stringify(was.filter.prop) === JSON.stringify(next.filter.prop) && same("focusDepth") && same("hiddenKinds") && same("showRestated") && same("tile");
+    if (!visible) this.refreshAll();
+    else if (was.filter.search !== next.filter.search) { this.updateMatches(); this.view.requestRender(); }
+    if (!same("focusDim")) this.setSelection(this.selection);
+    if (!same("layout")) { const want = this.modelNow().layout; if (want !== this.layoutKind) this.runLayout(want, true); }
   }
-  /** A tile of the graph space draws fewer kinds than the view of the graph until the person chooses. */
-  setTile(tile: boolean): void { if (tile !== this.tile) { this.tile = tile; this.refreshAll(); } }
 
   private writeEdges(lo: number, hi: number): void {
     const g = this.graph, s = this.scene;
-    const hidden = this.hiddenNow;
+    const hidden = this.model.hiddenKinds;
     const seen = this.anchor ? new Set<string>() : null;
     for (let e = lo; e < hi; e++) {
       const r = g.edges[e];
       const a = g.edgeSrc[e], b = g.edgeDst[e];
       const kind = this.kindOf(r?.type ?? "");
-      if (!r || a < 0 || b < 0 || (kind && hidden.has(kind)) || (!this.showRestated && this.restated.has(r.type))) { s.hideEdge(e); continue; }
+      if (!r || a < 0 || b < 0 || (kind && hidden.has(kind)) || (!this.shown.showRestated && this.restated.has(r.type))) { s.hideEdge(e); continue; }
       let ea = a, eb = b, agg = false;
       if (this.anchor) { ea = this.anchor[a]; eb = this.anchor[b]; agg = ea !== a || eb !== b; }
       if (!this.vis[ea] || !this.vis[eb] || ea === eb) { s.hideEdge(e); continue; }
@@ -468,7 +473,8 @@ export class DataPane {
     if (!steps.length) return;
     const g = this.graph, s = this.scene;
     this.ensureSized();
-    const full = !!(this.filter.hiddenTypes.size || this.filter.prop || this.grouping && this.collapsed.size || this.focusDepth || this.thinsIsolated || (this.tile && tileThinsIsolated(g)) || this.hiddenNow.has("support") || (this.info.tree && Object.keys(this.info.tree.state).length));
+    // drawn element by element only when the last full pass needed no pass over the whole graph; the model after the steps decides again below
+    const full = this.model.whole;
     let structural = false;
     for (const step of steps) {
       const res: Extract<ApplyResult, { ok: true }> = step.result;
@@ -505,15 +511,15 @@ export class DataPane {
     s.positionsDirty = true; s.positionsVersion++;
     // the selection is held by id: a slot it flagged may now hold another element
     if (this.selection && structural) this.flagSelection();
-    const hidden = this.hiddenKinds();
-    if (full || hidden.size !== this.hiddenNow.size || [...hidden].some((k) => !this.hiddenNow.has(k))) this.refreshAll();
+    const now = this.modelNow();
+    if (full || !sameDrawing(this.model, now)) this.refreshAll();
     else { s.nodeCount = Math.max(s.nodeCount, g.nodes.length); if (this.selection && structural) this.updateHot(); }
     if (this.legendStale) this.recolor();
     this.updateMatches();
     this.view.requestRender();
     // the layout of a revision is a function of that revision: when the graph now reads best in another layout (a pane made on an empty revision,
     // a scrub that brought the tree), or a layered graph changed its nodes or edges, it is laid out again
-    const want = this.userLayout ? this.layoutKind : this.autoLayoutKind();
+    const want = now.layout;
     if (want !== this.layoutKind || (want === "layered" && structural && g.nodeCount <= 5000)) this.runLayout(want, want !== this.layoutKind);
   }
 
@@ -600,7 +606,7 @@ export class DataPane {
   setSelection(sel: Selection | null): void {
     this.selection = sel && sel.graph === this.info.id ? sel : null;
     this.flagSelection();
-    if (this.focusDepth > 0) this.refreshAll(); else this.updateHot();
+    if (this.shown.focusDepth > 0) this.refreshAll(); else this.updateHot();
   }
 
   /** The flags of the selection and what it relates to, found by id. */
@@ -691,16 +697,8 @@ export class DataPane {
 
   expandAll(): void { this.collapsed.clear(); this.refreshAll(); this.relayoutIfLayered(); }
 
-  setFilter(f: Filter): void {
-    const was = this.filter;
-    this.filter = f;
-    // the search only marks matches; what is visible changes only with the types or the property condition
-    const sameVisible = was.hiddenTypes.size === f.hiddenTypes.size && [...f.hiddenTypes].every((t) => was.hiddenTypes.has(t)) && JSON.stringify(was.prop) === JSON.stringify(f.prop);
-    if (sameVisible) { this.updateMatches(); this.view.requestRender(); } else this.refreshAll();
-  }
-
   private updateMatches(): void {
-    const q = this.filter.search.trim();
+    const q = this.shown.filter.search.trim();
     this.matches = new Set<number>();
     if (q) {
       const g = this.graph;
@@ -742,7 +740,7 @@ export class DataPane {
     this.view.hotEdges = [...this.edgeFlags.members_(St.Selected), ...this.edgeFlags.members_(St.Hover), ...this.edgeFlags.members_(St.Identity)].filter((e) => this.scene.edgeVisible(e));
     this.view.setHot(nodes, edges);
     const focused = this.nodeFlags.members_(St.Selected).size + this.edgeFlags.members_(St.Selected).size > 0 || this.matches.size > 0 || this.nodeFlags.members_(St.Identity).size > 0 || this.nodeExtra.members_(Ex.Source).size > 0 || this.edgeFlags.members_(St.Identity).size > 0;
-    this.view.dim = focused && this.focusDim ? 0.2 : 1;
+    this.view.dim = focused && this.shown.focusDim ? 0.2 : 1;
   }
 
   focusSelection(): void {
@@ -802,9 +800,9 @@ export class DataPane {
       }
       return true;
     }
-    if (ev.key === "Enter" && this.selection?.kind === "entity") { this.focusDepth = this.focusDepth ? 0 : 1; this.refreshAll(); this.ev.announce(this.focusDepth ? "Neighbourhood focus on" : "Neighbourhood focus off"); return true; }
+    if (ev.key === "Enter" && this.selection?.kind === "entity") { this.setView({ focusDepth: this.shown.focusDepth ? 0 : 1 }); this.ev.announce(this.shown.focusDepth ? "Neighbourhood focus on" : "Neighbourhood focus off"); return true; }
     if (ev.key === " " && this.selection?.kind === "entity") { const s = g.nodeSlot.get(this.selection.id); if (s !== undefined) this.toggleCollapse(s); return true; }
-    if (ev.key === "Escape") { this.focusDepth = 0; this.ev.select(null, false); return true; }
+    if (ev.key === "Escape") { this.shown = { ...this.shown, focusDepth: 0 }; this.ev.select(null, false); return true; }
     return false;
   }
 

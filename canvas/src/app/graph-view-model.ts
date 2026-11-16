@@ -25,6 +25,31 @@ export function defaultHiddenKinds(tile: boolean, present: ReadonlySet<EdgeKind>
 
 export const emptyFilter = (): Filter => ({ hiddenTypes: new Set(), prop: null, search: "" });
 
+export type LayoutKind = "force" | "layered";
+/** What the person chose about how a pane shows its graph. `layout` "auto": the layout the graph reads best in, decided again as it changes. */
+export interface PaneView { filter: Filter; focusDepth: number; focusDim: boolean; hiddenKinds: EdgeKind[] | null; showRestated: boolean; layout: "auto" | LayoutKind; tile: boolean }
+export const emptyPaneView = (): PaneView => ({ filter: emptyFilter(), focusDepth: 0, focusDim: true, hiddenKinds: null, showRestated: false, layout: "auto", tile: false });
+
+/** What the pane draws by, as a function of the view and of facts about the graph now. A step whose model equals the last one is drawn element by element. */
+export interface PaneModel {
+  hiddenKinds: ReadonlySet<EdgeKind>;
+  /** a tile leaves out the nodes no edge reaches */
+  thinIsolated: boolean;
+  /** what is visible depends on the whole graph (filters, focus, collapsed groups, thinning, left-out support): every step is a full pass */
+  whole: boolean;
+  layout: LayoutKind;
+}
+export interface PaneFacts { presentKinds: ReadonlySet<EdgeKind>; tileThins: boolean; collapsed: boolean; treeState: boolean; autoLayout: LayoutKind }
+export function paneModel(v: PaneView, f: PaneFacts): PaneModel {
+  const hiddenKinds = new Set(v.hiddenKinds ?? defaultHiddenKinds(v.tile, f.presentKinds));
+  const thinIsolated = v.tile && f.tileThins;
+  const whole = v.filter.hiddenTypes.size > 0 || !!v.filter.prop || v.focusDepth > 0 || f.collapsed || thinIsolated || hiddenKinds.has("support") || f.treeState;
+  return { hiddenKinds, thinIsolated, whole, layout: v.layout === "auto" ? f.autoLayout : v.layout };
+}
+/** Two models draw the same elements (the layout is decided apart). */
+export const sameDrawing = (a: PaneModel, b: PaneModel): boolean =>
+  a.whole === b.whole && a.thinIsolated === b.thinIsolated && a.hiddenKinds.size === b.hiddenKinds.size && [...a.hiddenKinds].every((k) => b.hiddenKinds.has(k));
+
 export function entityMatchesProp(e: Entity, f: PropertyFilter): boolean {
   const v = e.props[f.key];
   const text = v ? valueText(v) : "";

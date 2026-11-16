@@ -21,7 +21,7 @@ import { darkTheme } from "../src/render/theme";
 import { EDGE_KINDS, type EdgeKind, type TreeSpec } from "../src/source/presentation";
 import type { GraphInfo } from "../src/source/types";
 import { ont } from "./fixtures/engine-fake";
-import { ent, rel, ver } from "./helpers";
+import { addE, addN, ent, patch, rel, ver } from "./helpers";
 
 const KINDS = EDGE_KINDS;
 const events = { select() {}, hover() {}, activate() {}, changed() {}, announce() {}, key: () => false };
@@ -44,18 +44,18 @@ const types: Record<string, EdgeKind | undefined> = { Is: "composition", Needs: 
 const info = (edgeKinds: Record<string, EdgeKind> | undefined): GraphInfo => ({ id: "g", role: "projection", descriptor: {}, ontology: ont("o"), inputs: [], edgeKinds } as unknown as GraphInfo);
 const world = (relTypes = Object.keys(types)) => new History({ version: ver("1"), entities: [ent("hub"), ...relTypes.map((t) => ent(`n-${t}`))], relationships: relTypes.map((t) => rel(`r-${t}`, "hub", `n-${t}`, t)) });
 const declared = Object.fromEntries(Object.entries(types).filter(([, k]) => k)) as Record<string, EdgeKind>;
-const paneOf = (i: GraphInfo, h: History, tile = false) => { const p = new DataPane(i, h, document.createElement("div"), darkTheme, events as never); p.setTile(tile); p.refreshAll(); return p; };
+const paneOf = (i: GraphInfo, h: History, tile = false) => { const p = new DataPane(i, h, document.createElement("div"), darkTheme, events as never); p.setView({ tile }); p.refreshAll(); return p; };
 const drawn = (p: DataPane, h: History) => Object.fromEntries(Object.keys(types).map((t) => { const slot = h.graph.edgeSlot.get(`r-${t}`)!; return [t, scene(p).edgeVisible(slot) ? scene(p).edgeKind(slot) : null]; }));
 
 describe("a pane draws each edge with the kind its type declares", () => {
   it("every kind has its own code and an edge without a kind has none", () => {
     const h = world(); const p = paneOf(info(declared), h);
-    p.setKindFilter([]);                                              // every kind drawn
+    p.setView({ hiddenKinds: [] });                                              // every kind drawn
     expect(drawn(p, h)).toEqual({ Is: EdgeKindCode.composition, Needs: EdgeKindCode.dependency, Calls: EdgeKindCode.communication, Explains: EdgeKindCode.support, Plain: 0 });
   });
   it.each(KINDS)("leaving %s out hides its edges and only those", (kind) => {
     const h = world(); const p = paneOf(info(declared), h);
-    p.setKindFilter([kind]);
+    p.setView({ hiddenKinds: [kind] });
     const shown = drawn(p, h);
     for (const [t, k] of Object.entries(types)) expect(shown[t] !== null, `${t} (${k ?? "no kind"})`).toBe(k !== kind);
   });
@@ -79,9 +79,9 @@ describe("a tile leaves out what does not make the graph readable at its size", 
   it("the pane of a tile draws composition and dependency, the person's choice overrides, and opening the graph draws all", () => {
     const h = world(); const p = paneOf(info(declared), h, true);
     expect(Object.fromEntries(Object.entries(drawn(p, h)).map(([t, k]) => [t, k !== null]))).toEqual({ Is: true, Needs: true, Calls: false, Explains: false, Plain: true });
-    p.setKindFilter([]);                                              // the person turned them all on
+    p.setView({ hiddenKinds: [] });                                              // the person turned them all on
     expect(Object.values(drawn(p, h)).every((k) => k !== null)).toBe(true);
-    p.setKindFilter(null); p.setTile(false);                          // opened: the default of the view leaves out only support
+    p.setView({ hiddenKinds: null }); p.setView({ tile: false });                          // opened: the default of the view leaves out only support
     expect(Object.fromEntries(Object.entries(drawn(p, h)).map(([t, k]) => [t, k !== null]))).toEqual({ Is: true, Needs: true, Calls: true, Explains: false, Plain: true });
   });
   it("the tile of a graph whose edges are all communication still draws them", () => {
@@ -137,8 +137,21 @@ describe("an element that only supports others", () => {
   });
   it("comes back as a node when support is turned on", () => {
     const h = world2(); const p = paneOf(info(declared), h);
-    p.setKindFilter([]);
+    p.setView({ hiddenKinds: [] });
     expect(["s1", "s2"].map((id) => nodeShown(p, h, id))).toEqual([true, true]);
     expect(p.labelsShown()).toContain("hub");
+  });
+});
+
+// Code review 2, change 6: a step that brings a kind decides the hidden kinds again (the pane model after the step differs from the last one).
+describe("a kind that a step brings", () => {
+  it("a tile that gains a dependency leaves communication out from that step on", () => {
+    const h = world(["Calls"]);
+    const p = paneOf(info(declared), h, true);
+    const calls = () => scene(p).edgeVisible(p.graph.edgeSlot.get("r-Calls")!);
+    expect(calls(), "a tile with only communication draws it").toBe(true);
+    const step = h.append(patch("1", "2", [addN(ent("n-Needs")), addE(rel("r-Needs", "hub", "n-Needs", "Needs"))]))!;
+    p.applyStep(step);
+    expect([[...p.hiddenKinds()].sort(), calls()], "the kinds hidden before the dependency stay hidden after it").toEqual([["communication", "support"], false]);
   });
 });

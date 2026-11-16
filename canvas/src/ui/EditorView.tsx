@@ -15,7 +15,8 @@ import { rendererTheme } from "../state/effects";
 import { storeKqlText } from "../state/editor-effects";
 import { runtime } from "../state/runtime";
 import { dispatch, useStore } from "../state/store";
-import type { Command } from "../state/types";
+import type { Command, EditorState } from "../state/types";
+import { WORK_LABEL } from "../state/editor-phase";
 import { webgl2Available } from "./CanvasHost";
 import { DirectionBadge } from "./common";
 import { Definitions } from "./editor/Definitions";
@@ -43,6 +44,7 @@ const store = (key: string) => { try { return JSON.parse(localStorage.getItem(ke
 const save = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* storage unavailable */ } };
 const run = (cmd: Command) => dispatch({ type: "editor/do", cmd });
 const short = (d: string) => d.replace("sha256:", "").slice(0, 10);
+const working = (ed: EditorState) => (ed.phase.t === "ready" ? ed.phase.work : null);
 
 
 
@@ -140,7 +142,7 @@ function Projects() {
       )}
       <div className={s.bar}>
         <Text weight="semibold" as="h2">Preview of the draft</Text><span className={s.grow} />
-        <Button size="small" icon={ed.busy === "preview" ? <Spinner size="tiny" /> : <Eye20Regular />} disabled={ed.busy === "preview"} onClick={() => dispatch({ type: "editor/preview" })}>Preview output graphs</Button>
+        <Button size="small" icon={working(ed) === "preview" ? <Spinner size="tiny" /> : <Eye20Regular />} disabled={working(ed) === "preview"} onClick={() => dispatch({ type: "editor/preview" })}>Preview output graphs</Button>
       </div>
       {pv && (
         <>
@@ -209,15 +211,15 @@ export function EditorView() {
   const [bottom, setBottom] = useState("problems");
   const [dialog, setDialog] = useState<"commit" | "new" | null>(null);
   const picked = useStore((x) => x.selection);
-  useEffect(() => { if (ed.status === "idle") dispatch({ type: "editor/open" }); }, [ed.status]);
+  useEffect(() => { if (ed.phase.t === "closed") dispatch({ type: "editor/open" }); }, [ed.phase.t]);
   // restoring a release can remove the projection being edited: move to a projection of the module that still exists
   useEffect(() => {
-    if (!session || ed.status !== "ready" || !ed.projection || session.graph.entity(ed.projection)) return;
+    if (!session || ed.phase.t !== "ready" || !ed.projection || session.graph.entity(ed.projection)) return;
     const next = session.catalog.projections().find((p) => p.module === ed.module) ?? session.catalog.projections().find((p) => p.module !== "sattle.kernel");
     if (next) dispatch({ type: "editor/projection", module: next.module, projection: next.id });
-  }, [session, ed.status, ed.projection, ed.module, ed.version]);
-  if (ed.status === "error") return <div className={s.pad}><MessageBar intent="warning"><MessageBarBody>{ed.message}</MessageBarBody><MessageBarActions><Button onClick={() => dispatch({ type: "editor/open" })}>Try again</Button></MessageBarActions></MessageBar></div>;
-  if (!session || ed.status !== "ready") return <div className={s.pad}><Spinner label="Opening a draft on the engine…" /></div>;
+  }, [session, ed.phase.t, ed.projection, ed.module, ed.version]);
+  if (ed.phase.t === "failed") return <div className={s.pad}><MessageBar intent="warning"><MessageBarBody>{ed.phase.message}</MessageBarBody><MessageBarActions><Button onClick={() => dispatch({ type: "editor/open" })}>Try again</Button></MessageBarActions></MessageBar></div>;
+  if (!session || ed.phase.t !== "ready") return <div className={s.pad}><Spinner label="Opening a draft on the engine…" /></div>;
 
   const c = session.catalog;
   const stack = stackOf(c, ed.projection);
@@ -234,7 +236,7 @@ export function EditorView() {
             {projections.map((q) => <option key={q.id} value={q.id}>{q.module}: {q.name}</option>)}</Select></Field>
           {p && <DirectionBadge direction={p.direction} />}
           <Badge appearance="outline" shape="square" color="informative">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
-          {ed.busy && <Spinner size="tiny" label={ed.busy} labelPosition="after" />}
+          {ed.phase.work && <Spinner size="tiny" label={WORK_LABEL[ed.phase.work]} labelPosition="after" />}
         </div>
         <div className={s.bar}>
           <Breadcrumb aria-label="Stacked projections" size="small">
@@ -261,7 +263,7 @@ export function EditorView() {
           </Toolbar>
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          {p && <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.svc.preview(ed.draft, { include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeKqlText(`${p.module}.${p.name}.kql`, text, dispatch)}
+          {p && <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeKqlText(`${p.module}.${p.name}.kql`, text, dispatch)}
             picked={picked && runtime.ws?.histories.get(picked.graph) ? { graph: picked.graph, data: runtime.ws.histories.get(picked.graph)!.graph, ids: [picked.id] } : null} /></Suspense>}
           {ed.notice && <div style={{ position: "absolute", left: 36, right: 36, top: 36 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}

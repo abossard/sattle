@@ -61,7 +61,7 @@ describe("the label of a node with a colored state", () => {
     const h = new History({ version: ver("1"), entities: [ent("a", "Pod", { name: "api", state: "Degraded" }), ent("b", "Pod", { name: "web", state: "Healthy" }), ent("c", "Pod", { name: "db", state: "Plain" }), ent("d", "Pod", { name: "cache" })], relationships: [] });
     const p = new DataPane(info, h, document.createElement("div"), darkTheme, events as never);
     p.setColoring("node", { property: "state", hint: info.presentation![0] } as never);
-    p.setTile(tile);
+    p.setView({ tile: tile });
     p.refreshAll();
     return p.labelsShown();
   };

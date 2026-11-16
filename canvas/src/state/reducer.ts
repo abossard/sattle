@@ -1,6 +1,7 @@
 // The only place state changes. Pure: (state, action) -> state, no clocks, no I/O, no mutation.
 import type { Action, GraphSummary, State } from "./types";
 import { emptyEditor, emptyFilter } from "./types";
+import { editorTransition } from "./editor-phase";
 
 export const initialState = (): State => ({
   sourceId: "", generation: 0, load: { status: "idle", message: "", ms: 0 }, graphs: [], catalog: "", activeGraph: "", view: "data", theme: "light", dialog: null,
@@ -34,10 +35,11 @@ export function reduce(s: State, a: Action): State {
     case "ui/announce": return { ...s, announcement: a.text };
     case "select/element": return { ...s, selection: a.selection, announcement: a.selection ? `Selected ${a.selection.kind} ${a.selection.id} in ${a.selection.graph}` : "Selection cleared" };
     case "editor/summary": return { ...s, editor: { ...s.editor, ...a.patch } };
+    case "editor/event": return { ...s, editor: { ...s.editor, phase: editorTransition(s.editor.phase, a.event) } };
     case "editor/projection": return { ...s, editor: { ...s.editor, module: a.module, projection: a.projection, preview: null } };
     case "editor/dismiss": return { ...s, editor: { ...s.editor, ...(a.what === "preview" ? { preview: null } : a.what === "notice" ? { notice: "" } : { releaseDiff: null }) } };
     // the engine and the session answer these; effects report with editor/summary
-    case "editor/open": return { ...s, editor: { ...emptyEditor(), status: "opening" } };
+    case "editor/open": return { ...s, editor: { ...emptyEditor(), phase: editorTransition(s.editor.phase, { t: "open" }) } };
     case "editor/do": case "editor/undo": case "editor/redo": case "editor/commit": case "editor/discard": case "editor/preview": case "editor/releases": case "editor/diffRelease": return s;
     case "pane/command": return s;
     case "hover/element": return { ...s, hover: a.selection };

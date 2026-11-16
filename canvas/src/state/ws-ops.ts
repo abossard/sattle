@@ -38,14 +38,15 @@ export function applyHighlight(ws: Workspace, graph: string, fs: FilterState | u
 /** Apply the parts of the filter state that changed to the pane. */
 export function applyFilter(pane: DataPane, f: FilterState, changed: Partial<FilterState>): void {
   const has = (k: keyof FilterState) => k in changed;
-  if (has("search") || has("hiddenTypes") || has("propKey") || has("propOp") || has("propValue")) {
-    pane.setFilter({ hiddenTypes: new Set(f.hiddenTypes), prop: f.propKey ? { key: f.propKey, op: f.propOp, value: f.propValue } : null, search: f.search });
-  }
-  if (has("focusDepth")) { pane.focusDepth = f.focusDepth; pane.refreshAll(); }
-  if (has("hiddenKinds")) pane.setKindFilter(f.hiddenKinds);
-  if (has("showRestated")) pane.setShowRestated(f.showRestated);
-  if (has("focusDim")) { pane.focusDim = f.focusDim; pane.setSelection(pane.selection); }
-  if (has("layout") && pane.layoutKind !== f.layout) { pane.userLayout = true; pane.runLayout(f.layout, true); }
+  pane.setView({
+    ...(has("search") || has("hiddenTypes") || has("propKey") || has("propOp") || has("propValue")
+      ? { filter: { hiddenTypes: new Set(f.hiddenTypes), prop: f.propKey ? { key: f.propKey, op: f.propOp, value: f.propValue } : null, search: f.search } } : {}),
+    ...(has("focusDepth") ? { focusDepth: f.focusDepth } : {}),
+    ...(has("hiddenKinds") ? { hiddenKinds: f.hiddenKinds } : {}),
+    ...(has("showRestated") ? { showRestated: f.showRestated } : {}),
+    ...(has("focusDim") ? { focusDim: f.focusDim } : {}),
+    ...(has("layout") ? { layout: f.layout } : {}),
+  });
   if (has("grouping")) {
     const g = resolveGrouping(pane.info, f.grouping);
     // a pane that already groups this way keeps what the user collapsed or expanded
