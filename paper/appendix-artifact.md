@@ -13,7 +13,8 @@ This appendix is the only part of the paper that names programs, files and comma
 | Folder | What it is | Chapters it implements |
 |---|---|---|
 | `engine/src/Sattle.Core` | values and their canonical form, names of entities, the fixed core of types | 1, 2 |
-| `engine/src/Sattle.Language` | the text form of definitions, its parser, printer and checker | 2, 5 |
+| `engine/src/Sattle.Language` | the text form of modules, its parser, printer and checker | 2, 5 |
+| `engine/src/Sattle.Kql` | the KQL front end: reading a projection file, checking its names and types, the library of functions, and the lowering of each statement to the operators | 5, 12 |
 | `engine/src/Sattle.Runtime` | graphs and versions, changes, step-by-step evaluation of projections, measurements, editable views, change of definitions, readers of sources, stores, restart | 3, 4, 6, 7, 8, 9, 10, 11 |
 | `engine/src/Sattle.Cli` | the command line program `sattle` and the server that the viewer talks to | 10, 12 |
 | `engine/definitions` | the definitions used in the experiments: types, naming rules, projections, the levels and the health model | 2, 5, 7 |

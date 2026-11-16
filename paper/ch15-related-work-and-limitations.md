@@ -76,7 +76,7 @@ Not listed here, because they are listed where they arise: truncation of documen
 - The kernel is closed. A new operator, builtin function, kind of value or adapter needs a new release of the engine (Ch. 2, 5, 10). Ontologies, identity domains and projections do not.
 - Recursion is positive, monotone and over a finite domain (Theorem 6.5, condition F5). General recursion, negation inside recursion, new identities in recursion and well-founded semantics are out of scope. `Join` is not a lens step. `sync` has no negative conditions.
 - Efficient maintenance of recursive views under retraction is cited, not established (Theorem 6.6). Patterns of several steps cannot in general be maintained in constant time (Fact 11.2).
-- Histograms and distributions as a kind of measurement are open. A `mean` does not decompose and must be rolled up through a weighted mean.
+- Histograms and distributions as a kind of measurement are open. A `mean` does not decompose and must be rolled up as a weighted mean, a sum of value times weight divided by a sum of weight.
 - Graphs computed on demand and changes described by a formula are not modelled (Ch. 0).
 
 **Operation** (gate 1c and Phase 2).

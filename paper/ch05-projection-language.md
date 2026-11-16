@@ -57,7 +57,7 @@ A *row type* `R` is a finite map from field names to field types. A row type has
 
 **Definition 5.5 (roles of computed values).** When an expression combines values: `data ⊔ ρ = ρ` (a computation with a measurement is a measurement); two measurement operands need the same period; and the time behavior follows Def. 5.6. For example `delta + delta = delta`, `delta ÷ delta = gauge`, `delta × data = delta`, and any arithmetic on a `cumulative` value is an error.
 
-**Definition 5.6 (time behavior of aggregates).** For aggregates over measurement fields: `sum`, `min` and `max` keep `gauge` and `delta` and refuse `cumulative` (apply `Delta` first); `mean` gives `gauge`; `weightedMean` and `last` are allowed on `gauge` only; `count` gives `gauge`. `Rate` turns a `delta` of unit `u` and period `P` into a `gauge` of unit `u/s`. `Delta` turns `cumulative` into `delta`, starting again when the value drops. `Threshold` accepts `gauge` or `delta`. A property declared with `combine = mean` may be rolled up again only through `weightedMean` with an explicit weight. The checker requires that the combine rule of a written measurement property equals the aggregate that produced its value.
+**Definition 5.6 (time behavior of aggregates).** For aggregates over measurement fields: `sum`, `min` and `max` keep `gauge` and `delta` and refuse `cumulative` (apply `Delta` first); `mean` is allowed on `gauge` only and gives `gauge`; `count` gives `gauge`; `last` reads data and no measurement. `Rate` turns a `delta` of unit `u` and period `P` into a `gauge` of unit `u/s`. `Delta` turns `cumulative` into `delta`, starting again when the value drops. `Threshold` accepts `gauge` or `delta`. A property declared with `combine = mean` may be rolled up again only as a weighted mean written with two sums, `sum(value · weight) / sum(weight)`, with an explicit weight. The checker requires that the combine rule of a written measurement property equals the aggregate that produced its value.
 
 *Example:* the calls per minute of two pods of `api` towards `db` are rolled up by `sum` into the calls of `api` towards `db`; both are `delta` with a period of one minute.
 
@@ -221,7 +221,7 @@ RT is a property of two programs, the parser and the printer. It is tested on th
 
 *Proof.* (a) By RT, `parse ∘ print` is the identity on `Can`, so `print` is injective on `Can`. For a canonical text `t' = print(G)` with `G ∈ Can`: `print(parse(t')) = print(parse(print(G))) = print(G) = t'`. So `print ∘ parse` is the identity on `print(Can)`. (b) `parse(t) ∈ Can`, so `fmt(fmt(t)) = print(parse(print(parse(t)))) = print(parse(t)) = fmt(t)`. If `fmt(t) = t` then `t = print(parse(t)) ∈ print(Can)`; the converse is (a). (c) If `fmt(t) = fmt(t')` then `print(parse(t)) = print(parse(t'))`, and `print` is injective on `Can`, so `parse(t) = parse(t')`. The converse is immediate. ∎
 
-*Remark (why not every well-formed graph).* `parse` gives generated names to the nodes that the text does not name: the steps of `let x` are `x#0, x#1, …` and an unnamed sink of rule `r` is `<r>.<k>` (5.6). The kernel constraints ask only for unique sibling names (K3). A well-formed graph whose step nodes carry other names is therefore in `Can` only if the printer writes it in a form that reproduces those names, which is not known. A draft can also hold a graph that the printer refuses because a part is missing (Ch. 4, 4.6). A committed catalog module is canonical, given RT, because a commit prints every changed module and activates what the check of that text produced (Def. 4.13).
+*Remark (why not every well-formed graph).* The texts of the theorem are the texts of modules (5.6); a projection is a file of KQL that the engine lowers and never prints, so the theorem says nothing about it. The kernel constraints ask only for unique sibling names (K3), and whether the printer reproduces every naming that a well-formed graph can carry is not known. A draft can also hold a graph that the printer refuses because a part is missing (Ch. 4, 4.6). A committed catalog module is canonical, given RT, because a commit prints every changed module and activates what the check of that text produced (Def. 4.13).
 
 ## 5.5 Operators that read measurements
 
@@ -237,19 +237,23 @@ Editable rules (bijective, lens or sync) contain none of these operators on a pa
 
 *Example:* the drop ratio of calls from `api` to `db`, per minute. With `above 0.05 for 3` and `below 0.02 for 3`, the edge becomes `degraded` after three minutes at or above 5 percent, and `ok` again after three minutes at or below 2 percent. A ratio that jumps between 3 and 4 percent changes nothing.
 
-**Fill, time-to-live and no data.** A source that reports only events, such as warnings, leaves a window without a record when nothing happened. Ch. 7 (Def. 7.14 to 7.16) defines how such a window can be filled with a value, and how a subject that is silent too long gets a state of its own, *no data*. The text:
+**Fill, time-to-live and no data.** A source that reports only events, such as warnings, leaves a window without a record when nothing happened. Ch. 7 (Def. 7.14 to 7.16) defines how such a window can be filled with a value, and how a subject that is silent too long gets a state of its own, *no data*. In the text of a projection (5.6) the fill and the time-to-live are two arguments of the function that reads the measurements, and a column `noData` comes with every row:
 
-```
-|> series G x.p [fill c], x.q [fill c] within D [ttl T]
-|> rollup by { ... } combine { ... } [nodata any]
-|> threshold m by { ... } above A for N then "x" below B for M then "y" initial "z" [nodata then "n" | nodata ignore] as s
+```kusto
+telemetry_filled("master", 30m, 5m, 0.0)
+| where property == "warnings"
+| project id, windowStart, value, noData
+| ... summarize ... by key, windowStart
+| ... invoke hysteresis("on", "off", "off", "nodata")
 ```
 
-`fill c` gives a covered window without a record the constant `c`. `ttl T` is the time-to-live after which a subject without a record is in no data. A roll-up key is in no data when every member that has a record, stored, filled or marked no data, is in no data (Def. 7.16), or with `nodata any` when one is. `nodata then "n"` is the value a `Threshold` gives such a key, and `nodata ignore` gives it no row. The checker refuses `fill` without `ttl`, `fill` on a gauge or a `cumulative` property, a `ttl` below one window width or above `within` less one window width, a `Threshold` over a series with `ttl` that has no `nodata` clause, and a `nodata` clause without a `ttl` upstream (Ch. 7, after Def. 7.16). The `lift` statement does not have these clauses yet.
+The look-back is `within`, the third argument is the time-to-live `ttl` after which a subject without a record is in no data, and the fourth gives a covered window without a record the constant `c`. A roll-up key is in no data when every member that has a record, stored, filled or marked no data, is in no data (Def. 7.16). The fourth argument of `hysteresis` is the value a `Threshold` gives such a key. The kernel has two variants that the text cannot write: a roll-up key that is in no data when one member is, and a `Threshold` that gives such a key no row. The checker refuses `fill` without `ttl`, `fill` on a gauge or a `cumulative` property, a `ttl` below one window width or above `within` less one window width, a `Threshold` over a series with `ttl` that has no `nodata` value, and a `nodata` value without a `ttl` upstream (Ch. 7, after Def. 7.16).
 
 ## 5.6 Concrete syntax
 
-Definitions are written in one text language: declarations of types in the style of PG-Schema ([pgschema]), patterns in the style of Cypher and GQL ([opencypher], [gql]), which are languages for describing and querying graph databases, and computations as named pipelines, `let x = … |> … ;`. Between programs, definitions travel as the canonical JSON of their facts (Ch. 1). Each construct of the text is one or a few nodes of the definition graph:
+Definitions are written in two kinds of text.
+
+The text of a **module** declares types, row types, identity domains, constraints and graph spaces, in the style of PG-Schema ([pgschema]). It contains no projection. Between programs, definitions travel as the canonical JSON of their facts (Ch. 1). Each construct of a module text is one or a few nodes of the definition graph:
 
 | Construct | Graph |
 |---|---|
@@ -258,35 +262,47 @@ Definitions are written in one text language: declarations of types in the style
 | `relationship R (A \| B) -> (C) {…}` | `RelationshipType`, `sourceType`, `targetType` |
 | `identity d for T version "1" { c: K by f; }` | `IdentityDomain`, `KeyComponent` with canonicalizer |
 | `rows N {…}` | `RowType`, `Field` |
-| `projection P purpose [forward] output M {…}` | `Projection`, `outputOntology` |
-| `in p: rows N;` and `in p: graph a;` | `Port`, `rowType` or `expects` |
-| `let x = src \|> step \|> …;` | one operator per step, wires between their ports |
-| `rule r class "reason" {…}` | `Rule`, `governs` each sink written in it |
-| `emit`, `link` | `EmitEntity`, `EmitRelationship`, `Link` |
 | `space S {…}` | `GraphSpace`, `Source`, `Graph`, `Binding`, `master` |
-
-The following operators have this text, which the printer writes canonically (tests print and reparse each of them to the same digest):
-
-| Construct | Notes |
-|---|---|
-| `let j = join a, b on <expr>;` | equalities between a left and a right expression, other conjuncts are a residual filter. Both inputs are data rows with distinct column names. Rejected: clashing columns, a condition with no equality |
-| `let u = union a, b;` and `\|> distinct` | `Union` needs the same columns of the same types. `Distinct` is set semantics over signed rows, rows with a weight as in Ch. 4 (Def. 4.6) |
-| `\|> traverse g via Rel out\|in\|either depth 0 .. 8 from c as d` | adds the columns `d`, `d_depth` and the demanded read columns `d.prop`. Depth at most 16. Rejected: a bad depth, an unknown start |
-| `values { a: 1 }, { a: 2 }` | constant rows of one shape, emitted once when the graph first evaluates |
-| `\|> retain on time for 24h` | `Retain` on the required data Instant column `time`, age a duration. Rejected: a field that is not a required data Instant, an age that is not positive, windowed input rows |
-| `mean(x)`, `any(b)`, `all(b)`, `last(value, order)`, `weightedMean(value, weight)` | aggregates; `last` takes an ordering expression |
-| `in n: param Integer = 0;` | a parameter port (Def. 5.14) |
 | `state: Text roles { "Healthy": ok };` | value roles (Ch. 2, Def. 2.13) |
+
+A **projection** is a file of KQL, the Kusto Query Language of Microsoft, stored beside the module whose ontology it writes to. KQL is a language for queries over tables, and it has a query over graphs, `graph-match`, for patterns of nodes and edges ([kqlgraph]). The engine reads the file with Microsoft's open parser ([kustolanguage]), checks the names and the types of every statement, and lowers each statement to the operators of 5.1. A projection in KQL is therefore a projection in the sense of Def. 5.1, and every statement of this chapter and the next is about the lowered graph and not about the text. The engine accepts a profile of KQL: only the forms whose result it can keep up to date from changes (5.1, Ch. 6). Any other form is refused with a message that names its place. Examples are a `join` of another kind than `inner`, an aggregate that depends on the order of rows (`take_any`), an estimate (`dcount`) and a reading of the wall clock (`now()` and `ago()` mean the newest time of the data, and are accepted only in a filter on time and in the look-back of a measurement).
+
+| KQL text | Construct of the definition graph |
+|---|---|
+| `graph P : m with (description = "…", history = 4);` | `Projection` with its settings, `outputOntology` to the module `m` |
+| `input g : m;` and `input r : RowType;` | `Port` of kind graph (`expects`) or rows (`rowType`) |
+| `declare query_parameters(minReady:long = 0);` | parameter port (Def. 5.14) |
+| `let x = …;` | the operators of the expression `x`, wired from port to port; a `let` with arguments is a function that is expanded where it is called |
+| `graph("g") \| graph-match (a)-[e]->(b) where … project …` | `Match`; the labels in `labels(e) has "Calls"` are the types of the pattern elements |
+| `(a)-[p*1..16]->(b)` in a `graph-match` | `Traverse`: the elements within one to 16 edges, with the depth bound; at most one such path, and it ends the pattern |
+| `where`, `project`, `extend` | `Filter`, `Map` |
+| `join kind=inner t on a, $left.b == $right.c` | `Join`: equalities between a column of each side; both sides are data rows with distinct column names |
+| `union a, b`, `distinct`, `datatable(…)[…]` | `Union` (the same columns of the same types), `Distinct` (set semantics over signed rows, Ch. 4, Def. 4.6), `Values` (constant rows, emitted once when the graph first evaluates) |
+| `where time > ago(24h)` | `Retain` on a required data `Instant` column, age a duration (Def. 5.15) |
+| `summarize n = count(), s = sum(x) by k` | `Group`; the aggregates are `count`, `countif`, `count_distinct`, `sum`, `min`, `max`, `avg` (the `mean` of the kernel) and `arg_max(order, value)` (the `last` with its ordering) |
+| `summarize … by k, windowStart = bin(time, 60s)` | `Window`, then `Group` over the windows of the rows' own time |
+| `join kind=inner (telemetry("g", 24h) \| …) on id` | `Series` (5.5): the closed windows of the measurements of an element within the look-back |
+| `summarize v = sumif(value, property == "p") by k, windowStart` over such rows | `Rollup` with `sum`, `min` or `max` (and `maxif`, `minif`) per key and window |
+| `… \| project k, windowStart, value, above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3 \| invoke hysteresis("high", "low", "initial")` | `Threshold` (Def. 7.10) |
+| `nodes T on k = q;` and `edges R from a to b = q;` | `EmitEntity`, `EmitRelationship`, a create |
+| `extend nodes T on k = q;` and `extend edges R from a to b = q;` | an update of what a create made, setting the properties that `q` gives, which may be measurements |
+| `link L from a to b = q;` | `Link` (Def. 1.10) |
+| `… with (rule = "r", accept = "create, delete", update = "name", onCreate = "f", onDelete = "g")` | `Rule` that governs the sinks written with the same `rule`, with its class and its edit policies (Ch. 8) |
+| `identity("domain", k1, k2)` | the id that the identity domain gives to the key components (Def. 1.9) |
+
+The functions `telemetry`, `telemetry_filled`, `identity`, `hysteresis` and `rate` come with the engine as a library written in plain KQL, so that tools for KQL check every call, and the engine recognises each by its name and maintains it from changes. Definitions in KQL stay close to the notation of the paper: a projection is a list of named tables (`let`) and of statements that write nodes and edges.
+
+A text is not printed back from the definition graph: the file is the source of its projection, and a draft of the definitions refuses a patch that touches a projection, which is edited as text (Ch. 12). The operators lowered from a file carry its places, so that a message of the checker names a line.
 
 **Definition 5.14 (parameter).** A projection may declare an input port of kind `param` with a value kind `κ ∈ {Text, Integer, Decimal, Boolean}` and an optional default constant. In an expression a parameter is a constant of kind `κ`, role data, requirement `req`. A graph of the space that binds the projection gives a literal of kind `κ` for every parameter that has no default (`graph g = m.p(master: master, minReady: 4)`), and the projection is checked again with the values per binding. A parameter is definition data: a `Port` with kind `param` and a `Binding` with a `value`, so the editor creates and edits it with the same patches as any other definition fact. The same projection bound twice with different values is two graphs.
 
-*Example:* the deployment health of Ch. 2 has the parameter `in minReady: param Integer = 0;`. The space binds it as `minReady: 1` for one graph; the same projection bound with `minReady: 2` is a second graph.
+*Example:* the deployment health of Ch. 2 has the parameter `declare query_parameters(minReady:long = 0);`. The space binds it as `minReady: 1` for one graph; the same projection bound with `minReady: 2` is a second graph.
 
 **Proposition 5.8 (parameters are constants of the binding).** The output of a bound graph is a function of its input graphs, its recorded rows, its definitions and its argument literals. A binding that omits a parameter without default, gives a literal of another kind, or names a port the projection does not have, is rejected when the space is made active and changes nothing.
 
 *Status.* The first part follows from Def. 5.14 (the binding gives a constant) and Theorem 6.3, with the literal as one more input of the definitions; no proof is written out, and the proposition counts as tested. Tests: one projection bound with a threshold of 5 and of 1 gives the groups `a` and `a, b`; each of the three wrong bindings is rejected with its message.
 
-**Definition 5.15 (retention).** `Retain(ts, age)` has a required data `Instant` column `ts` of its input (not windowed) and a positive `age` in nanoseconds (the text `retain on time for 24h`). Let `λ` be the logical-time frontier (the time up to which windows are closed, Def. 7.6 and Def. 7.11) and `time(r)` the value of `ts` in row `r`. A row `r` with weight `w > 0` passes unchanged if `time(r) + age > λ` at its recorded position, and is counted and dropped otherwise. A held row is withdrawn, that is emitted again with weight `−w`, when an advance moves `λ` to a value with `time(r) + age ≤ λ`. A retraction of a held row passes and releases it. A retraction of a row that has been withdrawn is absorbed. A row in which `ts` is absent breaks its row contract, because the column is required: it is dropped at the `Retain` and counted as a runtime fault. It neither passes nor is held, so it never has to expire. It is not passed, because a row without a time could never be withdrawn and the retained set would no longer be a function of the frontier (Proposition 5.9); and it does not fail the input, because one malformed row must not stop the rows around it (Def. 5.19). Whatever is derived from a withdrawn row is retracted by the support counts of Ch. 6, so retention is not a second removal mechanism for elements.
+**Definition 5.15 (retention).** `Retain(ts, age)` has a required data `Instant` column `ts` of its input (not windowed) and a positive `age` in nanoseconds (the text `where time > ago(24h)`). Let `λ` be the logical-time frontier (the time up to which windows are closed, Def. 7.6 and Def. 7.11) and `time(r)` the value of `ts` in row `r`. A row `r` with weight `w > 0` passes unchanged if `time(r) + age > λ` at its recorded position, and is counted and dropped otherwise. A held row is withdrawn, that is emitted again with weight `−w`, when an advance moves `λ` to a value with `time(r) + age ≤ λ`. A retraction of a held row passes and releases it. A retraction of a row that has been withdrawn is absorbed. A row in which `ts` is absent breaks its row contract, because the column is required: it is dropped at the `Retain` and counted as a runtime fault. It neither passes nor is held, so it never has to expire. It is not passed, because a row without a time could never be withdrawn and the retained set would no longer be a function of the frontier (Proposition 5.9); and it does not fail the input, because one malformed row must not stop the rows around it (Def. 5.19). Whatever is derived from a withdrawn row is retracted by the support counts of Ch. 6, so retention is not a second removal mechanism for elements.
 
 **Proposition 5.9 (retention is a function of the frontier).** For every recorded input and every position `n` of it, the integrated output of `Retain` equals the integrated input restricted to the rows that have a time and are *live* at the frontier `λ_n` of that position: `I(out)[n] = I(in)[n] restricted to { r | time(r) + age > λ_n }`. The right side does not mention how the input is cut into steps.
 Theorem 6.1 uses this proposition for its `Retain` case, and the proof below does not use Theorem 6.1.
@@ -303,30 +319,36 @@ A step that carries several positions is their composition, so the claim holds a
 *Measured.* On the small samples of recordings, with an age that expires the oldest 25, 50 and 90 percent of the evidence, the master graph keeps exactly the evidence whose time plus age is above the frontier, and the digest of the state is the same for batches of 1, 7, 50 and 100,000 records. On each of the two real recordings, with an age that expires the older half, the same holds for batches of 1, 50 and 100,000. The proposition is not tested on generated inputs.
 
 
-Generated names: an unnamed sink in rule `r` is `<r>.<k>`; pipeline steps of `let x` are `x#0, x#1, …` with the last named `x`. Layout is canonical, `///` comments are kept as descriptions and `//` comments are dropped.
+**Worked example.** The service graph of the running example, written out: a forward view that derives dependencies between services from calls between pods, and turns the drop ratio of closed one-minute windows into a `status` with hysteresis. It is the core of the shipped projection of the service tree, without its groups by namespace.
 
-**Worked example.** The service graph of the running example, written out: a forward view that derives dependencies between services from calls between pods, and turns the drop ratio of closed one-minute windows into a `status` with hysteresis. The one `match` of three edges is another way to write the two `Match`es and two `Join`s of the example in 5.1; both give the same rows.
+```kusto
+graph depHealth : acme.svc with (description = "Who calls whom, and how healthy each call path is.", history = 4);
+input master : acme.ops;
 
-```text
-projection depHealth view forward output acme.svc {
-  in master: graph ops;
-  let deps = match master (a: infra.Pod)-[c:infra.Calls]->(b: infra.Pod),
-                          (a)-[:infra.Backs]->(s: infra.Service),
-                          (b)-[:infra.Backs]->(t: infra.Service)
-    |> where s != t;
-  emit relationship DependsOn from deps key dependsOn: s -> t;
-  let win = deps
-    |> series master c.flows, c.drops within 24h
-    |> rollup by { s: s, t: t } combine { flows: sum(flows), drops: sum(drops) };
-  let ratio = win |> select { s: s, t: t, windowStart: windowStart,
-                              r: if(flows > 0, drops / flows, 0.0) };
-  let health = ratio |> threshold r by { s: s, t: t }
-      above 0.05 for 3 then "degraded" below 0.02 for 3 then "ok" initial "ok" as status;
-  emit update relationship DependsOn from health key dependsOn: s -> t set { status: status };
-}
+// a pod backs the services whose endpoints it serves
+let backing = graph("master")
+    | graph-match (p)-[b]->(s) where labels(b) has "Backs"
+      project pod = p.id, service = s.id;
+// a call between two pods is a call between the services they back
+let deps = graph("master")
+    | graph-match (a)-[c]->(b) where labels(c) has "Calls"
+      project call = c.id, fromPod = a.id, toPod = b.id
+    | join kind=inner (backing | project fromPod = pod, src = service) on fromPod
+    | join kind=inner (backing | project toPod = pod, dst = service) on toPod
+    | where src != dst;
+let flows = deps
+    | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project call = id, windowStart, property, value) on call
+    | summarize flows = sumif(value, property == "flows"), drops = sumif(value, property == "drops") by src, dst, windowStart
+    | extend dropRatio = iff(flows > 0, drops / flows, 0.0);
+
+edges DependsOn from src to dst = deps;
+extend edges DependsOn from src to dst = flows
+    | project src, dst, windowStart, value = dropRatio, above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3
+    | invoke hysteresis("degraded", "ok", "ok")
+    | project src, dst, status = state;
 ```
 
-Reading with the judgments: `Match` types `a, b` as `Ent⟨Pod⟩`, `c` as `Rel⟨Calls⟩`; `where s != t` is `(Boolean, req, data)`; the first emit is a create with key `dependsOn`; `Series` reads two `delta` telemetry properties of period 60 s, so `W = 60 s`; `Rollup` with `sum` on `delta` is allowed and the output stays `tele⟨delta, 60 s⟩`; `drops / flows` is `tele⟨gauge⟩` by the role join, and `Threshold` accepts it and outputs `status : (Text, req, data)`; the second emit is an update of the `DependsOn` created above and sets a `data` property, which P4 allows because the value came from `Threshold`. A `where` on `flows` outside `Threshold` would violate P4. A `Rollup` input of a `cumulative` property would violate Def. 5.6. A projection with a rule of class `lens` containing this path would violate P2.
+Reading with the judgments: each `graph-match` is a `Match` with one edge pattern, and its `where` on the labels gives the pattern elements their types (`Backs`, `Calls`); the two joins of `deps` are `Join`s on a pod, and `where src != dst` is `(Boolean, req, data)`; the first statement that writes is a create with the key `dependsOn`, the default key, which is the name of the type with a lower-case first letter (a setting `key = "…"` gives another); the join with `telemetry` on the call is a `Series` that reads two `delta` properties of period 60 s, so `W = 60 s`; the `summarize` by `windowStart` is a `Rollup`, and `sum` on `delta` is allowed and the output stays `tele⟨delta, 60 s⟩`; `drops / flows` is `tele⟨gauge⟩` by the role join, and `Threshold` accepts it and outputs `status : (Text, req, data)`; the second statement that writes is an update of the `DependsOn` created above and sets a `data` property, which P4 allows because the value came from `Threshold`. A `where` on `flows` outside `Threshold` would violate P4. A `Rollup` input of a `cumulative` property would violate Def. 5.6. A projection with a rule of class `lens` containing this path would violate P2.
 
 ## 5.7 Refactoring
 
@@ -430,7 +452,7 @@ An earlier version of the prototype had a statement `lift` that was expanded int
 ## 5.9 What the prototype does differently
 
 - **Operators.** 17 of the 18 operator kinds are built. `Delta` is not, because no property in the definitions or the recordings is a running total. `Match` has no patterns of variable length. Recursion over rows is not expressible: reach over the relationships of a graph is a `Traverse` with its depth bounds (Ch. 6).
-- **Aggregates over measurements.** The prototype is stricter than Def. 5.6: `weightedMean` and `last` are allowed only over data, not over a `gauge`, and `mean` in a `Rollup` needs a `gauge`. The checker refuses the other cases with a message.
+- **Aggregates over measurements.** The prototype follows Def. 5.6 and refuses the other cases with a message. The text of a projection (5.6) writes `sum`, `min` and `max` over windows; `mean` over a `gauge` exists in the kernel and has no spelling in KQL.
 - **Retention** of evidence uses `Retain` with an age of 24 hours in the rules that write evidence. The age is a choice, not a result.
 - **Refactoring** (5.7) has no operation of its own and no test; the three refactorings are edits of the text, and their premises are not checked.
 - **Tests** of the typing rules are examples of refused projections, each with the rule it breaks and its position; type soundness on generated projections is not tested.

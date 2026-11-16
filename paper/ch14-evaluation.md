@@ -131,7 +131,7 @@ Each chapter ends with what the prototype does differently. Taken together, the 
 - Several statements were checked on fixtures and on real recordings, not on randomly generated projections.
 - How the premise B3 was found rests on comparing exported graphs, not on instrumenting the engine. That the survivor rule removes the dependence on order in general is Proposition 1.8; its tests are one synthetic input and two recordings. The causes behind B1 and B2 were found by set B. For a time the suite had no targeted tests of B1 and B2, and only the tests on the recordings guarded them.
 - From the tenth state of the software on, the figures at the current state are set A's: the people who direct the work also verify it, and the authors' check is a reading of code and tests.
-- Viewer and engine were evaluated at different times; what the viewer shows on the served newest recording (589 stubs, 143 folded evidence elements, the propagated failure) was seen in a browser in set A and is not asserted by a script.
+- Viewer and engine were evaluated at different times. What the viewer shows on the served newest recording was seen in a browser at the state of this revision (589 stubs, the workload model with two folded evidence elements and every state `Unknown`), and earlier in set A with the earlier health model (143 folded evidence elements, the propagated failure). No script asserts it.
 - The runs on real recordings depend on a local file of names that only one machine has; the authors used a copy that matches the shared definitions, and the state digests confirm it.
 
 **External.**
@@ -155,7 +155,7 @@ Sorted by gate. The two items that define gates 1b and 1c, a stated claim of exp
 | 1a | refactoring: any test, and a check of its premises | Proposition 5.7 |
 | 1a | levels: the image checked to be a function when data arrive; lifting on generated graphs and over more than two levels; capabilities in a real recording | Ch. 5, 5.8 |
 | 1a | an independent check of the canonical encoder; digests on other platforms; reuse of pod names; merge across projections | Ch. 1, 2, 10 |
-| 1b | aggregates of `Rollup` over a gauge and over a running total evaluated on data; `weightedMean` and `last` over a gauge built or removed from Def. 5.6 | Ch. 5 |
+| 1b | aggregates of `Rollup` over a gauge and over a running total evaluated on data; `last` over a gauge built or removed from Def. 5.6 | Ch. 5 |
 | 1b | `sync` rules; `Delta`; a measured cost of `Join` | Ch. 6, 8; H14 |
 | 1c | the Cosmos store on a real account: times, cost of the 32 requests per version, the path for large commits, the lease | Ch. 11; H3, H5, H7 |
 | 1c | the ten-run figures on a machine without other load and on the reference machine; ten runs for the other hypotheses; H5 and H10 with the whole health model; H10 with a kill during input, with new data, and on Cosmos | every status of Ch. 13 |

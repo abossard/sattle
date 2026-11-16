@@ -1,7 +1,7 @@
 # Inventory of laws, theorems and propositions
 
 **Claim.** Every numbered theorem, proposition, corollary, law and claim of the paper is listed here with its status, the technique of its proof and what checked it besides reading.
-**Status.** Complete for Ch. 1 to 13 at the text of this revision. No statement is a sketch or open. The third pass found four statements with a part that is false as stated or short of a hypothesis. Two of them (5.5, 10.3) are restated in their chapters. For the other two (5.3, 7.1) the restatement is pending a choice of the project; their chapters say so, and the two proposed forms are in the section "Third pass". No proof in this paper is mechanized. Where the last column says "reading only", the proof was written and read, and nothing else; the statements that a second reader derived again at gate 1a are listed in their own section, with every difference found.
+**Status.** Complete for Ch. 1 to 13 at the text of this revision: 114 numbered statements, none a sketch, open or pending a restatement. The third pass found four statements with a part that is false as stated or short of a hypothesis (5.3, 5.5, 7.1, 10.3); all four are restated in their chapters, and the section "Third pass" keeps the derivation. No proof in this paper is mechanized. Where the last column says "reading only", the proof was written and read, and nothing else; the statements that a second reader derived again at gate 1a are listed in their own section, with every difference found.
 **Gate.** 1a (theory). This file is the evidence of that gate.
 
 ## Reading the table
@@ -32,9 +32,9 @@
 | open | 4 | 4 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
 | all | 113 | 113 | 113 | 113 | 113 | 113 | 113 | 114 | 114 | 114 | 114 | 114 |
 
-The four statements with a pending restatement (5.3, 5.5, 7.1, 10.3) were counted as proved and read only, except 7.1, which has example tests. Theorems 5.5 and 10.3 are restated in their chapters as part D of the third pass proposes, and count as proved again. Theorems 5.3 and 7.1 stay pending until the project chooses between restating them and adding the typing rule for windowed rows. The sentence below still gives the figures after the second pass.
+The four statements with a pending restatement in the third pass (5.3, 5.5, 7.1, 10.3) are restated in their chapters and count as proved again; the last column of the counts shows 114 statements and no pending restatement. The sentence below gives the figures of the gate 1a pass, after the second pass, and has not been recounted.
 
-Of the 105 statements counted as proved in one of the three ways, 2 are checked by a differential harness against an independent reference evaluator (Theorems 6.1 and 6.2; the engine passes it since evaluation 12), 10 by seeded property tests that a review found weakened, 54 by example tests or measurements only, some of them void or weakened (last section but one), and 39 by reading only. Of the fifteen statements closed in the gate 1a pass, nine were **restated** because their first form was false or too strong (2.5, 5.2, 5.6, 5.7, 7.5, 8.7, 9.7, 11.6, 13.5), and seven are proved under named premises (4.11, 5.2, 5.6, 5.7, 10.5, 10.7, 10.8). "Proved under premises" is not "proved": the premise is the part that a test must still check.
+At the gate 1a pass, of the 105 statements counted as proved in one of the three ways, 2 are checked by a differential harness against an independent reference evaluator (Theorems 6.1 and 6.2; the engine passes it since evaluation 12), 10 by seeded property tests that a review found weakened, 54 by example tests or measurements only, some of them void or weakened (last section but one), and 39 by reading only. Of the fifteen statements closed in the gate 1a pass, nine were **restated** because their first form was false or too strong (2.5, 5.2, 5.6, 5.7, 7.5, 8.7, 9.7, 11.6, 13.5), and seven are proved under named premises (4.11, 5.2, 5.6, 5.7, 10.5, 10.7, 10.8). "Proved under premises" is not "proved": the premise is the part that a test must still check.
 
 ## The table
 

@@ -9,6 +9,7 @@ Stable keys, used as `[key]` in the chapters. "Checked" says where the source wa
 | R01 | [research/01-content-review.md](research/01-content-review.md) |
 | R02 | [research/02-master-graph-storage-and-scale.md](research/02-master-graph-storage-and-scale.md) |
 | R03 | [research/03-projection-language-and-metagraph.md](research/03-projection-language-and-metagraph.md) |
+| R10 | [research/10-existing-graph-languages.md](research/10-existing-graph-languages.md) |
 | ARCH | [ARCHITECTURE.md](../brainstorm/contracts/docs/ARCHITECTURE.md) |
 | DEC | [DECISIONS.md](../brainstorm/contracts/docs/DECISIONS.md) |
 | ADP | [ADAPTERS.md](../brainstorm/contracts/docs/ADAPTERS.md) |
@@ -119,7 +120,7 @@ The store evaluation of Ch. 11 section 11.4 summarizes verdicts. The documentati
 
 ## Sources for Ch. 2 to 15
 
-"Checked": **R01**, **R03** (opened by the research on 10 November 2026) or **Crossref** (title, authors, year, venue read from the Crossref record on 10 November 2026 for this paper). Content claims about R03 sources rest on R03 section 1.
+"Checked": **R01**, **R03** (opened by the research on 10 November 2026), **R10** (pages opened by the research note on 12 November 2026) or **Crossref** (title, authors, year, venue read from the Crossref record on 10 November 2026 for this paper). Content claims about R03 sources rest on R03 section 1.
 
 | Key | Reference | Link | Checked |
 |---|---|---|---|
@@ -127,6 +128,8 @@ The store evaluation of Ch. 11 section 11.4 summarizes verdicts. The documentati
 | pgkeys2021 | R. Angles et al. *PG-Keys: Keys for Property Graphs*. SIGMOD 2021. DOI 10.1145/3448016.3457561. | <https://doi.org/10.1145/3448016.3457561> | Crossref |
 | gql | ISO/IEC 39075:2024 *Database languages, GQL*. Publication facts from gqlstandards.org (the ISO page returned 403). | <https://www.gqlstandards.org/> | R03 |
 | opencypher | openCypher. | <https://opencypher.org/> | R03 |
+| kqlgraph | Microsoft. *Graph semantics overview* and *graph-match operator*. Documentation of Kusto. | <https://learn.microsoft.com/en-us/kusto/query/graph-semantics-overview>, <https://learn.microsoft.com/en-us/kusto/query/graph-match-operator> | R10 |
+| kustolanguage | Microsoft. *Kusto Query Language*, parser and analyzer library Kusto.Language (source under Apache-2.0), version 12.4.1. | <https://github.com/microsoft/Kusto-Query-Language> | R10 |
 | cypher-patterns | Neo4j, Cypher patterns. | <https://neo4j.com/docs/cypher-manual/current/patterns/> | R01 (G3), R03 |
 | rdfs | W3C. *RDF 1.1 Schema*. | <https://www.w3.org/TR/rdf11-schema/> | R03 |
 | owl2 | W3C. *OWL 2 Overview*. | <https://www.w3.org/TR/owl2-overview/> | R03 |
@@ -159,7 +162,3 @@ The store evaluation of Ch. 11 section 11.4 summarizes verdicts. The documentati
 | akidau2015 | T. Akidau et al. *The Dataflow Model*. PVLDB, 2015. | | R01 (dataflow) |
 | david2016 | I. Dávid, I. Ráth, D. Varró. SoSyM 17, online 2016. On streaming model transformations (title not recorded in R01). | | R01 (stream-model) |
 | steer2020 | B. Steer, F. Cuadrado, R. Clegg. Raphtory: streaming analysis of distributed temporal graphs. Future Generation Computer Systems 102, 2020. | | R01 |
-
-## Not yet cited (named in R01 section 2.5, not opened)
-
-Each must be opened before it is cited: Abiteboul, Hull and Vianu *Foundations of Databases* (R03 opened chapter 15 for stratified negation only; no claim of the chapters rests on it), SQL/PGQ, RDF-star, algebraic graph transformation (Ehrig et al.), patch theory (Jacobson), Stevens on bx in QVT, bitemporal data (Snodgrass), entity resolution (Fellegi and Sunter), streaming graph surveys (Besta et al.), SHACL appendices beyond the R03 summary.

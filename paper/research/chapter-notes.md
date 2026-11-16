@@ -1927,7 +1927,7 @@ The whole chapter as it stood before the reader rewrite (2026-11-12). The labels
 
     ## 15.3 Open questions index
 
-    Questions Q1 to Q16 of [R03] and risks R1 to R20 of [R02] are discharged by the obligation tables of Ch. 2, 5, 6, 8, 9, 10, 11 and 13. Not yet attached to a chapter obligation: Q6 (is a single `Threshold` enough to derive health, or are multi-signal rules needed), Q8 (is the syntax learnable), Q16 (partitioning one projection by entity handle with an ordered merge).
+    Retired (2026-11-16). Chapter 15 has no such index, and the paper's open points are listed in the README and in Chapter 15, 15.2. The questions Q1 to Q16 stay in research note 03 with their tests; Q8 (is the syntax learnable) no longer concerns a syntax of the project, since projections are written in KQL.
 
     ## 15.4 Delta to iteration 0.1
 

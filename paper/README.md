@@ -60,13 +60,12 @@ All figures are from an early prototype on one laptop-class machine. They are ea
 
 ## What is open
 
-- **Expressiveness is not yet stated.** The paper describes the language and what was built with it. It does not yet say which class of transformations the language can express and which it cannot.
-- **Efficiency at the target scale is not shown.** The target is a master graph of one million nodes on one machine, with a stated budget per node, edge and measurement. The budgets are not yet stated. The whole prototype used 5.4 GB on a synthetic estate of 750,000 entities, far more than the structure alone.
-- **Storage was tested on two simple stores.** A cloud database was designed for and run only on a local emulator.
-- **The health model is early evidence.** It covers one workload of one cluster that no longer exists. Whether a person who did not build it understands it was not tested. Nothing was measured from a source to the screen on a live stream.
-- **Three rules of the paper are not yet built**: how measurements combine when two names merge, how long measurements are kept, and listing conflicts with each version. So are a way to fill silent periods with a value and a "no data" state (Ch. 7).
+Chapter 0 states where each of the three goals of Phase 1 stands, and Chapter 15 lists every limit with its reason. In short:
 
-Chapter 15 lists the limits with reasons.
+- **Expressiveness is not yet stated.** The paper does not say which class of transformations the language can express and which it cannot.
+- **Efficiency at the target scale is not shown.** The budgets per node, edge and measurement are not stated, and nothing was measured at one million nodes.
+- **Storage and evidence are narrow.** Two simple stores were tested, a cloud database only on a local emulator, and the health model rests on one workload of one cluster that no longer exists.
+- **Retention of measurements** is a setting of the running engine and not yet a declaration in the definitions.
 
 ## How to read
 

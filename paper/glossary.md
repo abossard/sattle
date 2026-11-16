@@ -149,7 +149,7 @@ The unqualified word "direction" is not used in the paper.
 - **Relationship**: directed typed edge between two entity ids, with its own id. [Ch. 3]
 - **Release**: a module version identified by its digest, created by a committed catalog revision that changes the module. It can be listed, diffed and restored. [Ch. 9]
 - **Replica**: consumer-side copy of a graph built from a snapshot and guarded patches. [Ch. 12]
-- **Retain** (operator): `retain on time for 24h`; a row passes unchanged and is withdrawn (the same row with weight minus one) when the logical frontier reaches its time plus the age, so what is derived only from it is retracted by the support counts. [Ch. 5, Def. 5.15]
+- **Retain** (operator): `where time > ago(24h)`; a row passes unchanged and is withdrawn (the same row with weight minus one) when the logical frontier reaches its time plus the age, so what is derived only from it is retracted by the support counts. [Ch. 5, Def. 5.15]
 - **Retained set**: ordered union of the element histories of a projection, each input once. [Ch. 9]
 - **Revision**: position in the per-graph totally ordered commit log. [Ch. 3]
 - **Revision log**: the chain of commit records of one graph. [Ch. 3]

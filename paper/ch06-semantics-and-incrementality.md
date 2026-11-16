@@ -139,7 +139,7 @@ For each operator the engine keeps a small state and computes the change of its 
 | `Match` edges, `Join` | bilinear: new left against old right, then new right against the new left | an index of the rows seen so far, by entity or by join key |
 | `Traverse` | per start element a search outward, one step of depth at a time, to the depth bound, recomputed only when a visited element or edge changed, only the difference emitted | visited set per start |
 | `Group`, `Rollup` with `count`, `sum` | per-key accumulators updated by signed deltas | one per key (and window) |
-| `Group`, `Rollup` with `min`, `max`, `mean`, `weightedMean`, `any`, `all`, `last` | per-key ordered multiset, or recompute the affected key | per key |
+| `Group`, `Rollup` with `min`, `max`, `mean`, `any`, `all`, `last` | per-key ordered multiset, or recompute the affected key | per key |
 | `Distinct` | weight per row, emit on `0 ↔ positive` transitions | weight map |
 | `Delta` | per-key fold over ordered closed windows | previous value per key |
 | `Threshold` | per-key state machine over ordered closed windows | the windows of the retained range and one carried state per key |
