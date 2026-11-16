@@ -17,6 +17,7 @@ while [ $# -gt 0 ]; do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+case "$speed" in ''|*[!0-9]*|0*) echo "--speed must be a whole number of 1 or more, not '$speed'" >&2; exit 2 ;; esac
 
 dll="$root/engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll"
 [ -f "$dll" ] || { echo "no engine build at $dll: run dotnet build engine/src/Sattle.Cli -c Release" >&2; exit 1; }
@@ -36,12 +37,12 @@ stop() {
 trap stop EXIT
 trap 'exit 130' INT TERM
 
-# wait_for LOG PATTERN PID SECONDS: until the log has the pattern, or fail when the process ends or time runs out
+# wait_for LOG PATTERN PID SECONDS: until the log has the pattern, or fail when the process ends; after SECONDS it warns once and keeps waiting
 wait_for() {
   local i=0
   until grep -q "$2" "$1" 2>/dev/null; do
     kill -0 "$3" 2>/dev/null || { echo "it stopped; last lines of $1:" >&2; tail -5 "$1" >&2; exit 1; }
-    i=$((i + 1)); [ "$i" -le $(( $4 * 2 )) ] || { echo "no '$2' in $1 after $4 s" >&2; exit 1; }
+    i=$((i + 1)); [ "$i" -ne $(( $4 * 2 )) ] || echo "    still no '$2' in $1 after $4 s; waiting on (Ctrl-C stops)" >&2
     sleep 0.5
   done
 }

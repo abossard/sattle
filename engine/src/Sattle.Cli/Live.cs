@@ -28,6 +28,8 @@ static class Live
         public string Id => "eventhub:" + hub;
         /// <summary>How far the space is behind the newest event of the partition (events, seconds of enqueued time), once the first batch arrived.</summary>
         public (long Events, double Seconds)? Lag { get; private set; }
+        /// <summary>Where the last read started, for the line that says the input is ready.</summary>
+        public string Start { get; private set; } = "";
         public IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct)
         {
             string[] ids;
@@ -37,7 +39,7 @@ static class Live
             var partition = ids[0]; long last = -1;
             if (after is not null && JsonNode.Parse(after) is { } p) { partition = p["partition"]!.GetValue<string>(); last = long.Parse(p["sequenceNumber"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture); }
             var pos = last >= 0 ? EventPosition.FromSequenceNumber(last, isInclusive: false) : from switch { "earliest" => EventPosition.Earliest, _ => EventPosition.Latest };
-            Console.WriteLine($"live: {hub} partition {partition} from {(last >= 0 ? "sequence number " + last : from ?? "latest")}");
+            Start = $"{hub} partition {partition} from {(last >= 0 ? "sequence number " + last : from ?? "latest")}";
             var receiver = new PartitionReceiver(group, partition, pos, fqns, hub, credential, new PartitionReceiverOptions { PrefetchCount = 1000, TrackLastEnqueuedEventProperties = true });
             try
             {
@@ -79,11 +81,12 @@ static class Live
         Directory.CreateDirectory(Path.Combine(outDir, "live"));
         var recordPath = Path.Combine(outDir, "live", "stream.ndjson");
         var seconds = long.TryParse(o.Get("seconds"), out var sv) ? sv : o.Duration("seconds", 0) / 1_000_000_000;
-        FileRecording? rec = null; var started = DateTimeOffset.UtcNow;
+        FileRecording? rec = null; var started = DateTimeOffset.UtcNow; string? retrying = null;
         var source = new EventHubsSource(group, fqns, hub, new AzureCliCredential(), o.Get("from"));
         host.LiveStatus = () => new JsonObject
         {
             ["hubs"] = new JsonArray(hub), ["namespace"] = ns, ["position"] = host.SourcePosition("eventhub:" + hub) is { } p ? JsonNode.Parse(p) : null, ["record"] = recordPath, ["events"] = (rec?.Count ?? 0).ToString(),
+            ["retrying"] = retrying,
             ["lag"] = source.Lag is { } lag ? new JsonObject { ["events"] = lag.Events.ToString(System.Globalization.CultureInfo.InvariantCulture), ["seconds"] = lag.Seconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) } : null,
         };
         var cts = new CancellationTokenSource();
@@ -93,7 +96,14 @@ static class Live
         using var onTerm = System.Runtime.InteropServices.PosixSignalRegistration.Create(System.Runtime.InteropServices.PosixSignal.SIGTERM, c => { c.Cancel = true; cts.Cancel(); });
         using var record = new FileRecording(recordPath); rec = record;
         LiveCounts counts;
-        try { counts = LiveInput.Run(host, source, Program.ReplayOptionsOf(o, cluster), cts.Token, record); }
+        // the ready line comes after the first read, when the link to the hub is open: a forwarder started on it is not missed
+        try
+        {
+            counts = LiveInput.RunRetrying(host, source, Program.ReplayOptionsOf(o, cluster), cts.Token,
+                backoff: n => TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(n - 1, 5))),
+                failed: (e, wait) => { retrying = e.Message; Console.Error.WriteLine($"live input failed ({e.GetType().Name}: {e.Message}); reading again from the saved position in {wait.TotalSeconds:F0} s"); },
+                recording: record, ready: () => { retrying = null; Console.WriteLine("live: " + source.Start); });
+        }
         catch (OperationCanceledException) { counts = new LiveCounts(record.Count, 0, 0); host.LiveFlush(); }
         Console.WriteLine($"live stopped after {(DateTimeOffset.UtcNow - started).TotalSeconds:F0} s: {counts.Consumed:N0} events, {counts.Duplicates} duplicate(s), {counts.Rejected} rejected, position {host.SourcePosition("eventhub:" + hub)}");
         Console.WriteLine($"state digest {host.StateDigest()}");

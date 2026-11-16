@@ -39,7 +39,7 @@ let nodeReadings = graph("master")
     | invoke windowsOf("reading", real(null));
 extend nodes ComponentSignal on sig = nodeReadings | summarize reading = max(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, reading;
 let warnings = graph("master")
-    | graph-match (p)-[b]->(s) where labels(p) has "Pod" and labels(b) has "Backs" and labels(s) has "Service" and s.namespace == workloadNamespace
+    | graph-match (p) where labels(p) has "Pod" and p.namespace == workloadNamespace
       project m = p.id, ekey = strcat("pod/", p.cluster, "/", p.namespace, "/", p.name), meter = "warnings"
     | distinct *
     | join kind=inner (rules) on $left.meter == $right.rmeter

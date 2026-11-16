@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // Unattended live feed: Hubble flows, Kubernetes watch events and metrics polls into one single-partition hub
 // as envelopes. With --mirror-hubble the flows are also written to the hubble hub. Stream semantics: see CAPTURE-FORMAT.md.
-// usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble] [--authoring FILE]
+// usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble] [--authoring FILE] [--cluster NAME]
 //   --authoring FILE  one authoring record per line (signal rules, policies, curations), sent as `authoring` envelopes at every start
+//   --cluster NAME    the cluster's name on Kubernetes and Prometheus records; default Cilium's cluster-name
 //   env HUBBLE_FILTER  observe filter flags, default "--namespace sattle-demo --namespace demo"
 //   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60), QUEUE_MAX_MB per hub (64)
 import { execFile } from 'node:child_process';
@@ -11,7 +12,7 @@ import { parseArgs, promisify } from 'node:util';
 import { AzureCliCredential } from '@azure/identity';
 import { azureMetricsPoller, cachedToken, nextPollMs } from './lib/azure-metrics-poll.mjs';
 import { producer } from './lib/eventhub.mjs';
-import { envelope, withCluster } from './lib/envelope.mjs';
+import { clusterName, envelope, withCluster } from './lib/envelope.mjs';
 import { sink } from './lib/sink.mjs';
 import { newSamples } from './lib/metrics-poll.mjs';
 import { startChild, supervise, sleep } from './lib/supervise.mjs';
@@ -21,15 +22,20 @@ const { values: a } = parseArgs({
   options: {
     namespace: { type: 'string' }, hub: { type: 'string', default: 'sattle-ingest' }, kubeconfig: { type: 'string' }, seconds: { type: 'string' },
     'no-hubble': { type: 'boolean' }, 'no-metrics': { type: 'boolean' }, 'mirror-hubble': { type: 'boolean' }, 'debug-start-rv': { type: 'string' },
-    authoring: { type: 'string' },
+    authoring: { type: 'string' }, cluster: { type: 'string' },
   },
 });
 const here = new URL('.', import.meta.url).pathname;
 const kubeEnv = { ...process.env, KUBECONFIG: a.kubeconfig };
 const startedAt = Date.now();
 // the cluster's name as Hubble gives it (Cilium's cluster-name), so Kubernetes and Prometheus records name the cluster the flows do
-const cluster = await promisify(execFile)('kubectl', ['-n', 'kube-system', 'get', 'configmap', 'cilium-config', '-o', 'jsonpath={.data.cluster-name}'], { env: kubeEnv })
-  .then((r) => r.stdout.trim(), () => '');
+const cluster = await (async () => {
+  try {
+    return clusterName(a.cluster ? { given: a.cluster } : await promisify(execFile)('kubectl',
+      ['-n', 'kube-system', 'get', 'configmap', 'cilium-config', '-o', 'jsonpath={.data.cluster-name}', '--request-timeout=10s'],
+      { env: kubeEnv, timeout: 15_000 }).then((r) => ({ stdout: r.stdout }), (error) => ({ error })));
+  } catch (err) { console.error(err.message); process.exit(1); }
+})();
 
 // ---- destinations
 const ingestClient = producer(a.namespace, a.hub);

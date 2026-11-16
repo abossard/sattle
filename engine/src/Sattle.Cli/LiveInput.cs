@@ -6,7 +6,7 @@ namespace Sattle.Cli;
 /// <summary>One event of a live source: its body as delivered (the envelope text, or that text encoded as a JSON string) and the position of the source after it (an opaque JSON text the source defines and understands).</summary>
 public sealed record LiveEvent(string Text, string Position);
 
-/// <summary>A source the live input reads: it yields events after a position (null: where the source starts by its own rule) in order, and null when it is idle for a moment (so the input can flush). Event Hubs is one; tests use a fake with the same contract.</summary>
+/// <summary>A source the live input reads: it yields events after a position (null: where the source starts by its own rule) in order, and null when it is idle for a moment (so the input can flush). It yields nothing before it has read from its medium once, so its first yield means that from then on nothing sent is missed. A source that fails throws; the input reads it again from the position the space has seen. Event Hubs is one; tests use a fake with the same contract.</summary>
 public interface ILiveSource
 {
     string Id { get; }
@@ -33,7 +33,8 @@ public static class LiveInput
         catch (System.Text.Json.JsonException) { return body; }
     }
 
-    public static LiveCounts Run(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, ILiveRecording? recording = null, TimeSpan? flushEvery = null, Action<string>? received = null)
+    /// <summary>`ready` is called once, when the source yields its first event or idle mark: a source yields only after it reads, so from then on nothing sent to it is missed (Event Hubs resolves `latest` when its link opens on the first read).</summary>
+    public static LiveCounts Run(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, ILiveRecording? recording = null, TimeSpan? flushEvery = null, Action<string>? received = null, Action? ready = null)
     {
         host.StartLive(options);
         if (recording is not null) { var journaled = host.LiveEnvelopeTexts(); for (var i = recording.Count; i < journaled.Count; i++) recording.Append(journaled[(int)i]); }
@@ -41,6 +42,7 @@ public static class LiveInput
         long consumed = 0, dup = 0, bad = 0; var since = Stopwatch.StartNew(); var every = flushEvery ?? TimeSpan.FromSeconds(2);
         foreach (var ev in source.Read(after, ct))
         {
+            if (ready is not null) { ready(); ready = null; }
             if (ev is null) { host.LiveFlush(); since.Restart(); continue; }
             received?.Invoke("received");
             switch (host.LiveEnvelope(source.Id, EnvelopeText(ev.Text), ev.Position, recording is null ? null : recording.Append))
@@ -53,5 +55,23 @@ public static class LiveInput
         }
         host.LiveFlush();
         return new LiveCounts(consumed, dup, bad);
+    }
+
+    /// <summary>`Run` that survives a failing source (a network error after a laptop slept, an expired credential): after an error it waits `backoff(n)` for the n-th failure in a row and reads again from the position the space has seen, so nothing is lost or processed twice. A source that got ready before it failed starts the count again. Only the cancellation ends it.</summary>
+    public static LiveCounts RunRetrying(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, Func<int, TimeSpan> backoff, Action<Exception, TimeSpan> failed, ILiveRecording? recording = null, Action? ready = null, TimeSpan? flushEvery = null)
+    {
+        var failures = 0;
+        while (true)
+        {
+            var gotReady = false;
+            try { return Run(host, source, options, ct, recording, flushEvery, ready: () => { gotReady = true; ready?.Invoke(); }); }
+            catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
+            {
+                failures = gotReady ? 1 : failures + 1;
+                var wait = backoff(failures);
+                failed(e, wait);
+                if (ct.WaitHandle.WaitOne(wait)) ct.ThrowIfCancellationRequested();
+            }
+        }
     }
 }

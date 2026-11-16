@@ -183,11 +183,12 @@ public class WorkloadTests
         _ = pods;
     }
 
-    /// <summary>#95: a pod of the namespace that backs no Service (here `probe`, a client like the lab's intruder) is part of the workload under its deployment, and the calls of it that are dropped (by a network policy) are its own signal: the caller is to blame, not the pods it calls. The estate gets a deployment `probe` with one pod on node-a, calls from it to api-5c9-1 every 5 s in minutes 1 to 3, and the rule `pod-drops`; the replay stops at 10:04:30, before scenario A.</summary>
+    /// <summary>#95: a pod of the namespace that backs no Service (here `probe`, a client like the lab's intruder) is part of the workload under its deployment, and the calls of it that are dropped (by a network policy) are its own signal: the caller is to blame, not the pods it calls. Its warning events count like those of any pod (review). The estate gets a deployment `probe` with one pod on node-a, calls from it to api-5c9-1 every 5 s in minutes 1 to 3, and the rule `pod-drops`; the replay stops at 10:04:30, before scenario A.</summary>
     [Theory]
-    [InlineData("FORWARDED", "pod:probe-6f8-1=Healthy, deployment:probe=Healthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
-    [InlineData("DROPPED", "pod:probe-6f8-1=Unhealthy, deployment:probe=Unhealthy, workload:shop=Unhealthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
-    public void A_pod_that_backs_no_Service_is_in_the_workload_and_its_dropped_calls_blame_it(string verdict, string expected)
+    [InlineData("FORWARDED", 0, "pod:probe-6f8-1=Healthy, deployment:probe=Healthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
+    [InlineData("DROPPED", 0, "pod:probe-6f8-1=Unhealthy, deployment:probe=Unhealthy, workload:shop=Unhealthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
+    [InlineData("FORWARDED", 3, "pod:probe-6f8-1=Unhealthy, deployment:probe=Unhealthy, workload:shop=Unhealthy, pod:api-5c9-1=Healthy, service:api=Healthy")]
+    public void A_pod_that_backs_no_Service_is_in_the_workload_and_its_dropped_calls_blame_it(string verdict, int warningsPerMinute, string expected)
     {
         var dir = Path.Combine(Path.GetTempPath(), "sattle-probe-" + Guid.NewGuid().ToString("N"));
         try
@@ -209,6 +210,14 @@ public class WorkloadTests
                     metadata = new { name = "probe-6f8-1", uid = "uid-probe-6f8-1", @namespace = "shop", resourceVersion = "951", ownerReferences = new[] { new { kind = "ReplicaSet", name = "probe-6f8" } } },
                 } }),
             ]);
+            File.AppendAllLines(Path.Combine(dir, "kubernetes", "probe.ndjson"), Enumerable.Range(1, warningsPerMinute > 0 ? 3 : 0).Select(m => Line("kubernetes-watch", m * 60 + 5, $"kubernetes-watch/ADDED/Event/ev-probe-{m}/96{m}", new
+            {
+                type = "ADDED", @object = new
+                {
+                    kind = "Event", involvedObject = new { kind = "Pod", name = "probe-6f8-1", @namespace = "shop" }, reason = "BackOff", type = "Warning", message = "back-off restarting container",
+                    count = warningsPerMinute, lastTimestamp = At(m * 60 + 5), metadata = new { name = $"probe-6f8-1.{m}", uid = $"ev-probe-{m}", resourceVersion = $"96{m}", @namespace = "shop" },
+                },
+            })));
             File.WriteAllLines(Path.Combine(dir, "hubble", "probe.ndjson"), Enumerable.Range(0, 36).Select(i => 60 + i * 5.0).Select(sec => Line("hubble", sec + 0.007, $"hubble/probe-{sec}", new
             {
                 flow = new { time = At(sec + 0.007), uuid = $"probe-{sec}", verdict, source = new { @namespace = "shop", cluster_name = "synth", pod_name = "probe-6f8-1" }, destination = new { @namespace = "shop", cluster_name = "synth", pod_name = "api-5c9-1" } },

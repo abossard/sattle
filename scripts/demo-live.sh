@@ -20,6 +20,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+for tool in jq curl lsof kubectl azd az node dotnet; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "$tool is not on the PATH" >&2; exit 1; }
+done
 dll="$root/engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll"
 kubeconfig="$root/lab/.kube/config"
 overlay="$root/lab/captures/space-overlay.sattle"
@@ -108,5 +111,9 @@ cat <<EOF
 EOF
 while kill -0 "$engine_pid" 2>/dev/null; do
   sleep 60
-  echo "    $(date -u +%H:%M:%SZ) lag $(api /space | jq -r '"\(.input.lag.events) events, \(.input.lag.seconds) s"' 2>/dev/null)"
+  input="$(api /space | jq -c '.input' 2>/dev/null || true)"
+  if [ -z "$input" ]; then echo "    $(date -u +%H:%M:%SZ) the engine does not answer on port $port" >&2
+  elif [ "$(jq -r '.retrying // empty' <<<"$input")" != "" ]; then echo "    $(date -u +%H:%M:%SZ) the input failed and is reading again: $(jq -r '.retrying' <<<"$input")" >&2
+  else echo "    $(date -u +%H:%M:%SZ) lag $(jq -r '"\(.lag.events) events, \(.lag.seconds) s"' <<<"$input")"; fi
+  kill -0 "$forwarder_pid" 2>/dev/null || { echo "the forwarder stopped; last lines:" >&2; tail -5 "$logs/forwarder.log" >&2; exit 1; }
 done

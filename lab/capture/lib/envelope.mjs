@@ -45,3 +45,13 @@ export function payloadOf(line) {
 // flows carry their own `cluster_name`). Without a name the envelope is unchanged and the engine uses its default.
 const clustered = new Set(['kubernetes-watch', 'kubernetes-list', 'prometheus']);
 export const withCluster = (e, cluster) => (cluster && clustered.has(e.source) ? { ...e, meta: { ...(e.meta ?? {}), cluster } } : e);
+
+// The cluster's name from `kubectl get configmap cilium-config`, or the one given with --cluster. A cluster without Cilium
+// (the configmap is not found) has none, and the engine uses its default; any other failure (a timeout, no access) is an
+// error, because records without the name would not meet the flows that name it.
+export function clusterName({ given, stdout, error }) {
+  if (given) return given;
+  if (!error) return stdout.trim();
+  if (/NotFound/.test(error.stderr ?? '')) return '';
+  throw new Error(`cannot read the cluster name from configmap kube-system/cilium-config (${String(error.stderr || error.message).trim().slice(0, 200)}); pass --cluster NAME`);
+}

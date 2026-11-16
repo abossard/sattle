@@ -125,6 +125,48 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     [InlineData("not json at all", "not json at all")]
     public void The_envelope_text_of_a_body(string body, string envelope) => Assert.Equal(envelope, LiveInput.EnvelopeText(body));
 
+    /// <summary>A source over the events that, on its k-th read, throws when it reaches the event at `crashes[k]` (0: before it yields anything, -1: never), and records what happened in order.</summary>
+    sealed class FlakySource(IReadOnlyList<string> lines, int[] crashes, List<string> log) : ILiveSource
+    {
+        int reads;
+        public string Id => "eventhub:fake";
+        public IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct)
+        {
+            var crashAt = reads < crashes.Length ? crashes[reads] : -1; reads++;
+            var start = after is null ? 0 : System.Text.Json.JsonDocument.Parse(after).RootElement.GetProperty("n").GetInt32() + 1;
+            log.Add("read");
+            for (var i = start; i < lines.Count; i++)
+            {
+                if (i - start == crashAt) { log.Add("crash"); throw new InvalidOperationException("the hub went away"); }
+                if (i == start) log.Add("first yield");
+                yield return new LiveEvent(lines[i], $"{{\"n\":{i}}}");
+            }
+        }
+    }
+
+    /// <summary>Review show stopper 1: the input says it is ready only after the source yielded, that is after its first read (Event Hubs resolves `latest` when the link opens on it), so a forwarder started on the ready line is not missed. Show stopper 2: a source that fails is read again from the position the space has seen, with the backoff counting failures in a row, until the run ends in the state of a run that never failed.</summary>
+    [Theory]
+    [InlineData("never fails", new int[0], "")]
+    [InlineData("fails once after reading", new[] { 30 }, "1")]
+    [InlineData("fails twice before reading, then after", new[] { 0, 0, 25 }, "1,2,1")]
+    [InlineData("fails after reading, twice", new[] { 20, 40 }, "1,1")]
+    public void A_failing_source_is_read_again_from_the_saved_position_and_ready_comes_after_each_first_read(string _, int[] crashes, string backoffs)
+    {
+        var events = Events();
+        var (digest, rows) = Uninterrupted.Value;
+        var log = new List<string>(); var waits = new List<int>();
+        using var d = new RestartTests.Durable("memory");
+        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
+        LiveInput.RunRetrying(h, new FlakySource(events, crashes, log), Ro, CancellationToken.None,
+            backoff: n => { waits.Add(n); return TimeSpan.Zero; }, failed: (e, w) => Assert.IsType<InvalidOperationException>(e),
+            ready: () => log.Add("ready"), flushEvery: TimeSpan.FromHours(1));
+        Assert.Equal((digest, rows), (h.StateDigest(), h.InputRows));
+        Assert.Equal(backoffs, string.Join(",", waits));
+        Assert.Equal(crashes.Length + 1, log.Count(x => x == "read"));
+        Assert.All(log.Select((x, i) => (x, i)).Where(t => t.x == "ready"), t => Assert.Equal("first yield", log[t.i - 1]));
+        Assert.Equal(log.Count(x => x == "first yield"), log.Count(x => x == "ready"));
+    }
+
     [Fact]
     public void A_record_that_is_not_an_envelope_is_rejected_and_its_position_is_kept()
     {

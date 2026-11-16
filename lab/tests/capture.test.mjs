@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sink } from '../capture/lib/sink.mjs';
 import { drainState } from '../capture/lib/drain.mjs';
-import { envelope, withCluster } from '../capture/lib/envelope.mjs';
+import { clusterName, envelope, withCluster } from '../capture/lib/envelope.mjs';
 
 // ---------- a stand-in for the Event Hubs producer: batches of at most `capacity` events, sends can fail ----------
 function fakeClient({ capacity = 100, failOnSend = [] } = {}) {
@@ -97,5 +97,19 @@ for (const [source, cluster, expected] of [
     assert.equal(got.meta?.cluster, expected);
     assert.equal(got.key, e.key);
     assert.deepEqual({ ...(got.meta ?? {}), cluster: undefined }, { ...(meta ?? {}), cluster: undefined });
+  });
+}
+
+// ---------- review: the cluster name is read with a timeout; only a cluster without Cilium may go without one ----------
+for (const [what, input, expected] of [
+  ['the configmap has the name', { stdout: 'c1\n' }, 'c1'],
+  ['the name is given, kubectl is not asked', { given: 'c2' }, 'c2'],
+  ['no Cilium: the configmap is not found', { error: { stderr: 'Error from server (NotFound): configmaps "cilium-config" not found' } }, ''],
+  ['kubectl timed out', { error: { message: 'Command failed: kubectl', killed: true, stderr: '' } }, Error],
+  ['no access to kube-system', { error: { stderr: 'Error from server (Forbidden): configmaps "cilium-config" is forbidden' } }, Error],
+]) {
+  test(`cluster name: ${what}`, () => {
+    if (expected === Error) assert.throws(() => clusterName(input), /pass --cluster NAME/);
+    else assert.equal(clusterName(input), expected);
   });
 }
