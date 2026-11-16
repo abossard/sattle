@@ -1,6 +1,6 @@
 # Live demo: the canvas follows the AKS cluster
 
-Each block is one terminal, run from the repository root. Needs `az login`, the azd env in `lab/` and the local space binding `lab/captures/space-overlay.sattle` (gitignored: the namespace and cluster of the lab workload).
+One command runs steps 1 to 3 and prints a checkpoint after each: `scripts/demo-live.sh` (Ctrl-C stops all three). By hand, each block is one terminal, run from the repository root. Needs `az login`, the azd env in `lab/` and the local space binding `lab/captures/space-overlay.sattle` (gitignored: the namespace and cluster of the lab workload).
 
 ```mermaid
 sequenceDiagram
