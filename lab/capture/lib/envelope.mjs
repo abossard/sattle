@@ -40,3 +40,8 @@ export function payloadOf(line) {
     return { text: line };
   }
 }
+
+// The cluster a Kubernetes or Prometheus record comes from, in the envelope meta, where the engine reads it (Hubble
+// flows carry their own `cluster_name`). Without a name the envelope is unchanged and the engine uses its default.
+const clustered = new Set(['kubernetes-watch', 'kubernetes-list', 'prometheus']);
+export const withCluster = (e, cluster) => (cluster && clustered.has(e.source) ? { ...e, meta: { ...(e.meta ?? {}), cluster } } : e);

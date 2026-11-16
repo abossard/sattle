@@ -11,7 +11,7 @@ import { parseArgs, promisify } from 'node:util';
 import { AzureCliCredential } from '@azure/identity';
 import { azureMetricsPoller, cachedToken, nextPollMs } from './lib/azure-metrics-poll.mjs';
 import { producer } from './lib/eventhub.mjs';
-import { envelope } from './lib/envelope.mjs';
+import { envelope, withCluster } from './lib/envelope.mjs';
 import { sink } from './lib/sink.mjs';
 import { newSamples } from './lib/metrics-poll.mjs';
 import { startChild, supervise, sleep } from './lib/supervise.mjs';
@@ -27,6 +27,9 @@ const { values: a } = parseArgs({
 const here = new URL('.', import.meta.url).pathname;
 const kubeEnv = { ...process.env, KUBECONFIG: a.kubeconfig };
 const startedAt = Date.now();
+// the cluster's name as Hubble gives it (Cilium's cluster-name), so Kubernetes and Prometheus records name the cluster the flows do
+const cluster = await promisify(execFile)('kubectl', ['-n', 'kube-system', 'get', 'configmap', 'cilium-config', '-o', 'jsonpath={.data.cluster-name}'], { env: kubeEnv })
+  .then((r) => r.stdout.trim(), () => '');
 
 // ---- destinations
 const ingestClient = producer(a.namespace, a.hub);
@@ -40,7 +43,8 @@ const sinks = [ingest, hubbleSink];
 // ---- one place that turns records into stream events; seq is global and increasing for this process
 let seq = 0;
 const counts = {};
-const route = (e) => {
+const route = (record) => {
+  const e = withCluster(record, cluster);
   e.seq = seq++;
   counts[e.source] = (counts[e.source] ?? 0) + 1;
   const body = JSON.stringify(e); // text body: the sinks bound memory by its length
@@ -148,7 +152,7 @@ const statsTimer = setInterval(() => {
   marker(s);
 }, 60_000);
 
-marker({ event: 'start', pid: process.pid, hub: a.hub, hubbleFilter: process.env.HUBBLE_FILTER ?? '--namespace sattle-demo --namespace demo' });
+marker({ event: 'start', pid: process.pid, hub: a.hub, cluster: cluster || null, hubbleFilter: process.env.HUBBLE_FILTER ?? '--namespace sattle-demo --namespace demo' });
 
 // ---- clean shutdown: stop producers, drain the queues (bounded wait), say goodbye, close
 const stop = async (why) => {

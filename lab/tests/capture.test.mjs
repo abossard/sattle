@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sink } from '../capture/lib/sink.mjs';
 import { drainState } from '../capture/lib/drain.mjs';
+import { envelope, withCluster } from '../capture/lib/envelope.mjs';
 
 // ---------- a stand-in for the Event Hubs producer: batches of at most `capacity` events, sends can fail ----------
 function fakeClient({ capacity = 100, failOnSend = [] } = {}) {
@@ -78,3 +79,23 @@ for (const [name, state, expected] of [
   test(`drain: ${name}`, () => {
     assert.deepEqual(drainState(state), expected);
   });
+
+// ---------- #95: Kubernetes and Prometheus records name the cluster the Hubble flows name, in the envelope meta ----------
+for (const [source, cluster, expected] of [
+  ['kubernetes-watch', 'c1', 'c1'],
+  ['kubernetes-list', 'c1', 'c1'],
+  ['prometheus', 'c1', 'c1'],
+  ['hubble', 'c1', undefined],
+  ['sattle-forwarder', 'c1', undefined],
+  ['kubernetes-watch', '', undefined],
+]) {
+  test(`a ${source} envelope with cluster "${cluster}" gets meta.cluster ${expected ?? 'not at all'}, its key and other meta unchanged`, () => {
+    const meta = source === 'kubernetes-list' ? { list: { kind: 'PodList' }, path: '/api/v1/pods' } : undefined;
+    const payload = { type: 'ADDED', object: { kind: 'Pod', metadata: { uid: 'u1', resourceVersion: '7' } }, metadata: { uid: 'u1', resourceVersion: '7' } };
+    const e = envelope({ source, capturedAt: '2026-01-01T00:00:00.000Z', seq: 0, payload, meta });
+    const got = withCluster(e, cluster);
+    assert.equal(got.meta?.cluster, expected);
+    assert.equal(got.key, e.key);
+    assert.deepEqual({ ...(got.meta ?? {}), cluster: undefined }, { ...(meta ?? {}), cluster: undefined });
+  });
+}

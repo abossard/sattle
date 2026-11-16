@@ -42,15 +42,11 @@ NS=$(cd lab && azd env get-value SATTLE_EVENTHUB_NAMESPACE)
 ```
 
 ```bash
-CL=$(KUBECONFIG=lab/.kube/config kubectl -n kube-system get configmap cilium-config -o jsonpath='{.data.cluster-name}')
-```
-
-```bash
-engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$NS" --group sattle-engine --from latest --cluster "$CL" --overlay lab/captures/space-overlay.sattle --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
+engine/src/Sattle.Cli/bin/Release/net11.0/sattle serve --live --eh-namespace "$NS" --group sattle-engine --from latest --overlay lab/captures/space-overlay.sattle --store sqlite=tmp/live-stream/demo/space.db --live-out tmp/live-stream/demo --port 5080
 ```
 
 - No state until the forwarder starts (step 2): its relist is the whole cluster.
-- `--cluster` is the name Hubble gives the cluster (Cilium's `cluster-name`): Kubernetes rows get the same name, so the pods a flow names are the pods the Kubernetes rows describe. Without it the engine takes the name of the newest file capture, and no call reaches a pod.
+- The forwarder reads the cluster's name as Hubble gives it (Cilium's `cluster-name`) and puts it on every Kubernetes and Prometheus record, so the pods a flow names are the pods the Kubernetes rows describe. `--cluster NAME` is needed only for a cluster without Cilium.
 - Same command again: resumes from the journaled position and catches up in seconds.
 - Ctrl-C or SIGTERM prints the state digest. `sattle replay tmp/live-stream/demo --no-flush --late-horizon 3 --overlay lab/captures/space-overlay.sattle --cluster <cluster>` gives the same digest.
 - `curl -s localhost:5080/space | jq .input.lag`: events and seconds behind the hub.
