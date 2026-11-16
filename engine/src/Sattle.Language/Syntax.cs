@@ -152,53 +152,9 @@ public sealed record IdentityDecl(string Name, Ref? For, string Version, List<Ke
 public sealed record EquivalenceDecl(string Name, Ref A, Ref B, string Mode, decimal Threshold, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record FieldDecl(string Name, bool Optional, VType Type, string? Unit, Pos Pos);
 public sealed record RowsDecl(string Name, List<FieldDecl> Fields, string? Doc, Pos Pos) : Decl(Doc, Pos);
-public sealed record PortDecl(string Name, string Kind, Ref Target, Pos Pos, Value? Default = null);
-public sealed record ProjectionDecl(string Name, string Purpose, bool Forward, string Output, List<PortDecl> Ports, long? Retain, List<ProjItem> Items, string? Doc, Pos Pos) : Decl(Doc, Pos);
 public sealed record SpaceSource(string Name, string Adapter, Ref Rows, Pos Pos);
 public sealed record SpaceGraph(string Name, bool Master, Ref Projection, List<(string Port, string From, Value? Literal)> Args, Pos Pos);
 public sealed record SpaceDecl(string Name, List<SpaceSource> Sources, List<SpaceGraph> Graphs, string? Doc, Pos Pos) : Decl(Doc, Pos);
-
-public abstract record ProjItem(Pos Pos);
-public sealed record Policies(List<string> Accept, Ref? CreateKey, List<(string Name, Expr Value, Pos Pos)> CreateDefault, string? OnDelete, List<(string Name, Expr Value, Pos Pos)> DeleteSet, Pos Pos);
-public sealed record RuleItem(string Name, string Class, bool PutPut, string? Reason, List<Stmt> Stmts, Pos Pos, Policies? Policy = null) : ProjItem(Pos);
-public abstract record Stmt(Pos Pos) : ProjItem(Pos);
-public sealed record LetStmt(string Name, Pipeline Pipe, Pos Pos) : Stmt(Pos);
-public sealed record EmitEntityStmt(bool Update, Ref Type, string From, Expr Id, List<(string Name, Expr Value, Pos Pos)> Set, Pos Pos) : Stmt(Pos);
-public sealed record EmitRelStmt(bool Update, Ref Type, string From, string KeyName, Expr Source, Expr Target, List<(string Name, Expr Value, Pos Pos)> Set, string? Retype, Pos Pos) : Stmt(Pos);
-public sealed record LinkStmt(Ref Policy, string From, Expr Left, Expr Right, Expr Confidence, Pos Pos) : Stmt(Pos);
-
-public sealed record Pipeline(PipeSource Source, List<Step> Steps, Pos Pos);
-public abstract record PipeSource(Pos Pos);
-public sealed record IdentSource(string Name, Pos Pos) : PipeSource(Pos);
-public sealed record MatchSource(string Graph, List<PathPat> Paths, Pos Pos) : PipeSource(Pos);
-public sealed record ValuesSource(List<List<(string Name, Expr Value)>> Rows, Pos Pos) : PipeSource(Pos);
-public sealed record JoinSource(string A, string B, Expr On, Pos Pos) : PipeSource(Pos);
-public sealed record UnionSource(string A, string B, Pos Pos) : PipeSource(Pos);
-public sealed record PathPat(List<NodePat> Nodes, List<EdgePat> Edges);
-public sealed record NodePat(string Var, Ref? Type, Pos Pos);
-public sealed record EdgePat(string? Var, Ref Type, bool Forward, Pos Pos);
-
-public abstract record Step(Pos Pos);
-public sealed record WhereStep(Expr Pred, Pos Pos) : Step(Pos);
-public sealed record DistinctStep(Pos Pos) : Step(Pos);
-public sealed record TraverseStep(string Graph, Ref Rel, string Direction, long Min, long Max, string From, string As, Pos Pos) : Step(Pos);
-public sealed record SelectStep(List<(string Name, Expr Value)> Record, Pos Pos) : Step(Pos);
-/// <summary>`Row`: the mark after a `last`, `last(value, order) row name`. The `last` aggregates of one group with the same mark take their values from one input row.</summary>
-public sealed record AggDecl(string Target, string Fn, Expr? Value, Expr? Order, Pos Pos, string? Row = null);
-public sealed record GroupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos) : Step(Pos);
-public sealed record WindowStep(string On, long WidthNs, string Late, Pos Pos) : Step(Pos);
-public sealed record RetainStep(string On, long AgeNs, Pos Pos) : Step(Pos);
-/// <summary>`Fills[i]`: the fill value of path i, a constant for a covered window without a record (Def. 7.15). `TtlNs`: the time to live after which an element without a record is in no data (Def. 7.16).</summary>
-public sealed record SeriesStep(string Graph, List<string> Paths, long WithinNs, Pos Pos, List<decimal?>? Fills = null, long? TtlNs = null) : Step(Pos);
-/// <summary>`NoDataAny`: the key is in no data when one member is; otherwise when all are (Def. 7.16).</summary>
-public sealed record RollupStep(List<(string Name, Expr Value)> Keys, List<AggDecl> Aggs, Pos Pos, bool NoDataAny = false) : Step(Pos);
-public sealed record ThresholdStep(Expr Value, List<(string Name, Expr Value)> Keys, decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial, string As, Pos Pos, Expr? AboveE = null, Expr? EnterE = null, Expr? BelowE = null, Expr? ExitE = null, string? NoData = null, bool NoDataIgnore = false) : Step(Pos);
-
-public abstract record Expr(Pos Pos);
-public sealed record LitExpr(Value Value, Pos Pos) : Expr(Pos);
-public sealed record PathExpr(string Path, Pos Pos) : Expr(Pos);
-public sealed record CallExpr(string Fn, List<Expr> Args, Pos Pos) : Expr(Pos);
-public sealed record IdExpr(Ref Domain, List<(string Name, Expr Value, Pos Pos)> Components, Pos Pos) : Expr(Pos);
 
 public sealed record ModuleAst(string Name, string Version, string? Doc, List<Import> Imports, List<Decl> Decls, Pos Pos);
 
@@ -212,10 +168,6 @@ public sealed class Parser
 
     public static ModuleAst Parse(string source) => new Parser(Lexer.Lex(source)).File();
 
-    /// <summary>The deepest nesting of expressions and pipelines a text may have, and the deepest expression tree it may give (a row of operators such as `a + b + c` nests one level per operator). Texts written by people nest a handful of levels; without a limit a text of a few hundred nested brackets, or of a few thousand operators in a row, overflows the stack here or in a later pass, which ends the process.</summary>
-    public const int MaxNesting = 100;
-    int depth, expressions;
-    void Enter() { if (++depth > MaxNesting) throw new SyntaxError($"nested deeper than {MaxNesting} levels", Cur.Pos); }
 
     Token Cur => toks[p];
     Token Peek(int n = 1) => toks[Math.Min(p + n, toks.Count - 1)];
@@ -236,7 +188,6 @@ public sealed class Parser
         if (IsSym(".") && Peek().Kind == T.Ident) { p++; return new Ref(a, Ident(), pos); }
         return new Ref(null, a, pos);
     }
-    SyntaxError Unsupported(string what) => new($"{what} is not supported in this engine slice (scope: research 03 examples 1 and 2)", Cur.Pos);
 
     ModuleAst File()
     {
@@ -318,22 +269,15 @@ public sealed class Parser
                     Sym("}");
                     return new RowsDecl(name, fields, doc, pos);
                 }
-            case "projection": return Projection(doc, pos);
+            case "projection": p--; throw new SyntaxError("a projection is written in KQL, in a file module.projection.kql beside the module", Cur.Pos);
             case "space": return Space(doc, pos);
-            default: p--; throw Err("expected entity, relationship, extend, constraint, identity, equivalence, rows, projection or space");
+            default: p--; throw Err("expected entity, relationship, extend, constraint, identity, equivalence, rows or space");
         }
     }
 
     List<Ref> RefAlt() { var l = new List<Ref> { RefP() }; while (TrySym("|")) l.Add(RefP()); return l; }
     List<Member> MembersOrSemi() => TrySym(";") ? [] : Members();
     string Str() => Cur.Kind == T.Str ? Next().Text : throw Err("expected a string");
-    /// <summary>A number, or an expression over the columns of the row (a threshold read from data).</summary>
-    (decimal N, Expr? E) NumOrExpr()
-    {
-        var save = p;
-        if (Cur.Kind is T.Int or T.Dec || (IsSym("-") && p + 1 < toks.Count && toks[p + 1].Kind is T.Int or T.Dec)) { var n = Number(); if (IsWord("for") || IsWord("below") || IsWord("then")) return (n, null); p = save; }
-        return (0, Expression());
-    }
 
     decimal Number()
     {
@@ -455,253 +399,6 @@ public sealed class Parser
         return new IdentityDecl(name, @for, ver, comps, doc, pos);
     }
 
-    Decl Projection(string? doc, Pos pos)
-    {
-        var name = Ident();
-        var purpose = Cur.Kind == T.Ident && Cur.Text is "ingestion" or "view" or "migration" or "verification" ? Next().Text : throw Err("expected a purpose (ingestion, view, migration, verification)");
-        var fwd = TryWord("forward"); Word("output"); var output = QName(); Sym("{");
-        var ports = new List<PortDecl>(); long? retain = null; var items = new List<ProjItem>();
-        while (!IsSym("}"))
-        {
-            if (IsWord("in") ) { var ppos = Next().Pos; var pn = Ident(); Sym(":"); var pk = Ident(); if (pk is not ("rows" or "graph" or "param")) throw Err("expected rows, graph or param"); var r = RefP(); Value? def = null;
-                if (pk == "param" && TrySym("="))
-                {
-                    if (Cur.Kind == T.Str) def = Value.Text(Next().Text);
-                    else if (Cur.Kind == T.Int) def = Value.Integer(System.Numerics.BigInteger.Parse(Next().Text, CultureInfo.InvariantCulture));
-                    else if (Cur.Kind == T.Dec) def = Value.Decimal(decimal.Parse(Next().Text, CultureInfo.InvariantCulture));
-                    else if (IsWord("true") || IsWord("false")) def = Value.Boolean(Next().Text == "true");
-                    else throw Err("expected a constant");
-                }
-                Sym(";"); ports.Add(new PortDecl(pn, pk, r, ppos, def)); }
-            else if (IsWord("retain")) { p++; retain = Int(); Sym(";"); }
-            else if (IsWord("rule")) items.Add(Rule());
-            else items.Add(Stmt());
-        }
-        Sym("}");
-        return new ProjectionDecl(name, purpose, fwd, output, ports, retain, items, doc, pos);
-    }
-
-    RuleItem Rule()
-    {
-        var pos = Next().Pos; var name = Ident();
-        var cls = Cur.Kind == T.Ident && Cur.Text is "bijective" or "lens" or "sync" or "readonly" ? Next().Text : throw Err("expected a rule class (bijective, lens, sync, readonly)");
-        var pp = cls == "lens" && TryWord("putput");
-        string? reason = Cur.Kind == T.Str ? Next().Text : null;
-        Sym("{");
-        var stmts = new List<Stmt>();
-        var accept = new List<string>(); Ref? createKey = null; var cdef = new List<(string, Expr, Pos)>(); string? onDelete = null; var dset = new List<(string, Expr, Pos)>(); Pos? ppos = null;
-        while (!IsSym("}"))
-        {
-            if (IsWord("source") || IsWord("target") || IsWord("correspond") || IsWord("equate") || IsWord("keep")) throw Unsupported($"rule item '{Cur.Text}' (sync rules are later work)");
-            if (IsWord("accept"))
-            {
-                ppos ??= Cur.Pos; p++;
-                do
-                {
-                    var e = Ident();
-                    if (e == "update") { Sym("("); var ps = new List<string> { Ident() }; while (TrySym(",")) ps.Add(Ident()); Sym(")"); accept.Add("update(" + string.Join(",", ps) + ")"); }
-                    else if (e is "create" or "delete") accept.Add(e);
-                    else { p--; throw Err("expected create, delete or update(...)"); }
-                } while (TrySym(","));
-                Sym(";");
-            }
-            else if (IsWord("on"))
-            {
-                ppos ??= Cur.Pos; p++;
-                if (TryWord("create")) { Word("key"); createKey = RefP(); if (TryWord("default")) cdef = RecordP(); Sym(";"); }
-                else if (TryWord("delete"))
-                {
-                    if (TryWord("remove")) onDelete = "remove";
-                    else { Word("set"); onDelete = "set"; dset = RecordP(); }
-                    Sym(";");
-                }
-                else throw Err("expected create or delete");
-            }
-            else stmts.Add(Stmt());
-        }
-        Sym("}");
-        var pol = ppos is null ? null : new Policies(accept, createKey, cdef, onDelete, dset, ppos.Value);
-        return new RuleItem(name, cls, pp, reason, stmts, pos, pol);
-    }
-
-    Stmt Stmt()
-    {
-        var pos = Cur.Pos;
-        if (TryWord("let"))
-        {
-            var name = Ident(); Sym("="); var pipe = Pipe(); Sym(";");
-            return new LetStmt(name, pipe, pos);
-        }
-        if (TryWord("emit"))
-        {
-            var upd = TryWord("update");
-            if (TryWord("entity"))
-            {
-                var t = RefP(); Word("from"); var from = Ident(); Word("identity"); var id = Expression();
-                var set = TryWord("set") ? RecordP() : [];
-                Sym(";");
-                return new EmitEntityStmt(upd, t, from, id, set, pos);
-            }
-            if (TryWord("relationship"))
-            {
-                var t = RefP(); Word("from"); var from = Ident(); Word("key"); var key = Ident(); Sym(":");
-                var src = Expression(); Sym("->"); var tgt = Expression();
-                var set = TryWord("set") ? RecordP() : [];
-                string? retype = null;
-                if (TryWord("on")) { Word("retype"); retype = Ident(); }
-                Sym(";");
-                return new EmitRelStmt(upd, t, from, key, src, tgt, set, retype, pos);
-            }
-            throw Err("expected entity or relationship");
-        }
-        if (TryWord("link"))
-        {
-            var pol = RefP(); Word("from"); var from = Ident(); Word("left"); var l = Expression(); Word("right"); var r = Expression(); Word("confidence"); var c = Expression(); Sym(";");
-            return new LinkStmt(pol, from, l, r, c, pos);
-        }
-        throw Err("expected let, emit, link or rule");
-    }
-
-    List<(string, Expr, Pos)> RecordP()
-    {
-        Sym("{");
-        var l = new List<(string, Expr, Pos)>();
-        do { var pos = Cur.Pos; var n = Ident(); Sym(":"); l.Add((n, Expression(), pos)); } while (TrySym(","));
-        Sym("}");
-        return l;
-    }
-    List<(string Name, Expr Value)> Rec() => RecordP().Select(x => (x.Item1, x.Item2)).ToList();
-
-    Pipeline Pipe() { Enter(); try { return PipeBody(); } finally { depth--; } }
-
-    Pipeline PipeBody()
-    {
-        var pos = Cur.Pos;
-        PipeSource src;
-        if (IsWord("match"))
-        {
-            var mp = Next().Pos; var g = Ident(); var paths = new List<PathPat> { PathPattern() };
-            while (TrySym(",")) paths.Add(PathPattern());
-            src = new MatchSource(g, paths, mp);
-        }
-        else if (IsWord("union"))
-        {
-            var up = Next().Pos; var a = Ident(); Sym(","); var b = Ident();
-            src = new UnionSource(a, b, up);
-        }
-        else if (IsWord("join"))
-        {
-            var jp = Next().Pos; var a = Ident(); Sym(","); var b = Ident(); Word("on");
-            src = new JoinSource(a, b, Expression(), jp);
-        }
-        else if (IsWord("values"))
-        {
-            var vp = Next().Pos; var rows = new List<List<(string, Expr)>> { Rec() };
-            while (TrySym(",")) rows.Add(Rec());
-            src = new ValuesSource(rows, vp);
-        }
-        else src = new IdentSource(Ident(), pos);
-        var steps = new List<Step>();
-        while (TrySym("|>")) steps.Add(StepP());
-        return new Pipeline(src, steps, pos);
-    }
-
-    PathPat PathPattern()
-    {
-        var nodes = new List<NodePat> { NodePattern() }; var edges = new List<EdgePat>();
-        while (IsSym("-[") || IsSym("<-["))
-        {
-            var fwd = Cur.Text == "-["; var pos = Next().Pos;
-            string? v = null;
-            if (Cur.Kind == T.Ident && Peek().Kind == T.Sym && Peek().Text == ":") { v = Ident(); }
-            Sym(":"); var t = RefP();
-            if (fwd) Sym("]->"); else Sym("]-");
-            if (IsSym("{")) throw Unsupported("quantified path patterns");
-            edges.Add(new EdgePat(v, t, fwd, pos));
-            nodes.Add(NodePattern());
-        }
-        return new PathPat(nodes, edges);
-    }
-
-    NodePat NodePattern()
-    {
-        var pos = Sym("(").Pos; var v = Ident(); Ref? t = TrySym(":") ? RefP() : null; Sym(")");
-        return new NodePat(v, t, pos);
-    }
-
-    Step StepP()
-    {
-        var pos = Cur.Pos;
-        if (TryWord("where")) return new WhereStep(Expression(), pos);
-        if (TryWord("select")) return new SelectStep(Rec(), pos);
-        if (TryWord("group")) { Word("by"); var k = Rec(); Word("aggregate"); return new GroupStep(k, AggList(), pos); }
-        if (TryWord("window"))
-        {
-            Word("on"); var on = Ident(); Word("width");
-            if (Cur.Kind != T.Duration) throw Err("expected a duration");
-            var w = Lexer.DurationNs(Next().Text); Word("late");
-            var late = Cur.Kind == T.Ident && Cur.Text is "ignore" or "revise" or "reject" ? Next().Text : throw Err("expected ignore, revise or reject");
-            return new WindowStep(on, w, late, pos);
-        }
-        if (TryWord("retain"))
-        {
-            Word("on"); var on = Ident(); Word("for");
-            if (Cur.Kind != T.Duration) throw Err("expected a duration");
-            return new RetainStep(on, Lexer.DurationNs(Next().Text), pos);
-        }
-        if (TryWord("series"))
-        {
-            var g = Ident(); var paths = new List<string>(); var fills = new List<decimal?>();
-            do { paths.Add(PathText()); fills.Add(TryWord("fill") ? Number() : null); } while (TrySym(","));
-            Word("within");
-            if (Cur.Kind != T.Duration) throw Err("expected a duration");
-            var within = Lexer.DurationNs(Next().Text);
-            long? ttl = null;
-            if (TryWord("ttl")) { if (Cur.Kind != T.Duration) throw Err("expected a duration"); ttl = Lexer.DurationNs(Next().Text); }
-            return new SeriesStep(g, paths, within, pos, fills, ttl);
-        }
-        if (TryWord("rollup")) { Word("by"); var k = Rec(); Word("combine"); var aggs = AggList(); var any = TryWord("nodata"); if (any) Word("any"); return new RollupStep(k, aggs, pos, any); }
-        if (TryWord("threshold"))
-        {
-            var v = Expression(); Word("by"); var k = Rec();
-            Word("above"); var (above, aboveE) = NumOrExpr(); Word("for"); var (en, enE) = NumOrExpr(); Word("then"); var high = Str();
-            Word("below"); var (below, belowE) = NumOrExpr(); Word("for"); var (ex, exE) = NumOrExpr(); Word("then"); var low = Str();
-            Word("initial"); var init = Str();
-            string? noData = null; var ignore = false;
-            if (TryWord("nodata")) { if (TryWord("then")) noData = Str(); else { Word("ignore"); ignore = true; } }
-            Word("as"); var asn = Ident();
-            return new ThresholdStep(v, k, above, (long)en, high, below, (long)ex, low, init, asn, pos, aboveE, enE, belowE, exE, noData, ignore);
-        }
-        if (TryWord("distinct")) return new DistinctStep(pos);
-        if (TryWord("traverse"))
-        {
-            var g = Ident(); Word("via"); var rel = RefP();
-            var dir = Cur.Kind == T.Ident && Cur.Text is "out" or "in" or "either" ? Next().Text : throw Err("expected out, in or either");
-            Word("depth"); var min = Int(); Sym(".."); var max = Int(); Word("from"); var from = Ident(); Word("as"); var asn = Ident();
-            return new TraverseStep(g, rel, dir, min, max, from, asn, pos);
-        }
-        if (IsWord("delta")) throw Unsupported($"step '{Cur.Text}'");
-        throw Err("expected a pipeline step");
-    }
-
-    string PathText() { var s = Ident(); while (TrySym(".")) s += "." + Ident(); return s; }
-
-    List<AggDecl> AggList()
-    {
-        Sym("{");
-        var l = new List<AggDecl>();
-        do
-        {
-            var pos = Cur.Pos; var t = Ident(); Sym(":"); var fn = Ident(); Sym("(");
-            Expr? v = null, w = null;
-            if (!IsSym(")")) { v = Expression(); if (TrySym(",")) w = Expression(); }
-            Sym(")");
-            l.Add(new AggDecl(t, fn, v, w, pos, TryWord("row") ? Ident() : null));
-        } while (TrySym(","));
-        Sym("}");
-        return l;
-    }
-
     Decl Space(string? doc, Pos pos)
     {
         var name = Ident(); Sym("{");
@@ -733,114 +430,5 @@ public sealed class Parser
         }
         Sym("}");
         return new SpaceDecl(name, sources, graphs, doc, pos);
-    }
-
-    // ---- expressions ----
-    public Expr Expression()
-    {
-        Enter(); expressions++;
-        Expr e; var pos = Cur.Pos;
-        try { e = Disj(); } finally { depth--; expressions--; }
-        // measured once, when the outermost expression is read: also inside a pipeline, where `depth` is not zero
-        if (expressions == 0 && DepthOf(e) > MaxNesting) throw new SyntaxError($"an expression nested deeper than {MaxNesting} levels (a row of operators nests one level each)", pos);
-        return e;
-    }
-
-    /// <summary>The depth of an expression tree, counted without recursion.</summary>
-    public static int DepthOf(Expr root)
-    {
-        var deepest = 0; var open = new Stack<(Expr Node, int Depth)>(); open.Push((root, 1));
-        while (open.Count > 0)
-        {
-            var (node, at) = open.Pop();
-            deepest = Math.Max(deepest, at);
-            if (node is CallExpr call) foreach (var a in call.Args) open.Push((a, at + 1));
-            else if (node is IdExpr id) foreach (var c in id.Components) open.Push((c.Value, at + 1));
-        }
-        return deepest;
-    }
-    Expr Disj() { var l = Conj(); if (!IsWord("or")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("or")) args.Add(Conj()); return new CallExpr("Or", args, pos); }
-    Expr Conj() { var l = Neg(); if (!IsWord("and")) return l; var args = new List<Expr> { l }; var pos = l.Pos; while (TryWord("and")) args.Add(Neg()); return new CallExpr("And", args, pos); }
-    Expr Neg() { var pos = Cur.Pos; if (TryWord("not")) return new CallExpr("Not", [Cmp()], pos); return Cmp(); }
-    Expr Cmp()
-    {
-        var l = Sum();
-        if (Cur.Kind == T.Sym && Cur.Text is "==" or "!=" or "<" or "<=" or ">" or ">=")
-        {
-            var op = Next().Text; var r = Sum();
-            return new CallExpr(op switch { "==" => "Equal", "!=" => "NotEqual", "<" => "LessThan", "<=" => "LessOrEqual", ">" => "GreaterThan", _ => "GreaterOrEqual" }, [l, r], l.Pos);
-        }
-        return l;
-    }
-    Expr Sum()
-    {
-        var l = Prod();
-        while (Cur.Kind == T.Sym && Cur.Text is "+" or "-" or "++")
-        {
-            var op = Next().Text; var r = Prod();
-            l = new CallExpr(op switch { "+" => "Add", "-" => "Subtract", _ => "Concat" }, [l, r], l.Pos);
-        }
-        return l;
-    }
-    Expr Prod()
-    {
-        var l = Unary();
-        while (Cur.Kind == T.Sym && Cur.Text is "*" or "/")
-        {
-            var op = Next().Text; var r = Unary();
-            l = new CallExpr(op == "*" ? "Multiply" : "Divide", [l, r], l.Pos);
-        }
-        return l;
-    }
-    Expr Unary()
-    {
-        var pos = Cur.Pos;
-        if (TrySym("-")) { var e = Primary(); return e is LitExpr { Value: IntegerValue i } ? new LitExpr(Value.Integer(-i.N), pos) : e is LitExpr { Value: DecimalValue d } ? new LitExpr(Value.Decimal(-d.Q), pos) : new CallExpr("Negate", [e], pos); }
-        return Primary();
-    }
-    Expr Primary()
-    {
-        var pos = Cur.Pos;
-        switch (Cur.Kind)
-        {
-            case T.Str: return new LitExpr(Value.Text(Next().Text), pos);
-            case T.Int: return new LitExpr(Value.Integer(System.Numerics.BigInteger.Parse(Next().Text, CultureInfo.InvariantCulture)), pos);
-            case T.Dec: return new LitExpr(Value.Decimal(decimal.Parse(Next().Text, CultureInfo.InvariantCulture)), pos);
-            case T.Duration: return new LitExpr(Value.Integer(Lexer.DurationNs(Next().Text)), pos);
-            case T.Instant:
-                { var t = Next().Text; return Norm.TryParseInstant(t, out var ns) ? new LitExpr(Value.Instant(ns), pos) : throw new SyntaxError("invalid instant literal", pos); }
-            case T.Sym when Cur.Text == "(": { p++; var e = Expression(); Sym(")"); return e; }
-            case T.Ident:
-                {
-                    var w = Cur.Text;
-                    if (w is "true" or "false") { p++; return new LitExpr(Value.Boolean(w == "true"), pos); }
-                    if (w == "null") { p++; return new LitExpr(Value.Null, pos); }
-                    // identity expression: ref ( ident : expr ...) ; call: ident ( expr ...) ; path: ident {. ident}
-                    var save = p;
-                    var r = RefP();
-                    if (IsSym("(") && Peek().Kind == T.Ident && Peek(2).Kind == T.Sym && Peek(2).Text == ":")
-                    {
-                        p++;
-                        var comps = new List<(string, Expr, Pos)>();
-                        do { var cp = Cur.Pos; var n = Ident(); Sym(":"); comps.Add((n, Expression(), cp)); } while (TrySym(","));
-                        Sym(")");
-                        return new IdExpr(r, comps, pos);
-                    }
-                    p = save;
-                    var name = Ident();
-                    if (IsSym("("))
-                    {
-                        p++;
-                        var args = new List<Expr>();
-                        if (!IsSym(")")) { do args.Add(Expression()); while (TrySym(",")); }
-                        Sym(")");
-                        return new CallExpr(char.ToUpperInvariant(name[0]) + name[1..], args, pos);
-                    }
-                    var path = name;
-                    while (IsSym(".") && Peek().Kind == T.Ident) { p++; path += "." + Ident(); }
-                    return new PathExpr(path, pos);
-                }
-            default: throw Err("expected an expression");
-        }
     }
 }

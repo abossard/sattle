@@ -173,22 +173,15 @@ public class KqlProjectionTests
         entity Stat { name: Text; n: Integer; }
         identity stat for Stat version "1" { name: Text by exact; }
         rows ItemRow { key: Text; group: Text; score: Integer; }
-        projection ingest ingestion output t.rows {
-          in a: rows ItemRow;
-          rule observed readonly "test" {
-            let c = a |> group by { k: key } aggregate { n: count() };
-            emit entity Stat from c identity stat(name: k) set { name: k, n: n };
-          }
-        }
         space s {
           source a adapter "sattle.authoring" rows ItemRow;
           master graph master = ingest(a: a);
         }
         """;
 
-    /// <summary>A projection in KQL takes the place of the module's projection of the same id, and the space of the same module still binds it.</summary>
+    /// <summary>A space binds a projection in KQL of its own module: the projections are read before the module's spaces.</summary>
     [Fact]
-    public void A_projection_in_KQL_replaces_the_one_its_module_declares_and_its_space_still_binds_it()
+    public void A_space_binds_a_projection_in_KQL_of_its_own_module()
     {
         var kql = "graph ingest : t.rows;\ninput a : ItemRow;\n"
             + "nodes Stat on stat with (rule = \"observed\", description = \"test\") = a | summarize n = count() by name = group | project stat = identity(\"stat\", name), name, n;\n";

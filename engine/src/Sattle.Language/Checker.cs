@@ -328,7 +328,7 @@ public sealed class ProjectionChecker(Graph defs)
                     var cols = kcols.Concat(carry).Concat([new Col("windowStart", inst), new Col("windowEnd", inst)]).Concat(aggs.Select(a => new Col(a.Target, a.Out))).ToList();
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
                     var any = d.Text(op, "nodata") == "any";
-                    if (any && !marked) Err("Rollup", op, "`nodata any` needs a series with a time to live (`ttl`) upstream");
+                    if (any && !marked) Err("Rollup", op, "a roll-up in no data when one member is needs telemetry with a time to live (telemetry_filled) upstream");
                     if (marked) cols.Add(new Col(TThreshold.NoDataColumn, R.Find(TThreshold.NoDataColumn)!.T));
                     return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, any, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
                 }
@@ -356,8 +356,8 @@ public sealed class ProjectionChecker(Graph defs)
                     if (init != high && init != low) Err("Threshold", op, "initial must be one of the two states");
                     var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
-                    if (marked && noData is null && !ignore) Err("Threshold", op, "the series has a time to live: the threshold must say what no data gives (`nodata then \"...\"`) or ignore it (`nodata ignore`)");
-                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a `nodata` clause needs a series with a time to live (`ttl`) upstream, and its `noData` column in the row");
+                    if (marked && noData is null && !ignore) Err("Threshold", op, "the telemetry has a time to live (telemetry_filled): hysteresis must say what no data gives, as its fourth argument");
+                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state of hysteresis needs telemetry with a time to live (telemetry_filled) upstream, and its noData column in the row");
                     if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
                     var target = d.Text(op, "target") ?? "status";
                     var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
@@ -421,7 +421,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (l is null || r is null) return null;
         if (l.Window != 0 || r.Window != 0 || l.Cols.Concat(r.Cols).Any(c => !c.T.Role.IsData)) { Err("Join", op, "join takes data rows: no windowed or telemetry input (roll it up and cross it with a threshold first)"); return null; }
         var clash = l.Cols.Select(c => c.Name).Intersect(r.Cols.Select(c => c.Name)).FirstOrDefault();
-        if (clash is not null) { Err("Join", op, $"both inputs have a column named '{clash}'; rename one with select"); return null; }
+        if (clash is not null) { Err("Join", op, $"both inputs have a column named '{clash}'; rename one with project"); return null; }
         var both = new Schema([.. l.Cols, .. r.Cols]);
         var on = Ex(Child(op, "on"), both);
         if (on is null) return null;
@@ -496,7 +496,7 @@ public sealed class ProjectionChecker(Graph defs)
             else if (v is null) Err("Aggregate", a, $"{fn} needs an argument");
             else if (!telemetry)
             {
-                if (!v.Type.Role.IsData) Err("Aggregate", a, "group aggregates take data; use rollup for telemetry");
+                if (!v.Type.Role.IsData) Err("Aggregate", a, "a summarize of data takes data; telemetry is summarized by windowStart after a join with telemetry(...)");
                 else switch (fn)
                     {
                         case "countDistinct": ft = new FType(Ty.Int(), true, Role.Data); break;
@@ -628,11 +628,11 @@ public sealed class ProjectionChecker(Graph defs)
             reads.Add(new TSeriesRead(v, hit[0], pn, p.ValueKind, fill));
         }
         var within = d.Int(op, "within");
-        if (period > 0 && within < period) Err("Series", op, "within must be at least the series period");
+        if (period > 0 && within < period) Err("Series", op, "the look-back of telemetry(...) must be at least the period of the property");
         var ttl = d.Prop(op, "ttl") is IntegerValue tv ? (long)tv.N : (long?)null;
-        if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live (`ttl`) on the same series: silence must have a declared outcome");
+        if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live, as telemetry_filled(graph, lookback, ttl, fill) gives: silence must have a declared outcome");
         // at most `within` less one window: a record that ends within the time to live is then a window of the look-back
-        if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the time to live must be at least one window and at most `within` less one window");
+        if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the time to live of telemetry_filled must be at least one window and at most the look-back less one window");
         if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
         if (reads.Count == 0 || target is null) return null;
         var inst = new FType(Ty.Instant, true, Role.Data);
@@ -668,7 +668,7 @@ public sealed class ProjectionChecker(Graph defs)
                 if (R.Window != pi.Period) { Err("Set", s, $"telemetry property {pi.Name} has period {Lexer.DurationText(pi.Period)}, the row window is {(R.Window == 0 ? "undefined" : Lexer.DurationText(R.Window))}"); continue; }
                 if (!e.Type.Role.IsData && (e.Type.Role.Temporality != pi.Temporality || e.Type.Role.Period != pi.Period)) { Err("Set", s, $"telemetry property {pi.Name} is {pi.Temporality}, the value is {e.Type.Role}"); continue; }
                 if (e.Type.Prov is { } f && pi.Combine is { } c && f != c) { Err("Set", s, $"property {pi.Name} combines with {c}, the value was rolled up with {f}"); continue; }
-                if (isRule) Err("Set", s, $"a bijective, lens or sync rule cannot set telemetry property {pi.Name}");
+                if (isRule) Err("Set", s, $"a step with an editable rule (accept or update) cannot set telemetry property {pi.Name}");
             }
             else if (!e.Type.Role.IsData) { Err("RoleInterference", s, $"graph data property {pi.Name} cannot take a telemetry value (only Threshold crosses to data)"); continue; }
             res.Add(new TSet(pid, pi.Name, e, tele, pi.Period, pi.Combine));
@@ -676,7 +676,7 @@ public sealed class ProjectionChecker(Graph defs)
         if (!update)
             foreach (var (p, req) in props)
                 if (req && outView.Props.TryGetValue(p, out var pi) && pi.Role != "telemetry" && !res.Any(x => x.PropId == p))
-                    Err("P5", op, $"create emit of {Ids.Name(typeId)} must set required property {pi.Name}");
+                    Err("P5", op, $"nodes {Ids.Name(typeId)} must set required property {pi.Name}");
         return res;
     }
 
@@ -684,7 +684,7 @@ public sealed class ProjectionChecker(Graph defs)
     {
         var t = d.Target(op, "ofType");
         if (t is null || !outView.Types.TryGetValue(t, out var ti) || ti.IsRel) { Err("P1", op, "emitted entity type is not in the output ontology"); return null; }
-        if (ti.Abstract) { Err("P1", op, $"cannot emit abstract type {ti.Name}"); return null; }
+        if (ti.Abstract) { Err("P1", op, $"abstract type {ti.Name} has no nodes or edges of its own"); return null; }
         var id = IdentityEx(Child(op, "id"), R);
         if (id is null) return null;
         if (id.Type.Ty.Tag != Tag.Ent || !id.Type.Role.IsData) { Err("EmitEntity", op, $"entity id must be an entity reference (data), found {id.Type}"); return null; }
@@ -697,7 +697,7 @@ public sealed class ProjectionChecker(Graph defs)
     {
         var t = d.Target(op, "ofType");
         if (t is null || !outView.Types.TryGetValue(t, out var ti) || !ti.IsRel) { Err("P1", op, "emitted relationship type is not in the output ontology"); return null; }
-        if (ti.Abstract) { Err("P1", op, $"cannot emit abstract type {ti.Name}"); return null; }
+        if (ti.Abstract) { Err("P1", op, $"abstract type {ti.Name} has no nodes or edges of its own"); return null; }
         var src = IdentityEx(Child(op, "source"), R); var tgt = IdentityEx(Child(op, "target"), R);
         if (src is null || tgt is null) return null;
         foreach (var (e, side) in new[] { (src, "source"), (tgt, "target") })
@@ -769,7 +769,7 @@ public sealed class ProjectionChecker(Graph defs)
         foreach (var (op, ids) in ops.Select(o => (o, o switch { TEmitEntity e => new[] { e.EntityId }, TEmitRel r => [r.Source, r.Target], _ => [] })))
             foreach (var id in ids.OfType<TId>())
                 if (JoinedBy(id.DomainId) is { } policy)
-                    Err("IdentityLinked", op.Id, $"identity domain {id.DomainName} is joined by the equivalence policy {d.Text(policy, "name") ?? Ids.Name(policy)}: an id computed with it in a view changes when a link joins it, and the view would keep the element under the id that lost. Name the element itself: match the entity and write `identity p`");
+                    Err("IdentityLinked", op.Id, $"identity domain {id.DomainName} is joined by the equivalence policy {d.Text(policy, "name") ?? Ids.Name(policy)}: an id computed with it in a view changes when a link joins it, and the view would keep the element under the id that lost. Name the element itself: read it with graph-match and keep its id (p.id)");
     }
 
     void EmitterChecks(List<TOp> ops, List<TRule> rules, string pid)
@@ -779,18 +779,18 @@ public sealed class ProjectionChecker(Graph defs)
         var creates = ops.OfType<TEmitEntity>().Where(e => !e.Update).ToList();
         var relCreates = ops.OfType<TEmitRel>().Where(e => !e.Update).ToList();
         foreach (var e in ops.OfType<TEmitEntity>().Where(e => e.Update))
-            if (!creates.Any(c => c.TypeId == e.TypeId)) Err("EmitEntity", e.Id, $"update emit of {Ids.Name(e.TypeId)} needs a create emit of the same type in this projection");
+            if (!creates.Any(c => c.TypeId == e.TypeId)) Err("EmitEntity", e.Id, $"extend nodes {Ids.Name(e.TypeId)} needs a nodes {Ids.Name(e.TypeId)} statement in this projection");
         foreach (var e in ops.OfType<TEmitRel>())
         {
-            if (e.Update && !relCreates.Any(c => c.TypeId == e.TypeId && c.Key == e.Key)) Err("EmitRelationship", e.Id, $"update emit needs a create emit of {Ids.Name(e.TypeId)} with key '{e.Key}'");
-            if (!e.Update && relCreates.Count(c => c.Key == e.Key) > 1) Err("EmitRelationship", e.Id, $"relationship key '{e.Key}' is used by two create emits");
+            if (e.Update && !relCreates.Any(c => c.TypeId == e.TypeId && c.Key == e.Key)) Err("EmitRelationship", e.Id, $"extend edges {Ids.Name(e.TypeId)} needs an edges {Ids.Name(e.TypeId)} statement with key '{e.Key}'");
+            if (!e.Update && relCreates.Count(c => c.Key == e.Key) > 1) Err("EmitRelationship", e.Id, $"relationship key '{e.Key}' is used by two edges statements");
             var ti = outView.Types[e.TypeId];
             foreach (var (x, allowed, side) in new[] { (e.Source, ti.Sources, "source"), (e.Target, ti.Targets, "target") })
             {
                 if (x.Type.Ty.TypeId is not { } st) continue;
                 var candidates = creates.Where(c => x.Type.Ty.TypeId is not null && Types.Comparable(c.EntityId.Type.Ty, x.Type.Ty, outView)).Select(c => c.TypeId).Distinct().ToList();
                 if (candidates.Count == 0 && SiblingCreates(pid).Any(c => outView.IsSubtype(c, st) || outView.IsSubtype(st, c))) continue;
-                if (candidates.Count == 0) { Err("EndpointDeferred", e.Id, $"{side} of {Ids.Name(e.TypeId)} is emitted by no create emit of this projection", "warning"); continue; }
+                if (candidates.Count == 0) { Err("EndpointDeferred", e.Id, $"{side} of {Ids.Name(e.TypeId)} is made by no nodes statement of this projection", "warning"); continue; }
                 if (allowed.Count > 0 && !candidates.Any(c => allowed.Any(a => outView.IsSubtype(c, a)))) Err("EmitRelationship", e.Id, $"{side} {Ids.Name(st)} resolves to {string.Join(", ", candidates.Select(Ids.Name))}, which relationship type {ti.Name} does not allow");
             }
         }
@@ -804,7 +804,7 @@ public sealed class ProjectionChecker(Graph defs)
             foreach (var k in keys)
             {
                 if (owner.TryGetValue(k, out var prev) && prev != (rule ?? "") && (cls is "bijective" or "lens" or "sync" || rules.FirstOrDefault(r => r.Name == prev)?.Class is "bijective" or "lens" or "sync"))
-                    Err("P2", e.Id, $"{Ids.Name(k)} is set by rules {prev} and {rule}; a bijective, lens or sync rule must own it exclusively");
+                    Err("P2", e.Id, $"{Ids.Name(k)} is set by rules {prev} and {rule}; an editable rule (accept or update) must own it exclusively");
                 owner[k] = rule ?? "";
             }
         }
@@ -821,9 +821,9 @@ public sealed class ProjectionChecker(Graph defs)
         var p = r.Policy;
         var emits = ops.OfType<TEmitEntity>().Where(e => e.Rule == r.Name && !e.Update).ToList();
         var accept = p?.Accept ?? [];
-        if (accept.Contains("create") && emits.Count > 0 && p?.CreateDomainId is null) Err("P5", pid, $"rule {r.Name} accepts create but has no 'on create key <domain>'");
-        if (p?.DeleteMode == "set" && p.DeleteSets.Count == 0) Err("P5", pid, $"rule {r.Name}: 'on delete set' sets nothing");
-        if (accept.Contains("delete") && p?.DeleteMode is null && emits.Count > 0) Err("P5", pid, $"rule {r.Name} accepts delete but has no 'on delete' action");
+        if (accept.Contains("create") && emits.Count > 0 && p?.CreateDomainId is null) Err("P5", pid, $"rule {r.Name} accepts create but has no onCreate function that gives the key");
+        if (p?.DeleteMode == "set" && p.DeleteSets.Count == 0) Err("P5", pid, $"rule {r.Name}: the onDelete function sets nothing");
+        if (accept.Contains("delete") && p?.DeleteMode is null && emits.Count > 0) Err("P5", pid, $"rule {r.Name} accepts delete but says nothing about a delete");
         if (p?.SourceTypeId is { } src)
         {
             var view = ViewOf(Ids.ModuleOf(src));
@@ -836,13 +836,13 @@ public sealed class ProjectionChecker(Graph defs)
                 }
             foreach (var (propId, req) in view.PropsOf(src))
                 if (req && view.Props.TryGetValue(propId, out var pi) && pi.Role != "telemetry" && !covered.Contains(propId) && accept.Contains("create"))
-                    Err("P5", pid, $"rule {r.Name}: create must provide required property {pi.Name} of {Ids.Name(src)} (from the view or 'on create default')");
-            foreach (var x in p.DeleteSets) if (!view.PropsOf(src).ContainsKey(x.PropId)) Err("P5", pid, $"rule {r.Name}: on delete sets {x.Name}, which {Ids.Name(src)} does not have");
+                    Err("P5", pid, $"rule {r.Name}: create must provide required property {pi.Name} of {Ids.Name(src)} (from the view or the onCreate function)");
+            foreach (var x in p.DeleteSets) if (!view.PropsOf(src).ContainsKey(x.PropId)) Err("P5", pid, $"rule {r.Name}: onDelete sets {x.Name}, which {Ids.Name(src)} does not have");
         }
         var viewProps = emits.SelectMany(e => e.Sets).Where(s => s.Value is TField).Select(s => s.PropName).ToHashSet();
         foreach (var a in accept.Where(a => a.StartsWith("update(", StringComparison.Ordinal)))
             foreach (var n in a[7..^1].Split(','))
-                if (!viewProps.Contains(n)) Err("P5", pid, $"rule {r.Name}: accept update({n}) names a property that no FieldRef of the rule sets");
+                if (!viewProps.Contains(n)) Err("P5", pid, $"rule {r.Name}: update = \"{n}\" names a property that no FieldRef of the rule sets");
     }
 
     /// <summary>Direction judgment (section 4.3): bijective needs δ = iso, one input stream, every input field recovered.</summary>
@@ -993,7 +993,7 @@ public sealed class ProjectionChecker(Graph defs)
 
     TExpr? IdExpr(string node, Schema R)
     {
-        if (!identityAllowed) { Err("IdentityOutsideSink", node, "an identity expression stands only in the identity or the endpoints of an emit and in a link (rule IdOf-in-sinks): a row that carries an identity into another operator would keep it after a merge. To group, join or filter by an element, emit it and read it through a `match` on a view of the graph"); return null; }
+        if (!identityAllowed) { Err("IdentityOutsideSink", node, "identity(...) stands only in the key of a nodes statement, the endpoints of an edges statement and a link (rule IdOf-in-sinks): a row that carries an identity into another operator would keep it after a merge. To group, join or filter by an element, make it with nodes and read it through graph-match on a view of the graph"); return null; }
         var was = identityAllowed; identityAllowed = false;          // its components are plain values
         try { return IdExprIn(node, R); } finally { identityAllowed = was; }
     }

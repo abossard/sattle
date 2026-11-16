@@ -118,7 +118,7 @@ public class Review2KqlTextTests
         Assert.DoesNotContain(put.Diagnostics, d => d.Message.Contains("there is no module w", StringComparison.Ordinal));
     }
 
-    /// <summary>HEAD: a rule name with `#` makes the printer throw (Suffix parses what follows `#`).</summary>
+    /// <summary>HEAD: a rule name with `#` made the printer throw (Suffix parses what follows `#`). The printer prints no projection since 3.47; the text still gives no exception.</summary>
     [Fact]
     public void A_rule_name_with_a_hash_is_a_diagnostic_not_an_exception()
     {

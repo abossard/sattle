@@ -7,8 +7,9 @@ namespace Sattle.Language;
 /// <summary>The definition graph has no text form here (for example an operator input without a wire). Names the element.</summary>
 public sealed class UnprintableException(string element, string message) : Exception(message) { public string Element { get; } = element; }
 
-/// <summary>Canonical printer (research 03 section 7.2): graph to text with parse(print(G)) = G on the module's facts. Layout is canonical, names are the stored names.</summary>
-public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except = null)
+/// <summary>Canonical printer (research 03 section 7.2): graph to text with parse(print(G)) = G on the module's facts. Layout is canonical, names are the stored names.
+/// A module text holds no projection: each projection is a file of its own, which is never printed.</summary>
+public sealed class Printer(Graph g, string module)
 {
     readonly DefView d = new(g);
     readonly string mid = Ids.Module(module);
@@ -16,16 +17,7 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
     readonly Dictionary<string, string> aliasOf = new(StringComparer.Ordinal); // module -> alias
     string Name(string id) => d.Text(id, "name") ?? Ids.Name(id);
 
-    /// <summary>`except`: projections that are not printed, because their text is a definition file of its own (a projection in KQL).</summary>
-    public static string Print(Graph g, string module, IReadOnlySet<string>? except = null) => new Printer(g, module, except).Run();
-
-    /// <summary>The text of one expression node of a module (aliases as the module's imports declare them).</summary>
-    public static string ExprText(Graph g, string module, string exprNode)
-    {
-        var p = new Printer(g, module);
-        foreach (var r in p.d.Out(p.mid, "imports")) p.aliasOf[Ids.ModuleOf(r.Target)] = r.Props.Text(Ids.KProp("alias")) ?? "";
-        return p.Expr(exprNode, 0);
-    }
+    public static string Print(Graph g, string module) => new Printer(g, module).Run();
 
     string Run()
     {
@@ -45,8 +37,8 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
         }
         sb.Append('\n');
         var blocks = new List<string>();
-        foreach (var slot in new[] { "entity", "rel", "extend", "constraint", "identity", "equivalence", "rows", "projection", "space" })
-            foreach (var id in InDeclarationOrder(d.Children(mid, slot).Where(x => except is null || !except.Contains(x)).OrderBy(x => x, StringComparer.Ordinal)))
+        foreach (var slot in new[] { "entity", "rel", "extend", "constraint", "identity", "equivalence", "rows", "space" })
+            foreach (var id in InDeclarationOrder(d.Children(mid, slot).OrderBy(x => x, StringComparer.Ordinal)))
             {
                 try
                 {
@@ -59,11 +51,9 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
                     case "identity": Identity(id); break;
                     case "equivalence": Equivalence(id); break;
                     case "rows": Rows(id); break;
-                    case "projection": Projection(id); break;
                     case "space": Space(id); break;
                 }
                 }
-                catch (UnprintableException) { throw; }
                 catch (Exception e) when (e is ArgumentException or InvalidOperationException or KeyNotFoundException or NullReferenceException or InvalidCastException or IndexOutOfRangeException or FormatException)
                 { throw new UnprintableException(id, $"{d.TypeName(id)} {Name(id)} is incomplete: a required slot, reference or value is missing"); }
             }
@@ -238,289 +228,6 @@ public sealed class Printer(Graph g, string module, IReadOnlySet<string>? except
             sb.Append(";\n");
         }
         sb.Append("}\n\n");
-    }
-
-    // ---- projections ----
-
-    void Projection(string pid)
-    {
-        Docs(d.Text(pid, "description"), "");
-        var outMod = Ids.ModuleOf(d.Target(pid, "outputOntology")!);
-        sb.Append($"projection {Name(pid)} {d.Text(pid, "purpose")}{(d.Bool(pid, "forward") ? " forward" : "")} output {(outMod == module ? module : aliasOf.GetValueOrDefault(outMod, outMod))} {{\n");
-        var ports = d.Children(pid, "port").OrderBy(x => Name(x), StringComparer.Ordinal).ToList();
-        foreach (var p in ports)
-        {
-            var isRows = d.Text(p, "kind") == "rows";
-            if (d.Text(p, "kind") == "param") { sb.Append("  in ").Append(Name(p)).Append(": param ").Append(Ids.Name(d.Target(p, "valueKind")!)).Append(d.Prop(p, "default") is { } dv && dv is not NullValue ? " = " + Lit(dv) : "").Append(";\n"); continue; }
-            sb.Append("  in ").Append(Name(p)).Append(": ").Append(isRows ? "rows " + Ref(d.Target(p, "rowType")!) : "graph " + (Ids.ModuleOf(d.Target(p, "expects")!) is var m && m == module ? module : aliasOf.GetValueOrDefault(m, m))).Append(";\n");
-        }
-        if (d.Int(pid, "retain") > 0) sb.Append("  retain ").Append(d.Int(pid, "retain")).Append(";\n");
-        var ops = d.Children(pid, "op");
-        bool IsSink(string o) => d.TypeName(o) is "EmitEntity" or "EmitRelationship" or "Link";
-        string Producer(string inPort)
-        {
-            var w = g.InRels(inPort).Select(g.Rel).FirstOrDefault(r => r is not null && Ids.Name(r!.Type) == "wire") ?? throw new UnprintableException(inPort, $"port {Ids.Name(inPort)} has no wire (W1)");
-            var src = w.Source; var parent = src[..src.LastIndexOf("/port:", StringComparison.Ordinal)];
-            return parent == pid ? Name(src) : Base(Name(parent));
-        }
-        // let groups
-        var groups = ops.Where(o => !IsSink(o)).GroupBy(o => Base(Name(o))).ToDictionary(x => x.Key, x => x.OrderBy(o => Suffix(Name(o))).ToList());
-        var printed = new HashSet<string>(); var order = new List<string>();
-        void Visit(string b)
-        {
-            if (!printed.Add(b)) return;
-            foreach (var o in groups[b])
-                foreach (var p in d.Children(o, "port").Where(x => d.Text(x, "direction") == "in" && d.Text(x, "kind") == "rows")) { var pr = Producer(p); if (pr != b && groups.ContainsKey(pr)) Visit(pr); }
-            foreach (var o in groups[b].Skip(0).Where(o => d.TypeName(o) is "Series")) { _ = o; }
-            order.Add(b);
-        }
-        foreach (var b in groups.Keys.Order(StringComparer.Ordinal)) Visit(b);
-        foreach (var b in order) Let(pid, b, groups[b], Producer);
-        // sinks
-        var ruleOf = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var r in d.Children(pid, "rule")) foreach (var s in d.Targets(r, "governs")) ruleOf[s] = r;
-        foreach (var s in ops.Where(o => IsSink(o) && !ruleOf.ContainsKey(o)).OrderBy(o => Suffix(Name(o)))) Sink(s, "  ", Producer);
-        foreach (var r in d.Children(pid, "rule").OrderBy(x => x, StringComparer.Ordinal))
-        {
-            var cls = d.Text(r, "class");
-            sb.Append("  rule ").Append(Name(r)).Append(' ').Append(cls);
-            if (d.Bool(r, "putput")) sb.Append(" putput");
-            if (d.Text(r, "reason") is { } reason) sb.Append(' ').Append(Q(reason));
-            sb.Append(" {\n");
-            Policies(r);
-            foreach (var s in d.Targets(r, "governs").OrderBy(o => Suffix(Name(o)))) Sink(s, "    ", Producer);
-            sb.Append("  }\n");
-        }
-        sb.Append("}\n\n");
-    }
-
-    void Policies(string rule)
-    {
-        if (g.Entity(rule)!.Props.Get(Ids.KProp("accept")) is ListValue l && l.Items.Length > 0)
-            sb.Append("    accept ").Append(string.Join(", ", l.Items.OfType<TextValue>().Select(x => x.S.StartsWith("update(", StringComparison.Ordinal) ? "update(" + x.S[7..^1].Replace(",", ", ") + ")" : x.S))).Append(";\n");
-        string Rec(string slot) => "{ " + string.Join(", ", d.Children(rule, slot).OrderBy(x => Name(d.Target(x, "property")!), StringComparer.Ordinal).Select(x => $"{Name(d.Target(x, "property")!)}: {Expr(d.Children(x, "value")[0], 0)}")) + " }";
-        if (d.Target(rule, "createKey") is { } ck)
-        {
-            sb.Append("    on create key ").Append(Ref(ck));
-            if (d.Children(rule, "createDefault").Count > 0) sb.Append(" default ").Append(Rec("createDefault"));
-            sb.Append(";\n");
-        }
-        if (d.Text(rule, "onDelete") == "remove") sb.Append("    on delete remove;\n");
-        else if (d.Text(rule, "onDelete") == "set") sb.Append("    on delete set ").Append(Rec("deleteSet")).Append(";\n");
-    }
-
-    static string Base(string name) { var i = name.IndexOf('#'); return i < 0 ? name : name[..i]; }
-    static int Suffix(string name)
-    {
-        var i = name.IndexOf('#'); if (i >= 0) return int.Parse(name[(i + 1)..], CultureInfo.InvariantCulture);
-        var j = name.LastIndexOf('.'); return j >= 0 && int.TryParse(name[(j + 1)..], out var k) ? k : int.MaxValue;
-    }
-
-    void Let(string pid, string name, List<string> ops, Func<string, string> producer)
-    {
-        sb.Append("  let ").Append(name).Append(" = ");
-        Chain(pid, ops, producer);
-        sb.Append(";\n");
-    }
-
-    void Chain(string pid, List<string> ops, Func<string, string> producer)
-    {
-        var steps = ops;
-        var first = ops[0];
-        try { ChainSource(pid, ops, producer, ref steps); }
-        catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException or NullReferenceException or KeyNotFoundException)
-        { throw new UnprintableException(first, $"{d.TypeName(first)} {Name(first)} is missing a required slot or reference ({e.Message})"); }
-        foreach (var op in steps)
-        {
-            sb.Append("\n    |> ");
-            try { PrintStep(op); }
-            catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException or NullReferenceException or KeyNotFoundException)
-            { throw new UnprintableException(op, $"{d.TypeName(op)} {Name(op)} is missing a required slot or reference ({e.Message})"); }
-        }
-    }
-
-    void ChainSource(string pid, List<string> ops, Func<string, string> producer, ref List<string> steps)
-    {
-        var first = ops[0];
-        if (d.TypeName(first) == "Match") { MatchSource(first, pid); steps = ops.Skip(1).ToList(); }
-        else if (d.TypeName(first) == "Values")
-        {
-            sb.Append("values ").Append(string.Join(", ", d.Children(first, "row").OrderBy(r => r, StringComparer.Ordinal).Select(r => Record(d.Children(r, "assign").OrderBy(a => d.Text(a, "target"), StringComparer.Ordinal).Select(a => (d.Text(a, "target")!, d.Children(a, "value")[0]))))));
-            steps = ops.Skip(1).ToList();
-        }
-        else if (d.TypeName(first) == "Join")
-        {
-            sb.Append("join ").Append(producer(Ids.Child(first, "port", "left"))).Append(", ").Append(producer(Ids.Child(first, "port", "right"))).Append(" on ").Append(Expr(d.Children(first, "on")[0], 0));
-            steps = ops.Skip(1).ToList();
-        }
-        else if (d.TypeName(first) == "Union")
-        {
-            sb.Append("union ").Append(producer(Ids.Child(first, "port", "in0"))).Append(", ").Append(producer(Ids.Child(first, "port", "in1")));
-            steps = ops.Skip(1).ToList();
-        }
-        else sb.Append(producer(Ids.Child(first, "port", "in")));
-    }
-
-    string ThresholdPart(string op, string slot, string number) => d.Children(op, slot) is { Count: > 0 } c ? Expr(c[0], 0) : number;
-
-    void PrintStep(string op)
-    {
-        {
-            switch (d.TypeName(op))
-            {
-                case "Filter": sb.Append("where ").Append(Expr(d.Children(op, "predicate")[0], 0)); break;
-                case "Distinct": sb.Append("distinct"); break;
-                case "Retain": sb.Append($"retain on {d.Text(op, "timestampField")} for {Lexer.DurationText(d.Int(op, "age"))}"); break;
-                case "Traverse":
-                    {
-                        var gp = g.InRels(Ids.Child(op, "port", "graph")).Select(g.Rel).First(r => r is not null && Ids.Name(r!.Type) == "wire")!;
-                        sb.Append($"traverse {Name(gp.Source)} via {Ref(d.Target(op, "ofType")!)} {d.Text(op, "direction")} depth {d.Int(op, "minDepth")} .. {d.Int(op, "maxDepth")} from {d.Text(op, "start")} as {d.Text(op, "target")}");
-                        break;
-                    }
-                case "Map": sb.Append("select ").Append(Record(d.Children(op, "assign").Select(a => (d.Text(a, "target")!, d.Children(a, "value")[0])))); break;
-                case "Window": sb.Append($"window on {d.Text(op, "timestampField")} width {Lexer.DurationText(d.Int(op, "width"))} late {d.Text(op, "late")}"); break;
-                case "Group": sb.Append("group by ").Append(KeyRecord(op)).Append(" aggregate ").Append(Aggs(op)); break;
-                case "Rollup": sb.Append("rollup by ").Append(KeyRecord(op)).Append(" combine ").Append(Aggs(op)).Append(d.Text(op, "nodata") == "any" ? " nodata any" : ""); break;
-                case "Series":
-                    {
-                        var gp = g.InRels(Ids.Child(op, "port", "graph")).Select(g.Rel).First(r => r is not null && Ids.Name(r!.Type) == "wire")!;
-                        sb.Append("series ").Append(Name(gp.Source)).Append(' ').Append(string.Join(", ", d.Children(op, "read").Select(r => d.Text(r, "path") + (d.Prop(r, "fill") is DecimalValue f ? " fill " + Norm.Decimal(f.Q) : "")))).Append(" within ").Append(Lexer.DurationText(d.Int(op, "within")));
-                        if (d.Prop(op, "ttl") is IntegerValue ttl) sb.Append(" ttl ").Append(Lexer.DurationText((long)ttl.N));
-                        break;
-                    }
-                case "Threshold":
-                    sb.Append("threshold ").Append(Expr(d.Children(op, "value")[0], 0)).Append(" by ").Append(KeyRecord(op))
-                        .Append($" above {ThresholdPart(op, "aboveBy", Norm.Decimal(d.Dec(op, "above")))} for {ThresholdPart(op, "enterBy", d.Int(op, "enterAfter").ToString())} then {Q(d.Text(op, "high")!)} below {ThresholdPart(op, "belowBy", Norm.Decimal(d.Dec(op, "below")))} for {ThresholdPart(op, "exitBy", d.Int(op, "exitAfter").ToString())} then {Q(d.Text(op, "low")!)} initial {Q(d.Text(op, "initial")!)}{(d.Text(op, "nodata") is { } nd ? " nodata then " + Q(nd) : d.Bool(op, "nodataIgnore") ? " nodata ignore" : "")} as {d.Text(op, "target")}");
-                    break;
-                default: throw new InvalidOperationException($"cannot print operator {d.TypeName(op)}");
-            }
-        }
-    }
-
-    void MatchSource(string op, string pid)
-    {
-        if (d.Children(op, "node").Count == 0) throw new UnprintableException(op, $"Match {Name(op)} has no pattern node");
-        var gp = g.InRels(Ids.Child(op, "port", "graph")).Select(g.Rel).First(r => r is not null && Ids.Name(r!.Type) == "wire")!;
-        sb.Append("match ").Append(Name(gp.Source)).Append(' ');
-        var seen = new HashSet<string>();
-        string Node(string nid)
-        {
-            var v = d.Text(nid, "var") ?? Ids.Name(nid);
-            if (seen.Add(v)) return $"({v}: {Ref(d.Target(nid, "ofType")!)})";
-            return $"({v})";
-        }
-        var paths = new List<string>(); var used = new HashSet<string>();
-        var edges = d.Children(op, "edge").OrderBy(e => d.Text(e, "var") is null ? 0 : 1).ThenBy(e => Ids.Name(e) is var n && n.StartsWith('#') ? int.Parse(n[1..], CultureInfo.InvariantCulture) : 0).ThenBy(e => e, StringComparer.Ordinal).ToList();
-        foreach (var e in edges)
-        {
-            var from = d.Target(e, "from")!; var to = d.Target(e, "to")!;
-            used.Add(from); used.Add(to);
-            var v = d.Text(e, "var");
-            paths.Add($"{Node(from)}-[{(v is null ? "" : v)}:{Ref(d.Target(e, "ofType")!)}]->{Node(to)}");
-        }
-        foreach (var n in d.Children(op, "node").Where(n => !used.Contains(n))) paths.Add(Node(n));
-        sb.Append(string.Join(",\n      ", paths));
-    }
-
-    string KeyRecord(string op) => Record(d.Children(op, "key").OrderBy(k => d.Text(k, "target"), StringComparer.Ordinal).Select(k => (d.Text(k, "target")!, d.Children(k, "value")[0])));
-    string Aggs(string op) => "{ " + string.Join(", ", d.Children(op, "agg").OrderBy(a => d.Text(a, "target"), StringComparer.Ordinal).Select(a =>
-    {
-        var args = new List<string>();
-        if (d.Children(a, "value").FirstOrDefault() is { } v) args.Add(Expr(v, 0));
-        if (d.Children(a, "order").FirstOrDefault() is { } w) args.Add(Expr(w, 0));
-        return $"{d.Text(a, "target")}: {d.Text(a, "fn")}({string.Join(", ", args)})" + (d.Text(a, "row") is { } row ? " row " + row : "");
-    })) + " }";
-    string Record(IEnumerable<(string Name, string Node)> items) => "{ " + string.Join(", ", items.Select(x => $"{x.Name}: {Expr(x.Node, 0)}")) + " }";
-
-    void Sink(string op, string indent, Func<string, string> producer)
-    {
-        var mark = sb.Length;
-        try { PrintSink(op, indent, producer); }
-        catch (Exception e) when (e is ArgumentOutOfRangeException or InvalidOperationException or NullReferenceException or KeyNotFoundException)
-        { sb.Length = mark; throw new UnprintableException(op, $"{d.TypeName(op)} {Name(op)} is missing a required slot or reference ({e.Message})"); }
-    }
-
-    void PrintSink(string op, string indent, Func<string, string> producer)
-    {
-        var from = producer(Ids.Child(op, "port", "in"));
-        switch (d.TypeName(op))
-        {
-            case "EmitEntity":
-                sb.Append(indent).Append(d.Text(op, "mode") == "update" ? "emit update entity " : "emit entity ").Append(Ref(d.Target(op, "ofType")!)).Append(" from ").Append(from)
-                    .Append("\n").Append(indent).Append("  identity ").Append(Expr(d.Children(op, "id")[0], 0));
-                Sets(op, indent);
-                break;
-            case "EmitRelationship":
-                sb.Append(indent).Append(d.Text(op, "mode") == "update" ? "emit update relationship " : "emit relationship ").Append(Ref(d.Target(op, "ofType")!)).Append(" from ").Append(from)
-                    .Append(" key ").Append(d.Text(op, "key")).Append(":\n").Append(indent).Append("  ").Append(Expr(d.Children(op, "source")[0], 0)).Append(" -> ").Append(Expr(d.Children(op, "target")[0], 0));
-                Sets(op, indent);
-                if (d.Text(op, "retype") is { } rt && rt != "reject") sb.Append(" on retype ").Append(rt);
-                break;
-            case "Link":
-                sb.Append(indent).Append("link ").Append(Ref(d.Target(op, "policy")!)).Append(" from ").Append(from)
-                    .Append("\n").Append(indent).Append("  left ").Append(Expr(d.Children(op, "left")[0], 0))
-                    .Append("\n").Append(indent).Append("  right ").Append(Expr(d.Children(op, "right")[0], 0))
-                    .Append("\n").Append(indent).Append("  confidence ").Append(Expr(d.Children(op, "confidence")[0], 0));
-                break;
-        }
-        sb.Append(";\n");
-    }
-
-    void Sets(string op, string indent)
-    {
-        var sets = d.Children(op, "set").OrderBy(s => Name(d.Target(s, "property")!), StringComparer.Ordinal).ToList();
-        if (sets.Count == 0) return;
-        sb.Append('\n').Append(indent).Append("  set { ").Append(string.Join(", ", sets.Select(s => $"{Name(d.Target(s, "property")!)}: {Expr(d.Children(s, "value")[0], 0)}"))).Append(" }");
-    }
-
-    // ---- expressions ----
-    // precedence: or 1, and 2, not 3, compare 4, sum 5, product 6, unary 7, primary 8
-
-    int depth;
-
-    /// <summary>The text of an expression. A graph that did not come from text (a draft patch) may nest deeper than the parser accepts, or in a circle: it is refused here by name, before the recursion runs out of stack.</summary>
-    string Expr(string node, int min)
-    {
-        if (depth >= Parser.MaxNesting) throw new UnprintableException(node, $"an expression nested deeper than {Parser.MaxNesting} levels");
-        depth++;
-        try { return ExprBody(node, min); } finally { depth--; }
-    }
-
-    string ExprBody(string node, int min)
-    {
-        string Wrap(int prec, string text) => prec < min ? "(" + text + ")" : text;
-        switch (d.TypeName(node))
-        {
-            case "FieldRef": return d.Text(node, "path")!;
-            case "Literal": { var v = d.Prop(node, "value")!; var t = Lit(v); return v is IntegerValue { N.Sign: < 0 } or DecimalValue { Q: < 0 } ? Wrap(7, t) : t; }
-            case "IdOf":
-                {
-                    var dom = d.Target(node, "domain")!;
-                    var comps = d.Children(node, "component").ToDictionary(c => d.Target(c, "component")!);
-                    var ordered = d.Children(dom, "component").Where(comps.ContainsKey).Select(c => $"{Name(c)}: {Expr(d.Children(comps[c], "value")[0], 0)}");
-                    return Ref(dom) + "(" + string.Join(", ", ordered) + ")";
-                }
-            case "Call":
-                {
-                    var fn = Ids.Name(d.Target(node, "function")!);
-                    var args = d.Children(node, "arg");
-                    string A(int i, int m) => Expr(args[i], m);
-                    switch (fn)
-                    {
-                        case "Equal" or "NotEqual" or "LessThan" or "LessOrEqual" or "GreaterThan" or "GreaterOrEqual":
-                            return Wrap(4, $"{A(0, 5)} {fn switch { "Equal" => "==", "NotEqual" => "!=", "LessThan" => "<", "LessOrEqual" => "<=", "GreaterThan" => ">", _ => ">=" }} {A(1, 5)}");
-                        case "Add" or "Subtract" or "Concat" when args.Count == 2:
-                            return Wrap(5, $"{A(0, 5)} {fn switch { "Add" => "+", "Subtract" => "-", _ => "++" }} {A(1, 6)}");
-                        case "Multiply" or "Divide": return Wrap(6, $"{A(0, 6)} {(fn == "Multiply" ? "*" : "/")} {A(1, 7)}");
-                        case "And": return Wrap(2, string.Join(" and ", args.Select(a => Expr(a, 3))));
-                        case "Or": return Wrap(1, string.Join(" or ", args.Select(a => Expr(a, 2))));
-                        case "Not": return Wrap(3, "not " + A(0, 4));
-                        case "Negate": return Wrap(7, "-" + A(0, 8));
-                        default: return Lower(fn) + "(" + string.Join(", ", args.Select(a => Expr(a, 0))) + ")";
-                    }
-                }
-            default: throw new InvalidOperationException("cannot print " + d.TypeName(node));
-        }
     }
 
     static string Lit(Value v) => v switch

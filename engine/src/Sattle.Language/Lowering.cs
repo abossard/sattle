@@ -1,17 +1,19 @@
-using System.Text;
 using Sattle.Core;
 
 namespace Sattle.Language;
 
-public sealed class LowerResult(DefBuilder builder, List<Diagnostic> diags, Dictionary<string, Pos> map, ModuleAst ast)
+public sealed class LowerResult(DefBuilder builder, List<Diagnostic> diags, Dictionary<string, Pos> map, ModuleAst ast, ProjectionFacts? projections)
 {
     public DefBuilder Builder { get; } = builder;
     public List<Diagnostic> Diagnostics { get; } = diags;
     public Dictionary<string, Pos> SourceMap { get; } = map;
     public ModuleAst Ast { get; } = ast;
+    /// <summary>The module's projections from files of their own, when they were read; their facts are not in `Builder`.</summary>
+    public ProjectionFacts? Projections { get; } = projections;
 }
 
-/// <summary>Text to graph (research 03 section 7.2): each construct maps to fixed node and edge types, ids from the containment path.</summary>
+/// <summary>Text to graph (research 03 section 7.2): each construct maps to fixed node and edge types, ids from the containment path.
+/// A module text declares the ontology and the spaces; its projections are files of their own, read after the ontology and before the spaces that bind them.</summary>
 public sealed class Lowering
 {
     readonly ModuleAst ast;
@@ -22,19 +24,21 @@ public sealed class Lowering
     readonly Dictionary<string, Pos> map = new(StringComparer.Ordinal);
     readonly Dictionary<string, string> alias = new(StringComparer.Ordinal); // alias -> module
     readonly string mid;
+    readonly Func<Graph, ProjectionFacts>? projections;
+    ProjectionFacts? read;
     Graph work;
-    OntologyView? view;
 
-    Lowering(ModuleAst ast, Graph catalog, string file)
+    Lowering(ModuleAst ast, Graph catalog, string file, Func<Graph, ProjectionFacts>? projections)
     {
-        this.ast = ast; this.catalog = catalog; this.file = file; mid = Ids.Module(ast.Name); work = catalog;
+        this.ast = ast; this.catalog = catalog; this.file = file; this.projections = projections; mid = Ids.Module(ast.Name); work = catalog;
     }
 
-    public static LowerResult Lower(ModuleAst ast, Graph catalog, string file)
+    /// <param name="projections">reads the module's projections against the catalog with the module's ontology; null when the module has none</param>
+    public static LowerResult Lower(ModuleAst ast, Graph catalog, string file, Func<Graph, ProjectionFacts>? projections = null)
     {
-        var l = new Lowering(ast, catalog, file);
+        var l = new Lowering(ast, catalog, file, projections);
         l.Run();
-        return new LowerResult(l.b, l.diags, l.map, ast);
+        return new LowerResult(l.b, l.diags, l.map, ast, l.read);
     }
 
     static Value T(string s) => Value.Text(s);
@@ -50,7 +54,7 @@ public sealed class Lowering
         map[id] = pos; return id;
     }
 
-    bool Exists(string id) => b.Nodes.ContainsKey(id) || catalog.Entity(id) is not null;
+    bool Exists(string id) => b.Nodes.ContainsKey(id) || work.Entity(id) is not null;
 
     string? ModuleOfRef(Ref r)
     {
@@ -90,13 +94,16 @@ public sealed class Lowering
         work = catalog.Clone();
         var err = work.Apply([.. b.Elements().Select(Edit.Create)]);
         if (err is not null) { Err("Internal", "module facts do not compose: " + err, ast.Pos); return; }
-        view = OntologyView.Build(work, Closure());
-        foreach (var d in ast.Decls)
-            switch (d)
-            {
-                case ProjectionDecl p: Projection(p); break;
-                case SpaceDecl s: Space(s); break;
-            }
+        if (projections is not null)
+        {
+            if (diags.Any(x => x.IsError)) return;
+            read = projections(work);
+            diags.AddRange(read.Diagnostics);
+            if (read.Diagnostics.Any(x => x.IsError)) return;
+            err = work.Apply([.. read.Projections.Values.SelectMany(f => f).Select(Edit.Create)]);
+            if (err is not null) { Err("Internal", "the projections do not compose with the module: " + err, ast.Pos); return; }
+        }
+        foreach (var s in ast.Decls.OfType<SpaceDecl>()) Space(s);
     }
 
     HashSet<string> Closure()
@@ -282,388 +289,6 @@ public sealed class Lowering
             var canon = Ids.KBuiltin("canon." + Pascal(c.Canonicalizer ?? "exact"));
             if (Kernel.Graph.Entity(canon) is null) Err("UnknownCanonicalizer", $"unknown canonicalizer '{c.Canonicalizer}'", c.Pos);
             else b.Edge(cid, "canonicalizer", canon);
-        }
-    }
-
-    // ---- projections --------------------------------------------------------------------------------------
-
-    sealed class ProjCtx
-    {
-        public required string Id;
-        public required string Name;
-        public Dictionary<string, string> Out = new(StringComparer.Ordinal);   // name -> producing port id
-        public Dictionary<string, string> GraphPorts = new(StringComparer.Ordinal);
-        public int EmitCount;
-        public Dictionary<string, int> RuleCount = new(StringComparer.Ordinal);
-        public Dictionary<string, string> RuleClass = new(StringComparer.Ordinal);
-    }
-
-    void Projection(ProjectionDecl pd)
-    {
-        var pid = Ids.Child(mid, "projection", pd.Name);
-        var outMod = pd.Output == ast.Name ? ast.Name : alias.GetValueOrDefault(pd.Output);
-        if (outMod is null) { Err("UnknownAlias", $"output '{pd.Output}' is neither this module nor an import alias", pd.Pos); outMod = ast.Name; }
-        var p = new List<(string, Value)> { ("name", T(pd.Name)), ("purpose", T(pd.Purpose)), ("retain", Value.Integer(pd.Retain ?? 0)), ("forward", Value.Boolean(pd.Forward)) };
-        if (pd.Doc is not null) p.Add(("description", T(pd.Doc)));
-        b.Contain(mid, "projection", pd.Name, "Projection", null, [.. p]); Reg(pid, pd.Pos);
-        b.Edge(pid, "outputOntology", Ids.Module(outMod));
-        var cx = new ProjCtx { Id = pid, Name = pd.Name };
-        foreach (var port in pd.Ports)
-        {
-            var id = port.Default is null ? b.Contain(pid, "port", port.Name, "Port", null, ("name", T(port.Name)), ("direction", T("in")), ("kind", T(port.Kind)))
-                : b.Contain(pid, "port", port.Name, "Port", null, ("name", T(port.Name)), ("direction", T("in")), ("kind", T(port.Kind)), ("default", port.Default)); Reg(id, port.Pos);
-            if (port.Kind == "param")
-            {
-                if (port.Target.Alias is not null || port.Target.Name is not ("Text" or "Integer" or "Decimal" or "Boolean")) Err("ParamKind", $"parameter type '{port.Target}' must be Text, Integer, Decimal or Boolean", port.Pos);
-                else b.Edge(id, "valueKind", Ids.KBuiltin(port.Target.Name));
-            }
-            else if (port.Kind == "rows") { if (Resolve(port.Target, "rows") is { } rt) b.Edge(id, "rowType", rt); cx.Out[port.Name] = id; }
-            else
-            {
-                // `in master: graph ops;` names an import alias (or this module)
-                var mname = alias.GetValueOrDefault(port.Target.ToString()) ?? (port.Target.ToString() == ast.Name ? ast.Name : null);       // a dotted module name is a qualified reference: compare the whole of it
-                if (mname is null) Err("UnknownAlias", $"graph port expects '{port.Target}', which is neither this module nor an import alias", port.Target.Pos);
-                else b.Edge(id, "expects", Ids.Module(mname));
-                cx.GraphPorts[port.Name] = id; cx.Out[port.Name] = id;
-            }
-        }
-        foreach (var item in pd.Items)
-        {
-            try
-            {
-                switch (item)
-                {
-                    case Stmt s: Statement(cx, s, null); break;
-                    case RuleItem r: Rule(cx, r); break;
-                }
-            }
-            catch (LowerError e) { Err(e.Code, e.Message, e.Pos); }
-        }
-    }
-
-    sealed class LowerError(string code, string message, Pos pos) : Exception(message) { public string Code { get; } = code; public Pos Pos { get; } = pos; }
-
-    void Rule(ProjCtx cx, RuleItem r)
-    {
-        var p = new List<(string, Value)> { ("name", T(r.Name)), ("class", T(r.Class)), ("putput", Value.Boolean(r.PutPut)) };
-        if (r.Reason is not null) p.Add(("reason", T(r.Reason)));
-        if (r.Policy is { } pol)
-        {
-            if (pol.Accept.Count > 0) p.Add(("accept", Value.List(pol.Accept.Select(Value.Text))));
-            if (pol.OnDelete is not null) p.Add(("onDelete", T(pol.OnDelete)));
-        }
-        var rid = b.Contain(cx.Id, "rule", r.Name, "Rule", null, [.. p]); Reg(rid, r.Pos);
-        cx.RuleClass[r.Name] = r.Class;
-        if (r.Policy is { CreateKey: { } ck } pl)
-        {
-            var dom = Resolve(ck, "identity");
-            if (dom is not null)
-            {
-                b.Edge(rid, "createKey", dom);
-                var target = work.Entity(dom) is null ? null : new DefView(work).Target(dom, "identifies");
-                void Sets(string slot, List<(string Name, Expr Value, Pos Pos)> items)
-                {
-                    foreach (var (name, value, pos) in items)
-                    {
-                        var pid = target is null || view is null ? null : PropByName(view, target, name, pos);
-                        var sid = b.Contain(rid, slot, name, "SetProperty"); Reg(sid, pos);
-                        if (pid is not null) b.Edge(sid, "property", pid);
-                        Expr(value, sid, "value", 0, cx);
-                    }
-                }
-                Sets("createDefault", pl.CreateDefault);
-                Sets("deleteSet", pl.DeleteSet);
-            }
-        }
-        else if (r.Policy is { OnDelete: not null } pl2 && pl2.DeleteSet.Count > 0) Err("Policy", "on delete set needs an 'on create key <domain>' to name the master entity type", r.Policy.Pos);
-        foreach (var s in r.Stmts)
-        {
-            try { Statement(cx, s, (rid, r.Name)); }
-            catch (LowerError e) { Err(e.Code, e.Message, e.Pos); }
-        }
-    }
-
-    string Op(ProjCtx cx, string kind, string name, Pos pos, params (string, Value)[] props)
-    {
-        var id = b.Contain(cx.Id, "op", name, kind, null, [("name", T(name)), .. props]); Reg(id, pos);
-        foreach (var (pn, dir, pk) in KernelTable.OperatorPorts(kind)) b.Contain(id, "port", pn, "Port", null, ("name", T(pn)), ("direction", T(dir)), ("kind", T(pk)));
-        return id;
-    }
-    static string Port(string op, string name) => Ids.Child(op, "port", name);
-
-    string Source(ProjCtx cx, string name, Pos pos) =>
-        cx.Out.TryGetValue(name, out var port) ? port : throw new LowerError("UnknownName", $"'{name}' is not a port or a let in this projection", pos);
-
-    void Statement(ProjCtx cx, Stmt s, (string Id, string Name)? rule)
-    {
-        string SinkName() => rule is { } r ? $"{r.Name}.{cx.RuleCount[r.Name] = cx.RuleCount.GetValueOrDefault(r.Name) + 1}" : $"emit.{++cx.EmitCount}";
-        void Govern(string sink) { if (rule is { } r) b.Edge(r.Id, "governs", sink); }
-        switch (s)
-        {
-            case LetStmt l: Let(cx, l); break;
-            case EmitEntityStmt e:
-                {
-                    var type = Resolve(e.Type, "entity") ?? throw new LowerError("Skipped", "unresolved", e.Pos);
-                    var name = SinkName();
-                    var op = Op(cx, "EmitEntity", name, e.Pos, ("mode", T(e.Update ? "update" : "create")));
-                    b.Edge(op, "ofType", type);
-                    b.Edge(Source(cx, e.From, e.Pos), "wire", Port(op, "in"));
-                    Expr(e.Id, op, "id", 0, cx);
-                    Sets(op, type, e.Set, cx);
-                    Govern(op);
-                    break;
-                }
-            case EmitRelStmt e:
-                {
-                    var type = Resolve(e.Type, "rel") ?? throw new LowerError("Skipped", "unresolved", e.Pos);
-                    var name = SinkName();
-                    var op = Op(cx, "EmitRelationship", name, e.Pos, ("mode", T(e.Update ? "update" : "create")), ("key", T(e.KeyName)), ("retype", T(e.Retype ?? "reject")));
-                    b.Edge(op, "ofType", type);
-                    b.Edge(Source(cx, e.From, e.Pos), "wire", Port(op, "in"));
-                    Expr(e.Source, op, "source", 0, cx);
-                    Expr(e.Target, op, "target", 0, cx);
-                    Sets(op, type, e.Set, cx);
-                    Govern(op);
-                    break;
-                }
-            case LinkStmt l:
-                {
-                    var pol = Resolve(l.Policy, "equivalence") ?? throw new LowerError("Skipped", "unresolved", l.Pos);
-                    var name = SinkName();
-                    var op = Op(cx, "Link", name, l.Pos);
-                    b.Edge(op, "policy", pol);
-                    b.Edge(Source(cx, l.From, l.Pos), "wire", Port(op, "in"));
-                    if (l.Left is not IdExpr) throw new LowerError("Syntax", "link left must be an identity expression", l.Left.Pos);
-                    if (l.Right is not IdExpr) throw new LowerError("Syntax", "link right must be an identity expression", l.Right.Pos);
-                    Expr(l.Left, op, "left", 0, cx); Expr(l.Right, op, "right", 0, cx); Expr(l.Confidence, op, "confidence", 0, cx);
-                    Govern(op);
-                    break;
-                }
-        }
-    }
-
-    void Sets(string op, string typeId, List<(string Name, Expr Value, Pos Pos)> set, ProjCtx cx)
-    {
-        foreach (var (name, value, pos) in set)
-        {
-            var pid = view is null ? null : PropByName(view, typeId, name, pos);
-            var sid = b.Contain(op, "set", name, "SetProperty"); Reg(sid, pos);
-            if (pid is not null) b.Edge(sid, "property", pid);
-            Expr(value, sid, "value", 0, cx);
-        }
-    }
-
-    void Let(ProjCtx cx, LetStmt l)
-    {
-        var pipe = l.Pipe;
-        var count = Count(pipe);
-        if (count == 0) { cx.Out[l.Name] = Source(cx, ((IdentSource)pipe.Source).Name, pipe.Pos); return; }
-        var i0 = 0;
-        cx.Out[l.Name] = Chain(cx, pipe, i => i == count - 1 ? l.Name : $"{l.Name}#{i}", count, ref i0);
-    }
-
-    static int Count(Pipeline pipe) => (pipe.Source is MatchSource or UnionSource or JoinSource or ValuesSource ? 1 : 0) + pipe.Steps.Count;
-
-    /// <summary>Lowers a source and its steps to operators named by opName; returns the last output port (or the source port when there are no operators).</summary>
-    string Chain(ProjCtx cx, Pipeline pipe, Func<int, string> OpName, int n, ref int idx)
-    {
-        string? prev;
-        if (pipe.Source is MatchSource m)
-        {
-            var op = Op(cx, "Match", OpName(idx++), m.Pos);
-            if (!cx.GraphPorts.TryGetValue(m.Graph, out var gp)) throw new LowerError("UnknownName", $"'{m.Graph}' is not a graph port", m.Pos);
-            b.Edge(gp, "wire", Port(op, "graph"));
-            MatchPatterns(op, m);
-            prev = Port(op, "out");
-        }
-        else if (pipe.Source is ValuesSource vs)
-        {
-            var op = Op(cx, "Values", OpName(idx++), vs.Pos);
-            for (var r = 0; r < vs.Rows.Count; r++)
-            {
-                var row = b.Contain(op, "row", "#" + r, "RowValue", r);
-                foreach (var (an, av) in vs.Rows[r])
-                {
-                    var asg = b.Contain(row, "assign", an, "Assign", null, ("target", T(an)));
-                    Expr(av, asg, "value", 0, cx);
-                }
-            }
-            prev = Port(op, "out");
-        }
-        else if (pipe.Source is JoinSource js)
-        {
-            var op = Op(cx, "Join", OpName(idx++), js.Pos);
-            b.Edge(Source(cx, js.A, js.Pos), "wire", Port(op, "left"));
-            b.Edge(Source(cx, js.B, js.Pos), "wire", Port(op, "right"));
-            Expr(js.On, op, "on", 0, cx);
-            prev = Port(op, "out");
-        }
-        else if (pipe.Source is UnionSource u)
-        {
-            var op = Op(cx, "Union", OpName(idx++), u.Pos);
-            b.Edge(Source(cx, u.A, u.Pos), "wire", Port(op, "in0"));
-            b.Edge(Source(cx, u.B, u.Pos), "wire", Port(op, "in1"));
-            prev = Port(op, "out");
-        }
-        else prev = Source(cx, ((IdentSource)pipe.Source).Name, pipe.Pos);
-        foreach (var step in pipe.Steps)
-        {
-            var name = OpName(idx++);
-            string op;
-            switch (step)
-            {
-                case WhereStep w:
-                    op = Op(cx, "Filter", name, w.Pos); Expr(w.Pred, op, "predicate", 0, cx); break;
-                case SelectStep sel:
-                    op = Op(cx, "Map", name, sel.Pos);
-                    for (var k = 0; k < sel.Record.Count; k++)
-                    {
-                        var a = b.Contain(op, "assign", sel.Record[k].Name, "Assign", k, ("target", T(sel.Record[k].Name)));
-                        Expr(sel.Record[k].Value, a, "value", 0, cx);
-                    }
-                    break;
-                case GroupStep g:
-                    op = Op(cx, "Group", name, g.Pos); Keys(op, g.Keys, cx); Aggs(op, g.Aggs, cx); break;
-                case TraverseStep tr:
-                    {
-                        op = Op(cx, "Traverse", name, tr.Pos, ("direction", T(tr.Direction)), ("minDepth", Value.Integer(tr.Min)), ("maxDepth", Value.Integer(tr.Max)), ("start", T(tr.From)), ("target", T(tr.As)));
-                        if (!cx.GraphPorts.TryGetValue(tr.Graph, out var tgp)) throw new LowerError("UnknownName", $"'{tr.Graph}' is not a graph port", tr.Pos);
-                        b.Edge(tgp, "wire", Port(op, "graph"));
-                        if (Resolve(tr.Rel, "rel") is { } rt) b.Edge(op, "ofType", rt); else throw new LowerError("Skipped", "unresolved", tr.Pos);
-                        break;
-                    }
-                case DistinctStep ds:
-                    op = Op(cx, "Distinct", name, ds.Pos); break;
-                case RetainStep rs:
-                    op = Op(cx, "Retain", name, rs.Pos, ("timestampField", T(rs.On)), ("age", Value.Integer(rs.AgeNs))); break;
-                case WindowStep w:
-                    op = Op(cx, "Window", name, w.Pos, ("timestampField", T(w.On)), ("width", Value.Integer(w.WidthNs)), ("late", T(w.Late))); break;
-                case SeriesStep sr:
-                    op = sr.TtlNs is { } ttl ? Op(cx, "Series", name, sr.Pos, ("within", Value.Integer(sr.WithinNs)), ("ttl", Value.Integer(ttl))) : Op(cx, "Series", name, sr.Pos, ("within", Value.Integer(sr.WithinNs)));
-                    if (!cx.GraphPorts.TryGetValue(sr.Graph, out var gp)) throw new LowerError("UnknownName", $"'{sr.Graph}' is not a graph port", sr.Pos);
-                    b.Edge(gp, "wire", Port(op, "graph"));
-                    for (var k = 0; k < sr.Paths.Count; k++)
-                    {
-                        var r = sr.Fills?[k] is { } fill ? b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T(sr.Paths[k])), ("fill", Value.Decimal(fill))) : b.Contain(op, "read", "#" + k, "FieldRef", k, ("path", T(sr.Paths[k])));
-                        Reg(r, sr.Pos);
-                    }
-                    break;
-                case RollupStep ru:
-                    op = ru.NoDataAny ? Op(cx, "Rollup", name, ru.Pos, ("nodata", T("any"))) : Op(cx, "Rollup", name, ru.Pos); Keys(op, ru.Keys, cx); Aggs(op, ru.Aggs, cx); break;
-                case ThresholdStep th:
-                    op = Op(cx, "Threshold", name, th.Pos,
-                    [
-                        ("target", T(th.As)), ("above", Value.Decimal(th.Above)), ("enterAfter", Value.Integer(th.EnterAfter)), ("high", T(th.High)),
-                        ("below", Value.Decimal(th.Below)), ("exitAfter", Value.Integer(th.ExitAfter)), ("low", T(th.Low)), ("initial", T(th.Initial)),
-                        .. th.NoData is { } nd ? new[] { ("nodata", T(nd)) } : [], .. th.NoDataIgnore ? new[] { ("nodataIgnore", Value.Boolean(true)) } : [],
-                    ]);
-                    Keys(op, th.Keys, cx); Expr(th.Value, op, "value", 0, cx);
-                    foreach (var (e, slot) in new[] { (th.AboveE, "aboveBy"), (th.EnterE, "enterBy"), (th.BelowE, "belowBy"), (th.ExitE, "exitBy") }) if (e is not null) Expr(e, op, slot, 0, cx);
-                    break;
-                default: throw new LowerError("Unsupported", "unsupported step", step.Pos);
-            }
-            b.Edge(prev, "wire", Port(op, "in"));
-            prev = Port(op, "out");
-        }
-        return prev;
-    }
-
-    void Keys(string op, List<(string Name, Expr Value)> keys, ProjCtx cx)
-    {
-        foreach (var (name, value) in keys)
-        {
-            var a = b.Contain(op, "key", name, "Assign", null, ("target", T(name)));
-            Expr(value, a, "value", 0, cx);
-        }
-    }
-
-    void Aggs(string op, List<AggDecl> aggs, ProjCtx cx)
-    {
-        foreach (var a in aggs)
-        {
-            var id = a.Row is null ? b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn)))
-                : b.Contain(op, "agg", a.Target, "Aggregate", null, ("target", T(a.Target)), ("fn", T(a.Fn)), ("row", T(a.Row)));
-            Reg(id, a.Pos);
-            if (a.Value is not null) Expr(a.Value, id, "value", 0, cx);
-            if (a.Order is not null) Expr(a.Order, id, "order", 0, cx);
-        }
-    }
-
-    void MatchPatterns(string op, MatchSource m)
-    {
-        var nodeTypes = new Dictionary<string, string?>();
-        var k = 0;
-        foreach (var path in m.Paths)
-        {
-            foreach (var n in path.Nodes)
-            {
-                string? type = n.Type is null ? null : Resolve(n.Type, "entity");
-                if (nodeTypes.TryGetValue(n.Var, out var old))
-                {
-                    if (type is not null && old is not null && old != type) Err("PatternType", $"variable '{n.Var}' is bound to two types", n.Pos);
-                    if (type is not null && old is null) nodeTypes[n.Var] = type;
-                }
-                else nodeTypes[n.Var] = type;
-            }
-        }
-        foreach (var (v, t) in nodeTypes)
-        {
-            var id = b.Contain(op, "node", v, "PatternNode", null, ("var", T(v)));
-            if (t is null) Err("PatternType", $"variable '{v}' has no type in the pattern", m.Pos);
-            else b.Edge(id, "ofType", t);
-        }
-        foreach (var path in m.Paths)
-            for (var i = 0; i < path.Edges.Count; i++)
-            {
-                var e = path.Edges[i];
-                var seg = e.Var ?? "#" + k++;
-                var props = e.Var is null ? [] : new[] { ("var", T(e.Var)) };
-                var id = b.Contain(op, "edge", seg, "PatternEdge", null, props); Reg(id, e.Pos);
-                if (Resolve(e.Type, "rel") is { } rt) b.Edge(id, "ofType", rt);
-                var (from, to) = e.Forward ? (path.Nodes[i], path.Nodes[i + 1]) : (path.Nodes[i + 1], path.Nodes[i]);
-                b.Edge(id, "from", Ids.Child(op, "node", from.Var));
-                b.Edge(id, "to", Ids.Child(op, "node", to.Var));
-            }
-    }
-
-    // ---- expressions ----
-
-    string Expr(Expr e, string parent, string slot, int ordinal, ProjCtx cx, string? name = null, bool ordered = false)
-    {
-        var seg = name ?? "#" + ordinal;
-        switch (e)
-        {
-            case PathExpr p:
-                return Reg(b.Contain(parent, slot, seg, "FieldRef", ordered ? ordinal : null, ("path", T(p.Path))), e.Pos);
-            case LitExpr l:
-                return Reg(b.Contain(parent, slot, seg, "Literal", ordered ? ordinal : null, ("value", l.Value)), e.Pos);
-            case CallExpr c:
-                {
-                    var fid = Ids.KBuiltin(c.Fn);
-                    if (Kernel.Graph.Entity(fid) is null) { Err("UnknownFunction", $"unknown function '{char.ToLowerInvariant(c.Fn[0]) + c.Fn[1..]}'", c.Pos); }
-                    var id = b.Contain(parent, slot, seg, "Call", ordered ? ordinal : null); Reg(id, e.Pos);
-                    if (Kernel.Graph.Entity(fid) is not null) b.Edge(id, "function", fid);
-                    for (var i = 0; i < c.Args.Count; i++) Expr(c.Args[i], id, "arg", i, cx, null, true);
-                    return id;
-                }
-            case IdExpr x:
-                {
-                    var id = b.Contain(parent, slot, seg, "IdOf", ordered ? ordinal : null); Reg(id, e.Pos);
-                    var dom = Resolve(x.Domain, "identity");
-                    if (dom is not null) b.Edge(id, "domain", dom);
-                    foreach (var (cname, cexpr, cpos) in x.Components)
-                    {
-                        var sc = b.Contain(id, "component", cname, "SetComponent"); Reg(sc, cpos);
-                        if (dom is not null)
-                        {
-                            var kc = Ids.Child(dom, "component", cname);
-                            if (Exists(kc)) b.Edge(sc, "component", kc); else Err("UnknownComponent", $"identity domain {x.Domain} has no component '{cname}'", cpos);
-                        }
-                        Expr(cexpr, sc, "value", 0, cx);
-                    }
-                    return id;
-                }
-            default: throw new InvalidOperationException();
         }
     }
 

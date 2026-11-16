@@ -82,12 +82,9 @@ public class LanguageTests
         Assert.Equal(printed, Printed(cat2));
     }
 
-    /// <summary>Each module of a catalog printed without the projections its `.kql` files give.</summary>
-    static Dictionary<string, string> Printed(Catalog cat)
-    {
-        var inKql = cat.Projections.Keys.Where(p => cat.FileOf.TryGetValue(p, out var f) && f.EndsWith(".kql", StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
-        return cat.Modules.Keys.Where(m => m != Ids.KernelModule).ToDictionary(m => m + ".sattle", m => Printer.Print(cat.Graph, m, inKql));
-    }
+    /// <summary>Each module of a catalog printed: its text, without the projections its `.kql` files give.</summary>
+    static Dictionary<string, string> Printed(Catalog cat) =>
+        cat.Modules.Keys.Where(m => m != Ids.KernelModule).ToDictionary(m => m + ".sattle", m => Printer.Print(cat.Graph, m));
 
     public static IEnumerable<object[]> Negative() =>
     [

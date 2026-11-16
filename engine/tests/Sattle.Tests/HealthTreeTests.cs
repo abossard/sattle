@@ -207,11 +207,18 @@ public class HealthTreeTests
     }
 
     [Fact]
-    public void The_threshold_of_a_signal_rule_is_read_from_the_row_and_prints_back_as_the_expression_it_was_written_as()
+    public void The_threshold_of_a_signal_rule_is_read_from_the_row()
     {
         var cat = Repo.LoadExamples(out _);
-        var text = Printer.Print(cat.Graph, "acme.tree");
-        Assert.Contains("|> threshold v by { ekey: ekey, rid: rid, severity: severity } above above for enterAfter then \"on\" below below for exitAfter then \"off\" initial \"off\" as state;", text);
+        var d = new DefView(cat.Graph);
+        var ops = cat.Graph.Entities.Where(e => Ids.ModuleOf(e.Id) == "acme.tree" && d.TypeName(e.Id) == "Threshold").Select(e => e.Id).ToList();
+        Assert.NotEmpty(ops);
+        Assert.All(ops, op =>
+        {
+            string? Read(string slot) => d.Children(op, slot).Select(c => d.Text(c, "path")).Single();
+            Assert.Equal(("above", "enterAfter", "below", "exitAfter"), (Read("aboveBy"), Read("enterBy"), Read("belowBy"), Read("exitBy")));
+            Assert.Equal(("on", "off", "off"), (d.Text(op, "high"), d.Text(op, "low"), d.Text(op, "initial")));
+        });
     }
 
     // ---- the graph is a tree for a viewer ------------------------------------------------------------------------------------------------

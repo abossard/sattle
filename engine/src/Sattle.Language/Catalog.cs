@@ -8,11 +8,11 @@ public sealed record SourceFile(string Path, string Text);
 public sealed record ModuleInfo(string Name, string Version, string Digest, string ReleaseId, string File, ModuleAst Ast);
 public sealed record PinFix(string File, Pos DigestPos, string Module, string Expected, string? Found);
 
-/// <summary>Projections written in another language than a module's text, in files of their own beside it.</summary>
+/// <summary>The projections, written in files of their own beside the module texts (a module text declares no projection).</summary>
 public interface IProjectionSource
 {
     /// <summary>The projections of `module` in `files` (every definition file that is not a module text), read against `catalog`,
-    /// which holds the module's own text and everything it imports.</summary>
+    /// which holds the module's ontology and everything it imports; the module's spaces are lowered after, so they can bind these projections.</summary>
     ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files);
     /// <summary>Whether a definition file of this name is one the source reads (a projection file), not a module text.</summary>
     bool Reads(string fileName);
@@ -43,7 +43,7 @@ public sealed class Catalog
 
     readonly IProjectionSource? projections;
 
-    /// <param name="projections">projections written in files of their own: each takes the place of the module's projection of the same id, or is added to the module</param>
+    /// <param name="projections">reads the projections, which are written in files of their own beside the module texts</param>
     public Catalog(IProjectionSource? projections = null)
     {
         this.projections = projections;
@@ -155,9 +155,15 @@ public sealed class Catalog
     {
         var mid = Ids.Module(ast.Name);
         var local = new List<Diagnostic>();
-        var low = Lowering.Lower(ast, Graph, file.Path);
+        // projections in files of their own, read against the module's ontology before its spaces bind them
+        var low = Lowering.Lower(ast, Graph, file.Path, projections is null || others.Count == 0 ? null : g => projections.Lower(g, ast.Name, others));
         local.AddRange(low.Diagnostics);
         foreach (var kv in low.SourceMap) { SourceMap[kv.Key] = kv.Value; FileOf[kv.Key] = file.Path; }
+        if (low.Projections is { } other)
+        {
+            read.UnionWith(other.Places.Values.Select(p => p.File).Concat(other.Diagnostics.Select(x => x.File).OfType<string>()));
+            foreach (var (id, (f, pos)) in other.Places) { SourceMap[id] = pos; FileOf[id] = f; }
+        }
         if (low.Diagnostics.Any(x => x.IsError)) { diags.AddRange(local); return; }
 
         // imports: version and pin
@@ -176,26 +182,9 @@ public sealed class Catalog
         }
 
         var work = Graph.Clone();
-        var elements = low.Builder.Elements().ToList();
+        List<Element> elements = [.. low.Builder.Elements(), .. low.Projections?.Projections.Values.SelectMany(f => f) ?? []];
         var err = work.Apply([.. elements.Select(Edit.Create)]);
         if (err is not null) { local.Add(new Diagnostic("Internal", "error", mid, err)); diags.AddRange(local); return; }
-        // projections in files of their own, read against the module's text: each replaces what the module's projection of the same id owns
-        if (projections is not null && others.Count > 0)
-        {
-            var other = projections.Lower(work, ast.Name, others);
-            read.UnionWith(other.Places.Values.Select(p => p.File).Concat(other.Diagnostics.Select(x => x.File).OfType<string>()));
-            local.AddRange(other.Diagnostics);
-            if (other.Diagnostics.Any(x => x.IsError)) { diags.AddRange(local); return; }
-            bool Under(string id) => other.Projections.Keys.Any(p => id == p || id.StartsWith(p + "/", StringComparison.Ordinal));
-            // owned: the elements under it, the rels from them, and the rel that contains it; a rel from outside (a space's producedBy, bindsPort) stays
-            elements = [.. elements.Where(e => e is Entity en ? !Under(en.Id) : e is Rel r && !Under(r.Source) && !(Ids.Name(r.Type) == "contains" && other.Projections.ContainsKey(r.Target))),
-                .. other.Projections.Values.SelectMany(f => f)];
-            foreach (var id in SourceMap.Keys.Where(Under).ToList()) { SourceMap.Remove(id); FileOf.Remove(id); }
-            foreach (var (id, (f, pos)) in other.Places) { SourceMap[id] = pos; FileOf[id] = f; }
-            work = Graph.Clone();
-            err = work.Apply([.. elements.Select(Edit.Create)]);
-            if (err is not null) { local.Add(new Diagnostic("Internal", "error", mid, err)); diags.AddRange(local); return; }
-        }
         var facts = elements.Select(Edit.Create).ToList();
 
         // structural conformance conforms(D, K), kernel constraints, reference closure (K4)

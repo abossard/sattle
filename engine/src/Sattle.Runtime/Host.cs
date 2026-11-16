@@ -147,9 +147,6 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && !from.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t));
         return res;
     }
-    /// <summary>The projections whose text is a definition file of its own: a printed module leaves them out, so it never holds a projection twice.
-    /// Known limit: the files are the ones held now, also when an older revision is printed (a release); a release from before a projection moved into a file would print without it. No projection moves today; this is solved when the `.sattle` projections retire.</summary>
-    IReadOnlySet<string> InFiles(Catalog cat, IReadOnlyList<SourceFile>? files = null) => cat.Projections.Keys.Where(p => cat.FileOf.TryGetValue(p, out var f) && (files ?? others).Any(o => o.Path == f)).ToHashSet(StringComparer.Ordinal);
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
     /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
@@ -790,7 +787,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         lock (Gate)
         {
             if (IsFileName(name)) return others.FirstOrDefault(f => Path.GetFileName(f.Path) == name)?.Text ?? throw new HostError("UnknownModule", $"no definition file {name}", 404);
-            return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name, InFiles(Catalog)) : throw new HostError("UnknownModule", $"no module {name}", 404);
+            return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name) : throw new HostError("UnknownModule", $"no module {name}", 404);
         }
     }
     public JsonNode Definitions() { lock (Gate) { return new JsonArray([.. Catalog.Modules.Values.Where(m => m.Name != Ids.KernelModule).Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["version"] = m.Version, ["digest"] = m.Digest, ["revision"] = Rev(Catalog.Graph.Entity(m.ReleaseId)?.Props.Text(Ids.KProp("revision")) is { } r ? long.Parse(r, CultureInfo.InvariantCulture) : 0) })]); } }

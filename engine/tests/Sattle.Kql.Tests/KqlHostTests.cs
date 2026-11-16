@@ -116,7 +116,7 @@ public class KqlHostTests
         var check = h.SetDraftText(d, file, edited, 0);
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
         Assert.True(check["modules"]![file]!["changed"]!.GetValue<bool>());
-        Assert.Equal((edited, h.Definition("acme.svc")), (h.DraftText(d, file), h.DraftText(d, "acme.svc")));
+        Assert.Equal((edited, h.Definition("acme.svc")), (h.DraftText(d, file), check["modules"]!["acme.svc"]!["text"]!.GetValue<string>()));
         Assert.Equal(before, Contains(h));                                   // the draft changes nothing live
         h.CommitDraft(d, h.CatalogRevision);
         Assert.InRange(Contains(h), 0, before - 1);
@@ -195,7 +195,7 @@ public class KqlHostTests
             .. rels.Select(r => (JsonNode)new JsonObject { ["kind"] = "relationship", ["id"] = V(r["id"]), ["after"] = r })]) };
         var check = h.ApplyDraftPatch(d, patch, 0);
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
-        Assert.Contains("graph serviceTreeTwo = svc.serviceDeps(master: master);", h.DraftText(d, "acme.space"));
+        Assert.Contains("graph serviceTreeTwo = svc.serviceDeps(master: master);", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
     }
 
     /// <summary>`sattle serve` builds its host with the `.kql` files and a source that reads them: it serves the estate to the estate's state digest, and its definitions are the `.kql` texts.

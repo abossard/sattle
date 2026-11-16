@@ -55,13 +55,13 @@ public static class Support
         ["cardinality"] = ("relationship", ["side", "min", "max"], "constraint cardinality R per source|target 0 .. 1|*;"),
         ["acyclic"] = ("relationship", [], "constraint acyclic R;"),
     };
-    /// <summary>Edit policies of a lens rule, as written inside the rule.</summary>
+    /// <summary>Edit policies of an editable rule, as settings of a step: `with (rule = "...", ...)`.</summary>
     public static readonly Dictionary<string, string> RulePolicies = new()
     {
-        ["accept create, delete, update(p, q)"] = "which view edits are accepted and which properties may change",
-        ["on create key <identity domain> default { p: expr }"] = "the identity of a created element and the defaults of properties the view does not show",
-        ["on delete set { p: expr }"] = "deleting retires the source element by setting these properties",
-        ["on delete remove"] = "deleting removes the source element",
+        ["accept = \"create, delete\", update = \"p, q\""] = "which view edits are accepted and which properties may change",
+        ["onCreate = \"f\""] = "a function whose parameters are the key of a created element and whose row gives the properties the view does not show",
+        ["onDelete = \"f\""] = "deleting retires the source element by setting the properties the function's row gives",
+        ["accept = \"delete\" without onDelete"] = "deleting removes the source element",
     };
     public static readonly HashSet<string> Functions =
     [
@@ -208,7 +208,7 @@ public static class Palette
         return new JsonObject
         {
             ["kernelDigest"] = Kernel.CompiledDigest, ["version"] = "3", ["operators"] = ops,
-            ["ruleClasses"] = new JsonArray([.. Support.RuleClasses.Select(kv => (JsonNode)new JsonObject { ["name"] = kv.Key, ["params"] = new JsonArray([.. kv.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(x => (JsonNode)x)]), ["policies"] = new JsonArray([.. (kv.Key is "lens" ? new[] { "accept", "on create", "on delete" } : []).Select(x => (JsonNode)x)]), ["supported"] = kv.Key != "sync", ["unsupportedReason"] = kv.Key == "sync" ? "not built: needs the stored correspondence graph and the FWD and BWD translators of Ch. 8, none of which exist" : null })]),
+            ["ruleClasses"] = new JsonArray([.. Support.RuleClasses.Select(kv => (JsonNode)new JsonObject { ["name"] = kv.Key, ["params"] = new JsonArray([.. kv.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(x => (JsonNode)x)]), ["policies"] = new JsonArray([.. (kv.Key is "lens" ? new[] { "accept", "update", "onCreate", "onDelete" } : []).Select(x => (JsonNode)x)]), ["supported"] = kv.Key != "sync", ["unsupportedReason"] = kv.Key == "sync" ? "not built: needs the stored correspondence graph and the FWD and BWD translators of Ch. 8, none of which exist" : null })]),
             ["aggregates"] = new JsonArray([.. aggs]),
             // every node type that carries references, also those only reached as expressions (Call, IdOf) or inside them (SetComponent): an editor needs no table of its own
             ["references"] = new JsonObject(Support.References.Keys.Select(k => k[..k.IndexOf('.')]).Distinct().Order(StringComparer.Ordinal).Select(t => KeyValuePair.Create(t, (JsonNode?)References(t)))),

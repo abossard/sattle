@@ -85,10 +85,10 @@ public class CheckerTests
         { "a fill on a gauge", View(Quiet("telemetry_filled(\"master\", 3m, 2m, 0.0)", Said, "level")), "Series", "takes no fill" },
         { "a fill of an Integer property that is no integer", View(Quiet("telemetry_filled(\"master\", 3m, 2m, 0.5)", Said)), "Series", "must be an integer" },
         { "a time to live below one window", View(Quiet("telemetry_filled(\"master\", 3m, 30s, real(null))", Said)), "Series", "at least one window" },
-        { "a time to live above the look-back", View(Quiet("telemetry_filled(\"master\", 3m, 4m, real(null))", Said)), "Series", "at most `within` less one window" },
-        { "a time to live as long as the look-back", View(Quiet("telemetry_filled(\"master\", 3m, 3m, real(null))", Said)), "Series", "at most `within` less one window" },
+        { "a time to live above the look-back", View(Quiet("telemetry_filled(\"master\", 3m, 4m, real(null))", Said)), "Series", "at most the look-back less one window" },
+        { "a time to live as long as the look-back", View(Quiet("telemetry_filled(\"master\", 3m, 3m, real(null))", Said)), "Series", "at most the look-back less one window" },
         { "a threshold over a series with a time to live that does not say what no data gives", View(Quiet("telemetry_filled(\"master\", 3m, 2m, real(null))", "")), "Threshold", "what no data gives" },
-        { "a no-data state without a time to live upstream", View(Quiet("telemetry(\"master\", 3m)", Said)), "Threshold", "needs a series with a time to live" },
+        { "a no-data state without a time to live upstream", View(Quiet("telemetry(\"master\", 3m)", Said)), "Threshold", "needs telemetry with a time to live" },
         { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded("c = k, g"), LoadType), "B1", "grouped by 'g'" },
         { "a reference to another entity type than the property names", View("nodes Out on o = " + Items + " | project o = identity(\"out\", k), k, owner = i;\n"), "Set", "owner expects" },
     };

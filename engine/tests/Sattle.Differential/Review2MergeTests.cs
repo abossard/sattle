@@ -113,7 +113,7 @@ public class Review2MergeTests
         {
             var (code, message) = Assert.Single(new Catalog(new Sattle.Kql.KqlSource()).Load([.. w.Files.Where(f => f.Path != "w.space.sattle")], updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => (d.Code, d.Message)).Distinct());     // without the space, which only says that the view did not load
             Assert.Equal("IdentityLinked", code);
-            Assert.Contains("identity p", message);
+            Assert.Contains("keep its id (p.id)", message);
             return;
         }
         Input[] log = [new RowInput("flows", Logs.Row(("src", Value.Text("web")), ("dst", Value.Text("web"))), 1), PodRow("u0", "Web")];

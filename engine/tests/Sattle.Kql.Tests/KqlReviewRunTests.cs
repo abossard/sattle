@@ -22,7 +22,7 @@ public class KqlReviewRunTests
     /// <summary>The definitions, checked once.</summary>
     static readonly Lazy<Catalog> Examples = new(() => { var cat = new Catalog(new KqlSource()); cat.Load(Catalog.ReadDirectory(Definitions), updatePins: true); return cat; });
 
-    /// <summary>The definitions with one projection in KQL given as text in place of its file: what the front end says, and what the catalog says of the text it printed (null when the front end refused).</summary>
+    /// <summary>The definitions with one projection in KQL given as text in place of its file: what the front end says, and what a catalog with the KQL source says of the text (null when the front end refused).</summary>
     static (KqlFiles Put, Catalog? Catalog, List<Diagnostic> LoadErrors) Loaded(string file, string text)
     {
         var definitions = Catalog.ReadDirectory(Definitions); var path = Path.Combine(Definitions, file);
@@ -47,8 +47,8 @@ public class KqlReviewRunTests
         + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n";
     const string Nodes = "nodes ServiceNode on service = services | project service, name, cluster, namespace;\n";
 
-    /// <summary>What the front end accepts, the catalog loads: a text is refused by the front end in the author's terms, or the operators it printed parse and check.
-    /// Each of these texts is valid KQL that the front end accepts; the catalog then refuses the printed module with a position in text the author did not write.</summary>
+    /// <summary>What the front end accepts, the catalog loads: a text is refused by the front end in the author's terms, or its operators check.
+    /// Each of these texts is valid KQL that the front end accepts; the catalog must not then refuse it.</summary>
     [Theory]
     [InlineData("a summarize without by (one row in Kusto, also over no rows)", "let n = services | summarize total = count();\n" + Nodes + "extend nodes ServiceNode on service = services | join kind=inner (n | project pods = total, k = \"x\") on $left.name == $right.k | project service, pods;\n")]
     [InlineData("a summarize with keys and no aggregate", "nodes ServiceNode on service = services | summarize by service, name, cluster, namespace;\n")]
@@ -66,7 +66,7 @@ public class KqlReviewRunTests
     {
         var (put, _, errors) = Loaded("acme.svc.serviceDeps.kql", Services + steps);
         if (!put.Ok) return;
-        Assert.True(errors.Count == 0, $"{what}: the front end accepted the text, and the catalog refuses what it printed:\n" + string.Join("\n", errors.Take(2)));
+        Assert.True(errors.Count == 0, $"{what}: the front end accepted the text, and the catalog refuses it:\n" + string.Join("\n", errors.Take(2)));
     }
 
     static readonly Lazy<(int All, int WithExternalName)> EstateServices = new(() =>

@@ -17,12 +17,6 @@ public class Review2KqlRunTests
         identity domA for KA version "1" { key: Text by exact; bucket: Text by exact; }
         identity domB for KB version "1" { key: Text by exact; bucket: Text by exact; }
         rows ItemRow { key: Text; bucket: Text; rank: Integer; x: Integer; y: Integer; note?: Text; }
-        projection ingest ingestion output t.base {
-          in items: rows ItemRow;
-          rule observed readonly "test" {
-            emit entity Summary from items identity summary(key: bucket) set { key: bucket, bucket: bucket, best: x };
-          }
-        }
         """;
 
     const string Space = """
@@ -37,10 +31,10 @@ public class Review2KqlRunTests
     /// <summary>The mini world with its ingestion projection given in KQL: the front end's result, and the engine after the rows are ingested (null when the front end refused).</summary>
     static (KqlFiles Put, Engine? Engine) Run(string kql, params (string Key, string Bucket, long Rank, long X, long Y, string? Note)[] rows)
     {
-        var put = KqlFiles.Of([new SourceFile("t.base.sattle", Base), new SourceFile("t.space.sattle", Space)], [new SourceFile("t.base.ingest.kql", kql)]);
+        var put = KqlFiles.Of([new SourceFile("t.base.sattle", Base)], [new SourceFile("t.base.ingest.kql", kql)]);
         if (!put.Ok) return (put, null);
-        var cat = new Catalog();
-        var res = cat.Load(put.Files, updatePins: true);
+        var cat = new Catalog(new KqlSource());
+        var res = cat.Load([.. put.Files, new SourceFile("t.space.sattle", Space)], updatePins: true);
         Assert.Empty(res.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()));
         var e = new Engine(cat, cat.Spaces.Keys.Single());
         var rw = new RowWriter(e.RowLayout("items"), e.Interner);
