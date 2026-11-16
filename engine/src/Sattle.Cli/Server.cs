@@ -94,11 +94,13 @@ public static class Server
         var app = Build(host, port, (o.Get("allow-origin") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
         // the address the server got: with `--port 0` the system picks a free port, and this line says which
         app.Lifetime.ApplicationStarted.Register(() => Console.WriteLine($"serving {app.Urls.First()} (PROTOCOL.md)"));
-        app.Lifetime.ApplicationStarted.Register(() => Task.Run(() =>
+        var live = o.Flags.Contains("live");
+        Task<int>? input = null;
+        app.Lifetime.ApplicationStarted.Register(() => input = Task.Run(() =>
         {
             try
             {
-                if (o.Flags.Contains("live")) Live.Run(host, o, cluster);
+                if (live) Live.Run(host, o, cluster, app.Lifetime);
                 else if (host.Restart is not null) { if (!host.Done) { host.Finish(); Console.WriteLine("the journal ends before the end of its input: the capture is not resumed, the space is closed"); } }
                 else
                 {
@@ -108,11 +110,13 @@ public static class Server
                     host.Finish();
                     Console.WriteLine($"replay finished: {stats.Records.Values.Sum():N0} records, state digest {host.StateDigest()}");
                 }
+                return 0;
             }
-            catch (Exception e) { Console.Error.WriteLine("input failed: " + e); }
+            catch (Exception e) { Console.Error.WriteLine("input failed: " + e); return 1; }
         }));
         app.Run();
-        return 0;
+        // a live input stops with the server and prints its counts and the state digest after it: wait for it, or the process ends first. A replay does not stop on a signal and is not waited for.
+        return live && input is not null ? input.GetAwaiter().GetResult() : 0;
     }
 
     /// <summary>The routes over a host, not started and without an input: `Run` adds the input and blocks; a test starts it on port 0 and calls it.</summary>

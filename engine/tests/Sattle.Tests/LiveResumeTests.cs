@@ -144,7 +144,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         }
     }
 
-    /// <summary>Review show stopper 1: the input says it is ready only after the source yielded, that is after its first read (Event Hubs resolves `latest` when the link opens on it), so a forwarder started on the ready line is not missed. Show stopper 2: a source that fails is read again from the position the space has seen, with the backoff counting failures in a row, until the run ends in the state of a run that never failed.</summary>
+    /// <summary>Review show stopper 1: the input says it is ready only after the source yielded, that is after its first read (Event Hubs resolves `latest` when the link opens on it), so a forwarder started on the ready line is not missed. Show stopper 2: a source that fails is read again from the position the space has seen, with the backoff counting failures in a row, until the run ends in the state of a run that never failed. The counts add up over the failed reads (#102).</summary>
     [Theory]
     [InlineData("never fails", new int[0], "")]
     [InlineData("fails once after reading", new[] { 30 }, "1")]
@@ -157,14 +157,60 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var log = new List<string>(); var waits = new List<int>();
         using var d = new RestartTests.Durable("memory");
         using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
-        LiveInput.RunRetrying(h, new FlakySource(events, crashes, log), Ro, CancellationToken.None,
-            backoff: n => { waits.Add(n); return TimeSpan.Zero; }, failed: (e, w) => Assert.IsType<InvalidOperationException>(e),
+        var counts = LiveInput.Run(h, new FlakySource(events, crashes, log), Ro, CancellationToken.None,
+            retry: (e, n) => { Assert.IsType<InvalidOperationException>(e); waits.Add(n); return TimeSpan.Zero; },
             ready: () => log.Add("ready"), flushEvery: TimeSpan.FromHours(1));
         Assert.Equal((digest, rows), (h.StateDigest(), h.InputRows));
+        Assert.Equal(new LiveCounts(events.Count, 0, 0), counts);
         Assert.Equal(backoffs, string.Join(",", waits));
         Assert.Equal(crashes.Length + 1, log.Count(x => x == "read"));
         Assert.All(log.Select((x, i) => (x, i)).Where(t => t.x == "ready"), t => Assert.Equal("first yield", log[t.i - 1]));
         Assert.Equal(log.Count(x => x == "first yield"), log.Count(x => x == "ready"));
+    }
+
+    /// <summary>A source that receives in batches of `size` like Event Hubs, through `LiveInput.Batches`, with the lag of each batch (events left after it). At the end of the events it waits for more, and the run is stopped while it waits (`stop`, the receive throws like `ReceiveBatchAsync`).</summary>
+    sealed class Batched(IReadOnlyList<string> lines, int size, CancellationTokenSource stop) : ILiveSource
+    {
+        public string Id => "eventhub:fake";
+        public List<LiveLag> Lags { get; } = [];
+        public IEnumerable<LiveEvent?> Read(string? after, CancellationToken ct)
+        {
+            var next = after is null ? 0 : System.Text.Json.JsonDocument.Parse(after).RootElement.GetProperty("n").GetInt32() + 1;
+            (IReadOnlyList<LiveEvent>, LiveLag?) Receive()
+            {
+                if (next == lines.Count) stop.Cancel();
+                ct.ThrowIfCancellationRequested();
+                var batch = Enumerable.Range(next, Math.Min(size, lines.Count - next)).Select(i => new LiveEvent(lines[i], $"{{\"n\":{i}}}")).ToList();
+                next += batch.Count;
+                return (batch, new LiveLag(lines.Count - next, 0));
+            }
+            return LiveInput.Batches(Receive, Lags.Add);
+        }
+    }
+
+    /// <summary>#102: a run stopped inside a batch (here by the received hook, as Ctrl-C would between two envelopes) finishes the envelope in hand and returns its counts so far, not the length of the recording; only the batches it processed whole report their lag, after their last envelope; the next start continues after the last envelope and ends in the state of a run that was never stopped.</summary>
+    [Theory]
+    [InlineData(7, 3)] [InlineData(25, 60)] [InlineData(25, 74)] [InlineData(25, 75)]
+    public void A_run_stopped_inside_a_batch_returns_its_counts_and_the_lag_of_whole_batches_and_resumes_to_the_uninterrupted_state(int size, int stopAt)
+    {
+        var events = Events();
+        var (digest, rows) = Uninterrupted.Value;
+        using var d = new RestartTests.Durable("memory");
+        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0)))
+        {
+            using var stop = new CancellationTokenSource(); var source = new Batched(events, size, stop); var got = 0;
+            var counts = LiveInput.Run(h, source, Ro, stop.Token, flushEvery: TimeSpan.FromHours(1), received: _ => { if (got++ == stopAt) stop.Cancel(); });
+            Assert.Equal(new LiveCounts(stopAt + 1, 0, 0), counts);
+            Assert.Equal($"{{\"n\":{stopAt}}}", h.SourcePosition("eventhub:fake"));
+            Assert.Equal(Enumerable.Range(1, stopAt / size).Select(b => new LiveLag(events.Count - b * size, 0)), source.Lags);
+        }
+        d.Close();
+        using var r = RestartTests.Reopen(d.Open(), Options(0));
+        using var end = new CancellationTokenSource(); var rest = new Batched(events, size, end);
+        var again = LiveInput.Run(r, rest, Ro, end.Token, flushEvery: TimeSpan.FromHours(1));
+        Assert.Equal(new LiveCounts(events.Count - stopAt - 1, 0, 0), again);
+        Assert.Equal((digest, rows), (r.StateDigest(), r.InputRows));
+        Assert.Equal(new LiveLag(0, 0), rest.Lags[^1]);
     }
 
     [Fact]

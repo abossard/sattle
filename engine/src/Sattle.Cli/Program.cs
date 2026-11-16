@@ -22,10 +22,11 @@ public static class Program
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
-        sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from checkpoint|latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
+        sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
         sattle bench  estate | b5 [--store memory|sqlite] | b7 [--cosmos ENDPOINT] | b8 | b10   [--capture DIR|latest] [--runs 10]
         CAPTURE is a capture directory, lab/fixtures, or "latest" (newest under lab/captures).
+        --from is where a live run starts when its store has no saved position; with one it continues after it.
         """;
 
     public static int Main(string[] args)
@@ -242,6 +243,7 @@ public static class Program
     static int Replay(Options o, bool serve)
     {
         var live = serve && o.Flags.Contains("live");
+        if (live && o.Get("from") is { } from && from is not ("latest" or "earliest")) return Fail($"--from {from}: expected latest or earliest\n{Usage}");
         var resumeOnly = serve && !live && o.Positional.Count == 0 && o.Get("store") is { } sspec && sspec != "memory";   // serve --store X with no capture: the journal in X is all there is
         if (o.Positional.Count == 0 && !live && !resumeOnly) return Fail("a capture directory is needed\n" + Usage);
         var capture = live || resumeOnly ? "" : FindCapture(o.Positional[0]);

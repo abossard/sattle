@@ -17,6 +17,15 @@ const keyers = {
   'kubernetes-list': (p, meta) => (p?.metadata?.uid ? `${meta?.list?.kind}/${p.metadata.uid}/${p.metadata.resourceVersion}` : undefined),
   arg: (p, meta) => (p?.id ? `${meta?.query ?? ''}/${p.id}` : undefined),
   'activity-log': (p) => p?.eventDataId ?? (p?.operationId ? `${p.operationId}/${p.operationName?.value ?? p.operationName}` : undefined),
+  // one datapoint (the forwarder sends each on its own): resource, metric, series (its dimension values) and time.
+  // A response with more datapoints (a capture) has no natural id and keeps the content hash.
+  'azure-metrics': (p, meta) => {
+    const [m, more] = p?.value ?? [];
+    const [s, more2] = m?.timeseries ?? [];
+    const [d, more3] = s?.data ?? [];
+    if (!d || more || more2 || more3) return undefined;
+    return `${meta?.resourceId}/${m.name?.value}/${JSON.stringify((s.metadatavalues ?? []).map((x) => [x.name?.value, x.value]))}/${d.timeStamp}`;
+  },
 };
 
 export function keyFor(source, payload, meta) {

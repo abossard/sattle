@@ -2,7 +2,11 @@
 // Unattended live feed: Hubble flows, Kubernetes watch events and metrics polls into one single-partition hub
 // as envelopes. With --mirror-hubble the flows are also written to the hubble hub. Stream semantics: see CAPTURE-FORMAT.md.
 // usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble] [--authoring FILE] [--cluster NAME]
-//   --authoring FILE  one authoring record per line (signal rules, policies, curations), sent as `authoring` envelopes at every start
+//   --authoring FILE  one authoring record per line (signal rules, policies, curations), sent as `authoring` envelopes at every start.
+//                     The file is the authored source of the stream: a record re-sent revises the engine's record of the same
+//                     kind and id. Within the engine's window of the last 20,000 delivery keys an unchanged record is dropped as
+//                     delivered; after it, the file's record is applied again and replaces an edit of that record made since
+//                     (in the canvas, for example). Leave --authoring out on a restart that must keep such edits.
 //   --cluster NAME    the cluster's name on Kubernetes and Prometheus records; default Cilium's cluster-name
 //   env HUBBLE_FILTER  observe filter flags, default "--namespace sattle-demo --namespace demo"
 //   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60), QUEUE_MAX_MB per hub (64)
@@ -98,15 +102,16 @@ if (!a['no-hubble']) {
 }
 
 // ---- Telemetry: a poller runs one script at a time, so slow polls never overlap
-// Azure metrics polls overlap, so each datapoint is sent once, by the first poll that has a value for it
+// Azure metrics polls overlap: each datapoint is its own envelope, keyed by resource, metric, series and time, sent once by
+// the first poll that has a value for it; after a restart its key is the one it had, so the engine drops a repeat
 let metricsSent = new Map();
-const onlyNew = (e) => { if (e.source !== 'azure-metrics') return e; const r = newSamples(metricsSent, e); metricsSent = r.state; return r.envelope; };
+const onlyNew = (e) => { if (e.source !== 'azure-metrics') return [e]; const r = newSamples(metricsSent, e); metricsSent = r.state; return r.envelopes; };
 const poller = (name, script, args, everySec) => (async () => {
   while (!stopping) {
     const t0 = Date.now();
     const child = startChild('bash', [`${here}sources/${script}`, ...args], {
       env: kubeEnv,
-      onLine: (l) => { let e; try { e = JSON.parse(l); } catch { badLines++; return; } e.seq = 0; const fresh = onlyNew(e); if (fresh) route(fresh); },
+      onLine: (l) => { let e; try { e = JSON.parse(l); } catch { badLines++; return; } e.seq = 0; onlyNew(e).forEach(route); },
     });
     register(child);
     const { code } = await child.done;
@@ -130,7 +135,7 @@ const azureMetricsLoop = (everySec, windowSec) => (async () => {
     const t0 = Date.now();
     try {
       p ??= azureMetricsPoller({ resources: await azureResources(), getToken });
-      for (const e of await p.poll(windowSec)) { const fresh = onlyNew(e); if (fresh) route(fresh); }
+      for (const e of await p.poll(windowSec)) onlyNew(e).forEach(route);
       failures = 0;
     } catch (err) { failures++; if (!stopping) marker({ event: 'poll-failed', poll: 'azure-metrics', failures, error: String(err.message).slice(0, 160) }); }
     const wait = Math.max(5_000, nextPollMs(everySec, failures) - (Date.now() - t0));

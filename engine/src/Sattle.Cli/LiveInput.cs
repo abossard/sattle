@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Microsoft.Extensions.Hosting;
 using Sattle.Runtime;
 
 namespace Sattle.Cli;
@@ -33,45 +34,103 @@ public static class LiveInput
         catch (System.Text.Json.JsonException) { return body; }
     }
 
-    /// <summary>`ready` is called once, when the source yields its first event or idle mark: a source yields only after it reads, so from then on nothing sent to it is missed (Event Hubs resolves `latest` when its link opens on the first read).</summary>
-    public static LiveCounts Run(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, ILiveRecording? recording = null, TimeSpan? flushEvery = null, Action<string>? received = null, Action? ready = null)
+    /// <summary>Reads `source` after the position the space has seen until it ends or `ct` is cancelled, and returns the counts so far (a cancellation stops after the envelope in hand and is no error). `ready` is called after each first read of the source, when it yields its first event or idle mark: a source yields only after it reads, so from then on nothing sent to it is missed (Event Hubs resolves `latest` when its link opens on the first read). Without `retry` a failure ends the run with its exception (a kill, for the tests). With `retry` a failure (a network error after a laptop slept, an expired credential) is survived: after the n-th failure in a row the input waits `retry(e, n)` and reads again from the position the space has seen, so nothing is lost or processed twice; a source that got ready before it failed starts the count again.</summary>
+    public static LiveCounts Run(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, ILiveRecording? recording = null, TimeSpan? flushEvery = null, Action<string>? received = null, Action? ready = null, Func<Exception, int, TimeSpan>? retry = null)
     {
         host.StartLive(options);
-        if (recording is not null) { var journaled = host.LiveEnvelopeTexts(); for (var i = recording.Count; i < journaled.Count; i++) recording.Append(journaled[(int)i]); }
-        var after = host.SourcePosition(source.Id);
-        long consumed = 0, dup = 0, bad = 0; var since = Stopwatch.StartNew(); var every = flushEvery ?? TimeSpan.FromSeconds(2);
-        foreach (var ev in source.Read(after, ct))
+        long consumed = 0, dup = 0, bad = 0; var failures = 0; var every = flushEvery ?? TimeSpan.FromSeconds(2);
+        while (true)
         {
-            if (ready is not null) { ready(); ready = null; }
-            if (ev is null) { host.LiveFlush(); since.Restart(); continue; }
-            received?.Invoke("received");
-            switch (host.LiveEnvelope(source.Id, EnvelopeText(ev.Text), ev.Position, recording is null ? null : recording.Append))
+            var gotReady = false;
+            try
             {
-                case SpaceHost.LiveResult.Consumed: consumed++; break;
-                case SpaceHost.LiveResult.Duplicate: dup++; break;
-                default: bad++; break;
+                if (recording is not null) { var journaled = host.LiveEnvelopeTexts(); for (var i = recording.Count; i < journaled.Count; i++) recording.Append(journaled[(int)i]); }
+                var since = Stopwatch.StartNew();
+                foreach (var ev in source.Read(host.SourcePosition(source.Id), ct))
+                {
+                    if (!gotReady) { gotReady = true; ready?.Invoke(); }
+                    if (ev is null) { host.LiveFlush(); since.Restart(); }
+                    else
+                    {
+                        received?.Invoke("received");
+                        switch (host.LiveEnvelope(source.Id, EnvelopeText(ev.Text), ev.Position, recording is null ? null : recording.Append))
+                        {
+                            case SpaceHost.LiveResult.Consumed: consumed++; break;
+                            case SpaceHost.LiveResult.Duplicate: dup++; break;
+                            default: bad++; break;
+                        }
+                        if (since.Elapsed > every) { host.LiveFlush(); since.Restart(); }
+                    }
+                    if (ct.IsCancellationRequested) break;
+                }
+                break;
             }
-            if (since.Elapsed > every) { host.LiveFlush(); since.Restart(); }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { break; }
+            catch (Exception e) when (retry is not null)
+            {
+                failures = gotReady ? 1 : failures + 1;
+                if (ct.WaitHandle.WaitOne(retry(e, failures))) break;
+            }
         }
         host.LiveFlush();
         return new LiveCounts(consumed, dup, bad);
     }
 
-    /// <summary>`Run` that survives a failing source (a network error after a laptop slept, an expired credential): after an error it waits `backoff(n)` for the n-th failure in a row and reads again from the position the space has seen, so nothing is lost or processed twice. A source that got ready before it failed starts the count again. Only the cancellation ends it.</summary>
-    public static LiveCounts RunRetrying(SpaceHost host, ILiveSource source, ReplayOptions options, CancellationToken ct, Func<int, TimeSpan> backoff, Action<Exception, TimeSpan> failed, ILiveRecording? recording = null, Action? ready = null, TimeSpan? flushEvery = null)
+    /// <summary>The events of a source that receives in batches (Event Hubs): an empty batch is an idle mark (null, the input flushes), a batch is its events in order, and `processed` gets the batch's lag once the input has asked for the event after the last one, that is after it processed the whole batch. An input that stops inside a batch never reports that batch's lag.</summary>
+    public static IEnumerable<LiveEvent?> Batches(Func<(IReadOnlyList<LiveEvent> Events, LiveLag? Lag)> receive, Action<LiveLag> processed)
     {
-        var failures = 0;
         while (true)
         {
-            var gotReady = false;
-            try { return Run(host, source, options, ct, recording, flushEvery, ready: () => { gotReady = true; ready?.Invoke(); }); }
-            catch (Exception e) when (e is not OperationCanceledException || !ct.IsCancellationRequested)
-            {
-                failures = gotReady ? 1 : failures + 1;
-                var wait = backoff(failures);
-                failed(e, wait);
-                if (ct.WaitHandle.WaitOne(wait)) ct.ThrowIfCancellationRequested();
-            }
+            var (events, lag) = receive();
+            if (events.Count == 0) { yield return null; continue; }
+            foreach (var e in events) yield return e;
+            if (lag is not null) processed(lag);
         }
     }
+
+    /// <summary>The next stop state and what the edge does on the way (Grokking Simplicity: a calculation; `RunUntilStopped` runs the effects). The first stop event names the reason, later ones change nothing: Ctrl-C, SIGTERM or anything else that stops the server cancels the input; the deadline (`--seconds`) cancels it and stops the server; the input ending stops the server unless it is already stopping.</summary>
+    public static (LiveStop State, LiveStopEffects Effects) Next(LiveStop state, LiveStopEvent e) => (state, e) switch
+    {
+        (LiveStop.Running, LiveStopEvent.HostStopping) => (new LiveStop.Stopping("the server was stopped (Ctrl-C or SIGTERM)"), LiveStopEffects.CancelInput),
+        (LiveStop.Running, LiveStopEvent.Deadline) => (new LiveStop.Stopping("--seconds ran out"), LiveStopEffects.CancelInput | LiveStopEffects.StopHost),
+        (LiveStop.Running, LiveStopEvent.InputEnded) => (new LiveStop.Stopped("the input ended"), LiveStopEffects.StopHost),
+        (LiveStop.Stopping s, LiveStopEvent.InputEnded) => (new LiveStop.Stopped(s.Reason), LiveStopEffects.None),
+        _ => (state, LiveStopEffects.None),
+    };
+
+    /// <summary>Runs `input` under the stop state machine (`Next`) and returns its counts and why it stopped. The host's stopping (ASP.NET's console lifetime turns Ctrl-C and SIGTERM into it) and the deadline cancel the input's token; when the input ends, by itself, cancelled or failing, the server is stopped, so it never goes on serving a state that no longer moves. A failure of the input is rethrown after the server was told to stop.</summary>
+    public static (LiveCounts Counts, string Reason) RunUntilStopped(IHostApplicationLifetime lifetime, TimeSpan? deadline, Func<CancellationToken, LiveCounts> input)
+    {
+        using var cancel = new CancellationTokenSource();
+        var gate = new object(); LiveStop state = new LiveStop.Running();
+        void Fire(LiveStopEvent e)
+        {
+            LiveStopEffects fx;
+            lock (gate) (state, fx) = Next(state, e);
+            if (fx.HasFlag(LiveStopEffects.CancelInput)) cancel.Cancel();
+            if (fx.HasFlag(LiveStopEffects.StopHost)) lifetime.StopApplication();
+        }
+        using var timer = deadline is { } d ? new Timer(_ => Fire(LiveStopEvent.Deadline), null, d, Timeout.InfiniteTimeSpan) : null;
+        using var stopping = lifetime.ApplicationStopping.Register(() => Fire(LiveStopEvent.HostStopping));
+        LiveCounts counts;
+        try { counts = input(cancel.Token); }
+        finally { Fire(LiveStopEvent.InputEnded); }
+        lock (gate) return (counts, ((LiveStop.Stopped)state).Reason);
+    }
 }
+
+/// <summary>How far the space is behind the newest event of its source after a batch was processed (events, seconds of enqueued time). One immutable value, replaced whole, so a reader on another thread sees one batch's lag or the next one's.</summary>
+public sealed record LiveLag(long Events, double Seconds);
+
+/// <summary>The states of stopping a live run: running, stopping for a reason (the input is cancelled and finishes its envelope, flushes and returns), stopped (the input returned; the reason is the first stop event's).</summary>
+public abstract record LiveStop
+{
+    public sealed record Running : LiveStop;
+    public sealed record Stopping(string Reason) : LiveStop;
+    public sealed record Stopped(string Reason) : LiveStop;
+}
+
+public enum LiveStopEvent { HostStopping, Deadline, InputEnded }
+
+[Flags]
+public enum LiveStopEffects { None = 0, CancelInput = 1, StopHost = 2 }
