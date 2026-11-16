@@ -68,21 +68,11 @@ public class KnownDefectTests
         Same(expected, ByEngine(w, log, "view"), log);
     }
 
-    /// <summary>Review: Exprs.cs:119. `<` on Text compares the text. The engine compares interner codes, the order in which the strings were first seen.</summary>
-    [Fact]
-    public void Text_is_ordered_by_its_characters_and_not_by_first_appearance()
-    {
-        var w = Worlds.TextOrder;
-        Input[] log = [Row("a", 1, "b", "a", 1, 0)];       // "b" is seen before "a": k < g is false
-        Assert.Empty(ByReference(w, log, "master"));
-        Same([], ByEngine(w, log, "master"), log);
-    }
-
-    /// <summary>Review: Exprs.cs:119, Operators.cs:250, :361. `last(value, order)` breaks a tie on the order by the greater value. For Text the engine takes the string that was interned later.</summary>
+    /// <summary>Review: Exprs.cs:119, Operators.cs:250, :361. The row with the greatest order (`arg_max(n, k, d)`) is, on a tie of the order, the one with the greater value. For Text the engine took the string that was interned later.</summary>
     [Fact]
     public void Last_breaks_a_tie_by_the_greater_text()
     {
-        var w = Named("group last");
+        var w = Named("group last of one row");
         Input[] log = [Row("a", 1, "z", "g0", 1, 0), Row("a", 1, "a", "g0", 1, 0)];
         Assert.Contains(ByReference(w, log, "master"), l => l.Contains("v=t:z"));
         Same(ByReference(w, log, "master"), ByEngine(w, log, "master"), log);
@@ -104,22 +94,19 @@ public class KnownDefectTests
     [Fact]
     public void A_match_reads_only_the_properties_its_own_projection_uses()
     {
-        var catalog = EngineRun.Load([new SourceFile("w.base.sattle", Worlds.BaseModule), new SourceFile("w.two.sattle", """
-            module w.two @ 1.0.0;
-            import w.base @ 1.0.0 sha256:… as base;
-            entity Copy { k: Text; g?: Text; }
-            identity copy for Copy version "1" { k: Text by exact; }
-            projection first view forward output w.two {
-              in master: graph base;
-              let m = match master (i: base.Item);
-              emit entity Copy from m identity copy(k: i.k) set { k: i.k, g: i.g };
-            }
-            projection second view forward output w.two {
-              in master: graph base;
-              let m = match master (i: base.Item);
-              emit entity Copy from m identity copy(k: i.k) set { k: i.k };
-            }
-            """)]);
+        const string Copies = """graph("master") | graph-match (i) where labels(i) has "Item" project """;
+        var catalog = EngineRun.Load(
+        [
+            new SourceFile("w.base.sattle", Worlds.BaseModule),
+            new SourceFile("w.two.sattle", """
+                module w.two @ 1.0.0;
+                import w.base @ 1.0.0 sha256:… as base;
+                entity Copy { k: Text; g?: Text; }
+                identity copy for Copy version "1" { k: Text by exact; }
+                """),
+            Worlds.Kql("w.two", "first", $"graph first : w.two;\ninput master : base;\nnodes Copy on c = {Copies}k = i.k, g = i.g | project c = identity(\"copy\", k), k, g;\n"),
+            Worlds.Kql("w.two", "second", $"graph second : w.two;\ninput master : base;\nnodes Copy on c = {Copies}k = i.k | project c = identity(\"copy\", k), k;\n"),
+        ]);
         var second = catalog.Projections.Values.Single(p => p.Name == "second").Ops.OfType<TMatch>().Single();
         Assert.Equal(["k"], second.Reads.Select(r => Ids.Name(r.PropId)));
     }

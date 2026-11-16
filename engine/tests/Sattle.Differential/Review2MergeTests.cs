@@ -11,7 +11,6 @@ namespace Sattle.Differential;
 public class Review2MergeTests
 {
     static AdvanceInput Advance(long seconds) => new(Origin + seconds * Second);
-    static World Named(string name) => Worlds.All.Single(w => w.Name == name);
     static ImmutableArray<string> ByEngine(World w, IReadOnlyList<Input> log, string graph) => EngineRun.Final(w.Catalog, log, Chunking.OneByOne).Graphs[graph].Lines();
     static ImmutableArray<string> ByReference(World w, IReadOnlyList<Input> log, string graph) => ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs[graph].Lines();
     static RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Origin + seconds * Second))), 1);
@@ -37,27 +36,27 @@ public class Review2MergeTests
     [Fact]
     public void A_view_reads_the_windows_of_a_merged_pod_in_the_step_of_the_merge()
     {
-        var master = Worlds.LinkedLoads.Files[0].Text;
         var w = new World("a view's series over a pod that a link merges", "Link, Series, Rollup in a view",
         [
-            new SourceFile("w.sattle", master[..master.IndexOf("space s {", StringComparison.Ordinal)]),
+            .. Worlds.LinkedLoads.Files.Take(2),        // the types and the ingestion, without the space
             new SourceFile("w.view.sattle", """
                 module w.view @ 1.0.0;
                 import w @ 1.0.0 sha256:… as base;
                 entity Seen { load?: Integer telemetry delta sum every 60s; }
-                projection v view forward output w.view {
-                  in master: graph base;
-                  let m = match master (p: base.Pod);
-                  let s = m |> series master p.load within 30m |> rollup by { p: p } combine { v: sum(load) };
-                  emit entity Seen from s identity p set { load: v };
-                }
-                space s {
+                """),
+            Worlds.Kql("w.view", "v", """
+                graph v : w.view;
+                input master : base;
+                nodes Seen on p = graph("master") | graph-match (p) where labels(p) has "Pod" project p = p.id
+                    | join kind=inner (telemetry("master", 30m) | where property == "load" | project p = id, windowStart, property, value) on p
+                    | summarize load = sum(value) by p, windowStart;
+                """),
+            Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
                   source pods adapter "sattle.authoring" rows base.PodRow;
                   source flows adapter "sattle.authoring" rows base.FlowRow;
                   source loads adapter "sattle.authoring" rows base.LoadRow;
                   master graph master = base.ingest(pods: pods, flows: flows, loads: loads);
-                  graph view = v(master: master);
-                }
+                  graph view = view.v(master: master);
                 """),
         ], []);
         Input[] log =
@@ -104,39 +103,19 @@ public class Review2MergeTests
 
     /// <summary>A view names its elements by the element. A key in a domain that an equivalence policy joins is refused: after the link the row that leaves the view computes the survivor's id and does not find the element it made, which stayed under the id that lost (the review's finding). Named by the element, the view follows the merge like the reference.</summary>
     [Theory]
-    [InlineData("base.podName(name: p.name)", true)]
+    [InlineData("identity(\"podName\", name)", true)]
     [InlineData("p", false)]
     public void A_view_names_its_elements_by_the_element_not_by_a_key_of_a_linked_domain(string identity, bool refused)
     {
-        var linked = Named("link").Files[0].Text;
-        SourceFile[] files =
-        [
-            new("w.sattle", linked[..linked.IndexOf("space s {", StringComparison.Ordinal)]),
-            new("w.view.sattle", $$"""
-                module w.view @ 1.0.0;
-                import w @ 1.0.0 sha256:… as base;
-                entity Tag { name?: Text; }
-                projection v view forward output w.view {
-                  in master: graph base;
-                  let m = match master (p: base.Pod);
-                  emit entity Tag from m identity {{identity}} set { name: p.name };
-                }
-                space s {
-                  source pods adapter "sattle.authoring" rows base.PodRow;
-                  source flows adapter "sattle.authoring" rows base.FlowRow;
-                  master graph master = base.ingest(pods: pods, flows: flows);
-                  graph view = v(master: master);
-                }
-                """),
-        ];
+        var w = Worlds.LinkedWith("a view named by the element of a linked domain", "Link, EmitEntity in a view", "entity Tag { name?: Text; }",
+            $"nodes Tag on t = graph(\"master\") | graph-match (p) where labels(p) has \"Pod\" project p = p.id, name = p.name | project t = {identity}, name;");
         if (refused)
         {
-            var (code, message) = Assert.Single(new Catalog().Load(files, updatePins: true).Diagnostics.Where(d => d.IsError && d.Code != "S2").Select(d => (d.Code, d.Message)).Distinct());     // S2: the space says its projection did not check
+            var (code, message) = Assert.Single(new Catalog(new Sattle.Kql.KqlSource()).Load([.. w.Files.Where(f => f.Path != "w.space.sattle")], updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => (d.Code, d.Message)).Distinct());     // without the space, which only says that the view did not load
             Assert.Equal("IdentityLinked", code);
             Assert.Contains("identity p", message);
             return;
         }
-        var w = new World("a view named by the element of a linked domain", "Link, EmitEntity in a view", files, []);
         Input[] log = [new RowInput("flows", Logs.Row(("src", Value.Text("web")), ("dst", Value.Text("web"))), 1), PodRow("u0", "Web")];
         var (expected, actual) = (ByReference(w, log, "view"), ByEngine(w, log, "view"));
         Assert.True(expected.SequenceEqual(actual), $"{Print(log)}\nexpected:\n{string.Join("\n", expected)}\nengine:\n{string.Join("\n", actual)}");

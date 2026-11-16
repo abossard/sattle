@@ -56,9 +56,9 @@ public class DifferentialTests
     [InlineData("gauge min", 1, 2, "1")] [InlineData("gauge max", 1, 2, "2")] [InlineData("gauge max", 2, 2, "2")]
     [InlineData("gauge mean", 1, 2, null)] [InlineData("gauge mean", 2, 2, "2")]                                   // a mean stored as one number: only equal values combine
     [InlineData("gauge last", 1, 2, null)] [InlineData("gauge last", 2, 2, "2")]                                   // a last without its order: the same
-    [InlineData("gauge mean", 1, 2, "1.5", "mean(n)", "Decimal")] [InlineData("gauge mean", 2, 2, "2", "mean(n)", "Decimal")]       // a mean with its sum and count
-    [InlineData("gauge last", 1, 2, "2", "last(n, t)")] [InlineData("gauge last", 3, 2, "2", "last(n, t)")]                         // a last with its order: the name's row is later
-    [InlineData("gauge mean", 1, 4, "2.3333333333333333333333333333", "mean(n)", "Decimal", 2L)]                                  // (1 + 2 + 4) / 3, not the mean 2.75 of the two means
+    [InlineData("gauge mean", 1, 2, "1.5", "avg(n)", "Decimal")] [InlineData("gauge mean", 2, 2, "2", "avg(n)", "Decimal")]       // a mean with its sum and count
+    [InlineData("gauge last", 1, 2, "2", "arg_max(t, n)")] [InlineData("gauge last", 3, 2, "2", "arg_max(t, n)")]                         // a last with its order: the name's row is later
+    [InlineData("gauge mean", 1, 4, "2.3333333333333333333333333333", "avg(n)", "Decimal", 2L)]                                  // (1 + 2 + 4) / 3, not the mean 2.75 of the two means
     [InlineData("delta sum", 1, 4, "7", "sum(n)", "Integer", 2L)]
     public void A_merge_combines_windows_as_if_written_under_the_survivor(string rule, long byUid, long byName, string? expected, string aggregate = "sum(n)", string kind = "Integer", long? secondByUid = null)
     {

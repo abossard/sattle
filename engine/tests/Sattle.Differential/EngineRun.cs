@@ -24,7 +24,7 @@ public static class EngineRun
 {
     public static Catalog Load(IEnumerable<SourceFile> files)
     {
-        var catalog = new Catalog();
+        var catalog = new Catalog(new Sattle.Kql.KqlSource());
         var result = catalog.Load(files, updatePins: true);
         var errors = result.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()).ToArray();
         return errors.Length == 0 ? catalog : throw new InvalidOperationException("definitions do not check:\n" + string.Join("\n", errors));
