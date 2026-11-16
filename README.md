@@ -1,18 +1,71 @@
 # Sattle
 
-Sattle turns what a cloud system reports into graphs that explain it, and keeps them up to date.
+Sattle turns what a cloud system reports into graphs that explain it, and keeps them up to date as the input changes. The words are defined once in the [glossary](paper/glossary.md).
 
-- **Semi-structured data in.** Kubernetes objects, Azure resources and metrics, network flows, activity and audit events. Each record arrives in an envelope that names its source, and an adapter turns it into typed rows.
-- **Domain knowledge added.** Ontology modules say which kinds of things exist, how they relate, and which key identifies each one, so the records of many sources about one thing become one entity.
-- **Rules applied.** A projection is a KQL file of rules. It reads graphs and writes a new graph: services and their calls from pods, capabilities from services, a workload's health from its parts.
-- **Graphs and trees out.** A graph space binds the projections into a set of graphs, from the master graph of everything reported up to a tree that names the part to blame.
-- **Always up to date.** Each change of the input becomes a small patch to every graph it reaches. The same input gives the same graphs, whatever the batching.
+```mermaid
+flowchart TB
+  subgraph IN["Semi-structured data in"]
+    SRC["sources<br/>Kubernetes, Hubble, Azure,<br/>Prometheus, authoring"]
+    ENV["envelopes<br/>capture files or Event Hub"]
+    AD["adapters<br/>Adapters.cs"]
+    ROWS["typed rows<br/>sattle.source.*.sattle"]
+    SRC --> ENV --> AD --> ROWS
+  end
+  subgraph DEF["Definitions"]
+    ONT["ontology modules .sattle<br/>domain knowledge,<br/>identity domains"]
+    KQL["projections .kql<br/>rules in KQL"]
+    SP["graph space<br/>acme.space.sattle"]
+  end
+  ENG["engine<br/>Engine.cs, Operators.cs, Identity.cs<br/>computes on changes only"]
+  G["graphs<br/>master, serviceTree,<br/>workloadStructure, workload, ..."]
+  HOST["host and server<br/>Host.cs, Server.cs<br/>protocol v3: HTTP history, /ws stream"]
+  CV["canvas<br/>EngineSource, store, views"]
+  ROWS --> ENG
+  DEF --> ENG
+  ENG -->|"one patch per changed graph"| G
+  G -->|"input of the next projection"| ENG
+  G --> HOST -->|"patch events"| CV
+  ENG -.->|"replay --out: static files"| CV
+```
 
-This repository is research in progress. It holds a white paper, a working engine, a canvas to look at the graphs and edit their projections, and a lab that captured real Azure data. [Status](#status) says what is proven and what is not. The words are defined once in the [glossary](paper/glossary.md).
+- **Semi-structured data in**: each record arrives in an envelope ([format](lab/CAPTURE-FORMAT.md)); an adapter turns it into typed rows.
+- **Domain knowledge**: ontology modules say what exists, how it relates, and which key identifies it, so records of many sources become one entity.
+- **Rules**: a projection is a KQL file of rules that reads graphs and writes one graph; the graph space binds them.
+- **Always up to date**: each input change becomes a patch to every graph it reaches, the same input gives the same graphs whatever the batching.
+
+One change, from the cluster to the screen:
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant K as Kubernetes API
+  participant F as forwarder<br/>eh-forward.mjs
+  participant H as Event Hub<br/>sattle-ingest
+  participant L as live input<br/>Live.cs
+  participant S as SpaceHost<br/>Host.cs
+  participant R as replay driver<br/>Replay.cs
+  participant E as Engine<br/>Engine.cs
+  participant W as server /ws<br/>Server.cs
+  participant C as canvas<br/>engine.ts, store
+  K->>F: watch event: a pod changed
+  F->>H: envelope (source, capturedAt, seq, key, payload)
+  H->>L: PartitionReceiver.ReceiveBatchAsync
+  L->>S: LiveEnvelope(source, text, position)
+  S->>S: journal the envelope, record stream.ndjson
+  S->>R: Process(envelope)
+  R->>R: adapter.Consume: typed rows
+  R->>E: rows on flush, Advance(λ) from capturedAt
+  E->>E: each projection turns the changed rows into changed elements
+  E-->>S: Committed(graph, patch), once per changed graph
+  S->>W: Publish {type: "patch", graph, patch}
+  W->>C: WebSocket message
+  C->>C: feed/patch: apply to the graph, redraw the views
+  Note over K,L: live with serve --live (issue 70), the demo replays capture files instead (serve CAPTURE --speed N)
+```
+
+This repository is research in progress: a white paper, a working engine, a canvas, and a lab that captured real Azure data. [Status](#status) says what is proven and what is not.
 
 ![The graph space: the master graph and the graphs derived from it](docs/screenshots/graph-space.png)
-
-*The graph space on a synthetic estate. The master graph (top left) and the graphs the projections derive from it, each with its own nodes and edges.*
 
 ## Getting started
 
@@ -99,7 +152,7 @@ npm --prefix canvas test
 ## Contents
 
 - [Getting started](#getting-started)
-- [The idea in one picture](#the-idea-in-one-picture)
+- [The graph space](#the-graph-space)
 - [Portfolio](#portfolio)
 - [The white paper](#the-white-paper)
 - [The engine](#the-engine)
@@ -108,104 +161,85 @@ npm --prefix canvas test
 - [Status](#status)
 - [Earlier iteration](#earlier-iteration)
 
-## The idea in one picture
+## The graph space
+
+The 13 graphs of [`acme.space.sattle`](engine/definitions/acme.space.sattle). Each arrow into a graph is a projection, labelled `module.projection`.
 
 ```mermaid
 flowchart LR
-  S["Sources<br/>Azure, Kubernetes,<br/>flows, metrics, events"] --> M["Master graph<br/>one per graph space"]
-  W["Authored rows<br/>capabilities, signal thresholds,<br/>policies, curations"] --> A["Authored graph"]
-  M --> P1["Graph serviceTree<br/>services and their calls"]
-  P1 --> P2["Graph capabilities"]
-  A --> P2
-  A --> H
-  M --> H["Graphs workloadStructure, workload<br/>structure, then health with roll-up"]
-  P1 --> H
-  H --> D["Document graph<br/>report"]
-  C["Catalog graph<br/>ontologies and projections<br/>as graphs"] -.defines.-> P1
-  C -.defines.-> P2
-  C -.defines.-> H
-  classDef box fill:#1f2937,stroke:#9ca3af,color:#f9fafb;
-  class S,W,M,A,P1,P2,H,D,C box;
+  ROWS["rows of the sources"] -->|"ops.ingest"| master
+  AUTH["authored rows<br/>capabilities, signal thresholds,<br/>policies, curations"] -->|"ops.authored"| authored
+  master -->|"svc.serviceDeps"| serviceTree
+  serviceTree -->|"biz.capabilityView"| capabilities
+  authored --> capabilities
+  master -->|"wl.workloadStructure"| workloadStructure
+  master -->|"wl.workloadHealth"| workload
+  workloadStructure --> workload
+  authored --> workload
+  master -->|"dh.deploymentHealth"| deploymentHealth
+  deploymentHealth -->|"rpt.deploymentReport"| deploymentReport
+  master -->|"tr, th, trep"| TREE["treeStructure, treeSignals, treeRollup,<br/>healthTree, healthReport<br/>(estate tree, paused)"]
+  authored --> TREE
 ```
 
-- An edge between two lower-level nodes becomes an edge between their higher-level images. A projection writes that with joins, as in [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql).
-- Each arrow into a graph is a projection: a KQL file of rules. The dotted arrows: the projections and ontologies are themselves stored as graphs.
-- Health is not built into the engine. It is an ontology module, [`acme.workload`](engine/definitions/acme.workload.sattle), and two projections, [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql) and [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql).
+- Health is not built into the engine: it is the ontology module [`acme.workload`](engine/definitions/acme.workload.sattle) and two projections, [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql) and [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql).
+- Edge lifting (an edge between two pods becomes an edge between their services) is a join: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql), theory in [Ch. 5](paper/ch05-projection-language.md).
 
 ## Portfolio
 
-All screenshots show the synthetic estate that ships with the repository ([generator](engine/tests/Sattle.Tests/fixtures/build-estate.py)). No real names appear in them.
+Screenshots of the running engine on the synthetic estate ([generator](engine/tests/Sattle.Tests/fixtures/build-estate.py)); no real names.
 
 ### 1. The master graph
 
 ![Master graph](docs/screenshots/master-graph.png)
 
-- Pods, services, deployments, nodes, Azure resources and evidence events in one graph, with a timeline of revisions.
-- The adapters in [`Adapters.cs`](engine/src/Sattle.Runtime/Adapters.cs) turn envelopes into rows; the projection [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) writes them into the graph under the ontology modules [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle), whose identity domains make one entity of what several sources report about one thing.
-- Theory: [Ch. 1, values and identity](paper/ch01-values-and-identity.md), [Ch. 3, graphs and revisions](paper/ch03-graphs-and-revisions.md).
+- Everything the sources reported, one entity per thing: [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) under [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle). Theory: [Ch. 1](paper/ch01-values-and-identity.md), [Ch. 3](paper/ch03-graphs-and-revisions.md).
 
-### 2. A higher level: services
+### 2. Services
 
 ![The service graph serviceTree](docs/screenshots/service-tree.png)
 
-- Pod-to-pod calls lifted to service-to-service dependencies, with flows summed per pair.
-- Definition: [`serviceDeps` of `acme.svc`](engine/definitions/acme.svc.serviceDeps.kql).
-- Theory: edge lifting as a quotient in [Ch. 5](paper/ch05-projection-language.md).
+- Calls between pods lifted to dependencies between services, flows summed per pair: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql).
 
-### 3. One level higher: capabilities
+### 3. Capabilities
 
 ![Capabilities](docs/screenshots/capabilities.png)
 
-- Service dependencies lifted again to the business capabilities the services realize.
-- Definition: [`capabilityView` of `acme.biz`](engine/definitions/acme.biz.capabilityView.kql).
+- Service dependencies lifted again to the capabilities the services realize: [`capabilityView`](engine/definitions/acme.biz.capabilityView.kql).
 
 ### 4. What a workload is made of and depends on
 
 ![Workload structure](docs/screenshots/workload-structure.png)
 
-- The question it answers: what is my workload made of, what does it talk to, and what does each part depend on?
-- Top to bottom: the workload, its services, their deployments and pods, the nodes, pool and cluster they run on. To the right: the cache, the storage account and the database server a service depends on, each reached through its private endpoint and the network. To the left: the gateway that exposes a service.
-- Three kinds of edges, declared in the ontology module [`acme.workload`](engine/definitions/acme.workload.sattle) (`kind composition`, `kind dependency`, `kind communication`) and drawn differently.
-- Every dependency is derived from data and carries its evidence: flows to a private endpoint's address, a resolved host name, a role of the pod's identity, an environment variable, calls between pods, a gateway backend. Definition: [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql).
+- Composition top to bottom, dependencies to the right, communication dotted; every dependency carries its evidence: [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql), tests in [`WorkloadTests.cs`](engine/tests/Sattle.Tests/WorkloadTests.cs).
 
 ### 5. Its health, and which part is to blame
 
 ![Workload health at 10:11, the database server down](docs/screenshots/workload-health.png)
 
-- The question it answers: is my workload healthy, and if not, which part is to blame?
-- Here the database server is down. The path from the workload to the origin is drawn in red; the origin carries a flag. At another moment of the replay a crash-looping pod is a smaller origin: its deployment stays healthy because two of three pods are.
-- A component's state is the worst severity over what it contains and what it depends on. Signals are meters read against authored signal thresholds; a meter that stops reporting becomes "no data", which is a state of its own. Definition: [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql).
-- Colors come from value roles declared in the ontology module (`roles { "Healthy": ok, ... }` on `Component.state`), not from code in the viewer.
-- Theory: [Ch. 7, the telemetry plane](paper/ch07-telemetry-plane.md).
+- The path from the workload to the origin (`⚑`, the database server) in red; a state is the worst over what a part contains and depends on: [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql). Colors are value roles of the ontology. Theory: [Ch. 7](paper/ch07-telemetry-plane.md).
 
 ![The same state as a tree of causes](docs/screenshots/workload-tree.png)
 
-- The tree is the graph drawn by its hierarchy. It follows the relation the state was computed from. Each row says through which part it is unhealthy; the origin is marked.
-- Code: [`tree-model.ts`](canvas/src/app/tree-model.ts), [`TreeView.tsx`](canvas/src/ui/TreeView.tsx).
+- The same graph drawn by its hierarchy, with the Inspector's lineage of the origin: [`tree-model.ts`](canvas/src/app/tree-model.ts), [`TreeView.tsx`](canvas/src/ui/TreeView.tsx).
 
 ### 6. A document is a graph too
 
 ![Report document](docs/screenshots/report-document.png)
 
-- A report rendered from a graph of document blocks, with a digest per revision.
-- Definition: [`deploymentReport`](engine/definitions/acme.report.deploymentReport.kql) into the ontology [`sattle.doc`](engine/definitions/sattle.doc.sattle). Renderer: [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
-- A smaller health example with value roles: [`deploymentHealth`](engine/definitions/acme.deployhealth.deploymentHealth.kql).
+- A graph of [`sattle.doc`](engine/definitions/sattle.doc.sattle) blocks rendered to Markdown with a digest per revision: [`deploymentReport`](engine/definitions/acme.report.deploymentReport.kql), [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
 
 ### 7. Editing a projection
 
 ![The projection editor on workloadHealth: the KQL text and its steps](docs/screenshots/editor-kql.png)
 
-- A projection is edited as its KQL text, with three notations beside it (Steps, Outline, Wires) that change the same text and share one undo history.
-- The text lives in a draft on the engine, which checks it, shows the rows after each step, and commits it as a new release of the module ([PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions)).
-- Code: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`KqlText.tsx`](canvas/src/ui/editor/KqlText.tsx), [`kql-edit.ts`](canvas/src/editor/kql-edit.ts).
-- Tests that build deployment health, workload health and a threshold from an empty projection in each notation and compare the result with the original: [`kql-references.test.tsx`](canvas/tests/editors/kql-references.test.tsx).
+- KQL text with three notations (Steps, Outline, Wires) that edit the same text, in a draft the engine checks and commits: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`kql-edit.ts`](canvas/src/editor/kql-edit.ts), tests in [`kql-references.test.tsx`](canvas/tests/editors/kql-references.test.tsx), protocol in [PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions).
 
 ### 8. Ontology modules are graphs
 
 ![Ontology view](docs/screenshots/ontology.png)
 
-- The domain knowledge: types, relationships and their constraints, drawn as the graph they are stored as.
-- Theory: [Ch. 2, ontologies as type graphs](paper/ch02-ontologies-as-type-graphs.md).
+- Types, relationships and identity domains, drawn as the graph they are stored as. Theory: [Ch. 2](paper/ch02-ontologies-as-type-graphs.md).
 
 ## The white paper
 
@@ -302,7 +336,7 @@ What does not hold yet:
 
 - **Efficiency.** The engine holds tens of kilobytes per master node. The target is about 1.6 KB at one million nodes on one machine. The plan is in [research note 04](paper/research/04-compute-and-memory-efficiency.md).
 - **Expressiveness gaps.** Unbounded reachability, comparison of a window with an earlier one, and "no data for N windows" cannot be expressed. See [research note 05](paper/research/05-expressiveness-and-flexibility.md).
-- **Always live.** Live input ran through Event Hubs only for the capture tooling, not yet for the engine's own reader ([#70](https://github.com/abossard/sattle/issues/70)). The source cluster runs again since 2026-11-16 ([`source-cluster.sh`](lab/source-cluster.sh)).
+- **Always live.** The engine follows the lab cluster live through Event Hubs since 2026-11-16 ([#70](https://github.com/abossard/sattle/issues/70): a scaled deployment turned Unhealthy in 34 s and back in 4 s, two hard kills resumed from the store). The source cluster runs again ([`source-cluster.sh`](lab/source-cluster.sh)).
 - **Persistence.** A local journal with snapshots works. A store-agnostic design that scales is a concept, not built.
 - **Known defects** in the canvas and the lab from the [code review](paper/research/07-code-review-findings.md) are not all fixed.
 
