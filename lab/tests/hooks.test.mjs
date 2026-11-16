@@ -1,5 +1,5 @@
 // Tests for the azd hooks and the capture shell helpers, run against stand-ins for az, azd, kubectl and curl
-// (a directory of small scripts first on PATH). Nothing here calls Azure. Run: node --test lab/tests/
+// (a directory of small scripts first on PATH). Nothing here calls Azure. Run: node --test lab/tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';

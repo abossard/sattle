@@ -1,5 +1,5 @@
 // Tests for the Node core of the capture tooling that can run without Azure: the forwarder's sink and the consumer's
-// stop rule. Run: node --test lab/tests/
+// stop rule. Run: node --test lab/tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { sink } from '../capture/lib/sink.mjs';

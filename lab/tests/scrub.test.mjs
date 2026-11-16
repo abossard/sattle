@@ -1,5 +1,5 @@
 // Tests for the fixture scrubber through its command line (`scrub.mjs build|verify <capture> <fixtures>`).
-// The capture is synthetic: every "real" value below is made up. Run: node --test lab/tests/
+// The capture is synthetic: every "real" value below is made up. Run: node --test lab/tests/*.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
