@@ -118,16 +118,14 @@ public class Review2KqlTextTests
         Assert.DoesNotContain(put.Diagnostics, d => d.Message.Contains("there is no module w", StringComparison.Ordinal));
     }
 
-    /// <summary>HEAD: a rule name with `#` made the printer throw (Suffix parses what follows `#`). The printer prints no projection since 3.47; the text still gives no exception.</summary>
+    /// <summary>HEAD: a rule name with `#` made the printer throw (Suffix parses what follows `#`). Since 3.47 the text loads through a catalog with the KQL source, which gives no exception.</summary>
     [Fact]
-    public void A_rule_name_with_a_hash_is_a_diagnostic_not_an_exception()
+    public void A_rule_name_with_a_hash_gives_no_exception()
     {
         var path = Path.Combine(Definitions, "acme.biz.capabilityView.kql");
         var text = File.ReadAllText(path).Replace("with (rule = \"tree\", accept", "with (rule = \"a#b\", accept", StringComparison.Ordinal);
-        var definitions = Language.Catalog.ReadDirectory(Definitions);
-        var loaded = new Language.Catalog(new KqlSource());
-        loaded.Load(definitions, updatePins: true);
-        var thrown = Record.Exception(() => KqlFiles.Of([.. definitions.Where(f => f.Path.EndsWith(".sattle", StringComparison.Ordinal))], [new SourceFile(path, text)], loaded));
+        var definitions = Language.Catalog.ReadDirectory(Definitions).Select(f => f.Path == path ? new SourceFile(path, text) : f).ToList();
+        var thrown = Record.Exception(() => new Language.Catalog(new KqlSource()).Load(definitions, updatePins: true));
         Assert.True(thrown is null, $"{thrown?.GetType().Name}: {thrown?.Message}");
     }
 

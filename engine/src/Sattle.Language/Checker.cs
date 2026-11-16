@@ -328,7 +328,7 @@ public sealed class ProjectionChecker(Graph defs)
                     var cols = kcols.Concat(carry).Concat([new Col("windowStart", inst), new Col("windowEnd", inst)]).Concat(aggs.Select(a => new Col(a.Target, a.Out))).ToList();
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;       // the input comes from a Series with a time to live
                     var any = d.Text(op, "nodata") == "any";
-                    if (any && !marked) Err("Rollup", op, "a roll-up in no data when one member is needs telemetry with a time to live (telemetry_filled) upstream");
+                    if (any && !marked) Err("Rollup", op, "a roll-up that gives no data when one member has none needs telemetry with a time to live (telemetry_filled) upstream");
                     if (marked) cols.Add(new Col(TThreshold.NoDataColumn, R.Find(TThreshold.NoDataColumn)!.T));
                     return new TRollup(name, op, inputs, new Schema(cols, R.Window), keys, aggs, R.Window, marked, any, [.. R.Cols.Where(c => c.T.Role.IsData && c.Name is not ("windowStart" or "windowEnd")).Select(c => c.Name)]);
                 }
@@ -683,7 +683,7 @@ public sealed class ProjectionChecker(Graph defs)
     TOp? TypeEmitEntity(string op, string name, Dictionary<string, Src> inputs, Schema R, string? rule)
     {
         var t = d.Target(op, "ofType");
-        if (t is null || !outView.Types.TryGetValue(t, out var ti) || ti.IsRel) { Err("P1", op, "emitted entity type is not in the output ontology"); return null; }
+        if (t is null || !outView.Types.TryGetValue(t, out var ti) || ti.IsRel) { Err("P1", op, "nodes type is not in the output ontology"); return null; }
         if (ti.Abstract) { Err("P1", op, $"abstract type {ti.Name} has no nodes or edges of its own"); return null; }
         var id = IdentityEx(Child(op, "id"), R);
         if (id is null) return null;
@@ -696,7 +696,7 @@ public sealed class ProjectionChecker(Graph defs)
     TOp? TypeEmitRel(string op, string name, Dictionary<string, Src> inputs, Schema R, string? rule)
     {
         var t = d.Target(op, "ofType");
-        if (t is null || !outView.Types.TryGetValue(t, out var ti) || !ti.IsRel) { Err("P1", op, "emitted relationship type is not in the output ontology"); return null; }
+        if (t is null || !outView.Types.TryGetValue(t, out var ti) || !ti.IsRel) { Err("P1", op, "edges type is not in the output ontology"); return null; }
         if (ti.Abstract) { Err("P1", op, $"abstract type {ti.Name} has no nodes or edges of its own"); return null; }
         var src = IdentityEx(Child(op, "source"), R); var tgt = IdentityEx(Child(op, "target"), R);
         if (src is null || tgt is null) return null;
@@ -911,7 +911,7 @@ public sealed class ProjectionChecker(Graph defs)
             if (reached.Count > 1) Err("DirectionOverclaim", pid, $"rule {r.Name} claims bijective but reads {reached.Count} input streams");
             foreach (var pn in reached)
                 foreach (var f in ports.First(p => p.Name == pn).Rows?.Cols ?? [])
-                    if (!recovered.Contains(f.Name)) Err("DirectionOverclaim", pid, $"rule {r.Name} claims bijective but input field '{f.Name}' of {pn} is not recovered by any emit");
+                    if (!recovered.Contains(f.Name)) Err("DirectionOverclaim", pid, $"rule {r.Name} claims bijective but input field '{f.Name}' of {pn} is not recovered by any nodes statement");
         }
     }
 

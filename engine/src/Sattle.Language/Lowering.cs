@@ -94,9 +94,9 @@ public sealed class Lowering
         work = catalog.Clone();
         var err = work.Apply([.. b.Elements().Select(Edit.Create)]);
         if (err is not null) { Err("Internal", "module facts do not compose: " + err, ast.Pos); return; }
+        if (diags.Any(x => x.IsError)) return;
         if (projections is not null)
         {
-            if (diags.Any(x => x.IsError)) return;
             read = projections(work);
             diags.AddRange(read.Diagnostics);
             if (read.Diagnostics.Any(x => x.IsError)) return;

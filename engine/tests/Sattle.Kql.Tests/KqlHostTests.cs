@@ -141,6 +141,17 @@ public class KqlHostTests
         h.DiscardDraft(d);
     }
 
+    /// <summary>A draft text is read by its file: a module name is a bad request, since a module of a draft changes by patches.</summary>
+    [Fact]
+    public void A_draft_text_of_a_module_is_a_bad_request()
+    {
+        var h = Served.Value;
+        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        var e = Assert.Throws<HostError>(() => h.DraftText(d, "acme.svc"));
+        Assert.Equal(("BadRequest", 400), (e.Code, e.Status));
+        h.DiscardDraft(d);
+    }
+
     /// <summary>A structural edit of a projection written in KQL would be lost at the next commit, which is made from text: refused, with the file to edit.</summary>
     [Fact]
     public void A_structural_edit_of_a_projection_in_KQL_is_refused()
