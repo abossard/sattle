@@ -3,11 +3,15 @@
 // as envelopes. With --mirror-hubble the flows are also written to the hubble hub. Stream semantics: see CAPTURE-FORMAT.md.
 // usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble]
 //   env HUBBLE_FILTER  observe filter flags, default "--namespace sattle-demo --namespace demo"
-//   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (300), QUEUE_MAX_MB per hub (64)
-import { parseArgs } from 'node:util';
+//   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60), QUEUE_MAX_MB per hub (64)
+import { execFile } from 'node:child_process';
+import { parseArgs, promisify } from 'node:util';
+import { AzureCliCredential } from '@azure/identity';
+import { azureMetricsPoller, cachedToken, nextPollMs } from './lib/azure-metrics-poll.mjs';
 import { producer } from './lib/eventhub.mjs';
 import { envelope } from './lib/envelope.mjs';
 import { sink } from './lib/sink.mjs';
+import { newSamples } from './lib/metrics-poll.mjs';
 import { startChild, supervise, sleep } from './lib/supervise.mjs';
 import { watchKind } from './lib/watch.mjs';
 
@@ -78,12 +82,15 @@ if (!a['no-hubble']) {
 }
 
 // ---- Telemetry: a poller runs one script at a time, so slow polls never overlap
+// Azure metrics polls overlap, so each datapoint is sent once, by the first poll that has a value for it
+let metricsSent = new Map();
+const onlyNew = (e) => { if (e.source !== 'azure-metrics') return e; const r = newSamples(metricsSent, e); metricsSent = r.state; return r.envelope; };
 const poller = (name, script, args, everySec) => (async () => {
   while (!stopping) {
     const t0 = Date.now();
     const child = startChild('bash', [`${here}sources/${script}`, ...args], {
       env: kubeEnv,
-      onLine: (l) => { try { const e = JSON.parse(l); e.seq = 0; route(e); } catch { /* noise */ } },
+      onLine: (l) => { let e; try { e = JSON.parse(l); } catch { badLines++; return; } e.seq = 0; const fresh = onlyNew(e); if (fresh) route(fresh); },
     });
     register(child);
     const { code } = await child.done;
@@ -92,11 +99,36 @@ const poller = (name, script, args, everySec) => (async () => {
     for (let waited = 0; waited < wait && !stopping; waited += 500) await sleep(500);
   }
 })();
+// Azure metrics through the REST API: the resources are looked up once (cluster, its load balancer, the hub namespace)
+const azureResources = async () => {
+  const script = `source "${here}lib.sh"; load_context
+    lb=$(az network lb list -g "$NODE_RG" --query '[0].id' -o tsv); ns=$(az eventhubs namespace show -g "$LAB_RG" -n "$EH_NS" --query id -o tsv)
+    jq -nc --arg a "$AKS_ID" --arg l "$lb" --arg n "$ns" '[{kind:"aks",id:$a},{kind:"loadbalancer",id:$l},{kind:"eventhubs",id:$n}] | map(select(.id != ""))'`;
+  const { stdout } = await promisify(execFile)('bash', ['-c', script], { env: kubeEnv });
+  return JSON.parse(stdout);
+};
+const azureMetricsLoop = (everySec, windowSec) => (async () => {
+  const getToken = cachedToken(new AzureCliCredential());
+  let p; let failures = 0;
+  while (!stopping) {
+    const t0 = Date.now();
+    try {
+      p ??= azureMetricsPoller({ resources: await azureResources(), getToken });
+      for (const e of await p.poll(windowSec)) { const fresh = onlyNew(e); if (fresh) route(fresh); }
+      failures = 0;
+    } catch (err) { failures++; if (!stopping) marker({ event: 'poll-failed', poll: 'azure-metrics', failures, error: String(err.message).slice(0, 160) }); }
+    const wait = Math.max(5_000, nextPollMs(everySec, failures) - (Date.now() - t0));
+    for (let waited = 0; waited < wait && !stopping; waited += 500) await sleep(500);
+  }
+})();
 if (!a['no-metrics']) {
   const prom = Number(process.env.PROM_POLL_SECONDS ?? 60);
-  const azure = Number(process.env.AZURE_POLL_SECONDS ?? 300);
+  // Azure metrics: a minute is accepted while its window is within the late horizon (3 windows of 60 s past the
+  // watermark, which trails capture time by 60 s), so latency plus poll interval must stay under about 240 s.
+  // Measured latency is under 30 s (CAPTURE-FORMAT.md): poll every 60 s over the last 300 s; newSamples drops repeats.
+  const azure = Number(process.env.AZURE_POLL_SECONDS ?? 60);
   loops.push(poller('prometheus', 'prometheus.sh', ['-', String(prom * 2)], prom));
-  loops.push(poller('azure-metrics', 'azure-metrics.sh', ['-', String(azure * 2)], azure));
+  loops.push(azureMetricsLoop(azure, Math.max(300, azure * 2)));
 }
 
 // ---- flush loop and stats

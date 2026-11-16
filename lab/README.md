@@ -4,7 +4,7 @@ Produces real captured data for the engine: recorded NDJSON files and a live Eve
 
 ## Prerequisites
 - `az` and `azd` logged in (`azd auth login`; Owner on the subscription), `az` extensions `aks-preview`, `resource-graph`; `kubectl`, `hubble`, `jq`, `node` 24
-- An existing AKS cluster with managed Prometheus. Its names are not in the repo: set them once in the azd environment (`SATTLE_AKS_NAME`, `SATTLE_AKS_RG`, see below); the hooks stop with a message naming the value if one is missing.
+- An AKS cluster with Azure CNI powered by Cilium and managed Prometheus. `./source-cluster.sh` creates one (its own resource group, one Standard_D4ds_v5 node, free control plane, an Azure Monitor workspace; outside the azd deployment, so `azd down` keeps it). Its names are not in the repo: set them once in the azd environment (`SATTLE_AKS_NAME`, `SATTLE_AKS_RG`, see below); the scripts and hooks stop with a message naming the value if one is missing.
 - `cd capture && npm install`
 
 ## Deploy and tear down (azd)
@@ -53,6 +53,25 @@ capture/capture.sh 420
 - Single sources can be run alone: `capture/sources/<name>.sh <outdir> [args]`.
 - Format of every record: see [CAPTURE-FORMAT.md](CAPTURE-FORMAT.md).
 
+## Two capture stacks
+The lab reads the cluster in two ways, and both stay (decision 2026-11-16, #84). A file capture therefore replays a different input path than the live stream: more Kubernetes kinds, no relist and no markers, and sources the stream does not carry. Its replay results do not have to equal those of a live run over the same minutes.
+
+| Input | File capture (`capture/capture.sh`, shell, to `captures/<timestamp>/`) | Live stream (`capture/eh-forward.mjs`, Node, to hub `sattle-ingest`) |
+|---|---|---|
+| Kubernetes | list of 23 kinds, then one watch per kind (resumes after an early end, no relist) | list-then-watch of 8 kinds (namespaces, nodes, pods, services, events, deployments, replica sets, endpoint slices) with relist and markers |
+| Hubble flows | followed for the window (`sources/hubble.sh`) | followed with restart and replay of the gap; mirrored to `sattle-hubble` with `--mirror-hubble` |
+| Prometheus (managed) | range queries after the window (`sources/prometheus.sh`) | polled every 60 s over 120 s |
+| Azure platform metrics (cluster, load balancer, Event Hubs namespace) | after the window, through the az CLI (`sources/azure-metrics.sh`) | REST API every 60 s over 300 s, each datapoint once |
+| Resource Graph inventory | snapshot before the window (`sources/arg.sh`) | none |
+| Activity Log | diagnostic setting to hub `sattle-activity`, consumed to a file, plus a backfill of up to 5000 events (`sources/activity-log.sh`) | on its own hub `sattle-activity`, not routed into `sattle-ingest` |
+| AKS control plane logs (`kube-audit-admin`, `cluster-autoscaler`) | diagnostic setting to hub `sattle-aks`, consumed to a file | on its own hub `sattle-aks`, not routed into `sattle-ingest` |
+| VNet flow logs | blobs read after the window (`sources/flowlogs.sh`) | none (blobs only, minutes late) |
+| Event Hubs | every hub consumed to `eventhub/*.ndjson` during the window | `sattle-ingest` is the stream itself |
+
+Azure inputs still missing for phase 2 (none is captured by either stack today):
+- In the live stream: Resource Graph inventory and its changes, the Activity Log and AKS logs (they are on their own hubs; the engine would read those hubs or the forwarder would route them), VNet flow logs.
+- In both: AKS control plane log categories beyond the two above (API server, scheduler, controller manager), container and Kubernetes event logs of Container Insights, Resource Health availability per resource (only its Activity Log events arrive), application telemetry (Application Insights or OpenTelemetry), Azure Monitor alerts as their own source (only alert events in the Activity Log), and load balancer health: the cluster's load balancer reports no `VipAvailability` until a service with a public frontend and health probe exists.
+
 ## Fixtures
 ```bash
 fixtures/build.sh captures/<timestamp>
@@ -74,6 +93,7 @@ Run in `lab/`, with the prerequisites above.
    azd env new sattle --subscription <subscription id> --location <region>
    azd env set SATTLE_AKS_RG <aks-resource-group>
    azd env set SATTLE_AKS_NAME <aks-name>
+   ./source-cluster.sh   # only when the cluster does not exist yet
    azd up
    ```
 2. Capture and build the fixtures in one command. About 12 minutes: a 420 s window, the pulls, then about 2 minutes for the scrub and its verify.
@@ -103,6 +123,7 @@ What stays on your machine, and why none of it is committed (all git-ignored):
 One lab per subscription: the hooks own one Activity Log diagnostic setting and one flow log by fixed names. `preprovision.sh` stops when the lab's resource group already exists and was not created by this azd environment, or when the Activity Log setting already feeds another lab.
 
 ## Cost
+- Source cluster from `source-cluster.sh`: one Standard_D4ds_v5 node about 0.23 USD per hour, load balancer and public IP about 0.03 USD per hour, managed Prometheus ingestion cents per day. Runs until deleted: `az group delete -n <aks-resource-group>` (not part of `azd down`).
 - ACNS: per node hour for as long as it is enabled on the cluster. Not removed by default.
 - Event Hubs Standard, 1 TU: about 0.03 USD per hour while the namespace exists.
 - Storage and flow logs: cents per day at this size. Activity Log and AKS audit logs add ingress to Event Hubs.
