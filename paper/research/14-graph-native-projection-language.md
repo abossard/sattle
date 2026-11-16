@@ -25,7 +25,10 @@ Terms used here:
 6. **The user's answers** (section 6) settle three axes: visual editing is required and the graph is the truth; recursion is bounded depth along any edges; KQL lends names only and nothing is converted from KQL text. His working name for the graph form is gkql.
 7. **Query verbs as nodes** (section 7): every KQL verb has a form as a node and lowers to a map or a keyed reduce. What changes is around the verbs: a pipeline becomes a graph without loops, join sides need names, a pattern is a graph inside a node, variables become connections.
 8. **"A graph form makes visual editing easy" is half true** (section 8). Parsing disappears and every edit is safe. Layout, readability at scale, comparison and review, keyboard editing and a text form were each built separately in every node-based tool read.
-9. **Eight decisions** remain open (section 10). None is taken here. The page stores his marks on 27 terms and on the decisions, readable in the next round.
+9. **Eight decisions** were put to him (section 10) and none was taken in this note. They were open until the fourth round (item 10). The page stores his marks on 27 terms and on the decisions.
+10. **Fourth round, 15 November 2026: the eight decisions are answered** (section 6) and 26 of the 27 terms are picked (section 9.1). The answer with the widest effect is "Graphs" on a pipe: every operator becomes a rule, a graph pattern in and a CONSTRUCT template out (section 3.3).
+11. **A second concrete case, one network seen by three sources** (section 1.6), adds one requirement no earlier example had: a join that depends on time (section 3.4). It can keep the three promises, under a limit on lateness.
+12. **Three projections are redrawn under his answers** on a third page (section 11.2). Nothing of that page ran on the engine.
 
 ## 1. Problem space
 
@@ -78,7 +81,7 @@ The target graph:
 - **Entities:** a root named after the model, user flows, system components, resources.
 - **Relationships:** parent to child. A child may have several parents, so the graph is a DAG, not a tree. A relationship cannot be changed, only removed and created.
 - **Signals** on an entity, each with a degraded and an unhealthy rule (an operator and a threshold; unhealthy is checked first), read from metrics, log queries, PromQL or pushed reports.
-- **Roll-up** on each parent over its children: `WorstOf`, `MaxNotHealthy` (a count or a share of children against a degraded and an unhealthy threshold) or `Average`. Each child has an impact on its parent: `Standard`, `Limited` (one level milder) or `Suppressed`.
+- **Roll-up** on each parent over its children: `WorstOf`, `MaxNotHealthy` (a count or a share of children against a degraded and an unhealthy threshold) or `Average`. Each parent to child relationship has an impact: `Standard`, `Limited` (one level milder) or `Suppressed` (decided on 15 November 2026, see below).
 - **States:** Healthy, Degraded, Unhealthy, Unknown.
 - **Size:** 7 to 30 entities and 0 to 25 signals per model, all written by hand.
 
@@ -87,13 +90,42 @@ Pain points he has today: a resource shared by two flows is copied per flow, so 
 What this target adds to the problem space:
 - **It is a projection's output graph.** Flows and components are authored facts, resources are observed, signals bind elements to telemetry.
 - **Identity is the cure for the copies.** A shared resource is one element with one id and several parents. A rule whose target gives the resource an identity computed from the observed resource cannot produce two copies. This is the strongest concrete case for "identity as a function of the match" (section 3.1).
-- **The roll-up is a reduce keyed by parent.** `WorstOf` is the maximum of the children's severities; the impact is a map on each child's value before the reduce. `MaxNotHealthy` is a count compared with a threshold. A count is not monotone, so it needs to know that a parent's children are complete (section 4, CALM). Unknown has to be a value of its own, or the roll-up repeats today's fault.
+- **The roll-up is a reduce keyed by parent.** `WorstOf` is the maximum of the children's severities; the impact is read from the relationship edge and applied to each child's value before the reduce, so one child can count differently for two parents. `MaxNotHealthy` is a count compared with a threshold. A count is not monotone, so it needs to know that a parent's children are complete (section 4, CALM). Unknown has to be a value of its own, or the roll-up repeats today's fault.
 - **Depth is small and bounded.** Root, flow, component, resource is three to four levels. Rolling up level by level is recursion along parent edges to a bounded depth, which is what the user asked for. The output being a DAG and not a tree means XSLT-style descent would visit a shared child once per parent; a reduce keyed by parent does not have that problem.
 - **The model is small, the estate is not.** "Without the whole graph" matters for the observed graph a model is derived from, and for many models at once, not for one model of 30 entities.
 - **Two ways to deliver, both open:**
   - *Emit the model.* Each change of the output graph becomes a create, update or delete call. The engine's +1 and -1 changes map onto that. The service's rules bite here: an update replaces the whole resource, a changed relationship is a delete and a create, and a delete loses history. So changes must be combined per entity, and stable ids matter even more.
   - *Compute health in Sattle and push it.* The model in Azure keeps entities with pushed reports as their only signals; thresholds and roll-up are computed by the engine. Azure's own roll-up and its faults are bypassed; its history and alerts still work on what is pushed.
-  - Nothing is decided between the two.
+  - Nothing is decided between the two. Delivery is parked since 15 November 2026 (section 6).
+
+Decided by him on 15 November 2026, relayed by the orchestrator: "impact setting should be on the relationship".
+- **In the authored input** the impact is a property of the parent to child edge, not of the child.
+- **The service differs.** As read by the orchestrator from four models (API version 2026-11-01, not checked for this note): `impact` is stored on the child entity, and a relationship holds only the names of parent and child. A child shared by two parents has one impact for both.
+- **So the step that writes the model out must map an impact per edge onto an impact per child.** Three ways:
+  - *Refuse* a shared child whose parents ask for different impacts. Nothing is copied; some authored models cannot be written out.
+  - *One entity per distinct impact.* Every model can be written out; the copies he named as a pain point come back for exactly these children, though they are generated from one element and cannot drift.
+  - *Compute in Sattle and push the state* (the second delivery option). The service's impact is not used, so nothing has to be mapped.
+  - This note's reading: the engine's roll-up uses the edge in all three; the choice only matters once delivery is taken up again.
+- **Roll-up in the service** is `signalGroups.dependencies` with `aggregationType` and `ignoreUnknown`. All parents read use `WorstOf` with `ignoreUnknown` true. A parent is Unknown only when every child is Unknown, and only while `ignoreUnknown` is true. So "`WorstOf` ignores Unknown" above is a setting, not a fixed fault.
+- **Unconfirmed:** `Average` and `MaxNotHealthy` appear in none of the models read. That `Average` is the mean of the children's severities is an assumption until checked against Microsoft's documentation.
+- **Fields of the service missing from the invented example:** healthObjective, alerts per entity, canvasPosition, the Resource Health switch, entity names that are GUIDs.
+
+### 1.6 A second concrete case: one network seen by three sources
+Given by the user on 15 November 2026, in his words, shortened: Kubernetes and Cilium give pod addresses, connections, configuration URLs from environment variables and the mapping of service accounts to managed identities. Azure gives node to node traffic, and node to firewall traffic, without the pods behind it. Pods reach databases through DNS lookups, network calls, configuration and the permissions set in Azure. Wanted: an Azure diagram that shows only Azure resources, and a service diagram that shows the running pods in an abstract way and whom they really talk to.
+
+Read as a projection problem (the reading is the orchestrator's and this note's, not his):
+- **Three sources at three levels of detail.** Pod to pod (Cilium), node to node and node to firewall (Azure flow records), and an inventory of Azure resources.
+- **The sources meet on values, not on shared elements.** An address, a DNS name, a machine that is a Node in one source and a virtual machine in the other, a service account federated to a managed identity.
+- **One of those values changes its meaning over time.** An address belongs to a pod only for a while. This is new (section 3.4).
+- **Evidence differs in kind.** A flow was observed. A DNS lookup and a configuration are hints. A permission is a possibility.
+- **The same traffic can be seen twice,** between pods by one source and between nodes by another. Summing both counts it twice.
+- **Some traffic stays unexplained.** A node to firewall flow with no pod flow behind it belongs to the cluster. Saying so is a rule that holds because something is absent.
+- **Two outputs from one merged graph.** The Azure diagram is a roll-up by containment and needs no pod. The service diagram folds pods into workloads and holds both hard parts: time and absence.
+
+What the case adds to the problem space:
+- Joins on values become paths once the value is a node (an address node, a name node). All patterns of the redrawing are then paths or stars.
+- "A workload talks to a database it has no permission for" is a ring as one pattern: two paths between the same two nodes. With tree-shaped patterns only (his answer, section 6) it becomes two rules that each build an edge, and a join on the built edges.
+- Not checked: how Azure flow records and Cilium report addresses after translation, and with what delay. That pod addresses are reused is common knowledge; no official statement was found.
 
 ## 2. Prior art
 
@@ -367,6 +399,57 @@ What lowers at which cost:
 | a path of at most k edges | k rounds, or a copy of everything within k steps of each part | around a hub the copy is most of the graph |
 | anything reachable | rounds until nothing changes | rounds grow with the longest path; a removal can undo conclusions many rounds away |
 
+### 3.3 Graphs on pipes: what each operator becomes
+His answer to "what travels on a pipe" is "Graphs" (section 6). The prototype of picture C carried rows whose columns hold values or elements. With graphs, the variables of one operator do not travel to the next, so the next operator finds its elements again with its own graph pattern. Every operator is then a rule, and the operator names are named shapes of rules.
+
+| Operator | On rows | On graphs | Lowers to |
+|---|---|---|---|
+| rule (graph pattern and CONSTRUCT template) | a match gives rows, sinks build at the end | every operator is this | joins keyed by each shared pattern node, maps, one reduce per built identity (section 3.2) |
+| where | keeps rows | keeps elements; an edge that loses an end goes too | a map; a reduce by node for edges that lose an end |
+| project, extend | chooses or adds columns | chooses or adds properties and types | a map |
+| summarize ... by | groups rows | folds nodes into one node per key, and the edges between members into one edge with aggregates | a reduce by the key; a reduce by the pair of keys for edges |
+| union | appends rows | lays graphs over each other; equal identity means one element | a reduce by identity |
+| join kind=... | combines rows agreeing on values | combines graphs by identity (inner: in both; leftanti: only left). A join on values is a graph pattern through a node that stands for the value | a reduce by identity |
+
+Two readings of "a graph on a pipe" exist in prior work:
+- **One graph.** G-CORE: a query takes graphs and gives a graph; inside a query, MATCH gives a table of bindings that CONSTRUCT consumes. It defines union, intersection and difference on graphs, and GROUP inside CONSTRUCT.
+- **One small graph per match.** Gradoop types its operators over "logical graphs" and "graph collections"; its pattern matching takes a graph and returns a collection with one graph per match; its summarization operator folds vertex groups into vertices and the edges between groups into summary edges, with aggregates.
+Which reading he means is open (section 10.1).
+
+Gains, argued and not measured:
+- Fewer operators. Deployment health as built has 16 operators and 16 pipes; redrawn it has 4 and 6. The joins of built state, the renaming projects and the union of constant rows disappear into patterns.
+- Every pipe can be shown as a graph, in the same canvas as the data.
+- One kind of box. Lineage is element to element at every operator.
+- A pipe and a stacked projection become the same thing; a stacked projection is a pipe whose graph is named and kept. His earlier answer "stack programs instead" then reads: a rule sees only the graph on its incoming pipe.
+
+Costs:
+- Each operator finds again what the one before had in hand: one more join per pipe, unless the lowering can see that a pattern matches exactly what the previous template built (fusion, known from UnQL and XSLT processors; not worked out here).
+- Every template needs an identity, not only the last one. An author who does not program will not write it, so a default and a visible mark are needed.
+- A value that belongs to no element needs a node to sit on.
+- Conditions and computed values stay text inside boxes.
+- New things a drawing must show: an optional part of a pattern, the line that says "the built node is this matched node", and whether everything else stays (extend) or only what is built (project).
+
+### 3.4 A join that depends on time
+The network case needs: a flow from an address at time t belongs to the pod that held the address at t.
+
+Names in existing languages:
+- KQL documents a pattern, "Joining within time window": join on the key and a time bin, then a `where` on the distance.
+- Flink SQL has "interval joins" (two append-only inputs with time attributes, a time range in the condition; state is dropped as time advances) and "temporal joins" with `FOR SYSTEM_TIME AS OF` against a versioned table (state: the versions per key since the last watermark).
+- SQL:2011 has application-time period tables and `FOR SYSTEM_TIME AS OF` on system-versioned tables.
+- DuckDB has as-of joins: the nearest earlier row in a reference table.
+- Materialize has temporal filters: a row enters while a condition on the clock holds and is taken back when it stops.
+
+Against the three promises (argued, not run):
+| Promise | Holds | Condition |
+|---|---|---|
+| bounded memory | yes, with a limit on lateness | per address: who held it when, and the flows per bin, until no late record can arrive. Without the limit both grow without bound. |
+| many machines | yes | key: network and address (private addresses repeat). Hot keys: a firewall, DNS, a node address standing for many pods. |
+| only what changed | yes | a new flow touches one key. A late record about an address sends -1 and +1 for the flows in its interval, while the limit allows. After that a result is final, right or wrong. |
+
+- The limit must cover the slowest source.
+- Under his answer "accept it and mark the node", this operator carries two marks by its nature: its result can change until late data can no longer arrive, and it can take back what it built.
+- The engine, read from its README and not from code: windows close by a frontier and stay revisable for a late horizon; an element's existence per window is tracked for silence; Cilium flows arrive with pod names, so no address join was needed so far; the pattern operator has no variable-length edges. A join with a time condition was not found there.
+
 ## 4. What is known to be impossible or hard
 
 - **Rules without recursion see a fixed distance.** Gaifman's locality theorem: a first-order question depends only on what lies within a fixed number of steps of the elements it names. Consequence: such a rule can run on a part plus a border of that width. Reachability is not local in this sense (Libkin, chapter 4), so no border is enough for it. Sources: [Gaifman](https://cris.huji.ac.il/en/publications/on-local-and-non-local-properties/), [Libkin](https://homepages.inf.ed.ac.uk/libkin/fmt/fmt.pdf).
@@ -409,6 +492,55 @@ Third round, asked interactively on 14 November 2026 after the second page:
 - **A child in state Unknown:** "Set per parent". A setting on each roll-up.
 - **May a rule read what another rule built:** "No, stack programs instead". A rule reads input graphs only; what a program built is read by a second program on top. So the roll-up of a health model is a program stacked on the program that builds entities and states, one level per program or a bounded path.
 - **Delivery to Azure Monitor:** "Explore both further".
+
+Fourth round, answered on the first page and relayed on 15 November 2026. These settle section 10:
+- **D1, main picture:** "Wired verbs with drawn patterns and targets".
+- **D2, on a pipe:** "Graphs". This overturns the narrowest choice of the picture C prototype, which carried rows (section 3.3).
+- **D3, how much one rule may see:** "A tree-shaped pattern".
+- **D4, a rule that cannot promise the three:** "Accept it and mark the node".
+- **D5, changing a graph in place:** "Build only, as today".
+- **D6, author:** "A domain person who does not program".
+- **D7, KQL work:** "Everything continues".
+- **D8, next step:** "Redraw real projections on paper" (section 11.2).
+- **A second use case** in his words (section 1.6).
+
+Fifth round, asked interactively on 15 November 2026 after the third page. His words, unedited:
+- **A graph on a pipe, one graph or one per match:** "I can't decide, but which one is more expressive, more composable and future proof?" Answered below.
+- **Who draws rules:** "there will be lots of pre-existing rules that already do 90% of the work. the domain person has to build an ontology and map it (visually) and then this will change the rules, or something lke that. Imagine that something will be shown to th domain expert and they will map , label an refine with quick lactions and this will then change or configure the rules."
+- **The same traffic seen by two sources:** "they mean different things and expose diferent information. not all pod to pod traffic is node to node traffic. also we might be able to say: these pods are on the same node and and these others are on different nodes, but very chatty, so we might expose metrics like network distance and latency reason through that"
+- **Next step:** "I don't like the term "deploy health" or deployment healyh. Next step is: imeplemant various reslistic scenarios. including a health model that has user flows on the top, system compnetnts underneats and then various azure services and signals connect to it"
+
+What follows from the fifth round (this note's reading):
+- **One graph or one per match.** One graph per match says more: it keeps apart which elements were found together, and their union is the one graph. One graph composes better: one kind of pipe, every operator fits every pipe, every pipe can be shown in the canvas, and a pipe equals a stacked projection. The difference closes when a match that matters is built as an element: a rule that builds one node per match, with lineage to what it matched, carries the same information inside one graph. His earlier answers already require an identity for everything built. So one graph is the smaller commitment that loses nothing that cannot be built back; one per match would add a second kind of pipe and a second set of operators (Gradoop has both sets).
+- **The author does not draw rules.** Rules exist beforehand. The domain person builds an ontology, maps what is shown onto it, labels and refines with quick actions; those acts configure the rules. So the authored part is an ontology and a mapping, both graphs. This is the health model finding (rules are generic, facts are authored) taken one step further, and close to the parked note 08 (rules as data read by a projection). What the graph form of a rule must be good at changes: it is read and configured far more often than it is drawn.
+- **Pod traffic and node traffic are two kinds of fact,** not two views of one. They are never summed and neither hides the other. New derived values are wanted across the two: whether two chatty workloads share a node, network distance, a reason for latency. Open question 3 of section 10.1 is settled this way; question 5 (node traffic no pod explains) loses most of its weight.
+- **The name "deployment health" is disliked.** It is the name of a shipped projection; a new name is not chosen here.
+- **Next step is implementation of several realistic scenarios,** among them a health model with user flows on top, system components underneath, and Azure services and signals connected to them. This touches the engine and is the orchestrator's to plan.
+
+Sixth round, his answers on the third page, given on 15 November 2026. His words:
+- **Q1, a graph on a pipe:** "One graph".
+- **Q2, who draws rules:** "Both, for different projections". Note: "if might be that there are many predefined rules and then a rule that combines them with a domain driven ontology to create the final rule".
+- **Q3, the same traffic seen by two sources:** "Keep both as evidence, never sum across sources". Note: "pod and node flows might overlap but they might still show different things and node flows might be hard to map to pods. so not sure this will really happen".
+- **Q4, flow, DNS lookup, configuration, permission:** "One TalksTo edge with a set of evidence kinds". Note: "depends on the rule, but yes, a talksTo rule could check if they all are observable".
+- **Q5, node traffic that no pod explains:** "Leave it out of the service diagram". Note: "uncaptured traffic might trigger a special rule and what happens is in that rule. so maybe we can have the service digram not showing it but a special diagram that shows all not capture traffic?"
+- **Q6, how long a result may still change:** "Per source".
+- **Q7, a ring in a pattern:** "Accept the ring and split it for the author, marked".
+- **Q8, what next:** first sent with no option, then on a second sending of the same answers: "A study with a domain person on these pictures". Note both times: "redoe all of them in practice".
+- **Terms:** the join that depends on time: "joining within time window", note: "all joins should support time and some nodes might force it". Optional part: OPTIONAL MATCH. Folding a graph by key: summarize ... by. A value as a node: identity domain. Evidence behind a built edge: lineage. Limit on lateness: late horizon.
+
+What follows from the sixth round (this note's reading):
+- **Section 10.1 is answered** except the wording of marks for an author who does not program.
+- **A rule can produce a rule.** His note on Q2 describes predefined rules combined with a domain ontology into the final rule. That is a projection whose output is a program, which needs the program stored as a graph (the catalog) and is the subject of parked note 08.
+- **Time is a property of every join, not a separate operator.** Each join may carry a time condition, and some node types (an address held for a while) force one. Then every join is marked as waiting unless shown otherwise, and the late horizon is set per source (Q6), so a join of two sources waits for the slower one.
+- **Evidence is lineage.** No new construct for evidence kinds: the kinds behind a TalksTo edge are read from the lineage of the rules that built it. This asks lineage to name the rule, not only the source elements.
+- **Unexplained traffic gets its own projection.** The service diagram needs no negative application condition; a separate diagram of traffic not captured does.
+- **Rings are accepted and split by the tool.** The author draws the ring; the lowering splits it into tree-shaped rules and a join on built edges, and marks it. D3 ("a tree-shaped pattern") then holds for what is lowered, not for what is drawn.
+- **Next is practice, then a study:** all redrawn projections built and run (engine work, the orchestrator's to plan), and a study with a domain person on the pictures. Which comes first he did not say; the note reads the study as done on pictures of projections that run.
+
+Typed by him on 15 November 2026, after the sixth round:
+- **Name:** "just "health graph" instead of deployment health".
+- **Delivery:** "no delivery required yet to azur emonitor, jsut our visualizations". The two delivery options of section 1.5 are parked.
+- **Marks:** "I have no clue what a mark is". The word was this note's and was never explained to him. Meant is: a warning shown on an operator's box when that operator cannot keep one of his three wishes (bounded memory, many machines, only what changed), from his answer "Accept it and mark the node". The pages must say "warning on the box" and show one, not use the word alone.
 
 Consequences drawn here, not by him:
 - "All three equally" means the language can promise them only for rules whose cost class is known, as XSLT does with streamability. Whether to refuse other rules is decision D4.
@@ -514,7 +646,44 @@ Shorthand used on the page and in this note, not proposed as terms:
 - rule graph, dataflow graph, syntax graph: 'rule graph' is GROOVE's word; 'dataflow graph' is standard; 'syntax graph' stands for abstract syntax graph
 - wall: a known limit; in the literature a lower bound or an undecidability result
 
+### 9.1 The user's picks (15 November 2026)
+From here on the note and the pages use these words. Rows of the table above, in order:
+
+| Concept | His pick |
+|---|---|
+| shape a rule looks for | graph pattern |
+| what a rule builds per match | CONSTRUCT template |
+| hole in the target | variable |
+| pattern and what is built | rule |
+| one operation | operator |
+| connection to the next operator | pipe |
+| keep what meets a condition | where |
+| add or change values | project |
+| combine by key | summarize ... by |
+| bring two sets together | join kind=... |
+| several branches as one | union |
+| follow edges up to N steps | variable-length edge |
+| hand a match to whichever rule treats it | no pick; his note: "apply-graph-pattern" |
+| stable id of a created element | identity(domain, key, ...) |
+| what an element was made from | lineage |
+| step without memory | map |
+| step with memory under a key | reduce |
+| one fact becoming or ceasing to be true | patch |
+| share of keys one worker holds | shuffle (hint.shufflekey) |
+| what a worker holds beyond its share | halo |
+| named graph a set of rules builds | projection |
+| named, reused piece | node group; his note: "let's call it a node-function?" |
+| span of time | bin() |
+| rule that holds because something is absent | negative application condition (NAC) |
+| rule sets one after another | stacked projection |
+| program stored as data | catalog |
+| name of the language | no name yet |
+
+- "apply-graph-pattern" and "node-function" are his own words, not taken from an existing language. They are recorded, not adopted.
+- Six concepts are new in this round and offered for the same review on the third page: the join that depends on time, an optional part of a pattern, folding a graph by key, a value as a node, the kinds of evidence behind a built edge, the limit on lateness.
+
 ## 10. Decisions for the user
+All eight were answered on 15 November 2026 (section 6, fourth round). The text below is kept as asked.
 No recommendation is made. Each option lists what follows from it. The earlier questions on the meaning of "a graph", on text or graph as the truth, and on recursion are answered in section 6.
 
 **D1. What is the main picture of a program?** You asked for both a graph of verbs and rules that look like the data. They can be one thing or two.
@@ -557,6 +726,18 @@ No recommendation is made. Each option lists what follows from it. The earlier q
 - *A throwaway prototype on the engine.* One projection as a program graph, lowered to the engine's existing operators and compared by digest with its KQL twin.
 - *Stop here.* The map is enough for now.
 
+### 10.1 Open after the fourth round
+Asked on the third page and interactively; no recommendation.
+1. A graph on a pipe: one graph, one small graph per match, or either.
+2. Who draws rules: the domain person, or someone else while the domain person edits authored facts. In the health model redrawing the three programs name no flow, component or threshold; everything specific is in the authored graph.
+3. The same traffic seen by two sources: the finer source wins, both kept as evidence and never summed, or summed.
+4. A flow, a DNS lookup, a configuration, a permission: one edge type with a set of evidence kinds, or separate types.
+5. Node traffic that no pod explains: shown on the cluster and marked, left out, or all node traffic shown on the cluster.
+6. How long a result may still change.
+7. A ring in a pattern: refused, split for the author, or accepted and marked.
+8. The next step.
+Also open: what a mark says to an author who does not program. A cost class will not do; it has to be a sentence about their data.
+
 ## 11. Prototypes
 Two small examples live in the page, not in the engine:
 - **Is this part enough?** A workload, three services and five pods, one pod failing. Asking for the state of an element highlights what the answer needed. Following containment only, the part is the subtree. Following dependencies as well, most of the graph is needed, and a worker holding only the subtree gives a wrong answer.
@@ -589,6 +770,17 @@ Assumptions made for the health model example, to be confirmed: the shape of the
 
 The pictures were checked for overlapping and clipped labels by a geometry test and looked at once at phone width. The evaluator of the mock was run on its sample graph. No screen reader test was done.
 
+### 11.2 Third page: three projections redrawn with graphs on pipes
+Published at https://claude.ai/artifact/LLmy8mqMb9zRFS2KUgATpW (private to its owner until shared). It uses his terms (section 9.1) and draws, from data, each operator as a box with a graph pattern on the left and a CONSTRUCT template on the right.
+
+- **Deployment health.** As built by the picture C prototype (rows on pipes, 16 operators, 16 pipes, state digest equal to the KQL text on four fixtures) beside the redrawing (graphs on pipes, 4 operators, 6 pipes: `workloads`, `talks`, `union`, `edgeState`). Still text: one condition, three expressions, one parameter.
+- **Health model.** Three stacked projections: entities from the authored and the observed graph, states from signal rules, and a roll-up of one level used three times in a row (depth bounded by the number of boxes; no loop). A resource used by two flows is one node with two parents, because its identity is the observed resource. `WorstOf` alone could be one box with a variable-length edge; `MaxNotHealthy` could not.
+- **Network case.** A merged graph `network` from three inputs (five rules between two unions), then `azureView` (one rule) and `serviceView` (three operators, one with a negative application condition, one a join on built edges).
+- **A small example of the time join:** four flows from one address held by two pods in turn, under three ways of joining, and a late record that moves one flow by a -1 and a +1 patch.
+- **Marks** (his answer D4), working labels for review: keeps memory per key; needs neighbours from other workers (halo); result can change until late data stops; can take back what it built; one key gets most of the work.
+
+Assumptions to confirm: the shape of the authored input of the health model; that `Average` is the mean of child severities; the invented inputs of the network case.
+
 ## 12. What could not be verified
 - Publisher pages of Springer, ACM and Elsevier refused access; the DOIs of those papers were confirmed through indexes only. They are marked in the sources.
 - Termination of graph rewriting as undecidable (Plump 1998) and the details of XSLT's streamability classes were not read in a source for this note.
@@ -601,6 +793,10 @@ The pictures were checked for overlapping and clipped labels by a geometry test 
 - TigerGraph's distributed execution of accumulators, and whether QVT specifications are stored as models, are not stated on the pages opened.
 - The ratings of section 2 are a reading of documents; no tool was run.
 - Saving marks from the page was not exercised in a real viewer; reading the page's database from this session works and returned no documents.
+- Fourth round: nothing of the third page ran on the engine. The lowering of graphs on pipes, the operator counts of the redrawings and the three promises for the time join are argued, not measured.
+- The network case is drawn from the user's description with invented inputs. No capture was read. How Azure flow records and Cilium report addresses and with what delay was not checked. No official statement that pod addresses are reused was found.
+- The Gradoop paper on grouping (BTW 2017) and the T-GQL paper were seen as abstracts or index entries only. The KQL page on joining within a time window does not say that KQL lacks an as-of join; that is not claimed.
+- Whether fusion of a template with the next pattern is possible in the engine was not examined.
 
 ## Sources
 Opened on 14 November 2026 unless marked.
@@ -688,3 +884,15 @@ Opened on 14 November 2026 unless marked.
 - [EMF Compare, Eclipse](https://eclipse.dev/emf/compare/)
 - [LabVIEW, comparing VIs](https://www.ni.com/docs/en-US/bundle/labview/page/comparing-vis.html) (found by search, not opened)
 - [Blender manual, node groups](https://docs.blender.org/manual/en/latest/interface/controls/nodes/groups.html) (page reached, text not read)
+
+Opened on 15 November 2026:
+- [Junghanns, Petermann, Gomez, Rahm, GRADOOP: scalable graph data management and analytics with Hadoop, technical report, 2015](https://arxiv.org/abs/1506.00548)
+- [Junghanns, Petermann, Rahm, Distributed grouping of property graphs with GRADOOP, BTW 2017](https://dl.gi.de/items/973dbc1e-94d6-46ce-9b63-a1f0e73b14ab/full) (abstract only)
+- [Apache Flink SQL, joins: interval joins and temporal joins](https://nightlies.apache.org/flink/flink-docs-release-2.3/docs/sql/reference/queries/joins/)
+- [Kusto Query Language, Joining within time window](https://learn.microsoft.com/en-us/kusto/query/join-time-window)
+- [DuckDB, FROM and JOIN clauses: as-of joins](https://duckdb.org/docs/2.0/sql/query_syntax/from.html)
+- [Kulkarni and Michels, Temporal features in SQL:2011, SIGMOD Record 2012](https://sigmodrecord.org/publications/sigmodRecord/1209/pdfs/07.industry.kulkarni.pdf)
+- [Materialize, Temporal filters (time windows)](https://materialize.com/docs/transform-data/patterns/temporal-filters/)
+- [Ngo, Re, Rudra, Skew strikes back: new developments in the theory of join algorithms, 2013](https://arxiv.org/abs/1310.3314) (pairwise join plans need quadratic time on some triangle inputs; the bound is N to the power 1.5)
+- [Debrouvier and others, A model and query language for temporal graph databases, 2021](https://doi.org/10.1007/s00778-021-00675-4) (index entry; the paper was not opened)
+- [Microsoft Entra Workload ID on Azure Kubernetes Service](https://learn.microsoft.com/en-us/azure/aks/workload-identity-overview) (federated identity credential)
