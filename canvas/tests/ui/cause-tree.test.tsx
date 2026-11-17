@@ -22,8 +22,8 @@ describe("the tree of the demo workload, reached by scrubbing", () => {
     const user = userEvent.setup();
     await openApp("demo", "data");
     await act(async () => { dispatch({ type: "ui/activeGraph", graph: "workload" }); });
-    // in steps from the start to eleven minutes (revision 11)
-    for (let t = 0; t <= 660; t += 60) await act(async () => { dispatch({ type: "time/seek", t }); });
+    // in steps from the start to sixteen minutes (revision 16)
+    for (let t = 0; t <= 960; t += 60) await act(async () => { dispatch({ type: "time/seek", t }); });
     await user.click(await screen.findByRole("tab", { name: /^Tree/ }));
     const tree = await screen.findByRole("tree", { name: "Tree of workload" });
     await waitFor(() => expect(within(tree).getAllByRole("treeitem").filter((r) => /origin/.test(r.textContent ?? "")).map(labelOf)).toEqual(expect.arrayContaining(["pg-shop", "web-7d4-3"])));

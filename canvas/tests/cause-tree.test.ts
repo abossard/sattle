@@ -1,6 +1,6 @@
 // The tree of a graph with a roll-up answers where a problem starts: by default it nests along the relation the state was computed from, marks
 // the origins (own state as bad as the rolled-up one) and opens the paths to them; an element reached by two paths is under both. Read on the
-// demo workload: the cache overloaded (revision 8), the database server down and one pod crash-looping (revision 11).
+// demo workload: the cache overloaded (revision 13), the database server down and one pod crash-looping (revision 16).
 import { describe, expect, it } from "vitest";
 import { History } from "../src/app/history";
 import { blamePath } from "../src/app/edge-kinds";
@@ -32,9 +32,9 @@ describe("the workload tree by cause", () => {
     expect(treeOf(h.graph, info)?.choice).toBe("cause");
   });
 
-  it("the cache overloaded (revision 8): the cache is the origin, the web and the shop are degraded through it, the api is not", async () => {
+  it("the cache overloaded (revision 13): the cache is the origin, the web and the shop are degraded through it, the api is not", async () => {
     const { info, h } = await load("workload");
-    h.seek(8);
+    h.seek(13);
     const m = treeOf(h.graph, info)!.model;
     expect(labels(m, [...m.nodes.values()].filter((n) => n.origin).map((n) => n.id))).toEqual(["shopcache"]);
     expect(labels(m, byLabel(m, "shop").through)).toEqual(["web"]);
@@ -43,9 +43,9 @@ describe("the workload tree by cause", () => {
     expect(opened(m)).toContain("shop > web > shopcache Degraded origin");
   });
 
-  it("the database server down (revision 11): the server is the origin under the database, under everything that needs it; the pod is a second origin under the web", async () => {
+  it("the database server down (revision 16): the server is the origin under the database, under everything that needs it; the pod is a second origin under the web", async () => {
     const { info, h } = await load("workload");
-    h.seek(11);
+    h.seek(16);
     const m = treeOf(h.graph, info)!.model;
     expect(labels(m, [...m.nodes.values()].filter((n) => n.origin).map((n) => n.id))).toEqual(["pg-shop", "web-7d4-3"]);
     expect(labels(m, byLabel(m, "database").through)).toEqual(["pg-shop"]);
