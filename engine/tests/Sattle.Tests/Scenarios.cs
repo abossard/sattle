@@ -58,6 +58,9 @@ public static class Scenarios
     /// <summary>The run of `dir` at chunk 100000, with its engine.</summary>
     public static ReplayTests.Run Run(string dir) => Runs.GetOrAdd(dir, d => new Lazy<ReplayTests.Run>(() => Gated(() => Replay(d, Full)))).Value;
 
+    /// <summary>One more replay of `dir` at chunk 100000, the caller's own: what a test of determinism compares the shared run with.</summary>
+    public static ReplayTests.Run Again(string dir) => Gated(() => Replay(dir, Full));
+
     /// <summary>The summary of the run of `dir` at `chunk`.</summary>
     public static Summary Of(string dir, int chunk) => Summaries.GetOrAdd((dir, chunk), k => new Lazy<Summary>(() =>
     {

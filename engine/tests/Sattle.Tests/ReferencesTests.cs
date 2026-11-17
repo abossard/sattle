@@ -65,7 +65,7 @@ public class ReferencesTests
                 var refs = h.Snapshot(id, null)["extent"]!["references"]!.AsArray();
                 if (id == "authored")
                 {
-                    var realizes = h.Engine.Graph("authored").State.Rels.Count(r => Ids.Name(r.Type) == "Realizes");
+                    var realizes = h.Relationships("authored", "Realizes").Count;
                     Assert.Equal(realizes.ToString(), g["dangling"]!.GetValue<string>());
                     Assert.All(refs, r => { Assert.Equal("inOtherGraph", r!["state"]!.GetValue<string>()); Assert.Equal("master", r["graph"]!.GetValue<string>()); Assert.Equal("Service", r["entityType"]!.GetValue<string>()); });
                     continue;
@@ -122,9 +122,12 @@ public class ReferencesTests
     [Fact]
     public void The_estate_workload_graphs_have_no_edge_to_a_component_outside_the_model()
     {
-        var e = Scenarios.Run(Estate).Engine;
-        foreach (var g in new[] { e.Graph("workloadStructure").State, e.Graph("workload").State })
-            Assert.DoesNotContain(g.Rels, r => g.Entity(r.Source) is null || g.Entity(r.Target) is null);
+        var e = Scenarios.Run(Estate);
+        foreach (var graph in new[] { "workloadStructure", "workload" })
+        {
+            var ids = e.Entities(graph).Select(x => x["id"].Id()).ToHashSet();
+            Assert.DoesNotContain(e.Relationships(graph), r => !ids.Contains(r["source"].Id()) || !ids.Contains(r["target"].Id()));
+        }
     }
 
     [Trait("Category", "Capture")]
@@ -135,8 +138,8 @@ public class ReferencesTests
         Assert.NotNull(dir);
         var run = Scenarios.Run(dir);
         foreach (var g in run.Engine.Graphs.Where(g => !g.IsMaster))
-            Assert.Empty(run.Export.Unresolved(g));
-        var master = run.Export.Unresolved(run.Engine.Master);
+            Assert.Empty(run.Read(x => x.Unresolved(g)));
+        var master = run.Read(x => x.Unresolved(run.Engine.Master));
         Assert.NotEmpty(master);                                                       // the capture names resources and pods that no source listed
         Assert.All(master, r => { Assert.Equal("absent", r.State); Assert.NotNull(r.EntityType); Assert.NotNull(r.Domain); Assert.NotEmpty(r.Key); });
     }
@@ -182,7 +185,7 @@ public class ReferencesTests
             using (h)
             {
                 var run = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
-                run.Export.WriteFiles(outDir, Repo.LoadExamples(out _).Spaces.Values.Single());
+                run.Read(x => { x.WriteFiles(outDir, Repo.LoadExamples(out _).Spaces.Values.Single()); return 0; });
                 var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(outDir, "manifest.json")))!["graphs"]!.AsObject();
                 Assert.All(manifest, g =>
                 {

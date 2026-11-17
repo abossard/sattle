@@ -129,7 +129,7 @@ public class LineageTests
         var dir = Path.Combine(Path.GetTempPath(), "sattle-out-" + Guid.NewGuid().ToString("N"));
         try
         {
-            run.Export.WriteFiles(dir, Repo.LoadExamples(out _).Spaces.Values.Single());
+            run.Read(x => { x.WriteFiles(dir, Repo.LoadExamples(out _).Spaces.Values.Single()); return 0; });
             var h = OnEstate.Value;
             var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["graphs"]!.AsObject();
             // every graph of the space is there with what it is, in the words of its projection, and with its edges in the final snapshot and in the patches

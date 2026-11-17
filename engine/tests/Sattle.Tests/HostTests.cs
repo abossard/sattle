@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), telemetry and meters (Theorem 7.1), lineage. A test that only reads shares one host of the class.</summary>
+/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), telemetry and meters (Theorem 7.1), the hysteresis of a threshold (Theorem 7.4), lineage. A test that only reads shares one host of the class.</summary>
 public class HostTests
 {
     const long Min = 60_000_000_000;
@@ -14,7 +14,10 @@ public class HostTests
     static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f, Repo.Projections)); });
 
     /// <summary>A host on the example definitions. The checked catalog is loaded once per test run (loading costs more than a host), every host gets its own engine and state.</summary>
-    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" }, Shared.Value.Loaded);
+    public static SpaceHost NewHost() => NewHost(lateHorizon: 3);
+
+    /// <summary>The same with another late horizon: 1,000,000 windows for a recorded input whose every window stays revisable, as `sattle replay` sets it.</summary>
+    public static SpaceHost NewHost(int? lateHorizon) => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = lateHorizon }, Shared.Value.Loaded);
 
     /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
@@ -208,6 +211,26 @@ public class HostTests
         var revs = h.Patches("master", 0).Select(p => long.Parse(p["to"]!["revision"]!["value"]!.GetValue<string>())).ToList();
         Assert.Equal(revs.Select((_, i) => (long)i + 1), revs);
         h.Unsubscribe(snap);
+    }
+
+    /// <summary>The service tree of the example definitions on six pods of three services in three namespaces, with flows between two of them: a node per service with its two pods as a structural fact, a group per namespace that contains its service, one dependency.</summary>
+    [Fact]
+    public void The_service_tree_has_a_node_per_service_with_its_pods_a_group_per_namespace_and_the_dependency_the_flows_show()
+    {
+        var h = Driven.Value;
+        var nodes = h.Entities("serviceTree", "ServiceNode");
+        Assert.Equal(3, nodes.Count);
+        Assert.All(nodes, x => Assert.Equal("2", x.Prop("pods")));
+        Assert.Equal((3, 3, 1), (h.Entities("serviceTree", "ServiceGroup").Count, h.Relationships("serviceTree", "Contains").Count, h.Relationships("serviceTree", "DependsOn").Count));
+    }
+
+    /// <summary>Theorem 7.4 (bounded churn) on served patches: the drop ratio is over the threshold in windows 0 to 2 and under it in windows 3 to 8, and the status of the dependency changes only when the state machine of the threshold changes state. Its served history is ok, degraded, ok: at most floor(N / n) = 3 changes for N = 9 windows and runs of n = 3.</summary>
+    [Fact]
+    public void Threshold_hysteresis_changes_the_structural_status_only_on_state_changes()
+    {
+        var statuses = Driven.Value.Patches("serviceTree", 0).SelectMany(p => p["edits"]!.AsArray()).Where(e => e!["after"] is { } after && after.Is("DependsOn"))
+            .Select(e => e!["after"]!.Prop("status")).Where(s => s is not null).ToList();
+        Assert.Equal(["ok", "degraded", "ok"], statuses);
     }
 
     [Fact]

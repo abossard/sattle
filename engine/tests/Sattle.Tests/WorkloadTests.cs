@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Runtime;
 
@@ -11,29 +12,27 @@ namespace Sattle.Tests;
 public class WorkloadTests
 {
     const long Min = 60_000_000_000;
-    const string M = "d:acme.workload/prop:";
     static readonly DateTimeOffset T0 = new(2026, 1, 1, 10, 0, 0, TimeSpan.Zero);
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Lazy<Engine>> Runs = new();
-    /// <summary>The estate replayed up to the capture time `seconds` after 10:00 (all of it for -1).</summary>
-    static Engine At(int seconds) => Runs.GetOrAdd(seconds, s => new Lazy<Engine>(() =>
-    {
-        var cat = Repo.LoadExamples(out _);
-        var space = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
-        {
-            ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = s < 0 ? null : T0.AddSeconds(s).ToUnixTimeMilliseconds() * 1_000_000,
-        }).Run(EstateTests.EstateDir);
-        return engine;
-    })).Value;
+    /// <summary>A replay of `dir` up to the capture time `seconds` after 10:00 (all of it for -1), on the example definitions or on `cat`. The tests read its graphs as they are served.</summary>
+    static ReplayTests.Run Until(string dir, int seconds, Sattle.Language.Catalog? cat = null) =>
+        ReplayTests.Replay(dir, 50, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: cat ?? Repo.LoadExamples(out _), until: seconds < 0 ? null : T0.AddSeconds(seconds).ToUnixTimeMilliseconds() * 1_000_000);
 
-    static string? P(Entity e, string prop) => e.Props.TryGet(M + prop, out var v) ? v switch { TextValue t => t.S, IntegerValue i => i.N.ToString(), _ => v.ToString() } : null;
-    static string NameOf(Graph g, string id) => g.Entity(id) is { } e ? P(e, "name") ?? P(e, "rule") ?? P(e, "detail") ?? id : id;
-    static Dictionary<string, string?> States(Engine e) =>
-        e.Graph("workload").State.Entities.Where(x => P(x, "state") is not null).ToDictionary(x => P(x, "kind") + ":" + P(x, "name"), x => P(x, "state"));
-    static HashSet<string> Edges(Graph g, string type) =>
-        [.. g.Rels.Where(r => Ids.Name(r.Type) == type).Select(r => NameOf(g, r.Source) + " -> " + NameOf(g, r.Target))];
+    static readonly System.Collections.Concurrent.ConcurrentDictionary<int, Lazy<ReplayTests.Run>> Runs = new();
+    /// <summary>The estate replayed up to the capture time `seconds` after 10:00 (all of it for -1), shared by the tests that read it.</summary>
+    static ReplayTests.Run At(int seconds) => Runs.GetOrAdd(seconds, s => new Lazy<ReplayTests.Run>(() => Until(EstateTests.EstateDir, s))).Value;
+
+    /// <summary>A served graph: its entities by id and its relationships.</summary>
+    sealed record G(Dictionary<string, JsonNode> Entities, List<JsonNode> Rels);
+    static G Of(ReplayTests.Run r, string graph) => new(r.Entities(graph).ToDictionary(x => x["id"].Id()), r.Relationships(graph));
+    static G Of(SpaceHost h, string graph) => new(h.Entities(graph).ToDictionary(x => x["id"].Id()), h.Relationships(graph));
+
+    static string? P(JsonNode e, string prop) => e.Prop(prop);
+    static string NameOf(G g, string id) => g.Entities.TryGetValue(id, out var e) ? P(e, "name") ?? P(e, "rule") ?? P(e, "detail") ?? id : id;
+    static Dictionary<string, string?> States(ReplayTests.Run e) =>
+        e.Entities("workload").Where(x => P(x, "state") is not null).ToDictionary(x => P(x, "kind") + ":" + P(x, "name"), x => P(x, "state"));
+    static HashSet<string> Edges(G g, string type) =>
+        [.. g.Rels.Where(r => r.Is(type)).Select(r => NameOf(g, r["source"].Id()) + " -> " + NameOf(g, r["target"].Id()))];
 
     /// <summary>Code review 2, defect 4, on the workload model: the answer api gave to web is no dependency of api on web. Scenario A (the cache is overloaded and only web uses it) leaves api healthy. Before, the answer made api depend on web and api became Degraded.</summary>
     [Fact]
@@ -49,16 +48,10 @@ public class WorkloadTests
             }
             // what Hubble writes for the answer of api to web: the ends are those of the packet, is_reply says it is the answer
             File.WriteAllLines(Path.Combine(dir, "hubble", "replies.ndjson"), ["""{"v":1,"source":"hubble","capturedAt":"2026-01-01T10:00:20.000Z","seq":1,"key":"extra","meta":null,"payload":{"flow":{"time":"2026-01-01T10:00:20.000Z","uuid":"reply-0","verdict":"FORWARDED","is_reply":true,"source":{"namespace":"shop","cluster_name":"synth","pod_name":"api-5c9-1"},"destination":{"namespace":"shop","cluster_name":"synth","pod_name":"web-7d4-1"}},"node_name":"node-a","time":"2026-01-01T10:00:20.000Z"}}"""]);
-            var cat = Repo.LoadExamples(out _);
-            var space = cat.Spaces.Keys.Single();
-            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
-            {
-                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(390).ToUnixTimeMilliseconds() * 1_000_000,
-            }).Run(dir);
-            Assert.DoesNotContain("api -> web", Edges(engine.Graph("workloadStructure").State, "DependsOn"));
-            Assert.Contains("web -> api", Edges(engine.Graph("workloadStructure").State, "DependsOn"));
-            Assert.Equal("Healthy", States(engine)["service:api"]);
+            var run = Until(dir, 390); using var engine = run.Engine;
+            Assert.DoesNotContain("api -> web", Edges(Of(run, "workloadStructure"), "DependsOn"));
+            Assert.Contains("web -> api", Edges(Of(run, "workloadStructure"), "DependsOn"));
+            Assert.Equal("Healthy", States(run)["service:api"]);
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -76,20 +69,20 @@ public class WorkloadTests
     [InlineData("Exposes", "apim-shop -> api")]
     public void The_workload_graph_has_each_edge_the_estate_shows_and_no_other(string type, string expected)
     {
-        Assert.Equal(expected.Split(',').Order(StringComparer.Ordinal), Edges(At(-1).Graph("workload").State, type).Order(StringComparer.Ordinal));
+        Assert.Equal(expected.Split(',').Order(StringComparer.Ordinal), Edges(Of(At(-1), "workload"), type).Order(StringComparer.Ordinal));
     }
 
     [Fact]
     public void Containment_is_a_tree_under_the_workload_and_every_node_has_a_name_and_an_edge()
     {
-        var g = At(-1).Graph("workload").State;
-        var parents = g.Rels.Where(r => Ids.Name(r.Type) == "Contains").GroupBy(r => r.Target).ToDictionary(x => x.Key, x => x.Count());
+        var g = Of(At(-1), "workload"); var contains = g.Rels.Where(r => r.Is("Contains")).ToList();
+        var parents = contains.GroupBy(r => r["target"].Id()).ToDictionary(x => x.Key, x => x.Count());
         Assert.All(parents.Values, n => Assert.Equal(1, n));                                                          // one parent each
-        var roots = g.Rels.Where(r => Ids.Name(r.Type) == "Contains").Select(r => r.Source).Distinct().Where(s => !parents.ContainsKey(s)).ToList();
-        Assert.Equal(["workload:shop"], roots.Select(r => P(g.Entity(r)!, "kind") + ":" + P(g.Entity(r)!, "name")));   // and one root, the workload
-        var touched = g.Rels.SelectMany(r => new[] { r.Source, r.Target }).ToHashSet();
-        Assert.All(g.Entities, e => Assert.True(touched.Contains(e.Id), $"{Ids.Name(e.Type)} {NameOf(g, e.Id)} has no edge"));
-        Assert.All(g.Entities, e => Assert.False(string.IsNullOrEmpty(P(e, "name") ?? P(e, "rule") ?? P(e, "detail")), $"{Ids.Name(e.Type)} {e.Id} has no label"));
+        var roots = contains.Select(r => r["source"].Id()).Distinct().Where(s => !parents.ContainsKey(s)).ToList();
+        Assert.Equal(["workload:shop"], roots.Select(r => P(g.Entities[r], "kind") + ":" + P(g.Entities[r], "name")));   // and one root, the workload
+        var touched = g.Rels.SelectMany(r => new[] { r["source"].Id(), r["target"].Id() }).ToHashSet();
+        Assert.All(g.Entities, e => Assert.True(touched.Contains(e.Key), $"{e.Value["type"].Id()} {NameOf(g, e.Key)} has no edge"));
+        Assert.All(g.Entities, e => Assert.False(string.IsNullOrEmpty(P(e.Value, "name") ?? P(e.Value, "rule") ?? P(e.Value, "detail")), $"{e.Value["type"].Id()} {e.Key} has no label"));
     }
 
     /// <summary>Each way of finding a dependency finds its own on the estate, and the evidence says what it saw.</summary>
@@ -102,8 +95,7 @@ public class WorkloadTests
     [InlineData("backend", "/subscriptions/sub-0001/resourcegroups/rg-shop/providers/microsoft.apimanagement/service/apim-shop", "api", "backend api of apim-shop sends requests to 10.1.0.20")]
     public void Each_way_of_finding_a_dependency_finds_it_and_keeps_what_it_saw(string how, string source, string targetName, string seen)
     {
-        var g = At(-1).Graph("workload").State;
-        var evidence = g.Entities.Where(e => P(e, "how") == how && P(e, "sourceKey") == source).ToList();
+        var evidence = At(-1).Entities("workload").Where(e => P(e, "how") == how && P(e, "sourceKey") == source).ToList();
         Assert.Contains(evidence, e => P(e, "targetKey")!.EndsWith("/" + targetName, StringComparison.Ordinal) && P(e, "detail")!.Contains(seen, StringComparison.Ordinal));
     }
 
@@ -116,15 +108,15 @@ public class WorkloadTests
     {
         using var h = new SpaceHost(Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
-        var structure = h.Engine.Graph("workloadStructure").State;
-        Assert.Contains(structure.Rels, r => Ids.Name(r.Type) == "DependsOn" && NameOf(structure, r.Source) == "web" && NameOf(structure, r.Target) == "shopcache");
-        var evidence = structure.Entities.Single(e => P(e, "how") == how && P(e, "sourceKey") == "svc/synth/shop/web" && P(e, "targetKey")!.EndsWith("/shopcache", StringComparison.Ordinal));
-        Assert.Contains(structure.Rels, r => Ids.Name(r.Type) == "EvidenceFor" && r.Source == evidence.Id && NameOf(structure, r.Target) == "web");
-        var master = h.Engine.Master.State;
-        string TypeOf(string id) => master.Entity(id)?.Type ?? master.Rels.FirstOrDefault(r => r.Id == id)?.Type ?? "";
-        var sources = h.Lineage("workloadStructure", evidence.Id)["sources"]!.AsArray();
+        var structure = Of(h, "workloadStructure");
+        Assert.Contains(structure.Rels, r => r.Is("DependsOn") && NameOf(structure, r["source"].Id()) == "web" && NameOf(structure, r["target"].Id()) == "shopcache");
+        var evidence = structure.Entities.Values.Single(e => P(e, "how") == how && P(e, "sourceKey") == "svc/synth/shop/web" && P(e, "targetKey")!.EndsWith("/shopcache", StringComparison.Ordinal))["id"].Id();
+        Assert.Contains(structure.Rels, r => r.Is("EvidenceFor") && r["source"].Id() == evidence && NameOf(structure, r["target"].Id()) == "web");
+        var master = Of(h, "master");
+        string TypeOf(string id) => (master.Entities.GetValueOrDefault(id) ?? master.Rels.FirstOrDefault(r => r["id"].Id() == id))?["type"].Id().Split('.')[^1] ?? "";          // a served type name, without the module a clash puts before it
+        var sources = h.Lineage("workloadStructure", evidence)["sources"]!.AsArray();
         Assert.All(sources, x => Assert.Equal("master", x!["graph"]!.GetValue<string>()));
-        var types = sources.Select(x => Ids.Name(TypeOf(x!["element"]!.GetValue<string>()))).ToHashSet();
+        var types = sources.Select(x => TypeOf(x!["element"]!.GetValue<string>())).ToHashSet();
         Assert.True(masterTypes.Split(',').All(types.Contains), $"{how}: the lineage names {string.Join(", ", types.Order())}");
     }
 
@@ -171,13 +163,8 @@ public class WorkloadTests
         var cat = new Sattle.Language.Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        var space = cat.Spaces.Keys.Single();
-        using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
-        {
-            ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(210).ToUnixTimeMilliseconds() * 1_000_000,
-        }).Run(EstateTests.EstateDir);
-        var states = States(engine);
+        var run = Until(EstateTests.EstateDir, 210, cat); using var engine = run.Engine;
+        var states = States(run);
         Assert.Equal((deployment, service), (states["deployment:web"], states["service:web"]));
         _ = pods;
     }
@@ -224,18 +211,12 @@ public class WorkloadTests
             })));
             File.WriteAllLines(Path.Combine(dir, "authoring", "probe.ndjson"),
                 [Line("authoring", 0.8, "authoring/signalRule/pod-drops", new { kind = "signalRule", id = "pod-drops", type = "pod", meter = "drops", above = 5, enterAfter = 1, below = 0, exitAfter = 2, severity = 2, invert = false })]);
-            var cat = Repo.LoadExamples(out _);
-            var space = cat.Spaces.Keys.Single();
-            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
-            {
-                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(270).ToUnixTimeMilliseconds() * 1_000_000,
-            }).Run(dir);
-            var structure = engine.Graph("workloadStructure").State;
+            var run = Until(dir, 270); using var engine = run.Engine;
+            var structure = Of(run, "workloadStructure");
             Assert.Contains("shop -> probe", Edges(structure, "Contains"));
             Assert.Contains("probe -> probe-6f8-1", Edges(structure, "Contains"));
             Assert.Contains("probe-6f8-1 -> node-a", Edges(structure, "HostedOn"));
-            var states = States(engine);
+            var states = States(run);
             foreach (var pair in expected.Split(", "))
             {
                 var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
@@ -248,7 +229,7 @@ public class WorkloadTests
     // ---- when pods, endpoints and flows go away (#102) ----
 
     /// <summary>The estate with the lines `keep` lets through and the extra lines per file, replayed up to `seconds` after 10:00.</summary>
-    static Engine Changed(Func<string, bool> keep, (string File, string[] Lines)[] extra, int seconds)
+    static ReplayTests.Run Changed(Func<string, bool> keep, (string File, string[] Lines)[] extra, int seconds)
     {
         var dir = Path.Combine(Path.GetTempPath(), "sattle-changed-" + Guid.NewGuid().ToString("N"));
         try
@@ -259,22 +240,18 @@ public class WorkloadTests
                 File.WriteAllLines(target, File.ReadLines(f).Where(keep));
             }
             foreach (var (file, lines) in extra) File.AppendAllLines(Path.Combine(dir, file), lines);
-            var cat = Repo.LoadExamples(out _);
-            var space = cat.Spaces.Keys.Single();
-            var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions
-            {
-                ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", UntilNs = T0.AddSeconds(seconds).ToUnixTimeMilliseconds() * 1_000_000,
-            }).Run(dir);
-            return engine;
+            return Until(dir, seconds);
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
     static string Record(string source, double sec, string key, object payload) => System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?>
         { ["v"] = 1, ["source"] = source, ["capturedAt"] = T0.AddSeconds(sec).ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", System.Globalization.CultureInfo.InvariantCulture), ["seq"] = 0, ["key"] = key, ["meta"] = null, ["payload"] = payload });
     static string Watch(double sec, string type, string kind, string uid, int version, object obj) => Record("kubernetes-watch", sec, $"kubernetes-watch/{type}/{kind}/{uid}/{version}", new { type, @object = obj });
-    static HashSet<string> KeyEdges(Graph g, string type) =>
-        [.. g.Rels.Where(r => Ids.Name(r.Type) == type).Select(r => (g.Entity(r.Source) is { } s ? P(s, "key") : r.Source) + " -> " + (g.Entity(r.Target) is { } t ? P(t, "key") : r.Target))];
+    static HashSet<string> KeyEdges(G g, string type)
+    {
+        string Key(string id) => g.Entities.TryGetValue(id, out var e) ? P(e, "key")! : id;
+        return [.. g.Rels.Where(r => r.Is(type)).Select(r => Key(r["source"].Id()) + " -> " + Key(r["target"].Id()))];
+    }
 
     /// <summary>A Deployment stays under the Service that selects it whatever happens to its pods. At 10:02 the api EndpointSlice empties, as when no pod of api is ready ("leave"), or api is scaled to 0: its pods deleted, the slice emptied ("scale0");
     /// one scaled to 0 keeps its node with no pods and is Unknown, and so is its Service. When the Service's selector stops matching the pod template ("unselect"), the Deployment is under the workload; the pods still in the Service's EndpointSlice keep its traffic, so its state comes from what it depends on.
@@ -304,11 +281,11 @@ public class WorkloadTests
                 Watch(120.2, "DELETED", "Pod", "uid-api-5c9-1", 983, Pod("api-5c9-1", "node-a")),
                 Watch(120.2, "DELETED", "Pod", "uid-api-5c9-2", 984, Pod("api-5c9-2", "node-b")),
             ]);
-        using var engine = Changed(_ => true, [("kubernetes/changes.ndjson", [.. lines])], 210);
-        var contains = KeyEdges(engine.Graph("workloadStructure").State, "Contains");
+        var run = Changed(_ => true, [("kubernetes/changes.ndjson", [.. lines])], 210); using var engine = run.Engine;
+        var contains = KeyEdges(Of(run, "workloadStructure"), "Contains");
         foreach (var edge in contained.Split(',')) Assert.Contains(edge, contains);
         foreach (var edge in notContained.Split(',')) Assert.DoesNotContain(edge, contains);
-        var states = States(engine);
+        var states = States(run);
         foreach (var pair in expected.Split(", "))
         {
             var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
@@ -333,21 +310,21 @@ public class WorkloadTests
             return change.StartsWith("web-7d4-3", StringComparison.Ordinal) && !line.Contains("\"pod_name\":\"web-7d4-3\"", StringComparison.Ordinal);
         }
         var rule = Record("authoring", 0.8, "authoring/signalRule/pod-drops", new { kind = "signalRule", id = "pod-drops", type = "pod", meter = "drops", above = 5, enterAfter = 1, below = 0, exitAfter = 2, severity = 2, invert = false });
-        using var engine = Changed(Keep, [("authoring/pod-drops.ndjson", [rule])], seconds);
-        var states = States(engine);
+        var run = Changed(Keep, [("authoring/pod-drops.ndjson", [rule])], seconds); using var engine = run.Engine;
+        var states = States(run);
         foreach (var pair in expected.Split(", "))
         {
             var (component, state) = (pair[..pair.IndexOf('=')], pair[(pair.IndexOf('=') + 1)..]);
             Assert.True(states.TryGetValue(component, out var actual) && actual == state, $"{change}: {component} is {actual ?? "absent"}, expected {state}");
         }
-        var signal = engine.Graph("workload").State.Entities.Single(e => P(e, "componentKey") == "pod/synth/shop/" + pod && P(e, "rule") == "pod-drops");
+        var signal = run.Entities("workload").Single(e => P(e, "componentKey") == "pod/synth/shop/" + pod && P(e, "rule") == "pod-drops");
         Assert.Equal(signalState, P(signal, "signalState"));
     }
 
     [Fact]
     public void An_observed_call_carries_no_failure_API_Management_needs_api_and_not_the_other_way()
     {
-        var g = At(-1).Graph("workloadStructure").State;
+        var g = Of(At(-1), "workloadStructure");
         var affects = Edges(g, "Affects");
         Assert.Contains("apim-shop -> api", affects);           // the gateway is affected by its backend
         Assert.DoesNotContain("api -> apim-shop", affects);
@@ -357,7 +334,7 @@ public class WorkloadTests
     [Theory]
     [InlineData("workloadStructure")] [InlineData("workload")]
     public void The_workload_graphs_conform_to_their_ontology(string graph) =>
-        Assert.Empty(Conformance.Check(At(-1).Graph(graph).State, Repo.LoadExamples(out _).OntologyOf("acme.workload")));
+        Assert.Empty(Conformance.Check(At(-1).Engine.Graph(graph).State, Repo.LoadExamples(out _).OntologyOf("acme.workload")));
 
     [Trait("Category", "Capture")]
     [CaptureTheory]
@@ -368,10 +345,10 @@ public class WorkloadTests
         var r = Scenarios.Run(dir);
         foreach (var name in new[] { "workloadStructure", "workload" })
         {
-            var g = r.Engine.Graph(name).State;
-            Assert.Empty(g.Rels.Where(x => g.Entity(x.Source) is null || g.Entity(x.Target) is null).Select(x => Ids.Name(x.Type) + " " + x.Source + " -> " + x.Target));
+            var g = Of(r, name);
+            Assert.Empty(g.Rels.Where(x => !g.Entities.ContainsKey(x["source"].Id()) || !g.Entities.ContainsKey(x["target"].Id())).Select(x => x["type"].Id() + " " + x["source"].Id() + " -> " + x["target"].Id()));
         }
-        Assert.Contains(r.Engine.Graph("workload").State.Entities, e => P(e, "kind") == "workload");
+        Assert.Contains(r.Entities("workload"), e => P(e, "kind") == "workload");
     }
 
     public static IEnumerable<object[]> CaptureNames() => Repo.CaptureDirs.Count > 0 ? Repo.CaptureDirs.Select(d => new object[] { Path.GetFileName(d) }) : [[""]];

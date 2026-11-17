@@ -33,6 +33,14 @@ public class BatchInvarianceTests
         Assert.True(r.MasterEntities > 100);
     }
 
+    /// <summary>An engine on the example space, for the tests below that feed it rows batch by batch.</summary>
+    static Engine NewEngine()
+    {
+        var cat = Repo.LoadExamples(out var res);
+        Assert.Empty(res.Diagnostics);
+        return new Engine(cat, cat.Spaces.Keys.Single());
+    }
+
     static string Line(string source, string at, long seq, object payload) =>
         System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = source, ["capturedAt"] = at, ["seq"] = seq, ["key"] = $"{source}/{seq}", ["meta"] = null, ["payload"] = payload });
 
@@ -113,7 +121,7 @@ public class BatchInvarianceTests
     public void Two_spellings_of_one_resource_id_count_into_one_window_whatever_the_batching(string name, bool split, bool reverse)
     {
         _ = name;
-        using var e = EngineTests.NewEngine();
+        using var e = NewEngine();
         Resources(e);
         var upper = Resource.Replace("resourcegroups", "resourceGroups");
         if (!split)
@@ -133,7 +141,7 @@ public class BatchInvarianceTests
     [InlineData(1, 10)] [InlineData(4, 10)] [InlineData(1, 30)] [InlineData(2, 5)]
     public void A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(int lateRows, int laterMinutes)
     {
-        using var e = EngineTests.NewEngine();
+        using var e = NewEngine();
         Resources(e);
         Activity(e, 2, Resource, 0, 3);
         e.Advance(T0 + 2 * Min);                                               // the window closes with 3
@@ -192,7 +200,7 @@ public class BatchInvarianceTests
     [InlineData(1)] [InlineData(2)]
     public void A_row_for_a_window_inside_the_late_horizon_revises_it(int lateRows)
     {
-        using var e = EngineTests.NewEngine();
+        using var e = NewEngine();
         Resources(e);
         Activity(e, 2, Resource, 0, 3);
         e.Advance(T0 + 2 * Min);

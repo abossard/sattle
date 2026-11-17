@@ -31,18 +31,19 @@ public class HealthTreeTests
         return dir;
     }
 
-    /// <summary>The engine after a replay of `dir`: the shared run of a tracked scenario (read, never changed), a replay of its own for a variant in a temporary folder.</summary>
-    static Engine Run(string dir) => dir == Wide || dir == Path.Combine(Fixtures, "estate") ? Scenarios.Run(dir).Engine
-        : ReplayTests.Replay(dir, 2000, Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }).Engine;
+    /// <summary>The replay of `dir`: the shared run of a tracked scenario (read, never changed), a replay of its own for a variant in a temporary folder. The tests read its graphs as they are served.</summary>
+    static ReplayTests.Run Run(string dir) => dir == Wide || dir == Path.Combine(Fixtures, "estate") ? Scenarios.Run(dir)
+        : ReplayTests.Replay(dir, 2000, Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
 
-    static string P(Entity e, string prop) => e.Props.TryGet("d:acme.tree/prop:" + prop, out var v) ? v switch { TextValue t => t.S, IntegerValue i => i.N.ToString(), BooleanValue b => b.B ? "true" : "false", _ => v.ToString()! } : "";
-    static Dictionary<string, Entity> Elements(Engine e, string graph = "healthTree") => e.Graph(graph).State.Entities.Where(x => Ids.Name(x.Type) == "Element").ToDictionary(x => P(x, "nodeKey"));
-    static Dictionary<string, string> Parents(Engine e, string graph = "healthTree")
+    /// <summary>A property of a served element as text, empty when it has none.</summary>
+    static string P(JsonNode e, string prop) => e.Prop(prop) ?? "";
+    static Dictionary<string, JsonNode> Elements(ReplayTests.Run e, string graph = "healthTree") => e.Entities(graph, "Element").ToDictionary(x => P(x, "nodeKey"));
+    static Dictionary<string, string> Parents(ReplayTests.Run e, string graph = "healthTree")
     {
-        var g = e.Graph(graph).State; var byId = g.Entities.Where(x => Ids.Name(x.Type) == "Element").ToDictionary(x => x.Id, x => P(x, "nodeKey"));
-        return g.Rels.Where(r => Ids.Name(r.Type) == "Contains").ToDictionary(r => byId[r.Target], r => byId[r.Source]);
+        var byId = e.Entities(graph, "Element").ToDictionary(x => x["id"].Id(), x => P(x, "nodeKey"));
+        return e.Relationships(graph, "Contains").ToDictionary(r => byId[r["target"].Id()], r => byId[r["source"].Id()]);
     }
-    static string State(Engine e, string key) => P(Elements(e)[key], "rolledState");
+    static string State(ReplayTests.Run e, string key) => P(Elements(e)[key], "rolledState");
 
     // ---- the tree ----------------------------------------------------------------------------------------------------------------------
 
@@ -60,7 +61,7 @@ public class HealthTreeTests
         var dir = Resolve(capture);
         var e = Run(dir); var elements = Elements(e, "treeStructure"); var parents = Parents(e, "treeStructure");
         Assert.NotEmpty(elements);
-        Assert.Equal(parents.Count, e.Graph("treeStructure").State.Rels.Count(r => Ids.Name(r.Type) == "Contains"));              // one Contains per child: no element has two parents
+        Assert.Equal(parents.Count, e.Relationships("treeStructure", "Contains").Count);              // one Contains per child: no element has two parents
         var roots = elements.Keys.Where(k => !parents.ContainsKey(k)).ToList();
         Assert.NotEmpty(roots);
         foreach (var k in elements.Keys)
@@ -70,7 +71,7 @@ public class HealthTreeTests
             Assert.Contains(cur, roots);
         }
         var cat = Repo.LoadExamples(out _);
-        var violations = Conformance.Check(e.Graph("treeStructure").State, cat.OntologyOf(e.Graph("treeStructure").Typed.OutputModule));
+        var violations = Conformance.Check(e.Engine.Graph("treeStructure").State, cat.OntologyOf(e.Engine.Graph("treeStructure").Typed.OutputModule));
         Assert.DoesNotContain(violations, d => d.Code is "Cardinality" or "Acyclic");
     }
 
@@ -228,7 +229,7 @@ public class HealthTreeTests
     public void The_ontology_marks_the_hierarchy_relationship()
     {
         var run = Scenarios.Run(Wide);
-        var onto = run.Export.Ontology(run.Engine.Graph("healthTree"));
+        var onto = run.Read(x => x.Ontology(run.Engine.Graph("healthTree")));
         var rels = onto["relationshipTypes"]!.AsArray().Where(x => x!["hierarchy"] is not null).ToDictionary(x => x!["id"]!["value"]!.GetValue<string>(), x => x!["hierarchy"]!.GetValue<bool>());
         bool Marked(string name) => rels.Single(kv => kv.Key == name || kv.Key.EndsWith("." + name, StringComparison.Ordinal) && kv.Key.StartsWith("acme.tree", StringComparison.Ordinal)).Value;
         Assert.True(Marked("Contains")); Assert.False(Marked("Rolls")); Assert.False(Marked("EvidenceFor"));
@@ -239,7 +240,7 @@ public class HealthTreeTests
     public void The_ontology_serves_treeState_per_entity_type_so_a_viewer_needs_no_property_names()
     {
         var run = Scenarios.Run(Wide);
-        var onto = run.Export.Ontology(run.Engine.Graph("healthTree"));
+        var onto = run.Read(x => x.Ontology(run.Engine.Graph("healthTree")));
         var element = onto["entityTypes"]!.AsArray().Single(x => x!["id"]!["value"]!.GetValue<string>() == "Element")!["treeState"]!;
         Assert.Equal("ownState", element["own"]!.GetValue<string>()); Assert.Equal("rolledState", element["rolledUp"]!.GetValue<string>());
         Assert.Equal("rolledSeverity", element["severity"]!.GetValue<string>()); Assert.Equal("nodeKind", element["kind"]!.GetValue<string>());
@@ -255,12 +256,12 @@ public class HealthTreeTests
         var dir = Variant(Wide, without: ["authoring/curation.ndjson"]);
         try
         {
-            var e = Run(dir); var g = e.Graph("healthTree").State;
-            var signal = g.Entities.First(x => Ids.Name(x.Type) == "Signal" && P(x, "signalRule") == "pod-warnings" && P(x, "signalElement") == "pod/red/pay/ledger-7a1-1");
+            var e = Run(dir); var byId = e.Entities("healthTree").ToDictionary(x => x["id"].Id());
+            var signal = e.Entities("healthTree", "Signal").First(x => P(x, "signalRule") == "pod-warnings" && P(x, "signalElement") == "pod/red/pay/ledger-7a1-1");
             Assert.Equal("on", P(signal, "signalState")); Assert.Equal("1", P(signal, "signalSeverity")); Assert.Equal("warnings", P(signal, "signalMeter"));
             Assert.Equal("1", P(signal, "signalEnterAfter")); Assert.Equal("3", P(signal, "signalExitAfter")); Assert.Equal("false", P(signal, "signalInverted"));
-            Assert.Contains(g.Rels, r => Ids.Name(r.Type) == "Measures" && r.Source == signal.Id && P(g.Entity(r.Target)!, "nodeKey") == "pod/red/pay/ledger-7a1-1");
-            Assert.Contains(((InMemoryTelemetryStore)e.Telemetry).Dump(e.Graph("healthTree").Key), x => e.Interner.Get(x.Element) == signal.Id && e.Interner.Get(x.Prop).EndsWith("prop:signalValue", StringComparison.Ordinal) && x.Value > 0);
+            Assert.Contains(e.Relationships("healthTree", "Measures"), r => r["source"].Id() == signal["id"].Id() && P(byId[r["target"].Id()], "nodeKey") == "pod/red/pay/ledger-7a1-1");
+            Assert.Contains(e.Windows("healthTree", "signalValue"), x => x.Element == signal["id"].Id() && x.Value > 0);
             var curated = Run(Wide);
             Assert.Equal("c1", P(Elements(curated)["wl/red/pay/ledger"], "curatedBy"));
             Assert.Equal("worst", P(Elements(e)["ns/red/pay"], "rollupMode"));
@@ -271,11 +272,11 @@ public class HealthTreeTests
     [Fact]
     public void Evidence_hangs_on_the_element_it_supports_and_every_evidence_edge_has_both_ends_in_the_graph()
     {
-        var e = Run(Wide); var g = e.Graph("healthTree").State;
-        var ev = g.Rels.Where(r => Ids.Name(r.Type) == "EvidenceFor").ToList();
+        var e = Run(Wide); var byId = e.Entities("healthTree").ToDictionary(x => x["id"].Id());
+        var ev = e.Relationships("healthTree", "EvidenceFor");
         Assert.NotEmpty(ev);
-        Assert.All(ev, r => { Assert.NotNull(g.Entity(r.Source)); Assert.NotNull(g.Entity(r.Target)); Assert.Equal("Element", Ids.Name(g.Entity(r.Target)!.Type)); });
-        Assert.DoesNotContain(g.Rels.Where(r => Ids.Name(r.Type) == "Contains"), r => Ids.Name(g.Entity(r.Source)!.Type) == "Evidence");    // evidence is never a child
+        Assert.All(ev, r => { Assert.Contains(r["source"].Id(), byId.Keys); Assert.True(byId[r["target"].Id()].Is("Element")); });
+        Assert.DoesNotContain(e.Relationships("healthTree", "Contains"), r => byId[r["source"].Id()].Is("Evidence"));    // evidence is never a child
     }
 
     [Fact]
@@ -319,7 +320,8 @@ public class HealthTreeTests
         finally { Directory.Delete(baseDir, true); Directory.Delete(extra, true); }
     }
 
-    static long ReplayEdits(Engine e) => e.Graph("healthTree").Head;
+    /// <summary>The revisions of the health tree in a replay: one per patch.</summary>
+    static long ReplayEdits(ReplayTests.Run e) => e.Export.PatchesOf("healthTree").Count;
 
     [Fact]
     public void The_lineage_of_a_tree_element_leads_down_to_the_master_element_and_the_evidence_to_the_event()
@@ -329,13 +331,13 @@ public class HealthTreeTests
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = Cluster }).Run(Wide);
             h.Finish();
-            string IdOf(string graph, string key) => h.Engine.Graph(graph).State.Entities.Single(x => Ids.Name(x.Type) == "Element" && P(x, "nodeKey") == key).Id;
+            string IdOf(string graph, string key) => h.Entities(graph, "Element").Single(x => P(x, "nodeKey") == key)["id"].Id();
             var top = h.Lineage("healthTree", IdOf("healthTree", "pod/red/pay/ledger-7a1-1"));
             var s1 = top["sources"]!.AsArray().First(s => s!["graph"]!.GetValue<string>() == "treeStructure")!;
             Assert.False(string.IsNullOrEmpty(s1["element"]!.GetValue<string>()));                                                                                        // the element of the structure it was copied from
             var reverse = h.LineageReverse("treeStructure", s1["element"]!.GetValue<string>());
             Assert.Contains(reverse["partOf"]!.AsArray(), p => p!["graph"]!.GetValue<string>() == "healthTree");                                                              // and back up
-            var evidence = h.Engine.Graph("healthTree").State.Entities.First(x => Ids.Name(x.Type) == "Evidence" && P(x, "evidenceKind") == "warning").Id;
+            var evidence = h.Entities("healthTree", "Evidence").First(x => P(x, "evidenceKind") == "warning")["id"].Id();
             var down = h.Lineage("healthTree", evidence);
             Assert.Contains(down["sources"]!.AsArray(), s => s!["graph"]!.GetValue<string>() == "master" && s["role"]!.GetValue<string>() == "event");                                    // the warning event
             var back = h.LineageReverse("master", down["sources"]!.AsArray().First(s => s!["role"]!.GetValue<string>() == "event")!["element"]!.GetValue<string>());
@@ -354,13 +356,13 @@ public class HealthTreeTests
             using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = Repo.Projections, Cluster = Cluster, LateHorizonWindows = 1_000_000, SealEvery = 40 }))
             {
                 new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 100, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = Cluster }).Run(Wide);
-                h.Finish(); digest = h.StateDigest(); unhealthy = h.Engine.Graph("healthTree").State.Entities.Count(x => Ids.Name(x.Type) == "Element" && P(x, "rolledState") == "Unhealthy");
+                h.Finish(); digest = h.StateDigest(); unhealthy = h.Entities("healthTree", "Element").Count(x => P(x, "rolledState") == "Unhealthy");
             }
             using var g2 = new SqliteGraphStore(store);
             using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Projections = Repo.Projections, Cluster = Cluster, VerifyJournal = true });
             Assert.NotNull(again.Restart);
             Assert.Equal(digest, again.StateDigest());
-            Assert.Equal(unhealthy, again.Engine.Graph("healthTree").State.Entities.Count(x => Ids.Name(x.Type) == "Element" && P(x, "rolledState") == "Unhealthy"));
+            Assert.Equal(unhealthy, again.Entities("healthTree", "Element").Count(x => P(x, "rolledState") == "Unhealthy"));
         }
         finally { foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(store) + "*")) File.Delete(f); }
     }
@@ -372,7 +374,7 @@ public class HealthTreeTests
     public void The_workload_model_and_the_tree_agree_on_the_state_of_what_both_measure_the_same_way(string kind, string component, string element)
     {
         var e = Run(Path.Combine(Fixtures, "estate"));
-        var model = e.Graph("workload").State.Entities.First(x => x.Props.Text("d:acme.workload/prop:kind") == kind && x.Props.Text("d:acme.workload/prop:name") == component).Props.Text("d:acme.workload/prop:state");
+        var model = e.Entities("workload").First(x => x.Prop("kind") == kind && x.Prop("name") == component).Prop("state");
         Assert.Equal("Healthy", model);
         Assert.Equal(model, State(e, element));
     }

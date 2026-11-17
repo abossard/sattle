@@ -13,7 +13,7 @@ public class KqlServerTests
     {
         await using var app = Server.Build(KqlHostTests.Served.Value, 0);
         await app.StartAsync();
-        using var http = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
+        using var http = new HttpClient { BaseAddress = new Uri(app.Urls.First()), Timeout = Timeout.InfiniteTimeSpan };      // no time limit of the client: on a loaded machine a call is slow, not failed (the default gives up after 100 s)
         try { return await call(http); } finally { await app.StopAsync(); }
     }
 

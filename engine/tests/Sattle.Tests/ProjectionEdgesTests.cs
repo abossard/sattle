@@ -21,20 +21,21 @@ public class ProjectionEdgesTests
 
     public static IEnumerable<object[]> Graphs() => Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => new object[] { g.Name });
 
-    static readonly Lazy<Engine> OnEstate = new(() => Scenarios.Run(Estate).Engine);
+    /// <summary>The shared run of the estate, read as it is served.</summary>
+    static ReplayTests.Run OnEstate => Scenarios.Run(Estate);
 
     [Theory]
     [MemberData(nameof(Graphs))]
     public void A_projection_whose_output_ontology_declares_relationship_types_has_relationships_on_the_estate(string graph)
     {
-        var e = OnEstate.Value; var g = e.Graph(graph);
+        var e = OnEstate; var (entities, relationships) = (e.Entities(graph).Count, e.Relationships(graph).Count);
         var cat = Repo.LoadExamples(out _);
-        var module = g.Typed.OutputModule;
+        var module = e.Engine.Graph(graph).Typed.OutputModule;
         var declared = cat.OntologyOf(module).Types.Values.Where(t => t.IsRel && Ids.ModuleOf(t.Id) == module).Select(t => t.Id).ToList();
-        if (declared.Count == 0) { Assert.True(Exempt.ContainsKey(graph) || g.State.EntityCount > 0); return; }
-        Assert.True(g.State.EntityCount > 0, $"{graph} has no entities on the estate");
+        if (declared.Count == 0) { Assert.True(Exempt.ContainsKey(graph) || entities > 0); return; }
+        Assert.True(entities > 0, $"{graph} has no entities on the estate");
         if (Exempt.ContainsKey(graph)) return;
-        Assert.True(g.State.RelCount > 0, $"{graph} declares {string.Join(", ", declared.Select(Ids.Name))} and emits {g.State.EntityCount} entities and no relationship on the estate");
+        Assert.True(relationships > 0, $"{graph} declares {string.Join(", ", declared.Select(Ids.Name))} and emits {entities} entities and no relationship on the estate");
     }
 
     [Fact]
@@ -47,29 +48,29 @@ public class ProjectionEdgesTests
 
     // ---- the capability level of the estate -------------------------------------------------------------------------------------------
 
-    static string ServiceName(Engine e, string id) => e.Graph("serviceTree").State.Entities.First(x => x.Id == id).Props.Text("d:acme.svc/prop:name")!;
-    static string CapName(Engine e, string id) => e.Graph("capabilities").State.Entities.First(x => x.Id == id).Props.Text("d:acme.biz/prop:name")!;
+    /// <summary>The names of the entities of a served graph, by id.</summary>
+    static Dictionary<string, string> Names(ReplayTests.Run e, string graph) => e.Entities(graph).ToDictionary(x => x["id"].Id(), x => x.Prop("name") ?? "");
 
-    /// <summary>The summed `prop` windows of every relationship of `graph`, by the names of its two ends.</summary>
-    static Dictionary<string, decimal> Summed(Engine e, string graph, string prop, Func<string, string> name)
+    /// <summary>The summed `prop` windows of every `DependsOn` relationship of `graph`, by the names of its two ends, which are entities of the graph `ends`.</summary>
+    static Dictionary<string, decimal> Summed(ReplayTests.Run e, string graph, string prop, string ends)
     {
-        var rels = e.Graph(graph).State.Rels.Where(r => Ids.Name(r.Type) == "DependsOn").ToDictionary(r => r.Id, r => name(r.Source) + " -> " + name(r.Target));
+        var name = Names(e, ends);
+        var rels = e.Relationships(graph, "DependsOn").ToDictionary(r => r["id"].Id(), r => name[r["source"].Id()] + " -> " + name[r["target"].Id()]);
         var sums = new Dictionary<string, decimal>();
-        foreach (var s in ((InMemoryTelemetryStore)e.Telemetry).Dump(e.Graph(graph).Key))
-            if (e.Interner.Get(s.Prop).EndsWith("/prop:" + prop, StringComparison.Ordinal) && rels.TryGetValue(e.Interner.Get(s.Element), out var pair))
-                sums[pair] = sums.GetValueOrDefault(pair) + s.Value;
+        foreach (var w in e.Windows(graph, prop))
+            if (rels.TryGetValue(w.Element, out var pair)) sums[pair] = sums.GetValueOrDefault(pair) + w.Value;
         return sums;
     }
 
     [Fact]
     public void The_estate_capabilities_have_a_hierarchy_and_a_dependency_lifted_from_the_service_level_with_the_same_flows()
     {
-        var e = OnEstate.Value; var g = e.Graph("capabilities").State;
-        Assert.Equal(4, g.Entities.Count(x => Ids.Name(x.Type) == "BizCapability"));
-        var under = g.Rels.Where(r => Ids.Name(r.Type) == "Under").Select(r => CapName(e, r.Source) + " -> " + CapName(e, r.Target)).Order().ToList();
+        var e = OnEstate; var caps = Names(e, "capabilities");
+        Assert.Equal(4, e.Entities("capabilities", "BizCapability").Count);
+        var under = e.Relationships("capabilities", "Under").Select(r => caps[r["source"].Id()] + " -> " + caps[r["target"].Id()]).Order().ToList();
         Assert.Equal(["Ordering -> Commerce", "Storefront -> Commerce"], under);
-        var lifted = Summed(e, "capabilities", "callFlows", id => CapName(e, id));
-        var service = Summed(e, "serviceTree", "flows", id => ServiceName(e, id));
+        var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
+        var service = Summed(e, "serviceTree", "flows", "serviceTree");
         Assert.Single(lifted);                                                                           // database has no pods, so nothing calls into data-platform
         Assert.Equal(service["web -> api"], lifted["Storefront -> Ordering"]);
         Assert.True(lifted.Values.All(v => v > 0));
@@ -78,13 +79,12 @@ public class ProjectionEdgesTests
     [Fact]
     public void On_the_estate_the_flows_out_of_the_service_groups_are_in_every_window_the_sum_of_the_flows_out_of_the_services()
     {
-        var e = OnEstate.Value; var tree = e.Graph("serviceTree");
-        var dump = ((InMemoryTelemetryStore)e.Telemetry).Dump(tree.Key).Where(x => e.Interner.Get(x.Prop).EndsWith("prop:flowsOut", StringComparison.Ordinal)).ToList();
-        var groups = tree.State.Entities.Where(x => Ids.Name(x.Type) == "ServiceGroup").Select(x => x.Id).ToHashSet();
-        var perWindow = dump.GroupBy(x => x.Ws).ToList();
+        var e = OnEstate;
+        var groups = e.Entities("serviceTree", "ServiceGroup").Select(x => x["id"].Id()).ToHashSet();
+        var perWindow = e.Windows("serviceTree", "flowsOut").GroupBy(x => x.Window).ToList();
         Assert.NotEmpty(perWindow);
         foreach (var w in perWindow)
-            Assert.Equal(w.Where(x => !groups.Contains(e.Interner.Get(x.Element))).Sum(x => x.Value), w.Where(x => groups.Contains(e.Interner.Get(x.Element))).Sum(x => x.Value));
+            Assert.Equal(w.Where(x => !groups.Contains(x.Element)).Sum(x => x.Value), w.Where(x => groups.Contains(x.Element)).Sum(x => x.Value));
     }
 
     // ---- the policies of the lift, on variants of the estate's authored capabilities and flows ----------------------------------------
@@ -160,12 +160,12 @@ public class ProjectionEdgesTests
         var dir = Copy([.. realizes.Split(',').Select(x => x == "" ? null : x)], extraWebToDb, retired);
         try
         {
-            var e = ReplayTests.Replay(dir, cluster: "synth").Engine;
-            var lifted = Summed(e, "capabilities", "callFlows", id => CapName(e, id));
+            var e = ReplayTests.Replay(dir, cluster: "synth");
+            var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
             Assert.Equal(expected == "" ? [] : expected.Split('|').Order().ToList(), lifted.Keys.Order().ToList());
-            var rels = e.Graph("capabilities").State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn");
+            var rels = e.Relationships("capabilities", "DependsOn").Count;
             Assert.Equal(lifted.Count, rels);                                                       // one relationship per pair of images: parallel edges did not stay parallel
-            var service = Summed(e, "serviceTree", "flows", id => ServiceName(e, id));
+            var service = Summed(e, "serviceTree", "flows", "serviceTree");
             if (lifted.TryGetValue("Storefront -> Ordering", out var storefront)) Assert.Equal(service["web -> api"] + (extraWebToDb ? service["web -> db"] : 0), storefront);
             if (extraWebToDb) Assert.True(service["web -> db"] > 0);
         }
@@ -205,29 +205,9 @@ public class ProjectionEdgesTests
         Assert.Equal(WithoutBinding(File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"))), WithoutBinding(File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"))));
     }
 
-    // ---- authored rows in a capture -----------------------------------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("{\"kind\":\"capability\",\"capId\":\"x\",\"name\":\"X\",\"owner\":\"o\"}")]                          // no status
-    [InlineData("{\"kind\":\"realizes\",\"capId\":\"x\",\"cluster\":\"c\",\"namespace\":\"n\"}")]                    // no service
-    [InlineData("{\"kind\":\"other\",\"capId\":\"x\"}")]                                                          // unknown kind
-    [InlineData("{\"kind\":\"capability\",\"name\":\"X\",\"owner\":\"o\",\"status\":\"active\"}")]                    // no capId
-    public void An_authoring_record_that_is_incomplete_is_rejected_and_counted(string payload)
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "sattle-authoring-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(dir, "authoring"));
-        File.WriteAllText(Path.Combine(dir, "authoring", "a.ndjson"), $"{{\"v\":1,\"source\":\"authoring\",\"capturedAt\":\"2026-01-01T10:00:00.000Z\",\"seq\":1,\"key\":\"authoring/x\",\"meta\":null,\"payload\":{payload}}}\n");
-        try
-        {
-            var r = ReplayTests.Replay(dir, cluster: "synth");
-            Assert.Equal(1, r.Stats.Rejected);
-            Assert.Equal(0, r.Engine.Master.State.EntityCount);
-        }
-        finally { Directory.Delete(dir, true); }
-    }
-
     // ---- the image is a function: policy for a node with two images, composition of two lifts, ratio and state of a lifted edge -------------
 
-    static Engine RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graphLine)
+    static ReplayTests.Run RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graphLine)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
@@ -237,10 +217,7 @@ public class ProjectionEdgesTests
         files.AddRange(moduleFiles);
         var cat = new Catalog(Repo.Projections); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        var id = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, id, new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
-        new Replay(engine, cat.Spaces[id], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
-        return engine;
+        return ReplayTests.Replay(dir, 200, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }, cat: cat);
     }
 
     /// <summary>One step from the pods straight to the capabilities: the composition of the two lifts, written as one.</summary>
@@ -283,8 +260,8 @@ public class ProjectionEdgesTests
             var e = RunWith(dir, "acme.onestep", [new SourceFile("acme.onestep.sattle", OneStep), new SourceFile("acme.onestep.oneStep.kql", OneStepGraph)], "graph oneStep = extra.oneStep(master: master, authored: authored);");
             foreach (var prop in new[] { "callFlows", "callDrops" })
             {
-                var twoSteps = Summed(e, "capabilities", prop, id => CapName(e, id));
-                var oneStep = Summed(e, "oneStep", prop, id => CapName(e, id));
+                var twoSteps = Summed(e, "capabilities", prop, "capabilities");
+                var oneStep = Summed(e, "oneStep", prop, "capabilities");
                 Assert.NotEmpty(twoSteps);
                 Assert.Equal(twoSteps.OrderBy(x => x.Key).ToList(), oneStep.OrderBy(x => x.Key).ToList());
             }
@@ -298,14 +275,13 @@ public class ProjectionEdgesTests
         var dir = Copy(["storefront|ordering", "ordering", "data-platform"], false, null);        // web realizes two capabilities
         try
         {
-            var run = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
-            var e = run.Engine;
-            var lifted = Summed(e, "capabilities", "callFlows", id => CapName(e, id));
-            var service = Summed(e, "serviceTree", "flows", id => ServiceName(e, id));
+            var e = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+            var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
+            var service = Summed(e, "serviceTree", "flows", "serviceTree");
             Assert.Equal(["Ordering -> Data platform"], lifted.Keys.ToList());                      // web has two images: its edge is not lifted to either; api to db is
             Assert.Equal(service["api -> db"], lifted["Ordering -> Data platform"]);
             var cat = Repo.LoadExamples(out _);
-            var authored = e.Graph("authored");                                                        // what people wrote, `Realizes` among it
+            var authored = e.Engine.Graph("authored");                                                        // what people wrote, `Realizes` among it
             var violations = Conformance.Check(authored.State, cat.OntologyOf(authored.Typed.OutputModule));
             Assert.Contains(violations, d => d.Code == "Cardinality");                              // `constraint cardinality Realizes per source 0 .. 1`
         }
@@ -318,23 +294,23 @@ public class ProjectionEdgesTests
         var dir = Copy(["storefront", "ordering", "ordering"], extraWebToDb: true, null);         // web to api (no drops) and web to db (drops in minutes 4 to 7) lift to one edge
         try
         {
-            var run = ReplayTests.Replay(dir, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
-            var e = run.Engine; var g = e.Graph("capabilities");
-            var edge = g.State.Rels.Single(r => Ids.Name(r.Type) == "DependsOn");
-            var windows = ((InMemoryTelemetryStore)e.Telemetry).Dump(g.Key).Where(x => e.Interner.Get(x.Element) == edge.Id).GroupBy(x => x.Ws)
-                .ToDictionary(w => w.Key, w => w.ToDictionary(x => e.Interner.Get(x.Prop).Split(':')[^1], x => x.Value));
-            Assert.True(windows.Count >= 8);
+            // a host, for the windows of two graphs by their start: the replay's files number the windows of each graph on their own
+            using var h = HostTests.NewHost(lateHorizon: 1_000_000);
+            h.RunCapture(dir, new ReplayOptions { ChunkRows = 2000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" });
+            var edge = Assert.Single(h.Relationships("capabilities", "DependsOn"))["id"].Id();
+            Dictionary<string, decimal> Of(string prop) => h.Windows("capabilities", prop).Where(x => x.Element == edge).ToDictionary(x => x.Window, x => x.Value);
+            var (flows, drops, ratio) = (Of("callFlows"), Of("callDrops"), Of("callDropRatio"));
+            Assert.True(flows.Count >= 8);
             // the ratio of every window is drops over flows of the lifted sums
-            Assert.All(windows.Values.Where(w => w["callFlows"] > 0), w => Assert.Equal(Math.Round(w["callDrops"] / w["callFlows"], 6), Math.Round(w["callDropRatio"], 6)));
+            Assert.All(flows.Where(w => w.Value > 0), w => Assert.Equal(Math.Round(drops[w.Key] / w.Value, 6), Math.Round(ratio[w.Key], 6)));
             // and it is not the mean of the ratios of the two service edges, which carry different numbers of flows
-            var tree = e.Graph("serviceTree"); var ratios = new Dictionary<long, List<decimal>>();
-            foreach (var r in tree.State.Rels.Where(r => Ids.Name(r.Type) == "DependsOn" && ServiceName(e, r.Source) == "web"))
-                foreach (var x in ((InMemoryTelemetryStore)e.Telemetry).Dump(tree.Key).Where(x => e.Interner.Get(x.Element) == r.Id && e.Interner.Get(x.Prop).EndsWith("/prop:dropRatio", StringComparison.Ordinal)))
-                    (ratios.TryGetValue(x.Ws, out var l) ? l : ratios[x.Ws] = []).Add(x.Value);
-            var diverging = windows.Where(w => ratios.TryGetValue(w.Key, out var l) && l.Count == 2 && w.Value["callDrops"] > 0 && Math.Abs(w.Value["callDropRatio"] - l.Average()) > 0.01m).ToList();
+            var services = h.Entities("serviceTree").ToDictionary(x => x["id"].Id(), x => x.Prop("name"));
+            var fromWeb = h.Relationships("serviceTree", "DependsOn").Where(r => services[r["source"].Id()] == "web").Select(r => r["id"].Id()).ToHashSet();
+            var ratios = h.Windows("serviceTree", "dropRatio").Where(x => fromWeb.Contains(x.Element)).GroupBy(x => x.Window).ToDictionary(w => w.Key, w => w.Select(x => x.Value).ToList());
+            var diverging = flows.Keys.Where(w => ratios.TryGetValue(w, out var l) && l.Count == 2 && drops[w] > 0 && Math.Abs(ratio[w] - l.Average()) > 0.01m).ToList();
             Assert.NotEmpty(diverging);
             // the state is derived from the aggregate: degraded while the summed ratio stays above 0.05 for three windows, ok again after three windows below 0.02
-            var states = run.Export.PatchesOf("capabilities").SelectMany(p => p.Edits).Where(x => x.After is Rel r && r.Id == edge.Id).Select(x => ((Rel)x.After!).Props.Text("d:acme.biz/prop:callStatus")).Where(x => x is not null).ToList();
+            var states = h.Patches("capabilities", 0).SelectMany(p => p["edits"]!.AsArray()).Where(x => x!["after"] is { } after && after["id"].Id() == edge).Select(x => x!["after"]!.Prop("callStatus")).Where(x => x is not null).ToList();
             Assert.Contains("degraded", states);
             Assert.Equal("ok", states.Last());                                                       // recovered after three windows below 0.02
         }

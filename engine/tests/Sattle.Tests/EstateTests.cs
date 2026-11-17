@@ -108,62 +108,51 @@ public class EstateTests
 
     public static string EstateDir => Estate;
 
-    static Engine Run(bool demo, out Catalog cat)
-    {
-        cat = LoadCatalog(demo);
-        var space = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Estate);
-        return engine;
-    }
+    /// <summary>A replay of the estate with the space of the estate folder (its workload binding), with the demo module or without. The tests read its graphs as they are served.</summary>
+    static ReplayTests.Run Run(bool demo) => ReplayTests.Replay(Estate, 50, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo));
 
-    static readonly Lazy<(Engine Engine, Catalog Cat)> Plain = new(() => { var e = Run(false, out var c); return (e, c); });
-    static readonly Lazy<(Engine Engine, Catalog Cat)> WithDemo = new(() => { var e = Run(true, out var c); return (e, c); });
+    static readonly Lazy<ReplayTests.Run> Plain = new(() => Run(false));
+    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => Run(true));
 
     [Theory]
     [InlineData("master")] [InlineData("serviceTree")] [InlineData("capabilities")] [InlineData("workloadStructure")] [InlineData("workload")] [InlineData("deploymentHealth")] [InlineData("deploymentReport")]
     public void Every_graph_of_the_space_has_entities(string graph)
     {
-        var g = Plain.Value.Engine.Graph(graph).State;
-        Assert.True(g.EntityCount > 0, $"{graph} is empty");
+        Assert.True(Plain.Value.Entities(graph).Count > 0, $"{graph} is empty");
     }
 
     [Theory]
     [InlineData("workloadStructure", "Contains")] [InlineData("workloadStructure", "DependsOn")] [InlineData("workloadStructure", "Affects")] [InlineData("workloadStructure", "TalksTo")] [InlineData("workload", "Measures")] [InlineData("workload", "EvidenceFor")] [InlineData("serviceTree", "DependsOn")] [InlineData("capabilities", "DependsOn")]
     public void The_graphs_have_relationships_of_the_types_a_closure_walks(string graph, string type)
     {
-        Assert.Contains(Plain.Value.Engine.Graph(graph).State.Rels, r => Ids.Name(r.Type) == type);
+        Assert.NotEmpty(Plain.Value.Relationships(graph, type));
     }
 
     [Fact]
     public void A_Link_merges_identities_a_union_has_two_sources_and_the_retained_evidence_is_there()
     {
-        var e = Plain.Value.Engine;
-        Assert.True(e.Identities.Merges > 0, "no identity merged: the second api pod's row arrives after the flows that name it");
-        Assert.Equal(0, e.Identities.Conflicts);
-        var types = e.Master.State.Entities.GroupBy(x => Ids.Name(x.Type)).ToDictionary(g => g.Key, g => g.Count());
-        Assert.Equal(18, types["ActivityEvent"]);                       // 10 from the management API and 8 from the diagnostic setting: the two sources of the Union in observedActivityEvents
-        Assert.True(types["WarningEvent"] > 0);
+        var e = Plain.Value;
+        Assert.True(e.Engine.Identities.Merges > 0, "no identity merged: the second api pod's row arrives after the flows that name it");          // the counters of identities are served by no file of a replay: read inside
+        Assert.Equal(0, e.Engine.Identities.Conflicts);
+        Assert.Equal(18, e.Entities("master", "ActivityEvent").Count);  // 10 from the management API and 8 from the diagnostic setting: the two sources of the Union in observedActivityEvents
+        Assert.NotEmpty(e.Entities("master", "WarningEvent"));
     }
 
     [Fact]
     public void Node_and_cluster_telemetry_has_windows_and_the_threshold_signals_exist()
     {
-        var e = Plain.Value.Engine;
-        var tel = ((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key);
-        var props = tel.Select(x => e.Interner.Get(x.Prop)).Distinct().Select(p => p[(p.LastIndexOf(':') + 1)..]).ToHashSet();
-        Assert.Contains("dropRate", props); Assert.Contains("forwardRate", props); Assert.Contains("cpuPercent", props);
-        Assert.True(tel.Count(x => e.Interner.Get(x.Prop).EndsWith("prop:dropRate", StringComparison.Ordinal)) >= 8);     // several windows per node, so a Series has a history to walk
-        var signals = e.Graph("workload").State.Entities.Where(x => Ids.Name(x.Type) == "ComponentSignal").ToList();
+        var e = Plain.Value;
+        Assert.All(new[] { "dropRate", "forwardRate", "cpuPercent" }, p => Assert.NotEmpty(e.Windows("master", p)));
+        Assert.True(e.Windows("master", "dropRate").Count >= 8);     // several windows per node, so a Series has a history to walk
+        var signals = e.Entities("workload", "ComponentSignal");
         Assert.True(signals.Count >= 5);
-        Assert.Contains(signals, s => s.Props.Text("d:acme.workload/prop:signalState") == "nodata");             // at the end the storage account's meter has been silent for longer than its time to live (the thresholds that fire on the way are WorkloadTests)
+        Assert.Contains(signals, s => s.Prop("signalState") == "nodata");             // at the end the storage account's meter has been silent for longer than its time to live (the thresholds that fire on the way are WorkloadTests)
     }
 
     [Fact]
     public void The_workload_roll_up_has_a_component_that_is_not_healthy_because_of_something_it_depends_on()
     {
-        var e = Plain.Value.Engine;
-        var states = e.Graph("workload").State.Entities.Select(c => c.Props.Text("d:acme.workload/prop:state")).Where(s => s is not null).ToList();
+        var states = Plain.Value.Entities("workload").Select(c => c.Prop("state")).Where(s => s is not null).ToList();
         Assert.Contains("Healthy", states);
         Assert.True(states.Any(s => s is "No data" or "Degraded" or "Unhealthy"), "every component is healthy or unknown: the roll-up shows nothing");      // at the end: the storage account in no data, and what depends on it
     }
@@ -172,17 +161,17 @@ public class EstateTests
     [InlineData("demoClosure", 0, 1)] [InlineData("demoBoth", 10, 0)] [InlineData("demoSeries", 3, 0)] [InlineData("demoValues", 2, 0)]
     public void The_operator_shapes_of_the_canvas_walkthroughs_produce_output(string graph, int minEntities, int minRels)
     {
-        var g = WithDemo.Value.Engine.Graph(graph).State;
-        Assert.True(g.EntityCount >= minEntities, $"{graph}: {g.EntityCount} entities");
-        Assert.True(g.RelCount >= minRels, $"{graph}: {g.RelCount} relationships");
+        var (entities, relationships) = (WithDemo.Value.Entities(graph).Count, WithDemo.Value.Relationships(graph).Count);
+        Assert.True(entities >= minEntities, $"{graph}: {entities} entities");
+        Assert.True(relationships >= minRels, $"{graph}: {relationships} relationships");
     }
 
     [Fact]
     public void The_closure_is_larger_than_its_base_so_the_traversal_walked_more_than_one_step()
     {
-        var e = WithDemo.Value.Engine;
-        var baseEdges = e.Graph("workloadStructure").State.Rels.Count(r => Ids.Name(r.Type) == "Affects");
-        Assert.True(e.Graph("demoClosure").State.RelCount > baseEdges, $"closure {e.Graph("demoClosure").State.RelCount} against {baseEdges} edges");
+        var e = WithDemo.Value;
+        var (baseEdges, closure) = (e.Relationships("workloadStructure", "Affects").Count, e.Relationships("demoClosure").Count);
+        Assert.True(closure > baseEdges, $"closure {closure} against {baseEdges} edges");
     }
 
     /// <summary>What a viewer needs to name and draw a graph is ontology data: the label of an entity type, the kind of a relationship type, and what the graph is in the words of its projection.</summary>
@@ -232,7 +221,7 @@ public class EstateTests
     [Fact]
     public void On_the_estate_the_roll_up_holds_states_of_more_than_one_value_role()
     {
-        var roles = Plain.Value.Engine.Graph("workload").State.Entities.Select(c => c.Props.Text("d:acme.workload/prop:state")).Where(s => s is not null).Distinct().ToList();
+        var roles = Plain.Value.Entities("workload").Select(c => c.Prop("state")).Where(s => s is not null).Distinct().ToList();
         Assert.True(roles.Count >= 2, string.Join(",", roles));
     }
 

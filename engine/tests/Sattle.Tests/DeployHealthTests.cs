@@ -20,19 +20,17 @@ public class DeployHealthTests
         var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        var space = cat.Spaces.Keys.Single();
-        var engine = new Engine(cat, space);
-        var export = new CanvasExport(engine, cat); export.Attach();
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
+        var run = ReplayTests.Replay(Fixture, 1, "synth", cat: cat);
         var nodes = new Dictionary<string, List<string>>(); var edges = new Dictionary<string, List<string>>();
         var names = new Dictionary<string, string>();
-        foreach (var p in export.PatchesOf("deploymentHealth"))
-            foreach (var e in p.Edits)
+        foreach (var p in run.Patches("deploymentHealth"))
+            foreach (var e in p["edits"]!.AsArray())
             {
-                if (e.After is Entity en) { var name = en.Props.Text("d:acme.deployhealth/prop:name")!; names[en.Id] = name; Step(nodes, name, en.Props.Text("d:acme.deployhealth/prop:state")); }
-                else if (e.After is Rel r) Step(edges, names.GetValueOrDefault(r.Source, r.Source) + ">" + names.GetValueOrDefault(r.Target, r.Target), r.Props.Text("d:acme.deployhealth/prop:state"));
+                if (e!["after"] is not { } after) continue;
+                if (e["kind"]!.GetValue<string>() == "entity") { var name = after.Prop("name")!; names[after["id"].Id()] = name; Step(nodes, name, after.Prop("state")); }
+                else Step(edges, names.GetValueOrDefault(after["source"].Id(), after["source"].Id()) + ">" + names.GetValueOrDefault(after["target"].Id(), after["target"].Id()), after.Prop("state"));
             }
-        return new Timeline(nodes, edges, engine, cat);
+        return new Timeline(nodes, edges, run.Engine, cat);
     }
 
     static void Step(Dictionary<string, List<string>> d, string key, string? state)
