@@ -23,7 +23,7 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
       "descriptor": { }, "projection": "ingest" },
     { "id": "serviceTree", "role": "projection", "head": "44", "ontology": "acme.svc", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "serviceDeps" }
   ],
-  "input": { "mode": "replay|live", "logicalTime": "2026-11-10T10:41:00Z", "rows": "243457" } }
+  "input": { "mode": "replay|live", "logicalTime": "2026-11-10T10:41:00Z", "rows": "243457", "dropped": [] } }
 ```
 - `direction` is `forward`, `lens`, `mixed` (a projection with `readonly` and `bijective` or `lens` rules) or `readonly`. `editable` is true when some rule accepts edits.
 - `GET /graphs/{g}/descriptor` returns the `GraphDescriptor` at the head.
@@ -615,6 +615,10 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **`GET /definitions`**: every module has `projections`, a list of `{ "projection": "module.name", "file", "language" }` for its projections in files of their own (`language` is `kql` today). A client picks the editor for a projection by its language. Additive: a client of 3.49 ignores the key.
 - **Draft patches.** A patch that touches a projection is refused with the code `ProjectionText` (was `KqlProjection`), with `file` as before. Not additive for a client that matches the old code: it must match `ProjectionText`.
 - **Definitions folder.** Every file of the folder except hidden ones is read: a module text or a projection file that a source claims. Any other file is the error `UnreadFile` at load, as a projection file of a module that did not load already was.
+
+## Version 3.51: rows no source binds are dropped and counted
+- **A space binds what it reads.** Rows of a type that an adapter delivers and no `source` of the space binds are dropped, as if the adapter had not delivered them: they join no chunk and take no sequence number. Before, the first such row stopped the run (a replay, a served replay, a live run and the restart of a journal). Example: a space from before 3.51 that binds no `SelectsRow` computes what it computed before the Kubernetes adapter delivered that type.
+- **`GET /space`** `input` has `dropped`: `[ { "adapter", "rowType", "rows" } ]`, one entry per adapter and row type with the rows dropped so far, for a served replay and a live run; empty when none. `replay` prints the same counts. Additive: a client of 3.50 ignores the key.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.

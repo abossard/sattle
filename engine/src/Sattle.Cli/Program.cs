@@ -303,6 +303,7 @@ public static class Program
         Console.WriteLine($"replayed {s.Records.Values.Sum():N0} record(s) in {s.Elapsed.TotalSeconds:F1} s, capture span {(s.LastCaptureNs - s.FirstCaptureNs) / 1e9:F0} s, {s.Advances} logical-time advance(s), {s.Chunks} chunk(s)");
         Console.WriteLine("records by source: " + string.Join(", ", s.Records.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")) + (s.Skipped > 0 ? $" ({s.Skipped:N0} not consumed: no adapter in this slice)" : ""));
         Console.WriteLine("rows by source:    " + string.Join(", ", s.Rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")));
+        if (s.Dropped.Count > 0) Console.WriteLine("dropped rows (no source of the space binds their type): " + string.Join(", ", s.Dropped.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key.Replace('|', ' ')}={x.Value:N0}")));
         Console.WriteLine($"rejected records: {s.Rejected}" + (s.RejectionSamples.Count > 0 ? " e.g. " + string.Join("; ", s.RejectionSamples.Take(3)) : ""));
         var hub = adapters.OfType<HubbleAdapter>().First();
         Console.WriteLine($"hubble: {hub.Flows:N0} flows, {hub.LostEventRecords} lost-event record(s) ({hub.LostEvents:N0} events lost)");

@@ -24,6 +24,8 @@ public sealed class ReplayStats
 {
     public Dictionary<string, long> Records { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, long> Rows { get; } = new(StringComparer.Ordinal);
+    /// <summary>The rows of a type that the adapter delivers and no source of the space binds (Def. 5.8): dropped, counted by `adapter|RowType`.</summary>
+    public Dictionary<string, long> Dropped { get; } = new(StringComparer.Ordinal);
     public long Skipped, Rejected, Advances, Chunks, LostEvents;
     public List<string> RejectionSamples { get; } = [];
     public TimeSpan Elapsed;
@@ -103,6 +105,8 @@ public sealed class Replay : IRowSink
     readonly Dictionary<string, List<string>> sourcesOfAdapter = new(StringComparer.Ordinal);
     readonly Dictionary<string, long> reported = new(StringComparer.Ordinal);       // a plain dictionary: it is part of the state a live host seals
     readonly Dictionary<string, RowWriter> writers = new(StringComparer.Ordinal);
+    /// <summary>The unbound row types the record being consumed wrote rows of: counted and emptied once it is consumed.</summary>
+    readonly List<string> unbound = [];
     string curAdapter = ""; string? current; long seq; long lastLambda = long.MinValue;
     public ReplayStats Stats { get; } = new();
     public event Action<long>? Progress;
@@ -132,12 +136,25 @@ public sealed class Replay : IRowSink
     public RowWriter Begin(string rowType)
     {
         var key = curAdapter + "|" + rowType;
+        if (!sourceOfRowType.ContainsKey(key)) return Unbound(key, rowType);
         if (current is not null && current != key) FlushCurrent();
         current = key;
         if (!writers.TryGetValue(key, out var w)) writers[key] = w = new RowWriter(engine.RowLayout(sourceOfRowType[key]), engine.Interner);
         w.InstantOffset = TimeShiftNs;
         return w;
     }
+    /// <summary>A writer for rows of a type no source of the space binds. Its rows never join a chunk and never cut one: the space sees the input of an adapter that does not deliver the type.</summary>
+    RowWriter Unbound(string key, string rowType)
+    {
+        if (!writers.TryGetValue(key, out var w))
+        {
+            var c = adapters.First(a => a.Id == curAdapter).Contracts.First(x => x.RowType == rowType);
+            writers[key] = w = new RowWriter(new Layout([.. c.Fields.Select(f => f.Name)], [.. c.Fields.Select(f => f.Kind == "Decimal")]), engine.Interner);
+        }
+        if (!unbound.Contains(key)) unbound.Add(key);
+        return w;
+    }
+
     public void Rejected(string source, string reason)
     {
         Stats.Rejected++;
@@ -189,14 +206,18 @@ public sealed class Replay : IRowSink
         {
             curAdapter = adapter.Id;
             var (writer, written) = current is not null && writers.TryGetValue(current, out var before) ? (current, before.Rows) : (null, 0);
+            var consumed = true;
             try { adapter.Consume(e, this); } // the rows of one record are never split across chunks, so a retraction and its insertion stay together
             catch (Exception x) when (x is InvalidOperationException or FormatException or KeyNotFoundException or ArgumentException or IndexOutOfRangeException or System.Text.Json.JsonException or OverflowException)
             {
                 // A record whose values have another JSON type than its adapter reads (a number written as text) is that record's fault: it is rejected and counted, and the records around it go on.
                 // An exception here would stop a replay, and a live space could never start again, because the record is in its journal. The rows the record wrote into the current chunk are taken back.
+                consumed = false;
                 Rejected(e.Source, $"malformed record ({x.GetType().Name}: {x.Message})");
                 if (current is not null && writers.TryGetValue(current, out var now)) now.Truncate(current == writer ? written : 0);
             }
+            foreach (var key in unbound) { var w = writers[key]; if (consumed) Stats.Dropped[key] = Stats.Dropped.GetValueOrDefault(key) + w.Rows; w.Truncate(0); }
+            unbound.Clear();
             if (current is not null && writers[current].Rows >= opt.ChunkRows) FlushCurrent();
         }
         return true;

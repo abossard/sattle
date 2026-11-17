@@ -159,6 +159,21 @@ public class ReplayTests
             Assert.Equal(steps[i - 1].Expected, Selects(Replay(Capture([.. steps.Take(i).Select(s => s.Line)]), chunk: 1).Engine));
     }
 
+    /// <summary>A space binds what it reads (Def. 5.8, #107). The space from before the adapter delivered `SelectsRow` (#104: its ingestion reads no selections and no source binds them) replays a capture with a Service that selects a Deployment: the rows of the unbound type are dropped and counted on `GET /space`, and the Service and the Deployment are ingested as before.</summary>
+    [Theory]
+    [InlineData("the space binds selections", false, "[]", 1)]
+    [InlineData("the space from before #104", true, """[{"adapter":"kubernetes.list-watch","rowType":"SelectsRow","rows":"1"}]""", 0)]
+    public void A_row_type_no_source_of_the_space_binds_is_dropped_and_counted(string @case, bool older, string dropped, int selects)
+    {
+        var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => older ? f with { Text = string.Join('\n', f.Text.Replace(" selections: selections,", "").Split('\n').Where(l => !l.Contains("selections", StringComparison.Ordinal))) } : f).ToList();
+        using var h = new SpaceHost(files, new HostOptions { Projections = new Sattle.Kql.KqlSource(), Cluster = "synth" });
+        var stats = h.RunCapture(Capture(K8s(1, "ADDED", "Service", "web", "ns1", """{"selector": {"app": "web"}}"""), Deployment(2, """{"app": "web"}""")), new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" });
+        Assert.Equal(0, stats.Rejected);
+        Assert.Equal(dropped, h.SpaceInfo()["input"]!["dropped"]!.ToJsonString());
+        Assert.True(selects == Selects(h.Engine).Count, @case);
+        Assert.All(new[] { "Service", "Deployment" }, t => Assert.Contains(h.Engine.Master.State.Entities, x => Ids.Name(x.Type) == t));
+    }
+
     [Fact]
     public void Flows_between_unobserved_pods_make_dangling_calls_and_never_a_revision_per_window()
     {

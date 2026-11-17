@@ -104,9 +104,7 @@ public static class Server
                 else if (host.Restart is not null) { if (!host.Done) { host.Finish(); Console.WriteLine("the journal ends before the end of its input: the capture is not resumed, the space is closed"); } }
                 else
                 {
-                    var ropts = Program.ReplayOptionsOf(o, cluster);
-                    var replay = new Replay(host, host.Space, host.Adapters, ropts, host.Gate);     // request handlers intern under the same lock
-                    var stats = replay.Run(capture);
+                    var stats = host.RunCapture(capture, Program.ReplayOptionsOf(o, cluster));
                     host.Finish();
                     Console.WriteLine($"replay finished: {stats.Records.Values.Sum():N0} records, state digest {host.StateDigest()}");
                 }

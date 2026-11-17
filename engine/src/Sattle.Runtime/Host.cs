@@ -156,6 +156,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly IDurableStore? durable; IJournalStore? journal => durable; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition; readonly List<DurableView> views = [];
     // live input: the envelopes themselves are journaled (the adapters rebuild their state from them), with the position of the source they came from
     Replay? live; string? liveOptions;
+    /// <summary>The replay of a capture that feeds this host (`RunCapture`): its counts are part of the state of the input.</summary>
+    Replay? capture;
     readonly Dictionary<string, string> sourcePositions = new(StringComparer.Ordinal);
     readonly Queue<string> liveKeyOrder = []; readonly HashSet<string> liveKeys = new(StringComparer.Ordinal);
     const int LiveKeyWindow = 20_000;
@@ -354,6 +356,14 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public int SealsTaken { get; private set; }
     public long LastSealBytes { get; private set; }
     public long SealMilliseconds { get; private set; }
+
+    /// <summary>Feeds the space a capture through the adapters of the host (a served replay), under the lock that request handlers intern under.</summary>
+    public ReplayStats RunCapture(string dir, ReplayOptions options)
+    {
+        var replay = new Replay(this, Space, Adapters, options, Gate);
+        lock (Gate) capture = replay;
+        return replay.Run(dir);
+    }
 
     // ---- live input ----
 
@@ -699,7 +709,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                     ["direction"] = dir, ["editable"] = rules.Any(r => r.Class is "lens" or "bijective"), ["document"] = g.Typed.OutputModule == Documents.Module, ["description"] = export.DescriptionOf(g), ["dangling"] = Rev(g.State.Rels.Count(r => g.State.Entity(r.Source) is null || g.State.Entity(r.Target) is null)), ["danglingBy"] = DanglingBy(g), ["descriptor"] = export.Descriptor(g, served[g.Name].Head), ["projection"] = g.Typed.Name,
                 });
             }
-            var input = new JsonObject { ["mode"] = Mode, ["logicalTime"] = lambdaSeen == 0 ? null : Norm.Instant(lambdaSeen), ["rows"] = Rev(inputRows) };
+            var dropped = new JsonArray([.. ((this.live ?? capture)?.Stats.Dropped ?? new()).OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => (JsonNode)new JsonObject { ["adapter"] = x.Key[..x.Key.IndexOf('|')], ["rowType"] = x.Key[(x.Key.IndexOf('|') + 1)..], ["rows"] = Rev(x.Value) })]);
+            var input = new JsonObject { ["mode"] = Mode, ["logicalTime"] = lambdaSeen == 0 ? null : Norm.Instant(lambdaSeen), ["rows"] = Rev(inputRows), ["dropped"] = dropped };
             if (LiveStatus?.Invoke() is { } live) foreach (var kv in live) input[kv.Key] = kv.Value?.DeepClone();
             return new JsonObject { ["space"] = Space.Name, ["protocol"] = "3", ["seq"] = Rev(Seq), ["catalogRevision"] = Rev(catalogHistory.Count), ["kernelDigest"] = Kernel.CompiledDigest, ["graphs"] = graphs, ["input"] = input };
         }
