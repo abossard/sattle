@@ -989,30 +989,29 @@ static class DecimalKey
     }
 }
 
+/// <summary>Distinct: a row is in the output while its multiplicity is positive. The multiplicities are a Z-set (`Table`) whose key is the whole row: every column as its 8-byte code (a decimal as the two halves of its number, so 2.5 and 2.50 are one row) and a bit per absent column.</summary>
 sealed class DistinctOp : PhysOp
 {
-    sealed class Key(long[] v) : IEquatable<Key>
+    readonly int n; readonly int[] at; readonly Table counts;
+    public DistinctOp(TDistinct t, Layout inL) : base(t)
     {
-        readonly long[] v = v;
-        public bool Equals(Key? o) => o is not null && v.AsSpan().SequenceEqual(o.v);
-        public override bool Equals(object? o) => o is Key k && Equals(k);
-        public override int GetHashCode() { var h = new HashCode(); foreach (var x in v) h.Add(x); return h.ToHashCode(); }
+        n = inL.Count; at = new int[n + 1];
+        for (var c = 0; c < n; c++) at[c + 1] = at[c] + (inL.IsDec[c] ? 2 : 1);
+        var width = at[n] + ((n + 63) >> 6);
+        counts = new Table([.. Enumerable.Repeat(8, width)], keyColumns: width);
     }
-    readonly Dictionary<Key, long> counts = [];
-    readonly int n;
-    public DistinctOp(TDistinct t, Layout inL) : base(t) { n = inL.Count; }
 
-    long[] KeyOf(Batch b, int row)
+    /// <summary>The stored form of a batch row: each column at its place, then the absent bits.</summary>
+    void Encode(Batch b, int row, Span<long> key)
     {
-        var res = new long[n * 3];
+        key.Clear();
         for (var c = 0; c < n; c++)
         {
             var col = b.Cols[c];
-            if (!col.Present(row)) { res[c * 3] = 1; continue; }
-            if (col.IsDec) (res[c * 3 + 1], res[c * 3 + 2]) = DecimalKey.Of(col.D[row]);
-            else res[c * 3 + 1] = col.L[row];
+            if (!col.Present(row)) key[at[n] + (c >> 6)] |= 1L << (c & 63);
+            else if (col.IsDec) (key[at[c]], key[at[c] + 1]) = DecimalKey.Of(col.D[row]);
+            else key[at[c]] = col.L[row];
         }
-        return res;
     }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
@@ -1020,11 +1019,13 @@ sealed class DistinctOp : PhysOp
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         // decide per row in order: a row crossing zero is emitted at that moment, so batch-internal cancellation is visible
         var bb = EmptyOutput();
+        Span<long> key = stackalloc long[counts.Columns];
         for (var k = 0; k < b.Rows; k++)
         {
-            var src = b.RowAt(k); var key = new Key(KeyOf(b, src));
-            var before = counts.GetValueOrDefault(key); var after = before + b.Weight(src);
-            if (after == 0) counts.Remove(key); else counts[key] = after;
+            var src = b.RowAt(k);
+            Encode(b, src, key);
+            var before = counts.Weight(counts.Find(key)); var after = before + b.Weight(src);
+            counts.Add(key, b.Weight(src));
             var was = before > 0; var now = after > 0;
             if (was == now) continue;
             var row = bb.Add(now ? 1 : -1);
