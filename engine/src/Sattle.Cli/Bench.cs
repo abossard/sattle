@@ -40,7 +40,7 @@ static partial class Bench
     /// <summary>`lookBack`: every look-back and retention of the definitions (`24h`) becomes this duration, so that a run of a few dozen windows reaches the steady state that the shipped 24 h reach after 1,440.</summary>
     static Engine NewEngine(IGraphStore? store = null, string? lookBack = null)
     {
-        var cat = new Catalog(new Sattle.Kql.KqlSource());
+        var cat = new Catalog(Program.Projections);
         var files = Catalog.ReadDirectory(FindDefs());
         if (lookBack is not null)
             files = [.. files.Select(f => f with { Text = f.Text.Replace("24h", lookBack) })];

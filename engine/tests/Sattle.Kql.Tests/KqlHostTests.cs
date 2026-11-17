@@ -163,7 +163,7 @@ public class KqlHostTests
         var op = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>().StartsWith(projection + "/op:", StringComparison.Ordinal))!.DeepClone();
         op["id"] = new JsonObject { ["value"] = id };
         var e = Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = id, ["after"] = op }) }, 0));
-        Assert.Equal(("KqlProjection", "acme.svc.serviceDeps.kql"), (e.Code, e.Extra["file"]!.GetValue<string>()));
+        Assert.Equal(("ProjectionText", "acme.svc.serviceDeps.kql"), (e.Code, e.Extra["file"]!.GetValue<string>()));
         Assert.Equal("0", h.DraftInfo(d)["revision"]!.GetValue<string>());
         h.DiscardDraft(d);
     }

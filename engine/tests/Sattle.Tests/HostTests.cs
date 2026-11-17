@@ -231,7 +231,7 @@ public class HostTests
         var message = host ? Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { Cluster = "synth" })).Message
             : string.Join("\n", new Catalog().Load(files).Diagnostics.Select(d => d.Message));
         foreach (var kql in files.Where(f => f.Path.EndsWith(".kql", StringComparison.Ordinal)))
-            Assert.Contains($"{Path.GetFileName(kql.Path)} is a projection file and this catalog has no projection source to read it", message);
+            Assert.Contains($"{Path.GetFileName(kql.Path)} is no module text and this catalog has no projection source to read it", message);
     }
 
     /// <summary>A commit writes the module texts, which hold no projection, and each `.kql` file as it was committed; a host started from the written folder loads the same catalog.</summary>

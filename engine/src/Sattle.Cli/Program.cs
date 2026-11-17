@@ -29,6 +29,9 @@ public static class Program
         --from is where a live run starts when its store has no saved position; with one it continues after it.
         """;
 
+    /// <summary>The projection languages this build reads, the one place they are registered: KQL now (`module.projection.kql`).</summary>
+    public static readonly IProjectionSource Projections = new ProjectionSources(new Sattle.Kql.KqlSource());
+
     public static int Main(string[] args)
     {
         try
@@ -177,14 +180,14 @@ public static class Program
     {
         var dir = FindDefinitions(o);
         var files = Catalog.ReadDirectory(dir);
-        var cat = new Catalog(new Sattle.Kql.KqlSource());
+        var cat = new Catalog(Program.Projections);
         var res = cat.Load(files, updatePins: o.Flags.Contains("update-pins"));
         if (o.Flags.Contains("update-pins") && res.PinFixes.Count > 0)
         {
             foreach (var (path, text) in Catalog.ApplyPinFixes(files, res.PinFixes)) File.WriteAllText(path, text);
             Console.WriteLine($"updated {res.PinFixes.Count} import pin(s) in {res.PinFixes.Select(f => f.File).Distinct().Count()} file(s)");
             files = Catalog.ReadDirectory(dir);
-            cat = new Catalog(new Sattle.Kql.KqlSource()); res = cat.Load(files);
+            cat = new Catalog(Program.Projections); res = cat.Load(files);
         }
         Print(res.Diagnostics);
         var errors = res.Diagnostics.Count(d => d.IsError);
@@ -252,7 +255,7 @@ public static class Program
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
-        var cat = new Catalog(new Sattle.Kql.KqlSource());
+        var cat = new Catalog(Program.Projections);
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }
         var spaceId = o.Get("space") is { } sn ? cat.Spaces.Keys.FirstOrDefault(k => Ids.Name(k) == sn) ?? throw new ArgumentException($"no graph space '{sn}'") : cat.Spaces.Keys.First();
@@ -338,7 +341,7 @@ public static class Program
 
     /// <summary>The options `serve` builds its host with.</summary>
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
-        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = new Sattle.Kql.KqlSource() };
+        new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
 
     static int Serve(Options o, string capture, string cluster)
     {

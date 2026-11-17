@@ -26,7 +26,7 @@ public sealed class KqlSource : IProjectionSource
         return new ProjectionFacts(projections, places, diags);
     }
 
-    public bool Reads(string fileName) => fileName.EndsWith(".kql", StringComparison.Ordinal) && ModuleOf(fileName).Length > 0;
+    public string? Language(string fileName) => fileName.EndsWith(".kql", StringComparison.Ordinal) && ModuleOf(fileName).Length > 0 ? "kql" : null;
 
     /// <summary>The module a file `module.projection.kql` belongs to.</summary>
     static string ModuleOf(string path) => Path.GetFileNameWithoutExtension(path) is var n && n.LastIndexOf('.') is > 0 and var dot ? n[..dot] : "";

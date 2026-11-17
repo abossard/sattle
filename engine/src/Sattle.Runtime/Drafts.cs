@@ -135,15 +135,16 @@ public sealed partial class SpaceHost
         }
     }
 
-    /// <summary>A projection is a projection file: a structural edit of it would be lost at the next commit, which is made from text. Refused, with the file to edit.</summary>
-    static void RefuseProjections(IEnumerable<string> touched)
+    /// <summary>A projection is a projection file: a structural edit of it would be lost at the next commit, which is made from text. Refused, with the file to edit (the one the catalog read it from).</summary>
+    void RefuseProjections(IEnumerable<string> touched)
     {
         const string Slot = "/projection:";
         foreach (var id in touched)
             if (id.IndexOf(Slot, StringComparison.Ordinal) is >= 0 and var at && id.IndexOf('/', at + Slot.Length) is var end)
             {
                 var p = end < 0 ? id : id[..end];
-                throw new HostError("KqlProjection", $"projection {Ids.Name(p)} is written in KQL: edit {Ids.ModuleOf(p)}.{Ids.Name(p)}.kql", 422, new JsonObject { ["element"] = id, ["file"] = $"{Ids.ModuleOf(p)}.{Ids.Name(p)}.kql" });
+                var file = Catalog.FileOf.TryGetValue(p, out var f) ? Path.GetFileName(f) : null;
+                throw new HostError("ProjectionText", $"projection {Ids.Name(p)} is written in a projection file: edit {file ?? "its text"}", 422, new JsonObject { ["element"] = id, ["file"] = file });
             }
     }
 

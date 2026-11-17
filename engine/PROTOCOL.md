@@ -611,6 +611,11 @@ The text editor of a projection reads and checks its `.kql` text through these c
   - Definition text: `relationship R (A) -> (B) [hierarchy] [rollup] [kind K] { ... }`. Kernel: `RelationshipType.rollup`, Boolean, optional. The engine reads none of it.
   - Additive: a client of 3.48 ignores the key. The kernel digest is `sha256:d7491eded4c5663553d0589e588492ce6b99006cc93fb0aec5a0e2933e5059c3` (`GET /palette`, `kernelDigest`); a seal written by an earlier build is rejected and the journal is replayed.
 
+## Version 3.50: projection languages behind one seam
+- **`GET /definitions`**: every module has `projections`, a list of `{ "projection": "module.name", "file", "language" }` for its projections in files of their own (`language` is `kql` today). A client picks the editor for a projection by its language. Additive: a client of 3.49 ignores the key.
+- **Draft patches.** A patch that touches a projection is refused with the code `ProjectionText` (was `KqlProjection`), with `file` as before.
+- **Definitions folder.** Every file of the folder except hidden ones is read: a module text or a projection file that a source claims. Any other file is the error `UnreadFile` at load, as a projection file of a module that did not load already was.
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.

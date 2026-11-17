@@ -31,7 +31,7 @@ public sealed record HostOptions
     /// <summary>The late horizon a journal header or a seal recorded: the number, none where it recorded none, 3 where the record is older than the field.</summary>
     internal static int? StoredLateHorizon(JsonNode record) => record.AsObject().TryGetPropertyValue("lateHorizon", out var stored) ? stored?.GetValue<int>() : 3;
     public string? SpaceName { get; init; }
-    /// <summary>Reads the projections that are written in another language than a module's text, in definition files of their own (KQL). Every catalog the host builds uses it: at the start, for a definition commit, for a draft, and at a restart. Without one, a definition file that is no module text is an error of the load.</summary>
+    /// <summary>Reads the projections that are written in another language than a module's text, in definition files of their own (one source per language, `ProjectionSources` for several). Every catalog the host builds uses it: at the start, for a definition commit, for a draft, and at a restart. Without one, a definition file that is no module text is an error of the load.</summary>
     public IProjectionSource? Projections { get; init; }
     public long InputRowCap { get; init; } = 40_000_000;
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
@@ -125,12 +125,12 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     readonly HostOptions options;
     readonly Interner interner = new();
     readonly Dictionary<string, (string Path, string Text)> sources = new(StringComparer.Ordinal);
-    /// <summary>The definition files that are no module text (projections in KQL), as they were given. They go wherever the module texts go: into every catalog, the journal header and a seal.</summary>
+    /// <summary>The definition files that are no module text (projections in files of their own), as they were given. They go wherever the module texts go: into every catalog, the journal header and a seal.</summary>
     readonly List<SourceFile> others = [];
     /// <summary>Every definition file of the space: the module texts as they are now, and the other files.</summary>
     public List<SourceFile> DefinitionFiles() { lock (Gate) return [.. sources.Values.Select(f => new SourceFile(f.Path, f.Text)), .. others]; }
     /// <summary>A definition file is named by its module (a module text) or by its file name (a projection file that the catalog's source reads). Without a source every name is a module's.</summary>
-    bool IsFileName(string name) => options.Projections?.Reads(name) == true;
+    bool IsFileName(string name) => options.Projections?.Language(name) is not null;
     /// <summary>The module texts of a map of definition files.</summary>
     IEnumerable<KeyValuePair<string, string>> ModuleTexts(IReadOnlyDictionary<string, string> texts) => texts.Where(kv => !IsFileName(kv.Key));
     /// <summary>A name from a request is a plain name: it never reaches a path outside the definitions folder.</summary>
@@ -790,7 +790,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name) : throw new HostError("UnknownModule", $"no module {name}", 404);
         }
     }
-    public JsonNode Definitions() { lock (Gate) { return new JsonArray([.. Catalog.Modules.Values.Where(m => m.Name != Ids.KernelModule).Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["version"] = m.Version, ["digest"] = m.Digest, ["revision"] = Rev(Catalog.Graph.Entity(m.ReleaseId)?.Props.Text(Ids.KProp("revision")) is { } r ? long.Parse(r, CultureInfo.InvariantCulture) : 0) })]); } }
+    /// <summary>The modules, each with its projections from files of their own: the projection (`module.name`), its file and the language the file is written in, so a client can pick the editor for it.</summary>
+    public JsonNode Definitions() { lock (Gate) { return new JsonArray([.. Catalog.Modules.Values.Where(m => m.Name != Ids.KernelModule).Select(m => (JsonNode)new JsonObject { ["name"] = m.Name, ["version"] = m.Version, ["digest"] = m.Digest, ["revision"] = Rev(Catalog.Graph.Entity(m.ReleaseId)?.Props.Text(Ids.KProp("revision")) is { } r ? long.Parse(r, CultureInfo.InvariantCulture) : 0), ["projections"] = ProjectionFiles(m.Name) })]); } }
+    JsonArray ProjectionFiles(string module) => new([.. Catalog.Projections.Keys.Where(p => Ids.ModuleOf(p) == module && Catalog.FileOf.TryGetValue(p, out var f) && IsFileName(Path.GetFileName(f))).Order(StringComparer.Ordinal)
+        .Select(p => (JsonNode)new JsonObject { ["projection"] = module + "." + Ids.Name(p), ["file"] = Path.GetFileName(Catalog.FileOf[p]), ["language"] = options.Projections!.Language(Path.GetFileName(Catalog.FileOf[p])) })]);
 
     // ---- telemetry ----
     /// <summary>The relationships of a graph that name an endpoint it does not hold, by cause: relationship type, the end, the type of the missing entity and whether another graph holds it (`inOtherGraph`, with the graph) or no graph does (`absent`). Empty when every endpoint is in the graph.</summary>

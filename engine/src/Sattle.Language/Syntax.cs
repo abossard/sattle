@@ -269,7 +269,7 @@ public sealed class Parser
                     Sym("}");
                     return new RowsDecl(name, fields, doc, pos);
                 }
-            case "projection": p--; throw new SyntaxError("a projection is written in KQL, in a file module.projection.kql beside the module", Cur.Pos);
+            case "projection": p--; throw new SyntaxError("a projection is written in a file of its own beside the module, named module.projection with the extension of its language", Cur.Pos);
             case "space": return Space(doc, pos);
             default: p--; throw Err("expected entity, relationship, extend, constraint, identity, equivalence, rows or space");
         }

@@ -8,14 +8,43 @@ public sealed record SourceFile(string Path, string Text);
 public sealed record ModuleInfo(string Name, string Version, string Digest, string ReleaseId, string File, ModuleAst Ast);
 public sealed record PinFix(string File, Pos DigestPos, string Module, string Expected, string? Found);
 
-/// <summary>The projections, written in files of their own beside the module texts (a module text declares no projection).</summary>
+/// <summary>The projections, written in files of their own beside the module texts (a module text declares no projection), in a language a source reads.
+/// The seam between a projection language and the engine: below it a projection is facts, the same for every language.</summary>
 public interface IProjectionSource
 {
     /// <summary>The projections of `module` in `files` (every definition file that is not a module text), read against `catalog`,
     /// which holds the module's ontology and everything it imports; the module's spaces are lowered after, so they can bind these projections.</summary>
     ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files);
-    /// <summary>Whether a definition file of this name is one the source reads (a projection file), not a module text.</summary>
-    bool Reads(string fileName);
+    /// <summary>The language of a definition file of this name when the source reads it (a projection file), else null.</summary>
+    string? Language(string fileName);
+}
+
+/// <summary>Several projection sources as one: each source gets only the files it claims, and their facts are merged. A file that two sources read and a projection written in two files are errors.</summary>
+public sealed class ProjectionSources(params IProjectionSource[] sources) : IProjectionSource
+{
+    public string? Language(string fileName) => sources.Select(s => s.Language(fileName)).OfType<string>().ToList() is [var one] ? one : null;
+
+    public ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files)
+    {
+        var projections = new Dictionary<string, IReadOnlyList<Element>>(StringComparer.Ordinal);
+        var places = new Dictionary<string, (string File, Pos Pos)>(StringComparer.Ordinal);
+        var diags = new List<Diagnostic>();
+        var readBy = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var s in sources)
+        {
+            var mine = files.Where(f => s.Language(Path.GetFileName(f.Path)) is not null).ToList();
+            if (mine.Count == 0) continue;
+            var low = s.Lower(catalog, module, mine);
+            diags.AddRange(low.Diagnostics);
+            var language = s.Language(Path.GetFileName(mine[0].Path))!;
+            foreach (var file in low.Places.Values.Select(p => p.File).Distinct(StringComparer.Ordinal))
+                if (!readBy.TryAdd(file, language)) diags.Add(new Diagnostic("ProjectionFile", "error", "", $"{Path.GetFileName(file)} is read by two projection languages, {readBy[file]} and {language}", file, 1, 1));
+            foreach (var (id, facts) in low.Projections)
+                if (!projections.TryAdd(id, facts)) diags.Add(new Diagnostic("ProjectionFile", "error", id, $"projection {Ids.Name(id)} is written in two files, {Path.GetFileName(places[id].File)} and {Path.GetFileName(low.Places[id].File)}", low.Places[id].File, 1, 1));
+            foreach (var (id, place) in low.Places) places.TryAdd(id, place);
+        }
+        return new ProjectionFacts(projections, places, diags);
+    }
 }
 
 /// <summary>The facts of a module's projections, by projection id; the file and position each element comes from; and what is wrong.</summary>
@@ -59,9 +88,9 @@ public sealed class Catalog
         Modules[Ids.KernelModule] = new ModuleInfo(Ids.KernelModule, Kernel.Version, Kernel.CompiledDigest, kernelRelease, "<kernel>", new ModuleAst(Ids.KernelModule, Kernel.Version, null, [], [], default));
     }
 
-    /// <summary>The definition files of a folder: the module texts (`.sattle`) and the projections in files of their own (`.kql`), which only a catalog with a projection source reads.</summary>
+    /// <summary>The definition files of a folder: every file in it except hidden ones. A file is a module text (`.sattle`) or a projection in a file of its own, which only a catalog with a projection source for its language reads; any other file is an error at load.</summary>
     public static List<SourceFile> ReadDirectory(string dir) =>
-        [.. Directory.EnumerateFiles(dir, "*.sattle").Concat(Directory.EnumerateFiles(dir, "*.kql")).Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
+        [.. Directory.EnumerateFiles(dir).Where(f => !Path.GetFileName(f).StartsWith('.')).Order(StringComparer.Ordinal).Select(f => new SourceFile(f, File.ReadAllText(f)))];
 
     /// <summary>Digest of a module release (section 2.9): sha256 of the canonical JSON of the sorted facts of the contains-closure, the edges leaving it and the import triples.</summary>
     public static string ModuleDigest(Graph g, string module, IEnumerable<(string Module, string Version, string Digest)> imports)
@@ -149,7 +178,7 @@ public sealed class Catalog
     static IEnumerable<Diagnostic> Unread(IEnumerable<SourceFile> others, IReadOnlySet<string> read, bool hasSource) =>
         others.Where(f => !read.Contains(f.Path)).Select(f => new Diagnostic("UnreadFile", "error", "", hasSource
             ? $"no module read {Path.GetFileName(f.Path)}: its module is missing or did not load, or nothing reads files of its kind"
-            : $"{Path.GetFileName(f.Path)} is a projection file and this catalog has no projection source to read it: the projections of a definitions folder are in its .kql files", f.Path, 1, 1));
+            : $"{Path.GetFileName(f.Path)} is no module text and this catalog has no projection source to read it", f.Path, 1, 1));
 
     void LoadModule(SourceFile file, ModuleAst ast, List<Diagnostic> diags, List<PinFix> fixes, bool updatePins, IReadOnlyList<SourceFile> others, HashSet<string> read)
     {

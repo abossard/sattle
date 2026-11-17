@@ -500,7 +500,7 @@ public sealed class ProjectionChecker(Graph defs)
                         case "sum": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "sum needs a numeric argument"); else ft = new FType(v.Type.Ty, v.Type.Req, Role.Data); break;
                         case "mean": if (!v.Type.Ty.IsNumeric) Err("Aggregate", a, "mean needs a numeric argument"); else ft = new FType(Ty.Dec(), false, Role.Data); break;
                         case "last":
-                            if (row is null) Err("Unsupported", a, "last needs a row mark: the last aggregates of one row take their values from it (KQL writes them with arg_max)");
+                            if (row is null) Err("Unsupported", a, "last needs a row mark: the last aggregates of one row take their values from it");
                             else if (w is null) Err("Aggregate", a, "last needs an ordering: last(value, order)");
                             else if (!w.Type.Role.IsData || w.Type.Ty.Tag is not (Tag.Integer or Tag.Decimal or Tag.Instant)) Err("Aggregate", a, $"the ordering of last must be a data Integer, Decimal or Instant, found {w.Type}");
                             else if (v.Type.Ty.Tag is Tag.Ent or Tag.Rel or Tag.Null) Err("Aggregate", a, "last takes a value column, not an element");

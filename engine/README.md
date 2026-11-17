@@ -29,7 +29,7 @@ dotnet build -c Release src/Sattle.Cli
 ```bash
 sattle check [--defs DIR] [--update-pins] [--print MODULE] [--plan]
 ```
-- Parses and checks every `.sattle` and `.kql` file in `definitions/`: syntax with positions, K1 to K11, the typing judgments, release digests and import pins. Errors print as `file:line:col: error Code: message`. Exit 1 on errors.
+- Parses and checks every file in `definitions/`: a `.sattle` module text, or a projection in a file of its own that a projection source reads (`.kql` now; `Program.Projections` is the one place the languages are registered, behind `IProjectionSource`, and nothing below that seam names a language). Checked: syntax with positions, K1 to K11, the typing judgments, release digests and import pins. Errors print as `file:line:col: error Code: message`. Exit 1 on errors.
 - `--update-pins` rewrites import digests in place (digests are computed, never typed). `--print` shows the canonical printed form. `--plan` shows the compiled plan: strategy per operator, fused chains, adapter contract check.
 ```bash
 sattle replay CAPTURE [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N] [--late-horizon WINDOWS] [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
