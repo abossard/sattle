@@ -193,6 +193,8 @@ public class ExpressivenessTests
         { "E6: a graph that reads itself", View("""nodes Out on o = graph("g") | graph-match (i) where labels(i) has "Out" project k = i.k""" + Out, "input g : w.view;", "  graph x = view.v(g: x);"), "graph production has a cycle" },
         { "E9: an order over rows", View("nodes Out on o = " + ItemRows + " | serialize | extend p = prev(k)" + Out), "serialize is not in the KQL profile" },
         { "E9: a percentile", View("nodes Out on o = " + ItemRows + " | summarize p = percentile(n, 50) by k" + Out), "percentile is not an aggregate of the profile" },
+        { "E9: a group by an identity column (#114)", View("nodes Out on o = " + ItemRows + """ | project p = identity("out", k) | summarize c = count() by p | project o = p, k = "x";"""), "'p' is an identity: it names a node or an end of an edge, it is not a value" },
+        { "E9: a join on an identity column (#114)", View("let ids = " + ItemRows + """ | project p = identity("out", k), k;""" + "\nnodes Out on o = ids | join kind=inner (ids | project p2 = p, k2 = k) on $left.p == $right.p2 | project o = p, k;"), "'p' is an identity: it names a node or an end of an edge, it is not a value" },
         { "E9: an identity used as a value", View("nodes Out on o = " + ItemRows + """ | project p = identity("out", k), k | where p == p | project o = p, k;"""), "is an identity: it names a node or an end of an edge, it is not a value" },
     };
 
@@ -202,4 +204,91 @@ public class ExpressivenessTests
         var errors = new Catalog(EngineRun.Projections).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => d.Message).ToArray();
         Assert.True(errors.Any(e => e.Contains(says, StringComparison.Ordinal)), $"{what}: expected \"{says}\", found {(errors.Length == 0 ? "no error" : string.Join("; ", errors))}");
     }
+
+    // ---- a group by an element that a link merges (#114) ----
+
+    /// <summary>Pods by uid, each linked to the name it is seen under, so a uid seen under two names merges them into one pod; calls name their pod by name. A view counts the calls of each pod by the pod it matches (Def. 5.9). A group by the identity column `identity("podName", src)` in the master would stay split into one group per name, and the front end refuses it.</summary>
+    static readonly World GroupByMergedPod = new("a group by a pod whose names a link merges", "Link, Match, Group, EmitEntity in a view",
+        [
+            new SourceFile("w.sattle", """
+                module w @ 1.0.0;
+                entity Pod { uid?: Text; }
+                entity Call { src: Text; at: Text; }
+                relationship Of (Call) -> (Pod);
+                identity podUid for Pod version "1" { uid: Text by exact; }
+                identity podName for Pod version "1" { name: Text by exact; }
+                identity call for Call version "1" { src: Text by exact; at: Text by exact; }
+                equivalence uidIsName between podUid, podName assert threshold 1.0;
+                rows PodRow { uid: Text; name: Text; }
+                rows CallRow { src: Text; at: Text; }
+                """),
+            Worlds.Kql("w", "ingest", """
+                graph ingest : w;
+                input pods : PodRow;
+                input calls : CallRow;
+                nodes Pod on p with (rule = "observed") = pods | project p = identity("podUid", uid), uid;
+                link uidIsName from byUid to byName with (confidence = 1.0, rule = "observed") = pods | project byUid = identity("podUid", uid), byName = identity("podName", name);
+                nodes Call on c with (rule = "observed") = calls | project c = identity("call", src, at), src, at;
+                edges Of from c to p with (rule = "observed") = calls | project c = identity("call", src, at), p = identity("podName", src);
+                """),
+            new SourceFile("w.view.sattle", "module w.view @ 1.0.0;\nimport w @ 1.0.0 sha256:… as base;\nentity Caller { calls: Integer; }\n"),
+            Worlds.Kql("w.view", "v", """
+                graph v : w.view;
+                input master : base;
+                nodes Caller on p = graph("master") | graph-match (c)-[o]->(p) where labels(o) has "Of" project p = p.id | summarize calls = count() by p;
+                """),
+            Worlds.Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
+                  source pods adapter "sattle.authoring" rows base.PodRow;
+                  source calls adapter "sattle.authoring" rows base.CallRow;
+                  master graph master = base.ingest(pods: pods, calls: calls);
+                  graph view = view.v(master: master);
+                """),
+        ],
+        [
+            new("pods", (r, _) => Row(("uid", Text(r, "u", 2)), ("name", Text(r, "a", 3)))),
+            new("calls", (r, _) => Row(("src", Text(r, "a", 3)), ("at", Text(r, "t", 5)))),
+            new("calls", (r, _) => Row(("src", Text(r, "a", 3)), ("at", Text(r, "t", 5)))),
+        ]) { Witnesses = ["prop:calls="] };
+
+    [Fact]
+    public void A_group_by_a_merged_pod_agrees_with_the_reference_however_the_log_is_cut()
+    {
+        var report = Differential.Check(GroupByMergedPod, seeds: 12, length: 14, reordered: false);
+        Assert.True(report is null, report);
+    }
+
+    /// <summary>Def. 5.9: a merge re-keys a group by an element. After every default log, the calls of the pods add up to the calls whose name belongs to a pod, counted once per pod over all its names, and no pod has two values for its calls; some logs merge two names of one pod.</summary>
+    [Fact]
+    public void A_group_by_a_merged_pod_counts_it_once_over_all_its_names()
+    {
+        var w = GroupByMergedPod;
+        var merged = 0;
+        foreach (var seed in Enumerable.Range(0, 12))
+        {
+            var log = w.Log(seed, 14);
+            var view = ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["view"];
+            // links are timeless (Theorem 1.5): every pods row ever inserted joins its uid and its name
+            var parent = new Dictionary<string, string>(StringComparer.Ordinal);
+            string Find(string x) => parent.TryGetValue(x, out var p) && p != x ? parent[x] = Find(p) : x;
+            foreach (var r in log.OfType<RowInput>().Where(r => r.Source == "pods" && r.Weight > 0))
+            {
+                var (u, n) = (Find("uid:" + ((TextValue)r.Fields["uid"]).S), Find("name:" + ((TextValue)r.Fields["name"]).S));
+                if (u != n) parent[u] = n;
+            }
+            var present = Integrated(log, "pods").Select(f => Find("uid:" + ((TextValue)f["uid"]).S)).ToHashSet(StringComparer.Ordinal);
+            var expected = Integrated(log, "calls").Select(f => (Src: ((TextValue)f["src"]).S, At: ((TextValue)f["at"]).S)).Distinct()
+                .Count(c => present.Contains(Find("name:" + c.Src)));
+            if (parent.Keys.Concat(parent.Values).Where(k => k.StartsWith("name:", StringComparison.Ordinal)).Distinct().GroupBy(Find).Any(g => g.Count() > 1)) merged++;
+            var calls = view.Entities.Values.SelectMany(e => e.Props.Where(kv => kv.Key.EndsWith("prop:calls", StringComparison.Ordinal))).Sum(kv => (long)((IntegerValue)kv.Value).N);
+            Assert.True(view.Conflicts.IsEmpty, $"seed {seed}: conflicts {string.Join("; ", view.Conflicts)}");
+            Assert.Equal(expected, calls);
+        }
+        Assert.True(merged > 0, "no default log merges two names of one pod");
+    }
+
+    /// <summary>The rows of `source` with positive integrated weight, each as often as its weight.</summary>
+    static IEnumerable<ImmutableSortedDictionary<string, Value>> Integrated(IEnumerable<Input> log, string source) =>
+        log.OfType<RowInput>().Where(r => r.Source == source)
+            .GroupBy(r => string.Join(",", r.Fields.Select(f => f.Key + "=" + Canon.Of(f.Value))))
+            .SelectMany(g => Enumerable.Repeat(g.First().Fields, (int)Math.Max(0, g.Sum(r => r.Weight))));
 }

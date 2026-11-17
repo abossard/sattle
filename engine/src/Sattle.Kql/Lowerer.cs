@@ -883,12 +883,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 byWindow = binned = true; continue;
             }
             if (name == "windowStart" && e is NameReference { SimpleName: "windowStart" }) { byWindow = true; continue; }
-            if (e is NameReference nr && r.Idents.TryGetValue(nr.SimpleName, out var id))
-            {
-                for (var k = 0; k < id.Parts.Length; k++) { keys.Add(($"{name}__{k + 1}", id.Parts[k].Value)); next.Cols.Add($"{name}__{k + 1}"); }
-                next.Idents[name] = new IdX(id.Domain, [.. id.Parts.Select((p, k) => (p.Component, (X)F($"{name}__{k + 1}")))]);
-                continue;
-            }
+            // an identity is no key (Scalar refuses it): a group by its components would stay split when a link merges two keys (Def. 5.9)
             var x = Scalar(e, r);
             keys.Add((name, x)); next.Cols.Add(name);
             if (x is FieldX f && !f.Path.Contains('.') && r.Types.TryGetValue(f.Path, out var t)) next.Types[name] = t;
@@ -1009,13 +1004,9 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         foreach (var (l, rr0) in pairs)
         {
             var rr = rename.GetValueOrDefault(rr0, rr0);
-            if (left.Idents.TryGetValue(l, out var li) && right.Idents.TryGetValue(rr, out var ri))
-            {
-                if (li.Domain != ri.Domain) throw new Refused($"'{l}' and '{rr0}' are identities of different domains", on);
-                for (var k = 0; k < li.Parts.Length; k++) conds.Add(new CallX("Equal", li.Parts[k].Value, ri.Parts[k].Value));
-                continue;
-            }
-            if (left.Idents.ContainsKey(l) || right.Idents.ContainsKey(rr)) throw new Refused($"join an identity with an identity of the same domain", on);
+            // a key of an identity would stay split when a link merges two of its keys (Def. 5.9): join by an element read through graph-match
+            if (left.Idents.ContainsKey(l) || right.Idents.ContainsKey(rr))
+                throw new Refused($"'{(left.Idents.ContainsKey(l) ? l : rr0)}' is an identity: it names a node or an end of an edge, it is not a value", on);
             if (!left.Cols.Contains(l)) throw new Refused($"the left side has no column '{l}'", on);
             if (!right.Cols.Contains(rr)) throw new Refused($"the right side has no column '{rr0}'", on);
             var (lt, rt) = (left.Types.GetValueOrDefault(l), right.Types.GetValueOrDefault(rr));
