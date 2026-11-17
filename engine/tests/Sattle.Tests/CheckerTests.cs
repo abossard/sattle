@@ -47,6 +47,21 @@ public class CheckerTests
             """),
     ];
 
+    /// <summary>A lens `top` over the lens view `view`: `view` edits the master's items by `k`, `top` edits the elements of `view` by `k`.</summary>
+    static SourceFile[] LensOverLens()
+    {
+        var files = View("nodes Out on o with (rule = \"items\", update = \"k\") = " + "graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project o = i.id, k = i.k;\n",
+            space: "graph view = v.v(master: master);\n  graph top = w.w(g: view);");
+        var space = files.Single(f => f.Path == "s.sattle");
+        return
+        [
+            .. files.Where(f => f != space),
+            new("w.sattle", "module w @ 1.0.0;\nimport v @ 1.0.0 sha256:… as v;\nentity Top { k: Text; }\n"),
+            new("w.w.kql", "graph w : w;\ninput g : v;\nnodes Top on o with (rule = \"tops\", update = \"k\") = graph(\"g\") | graph-match (x) where labels(x) has \"Out\" project o = x.id, k = x.k;\n"),
+            space with { Text = space.Text.Replace("import v @ 1.0.0 sha256:… as v;", "import v @ 1.0.0 sha256:… as v;\nimport w @ 1.0.0 sha256:… as w;") },
+        ];
+    }
+
     const string Items = "graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i = i.id, k = i.k, g = i.g";
     const string Plain = "nodes Out on o = " + Items + " | project o = identity(\"out\", k), k;\n";
     /// <summary>The windows of the items' hits within three minutes.</summary>
@@ -90,6 +105,7 @@ public class CheckerTests
         { "a no-data state without a time to live upstream", View(Quiet("telemetry(\"master\", 3m)", Said)), "Threshold", "needs telemetry with a time to live" },
         { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded("c = k, g"), LoadType), "B1", "grouped by 'g'" },
         { "a reference to another entity type than the property names", View("nodes Out on o = " + Items + " | project o = identity(\"out\", k), k, owner = i;\n"), "Set", "owner expects" },
+        { "a lens over a lens view: the engine runs one lens over a bijective rule (Ch. 8)", LensOverLens(), "Unsupported", "rule tops: a lens over the lens view view is later work" },
         { "a lens rule whose rows pass through a join: a join is not a lens step", View("nodes Out on o with (rule = \"items\", update = \"k\") = " + Items + " | join kind=inner (graph(\"master\") | graph-match (x) where labels(x) has \"Other\" project g = x.k) on g | project o = i, k;\n"), "DirectionOverclaim", "(Join) is many-to-one or lossy" },
     };
 

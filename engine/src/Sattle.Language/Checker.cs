@@ -1241,6 +1241,22 @@ public sealed class SpaceChecker(Graph defs)
             if (ops.OfType<TLink>().Any())
                 Err("S1", spaceId, $"graph {g.Name} ingests and is not the master: it links no identities, a link rule belongs to the master's projection");
         }
+        // a lens over a lens view: the engine translates an edit of a view straight to the graph that ingests the type (Ch. 8), so it runs one lens over a bijective rule and refuses a deeper stack, as it refuses sync
+        bool HasLens(TGraph g) => (g.Instance ?? projections[g.ProjectionId]).Rules.Any(r => r.Class == "lens");
+        foreach (var g in graphs)
+        {
+            var tp = g.Instance ?? projections[g.ProjectionId];
+            var byName = tp.Ops.ToDictionary(o => o.Name);
+            foreach (var r in tp.Rules.Where(r => r.Class == "lens"))
+                foreach (var sink in r.Sinks.Where(byName.ContainsKey).Select(n => byName[n]))
+                {
+                    var ports = new HashSet<string>(StringComparer.Ordinal);
+                    void Trace(TOp op) { foreach (var (_, src) in op.Inputs) if (src.IsPort) ports.Add(src.Name); else Trace(byName[src.Name]); }
+                    Trace(sink);
+                    foreach (var up in ports.Select(pn => g.Bindings.GetValueOrDefault(pn)).Select(n => graphs.FirstOrDefault(x => x.Name == n)).OfType<TGraph>().Where(HasLens))
+                        Err("Unsupported", sink.Id, $"rule {r.Name}: a lens over the lens view {up.Name} is later work; the engine runs one lens over a bijective rule");
+                }
+        }
         // S4: a pattern node of a type the matched graph never holds is a reference (the end of a relationship, by its id): it has no properties to read
         foreach (var g in graphs)
         {
