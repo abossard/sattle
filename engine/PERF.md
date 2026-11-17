@@ -399,6 +399,45 @@ Every operator call built a new output batch, 64 rows of every column and the we
 - Wall time: the machine ran at a load average of 50 to 250 (other sessions), so single times say little: 23.9 to 61.4 s before and 21.0 to 41.2 s after over the alternating runs.
 - The state digests are unchanged (estate, `lab/fixtures`, both recordings).
 
+## Memory cost of the week's foundations (#108, 2026-11-17)
+Theory. A step may keep what the next change needs, keyed by what exists now; it must not keep what grows with the input, and a change must cost what it touches, not what the estate holds. Three places broke that rule, and each is fixed here:
+- **Selects** matched every change against every Service and Deployment of the estate and compared the rows of a namespace pairwise. Label selection is local to a namespace, so the state is now kept per namespace (a reduce keyed by cluster and namespace): a Service change is matched against the Deployments of its namespace only, a Deployment change against its Services, and each (Service, Deployment) row carries a count of the object pairs that give it. A row is written when its count leaves 0 and taken back when it returns to 0; an object delivered again unchanged writes nothing.
+- **Dropped rows** were written with the engine's interner, which only grows: every text of a row no source binds stayed in memory for the life of the space. Those rows are never read, so their writers now keep no text table: the rows are counted and their texts are not kept.
+- **The inputs kept for a definition commit** were held in memory up to 40 million rows even when the space has a journal, which holds the same inputs. A space with a journal now keeps none and reads them from the journal (the path a seal restart already took); a space without a journal keeps them up to the cap as before.
+
+Per foundation: the structure that holds its state, its cost per change, and what it retains.
+
+| Foundation | State (structure) | Per change: time, allocation | Retained per element |
+|---|---|---|---|
+| Live input, dedup window | `Queue<string>` and `HashSet<string>` of the last 20,000 envelope keys | one hash lookup and insert; the key's JSON is parsed for the lookup | about 150 B per key (a key of about 48 characters, a set entry, a queue slot): about 3 MB for the full window, constant |
+| Live input, journal and recording | the journal store (SQLite), the recording file | one journal append and one file append per envelope; nothing in memory | none in memory |
+| Live input, retry position and lag | one position text per source; the lag is one record after processing | one dictionary write | one entry per source |
+| Live input, inputs kept for a definition commit | `List<EngineInput>` of row batches (before: always, up to 40 M rows; now: only without a journal) | one list append | 8 B per column per row (4 to 11 columns: 32 to 88 B per row), so 1.3 to 3.5 GB at the cap before the fix for a space with a journal; now 0 |
+| Selects | per namespace: Services and Deployments by key, and a count per (Service name, Deployment name) | before: every Service and Deployment of the estate, then a pairwise comparison of the namespace's rows; now: the other kind of the same namespace, one label check each | a label array per Service and Deployment, two dictionary entries, one count per pair |
+| Roll-up marker and origin | one boolean on the relationship type in the catalog; the origin is read by the canvas | none | none per element |
+| Projection sources | none after lowering: the lowered operators are catalog elements the plans need, the file texts are the definitions the host keeps for a restart | per catalog build only | none per projection beyond the catalog |
+| Dropped-row counts | `Dictionary<string, long>` by adapter and row type, one row writer per unbound type | before: the row's texts interned for good; now: counted, the texts not kept | one entry and one writer per unbound type |
+
+Measured on the estate of the tests (73 master nodes, 2,266 records) and capture 20261110T140542Z (48,287 master entities, 160,300 records), Release builds of each commit in a clone, `sattle bench phases --capture` (allocation per record and per row after setup) and `sattle replay --census` (bytes retained per structure after a forced compacting collection). The capture before #104 replays with the space overlay without its two `selections` lines. One run per figure; the machine was shared (load average up to 581 at the end), so times are noisy and byte figures are not.
+
+| Build | Estate: adapters, B per record allocated / B per master node retained | Estate: replay (writers, dropped counts), B per node | Capture: adapters, B per record allocated | Capture: allocated per input row (whole path) | Capture: adapters / replay / interner retained | Capture: live bytes |
+|---|---|---|---|---|---|---|
+| before the roll-up marker (b831eef) | 6,893 / 400 | 1,362 | 10,007 | 16,455 B | 0.3 / 0.1 / 33.8 MB | 237 MB |
+| roll-up marker (82db158; measured at 99f0ee8, which also holds the live input changes of #102 and #105) | 6,893 / 400 | 1,362 | 10,025 | 16,292 B | 0.3 / 0.1 / 33.8 MB | 236 MB |
+| projection sources (measured at e150797) | 6,893 / 400 | 1,362 | 10,025 | 16,291 B | 0.3 / 0.1 / 33.8 MB | 236 MB |
+| Selects (f3b5e81) | 6,955 / 428 | 1,437 | 10,032 | 16,433 B | 0.3 / 0.1 / 33.8 MB | 236 MB |
+| dropped-row counts (8564071, measured at 4fa7f8c) | 6,955 / 428 | 1,439 | 10,030 | 16,432 B | 0.3 / 0.1 / 33.8 MB | 236 MB |
+| streaming operators (#39, 955c66f) | 4,284 / 428 | 337 | 10,031 | 12,858 B | 0.3 / below 0.1 / 33.8 MB | 239 MB |
+| this change, on 955c66f | 4,281 / 436 | 337 | 10,026 | 12,857 B | 0.3 / below 0.1 / 33.8 MB | 239 MB |
+
+- The roll-up marker and the projection sources cost nothing measurable per element, as the structure says. Selects costs 28 B per master node in the adapter on the estate (its 3 Services and 2 Deployments) and 75 B in the replay (the `SelectsRow` writer); on the capture 1 B per node. The dropped-row counts cost 2 B per node on the estate. This change adds 8 B per node on the estate (the per-namespace index).
+- The rows of #39 and of this change are measured on 955c66f, whose batch builders reuse their arrays: that, not this change, moves the estate's adapter and replay figures. The allocation trace's fix in #39 changes which operator a byte is counted to, not the totals above, which are the thread's own counter around each phase; the adapter phase runs outside the engine and is not traced.
+- At scale the old matching is the cost. A synthetic capture of 20 namespaces, each with 100 Services and 100 Deployments, delivered twice (8,000 records), on 955c66f, alternating: the adapters took 42.1 and 46.1 s and allocated 40.8 GB (5.1 MB per record) before; 0.21 and 0.26 s and 40 MB (5.0 KB per record) after. The label check now compares the pairs in place: as a `Contains` on the label array it boxed every pair it compared.
+- The engine's ingest of the same 8,000 records allocates 15.2 GB (1.9 MB per Kubernetes record) with and without this change. That is the cost of the operators on many Services and Deployments, not of Selects, and belongs to the efficiency concept (#3, #49).
+- State digests are unchanged by this change: estate `sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422`, capture 20261110T140542Z with the overlay `sha256:bd7dd35664dec61df5868c9d35c8bc97620ecc5fa7670b2b9439d15f074ccb13`.
+- Proofs: `The_texts_of_dropped_rows_stay_out_of_the_interner` (fails before: the text is interned), `Selections_of_several_Services_and_Deployments_follow_each_object_in_its_namespace` and the Selects, dropped-row, forwarder and restart tests as before. On 955c66f with this change: `Sattle.Differential` 241 of 241, X12 16 of 16, the KQL tests 229 of 229, the default run of `Sattle.Tests` 674 passed and 2 skipped, and the slow restart, seal, live-crash and forwarder tests 63 of 63. A seal of a live space holds one text table: the writers of unbound rows hold none, which a first variant with a second, emptied table broke.
+- Left as it is, by measurement: a live envelope's JSON is parsed four times (its key and its envelope, once to decide on duplicates and again when its journal entry is applied); the parse costs 28 KB per record on the capture, so the live path pays about twice that. It does not grow with the input.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

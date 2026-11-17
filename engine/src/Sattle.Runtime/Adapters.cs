@@ -101,9 +101,11 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     readonly Dictionary<string, List<string?[]>> slices = [];
     /// <summary>The label selector of each Service and the pod template labels of each Deployment, by the object's key.</summary>
     readonly Dictionary<string, Labelled> selectors = [], templates = [];
-    /// <summary>The `SelectsRow` rows written, per cluster and namespace.</summary>
-    readonly Dictionary<string, List<string?[]>> selects = [];
+    /// <summary>Label selection per cluster and namespace (Kubernetes selects only within a namespace), so a change is matched against its namespace alone.</summary>
+    readonly Dictionary<string, Scope> scopes = [];
     sealed record Labelled(string Cluster, string Namespace, string Name, KeyValuePair<string, string>[] Labels);
+    /// <summary>The Services and Deployments of one namespace by key, and per written `SelectsRow` (Service name, Deployment name) the number of object pairs that give it: a row is written when its count leaves 0 and taken back when it returns to 0.</summary>
+    sealed class Scope { public readonly Dictionary<string, Labelled> Selectors = [], Templates = []; public readonly Dictionary<(string Service, string Deployment), int> Pairs = []; }
     readonly Dictionary<string, long> eventCounts = [];
     public long Events { get; private set; }
 
@@ -130,9 +132,9 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                 switch (path[(path.LastIndexOf('/') + 1)..])
                 {
                     case "pods": foreach (var k in Gone(pods.Keys)) Upsert(pods, k, null, sink, "PodRow", WritePod); break;
-                    case "services": foreach (var k in Gone(services.Keys)) { Upsert(services, k, null, sink, "ServiceRow", WriteService); Label(selectors, k, null, sink); } break;
+                    case "services": foreach (var k in Gone(services.Keys)) { Upsert(services, k, null, sink, "ServiceRow", WriteService); Label(true, k, null, sink); } break;
                     case "nodes": foreach (var k in Gone(nodes.Keys)) Upsert(nodes, k, null, sink, "NodeRow", WriteNode); break;
-                    case "deployments": foreach (var k in Gone(deployments.Keys)) { Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); Label(templates, k, null, sink); } break;
+                    case "deployments": foreach (var k in Gone(deployments.Keys)) { Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); Label(false, k, null, sink); } break;
                     case "endpointslices": foreach (var k in Gone(slices.Keys)) RemoveSlice(k, sink); break;
                     case "serviceaccounts": foreach (var k in Gone(accounts.Keys)) Upsert(accounts, k, null, sink, "ServiceAccountRow", WriteAccount); break;
                 }
@@ -181,11 +183,11 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                 Upsert(deployments, key, deleted ? null : [uid, ns, name, obj.Path("spec", "replicas") is { ValueKind: JsonValueKind.Number } rp ? rp.GetInt64().ToString(CultureInfo.InvariantCulture) : null, cluster], sink, "DeploymentRow",
                     WriteDeployment);
                 HostReferences(key, ns, name, deleted ? null : obj, sink);
-                Label(templates, key, deleted ? null : new(cluster, ns, name, LabelsOf(obj.Path("spec", "template", "metadata", "labels"))), sink);
+                Label(false, key, deleted ? null : new(cluster, ns, name, LabelsOf(obj.Path("spec", "template", "metadata", "labels"))), sink);
                 break;
             case "Service":
                 Upsert(services, key, deleted ? null : [uid, ns, name, obj.PathS("spec", "externalName"), AddressOf(obj), cluster], sink, "ServiceRow", WriteService);
-                Label(selectors, key, deleted ? null : new(cluster, ns, name, obj.PathS("spec", "type") == "ExternalName" ? [] : LabelsOf(obj.Path("spec", "selector"))), sink);
+                Label(true, key, deleted ? null : new(cluster, ns, name, obj.PathS("spec", "type") == "ExternalName" ? [] : LabelsOf(obj.Path("spec", "selector"))), sink);
                 break;
             case "Node":
                 Upsert(nodes, key, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID")), obj.PathS("metadata", "labels", "kubernetes.azure.com/agentpool") ?? obj.PathS("metadata", "labels", "agentpool"), cluster], sink, "NodeRow", WriteNode);
@@ -298,28 +300,48 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     static KeyValuePair<string, string>[] LabelsOf(JsonElement? map) =>
         map is { ValueKind: JsonValueKind.Object } m ? [.. m.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).Select(p => KeyValuePair.Create(p.Name, p.Value.GetString()!))] : [];
 
-    /// <summary>Sets the labels of one Service or Deployment, or removes them (null), and writes what that changes in the `SelectsRow` rows of its namespace.</summary>
-    void Label(Dictionary<string, Labelled> state, string key, Labelled? next, IRowSink sink)
+    /// <summary>Sets the labels of one Service (`service`) or Deployment, or removes them (null), and writes what that changes in the `SelectsRow` rows of its namespace. Only the other kind of the same namespace is matched against the old and the new labels: the cost of a change is the size of its namespace, not of the estate, and an unchanged object writes nothing.</summary>
+    void Label(bool service, string key, Labelled? next, IRowSink sink)
     {
-        var at = next ?? state.GetValueOrDefault(key);
+        var state = service ? selectors : templates;
+        var old = state.GetValueOrDefault(key);
+        var at = next ?? old;
         if (at is null) return;
-        if (next is null) state.Remove(key); else state[key] = next;
-        Select(at.Cluster, at.Namespace, sink);
+        var sk = Key(at.Cluster, at.Namespace);
+        if (!scopes.TryGetValue(sk, out var scope)) scopes[sk] = scope = new();
+        foreach (var other in (service ? scope.Templates : scope.Selectors).Values)
+        {
+            int Match(Labelled? x) => x is not null && (service ? Selects(x, other) : Selects(other, x)) ? 1 : 0;
+            var delta = Match(next) - Match(old);
+            if (delta != 0) Count(scope, at.Cluster, at.Namespace, service ? (at.Name, other.Name) : (other.Name, at.Name), delta, sink);
+        }
+        var own = service ? scope.Selectors : scope.Templates;
+        if (next is null) { state.Remove(key); own.Remove(key); } else { state[key] = next; own[key] = next; }
+        if (scope.Selectors.Count == 0 && scope.Templates.Count == 0) scopes.Remove(sk);
     }
 
-    /// <summary>A Service selects a Deployment of its namespace when the Deployment's pod template labels hold every pair of the Service's selector (Kubernetes label selection); a Service with an empty selector selects none. Writes the rows that differ from those written before for the namespace.</summary>
-    void Select(string cl, string ns, IRowSink sink)
+    /// <summary>A Service selects a Deployment of its namespace when the Deployment's pod template labels hold every pair of the Service's selector (Kubernetes label selection); a Service with an empty selector selects none.</summary>
+    static bool Selects(Labelled s, Labelled d)
     {
-        List<string?[]> rows = [.. from s in selectors.Values where s.Cluster == cl && s.Namespace == ns && s.Labels.Length > 0
-                                   from d in templates.Values where d.Cluster == cl && d.Namespace == ns && s.Labels.All(d.Labels.Contains)
-                                   select new string?[] { cl, ns, s.Name, d.Name }];
-        var scope = Key(cl, ns);
-        selects.TryGetValue(scope, out var prev); prev ??= [];
-        foreach (var r in prev.Where(p => !rows.Any(x => x.SequenceEqual(p)))) { var w = sink.Begin("SelectsRow"); w.Begin(-1); WriteSelects(w, r); }
-        foreach (var r in rows.Where(x => !prev.Any(p => p.SequenceEqual(x)))) { var w = sink.Begin("SelectsRow"); w.Begin(1); WriteSelects(w, r); }
-        if (rows.Count == 0) selects.Remove(scope); else selects[scope] = rows;
+        if (s.Labels.Length == 0) return false;
+        foreach (var p in s.Labels)
+        {
+            var found = false;
+            foreach (var q in d.Labels) if (q.Key == p.Key && q.Value == p.Value) { found = true; break; }
+            if (!found) return false;
+        }
+        return true;
     }
-    static void WriteSelects(RowWriter w, string?[] r) { w.Text("cluster", r[0]); w.Text("namespace", r[1]); w.Text("service", r[2]); w.Text("deployment", r[3]); }
+
+    /// <summary>Adds `delta` object pairs to a (Service, Deployment) row of a namespace; writes the row when its count leaves 0 and takes it back when the count returns to 0.</summary>
+    static void Count(Scope scope, string cl, string ns, (string Service, string Deployment) pair, int delta, IRowSink sink)
+    {
+        var was = scope.Pairs.GetValueOrDefault(pair); var now = was + delta;
+        if (now == 0) scope.Pairs.Remove(pair); else scope.Pairs[pair] = now;
+        if ((was == 0) == (now == 0)) return;
+        var w = sink.Begin("SelectsRow"); w.Begin(now == 0 ? -1 : 1);
+        w.Text("cluster", cl); w.Text("namespace", ns); w.Text("service", pair.Service); w.Text("deployment", pair.Deployment);
+    }
 
     static void Write(RowWriter w, string?[] r) { w.Text("cluster", r[4]); w.Text("namespace", r[0]); w.Text("service", r[1]); w.Text("address", r[2]); w.Text("podUid", r[3]); }
 

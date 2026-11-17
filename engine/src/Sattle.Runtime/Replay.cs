@@ -149,7 +149,7 @@ public sealed class Replay : IRowSink
         if (!writers.TryGetValue(key, out var w))
         {
             var c = adapters.First(a => a.Id == curAdapter).Contracts.First(x => x.RowType == rowType);
-            writers[key] = w = new RowWriter(new Layout([.. c.Fields.Select(f => f.Name)], [.. c.Fields.Select(f => f.Kind == "Decimal")]), engine.Interner);
+            writers[key] = w = new RowWriter(new Layout([.. c.Fields.Select(f => f.Name)], [.. c.Fields.Select(f => f.Kind == "Decimal")]), null);
         }
         if (!unbound.Contains(key)) unbound.Add(key);
         return w;

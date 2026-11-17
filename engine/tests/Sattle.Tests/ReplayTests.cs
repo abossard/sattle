@@ -159,6 +159,43 @@ public class ReplayTests
             Assert.Equal(steps[i - 1].Expected, Selects(Replay(Capture([.. steps.Take(i).Select(s => s.Line)]), chunk: 1).Engine));
     }
 
+    /// <summary>Selection is matched per namespace and counted per (Service, Deployment) pair (#108): two Services that select one Deployment give two rows, a Deployment of another namespace adds none, deleting one Service takes back only its row, and a Service delivered again unchanged changes nothing.</summary>
+    [Fact]
+    public void Selections_of_several_Services_and_Deployments_follow_each_object_in_its_namespace()
+    {
+        string Service(long seq, string name, string type = "ADDED") => K8s(seq, type, "Service", name, "ns1", """{"selector": {"app": "web"}}""");
+        var steps = new (string Line, string[] Expected)[]
+        {
+            (Service(1, "web"), []), (Service(2, "web2"), []), (Deployment(3, """{"app": "web"}"""), ["web -> web", "web2 -> web"]),
+            (K8s(4, "ADDED", "Deployment", "web-b", "ns2", """{"replicas": 0, "template": {"metadata": {"labels": {"app": "web"}}}}"""), ["web -> web", "web2 -> web"]),
+            (Service(5, "web2", "DELETED"), ["web -> web"]), (Service(6, "web", "MODIFIED"), ["web -> web"]),
+        };
+        for (var i = 1; i <= steps.Length; i++)
+            Assert.Equal(steps[i - 1].Expected, Selects(Replay(Capture([.. steps.Take(i).Select(s => s.Line)]), chunk: 1).Engine).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>The rows of a type no source binds are never read (#108): their texts stay out of the engine's interner, which only grows, so a source the space does not bind costs no memory however much it sends.</summary>
+    [Fact]
+    public void The_texts_of_dropped_rows_stay_out_of_the_interner()
+    {
+        var dir = Capture(Flow("2026-11-10T10:00:01.000Z", "a", "b"));
+        var cat = Repo.CatalogFor(dir, out _); var space = cat.Spaces.Keys.Single();
+        var adapters = AdapterRegistry.Create("synth").Select(a => a is HubbleAdapter ? new UnboundRow(a) : a).ToList();
+        var engine = new Engine(cat, space);
+        var stats = new Replay(engine, cat.Spaces[space], adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(dir);
+        Assert.Equal(1, stats.Dropped["hubble.observe|UnboundRow"]);
+        Assert.False(engine.Interner.TryFind("only-in-an-unbound-row", out _));
+    }
+
+    /// <summary>An adapter that also delivers a row of a type no source binds, with a text no other row has.</summary>
+    sealed class UnboundRow(ISourceAdapter inner) : ISourceAdapter
+    {
+        public string Id => inner.Id;
+        public IReadOnlyList<RowContract> Contracts => [.. inner.Contracts, new RowContract("UnboundRow", [new RowField("note", "Text", false)])];
+        public bool Handles(string s) => inner.Handles(s);
+        public void Consume(Envelope e, IRowSink sink) { inner.Consume(e, sink); var w = sink.Begin("UnboundRow"); w.Begin(1); w.Text("note", "only-in-an-unbound-row"); }
+    }
+
     /// <summary>A space binds what it reads (Def. 5.8, #107). The space from before the adapter delivered `SelectsRow` (#104: its ingestion reads no selections and no source binds them) replays a capture with a Service that selects a Deployment: the rows of the unbound type are dropped and counted on `GET /space`, and the Service and the Deployment are ingested as before.</summary>
     [Theory]
     [InlineData("the space binds selections", false, "[]", 1)]

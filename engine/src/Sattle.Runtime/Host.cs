@@ -149,8 +149,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
     readonly List<Patch> catalogHistory = [];
-    /// <summary>The engine inputs so far, while they are in memory: not after a restart from a seal (they are in the journal), and not beyond the row cap.</summary>
-    List<EngineInput>? kept = [];
+    /// <summary>The engine inputs so far, for a space without a journal and up to the row cap. A space with a journal keeps none: the journal holds them, and a copy in memory would grow with the input.</summary>
+    List<EngineInput>? kept;
     readonly List<Subscription> subs = [];
     long inputRows, fed;
     readonly IDurableStore? durable; IJournalStore? journal => durable; Phase phase = Phase.Running; int generation; long journalPos, lastSealPosition; readonly List<DurableView> views = [];
@@ -211,6 +211,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         this.options = options;
         if (texts is not null) interner.ReplaceAll(texts);
         this.durable = durable; this.phase = phase; this.generation = generation;
+        kept = durable is null ? [] : null;
         var cat = loaded.Catalog; var fixedText = loaded.FixedText;
         foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) sources[m.Name] = (m.File, fixedText.TryGetValue(m.File, out var ft) ? ft : files.First(f => f.Path == m.File).Text);
         others.AddRange(files.Where(f => !sources.Values.Any(m => m.Path == f.Path)));

@@ -130,8 +130,8 @@ public static class Codec
     }
 }
 
-/// <summary>Writes source rows into a batch by field name (cold path) or column index (hot path). Optional fields given null are absent, and so is every column that is not written before the next row begins.</summary>
-public sealed class RowWriter(Layout layout, Interner it)
+/// <summary>Writes source rows into a batch by field name (cold path) or column index (hot path). Optional fields given null are absent, and so is every column that is not written before the next row begins. Without a text table (`it` null: rows of a type no source binds, which are counted and never read) its texts are not kept.</summary>
+public sealed class RowWriter(Layout layout, Interner? it)
 {
     BatchBuilder bb = new(layout);
     int row = -1;
@@ -142,8 +142,8 @@ public sealed class RowWriter(Layout layout, Interner it)
     public int Rows => bb.Batch.N;
     public int Col(string name) => Layout.Index(name);
     public void Begin(long weight = 1) { Close(); row = bb.Add(weight); Array.Clear(written); }
-    public void Text(int col, string? v) { written[col] = true; if (v is null) bb.Absent(row, col); else bb.Batch.Cols[col].L[row] = it.Intern(v); }
-    public void Text(int col, ReadOnlySpan<char> v) { written[col] = true; bb.Batch.Cols[col].L[row] = it.Intern(v); }
+    public void Text(int col, string? v) { written[col] = true; if (v is null) bb.Absent(row, col); else bb.Batch.Cols[col].L[row] = it?.Intern(v) ?? 0; }
+    public void Text(int col, ReadOnlySpan<char> v) { written[col] = true; bb.Batch.Cols[col].L[row] = it is null ? 0 : it.Intern(v); }
     public void Code(int col, long code) { written[col] = true; bb.Batch.Cols[col].L[row] = code; }
     public void Int(int col, long v) { written[col] = true; bb.Batch.Cols[col].L[row] = v; }
     public void Instant(int col, long ns) { written[col] = true; bb.Batch.Cols[col].L[row] = ns + InstantOffset; }
