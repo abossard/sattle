@@ -320,6 +320,13 @@ public sealed class Engine : IDisposable, IEngineInput
             if (gr.Ingests) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
         WantsProgress = graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills));
+        // a Series reads the windows of an element from the store when the element gets its first row
+        foreach (var g in graphs)
+            foreach (var series in g.Plan.Ops.OfType<SeriesOp>())
+            {
+                var read = new GraphKey(this.options.Tenant, g.PortSources[((TSeries)series.Typed).GraphPort]);
+                series.Stored = (elem, props, from, visit) => Telemetry.ScanWindow(read, [elem], props, from, long.MaxValue, visit);
+            }
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
         foreach (var g in graphs)
             foreach (var series in g.Plan.Ops.OfType<SeriesOp>().Where(s => s.Fills))

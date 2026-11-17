@@ -535,6 +535,27 @@ Theory. A view of one namespace should keep state for that namespace. Two reads 
 - Why estate-wide moves: its graphs are identical (`workload` 20 entities, 20 relationships). Its `workload` telemetry falls from 146 to 56 windows, and 9 fewer identities are minted (246 to 237). Before, `extend nodes ComponentSignal` wrote reading windows for the signals of meters outside the workload. Those signal elements are never created, so the windows had no element. The estate has no such meters.
 - The `acme.workload` pin in `acme.space` moves.
 
+### Hog 4: a `Series` keeps the windows of the elements it joined (#49, 2026-11-17)
+Theory. A `Series` joins the structural rows with the closed windows of the read graph, keyed by element. The telemetry store already indexes those windows by element. The `Series` kept the windows of every element of the read graph, whether or not a row joined it. Now it keeps the windows of the elements with a row only, as emitted, so it can retract them at the look-back edge after the store has dropped them by retention. When an element gets its first row, its windows of the look-back are read from the store. The read graph runs earlier in the same step, so the store holds exactly the window changes the `Series` has received. When the last row goes, the windows go. Per joined element the windows are a `SortedList<long, decimal?[]>`: about 72 B per window (the values array, 8 B start, 8 B reference) instead of about 116 B (tree node and array). Seal format 6.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 403 / 359 MB | 3,031 / 2,596 MB |
+| per master node | 40.3 / 35.9 KB | 30.3 / 26.0 KB |
+| `Series` state | 58.0 / 14.2 MB | 572.2 / 134.8 MB |
+| `Series` per master node | 5,808 / 1,420 B | 5,721 / 1,348 B |
+| windows a `Series` holds | 378,758 / 71,048 | 3,789,028 / 708,718 |
+| `workload` | 24.3 / 12.9 MB | 149.8 / 35.4 MB |
+| `workloadStructure` | 51.3 / 31.1 MB | 350.8 / 149.0 MB |
+| `Series` allocated | 298 / 132 MB | 2,920 / 1,261 MB |
+| peak resident set | 901 / 875 MB | 4,613 / 3,852 MB |
+
+- Before is hog 5's after-run. Both runs have hog 5's definitions.
+- Times are not comparable: the load average at the start was 128 and 72 before, and 609 and 568 after. Bytes and allocations are valid under load. The `Series` operators' own time still fell (10^5: 2,658 to 2,188 ms), the store reads included.
+- What the `Series` still holds at 10^5: the windows of the views that join the whole estate, and its structural rows (the `Int64[]` and `Decimal[]` per row).
+- The telemetry store grows by 2.3 MB at 10^5: two 24 B wrappers (`Keys`, `Values`) that a `SortedList` caches once its scan touches a series. That is about one object per master node.
+- Digests: unchanged. estate, deploy-health, estate-wide and the lab fixtures equal the pins with hog 5.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

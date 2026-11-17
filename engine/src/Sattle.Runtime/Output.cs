@@ -3,15 +3,47 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>Series: closed telemetry windows of the matched elements, joined to the structural rows by element handle. Bilinear: new rows against the windows seen so far, then new windows against all rows (section 11.1, section 11.2).</summary>
+/// <summary>Series: closed telemetry windows of the matched elements, joined to the structural rows by element handle. Bilinear: new rows against the windows seen so far, then new windows against all rows (section 11.1, section 11.2). It keeps the windows of the elements with a row only; the telemetry store is the index of the others.</summary>
 sealed class SeriesOp : PhysOp
 {
     readonly TSeries t; readonly Layout inLayout; readonly int elemCol; readonly int[] propHandles; readonly bool[] readIsDec;
     readonly int outWs, outWe; readonly int[] outReadCol; readonly long within, period;
     sealed record Arr(long[] L, decimal[] D, bool[] P, long Weight);
+    /// <summary>The structural rows by element; an element is here while it has a row.</summary>
     readonly Dictionary<int, List<Arr>> arrangement = [];
-    readonly Dictionary<int, SortedDictionary<long, decimal?[]>> windows = [];
+    /// <summary>The windows of the look-back of the elements in `arrangement` only, by start, with the values of the reads: what the output holds and must retract at the look-back edge. The windows of every other element are in the telemetry store.</summary>
+    readonly Dictionary<int, SortedList<long, decimal?[]>> windows = [];
+    /// <summary>Visits the stored windows of an element's read properties that start at or after an instant, in the read graph (set at activation). The read graph runs before this one in a step, so the store holds every window change this Series has received, this step's included.</summary>
+    public Action<int, int[], long, WindowVisitor> Stored = null!;
     long frontier = long.MinValue;
+
+    /// <summary>Adds a structural row to the arrangement. An element that gets its first row reads its windows of the look-back from the store; it is `fresh`, and this step's window changes are already in what it read.</summary>
+    List<Arr> Arrange(int c, long[] l, decimal[] d, bool[] p, long w, ref HashSet<int>? fresh)
+    {
+        if (!arrangement.TryGetValue(c, out var list))
+        {
+            arrangement[c] = list = [];
+            SortedList<long, decimal?[]>? ws = null;
+            Stored(c, propHandles, frontier == long.MinValue ? long.MinValue : frontier - within, (_, prop, start, value) =>
+            {
+                ws ??= [];
+                if (!ws.TryGetValue(start, out var vals)) ws[start] = vals = new decimal?[propHandles.Length];
+                vals[Array.IndexOf(propHandles, prop)] = value;
+            });
+            if (ws is not null) windows[c] = ws;
+            (fresh ??= []).Add(c);
+        }
+        var ex = list.FindIndex(a => SameRow(a, l, d, p));
+        if (ex >= 0) { var nw = list[ex].Weight + w; if (nw == 0) list.RemoveAt(ex); else list[ex] = list[ex] with { Weight = nw }; }
+        else if (w != 0) list.Add(new Arr(l, d, p, w));
+        return list;
+    }
+
+    /// <summary>After its row was applied: an element with no row left drops its windows (the store keeps them).</summary>
+    void LeaveIfEmpty(int c)
+    {
+        if (arrangement.TryGetValue(c, out var list) && list.Count == 0) { arrangement.Remove(c); windows.Remove(c); }
+    }
 
     // ---- fill and time to live (Def. 7.14 to 7.16) ----
     /// <summary>Per read, the sources that feed the property it reads (a function of the definitions, set at activation).</summary>
@@ -154,6 +186,7 @@ sealed class SeriesOp : PhysOp
             }
         }
         var rows = In(inputs, "in");
+        HashSet<int>? fresh = null;
         if (rows is not null)
             for (var k = 0; k < rows.Rows; k++)
             {
@@ -166,13 +199,11 @@ sealed class SeriesOp : PhysOp
                     if (inLayout.IsDec[col]) d[col] = rows.Cols[col].D[i]; else l[col] = rows.Cols[col].L[i];
                 }
                 var w = rows.Weight(i);
-                if (!arrangement.TryGetValue(c, out var list)) arrangement[c] = list = [];
-                var ex = list.FindIndex(a => SameRow(a, l, d, p));
-                if (ex >= 0) { var nw = list[ex].Weight + w; if (nw == 0) list.RemoveAt(ex); else list[ex] = list[ex] with { Weight = nw }; }
-                else if (w != 0) list.Add(new Arr(l, d, p, w));
+                Arrange(c, l, d, p, w, ref fresh);
                 var row = new Arr(l, d, p, w);
                 foreach (var a in Starts(c, edge, long.MaxValue, hi)) if (Record(c, a, hi, frontier) is { } vals) WriteRow(bb, row, a, vals, w);
                 if (marker.TryGetValue(c, out var m)) WriteRow(bb, row, m, [], w, true);
+                LeaveIfEmpty(c);
                 touched.Add(c);
             }
         var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
@@ -188,14 +219,16 @@ sealed class SeriesOp : PhysOp
             foreach (var ((elem, wstart), changes) in byWindow)
             {
                 if (frontier != long.MinValue && wstart < frontier - within) continue;
+                if (!arrangement.TryGetValue(elem, out var list) || fresh?.Contains(elem) == true) continue;     // no row: the store keeps it; a row since this step: read with this change
                 var before = Record(elem, wstart, hi, frontier);
                 if (!windows.TryGetValue(elem, out var ws)) windows[elem] = ws = [];
                 var stored = ws.TryGetValue(wstart, out var cur) ? (decimal?[])cur.Clone() : new decimal?[propHandles.Length];
                 foreach (var ch in changes) stored[Array.IndexOf(propHandles, ch.Key.Prop)] = ch.New;
                 if (stored.All(x => !x.HasValue)) ws.Remove(wstart); else ws[wstart] = stored;
+                if (ws.Count == 0) windows.Remove(elem);
                 var after = Record(elem, wstart, hi, frontier);
                 touched.Add(elem);
-                if (Same(before, after) || !arrangement.TryGetValue(elem, out var list)) continue;
+                if (Same(before, after)) continue;
                 foreach (var r in list)
                 {
                     if (before is not null) WriteRow(bb, r, wstart, before, -r.Weight);
@@ -263,7 +296,8 @@ sealed class SeriesOp : PhysOp
         if (Fills) return RunFilled(ep, inputs);
         var bb = EmptyOutput();
         var rows = In(inputs, "in");
-        // step A: changed structural rows against the windows seen before this step
+        // step A: changed structural rows against the windows seen before this step (an element with its first row: against the windows of the store, this step's changes included)
+        HashSet<int>? fresh = null;
         if (rows is not null)
             for (var k = 0; k < rows.Rows; k++)
             {
@@ -276,13 +310,11 @@ sealed class SeriesOp : PhysOp
                     if (inLayout.IsDec[col]) d[col] = rows.Cols[col].D[i]; else l[col] = rows.Cols[col].L[i];
                 }
                 var w = rows.Weight(i);
-                if (!arrangement.TryGetValue(c, out var list)) arrangement[c] = list = [];
-                var ex = list.FindIndex(a => SameRow(a, l, d, p));
-                if (ex >= 0) { var nw = list[ex].Weight + w; if (nw == 0) list.RemoveAt(ex); else list[ex] = list[ex] with { Weight = nw }; }
-                else if (w != 0) list.Add(new Arr(l, d, p, w));
+                Arrange(c, l, d, p, w, ref fresh);
                 if (windows.TryGetValue(c, out var ws))
                     foreach (var (wstart, vals) in ws)
                         if (Complete(vals) && (frontier == long.MinValue || wstart >= frontier - within)) WriteRow(bb, new Arr(l, d, p, w), wstart, vals, w);
+                LeaveIfEmpty(c);
             }
         // step B: changed telemetry windows against every row (after step A)
         var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
@@ -299,12 +331,13 @@ sealed class SeriesOp : PhysOp
             foreach (var ((elem, wstart), changes) in byWindow)
             {
                 if (frontier != long.MinValue && wstart < frontier - within) continue;      // outside the look-back: neither kept nor joined (Def. 6.7)
+                if (!arrangement.TryGetValue(elem, out var list) || fresh?.Contains(elem) == true) continue;     // no row: the store keeps it; a row since this step: read with this change
                 if (!windows.TryGetValue(elem, out var ws)) windows[elem] = ws = [];
                 var before = ws.TryGetValue(wstart, out var cur) ? (decimal?[])cur.Clone() : new decimal?[propHandles.Length];
                 var after = (decimal?[])before.Clone();
                 foreach (var ch in changes) after[Array.IndexOf(propHandles, ch.Key.Prop)] = ch.New;
                 if (after.All(x => !x.HasValue)) ws.Remove(wstart); else ws[wstart] = after;
-                if (!arrangement.TryGetValue(elem, out var list)) continue;
+                if (ws.Count == 0) windows.Remove(elem);
                 foreach (var r in list)
                 {
                     if (Complete(before)) WriteRow(bb, r, wstart, before, -r.Weight);
