@@ -55,7 +55,7 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 
 ## Projection editor (engine source)
 
-An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a `.kql` file (research note 11), and the editor edits that text.
+An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a file of its own, written in a language the engine names for it (`GET /definitions`, `projections`: projection, file, language). `src/ui/editor/languages.tsx` is the one place that maps a language to its editor: KQL (research note 11) is the only entry, and a projection in any other language opens as its text (`GET /definitions/{file}`), read-only, with a note that the canvas has no editor for it.
 
 The phase of the editor (`src/state/editor-phase.ts`); a draft session is open only in `ready`:
 
@@ -74,7 +74,7 @@ stateDiagram-v2
   }
 ```
 
-- **KQL text** (`src/ui/editor/KqlText.tsx`): CodeMirror 6 with the engine's errors, completion and hover (`/kql/analyse`, `/kql/complete`, `/kql/hover`). "Store in draft" stores the text (`PUT /drafts/{id}/text/{module.projection.kql}`); "Show rows" previews the stored text and puts the rows after each operator under its card.
+- **KQL text** (`src/ui/editor/KqlText.tsx`): CodeMirror 6 with the engine's errors, completion and hover (`/kql/analyse`, `/kql/complete`, `/kql/hover`). "Store in draft" stores the text (`PUT /drafts/{id}/text/{file}`); "Show rows" previews the stored text and puts the rows after each operator under its card.
 - **Notations beside the text**: Steps, Outline and Wires (`src/ui/editor/Kql*.tsx`). Each is a pure view of the engine's outline of the text; every edit it makes is a list of text changes from the editing module (`src/editor/kql-edit.ts`), so typing and visual edits share one undo history. Each has "Add a statement": a form the engine completes at a statement's start, then the rest of the statement. By example: a picked element of a graph the projection reads becomes a `let` with the `graph-match` that finds its like.
 - **Draft details** below: Problems (the engine's check), Text (a module of the draft as the engine prints it, edited as text and checked; the space module holds the bindings of the graphs, parameter values such as `workloadNamespace: "shop"` among them), Definitions (row types with fields, constraints, equivalence policies, value roles), Versions and preview (releases, compare, restore into the draft; preview of the output graphs with counts, scope, the diff against the live graphs and the previewed graph drawn).
 - New projection (toolbar: stores the projection's KQL file with its graph line, inputs and parameters, then binds its graph in the space), Undo and Redo of the draft's module edits (99 steps, as inverse edits), Discard, and Commit (`Ctrl+S`; names a new version of the module when the version is changed).
@@ -193,7 +193,7 @@ Implementations:
 - `src/app`: workspace (history, panes, selection, cross-graph highlight), data pane, telemetry hub, perf harness.
 - `src/state`: store, reducer, effects, runtime, editor effects.
 - `src/editor`: the KQL calls and readings (`kql.ts`), the editing module and the notations' calculations (`kql-edit`, `kql-outline`, `kql-wires`, `kql-example`), declarations (`structures`), palette types, session (draft, undo), engine service.
-- `src/ui`: Fluent components; `src/ui/editor`: the KQL text, its notations, Definitions and the new projection dialog.
+- `src/ui`: Fluent components; `src/ui/editor`: the editor of each projection language (`languages.tsx`), the KQL text, its notations, Definitions and the new projection dialog.
 - Calculations are pure and tested; actions (DOM, GL, workers, network) are at the edges.
 
 ## Not done or not verified

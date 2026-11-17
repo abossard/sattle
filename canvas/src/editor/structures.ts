@@ -9,6 +9,7 @@ import type { Edit } from "../core/model";
 import type { GraphValue } from "../core/wire-types";
 import { contains, ent, rel, setPropEdit, text } from "./patches";
 import type { Palette, PaletteDeclaration, PaletteParam } from "./palette";
+import type { ProjectionFile } from "./service";
 
 /** A computed edit, or the reason it cannot be made. */
 export type Result<T> = { ok: true; value: T } | { ok: false; reason: string };
@@ -183,7 +184,7 @@ export function bindingEdits(g: Graph, module: string, name: string, graphName: 
  * A new projection the KQL way: the text of its file (the graph line with its settings, one `input` line per input and the parameters'
  * declaration) and the edits that place its graph in the space. The text is stored first, then the edits applied. Operators come afterwards.
  */
-export function newProjection(g: Graph, spec: ProjectionSpec): Result<{ file: string; text: string; edits: Edit[] }> {
+export function newProjection(g: Graph, spec: ProjectionSpec): Result<{ file: ProjectionFile; text: string; edits: Edit[] }> {
   const space = [...g.entities()].find((e) => e.type === "GraphSpace")?.id;
   if (!space) return no("the catalog has no graph space");
   if (!nameOk(spec.name) || !nameOk(spec.graphName)) return no("names are letters, digits and _");
@@ -226,5 +227,5 @@ export function newProjection(g: Graph, spec: ProjectionSpec): Result<{ file: st
   const settings = [...(spec.description.trim() ? [`description = ${JSON.stringify(spec.description.trim())}`] : []), ...(history ? [`history = ${history}`] : [])];
   const text = [`graph ${spec.name} : ${mod(spec.outputModule)}${settings.length ? ` with (${settings.join(", ")})` : ""};`, ...lines,
     ...(declared.length ? [`declare query_parameters(${declared.join(", ")});`] : [])].join("\n") + "\n";
-  return ok({ file: `${spec.module}.${spec.name}.kql`, text, edits: bindingEdits(g, spec.module, spec.name, spec.graphName, from, values) });
+  return ok({ file: { projection: `${spec.module}.${spec.name}`, file: `${spec.module}.${spec.name}.kql`, language: "kql" }, text, edits: bindingEdits(g, spec.module, spec.name, spec.graphName, from, values) });
 }

@@ -36,7 +36,7 @@ const binding = (s: EditorSession, r: KqlReference, name: string): Edit[] =>
 async function draftWith(svc: EditorService, r: KqlReference, text: string): Promise<EditorSession> {
   const s = await EditorSession.open(svc);
   const store = async (name: string, t: string) => {
-    expect((await s.storeKql(`${r.module}.${name}.kql`, t)).ok).toBe(true);
+    expect((await s.storeText(`${r.module}.${name}.kql`, t)).ok).toBe(true);
     const b = binding(s, r, name);
     if (b.length) expect((await s.apply(b, `bind ${name}`)).ok).toBe(true);
   };
@@ -109,7 +109,7 @@ describe("the reference projections built in each notation from an empty graph l
       try {
         expect((await svc.kqlText(projection, fresh.draft.draft)).text).toBe(text);
         // an original with no file is not committed: the new draft holds it again
-        if (r.text) { expect((await fresh.storeKql(`${r.module}.${r.projection}.kql`, r.text)).ok).toBe(true); const b = binding(fresh, r, r.projection); if (b.length) expect((await fresh.apply(b, "bind")).ok).toBe(true); }
+        if (r.text) { expect((await fresh.storeText(`${r.module}.${r.projection}.kql`, r.text)).ok).toBe(true); const b = binding(fresh, r, r.projection); if (b.length) expect((await fresh.apply(b, "bind")).ok).toBe(true); }
         const d = await digests(svc, fresh, r);
         expect(d.twin).toBe(d.original);
       } finally { await svc.discard(fresh.draft.draft).catch(() => {}); }

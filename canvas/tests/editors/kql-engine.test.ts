@@ -22,7 +22,7 @@ describe("a projection's KQL text through the engine's draft", () => {
     const was = await digests();
     const commit = async (text: string) => {
       const s = await EditorSession.open(svc);
-      expect((await s.storeKql(file, text)).ok).toBe(true);
+      expect((await s.storeText(file, text)).ok).toBe(true);
       expect((await svc.kqlText(projection, s.draft.draft)).text).toBe(text);
       await svc.commit(s.draft.draft, s.draft.baseRevision);
     };
@@ -89,7 +89,7 @@ describe("a projection's KQL text through the engine's draft", () => {
       inputs: [{ port: "master", graph: "master", ontology: "d:acme.ops" }], params: [{ port: "minReady", kind: "long", value: "", default: "0" }] });
     if (!made.ok) throw new Error(made.reason);
     expect(made.value.text).toBe(`graph ${name} : acme.deployhealth with (history = 4);\ninput master : acme.ops;\n${header}`);
-    expect((await s.storeKql(made.value.file, made.value.text + original.slice(original.indexOf(header) + header.length))).ok).toBe(true);
+    expect((await s.storeText(made.value.file.file, made.value.text + original.slice(original.indexOf(header) + header.length))).ok).toBe(true);
     expect((await s.apply(made.value.edits, `bind ${name}`)).ok).toBe(true);
     expect(s.graph.entity(`${space}/binding:${name}.master`)).toBeDefined();
     expect(s.diagnostics.filter((d) => d.severity === "error").map((d) => d.message)).toEqual([]);

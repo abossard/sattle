@@ -1,4 +1,4 @@
-// The editor side of the engine protocol (v3): palette, drafts, releases, preview and the KQL editor calls. HTTP only.
+// The editor side of the engine protocol (v3): palette, projection files, drafts, releases, preview and the KQL editor calls. HTTP only.
 // Responses are parsed here, so the rest of the editor sees typed values; engine errors become EngineError with the code and element.
 import type { Patch, Snapshot } from "../core/model";
 import { patchToWire } from "../core/wire";
@@ -13,6 +13,8 @@ export class EngineError extends Error {
 }
 
 export interface Draft { draft: string; baseRevision: string; revision: string }
+/** engine 3.50: a projection in a file of its own, and the language the engine reads that file in; the language picks the editor (ui/editor/languages.tsx) */
+export interface ProjectionFile { projection: string; file: string; language: string }
 /** engine 3.21: a column of the rows after an operator. `kind` is `Entity`, `Relationship` or the value kind; `unit` a unit other than 1; `item` the item kind of a list. */
 export interface Column { name: string; kind: string; type: string | null; unit: string | null; item: string | null; required: boolean; role: "data" | "telemetry"; temporality: string | null; period: string | null }
 /** engine 3.21: the columns after each typed operator of a projection, in order, from a draft check or a draft patch */
@@ -76,12 +78,13 @@ export class EditorService {
   private readonly base: string;
   constructor(base: string, private readonly f: typeof fetch = (...a) => fetch(...a)) { this.base = new URL(base, globalThis.location?.href ?? "http://localhost/").href.replace(/\/$/, ""); }
 
-  private async call(method: string, path: string, body?: unknown): Promise<unknown> {
+  /** `text`: an answer that succeeds is the text as sent, never parsed (a definition file may start like JSON). */
+  private async call(method: string, path: string, body?: unknown, text = false): Promise<unknown> {
     let res: Response;
     try { res = await this.f(this.base + path, body === undefined ? { method } : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); } catch (e) { throw new EngineError("Unreachable", (e as Error).message, 0); }
     const raw = await res.text();
     let json: unknown = raw;
-    if ((res.headers.get("content-type") ?? "").includes("json") || /^[{[]/.test(raw)) { try { json = JSON.parse(raw); } catch { /* text */ } }
+    if ((!text || !res.ok) && ((res.headers.get("content-type") ?? "").includes("json") || /^[{[]/.test(raw))) { try { json = JSON.parse(raw); } catch { /* text */ } }
     if (!res.ok) {
       const e = ((json as { error?: Record<string, unknown> })?.error ?? {}) as Record<string, unknown>;
       throw new EngineError(String(e.code ?? `HTTP${res.status}`), String(e.message ?? raw.slice(0, 120)), res.status, e.element ? String(e.element) : undefined, parseDiagnostics(e.diagnostics));
@@ -89,6 +92,12 @@ export class EditorService {
     return json;
   }
   async palette(): Promise<Palette> { return parsePalette(await this.call("GET", "/palette")); }
+  /** Every projection file of the space with its language (PROTOCOL 3.50), from the modules' `projections`. */
+  async projectionFiles(): Promise<ProjectionFile[]> {
+    return ((await this.call("GET", "/definitions")) as { projections?: Record<string, unknown>[] }[]).flatMap((m) => (m.projections ?? []).map((p) => ({ projection: String(p.projection), file: String(p.file), language: String(p.language) })));
+  }
+  /** A definition file's text as the space holds it, whatever its language. */
+  async definitionText(file: string): Promise<string> { return String(await this.call("GET", `/definitions/${encodeURIComponent(file)}`, undefined, true)); }
 
   // ---- a projection's KQL text (PROTOCOL 3.41, 3.42): `projection` is `module.name`, e.g. acme.svc.serviceDeps ----
   /** The text as the space holds it, or as a draft holds it when given; never printed from the catalog. */
@@ -96,7 +105,7 @@ export class EditorService {
   async kqlAnalyse(projection: string, text: string, depth: Depth): Promise<Analysis> { return (await this.call("POST", "/kql/analyse", { projection, text, depth })) as Analysis; }
   async kqlComplete(projection: string, text: string, offset: number): Promise<Completion> { return (await this.call("POST", "/kql/complete", { projection, text, offset })) as Completion; }
   async kqlHover(projection: string, text: string, offset: number): Promise<Hover> { return (await this.call("POST", "/kql/hover", { projection, text, offset })) as Hover; }
-  /** Store a projection file's text in the draft (`file` is `module.projection.kql`); check, preview and commit include it from then on. */
+  /** Store a projection file's text in the draft (`file` as `GET /definitions` names it); check, preview and commit include it from then on. */
   async setDraftText(id: string, file: string, text: string, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
   async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
 

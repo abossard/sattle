@@ -77,7 +77,7 @@ describe("the KQL text editor on the engine's answers", () => {
 
   it("the editor shows the file as the space holds it, and says when the engine finds no problem", async () => {
     const f = rec.files.find((x) => x.projection === "acme.svc.serviceDeps")!;
-    render(<KqlText port={recorded()} projection={f.projection} />);
+    render(<KqlText port={recorded()} file={{ projection: f.projection, file: `${f.projection}.kql`, language: "kql" }} />);
     expect(await screen.findByText("acme.svc.serviceDeps.kql")).toBeTruthy();
     const box = await screen.findByRole("textbox", { name: "KQL text of acme.svc.serviceDeps" });
     expect(box.textContent).toContain("graph serviceDeps : acme.svc with (");

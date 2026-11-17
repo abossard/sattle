@@ -100,7 +100,7 @@ describe("a new projection: its KQL file and its place in the space", () => {
   it("writes the graph line, the inputs and the parameters, and binds each port in the space", () => {
     const r = newProjection(base, spec);
     if (!r.ok) throw new Error(r.reason);
-    expect(r.value.file).toBe("m.podReady.kql");
+    expect(r.value.file).toEqual({ projection: "m.podReady", file: "m.podReady.kql", language: "kql" });
     expect(r.value.text).toBe("graph podReady : out;\ninput master : ops;\ndeclare query_parameters(minReady:long);\n");
     expect(rels(r.value.edits)).toEqual([
       "S|contains|S/graph:podReady", "S/graph:podReady|producedBy|P",

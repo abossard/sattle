@@ -115,7 +115,7 @@ describe("text applied over a draft that already holds graph edits", () => {
     const s = await EditorSession.open(eng.svc);
     await s.apply(add(1), "add 1");
     eng.rev += moved; // another writer moved the draft on
-    const o = await s.storeKql("m.p.kql", "graph p : m;");
+    const o = await s.storeText("m.p.kql", "graph p : m;");
     expect(o.ok).toBe(ok);
     expect(eng.files.get("m.p.kql")).toBe(ok ? "graph p : m;" : undefined);
     expect(s.revision).toBe(String(eng.rev));

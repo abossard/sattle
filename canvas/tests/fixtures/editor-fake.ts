@@ -17,6 +17,7 @@ export function fakeEngine(seed: { entities?: Snapshot["entities"]; relationship
   const svc = {
     palette: async () => parsePalette({ operators: [] }),
     createDraft: async () => ({ draft: "d1", baseRevision: "11", revision: "0" }),
+    projectionFiles: async () => [],
     snapshot: async () => ({ ...g.toSnapshot(), version: { ...base.version, revision: String(rev) } }),
     check: async (): Promise<Applied> => ({ revision: String(rev), ok: true, diagnostics: [], modules: { m: { text: `rev ${rev}` } } }),
     checkText: async () => { calls.checkText++; return { ok: false, patch: null, diagnostics: [], affectedModules: [] }; },

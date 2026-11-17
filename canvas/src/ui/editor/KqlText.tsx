@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { completionOf, diagnosticsOf, digestOf, hoverLines, kqlLanguage, type Analysis, type Completion, type Depth, type Hover, type Place } from "../../editor/kql";
 import { add, cardsOf, listsOf, type Change } from "../../editor/kql-edit";
 import { matchOf } from "../../editor/kql-example";
-import type { Graph } from "../../core/graph";
+import type { EditorProps } from "./languages";
 import { KqlOutline } from "./KqlOutline";
 import { KqlSteps, type Reading } from "./KqlSteps";
 import { KqlWires } from "./KqlWires";
@@ -125,13 +125,11 @@ type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ t
 
 /**
  * The `.kql` file of a projection, editable, with the engine's answers, and Steps beside it. `port` also reads the text (in the draft when one
- * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator.
+ * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator; `picked` gives, by example, a `let`
+ * with the graph-match that finds the picked element's like.
  */
-export default function KqlText({ port, projection, draft, rows, store, picked }: { port: Port; projection: string; draft?: string; rows?: () => Promise<{ op: string; rows: string }[]>;
-  /** the element picked in a data graph (an edge brings its ends): by example, a `let` with the graph-match that finds its like */
-  picked?: { graph: string; data: Graph; ids: string[] } | null;
-  /** store the text in the draft; the engine's refusal, or null */
-  store?: (text: string) => Promise<string | null> }) {
+export default function KqlText({ port, file, draft, rows, store, picked }: Omit<EditorProps, "port"> & { port: Port }) {
+  const projection = file.projection;
   const s = useStyles();
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
@@ -207,7 +205,7 @@ export default function KqlText({ port, projection, draft, rows, store, picked }
   return (
     <div className={s.root}>
       <div className={s.head}>
-        <Text className={s.file}>{projection}.kql</Text>
+        <Text className={s.file}>{file.file}</Text>
         <Text size={200} role="status">{problems === null ? "" : problems ? `${problems} problem${problems === 1 ? "" : "s"} found by the engine` : "the engine reads the text without problems"}</Text>
         <Text size={200}>{store ? (stored ? "The draft holds this text." : "Changed here, not yet in the draft.") : "Changes are checked as you type; they are not stored in the draft."}</Text>
         <span className={s.grow} />

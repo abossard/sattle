@@ -7,7 +7,7 @@ import type { Edit, Patch } from "../core/model";
 import type { EngineDiagnostic } from "../source/types";
 import { coalesce, invertEdits } from "./patches";
 import type { Palette } from "./palette";
-import { EngineError, type Applied, type Draft, type EditorService, type Preview } from "./service";
+import { EngineError, type Applied, type Draft, type EditorService, type Preview, type ProjectionFile } from "./service";
 
 export const MAX_UNDO = 99;
 
@@ -23,9 +23,12 @@ export class EditorSession {
   #schemas: Record<string, import("./service").OperatorSchema[]> = {};
   #graph: Graph;
   #revision: string;
+  #files: ReadonlyMap<string, ProjectionFile>;
   private cat: { version: number; catalog: Catalog } | null = null;
 
-  private constructor(readonly svc: EditorService, readonly palette: Palette, readonly draft: Draft, graph: Graph, revision: string) { this.#graph = graph; this.#revision = revision; }
+  private constructor(readonly svc: EditorService, readonly palette: Palette, readonly draft: Draft, graph: Graph, revision: string, files: ProjectionFile[]) {
+    this.#graph = graph; this.#revision = revision; this.#files = new Map(files.map((f) => [f.projection, f]));
+  }
 
   /** the browser's copy of the draft's catalog graph; only the session changes it */
   get graph(): Graph { return this.#graph; }
@@ -39,11 +42,13 @@ export class EditorSession {
   get schemas(): Readonly<Record<string, readonly import("./service").OperatorSchema[]>> { return this.#schemas; }
   get undoStack(): readonly Step[] { return this.#undo; }
   get redoStack(): readonly Step[] { return this.#redo; }
+  /** A projection's file and language (`projection` is `module.name`): as the space lists it, or as this session stored it for a new projection. */
+  fileOf(projection: string): ProjectionFile | undefined { return this.#files.get(projection); }
 
   static async open(svc: EditorService, base?: string): Promise<EditorSession> {
-    const [palette, draft] = await Promise.all([svc.palette(), svc.createDraft(base)]);
+    const [palette, draft, files] = await Promise.all([svc.palette(), svc.createDraft(base), svc.projectionFiles()]);
     const snap = await svc.snapshot(draft.draft);
-    const s = new EditorSession(svc, palette, draft, Graph.fromSnapshot(snap), draft.revision);
+    const s = new EditorSession(svc, palette, draft, Graph.fromSnapshot(snap), draft.revision, files);
     const checked = await svc.check(draft.draft);
     s.absorb(checked);
     return s;
@@ -128,12 +133,13 @@ export class EditorSession {
    * A change composed from the draft when the queue reaches it: `compose` reads the graph then, so its edits start from the revision they apply to.
    * With `file`, the projection file's text is stored first, in the same step (a new projection: its file, then its graph and bindings).
    */
-  change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: { name: string; text: string } } | null): Promise<Outcome | null> {
+  change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: ProjectionFile & { text: string } } | null): Promise<Outcome | null> {
     return this.serial(async () => {
       const c = compose(this.#graph);
       if (!c) return null;
-      const stored = c.file ? await this.storeKqlNow(c.file.name, c.file.text) : null;
+      const stored = c.file ? await this.storeTextNow(c.file.file, c.file.text) : null;
       if (stored && !stored.ok) return stored;
+      if (c.file) { const { projection, file, language } = c.file; this.#files = new Map(this.#files).set(projection, { projection, file, language }); }
       return c.edits.length ? this.applyNow(c.edits, c.label) : stored;
     });
   }
@@ -184,8 +190,8 @@ export class EditorSession {
    * Store a projection file's text in the draft. The draft's facts follow from the text (a text that does not lower changes none, its errors
    * are in the check), so the graph is read again. Not a step of this undo stack: the text editor keeps the text's own history.
    */
-  storeKql(file: string, text: string): Promise<Outcome> { return this.serial(() => this.storeKqlNow(file, text)); }
-  private async storeKqlNow(file: string, text: string): Promise<Outcome> {
+  storeText(file: string, text: string): Promise<Outcome> { return this.serial(() => this.storeTextNow(file, text)); }
+  private async storeTextNow(file: string, text: string): Promise<Outcome> {
     try {
       const applied = await this.svc.setDraftText(this.draft.draft, file, text, this.#revision);
       await this.resyncNow();

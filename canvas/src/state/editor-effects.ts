@@ -45,12 +45,12 @@ async function work(s: EditorSession, w: Work, dispatch: Dispatch, fn: () => Pro
   dispatch({ type: "editor/event", event: { t: "done", work: w } });
 }
 
-/** Store a projection's KQL text in the draft (the text editor's "Store in draft"): the summary follows; the error when the engine refuses. */
-export async function storeKqlText(file: string, text: string, dispatch: Dispatch): Promise<string | null> {
+/** Store a projection file's text in the draft (the text editor's "Store in draft"): the summary follows; the error when the engine refuses. */
+export async function storeProjectionText(file: string, text: string, dispatch: Dispatch): Promise<string | null> {
   const s = runtime.session;
   if (!s) return "no draft is open";
   let error: string | null = null;
-  await work(s, "store", dispatch, async () => { const o = await s.storeKql(file, text); error = o.ok ? null : o.error; return o; });
+  await work(s, "store", dispatch, async () => { const o = await s.storeText(file, text); error = o.ok ? null : o.error; return o; });
   return error;
 }
 
@@ -112,7 +112,7 @@ async function perform(cmd: Command, s: EditorSession, dispatch: Dispatch): Prom
     case "restore": return s.restore(cmd.digest);
     case "newProjection": {
       const { spec } = cmd;
-      const o = await s.change((g) => { const p = need(newProjection(g, spec)); return { edits: p.edits, label: `bind ${spec.name}`, file: { name: p.file, text: p.text } }; });
+      const o = await s.change((g) => { const p = need(newProjection(g, spec)); return { edits: p.edits, label: `bind ${spec.name}`, file: { ...p.file, text: p.text } }; });
       if (o?.ok && runtime.session === s) dispatch({ type: "editor/projection", module: spec.module, projection: `d:${spec.module}/projection:${spec.name}` });
       return o;
     }

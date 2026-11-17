@@ -1,10 +1,10 @@
-// The projection editor: the projection's KQL text with its notations, and the draft's problems, module texts, definitions, versions and
+// The projection editor: the projection's text in the editor of its language, and the draft's problems, module texts, definitions, versions and
 // previews around one draft on the engine.
 import {
   Badge, Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Select, Spinner, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Textarea, Toolbar, ToolbarButton, ToolbarDivider, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Checkmark12Regular, ArrowRedo20Regular, ArrowUndo20Regular, Eye20Regular, Keyboard20Regular, Save20Regular } from "@fluentui/react-icons";
-import { Suspense, lazy, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
 import { Graph } from "../core/graph";
@@ -12,7 +12,7 @@ import { moduleOfId } from "../core/catalog";
 import { stackOf } from "../editor/stack";
 import type { IdentityEffect, Release } from "../editor/service";
 import { rendererTheme } from "../state/effects";
-import { storeKqlText } from "../state/editor-effects";
+import { storeProjectionText } from "../state/editor-effects";
 import { runtime } from "../state/runtime";
 import { dispatch, useStore } from "../state/store";
 import type { Command, EditorState } from "../state/types";
@@ -20,10 +20,8 @@ import { WORK_LABEL } from "../state/editor-phase";
 import { webgl2Available } from "./CanvasHost";
 import { DirectionBadge } from "./common";
 import { Definitions } from "./editor/Definitions";
+import { editorFor } from "./editor/languages";
 import { NewProjectionDialog } from "./editor/NewProjection";
-
-// the KQL text editor brings CodeMirror: it loads when its tab is first opened
-const KqlText = lazy(() => import("./editor/KqlText"));
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", minHeight: 0, height: "100%" },
@@ -230,6 +228,8 @@ export function EditorView() {
   const openProjection = (id: string) => { dispatch({ type: "editor/projection", module: moduleOfId(id), projection: id }); dispatch({ type: "editor/releases", module: moduleOfId(id) }); };
   const projections = c.projections().filter((p) => p.module !== "sattle.kernel");
   const p = projections.find((x) => x.id === ed.projection);
+  const file = p && session.fileOf(`${p.module}.${p.name}`);
+  const Editor = file && editorFor(file.language);
   const onKeyDown = (e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); setDialog("commit"); } };
 
   return (
@@ -267,7 +267,7 @@ export function EditorView() {
           </Toolbar>
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          {p && <Suspense fallback={<Spinner label="Loading the text editor…" />}><KqlText port={session.svc} projection={`${p.module}.${p.name}`} draft={ed.draft || undefined} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeKqlText(`${p.module}.${p.name}.kql`, text, dispatch)}
+          {file && Editor && <Suspense fallback={<Spinner label="Loading the text editor…" />}><Editor port={session.svc} file={file} draft={ed.draft || undefined} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeProjectionText(file.file, text, dispatch)}
             picked={picked && runtime.ws?.history(picked.graph) ? { graph: picked.graph, data: runtime.ws.history(picked.graph)!.graph, ids: [picked.id] } : null} /></Suspense>}
           {ed.notice && <div style={{ position: "absolute", left: 36, right: 36, top: 36 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}
