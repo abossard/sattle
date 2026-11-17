@@ -182,6 +182,7 @@ static partial class Bench
     {
         if (o.Positional.Contains("estate")) return Estate(o);
         if (o.Positional.Contains("phases")) return Phases(o);
+        if (o.Positional.Contains("gen-estate")) return GenEstate(o);
         if (o.Positional.Contains("b5")) return SourceToGraph(o);
         if (o.Positional.Contains("b7")) return DurableReads(o);
         if (o.Positional.Contains("b8")) return ElementView(o);

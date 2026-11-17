@@ -24,6 +24,8 @@ public static class Program
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
         sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
+        sattle bench  gen-estate --nodes N [--minutes 10] [--pairs-per-node 0.24] --out DIR
+        sattle bench  phases [--capture DIR] [--census]
         sattle bench  estate | b5 [--store memory|sqlite] | b7 [--cosmos ENDPOINT] | b8 | b10   [--capture DIR|latest] [--runs 10]
         CAPTURE is a capture directory, lab/fixtures, or "latest" (newest under lab/captures).
         --from is where a live run starts when its store has no saved position; with one it continues after it.

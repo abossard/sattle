@@ -467,6 +467,54 @@ Rejected: a `Utf8JsonReader` state machine per adapter. A forward pass over a Hu
 - `RecordReadingTests`: the lines of a file with LF, CRLF, a byte order mark, no final newline, empty lines and a line longer than the buffer give the envelopes of their texts; texts with escapes, beyond ASCII, empty and longer than the stack buffer are written as their values; hosts as `HostOf` gives them; an audit event inside a string with its escapes; reading and consuming a flow of known texts allocates under 1 KB per record (3,227 B before, which fails it).
 - State digests unchanged: estate `sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422`, `lab/fixtures` `sha256:4a1560a5b4df685d764a5a491fa008594b36f583bfd4a0df5d8ae09128b6ffd0`, 20261110T105738Z `sha256:de8fe8a84f6567ff4a2630571a49ca671d4741e745a1a9d44779d6d5a2aa4520` and 20261110T140542Z `sha256:bd7dd35664dec61df5868c9d35c8bc97620ecc5fa7670b2b9439d15f074ccb13` (both with the overlay).
 
+## Scale ladder for gate 1c, phase 1: 10^4 and 10^5 master nodes (#49, 2026-11-17)
+**Input.** `sattle bench gen-estate --nodes N --out DIR` writes a capture in the format of the test estate, scaled by its workload namespace. Per namespace it holds the Services web, api and database, 5 pods, 2 Deployments, service accounts and EndpointSlices, and 10 Azure resources (cache, storage account, PostgreSQL, API Management and a backend, 3 private endpoints, a managed identity and a role assignment), so 18 master nodes. There is one Kubernetes node and VM per 30 pods, in one cluster and one subscription. Per minute it writes one flow per active pod pair (0.24 per master node, so 240,000 at 10^6), four endpoint flows per namespace, one Azure Monitor point per platform resource, and Prometheus samples per node. Scenarios A to C (cache, database, crash loop) run in one namespace of every hundred, with the estate's signal rules. The first namespace is `shop`, so the tracked space binds the workload model to it. The input is deterministic and is not in git (`tmp/`). 10^4: 81,598 records (40 MB); 10^5: 816,075 records (402 MB); 10 minutes each.
+
+**Harness.** `sattle bench phases --capture DIR --census` adds three things to the phases of the replay: the thread's CPU per phase (`CLOCK_THREAD_CPUTIME_ID`), the peak resident set (`ru_maxrss`), and the census at the end, per master node (pods, Services and Azure resources). A bug is fixed: the closing flush and advance were counted to the engine but not to the processing total, so the adapters read negative.
+
+Release build of 1b89b48 plus the harness, in a clone. Load average 140 to 300 (other sessions). Byte figures do not depend on the load; times are pessimistic.
+
+| | 10^4 (9,995 master nodes) | 10^5 (100,011) | budget (research 04, 1.2) |
+|---|---|---|---|
+| wall, thread CPU, process CPU | 23.2 s, 21.4 s, 25.5 s | 822 s, 646 s, 731 s | |
+| engine ingest, wall and CPU | 20.2 s, 18.8 s | 800 s, 627 s | |
+| allocated per input row (whole path) | 531 KB | 637 KB | 1 KB per record |
+| same, without `LinkOp` and `TraverseOp` | 57 KB | 56 KB | |
+| GC pause | 0.7 s (3 %) | 44.7 s (5 %) | 5 % |
+| peak resident set | 963 MB | 4,879 MB | |
+| live bytes at the end | 422 MB | 3,191 MB | |
+| per master node | 42.2 KB | **31.9 KB** | 2.2 KB |
+
+**Retained bytes per master node by structure** (census, coverage 98 and 100 %; the top 14):
+| structure | 10^4 | 10^5 | what it is |
+|---|---|---|---|
+| `SeriesOp` | 6,042 | 5,939 | a `SortedDictionary<long, decimal?[]>` per element, one tree node and one array per window: 3.79 M windows, about 116 B each for the node and the array |
+| `TraverseOp` | 6,179 | 5,835 | the reach of every start as a `List<Entity>`, a copy of each reached entity with its properties as strings and `TextValue`s |
+| `JoinOp` | 3,596 | 2,925 | the tables of both sides |
+| `GroupOp` | 2,836 | 2,578 | accumulator tables |
+| telemetry store | 1,854 | 1,828 | a `(decimal, long)[]` per series, and the change log |
+| interner | 1,771 | 1,643 | 1.24 M strings at 10^5, 12 per master node |
+| `WindowedGroupOp` | 1,742 | 1,346 | |
+| hot graph byte pool | 1,386 | 1,180 | |
+| sink contributions | 867 | 834 | |
+| `RollupOp` | 828 | 702 | |
+| `ThresholdOp` | 617 | 603 | a sorted tree of windows per key |
+| `MatchOp` | 2,764 | 571 | mostly fixed: an ontology view per operator (20 MB at 200 nodes) |
+| identity catalog | 570 | 507 | |
+| engine rest, statics | 2,170 | 217 | fixed (21.7 MB) |
+
+Per graph at 10^5, MB: `healthTree` 1,031; shared (interner, telemetry, identities, statics) 420; `workloadStructure` 375; `master` 307; `workload` 264; `treeStructure` 191; `treeSignals` 183; `serviceTree` 170; `treeRollup` 160. `workloadStructure` and `workload` produce 86 elements (the namespace `shop`) and hold 639 MB, 6.4 KB per master node.
+
+**Work by operator, 10^4 and 10^5** (ms and MB allocated; the growth for ten times the nodes):
+| operator | 10^4 | 10^5 | growth of the allocation |
+|---|---|---|---|
+| `TraverseOp` (almost all `healthTree`) | 3,150 ms, 1,404 MB | 487,306 ms, 130,853 MB | 93 times: quadratic |
+| `LinkOp` (identity merges) | 12,997 ms, 41,037 MB | 203,917 ms, 390,577 MB | 9.5 times: linear, about 8.8 MB per call |
+| `JoinOp` | 686 ms, 78 MB | 66,126 ms, 544 MB | time 96 times (downstream of the reach churn) |
+| all others | about 4.8 s, 1.6 GB | about 36 s, 13 GB | about linear |
+
+**What blocks 10^6.** Linear structures would put about 32 KB per master node, so 32 GB live, against the 2.2 KB budget (a gap of 14.5 times). The traversal is quadratic: 487 s at 10^5 would be about 13 h at 10^6. The merges would allocate about 3.9 TB. The theory notes of the hogs are on #49, one per hog, before any fix.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
