@@ -137,7 +137,7 @@ For each operator the engine keeps a small state and computes the change of its 
 |---|---|---|
 | `Filter`, `Map`, `Union`, emits, `Window` assignment | linear: apply to the delta batch | none |
 | `Match` edges, `Join` | bilinear: new left against old right, then new right against the new left | an index of the rows seen so far, by entity or by join key |
-| `Traverse` | per start element a search outward, one step of depth at a time, to the depth bound, recomputed only when a visited element or edge changed, only the difference emitted | visited set per start |
+| `Traverse` | per start element a search outward, one step of depth at a time, to the depth bound; an added edge lowers depths from its far end for the starts that reached its near end, a lost edge searches its starts again, an edited entity touches the starts that visited it; only the difference emitted | per start, the depth each element was first reached at |
 | `Group`, `Rollup` with `count`, `sum` | per-key accumulators updated by signed deltas | one per key (and window) |
 | `Group`, `Rollup` with `min`, `max`, `mean`, `last` | per-key ordered multiset, or recompute the affected key | per key |
 | `Distinct` | weight per row, emit on `0 ↔ positive` transitions | weight map |

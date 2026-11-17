@@ -4,7 +4,7 @@ using static Sattle.Differential.Logs;
 
 namespace Sattle.Differential;
 
-/// <summary>Theorem 6.1 and Theorem 6.2 on the smallest log of every defect that the code reviews and the harness found: after every batch of every cut, and with the rows of a batch reversed, the engine equals the reference. Each log is written out, so a defect that comes back fails here by name, whatever the generated logs of its world reach.</summary>
+/// <summary>Theorem 6.1 and Theorem 6.2 on the smallest log of every defect that the code reviews and the harness found, and on a written log of every case a review named that generated logs may miss: after every batch of every cut, and with the rows of a batch reversed, the engine equals the reference. Each log is written out, so a defect that comes back fails here by name, whatever the generated logs of its world reach.</summary>
 public class SmallestLogTests
 {
     static RowInput Row(string source, long weight, string k, string g, long n, long seconds, decimal? d = null) =>
@@ -13,6 +13,11 @@ public class SmallestLogTests
     static RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Origin + seconds * Second))), 1);
     static RowInput Pod(string uid, string name) => new("pods", Logs.Row(("uid", Value.Text(uid)), ("name", Value.Text(name)), ("g", Value.Text("g0"))), 1);
     static AdvanceInput Advance(long seconds) => new(Origin + seconds * Second);
+    static Input[] Items(int count) => [.. Enumerable.Range(0, count).Select(i => Row("a", 1, "k" + i, "g0", 1, 0))];
+    /// <summary>Edges of `edges` between items, each written `from>to`.</summary>
+    static Input[] Edges(params string[] pairs) => [.. pairs.Select(p => p.Split('>')).Select(e => Edge(1, e[0], e[1]))];
+    /// <summary>The fact text of a `Reach` from item `a` to item `b`.</summary>
+    static string Reach(string a, string b) => $"prop:a=t:{a},d:w.view/prop:b=t:{b},";
 
     /// <summary>The defect, the world it shows in, its smallest log, and a text the reference's result must contain (so a log that no longer reaches the case fails).</summary>
     public static TheoryData<string, string, Input[], string?> Cases => new()
@@ -71,6 +76,22 @@ public class SmallestLogTests
             [Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), Advance(90), Pod("u0", "Web")], null },
         { "a view named by the element follows a merge of the master", "a view named by the element of a linked domain",
             [Edge(1, "web", "web", "flows"), Pod("u0", "Web")], "d:w.view/prop:name=" },
+
+        // ---- #113: traverse in increments (an added edge lowers depths from its far end, a lost edge walks its starts again); an advance ends a batch, so the last edges form a patch of their own under every cut ----
+        { "an added edge lowers depths two hops past its far end, and an item comes into reach at the maximum depth", "traverse from depth 1 to 3",
+            [.. Items(5), .. Edges("k0>k1", "k1>k2", "k2>k3", "k3>k4"), Advance(60), .. Edges("k0>k2")], Reach("k0", "k4") },
+        { "a cycle back to the start does not reach the start below the minimum depth", "traverse from depth 1 to 3",
+            [.. Items(2), .. Edges("k0>k1"), Advance(60), .. Edges("k1>k0")], Reach("k0", "k1") },
+        { "two added edges of one patch, the second lowering the near end of the first", "traverse from depth 1 to 3",
+            [.. Items(5), .. Edges("k0>k1", "k1>k2", "k3>k4"), Advance(60), .. Edges("k2>k3", "k0>k2")], Reach("k0", "k4") },
+        { "an added and a lost edge of one patch, of different starts", "traverse from depth 1 to 3",
+            [.. Items(5), .. Edges("k0>k1", "k3>k4"), Advance(60), Edge(-1, "k3", "k4"), Edge(1, "k1", "k2")], Reach("k0", "k2") },
+        { "against the direction of the edges, an added edge lowers depths two hops past its far end", "traverse in",
+            [.. Items(5), .. Edges("k1>k0", "k2>k1", "k3>k2", "k4>k3"), Advance(60), .. Edges("k2>k0")], Reach("k0", "k4") },
+        { "either way, an added edge against the direction lowers depths past its far end", "traverse either way",
+            [.. Items(4), .. Edges("k1>k0", "k1>k2", "k3>k2"), Advance(60), .. Edges("k2>k0")], Reach("k0", "k3") },
+        { "a traverse follows a sub-type of its relationship type and not another type", "traverse over a sub-type, not over another type",
+            [.. Items(3), Edge(1, "k0", "k1", "fast"), Edge(1, "k1", "k2", "other"), Advance(60), Edge(1, "k0", "k2", "other"), Advance(120), Edge(1, "k1", "k2", "fast")], Reach("k0", "k2") },
     };
 
     [Theory, MemberData(nameof(Cases))]

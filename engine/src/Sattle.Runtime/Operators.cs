@@ -1169,8 +1169,8 @@ sealed class JoinOp : PhysOp
 
 // ---- traversal -------------------------------------------------------------------------------------------
 
-/// <summary>Bounded traversal: for every input row, the elements reachable from its start element over one relationship type. Input rows are kept per start element together with the reach last emitted for it. A row delta is joined with the old reach; a start is recomputed when a visited element or edge appears in the graph patch, and the difference between old and new reach is emitted once per row. Reached elements that are not in the graph are skipped (they appear when the entity does).
-/// State: the rows as a Z-set (`Table`: every column as its 8-byte code, a decimal as its number in `DecimalCodes`, and a bit per absent column) arranged by start; per start its reach (the entities reached, in the walk's order, and a 64-bit hash of them and the properties read); and which ids each start's walk visited (`Table` of (id, start), arranged both ways), so a patch finds the starts it reaches through its ids. The walk's set and lists belong to the operator and are emptied after each walk.</summary>
+/// <summary>Bounded traversal: for every input row, the entities reachable from its start element over one relationship type (and its sub-types) in the direction given, at a depth from `Min` to `Max`. Per start, the operator keeps the depth at which its walk first reached each id; what the start reaches is read from those depths and the graph. A row delta is emitted against that reach. A patch is applied in increments: a start with no walk yet, or whose walk visited an end of a lost edge, is walked again and the difference emitted; an added edge only lowers depths, so from each start that visited its near end the depths are lowered from its far end on and only the ids whose depth fell are emitted again; an edited entity touches the starts that visited it. Reached elements that are not in the graph are skipped (they appear when the entity does).
+/// State: the rows as a Z-set (`Table`: every column as its 8-byte code, a decimal as its number in `DecimalCodes`, and a bit per absent column) arranged by start; and per (start, visited id) the depth (`Table`, arranged both ways), so a patch finds the starts it reaches through its ids. Properties are read from the graph when a row is emitted; nothing of an entity is kept. The walk's set, lists and queue belong to the operator and are emptied after each call.</summary>
 sealed class TraverseOp : PhysOp
 {
     readonly TTraverse t; readonly Interner it; readonly OntologyView view;
@@ -1391,7 +1391,8 @@ sealed class TraverseOp : PhysOp
         for (var r = visitsOf.First([code]); r >= 0; r = visitsOf.Next(r)) touched.TryAdd((depths.Get(r, 0), code), (int)depths.Get(r, Depth));
     }
 
-    /// <summary>An added edge reached `id` from `start` at `depth`: breadth first from there, every id whose depth falls gets the lower depth and is touched with the depth it had before the patch.</summary>
+    /// <summary>An added edge reached `id` from `start` at `depth`: breadth first from there, every id whose depth falls gets the lower depth and is touched with the depth it had before the patch.
+    /// An id may be queued more than once in one call, once per neighbour whose depth fell. That is harmless: the queue holds depths in rising order, so the first time an id is taken it gets its least depth, and every later copy finds a depth no greater than its own and is skipped. A later added edge of the same patch lowers an id again only where its depth is less; the touched depth stays the one from before the patch, since only the first `TryAdd` counts. A copy costs one lookup, as a check when queuing would.</summary>
     void Lower(long start, string id, int depth)
     {
         queue.Clear(); queue.Enqueue((id, depth));

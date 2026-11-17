@@ -461,6 +461,56 @@ public static class Worlds
             ViewSpace,
         ], [Keyed("a"), Edges]) with { Witnesses = ["Reach"] };
 
+    // ---- traversals: the reach of each item over its edges ----
+
+    const string ReachType = """
+        entity Reach { a: Text; b: Text; g: Text; }
+        identity reach for Reach version "1" { a: Text by exact; b: Text by exact; }
+        """;
+    /// <summary>The items each item reaches over `Edge` along `path` (such as `-[p*0..2]->`), one `Reach` per pair, named by both keys.</summary>
+    static string Reach(string path) => $"""
+        nodes Reach on r = graph("master") | graph-match (i){path}(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
+            | project r = identity("reach", a, b), a, b, g;
+        """;
+    /// <summary>Items k0 to k4 and the edges between them: room for a chain of four edges and a short cut over it.</summary>
+    static readonly IReadOnlyList<SourceSpec> FiveItems =
+    [
+        new("a", (r, now) => Row(("k", Text(r, "k", 5)), ("g", Text(r, "g", 3)), ("n", Value.Integer(r.Next(6))), ("d", Value.Null), ("t", Near(r, now))), f => ((TextValue)f["k"]).S),
+        FiveEdges("edges"), FiveEdges("edges"),
+    ];
+    static SourceSpec FiveEdges(string name) => new(name, (r, _) => Row(("src", Text(r, "k", 5)), ("dst", Text(r, "k", 5))), f => ((TextValue)f["src"]).S + ">" + ((TextValue)f["dst"]).S);
+
+    /// <summary>#113: a traverse from depth 1 to 3. An added edge lowers depths from its far end, possibly several hops on, and a cycle back to the start does not reach the start (its depth is 0, below the minimum). Two added edges of one patch, or an added and a lost edge, meet in one step when a cut puts them in one batch.</summary>
+    public static readonly World TraverseOneToThree = View("traverse from depth 1 to 3", "Traverse", ReachType, Reach("-[p*1..3]->"), 0.1, FiveItems) with { Witnesses = ["Reach"] };
+    /// <summary>#113: a traverse against the direction of the edges: an item reaches the items with edges into it.</summary>
+    public static readonly World TraverseIn = View("traverse in", "Traverse", ReachType, Reach("<-[p*1..3]-"), 0.1, FiveItems) with { Witnesses = ["Reach"] };
+    /// <summary>#113: a traverse over `Edge` follows `Fast`, a sub-type of `Edge`, and not `Other`, a relationship type of its own between the same items.</summary>
+    public static readonly World TraverseSubtype = new("traverse over a sub-type, not over another type", "Traverse",
+        [
+            new SourceFile("w.base.sattle", BaseModule + "relationship Fast : Edge (Item) -> (Item);\nrelationship Other (Item) -> (Item);\n"),
+            Kql("w.base", "ingest", """
+                graph ingest : w.base;
+                input a : R;
+                input edges : EdgeRow;
+                input fast : EdgeRow;
+                input other : EdgeRow;
+                nodes Item on i with (rule = "observed") = a | project i = identity("item", k), k, g, n;
+                edges Edge from s to d with (rule = "observed") = edges | project s = identity("item", src), d = identity("item", dst);
+                edges Fast from s to d with (rule = "observed") = fast | project s = identity("item", src), d = identity("item", dst);
+                edges Other from s to d with (rule = "observed") = other | project s = identity("item", src), d = identity("item", dst);
+                """),
+            new SourceFile("w.view.sattle", $"module w.view @ 1.0.0;\nimport w.base @ 1.0.0 sha256:… as base;\n{ReachType}\n"),
+            Kql("w.view", "v", $"graph v : w.view;\ninput master : base;\n{Reach("-[p*1..3]->")}\n"),
+            Space("import w.base @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
+                  source a adapter "sattle.authoring" rows base.R;
+                  source edges adapter "sattle.authoring" rows base.EdgeRow;
+                  source fast adapter "sattle.authoring" rows base.EdgeRow;
+                  source other adapter "sattle.authoring" rows base.EdgeRow;
+                  master graph master = base.ingest(a: a, edges: edges, fast: fast, other: other);
+                  graph view = view.v(master: master);
+                """),
+        ], [FiveItems[0], FiveEdges("edges"), FiveEdges("fast"), FiveEdges("other")], 0.1) { Witnesses = ["rel ", "Reach"] };
+
     public static readonly IReadOnlyList<World> All =
     [
         TraverseAfterWhere,
@@ -522,20 +572,9 @@ public static class Worlds
             """, """
             nodes Pair on p = graph("master") | graph-match (x)-[e]->(y) where labels(e) has "Edge" project a = x.k, b = y.k, g = y.g | project p = identity("pair", a, b), a, b, g;
             """) with { Witnesses = ["Pair"] },
-        View("traverse", "Traverse", """
-            entity Reach { a: Text; b: Text; g: Text; }
-            identity reach for Reach version "1" { a: Text by exact; b: Text by exact; }
-            """, """
-            nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]->(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
-                | project r = identity("reach", a, b), a, b, g;
-            """) with { Witnesses = ["Reach"] },
-        View("traverse either way", "Traverse", """
-            entity Reach { a: Text; b: Text; g: Text; }
-            identity reach for Reach version "1" { a: Text by exact; b: Text by exact; }
-            """, """
-            nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]-(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
-                | project r = identity("reach", a, b), a, b, g;
-            """) with { Witnesses = ["Reach"] },
+        View("traverse", "Traverse", ReachType, Reach("-[p*0..2]->")) with { Witnesses = ["Reach"] },
+        View("traverse either way", "Traverse", ReachType, Reach("-[p*0..2]-")) with { Witnesses = ["Reach"] },
+        TraverseOneToThree, TraverseIn, TraverseSubtype,
         View("emit update", "EmitEntity update", """
             entity Copy { k: Text; g?: Text; degree?: Integer; }
             identity copy for Copy version "1" { k: Text by exact; }

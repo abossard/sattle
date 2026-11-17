@@ -147,7 +147,7 @@ public static class PlanCompiler
                         strategies.Add($"{m.Name}: Match, bilinear delta against the input graph (new before the seed component, old after it)");
                         break;
                     }
-                case TTraverse tr: op = new TraverseOp(tr, inL, catalog.OntologyOf(tp.Port(tr.GraphPort).ExpectsModule!), cx.It); strategies.Add($"{tr.Name}: Traverse, per start element a breadth-first reach over {tr.Direction} edges to depth {tr.Max}; a start is recomputed only when a visited element or edge changed, and only the difference is emitted"); break;
+                case TTraverse tr: op = new TraverseOp(tr, inL, catalog.OntologyOf(tp.Port(tr.GraphPort).ExpectsModule!), cx.It); strategies.Add($"{tr.Name}: Traverse, per start element the depth each element was first reached at, over {tr.Direction} edges to depth {tr.Max}; an added edge lowers depths from its far end for the starts that reached its near end, a lost edge walks its starts again, an edited entity touches the starts that visited it, and only the difference is emitted"); break;
                 case TValues v: op = new ValuesOp(v, cx.It); strategies.Add($"{v.Name}: Values, the constant rows are emitted once, in the first evaluation of the graph"); break;
                 case TJoin j: op = new JoinOp(j, InputLayout(j, "left"), InputLayout(j, "right"), cx); strategies.Add($"{j.Name}: Join, hash join on {j.Keys.Count} equality key(s), bilinear delta: new left against old right, then new right against the new left"); break;
                 case TUnion u: op = new UnionOp(u, InputLayout(u, "in0"), InputLayout(u, "in1")); strategies.Add($"{u.Name}: Union, linear: both inputs' signed rows concatenated (weights add)"); break;

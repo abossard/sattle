@@ -19,7 +19,7 @@ public static class Support
         ["Threshold"] = "per-key state machine over ordered closed windows",
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys",
-        ["Traverse"] = "per start element breadth-first reach, recomputed only when a visited element or edge changed; emits the difference",
+        ["Traverse"] = "per start element the depth each element was first reached at; an added edge lowers depths from its far end, a lost edge walks the starts that visited its ends again, an edited entity touches the starts that visited it; emits the difference",
         ["Union"] = "linear: concatenation of both inputs' signed rows",
         ["Distinct"] = "per-row multiplicity counts, set semantics over signed rows",
         ["EmitEntity"] = "support-counted element layer",
