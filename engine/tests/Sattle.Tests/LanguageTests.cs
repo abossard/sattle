@@ -1,5 +1,4 @@
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Language;
 
 namespace Sattle.Tests;
@@ -11,7 +10,7 @@ public class LanguageTests
 
     static (Catalog Cat, LoadResult Result) Load(Dictionary<string, string> sources, bool updatePins = true)
     {
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Repo.Projections);
         var res = cat.Load(sources.Select(kv => new SourceFile(kv.Key, kv.Value)), updatePins);
         return (cat, res);
     }
@@ -57,17 +56,17 @@ public class LanguageTests
     public void Import_pins_are_verified_and_can_be_fixed()
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:…") }).ToList();
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: false);
         Assert.Contains(res.Diagnostics, d => d.Code == "ImportPinMissing" && d.Line > 0);
-        res = new Catalog(new KqlSource()).Load(files, updatePins: true);
+        res = new Catalog(Repo.Projections).Load(files, updatePins: true);
         Assert.NotEmpty(res.PinFixes);
         var fixedText = Catalog.ApplyPinFixes(files, res.PinFixes);
         var fixedFiles = files.Select(f => fixedText.TryGetValue(f.Path, out var t) ? f with { Text = t } : f).ToList();
-        var again = new Catalog(new KqlSource()).Load(fixedFiles, updatePins: false);
+        var again = new Catalog(Repo.Projections).Load(fixedFiles, updatePins: false);
         Assert.Empty(again.Diagnostics);
         var wrong = fixedFiles.Select(f => f.Path.EndsWith("acme.svc.sattle") ? f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:" + new string('0', 64)) } : f).ToList();
-        Assert.Contains(new Catalog(new KqlSource()).Load(wrong, updatePins: false).Diagnostics, d => d.Code is "ImportPinMismatch");
+        Assert.Contains(new Catalog(Repo.Projections).Load(wrong, updatePins: false).Diagnostics, d => d.Code is "ImportPinMismatch");
     }
 
     [Fact]

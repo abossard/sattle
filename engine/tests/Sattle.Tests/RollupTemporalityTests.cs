@@ -1,5 +1,4 @@
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -39,7 +38,7 @@ public class RollupTemporalityTests
                 }
                 """),
         ];
-        return [.. new Catalog(new KqlSource()).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError && d.Code == "Aggregate")];
+        return [.. new Catalog(Repo.Projections).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError && d.Code == "Aggregate")];
     }
 
     public static IEnumerable<object[]> Matrix() =>

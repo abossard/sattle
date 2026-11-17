@@ -2,7 +2,6 @@ using Microsoft.Data.Sqlite;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -11,7 +10,7 @@ namespace Sattle.Tests;
 public class SealTests
 {
     const long Min = 60_000_000_000;
-    static HostOptions Options(long sealEvery) => new() { Projections = new KqlSource(), Cluster = "synth", SealEvery = sealEvery };
+    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, Cluster = "synth", SealEvery = sealEvery };
     static List<SourceFile> Files => EstateTests.Files(demo: true);
 
     public static IEnumerable<object[]> Stores() => RestartTests.Stores();

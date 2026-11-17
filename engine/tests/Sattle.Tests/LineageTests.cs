@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -14,7 +13,7 @@ public class LineageTests
 
     static SpaceHost Serve(string dir)
     {
-        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(EstateFiles(), new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
         h.Finish();
         return h;
@@ -186,7 +185,7 @@ public class LineageTests
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
         files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
         files.AddRange([new SourceFile("acme.bygroup.sattle", ByGroup), new SourceFile("acme.bygroup.pairs.kql", Pairs)]);
-        var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
         using (h)
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(Estate);

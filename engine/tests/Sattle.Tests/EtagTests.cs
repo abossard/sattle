@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using Sattle.Cli;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -18,8 +17,8 @@ public class EtagTests
     [Fact]
     public void Two_hosts_whose_definitions_differ_in_one_value_role_answer_different_ETags_for_the_ontology_at_the_same_catalog_revision()
     {
-        using var a = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": warning"), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
-        using var b = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": danger"), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var a = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": warning"), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        using var b = new SpaceHost(WithRole("\"Degraded\": warning", "\"Degraded\": danger"), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         Assert.Equal(a.CatalogRevision, b.CatalogRevision);                                     // the old tag, "onto-health-<catalog revision>", was the same for both
         Assert.NotEqual(Etags.Of(Json(a.Ontology("workload"))), Etags.Of(Json(b.Ontology("workload"))));
         Assert.Equal(Etags.Of(Json(a.Ontology("workload"))), Etags.Of(Json(a.Ontology("workload"))));
@@ -35,12 +34,12 @@ public class EtagTests
         string[] before;
         string[] Tags(SpaceHost h) => [Etags.Of(Json(h.Ontology("workload"))), Etags.Of(Json(h.Snapshot("deploymentHealth", null))), Etags.Of(Nd(h.Patches("deploymentHealth", 0))), Etags.Of(Json(h.Snapshot("master", 1))), Etags.Of(Json(h.Definitions()))];
         string instance;
-        using (var h = SpaceHost.OpenDurable(store, files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }))
+        using (var h = SpaceHost.OpenDurable(store, files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" }))
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(fixture);
             before = Tags(h); instance = h.Instance;
         }
-        using var r = SpaceHost.OpenDurable(store, null, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var r = SpaceHost.OpenDurable(store, null, new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         Assert.NotEqual(instance, r.Instance);
         Assert.Equal(before, Tags(r));
     }

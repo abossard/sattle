@@ -105,7 +105,7 @@ public class TypeSoundnessTests
     static readonly SourceSpec A = new("a", (r, now) => Row(("k", Text(r, "k", 4)), ("g", Text(r, "g", 3)), ("n", Value.Integer(r.Next(6))),
         ("d", Pick(r, Value.Null, Value.Decimal(1m), Value.Decimal(2.5m), Value.Decimal(0m))), ("t", Near(r, now))));
 
-    [Theory, Trait("Category", "Differential")]
+    [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)] [InlineData(6)]
     public void A_well_typed_projection_never_faults_and_emits_conforming_elements(int seed)
     {
@@ -115,7 +115,7 @@ public class TypeSoundnessTests
         {
             var (body, last) = Chain(r);
             var files = Module(body, last);
-            var catalog = new Catalog(new Sattle.Kql.KqlSource());
+            var catalog = new Catalog(EngineRun.Projections);
             var res = catalog.Load(files, updatePins: true);
             Assert.False(res.Diagnostics.Any(d => d.IsError), "the generator wrote a definition that does not check:\n" + files[1].Text + "\n" + string.Join("\n", res.Diagnostics.Where(d => d.IsError)));
             checkedChains++;
@@ -147,7 +147,7 @@ public class TypeSoundnessTests
     }
 
     /// <summary>A fault is counted, leaves its value absent and does not stop the rows around it: an overflow in one row of a batch of three.</summary>
-    [Fact, Trait("Category", "Differential")]
+    [Fact]
     public void A_fault_is_counted_and_leaves_only_its_own_value_absent()
     {
         var catalog = EngineRun.Load(Module("let x0 = a | project k, g, n = n * 4611686018427387904;", new Rel("x0", new() { ["k"] = ("Text", true), ["g"] = ("Text", true), ["n"] = ("Integer", true) })));

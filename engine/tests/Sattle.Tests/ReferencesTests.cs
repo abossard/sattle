@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -38,7 +37,7 @@ public class ReferencesTests
 
     static (SpaceHost Host, JsonNode Space) Serve(string dir, List<SourceFile> files)
     {
-        var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth", LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 1_000_000 });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth" }).Run(dir);
         h.Finish();
         return (h, h.SpaceInfo());

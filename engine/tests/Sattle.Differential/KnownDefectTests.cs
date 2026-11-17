@@ -7,8 +7,7 @@ using static Sattle.Differential.Logs;
 
 namespace Sattle.Differential;
 
-/// <summary>One test per defect of the code review (paper/research/07-code-review-findings.md, section 1) that the engine core has today. Each states the correct behaviour and fails until the defect is fixed; none is skipped or filtered out of the default run.</summary>
-[Trait("Category", "KnownDefect")]
+/// <summary>One test per defect of the code review (paper/research/07-code-review-findings.md, section 1) that the engine core had. Each states the correct behaviour; all are fixed, so each is a regression test of the default run.</summary>
 public class KnownDefectTests
 {
     static RowInput Row(string source, long weight, string k, string g, long n, long seconds, decimal? d = null) =>

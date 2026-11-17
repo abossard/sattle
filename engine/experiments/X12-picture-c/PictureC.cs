@@ -428,5 +428,5 @@ public sealed class ProgramSource(IProjectionSource text) : IProjectionSource
         return new ProjectionFacts(projections, places, diags);
     }
 
-    public bool Reads(string fileName) => fileName.EndsWith(Extension, StringComparison.Ordinal) || text.Reads(fileName);
+    public string? Language(string fileName) => fileName.EndsWith(Extension, StringComparison.Ordinal) ? "gkql" : text.Language(fileName);
 }

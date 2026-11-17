@@ -1,7 +1,6 @@
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -90,7 +89,7 @@ public class EstateTests
     public static Catalog LoadCatalog(bool demo)
     {
         var files = Files(demo);
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         return cat;
@@ -189,7 +188,7 @@ public class EstateTests
     [Fact]
     public void The_ontology_endpoint_serves_the_label_of_each_entity_type_and_the_kind_of_each_relationship_type_and_the_space_describes_each_graph()
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         var onto = h.Ontology("workload");
         string? Of(string list, string type, string field, bool id) => onto[list]!.AsArray().Single(t => t!["id"]!["value"]!.GetValue<string>().Split('.')[^1] == type)![field] is { } v ? (id ? v["value"] : v)!.GetValue<string>() : null;
         Assert.Equal("name", Of("entityTypes", "WorkloadService", "label", true)!.Split('.')[^1]);                          // the label of the supertype Component
@@ -215,7 +214,7 @@ public class EstateTests
     [Fact]
     public void The_ontology_endpoint_of_the_workload_graph_serves_value_roles_for_the_state_properties()
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         var onto = h.Ontology("workload");
         string Roles(string property) => string.Join(",", onto["properties"]!.AsArray().Where(p => p!["id"]!["value"]!.GetValue<string>() == property).Select(p => p!["presentation"]).Single()!.AsArray()
             .Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order());
@@ -233,7 +232,7 @@ public class EstateTests
     [Fact]
     public void A_preview_of_the_estate_shows_the_identity_merge_of_its_Link_so_a_walkthrough_can_assert_it()
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Estate);
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var p = h.Preview(d, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("serviceTree") });

@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -73,7 +72,7 @@ public class AuthoredGraphTests
 
     static SpaceHost Host()
     {
-        var h = new SpaceHost(Files(), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        var h = new SpaceHost(Files(), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         foreach (var k in new[] { "k1", "k2" }) { rw.Begin(); rw.Text("capId", k); rw.Text("name", "a-" + k); rw.Text("owner", "d"); rw.Text("status", "live"); }
         h.Ingest("items", rw.Build()!, 1);
@@ -139,7 +138,7 @@ public class AuthoredGraphTests
             "telemetry in authored" => "source levels adapter \"test\" rows base.LevelRow;\n  master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items, levels: levels);\n  graph view = view.v(authored: authored);",
             _ => Graphs,
         };
-        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs), new KqlSource()));
+        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs), Repo.Projections));
         Assert.True(e.Message.Contains(message, StringComparison.Ordinal), $"{what}: {e.Message}");
     }
 
@@ -158,7 +157,7 @@ public class AuthoredGraphTests
             input g : t.base;
             nodes Loose on l with (rule = "made", description = "loose") = graph("g") | graph-match (i) where labels(i) has "Item" project l = identity("loose", i.k), name = i.k;
             """) } : []];
-        var res = new Catalog(new KqlSource()).Load(files, updatePins: true);
+        var res = new Catalog(Repo.Projections).Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         Assert.Equal(deferred, res.Diagnostics.Any(d => d.Code == "EndpointDeferred"));
         _ = what;
@@ -173,7 +172,7 @@ public class AuthoredGraphTests
             "link noteKeyIsName from k to n with (rule = \"observed\", confidence = 1.0) = obs | project k = identity(\"noteKey\", capId), n = identity(\"noteName\", service);\n",
             "nodes Note on n with (rule = \"notes\", description = \"a note per item, by key and by name\") = items | project n = identity(\"noteKey\", capId);\n"
             + "nodes Note on n with (rule = \"notes\") = items | project n = identity(\"noteName\", name);\n");
-        using var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         int Notes() => h.Engine.Graph("authored").State.Entities.Count(e => Ids.Name(e.Type) == "Note");
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         rw.Begin(); rw.Text("capId", "k1"); rw.Text("name", "a-k1"); rw.Text("owner", "d"); rw.Text("status", "live");

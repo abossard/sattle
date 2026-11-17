@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -282,7 +281,7 @@ public class HealthTreeTests
     [Fact]
     public void The_report_document_lists_the_totals_per_state_and_the_elements_that_are_not_healthy_worst_first()
     {
-        var h = new SpaceHost(Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = new KqlSource(), Cluster = Cluster, LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = Repo.Projections, Cluster = Cluster, LateHorizonWindows = 1_000_000 });
         using (h)
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = Cluster }).Run(Wide);
@@ -334,7 +333,7 @@ public class HealthTreeTests
     [Fact]
     public void The_lineage_of_a_tree_element_leads_down_to_the_master_element_and_the_evidence_to_the_event()
     {
-        var h = new SpaceHost(Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = new KqlSource(), Cluster = Cluster, LateHorizonWindows = 1_000_000 });
+        var h = new SpaceHost(Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = Repo.Projections, Cluster = Cluster, LateHorizonWindows = 1_000_000 });
         using (h)
         {
             new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 200, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = Cluster }).Run(Wide);
@@ -361,13 +360,13 @@ public class HealthTreeTests
         {
             string digest; int unhealthy;
             using (var g = new SqliteGraphStore(store))
-            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = new KqlSource(), Cluster = Cluster, LateHorizonWindows = 1_000_000, SealEvery = 40 }))
+            using (var h = SpaceHost.OpenDurable(g, Repo.DefinitionFilesFor(Wide), new HostOptions { Projections = Repo.Projections, Cluster = Cluster, LateHorizonWindows = 1_000_000, SealEvery = 40 }))
             {
                 new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 100, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = Cluster }).Run(Wide);
                 h.Finish(); digest = h.StateDigest(); unhealthy = h.Engine.Graph("healthTree").State.Entities.Count(x => Ids.Name(x.Type) == "Element" && P(x, "rolledState") == "Unhealthy");
             }
             using var g2 = new SqliteGraphStore(store);
-            using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Projections = new KqlSource(), Cluster = Cluster, VerifyJournal = true });
+            using var again = SpaceHost.OpenDurable(g2, null, new HostOptions { Projections = Repo.Projections, Cluster = Cluster, VerifyJournal = true });
             Assert.NotNull(again.Restart);
             Assert.Equal(digest, again.StateDigest());
             Assert.Equal(unhealthy, again.Engine.Graph("healthTree").State.Entities.Count(x => Ids.Name(x.Type) == "Element" && P(x, "rolledState") == "Unhealthy"));

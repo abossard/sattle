@@ -38,7 +38,7 @@ public class SealRestoreTests
         public void Dispose() { }
     }
 
-    [Theory, MemberData(nameof(WorldNames)), Trait("Category", "Differential")]
+    [Theory, MemberData(nameof(WorldNames))]
     public void A_seal_restore_equals_a_full_replay_in_every_field(string world)
     {
         var w = Worlds.All.Single(x => x.Name == world);

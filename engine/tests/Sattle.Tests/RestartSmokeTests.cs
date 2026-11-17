@@ -1,6 +1,5 @@
 using Sattle.Cli;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -10,7 +9,7 @@ public class RestartSmokeTests
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
-    static HostOptions Options => new() { Projections = new KqlSource(), Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
 
     [Fact]
     public void A_space_restarts_from_its_journal_and_from_a_seal_with_the_same_digest_and_sequence()

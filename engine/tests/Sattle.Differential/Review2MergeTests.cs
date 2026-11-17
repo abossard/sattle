@@ -111,7 +111,7 @@ public class Review2MergeTests
             $"nodes Tag on t = graph(\"master\") | graph-match (p) where labels(p) has \"Pod\" project p = p.id, name = p.name | project t = {identity}, name;");
         if (refused)
         {
-            var (code, message) = Assert.Single(new Catalog(new Sattle.Kql.KqlSource()).Load([.. w.Files.Where(f => f.Path != "w.space.sattle")], updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => (d.Code, d.Message)).Distinct());     // without the space, which only says that the view did not load
+            var (code, message) = Assert.Single(new Catalog(EngineRun.Projections).Load([.. w.Files.Where(f => f.Path != "w.space.sattle")], updatePins: true).Diagnostics.Where(d => d.IsError).Select(d => (d.Code, d.Message)).Distinct());     // without the space, which only says that the view did not load
             Assert.Equal("IdentityLinked", code);
             Assert.Contains("keep its id (p.id)", message);
             return;

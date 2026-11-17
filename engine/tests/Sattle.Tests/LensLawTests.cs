@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -63,7 +62,7 @@ public class LensLawTests
     static SpaceHost Host(string step, int seed)
     {
         var files = Files(step);
-        var h = new SpaceHost(files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         var rnd = new Random(seed);
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
         for (var i = 0; i < rnd.Next(3, 7); i++) { rw.Begin(); rw.Text("capId", "k" + i); rw.Text("name", "a" + rnd.Next(10)); rw.Text("owner", "d" + rnd.Next(10)); rw.Text("status", rnd.Next(4) == 0 ? "gone" : "live"); }

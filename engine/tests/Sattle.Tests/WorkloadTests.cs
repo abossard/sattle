@@ -1,6 +1,5 @@
 using Sattle.Core;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -115,7 +114,7 @@ public class WorkloadTests
     [InlineData("configuration", "HostReference,AzureResource")]
     public void Why_web_depends_on_the_cache_is_answered_by_its_evidence_and_the_lineage_of_the_evidence(string how, string masterTypes)
     {
-        using var h = new SpaceHost(Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
         var structure = h.Engine.Graph("workloadStructure").State;
         Assert.Contains(structure.Rels, r => Ids.Name(r.Type) == "DependsOn" && NameOf(structure, r.Source) == "web" && NameOf(structure, r.Target) == "shopcache");
@@ -169,7 +168,7 @@ public class WorkloadTests
                 ? f.Text.Replace(PodsOfDeployment, $"datatable(dk:string, pk2:string, k:string, own:long) [{rows}]")
                 : throw new InvalidOperationException("the statement of the pods of a deployment changed"),
         }).ToList();
-        var cat = new Sattle.Language.Catalog(new KqlSource());
+        var cat = new Sattle.Language.Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var space = cat.Spaces.Keys.Single();

@@ -22,9 +22,12 @@ public sealed record Chunking(string Name, Func<int, bool> SplitAfter, bool Reve
 /// <summary>Runs the engine on a log and reads its state back as facts. Actions only: the calculations are in Sattle.Reference.</summary>
 public static class EngineRun
 {
+    /// <summary>The projection languages the worlds may be written in: the registration of the CLI, the one place that names a language.</summary>
+    public static IProjectionSource Projections => Sattle.Cli.Program.Projections;
+
     public static Catalog Load(IEnumerable<SourceFile> files)
     {
-        var catalog = new Catalog(new Sattle.Kql.KqlSource());
+        var catalog = new Catalog(Projections);
         var result = catalog.Load(files, updatePins: true);
         var errors = result.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()).ToArray();
         return errors.Length == 0 ? catalog : throw new InvalidOperationException("definitions do not check:\n" + string.Join("\n", errors));

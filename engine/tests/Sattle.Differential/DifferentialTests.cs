@@ -7,17 +7,17 @@ public class DifferentialTests
 {
     public static TheoryData<string> WorldNames => [.. Worlds.All.Select(w => w.Name)];
 
-    [Theory, MemberData(nameof(WorldNames)), Trait("Category", "Differential")]
+    [Theory, MemberData(nameof(WorldNames))]
     public void The_engine_equals_the_reference_however_the_log_is_cut(string world) => Agrees(world, seeds: 12, length: 14, reordered: false);
 
-    [Theory, MemberData(nameof(WorldNames)), Trait("Category", "Differential")]
+    [Theory, MemberData(nameof(WorldNames))]
     public void The_engine_equals_the_reference_when_the_rows_of_a_batch_are_reordered(string world) => Agrees(world, seeds: 12, length: 14, reordered: true);
 
     [Theory, MemberData(nameof(WorldNames)), Trait("Category", "Slow")]
     public void The_engine_equals_the_reference_on_many_logs_however_they_are_cut(string world) => Agrees(world, seeds: 150, length: 20, reordered: false);
 
     /// <summary>The comparison is not empty: on the default seeds the reference result of every world holds facts of every graph, and the facts that show its operator at work (a window, a state that switched on, a reach of depth two, a merged identity).</summary>
-    [Theory, MemberData(nameof(WorldNames)), Trait("Category", "Differential")]
+    [Theory, MemberData(nameof(WorldNames))]
     public void The_generated_logs_exercise_the_world(string world)
     {
         var w = Worlds.All.Single(x => x.Name == world);
@@ -28,7 +28,7 @@ public class DifferentialTests
     }
 
     /// <summary>T-RETAIN: retention keeps exactly the rows younger than the age at the frontier (Proposition 5.9), on logs with rows that are expired when they arrive, retractions of held rows and frontier advances, however the log is cut.</summary>
-    [Fact, Trait("Category", "Differential")]
+    [Fact]
     public void Retention_keeps_exactly_the_rows_younger_than_the_age_under_generated_frontiers()
     {
         var w = Worlds.All.Single(x => x.Name == "retain");
@@ -51,7 +51,7 @@ public class DifferentialTests
     }
 
     /// <summary>T-MERGE-TELE (Law 7.5 item 3): one window of a pod written by a group over its uid and a group over its name, with the link that merges the two identities before both rows, between them or after both, in every order and batching. The window is the same in every case and equals the reference: the combination of the two values by the property's rule, where a rule that does not combine two different values leaves no value.</summary>
-    [Theory, Trait("Category", "Differential")]
+    [Theory]
     [InlineData("delta sum", 1, 2, "3")] [InlineData("delta sum", 2, 2, "4")]
     [InlineData("gauge min", 1, 2, "1")] [InlineData("gauge max", 1, 2, "2")] [InlineData("gauge max", 2, 2, "2")]
     [InlineData("gauge mean", 1, 2, null)] [InlineData("gauge mean", 2, 2, "2")]                                   // a mean stored as one number: only equal values combine
@@ -84,7 +84,7 @@ public class DifferentialTests
     }
 
     /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): pods named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. That a group by the merged identity counts one group over both keys is the world "a view grouped by a pod that a link merges".</summary>
-    [Theory, Trait("Category", "Differential")]
+    [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
     public void Identity_is_independent_of_key_arrival_order_on_generated_inputs(int seed)
     {
@@ -121,7 +121,7 @@ public class DifferentialTests
     }
 
     /// <summary>Code review 2, defect 22: an entity that a link forwards to another id keeps its lineage, since what was known about the id that lost is then known about the survivor. Before, the survivor of a merge had no lineage.</summary>
-    [Theory, Trait("Category", "Differential")]
+    [Theory]
     [InlineData(false)] [InlineData(true)]
     public void An_entity_that_a_link_forwards_to_another_id_keeps_its_lineage(bool rowByRow)
     {
@@ -137,7 +137,7 @@ public class DifferentialTests
     }
 
     /// <summary>The support of windows written under two ids of one class is engine state: a snapshot taken after the merge restores it, and both engines continue to the same state (premise S1 for the new state).</summary>
-    [Fact, Trait("Category", "Differential")]
+    [Fact]
     public void A_snapshot_keeps_the_windows_written_under_two_ids()
     {
         var w = Worlds.LinkedLoads;
@@ -163,7 +163,7 @@ public class DifferentialTests
     }
 
     /// <summary>Review finding (data-driven thresholds): parameters that come from the row are checked at run time. A row whose parameters are no state machine (`above` not greater than `below`, a run of less than one window) is dropped and counted, and the rows of other keys still give their states; the reference drops the same rows (the world agrees under every cut).</summary>
-    [Fact, Trait("Category", "Differential")]
+    [Fact]
     public void Row_parameters_that_are_no_state_machine_are_dropped_and_counted()
     {
         var w = Worlds.RowParameters;

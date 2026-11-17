@@ -1,5 +1,4 @@
 using Sattle.Language;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -8,6 +7,8 @@ public static class Repo
 {
     public static string Root { get; } = FindRoot();
     public static string Definitions => Path.Combine(Root, "engine", "definitions");
+    /// <summary>The projection languages the tests read: the registration of the CLI, the one place that names a language. An engine test names none.</summary>
+    public static IProjectionSource Projections => Sattle.Cli.Program.Projections;
     /// <summary>The folder of the local data (`fixtures`, `captures`): `lab` of the repository, or the folder the environment variable SATTLE_LAB names. With an empty folder the tests run as on a fresh clone, where neither is there.</summary>
     static string Lab => Environment.GetEnvironmentVariable("SATTLE_LAB") is { Length: > 0 } folder ? folder : Path.Combine(Root, "lab");
     /// <summary>The scrubbed excerpt of a real capture. Its data files are generated locally and are not in the repository.</summary>
@@ -48,7 +49,7 @@ public static class Repo
     public static Catalog CatalogFor(string dir, out LoadResult result)
     {
         if (OverlayFor(dir) is null && Sattle.Cli.Program.ArgumentsOf(dir) is null) return LoadExamples(out result);
-        var loaded = WithOverlay.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(new KqlSource()); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
+        var loaded = WithOverlay.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(Projections); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
         result = loaded.Result; return loaded.Cat;
     }
 
@@ -64,7 +65,7 @@ public static class Repo
 
     static readonly Lazy<(Catalog Cat, LoadResult Result)> Examples = new(() =>
     {
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Projections);
         var res = cat.Load(Catalog.ReadDirectory(Definitions), updatePins: true);
         return (cat, res);
     });

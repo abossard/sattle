@@ -1,7 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Sattle.Core;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -12,7 +11,7 @@ public class RestartTests
     const long Min = 60_000_000_000;
     static string Fixture => Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
     static IReadOnlyList<Sattle.Language.SourceFile> Files => Sattle.Language.Catalog.ReadDirectory(Repo.Definitions);
-    static HostOptions Options => new() { Projections = new KqlSource(), Cluster = "synth" };
+    static HostOptions Options => new() { Projections = Repo.Projections, Cluster = "synth" };
 
     public static IEnumerable<object[]> Stores() => StoreConformanceTests.CosmosEndpoint is null ? [["memory"], ["sqlite"]] : [["memory"], ["sqlite"], ["cosmos"]];
 

@@ -2,7 +2,6 @@ using System.Text.Json;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -90,7 +89,7 @@ public class SourceProgressTests
         try
         {
             var store = new InMemoryGraphStore();
-            var options = new HostOptions { Projections = new KqlSource(), Cluster = "synth" };
+            var options = new HostOptions { Projections = Repo.Projections, Cluster = "synth" };
             string digest;
             using (var host = SpaceHost.OpenDurable(store, Files(), options))
             {
@@ -110,7 +109,7 @@ public class SourceProgressTests
     [InlineData(true, 6)] [InlineData(false, 6)] [InlineData(false, 9)]
     public void A_snapshot_in_the_middle_of_a_capture_carries_the_state_of_a_filling_series(bool reporting, int cut)
     {
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Repo.Projections);
         Assert.DoesNotContain(cat.Load(Files(), updatePins: true).Diagnostics, d => d.IsError);
         var space = cat.Spaces.Keys.Single();
         var lines = Lines(reporting);
@@ -137,7 +136,7 @@ public class SourceProgressTests
     [InlineData(1)] [InlineData(3)] [InlineData(100000)]
     public void The_state_with_fills_and_no_data_does_not_depend_on_the_chunk_size(int chunk)
     {
-        var cat = new Catalog(new KqlSource());
+        var cat = new Catalog(Repo.Projections);
         Assert.DoesNotContain(cat.Load(Files(), updatePins: true).Diagnostics, d => d.IsError);
         string Digest(bool reporting, int rows)
         {

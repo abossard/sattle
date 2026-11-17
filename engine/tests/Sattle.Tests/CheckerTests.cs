@@ -1,5 +1,4 @@
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -68,7 +67,7 @@ public class CheckerTests
 
     static (Catalog Catalog, List<Diagnostic> Errors) Load(SourceFile[] files)
     {
-        var catalog = new Catalog(new KqlSource());
+        var catalog = new Catalog(Repo.Projections);
         return (catalog, [.. catalog.Load(files, updatePins: true).Diagnostics.Where(d => d.IsError)]);
     }
 

@@ -2,12 +2,10 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Differential;
 
-/// <summary>The defects of the review's list "Correctness, reached today" that sit outside the operators: host, snapshot, drafts, export. Each states the correct behaviour and fails until the defect is fixed.</summary>
-[Trait("Category", "KnownDefect")]
+/// <summary>The defects of the review's list "Correctness, reached today" that sat outside the operators: host, snapshot, drafts, export. Each states the correct behaviour; all are fixed, so each is a regression test.</summary>
 public class HostDefectTests
 {
     static string Definitions
@@ -20,8 +18,8 @@ public class HostDefectTests
         }
     }
 
-    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shipped = new(() => { var f = Catalog.ReadDirectory(Definitions); return (f, SpaceHost.LoadDefinitions(f, new KqlSource())); });
-    static SpaceHost ShippedHost() => new(Shipped.Value.Files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }, Shipped.Value.Loaded);
+    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shipped = new(() => { var f = Catalog.ReadDirectory(Definitions); return (f, SpaceHost.LoadDefinitions(f, EngineRun.Projections)); });
+    static SpaceHost ShippedHost() => new(Shipped.Value.Files, new HostOptions { Projections = EngineRun.Projections, Cluster = "synth" }, Shipped.Value.Loaded);
 
     static List<JsonNode> Drain(Subscription s) { var l = new List<JsonNode>(); while (s.Messages.Reader.TryRead(out var m)) l.Add(JsonNode.Parse(m)!); return l; }
 

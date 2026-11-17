@@ -2,7 +2,6 @@ using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
-using Sattle.Kql;
 
 namespace Sattle.Tests;
 
@@ -12,10 +11,10 @@ public class HostTests
     const long Min = 60_000_000_000;
     static readonly long T0 = 1_794_300_000_000_000_000 / Min * Min;
 
-    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f, new KqlSource())); });
+    static readonly Lazy<(IReadOnlyList<SourceFile> Files, SpaceHost.LoadedDefinitions Loaded)> Shared = new(() => { var f = Catalog.ReadDirectory(Repo.Definitions); return (f, SpaceHost.LoadDefinitions(f, Repo.Projections)); });
 
     /// <summary>A host on the example definitions. The checked catalog is loaded once per test run (loading costs more than a host), every host gets its own engine and state.</summary>
-    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = new KqlSource(), Cluster = "synth" }, Shared.Value.Loaded);
+    public static SpaceHost NewHost() => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" }, Shared.Value.Loaded);
 
     /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
@@ -114,7 +113,7 @@ public class HostTests
         Assert.Equal(masterHead, h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "master")!["head"]!.GetValue<string>());
         Assert.Equal("degraded", Status());
         // the result equals a fresh engine with the new definition fed the same inputs
-        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+        using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         Drive(fresh);
         Assert.Equal(fresh.StateDigest(), h.StateDigest());
         // history: the patches of serviceTree, applied in order to the empty graph, give the served snapshot element by element
@@ -244,13 +243,13 @@ public class HostTests
         {
             foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
             const string Kql = "acme.svc.serviceDeps.kql";
-            using var h = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = new KqlSource(), Cluster = "synth" }) { DefinitionsDir = dir, WriteDefinitions = true };
+            using var h = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = Repo.Projections, Cluster = "synth" }) { DefinitionsDir = dir, WriteDefinitions = true };
             var edited = Text(Kql).Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
             Assert.NotEqual(Text(Kql), edited);
             h.Commit(Kql, edited, h.CatalogRevision);
             Assert.Equal(edited, File.ReadAllText(Path.Combine(dir, Kql)));
             Assert.All(Directory.EnumerateFiles(dir, "*.sattle"), f => Assert.DoesNotContain("\nprojection ", File.ReadAllText(f)));
-            using var again = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
+            using var again = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
             Assert.Equal(h.Catalog.Graph.Digest(), again.Catalog.Graph.Digest());
         }
         finally { Directory.Delete(dir, true); }
