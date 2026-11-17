@@ -626,6 +626,23 @@ Theory. At 10^4 the interner holds 127,466 texts: 89,074 element ids (`e:` and `
 - Before is the groups patch. Times are measured under load and not comparable; bytes are.
 - Digests unchanged, as for the joins.
 
+### Efficiency stage 2, telemetry store and Series: one copy of a window (#115, 2026-11-17)
+Theory. A Series kept, per element with a row, the windows of its look-back with the values of its reads: a copy of what the store holds, kept to retract a window when it leaves the look-back. Now the store is the one copy. A window change needs the record before and after: after is the store now (the read graph steps first), before is the store with the first old value of each changed read put back, which the change carries. Changed windows join the rows before the step, then changed rows join the windows after it (`Δ(R ⋈ W) = R_old ⋈ ΔW + ΔR ⋈ W_new`), so an element's first row needs no special case. At an advance the windows that leave the look-back are read from the store, so retention now runs after every graph of the epoch stepped, not after each graph: before, the read graph could drop a window before the Series retracted it. Every window a Series can need starts at or after `frontier - within`, and `within <= retention`, so the store holds it; the store after the epoch is the same as before. The store keeps a series as its starts and values in two arrays and its width (it was a `SortedList` with two wrappers and a second dictionary for the width). The input id of a window goes: it was compared only together with an equal value, and then no change is logged either way. The change log is released as it is read (one reader per plane, its graph, right after its step); it held the last step's changes and handed out a copy. A Series row stores each column once, in `long` or `decimal` by its type (it held both arrays at full width). Seal format 8 to 9.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 278 / 263 MB | 1,786 / 1,636 MB |
+| per master node | 27.8 / 26.3 KB | 17.9 / 16.4 KB |
+| telemetry store per master node | 1,674 / 1,041 B | 1,652 / 1,030 B |
+| Series per master node | 1,420 / 538 B | 1,348 / 473 B |
+| store bytes per window | 84 / 52 | 83 / 52 |
+| allocated per input record | 60.5 / 60.2 KB | 59.3 / 59.1 KB |
+
+- Windows: 198,968 at 10^4 and 1,987,323 at 10^5, about 10 per series.
+- What a store window costs now: 8 B start and 16 B value, with the slack of doubling arrays; per series an object of 48 B and a dictionary entry. Next candidates: values as integers where a series holds only integers, and a column per plane instead of an object per series.
+- Cost moved: a Series reads the store for a new row and at an advance, where it read its copy. SeriesOp time at 10^5 1,039 ms before, 1,609 ms after, both under load (another worker's tests ran): not comparable.
+- Before is the interner patch. Digests unchanged at 10^4 and 10^5.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

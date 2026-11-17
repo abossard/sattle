@@ -517,12 +517,12 @@ public sealed record SeriesRead(int Element, int Prop, IReadOnlyList<SeriesPoint
 /// <summary>The three-operation telemetry port of research 02 section 3.2: Append, ReadWindow, ClosedWindows. No revisions, no commit promise.</summary>
 public interface ITelemetryStore
 {
-    /// <summary>At-least-once: a sample with the same (element, property, window, input id) is removed as duplicate; a different input id for the same window replaces it. Returns the position after the batch.</summary>
+    /// <summary>At-least-once: a sample with the value its window has already is no change (a duplicate delivery, or a rewrite with the same value); another value replaces it. Returns the position after the batch.</summary>
     long Append(GraphKey g, ReadOnlySpan<Sample> samples);
     IReadOnlyList<SeriesRead> ReadWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs);
     /// <summary>The same windows without allocating: each window of each (element, property) series in `[fromNs, toNs)` is handed to the visitor, in series order and window order. Returns the number of windows visited. A view of 10,000 elements over an hour is 2.4 M windows; reading them into lists allocated 148 MB and the collections that followed were the 300 ms outliers of H8.</summary>
     long ScanWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs, WindowVisitor visit);
-    /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only telemetry an engine input may carry (L12).</summary>
+    /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only telemetry an engine input may carry (L12). A plane has one reader, its graph, which reads right after its step: what is returned is released.</summary>
     IReadOnlyList<WindowChange> ClosedWindows(GraphKey g, long afterPosition, out long newPosition);
     /// <summary>A source reported lost events (a Hubble LostEvent): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
@@ -538,12 +538,35 @@ public interface ITelemetryStore
 
 public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelemetryStore
 {
+    /// <summary>The windows of one series in start order: their starts and values in two arrays, the first `Count` slots used, and the width of its windows (to know where they end).</summary>
+    sealed class Windows(long width)
+    {
+        public readonly long Width = width;
+        public long[] Starts = []; public decimal[] Values = []; public int Count;
+        /// <summary>The slot of a window start, or the complement of the slot it would take.</summary>
+        public int Find(long start) => Array.BinarySearch(Starts, 0, Count, start);
+        /// <summary>The first slot whose window starts at or after an instant.</summary>
+        public int From(long start) { var i = Find(start); return i < 0 ? ~i : i; }
+        public void Insert(int i, long start, decimal value)
+        {
+            if (Count == Starts.Length) { var cap = Count == 0 ? 4 : 2 * Count; Array.Resize(ref Starts, cap); Array.Resize(ref Values, cap); }
+            Array.Copy(Starts, i, Starts, i + 1, Count - i); Array.Copy(Values, i, Values, i + 1, Count - i);
+            Starts[i] = start; Values[i] = value; Count++;
+        }
+        public void Set(long start, decimal value) { var i = Find(start); if (i >= 0) Values[i] = value; else Insert(~i, start, value); }
+        /// <summary>Removes `n` slots from slot `i`.</summary>
+        public void RemoveAt(int i, int n = 1)
+        {
+            Array.Copy(Starts, i + n, Starts, i, Count - i - n); Array.Copy(Values, i + n, Values, i, Count - i - n);
+            Count -= n;
+        }
+    }
+
     sealed class Plane
     {
-        public readonly Dictionary<(int, int), SortedList<long, (decimal Value, long Input)>> Series = [];
-        public readonly List<WindowChange> Log = [];
+        public readonly Dictionary<(int, int), Windows> Series = [];
+        public List<WindowChange> Log = [];
         public long Base; // position of Log[0]
-        public readonly Dictionary<(int, int), long> Width = [];     // the window width of each series, to know where its windows end
         public long? RetainedFrom;
         /// <summary>Windows that a merge left without a value because their two values could not be combined (Law 7.5). "No value" is absorbing over merges: the window of a third id does not bring a value back. A later write of the window (the rows as they are aggregated now) ends it.</summary>
         public readonly HashSet<WindowKey> NoValue = [];
@@ -564,23 +587,28 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             foreach (var s in samples)
             {
                 var key = (s.Element, s.Prop);
-                if (!p.Series.TryGetValue(key, out var ser)) { p.Series[key] = ser = []; p.Width[key] = s.WidthNs; }
-                var had = ser.TryGetValue(s.WindowStart, out var old);
                 var wk = new WindowKey(s.Element, s.Prop, s.WindowStart);
                 if (s.Deleted) p.Aux.Remove(wk);
                 else if (s.AuxA is { } aa) p.Aux[wk] = (aa, s.AuxB ?? 0); else p.Aux.Remove(wk);
+                if (!p.Series.TryGetValue(key, out var ser))
+                {
+                    if (s.Deleted) continue;
+                    p.Series[key] = ser = new Windows(s.WidthNs);
+                }
+                var at = ser.Find(s.WindowStart);
+                var old = at >= 0 ? ser.Values[at] : 0;
                 if (s.Deleted)
                 {
-                    if (!had) continue;
-                    ser.Remove(s.WindowStart);
-                    p.Log.Add(new WindowChange(new WindowKey(s.Element, s.Prop, s.WindowStart), old.Value, null));
+                    if (at < 0) continue;
+                    ser.RemoveAt(at);
+                    if (ser.Count == 0) p.Series.Remove(key);
+                    p.Log.Add(new WindowChange(wk, old, null));
                     continue;
                 }
-                p.NoValue.Remove(new WindowKey(s.Element, s.Prop, s.WindowStart));
-                if (had && old.Input == s.InputId && old.Value == s.Value) continue; // duplicate delivery
-                if (had && old.Value == s.Value) { ser[s.WindowStart] = (s.Value, s.InputId); continue; }
-                ser[s.WindowStart] = (s.Value, s.InputId);
-                p.Log.Add(new WindowChange(new WindowKey(s.Element, s.Prop, s.WindowStart), had ? old.Value : null, s.Value));
+                p.NoValue.Remove(wk);
+                if (at >= 0) { var same = old == s.Value; ser.Values[at] = s.Value; if (same) continue; }      // the same value: a duplicate delivery or a rewrite, no change
+                else ser.Insert(~at, s.WindowStart, s.Value);
+                p.Log.Add(new WindowChange(wk, at >= 0 ? old : null, s.Value));
             }
             if (p.Log.Count > logCapacity) { var drop = p.Log.Count - logCapacity / 2; p.Log.RemoveRange(0, drop); p.Base += drop; }
             return p.Base + p.Log.Count;
@@ -596,9 +624,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 foreach (var pr in props)
                 {
                     if (!p.Series.TryGetValue((e, pr), out var ser)) continue;
-                    var keys = ser.Keys; var vals = ser.Values; int lo = 0, hi = keys.Count;
-                    while (lo < hi) { var mid = (lo + hi) >> 1; if (keys[mid] < fromNs) lo = mid + 1; else hi = mid; }
-                    for (var i = lo; i < keys.Count && keys[i] < toNs; i++) { visit(e, pr, keys[i], vals[i].Value); n++; }
+                    for (var i = ser.From(fromNs); i < ser.Count && ser.Starts[i] < toNs; i++) { visit(e, pr, ser.Starts[i], ser.Values[i]); n++; }
                 }
             return n;
         }
@@ -616,12 +642,9 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                     List<SeriesPoint> pts;
                     if (p.Series.TryGetValue((e, pr), out var ser))
                     {
-                        var keys = ser.Keys; int lo = 0, hi = keys.Count;
-                        while (lo < hi) { var mid = (lo + hi) >> 1; if (keys[mid] < fromNs) lo = mid + 1; else hi = mid; }   // first window at or after fromNs
-                        int end = lo, top = keys.Count;
-                        while (end < top) { var mid = (end + top) >> 1; if (keys[mid] < toNs) end = mid + 1; else top = mid; }   // first window at or after toNs
+                        int lo = ser.From(fromNs), end = Math.Max(lo, ser.From(toNs));
                         pts = new List<SeriesPoint>(end - lo);
-                        for (var i = lo; i < end; i++) pts.Add(new SeriesPoint(keys[i], ser.Values[i].Value));
+                        for (var i = lo; i < end; i++) pts.Add(new SeriesPoint(ser.Starts[i], ser.Values[i]));
                     }
                     else pts = [];
                     var partial = p.Partials.Count == 0 ? default : pts.Select(x => p.Partials.GetValueOrDefault(x.WindowStart)).FirstOrDefault(x => x.Reason is not null);
@@ -637,11 +660,12 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         {
             var p = Get(g);
             if (afterPosition < p.Base) throw new GapException(p.Base);
-            newPosition = p.Base + p.Log.Count;
-            // A position says what its reader has consumed. Nothing before it is read again, so it is released: the log holds the changes not yet read, not the history of the plane.
+            // A position says what its reader has consumed, and what it reads now it has consumed too: the plane's one reader is its graph, right after its step. So the log holds the changes not yet read, not the history of the plane.
             var consumed = (int)(afterPosition - p.Base);
-            if (consumed > 0) { p.Log.RemoveRange(0, consumed); p.Base = afterPosition; }
-            return [.. p.Log];
+            if (consumed > 0) p.Log.RemoveRange(0, consumed);
+            var read = p.Log;
+            p.Log = []; p.Base = afterPosition + read.Count; newPosition = p.Base;
+            return read;
         }
     }
 
@@ -666,23 +690,25 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             foreach (var key in p.Series.Keys.Where(k => k.Item1 == from).ToList())
             {
                 var src = p.Series[key]; var dst = (to, key.Item2);
-                if (!p.Series.TryGetValue(dst, out var target)) { p.Series[dst] = target = []; p.Width[dst] = p.Width.GetValueOrDefault(key); }
-                foreach (var (ws, (value, input)) in src.ToList())
+                if (!p.Series.TryGetValue(dst, out var target)) p.Series[dst] = target = new Windows(src.Width);
+                for (var i = 0; i < src.Count; i++)
                 {
+                    var ws = src.Starts[i]; var value = src.Values[i];
                     p.Log.Add(new WindowChange(new WindowKey(from, key.Item2, ws), value, null));
-                    var had = target.TryGetValue(ws, out var old);
+                    var slot = target.Find(ws); var had = slot >= 0; var old = had ? target.Values[slot] : 0;
                     var at = new WindowKey(to, key.Item2, ws);
                     var fromKey = new WindowKey(from, key.Item2, ws);
                     (decimal A, decimal B)? auxFrom = p.Aux.TryGetValue(fromKey, out var af) ? af : null, auxTo = p.Aux.TryGetValue(at, out var at2) ? at2 : null;
                     p.Aux.Remove(fromKey);
                     // two values and no rule that makes one of them: a conflict, the window has no value
-                    var combined = p.NoValue.Contains(at) ? null : !had ? (value, auxFrom) : Combine(combineOf?.Invoke(key.Item2), old.Value, auxTo, value, auxFrom);
-                    if (combined is { } c) { target[ws] = (c.Value, input); if (c.Aux is { } ca) p.Aux[at] = ca; else p.Aux.Remove(at); }
-                    else { target.Remove(ws); p.Aux.Remove(at); if (p.NoValue.Add(at)) p.MergeConflicts++; }
+                    var combined = p.NoValue.Contains(at) ? null : !had ? (value, auxFrom) : Combine(combineOf?.Invoke(key.Item2), old, auxTo, value, auxFrom);
+                    if (combined is { } c) { target.Set(ws, c.Value); if (c.Aux is { } ca) p.Aux[at] = ca; else p.Aux.Remove(at); }
+                    else { if (had) target.RemoveAt(slot); p.Aux.Remove(at); if (p.NoValue.Add(at)) p.MergeConflicts++; }
                     var v = combined?.Value;
-                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old.Value : null, v));
+                    p.Log.Add(new WindowChange(new WindowKey(to, key.Item2, ws), had ? old : null, v));
                 }
-                p.Series.Remove(key); p.Width.Remove(key);
+                p.Series.Remove(key);
+                if (target.Count == 0) p.Series.Remove(dst);
             }
             // a window of the loser that was already without a value stays so under the survivor, and takes the survivor's value with it
             foreach (var mark in p.NoValue.Where(k => k.Element == from).ToList())
@@ -690,7 +716,12 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 p.NoValue.Remove(mark);
                 var at = mark with { Element = to };
                 p.NoValue.Add(at);
-                if (p.Series.TryGetValue((to, mark.Prop), out var target) && target.TryGetValue(mark.WindowStart, out var gone)) { target.Remove(mark.WindowStart); p.Log.Add(new WindowChange(at, gone.Value, null)); }
+                if (p.Series.TryGetValue((to, mark.Prop), out var target) && target.Find(mark.WindowStart) is >= 0 and var slot)
+                {
+                    var gone = target.Values[slot]; target.RemoveAt(slot);
+                    if (target.Count == 0) p.Series.Remove((to, mark.Prop));
+                    p.Log.Add(new WindowChange(at, gone, null));
+                }
             }
         }
     }
@@ -703,10 +734,11 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             p.RetainedFrom = from;
             foreach (var (key, ser) in p.Series)
             {
-                var width = p.Width.GetValueOrDefault(key);
-                while (ser.Count > 0 && ser.Keys[0] + width <= from) { p.Aux.Remove(new WindowKey(key.Item1, key.Item2, ser.Keys[0])); ser.RemoveAt(0); }
+                var n = 0;
+                while (n < ser.Count && ser.Starts[n] + ser.Width <= from) { if (p.Aux.Count > 0) p.Aux.Remove(new WindowKey(key.Item1, key.Item2, ser.Starts[n])); n++; }
+                if (n > 0) ser.RemoveAt(0, n);
             }
-            foreach (var key in p.Series.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) { p.Series.Remove(key); p.Width.Remove(key); }
+            foreach (var key in p.Series.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) p.Series.Remove(key);
         }
     }
 
@@ -727,7 +759,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         lock (gate)
         {
             var p = Get(g);
-            return [.. p.Series.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Key.Item2).SelectMany(kv => kv.Value.Select(w => (kv.Key.Item1, kv.Key.Item2, w.Key, w.Value.Value)))];
+            return [.. p.Series.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Key.Item2).SelectMany(kv => Enumerable.Range(0, kv.Value.Count).Select(i => (kv.Key.Item1, kv.Key.Item2, kv.Value.Starts[i], kv.Value.Values[i])))];
         }
     }
 }

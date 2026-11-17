@@ -320,12 +320,12 @@ public sealed class Engine : IDisposable, IEngineInput
             if (gr.Ingests) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
         WantsProgress = graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills));
-        // a Series reads the windows of an element from the store when the element gets its first row
+        // a Series reads its windows from the store of the graph it reads
         foreach (var g in graphs)
             foreach (var series in g.Plan.Ops.OfType<SeriesOp>())
             {
                 var read = new GraphKey(this.options.Tenant, g.PortSources[((TSeries)series.Typed).GraphPort]);
-                series.Stored = (elem, props, from, visit) => Telemetry.ScanWindow(read, [elem], props, from, long.MaxValue, visit);
+                series.Stored = (elems, props, from, to, visit) => Telemetry.ScanWindow(read, elems, props, from, to, visit);
             }
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
         foreach (var g in graphs)
@@ -473,6 +473,8 @@ public sealed class Engine : IDisposable, IEngineInput
             }
             results[g.Name] = Execute(g, ep, seq, cause);
         }
+        // retention after every graph stepped: a Series retracts a window that leaves its look-back by reading it from the store of the graph it reads, which stepped before it
+        if (master.HasAdvance) foreach (var name in results.Keys) Telemetry.Retain(byName[name].Key, master.Lambda, options.TelemetryRetentionNs);
     }
 
     GraphResult Execute(GraphRuntime g, Epoch ep, long seq, string cause)
@@ -530,7 +532,6 @@ public sealed class Engine : IDisposable, IEngineInput
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
         var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
         g.TelemetryPosition = read;
-        if (ep.HasAdvance) Telemetry.Retain(g.Key, ep.Lambda, options.TelemetryRetentionNs);
         var result = new GraphResult(patch, changes, g.Head);
         var conflicts = g.Out.TakeChanged();
         if (patch is not null || changes.Count > 0 || conflicts.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner) { Conflicts = conflicts });
