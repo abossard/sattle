@@ -211,6 +211,20 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         if (!RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == name || e.Target == name))) ends.Add([end, elem], -1);
     }
 
+    /// <summary>The sink that creates an element: the smallest sink with a create fragment of positive weight, as `Resolve` picks it; -1 when none does.</summary>
+    public int CreateSink(int elem)
+    {
+        var best = -1;
+        for (var r = ByElement.First([elem]); r >= 0; r = ByElement.Next(r))
+        {
+            if (contributions.Weight(r) <= 0) continue;
+            var (b, p) = values.Slice((int)contributions.Get(r, 1));
+            var sink = (int)ReadVarint(b, ref p);
+            if (b[p] == 0 && (best < 0 || sink < best)) best = sink;
+        }
+        return best;
+    }
+
     /// <summary>The fragments of an element with their weights, as fragment codes.</summary>
     List<(int Code, long Weight)> RowsOf(int elem)
     {

@@ -8,100 +8,152 @@ sealed record LineageOrigin(string Sink, string? Rule, bool Update, (string Role
 /// <summary>Where an element comes from: the sink and rule that emitted it and the input elements it is made of. With `FromRows` the sources are every input element of the rows that hold it up, and `Contributions` is the weight of those rows; without, they are the elements of the last row that emitted it, and `Total` is how many element columns such a row has.</summary>
 sealed record ElementLineage(string? Sink, string? Rule, IReadOnlyList<LineageSource> Sources, bool FromRows, long Contributions, long Total);
 
-/// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. Nothing outside reads its state.</summary>
-sealed class LineageLayer
+/// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. It keeps only the rows that hold something up, as Z-sets of handles (#40): per emit a table of (element, group key, the handle of each element column, a bit per absent column) arranged by element, per `Group` a table of (group key, member handles, absent bits) arranged by key. A row at weight zero is gone, so nothing outlives what it supports. The sink and rule of an element are read from the element layer when asked. Nothing outside reads its state.</summary>
+sealed class LineageLayer(ElementLayer elements)
 {
-    /// <summary>Per emitted element, the sink and the input elements bound by the last contributing row.</summary>
-    readonly Dictionary<int, LineageInfo> infos = [];
-    /// <summary>Per emitted element, every input row that supports it: a create emit of a sink whose input rows bind elements of a Match (or Traverse) adds the row with its weight and a retraction subtracts it, so what is left is exactly the rows that hold the element up. This is the complete lineage of a lifted element: an edge that stands for many lower edges, a node that stands for many lower nodes. A row is the elements it binds, as text (role, kind, graph port, handle). Elements emitted from an aggregate keep only the group-key lineage in `Lineage`.</summary>
-    readonly Dictionary<int, Dictionary<string, long>> supports = [];
-    /// <summary>Per `Group` operator and group key, the input rows that make up the group (the rows it aggregates, as `RowKey` text with signed weights). An element emitted from the group's output names them all: `GroupRefs` says which group and key an element was emitted from.</summary>
-    readonly Dictionary<string, Dictionary<string, Dictionary<string, long>>> groupMembers = [];
-    readonly Dictionary<int, (string Group, string Key)> groupRefs = [];
-    sealed record LineageInfo(string Sink, string? Rule, IReadOnlyList<LineageSource> Sources, long Total);
-
-    /// <summary>The elements a row binds, as text (role, kind, graph port, handle); empty when it binds none.</summary>
-    static string RowKey((string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row)
+    /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0).</summary>
+    sealed class SinkRows(LineageOrigin origin)
     {
-        var sb = new System.Text.StringBuilder();
-        foreach (var (role, col, isRel, port) in cols)
-            if (b.Cols[col].Present(row)) sb.Append(role).Append('\u001f').Append(isRel ? 'r' : 'e').Append('\u001f').Append(port).Append('\u001f').Append((int)b.Cols[col].L[row]).Append('\u001e');
-        return sb.ToString();
+        public readonly LineageOrigin Origin = origin;
+        public readonly int KeyWidth = origin.Group?.KeyCols.Length ?? 0;
+        public readonly Table Rows = new([.. Enumerable.Repeat(8, Width(1 + (origin.Group?.KeyCols.Length ?? 0), origin.Cols.Length))], Width(1 + (origin.Group?.KeyCols.Length ?? 0), origin.Cols.Length));
+        public Arrangement? byElem;
+        public Arrangement ByElem => byElem ??= Rows.Arrange(0);
+    }
+    /// <summary>The member rows of one `Group`: its element columns, its table and the table's arrangement by group key.</summary>
+    sealed class MemberRows
+    {
+        public readonly (string Role, int Col, bool IsRel, string Port)[] Cols;
+        public readonly int KeyWidth;
+        public readonly Table Rows;
+        public readonly Arrangement ByKey;
+        public MemberRows((string Role, int Col, bool IsRel, string Port)[] cols, int keyWidth)
+        {
+            Cols = cols; KeyWidth = keyWidth;
+            Rows = new([.. Enumerable.Repeat(8, Width(keyWidth, cols.Length))], Width(keyWidth, cols.Length));
+            ByKey = Rows.Arrange([.. Enumerable.Range(0, keyWidth)]);
+        }
+    }
+    static int Width(int lead, int cols) => lead + cols + ((cols + 63) >> 6);
+
+    /// <summary>By sink number (the emit's place in the projection).</summary>
+    readonly List<SinkRows?> sinks = [];
+    readonly Dictionary<string, MemberRows> groups = [];
+
+    /// <summary>An emit says where its rows come from, once when it is built.</summary>
+    public void Register(int sink, LineageOrigin origin)
+    {
+        while (sinks.Count <= sink) sinks.Add(null);
+        if (sinks[sink]?.Origin.Sink != origin.Sink) sinks[sink] = new SinkRows(origin);
+    }
+    /// <summary>A `Group` with element columns among its input, once when it is built.</summary>
+    public void RegisterGroup(string group, int keyWidth, (string Role, int Col, bool IsRel, string Port)[] cols)
+    {
+        if (cols.Length > 0 && !groups.ContainsKey(group)) groups[group] = new MemberRows(cols, keyWidth);
+    }
+
+    /// <summary>Writes the handles of a row's element columns from `at` on, then their absent bits; false when every one is absent.</summary>
+    static bool Handles((string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, Span<long> key, int at)
+    {
+        var any = false;
+        for (var i = 0; i < cols.Length; i++)
+        {
+            var c = b.Cols[cols[i].Col];
+            if (c.Present(row)) { key[at + i] = (int)c.L[row]; any = true; }
+            else key[at + cols.Length + (i >> 6)] |= 1L << (i & 63);
+        }
+        return any;
     }
 
     /// <summary>A row of a group came or went: `Group` operators call this for the rows they aggregate.</summary>
-    public void Member(string group, string key, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, long w)
+    public void Member(string group, ReadOnlySpan<long> groupKey, Batch b, int row, long w)
     {
-        if (w == 0) return;
-        var rk = RowKey(cols, b, row); if (rk.Length == 0) return;
-        if (!groupMembers.TryGetValue(group, out var byKey)) groupMembers[group] = byKey = [];
-        if (!byKey.TryGetValue(key, out var rows)) byKey[key] = rows = [];
-        var n = rows.GetValueOrDefault(rk) + w;
-        if (n == 0) { rows.Remove(rk); if (rows.Count == 0) byKey.Remove(key); } else rows[rk] = n;
+        if (w == 0 || !groups.TryGetValue(group, out var m)) return;
+        Span<long> key = stackalloc long[m.Rows.Columns]; key.Clear();
+        groupKey.CopyTo(key);
+        if (Handles(m.Cols, b, row, key, m.KeyWidth)) m.Rows.Add(key, w);
     }
 
-    /// <summary>A row of an emit that says `elem` exists (or, for an update emit, refines it), with its weight.</summary>
-    public void Support(int elem, LineageOrigin origin, Batch b, int row, long w)
+    /// <summary>A row of an emit that says `elem` exists, with its weight. An update emit refines an element and holds nothing up.</summary>
+    public void Support(int sink, int elem, Batch b, int row, long w)
     {
-        if (!origin.Update)
-        {
-            AddSupport(elem, origin.Cols, b, row, w);
-            if (w > 0 && origin.Group is { } gr) groupRefs[elem] = (gr.Group, string.Join(',', gr.KeyCols.Select(c => b.Cols[c].L[row])));
-        }
-        if (w > 0) infos[elem] = InfoOf(origin.Sink, origin.Rule, origin.Cols, b, row, origin.Update ? infos.GetValueOrDefault(elem) : null);
+        var s = sinks[sink]!;
+        if (s.Origin.Update || w == 0) return;
+        Span<long> key = stackalloc long[s.Rows.Columns]; key.Clear();
+        key[0] = elem;
+        if (s.Origin.Group is { } gr) for (var i = 0; i < gr.KeyCols.Length; i++) key[1 + i] = b.Cols[gr.KeyCols[i]].L[row];
+        if (Handles(s.Origin.Cols, b, row, key, 1 + s.KeyWidth) || s.Origin.Group is not null) s.Rows.Add(key, w);
     }
 
-    void AddSupport(int elem, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, long w)
-    {
-        if (cols.Length == 0 || w == 0) return;
-        var key = RowKey(cols, b, row);
-        if (key.Length == 0) return;
-        if (!supports.TryGetValue(elem, out var rows)) supports[elem] = rows = [];
-        var n = rows.GetValueOrDefault(key) + w;
-        if (n == 0) { rows.Remove(key); if (rows.Count == 0) supports.Remove(elem); } else rows[key] = n;
-    }
-
-    /// <summary>The sources of a row: its element-valued columns that come from a Match. An update emit keeps the sources of the create emit it refines.</summary>
-    static LineageInfo InfoOf(string sink, string? rule, (string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, LineageInfo? previous)
-    {
-        if (previous is not null) return previous;
-        var list = new List<LineageSource>();
-        foreach (var (role, col, isRel, port) in cols)
-            if (b.Cols[col].Present(row) && list.Count < 16) list.Add(new LineageSource(role, (int)b.Cols[col].L[row], isRel, port));
-        if (previous is not null && list.Count == 0) return previous;
-        return new LineageInfo(previous?.Sink ?? sink, previous?.Rule ?? rule, list, cols.Length);
-    }
-
-    /// <summary>What is known about `from` is now known about `to`: its sink and group replace those of `to`, its rows add to them. A merge of two identities calls this for every element whose rows moved, so the survivor has the lineage of the element that lost.</summary>
+    /// <summary>What is known about `from` is now known about `to`: its rows add to those of `to`. A merge of two identities calls this for every element whose rows moved, so the survivor has the lineage of the element that lost.</summary>
     public void Move(int from, int to)
     {
         if (from == to) return;
-        if (infos.Remove(from, out var info)) infos[to] = info;
-        if (groupRefs.Remove(from, out var gref)) groupRefs[to] = gref;
-        if (!supports.Remove(from, out var rows)) return;
-        if (!supports.TryGetValue(to, out var into)) supports[to] = into = [];
-        foreach (var (k, n) in rows) { var m = into.GetValueOrDefault(k) + n; if (m == 0) into.Remove(k); else into[k] = m; }
+        foreach (var s in sinks)
+        {
+            if (s is null) continue;
+            var rows = s.ByElem.Rows([from]);
+            if (rows.Count == 0) continue;
+            var key = new long[s.Rows.Columns];         // a merge is rare
+            foreach (var r in rows)
+            {
+                for (var c = 0; c < key.Length; c++) key[c] = s.Rows.Get(r, c);
+                var w = s.Rows.Weight(r);
+                s.Rows.Add(key, -w);
+                key[0] = to;
+                s.Rows.Add(key, w);
+            }
+        }
     }
 
-    /// <summary>Where `elem` comes from, or null when nothing is known about it.</summary>
+    static IEnumerable<LineageSource> Sources((string Role, int Col, bool IsRel, string Port)[] cols, Table t, int r, int at)
+    {
+        for (var i = 0; i < cols.Length; i++)
+            if ((t.Get(r, at + cols.Length + (i >> 6)) >> (i & 63) & 1) == 0) yield return new LineageSource(cols[i].Role, (int)t.Get(r, at + i), cols[i].IsRel, cols[i].Port);
+    }
+
+    /// <summary>Where `elem` comes from, or null when nothing is known about it: the sink and rule that create it (the smallest sink with a create, as the element layer resolves it), and the input elements of the rows that hold it up. An element emitted from a group's output names the members of its group keys; one whose sink binds no element column names none.</summary>
     public ElementLineage? Of(int elem)
     {
-        var info = infos.GetValueOrDefault(elem);
-        var rows = groupRefs.TryGetValue(elem, out var gref) && groupMembers.TryGetValue(gref.Group, out var byKey) && byKey.TryGetValue(gref.Key, out var members) ? members : supports.GetValueOrDefault(elem);
-        if (rows is null) return info is null ? null : new(info.Sink, info.Rule, info.Sources, false, info.Sources.Count, info.Total);
-        var sources = new HashSet<LineageSource>();
-        foreach (var key in rows.Keys)
-            foreach (var part in key.Split('\u001e', StringSplitOptions.RemoveEmptyEntries))
+        var create = elements.CreateSink(elem);
+        var info = create >= 0 && create < sinks.Count ? sinks[create]?.Origin : null;
+        var sources = new HashSet<LineageSource>(); long rows = 0, members = 0;
+        var memberSources = new HashSet<LineageSource>(); var keys = new HashSet<(string, string)>();
+        foreach (var s in sinks)
+        {
+            if (s is null) continue;
+            var key = new long[s.KeyWidth];
+            for (var r = s.ByElem.First([elem]); r >= 0; r = s.ByElem.Next(r))
             {
-                var f = part.Split('\u001f');
-                sources.Add(new LineageSource(f[0], int.Parse(f[3]), f[1] == "r", f[2]));
+                var any = false;
+                foreach (var x in Sources(s.Origin.Cols, s.Rows, r, 1 + s.KeyWidth)) { sources.Add(x); any = true; }
+                if (any) rows += s.Rows.Weight(r);
+                if (s.Origin.Group is not { } gr || !groups.TryGetValue(gr.Group, out var m)) continue;
+                for (var i = 0; i < key.Length; i++) key[i] = s.Rows.Get(r, 1 + i);
+                if (!keys.Add((gr.Group, string.Join(',', key.ToArray())))) continue;
+                for (var mr = m.ByKey.First(key); mr >= 0; mr = m.ByKey.Next(mr))
+                {
+                    members += m.Rows.Weight(mr);
+                    foreach (var x in Sources(m.Cols, m.Rows, mr, m.KeyWidth)) memberSources.Add(x);
+                }
             }
-        return new(info?.Sink, info?.Rule, [.. sources], true, rows.Values.Sum(), info?.Total ?? 0);
+        }
+        if (members != 0) return new(info?.Sink, info?.Rule, [.. memberSources], true, members, info?.Cols.Length ?? 0);
+        if (rows != 0 && sources.Count > 0) return new(info?.Sink, info?.Rule, [.. sources], true, rows, info?.Cols.Length ?? 0);
+        return info is null ? null : new(info.Sink, info.Rule, [], false, 0, info.Cols.Length);
     }
 
-    /// <summary>The elements a sink is recorded for.</summary>
-    public IEnumerable<int> Elements => infos.Keys;
+    /// <summary>The elements that some row holds up.</summary>
+    public IEnumerable<int> Elements
+    {
+        get
+        {
+            var seen = new HashSet<int>();
+            foreach (var s in sinks)
+                if (s is not null) for (var r = 0; r < s.Rows.RowLimit; r++) if (s.Rows.Live(r) && seen.Add((int)s.Rows.Get(r, 0))) yield return (int)s.Rows.Get(r, 0);
+        }
+    }
 
     /// <summary>How much is held; it changes when lineage is added or removed.</summary>
-    public long Size => (long)supports.Count + infos.Count + groupRefs.Count + groupMembers.Sum(m => m.Value.Count);
+    public long Size => sinks.Sum(s => (long)(s?.Rows.Count ?? 0)) + groups.Values.Sum(m => (long)m.Rows.Count);
 }

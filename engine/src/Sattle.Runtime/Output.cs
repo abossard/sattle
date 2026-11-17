@@ -378,11 +378,11 @@ public sealed class OutputBuilder
     readonly ConflictSet conflicts = new();
     readonly ElementLayer elements;
     readonly WindowSupport windows;
-    readonly LineageLayer lineage = new();
+    readonly LineageLayer lineage;
     /// <summary>Where the elements come from: the emits and groups write it, the lineage reader asks it.</summary>
     internal LineageLayer Lineage => lineage;
 
-    public OutputBuilder(Interner it) { elements = new(it, conflicts); windows = new(it, conflicts); }
+    public OutputBuilder(Interner it) { elements = new(it, conflicts); windows = new(it, conflicts); lineage = new(elements); }
 
     /// <summary>A row says something about an element: its type, endpoints and properties, with the row's weight.</summary>
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight) => elements.Contribute(elem, isRel, sink, update, type, source, target, props, weight);
@@ -450,6 +450,7 @@ sealed class EmitEntityOp : SinkOp
         this.t = t; it = cx.It; id = compile(t.EntityId); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
         sets = [.. t.Sets.Select(s => (s, compile(s.Value)))]; cols = new Column[sets.Length];
         shape = new(it, sink, false, t.Update, t.TypeId, GraphProps(t.Sets));
+        cx.Out.Lineage.Register(sink, origin);
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
         if (id is VId v && t.Sets.Any(s => s.Telemetry)) v.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
@@ -471,7 +472,7 @@ sealed class EmitEntityOp : SinkOp
                     cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
             }
             if (!cx.Out.Contribute(shape, elem, -1, -1, cols, row, w)) continue;
-            cx.Out.Lineage.Support(elem, origin, b, row, w);
+            cx.Out.Lineage.Support(shape.Sink, elem, b, row, w);
         }
         return null;
     }
@@ -488,6 +489,7 @@ sealed class EmitRelOp : SinkOp
         this.t = t; it = cx.It; src = compile(t.Source); tgt = compile(t.Target); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
         sets = [.. t.Sets.Select(s => (s, compile(s.Value)))]; cols = new Column[sets.Length];
         shape = new(it, sink, true, t.Update, t.TypeId, GraphProps(t.Sets));
+        cx.Out.Lineage.Register(sink, origin);
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
         if (t.Sets.Any(s => s.Telemetry)) foreach (var e in new[] { src, tgt }.OfType<VId>()) e.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
@@ -512,7 +514,7 @@ sealed class EmitRelOp : SinkOp
                     ((so is null ? s : so.L[row]) << 32) | (uint)(to is null ? d : to.L[row]), set.Combine);          // a relationship is written under the own ids of its two endpoints
             }
             if (!cx.Out.Contribute(shape, rel, s, d, cols, row, w)) continue;
-            cx.Out.Lineage.Support(rel, origin, b, row, w);
+            cx.Out.Lineage.Support(shape.Sink, rel, b, row, w);
         }
         return null;
     }
