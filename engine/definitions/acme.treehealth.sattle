@@ -1,7 +1,7 @@
 /// The health of the estate: the tree of acme.tree with the own state of each element (from its signals), its rolled-up state (by the element's policy: worst by default, share of the monitored elements below it, or ignore) and the counts of the monitored elements below it per state.
 module acme.treehealth @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
+import sattle.infra @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee07fe0626fac5147e0c65ec689115 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
-import acme.tree    @ 1.0.0 sha256:dd0a852ea4ab0be6ca201d4ad84ec8a315c5902697cb5fb4e83f5f2f72b3b45a as tree;
+import acme.ops     @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
+import acme.tree    @ 1.0.0 sha256:e45ac07d947c6c15f870eab6d41dfe850fd2dcfbb2c850ec35e40c0e2790ae41 as tree;

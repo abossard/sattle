@@ -52,11 +52,11 @@ ENV = {"web": [{"name": "CACHE_HOST", "value": "shopcache.redis.cache.windows.ne
 DEPLOYMENTS = {"web": 3, "api": 2}
 for d, r in DEPLOYMENTS.items():
     rv += 1
-    k8s("Deployment", f"dep-{d}", d, "shop", at(0.2), {"spec": {"replicas": r, "template": {"spec": {"serviceAccountName": d, "containers": [{"name": d, "env": ENV[d]}]}}}}, rv)
+    k8s("Deployment", f"dep-{d}", d, "shop", at(0.2), {"spec": {"replicas": r, "template": {"metadata": {"labels": {"app": d, "tier": "shop"}}, "spec": {"serviceAccountName": d, "containers": [{"name": d, "env": ENV[d]}]}}}}, rv)
 rv += 1
-k8s("Service", "svc-web", "web", "shop", at(0.4), {"spec": {"clusterIP": "10.0.0.11"}}, rv)
+k8s("Service", "svc-web", "web", "shop", at(0.4), {"spec": {"clusterIP": "10.0.0.11", "selector": {"app": "web"}}}, rv)
 rv += 1
-k8s("Service", "svc-api", "api", "shop", at(0.4), {"spec": {"type": "LoadBalancer", "clusterIP": "10.0.0.12"}, "status": {"loadBalancer": {"ingress": [{"ip": "10.1.0.20"}]}}}, rv)
+k8s("Service", "svc-api", "api", "shop", at(0.4), {"spec": {"type": "LoadBalancer", "clusterIP": "10.0.0.12", "selector": {"app": "api"}}, "status": {"loadBalancer": {"ingress": [{"ip": "10.1.0.20"}]}}}, rv)
 rv += 1
 k8s("Service", "svc-database", "database", "shop", at(0.4), {"spec": {"type": "ExternalName", "externalName": "pg-shop.postgres.database.azure.com"}}, rv)
 PODS = [("web-7d4-1", "web", "node-a", 1), ("web-7d4-2", "web", "node-b", 1), ("web-7d4-3", "web", "node-a", 1), ("api-5c9-1", "api", "node-a", 1), ("api-5c9-2", "api", "node-b", 330)]

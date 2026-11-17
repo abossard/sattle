@@ -49,6 +49,25 @@ public class ForwarderMarkerTests
         Assert.Equal(["a", "d"], names);                                                        // b and c were deleted while the forwarder was down, d is new
     }
 
+    /// <summary>A relist that no longer holds the Service or the Deployment withdraws the selection between them, with the object.</summary>
+    [Theory]
+    [InlineData("Service", "/api/v1/services")]
+    [InlineData("Deployment", "/apis/apps/v1/deployments")]
+    public void A_relist_without_the_Service_or_the_Deployment_withdraws_their_selection(string kind, string path)
+    {
+        object Labelled(string k, object spec) => new Dictionary<string, object> { ["kind"] = k, ["metadata"] = Meta("web"), ["spec"] = spec };
+        var lines = new List<string>
+        {
+            Line("kubernetes-watch", "2026-01-01T10:00:00.000Z", 1, new { type = "ADDED", @object = Labelled("Service", new { selector = new { app = "web" } }) }),
+            Line("kubernetes-watch", "2026-01-01T10:00:00.100Z", 2, new { type = "ADDED", @object = Labelled("Deployment", new { template = new { metadata = new { labels = new { app = "web" } } } }) }),
+            Marker(3, "2026-01-01T10:05:00.000Z", "relist-start", path), Marker(4, "2026-01-01T10:05:00.100Z", "relist-end", path),
+        };
+        var selects = (int n) => ReplayTests.Replay(Capture(lines.Take(n)), chunk: 1).Engine.Master.State.Rels.Count(r => Ids.Name(r.Type) == "Selects");
+        Assert.Equal(1, selects(2));
+        Assert.Equal(0, selects(4));
+        Assert.Equal(0, ReplayTests.Replay(Capture(lines), chunk: 1).Engine.Master.State.Entities.Count(x => Ids.Name(x.Type) == kind));
+    }
+
     [Fact]
     public void A_relist_that_never_ends_deletes_nothing_and_a_relist_of_another_kind_leaves_this_kind_alone()
     {

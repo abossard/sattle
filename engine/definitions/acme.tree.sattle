@@ -1,9 +1,9 @@
 /// The health tree of the whole estate, derived from the master with no names in the definitions: every element that can have health has exactly one parent, Azure side subscription, resource group, resource, Kubernetes side cluster, namespace, workload, pod, node. Curation, signal rules and roll-up policies are authored data in the master.
 module acme.tree @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
+import sattle.infra @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee07fe0626fac5147e0c65ec689115 as infra;
 import sattle.azure @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
-import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
+import acme.ops     @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
 
 /// One node of the tree. kind is subscription, resourceGroup, resource, cluster, namespace, workload, pod or node.
 entity Element {

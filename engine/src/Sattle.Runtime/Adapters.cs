@@ -88,6 +88,7 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
         new("ServiceAccountRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("clientId", "Text", true)]),
         new("HostReferenceRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("deployment", "Text"), RowDef.F("variable", "Text"), RowDef.F("host", "Text")]),
         new("EndpointRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("service", "Text"), RowDef.F("address", "Text"), RowDef.F("podUid", "Text", true)]),
+        new("SelectsRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("service", "Text"), RowDef.F("deployment", "Text")]),
         new("NodeRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("name", "Text"), RowDef.F("resourceId", "Text", true), RowDef.F("pool", "Text", true)]),
         new("EventRow", [RowDef.F("eventId", "Text"), RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("kind", "Text"), RowDef.F("name", "Text"), RowDef.F("reason", "Text"), RowDef.F("type", "Text"), RowDef.F("count", "Integer"), RowDef.F("message", "Text", true)]),
     ];
@@ -98,6 +99,11 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     /// <summary>The host references of each Deployment (`HostReferenceRow`), by the Deployment's key: written again when the Deployment changes.</summary>
     readonly Dictionary<string, List<string?[]>> hostRefs = [];
     readonly Dictionary<string, List<string?[]>> slices = [];
+    /// <summary>The label selector of each Service and the pod template labels of each Deployment, by the object's key.</summary>
+    readonly Dictionary<string, Labelled> selectors = [], templates = [];
+    /// <summary>The `SelectsRow` rows written, per cluster and namespace.</summary>
+    readonly Dictionary<string, List<string?[]>> selects = [];
+    sealed record Labelled(string Cluster, string Namespace, string Name, KeyValuePair<string, string>[] Labels);
     readonly Dictionary<string, long> eventCounts = [];
     public long Events { get; private set; }
 
@@ -124,9 +130,9 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                 switch (path[(path.LastIndexOf('/') + 1)..])
                 {
                     case "pods": foreach (var k in Gone(pods.Keys)) Upsert(pods, k, null, sink, "PodRow", WritePod); break;
-                    case "services": foreach (var k in Gone(services.Keys)) Upsert(services, k, null, sink, "ServiceRow", WriteService); break;
+                    case "services": foreach (var k in Gone(services.Keys)) { Upsert(services, k, null, sink, "ServiceRow", WriteService); Label(selectors, k, null, sink); } break;
                     case "nodes": foreach (var k in Gone(nodes.Keys)) Upsert(nodes, k, null, sink, "NodeRow", WriteNode); break;
-                    case "deployments": foreach (var k in Gone(deployments.Keys)) Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); break;
+                    case "deployments": foreach (var k in Gone(deployments.Keys)) { Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); Label(templates, k, null, sink); } break;
                     case "endpointslices": foreach (var k in Gone(slices.Keys)) RemoveSlice(k, sink); break;
                     case "serviceaccounts": foreach (var k in Gone(accounts.Keys)) Upsert(accounts, k, null, sink, "ServiceAccountRow", WriteAccount); break;
                 }
@@ -175,9 +181,11 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                 Upsert(deployments, key, deleted ? null : [uid, ns, name, obj.Path("spec", "replicas") is { ValueKind: JsonValueKind.Number } rp ? rp.GetInt64().ToString(CultureInfo.InvariantCulture) : null, cluster], sink, "DeploymentRow",
                     WriteDeployment);
                 HostReferences(key, ns, name, deleted ? null : obj, sink);
+                Label(templates, key, deleted ? null : new(cluster, ns, name, LabelsOf(obj.Path("spec", "template", "metadata", "labels"))), sink);
                 break;
             case "Service":
                 Upsert(services, key, deleted ? null : [uid, ns, name, obj.PathS("spec", "externalName"), AddressOf(obj), cluster], sink, "ServiceRow", WriteService);
+                Label(selectors, key, deleted ? null : new(cluster, ns, name, obj.PathS("spec", "type") == "ExternalName" ? [] : LabelsOf(obj.Path("spec", "selector"))), sink);
                 break;
             case "Node":
                 Upsert(nodes, key, deleted ? null : [uid, name, ResourceIdOf(obj.PathS("spec", "providerID")), obj.PathS("metadata", "labels", "kubernetes.azure.com/agentpool") ?? obj.PathS("metadata", "labels", "agentpool"), cluster], sink, "NodeRow", WriteNode);
@@ -286,6 +294,33 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
         foreach (var r in rows.Where(x => !prev.Any(p => p.SequenceEqual(x)))) { var w = sink.Begin("EndpointRow"); w.Begin(1); Write(w, r); }
         if (rows.Count == 0) slices.Remove(key); else slices[key] = rows;
     }
+    /// <summary>The string pairs of a label map; none for a map that is absent.</summary>
+    static KeyValuePair<string, string>[] LabelsOf(JsonElement? map) =>
+        map is { ValueKind: JsonValueKind.Object } m ? [.. m.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).Select(p => KeyValuePair.Create(p.Name, p.Value.GetString()!))] : [];
+
+    /// <summary>Sets the labels of one Service or Deployment, or removes them (null), and writes what that changes in the `SelectsRow` rows of its namespace.</summary>
+    void Label(Dictionary<string, Labelled> state, string key, Labelled? next, IRowSink sink)
+    {
+        var at = next ?? state.GetValueOrDefault(key);
+        if (at is null) return;
+        if (next is null) state.Remove(key); else state[key] = next;
+        Select(at.Cluster, at.Namespace, sink);
+    }
+
+    /// <summary>A Service selects a Deployment of its namespace when the Deployment's pod template labels hold every pair of the Service's selector (Kubernetes label selection); a Service with an empty selector selects none. Writes the rows that differ from those written before for the namespace.</summary>
+    void Select(string cl, string ns, IRowSink sink)
+    {
+        List<string?[]> rows = [.. from s in selectors.Values where s.Cluster == cl && s.Namespace == ns && s.Labels.Length > 0
+                                   from d in templates.Values where d.Cluster == cl && d.Namespace == ns && s.Labels.All(d.Labels.Contains)
+                                   select new string?[] { cl, ns, s.Name, d.Name }];
+        var scope = Key(cl, ns);
+        selects.TryGetValue(scope, out var prev); prev ??= [];
+        foreach (var r in prev.Where(p => !rows.Any(x => x.SequenceEqual(p)))) { var w = sink.Begin("SelectsRow"); w.Begin(-1); WriteSelects(w, r); }
+        foreach (var r in rows.Where(x => !prev.Any(p => p.SequenceEqual(x)))) { var w = sink.Begin("SelectsRow"); w.Begin(1); WriteSelects(w, r); }
+        if (rows.Count == 0) selects.Remove(scope); else selects[scope] = rows;
+    }
+    static void WriteSelects(RowWriter w, string?[] r) { w.Text("cluster", r[0]); w.Text("namespace", r[1]); w.Text("service", r[2]); w.Text("deployment", r[3]); }
+
     static void Write(RowWriter w, string?[] r) { w.Text("cluster", r[4]); w.Text("namespace", r[0]); w.Text("service", r[1]); w.Text("address", r[2]); w.Text("podUid", r[3]); }
 
     void Event(string uid, string ns, JsonElement obj, IRowSink sink)

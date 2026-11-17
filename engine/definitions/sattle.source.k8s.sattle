@@ -11,6 +11,8 @@ rows ServiceAccountRow { cluster: Text; namespace: Text; name: Text; clientId?: 
 /// One environment variable of a Deployment's containers that names a host (by its name: *HOST, *HOSTNAME, *SERVER, *ENDPOINT, *URL, *URI), with the host it names. Other variables are not read.
 rows HostReferenceRow { cluster: Text; namespace: Text; deployment: Text; variable: Text; host: Text; }
 rows EndpointRow { cluster: Text; namespace: Text; service: Text; address: Text; podUid?: Text; }
+/// One Service and one Deployment of its namespace whose pod template labels hold every pair of the Service's selector. A Service with no selector or of type ExternalName selects none.
+rows SelectsRow  { cluster: Text; namespace: Text; service: Text; deployment: Text; }
 /// One Node. pool is its AKS agent pool (label kubernetes.azure.com/agentpool).
 rows NodeRow     { cluster: Text; uid: Text; name: Text; resourceId?: Text; pool?: Text; }
 /// One row per newly observed event occurrence. count is the increment since the last row of the same event.

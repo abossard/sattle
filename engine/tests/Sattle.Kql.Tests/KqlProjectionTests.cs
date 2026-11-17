@@ -29,7 +29,7 @@ public class KqlProjectionTests
     [InlineData("acme.tree.treeSignals.kql", "treeSignals", "sha256:ed034b16e9bd00ff3e6004030f841ea514c5b16db0fb0e4776528dfb3af2a21f")]
     [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "sha256:bf8d153035d1ca92289337a0f4620c58eb6c83a02ab962fb97a061470d0be989")]
     [InlineData("acme.treehealth.healthTree.kql", "healthTree", "sha256:5787d12669595d2c99b02a95eaba52b17080148ae7ee683d38f1b5c1d988f918")]
-    [InlineData("acme.ops.ingest.kql", "master", "sha256:a8ebc7b45962807b47f1286479139194e767ed1fbafba3826a836b1eef5b3d10")]
+    [InlineData("acme.ops.ingest.kql", "master", "sha256:48817b8a0ae878a6db555365dec625edf2c7a616fe3538918eef9514b66be482")]
     public void A_projection_in_KQL_gives_the_pinned_state_on_the_estate(string kql, string graph, string pinned)
     {
         var path = Path.Combine(Definitions, kql);
@@ -53,7 +53,7 @@ public class KqlProjectionTests
         finally { Console.SetOut(saved); }
         Assert.True(code == 0, output.ToString());
         var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
-        Assert.Equal("sha256:6b8c3048b610a935ae4e297a42dc8b774c1c1ddb8a02ae16343703333865b2eb", digest);
+        Assert.Equal("sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422", digest);
     }
 
     /// <summary>What the profile refuses, and that the message says what to write instead.</summary>

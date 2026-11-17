@@ -1,8 +1,8 @@
 /// Deployment health as an ontology, computed by a projection: nothing about health lives in the engine. A Deployment is Healthy while its ready pods exceed minReady. Further requirements are further rules of the projection that set or update the same properties.
 module acme.deployhealth @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
-import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
+import sattle.infra @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee07fe0626fac5147e0c65ec689115 as infra;
+import acme.ops     @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
 
 /// One node per Deployment. state is computed from readyPods and the minReady binding argument.
 entity Workload {

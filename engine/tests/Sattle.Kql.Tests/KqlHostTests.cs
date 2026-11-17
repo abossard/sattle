@@ -219,7 +219,7 @@ public class KqlHostTests
         Assert.Equal(Text("acme.svc.serviceDeps.kql"), host.Definition("acme.svc.serviceDeps.kql"));
         new Replay(host, host.Space, host.Adapters, Sattle.Cli.Program.ReplayOptionsOf(o, "synth")).Run(EstateDir);
         host.Finish();
-        Assert.Equal("sha256:6b8c3048b610a935ae4e297a42dc8b774c1c1ddb8a02ae16343703333865b2eb", host.StateDigest());
+        Assert.Equal("sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422", host.StateDigest());
     }
 
     /// <summary>A store written with projections in KQL, opened without a projection source, is refused, naming the files it holds.</summary>

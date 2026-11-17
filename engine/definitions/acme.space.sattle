@@ -1,19 +1,19 @@
 /// Operations graph space: the master from Kubernetes, Hubble and Azure, the authored graph from authored rows, and the views on them: the service tree, the workload model, the estate tree, capabilities, deployment health and reports.
 module acme.space @ 1.0.0;
 
-import sattle.source.k8s    @ 1.0.0 sha256:0b1c5d7a5474154d69611d57dfffbf1014ac7e809a34fa7fc61a95fb1b934c2a as k8s;
+import sattle.source.k8s    @ 1.0.0 sha256:5e6031686b2731a54774a35f7126f1b8bc9ea9e8c3d34669588ffb61cc46aab7 as k8s;
 import sattle.source.hubble @ 1.0.0 sha256:95433584c514e135464e77fc445141fec30b87e7cd1545544e709026682cb857 as hubble;
 import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a41f5d8d0498615a519734bc159d64 as azsrc;
 import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
-import acme.ops             @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
-import acme.svc             @ 1.0.0 sha256:2329961ae27ee2000c2a66b10311a87e99de12a5863abdeb31cc3730f636b148 as svc;
-import acme.workload @ 1.0.0 sha256:0ed83a63b1c76eeb29974e9d6856be176ba3f14409d7fbe835a78573febddd75 as wl;
-import acme.deployhealth @ 1.0.0 sha256:88b2dd8a8bf9fb5755a01b16cc3613d8f2f041159b7f1624b10bd518c6e957ed as dh;
-import acme.report @ 1.0.0 sha256:d339657b605f0baab253d8bd70c51d94c24d074844ad3160b13ca0ecb7c82d78 as rpt;
-import acme.treereport @ 1.0.0 sha256:03f20a307c44f87bedeae89fcd228b28d8137655eaf0122b510cfb28306400c7 as trep;
-import acme.treehealth @ 1.0.0 sha256:447a9096746f37d171931559ddba5bbe1b48566ab53f9041b5cae13a3bc012c0 as th;
-import acme.tree @ 1.0.0 sha256:dd0a852ea4ab0be6ca201d4ad84ec8a315c5902697cb5fb4e83f5f2f72b3b45a as tr;
-import acme.biz             @ 1.0.0 sha256:f740b55c314974f8bacdf275ef10724c58e62954541477ebf5d6d3d145131705 as biz;
+import acme.ops             @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
+import acme.svc             @ 1.0.0 sha256:60c986c067aead62f18a758eacc7d6007e68057b6739e3388bfe48b20c289b72 as svc;
+import acme.workload @ 1.0.0 sha256:d18f69c3c60ed9303af420dc37a6620cd72abc1da0d76c7807c2b0bf9757913d as wl;
+import acme.deployhealth @ 1.0.0 sha256:2edc7f71d06ec65add1f7bbe75cf5260b17f5ddafd05fc2a8059cfc05e23d8e3 as dh;
+import acme.report @ 1.0.0 sha256:76ca070efe167d7b99de6ebc5646cecc5f3274608cf94b604e5f1996f4883b9d as rpt;
+import acme.treereport @ 1.0.0 sha256:deda821960ec3940abc4e72688d7a421e3f38718b0cddfa95d3f5e4bdb069a90 as trep;
+import acme.treehealth @ 1.0.0 sha256:eb7c0e55bd66ae6c93875c4613845d57c1afdd38a3b167fa1be7093884de25c6 as th;
+import acme.tree @ 1.0.0 sha256:e45ac07d947c6c15f870eab6d41dfe850fd2dcfbb2c850ec35e40c0e2790ae41 as tr;
+import acme.biz             @ 1.0.0 sha256:16f98d32b459998e2febd1a2479c5a74031272d055f32070ba9f402b50cfed00 as biz;
 
 space operations {
   source pods      adapter "kubernetes.list-watch" rows k8s.PodRow;
@@ -22,6 +22,7 @@ space operations {
   source services  adapter "kubernetes.list-watch" rows k8s.ServiceRow;
   source deployments adapter "kubernetes.list-watch" rows k8s.DeploymentRow;
   source endpoints adapter "kubernetes.list-watch" rows k8s.EndpointRow;
+  source selections adapter "kubernetes.list-watch" rows k8s.SelectsRow;
   source flows     adapter "hubble.observe"        rows hubble.FlowRow;
   source nodes     adapter "kubernetes.list-watch" rows k8s.NodeRow;
   source events    adapter "kubernetes.list-watch" rows k8s.EventRow;
@@ -38,7 +39,7 @@ space operations {
   source policies  adapter "sattle.authoring"      rows ops.PolicyRow;
   source curations adapter "sattle.authoring"      rows ops.CurationRow;
 
-  master graph master = ops.ingest(pods: pods, services: services, accounts: accounts, hostRefs: hostRefs, deployments: deployments, endpoints: endpoints,
+  master graph master = ops.ingest(pods: pods, services: services, accounts: accounts, hostRefs: hostRefs, deployments: deployments, endpoints: endpoints, selections: selections,
                                    flows: flows,
                                    nodes: nodes, events: events, resources: resources, metrics: metrics,
                                    activity: activity, diagActivity: diagActivity, audit: audit, resourceMetrics: resourceMetrics, flowLogs: flowLogs);

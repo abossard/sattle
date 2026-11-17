@@ -48,12 +48,11 @@ nodes Cluster on azureResource = clusters | project azureResource, key = tolower
 let poolsOfCluster = pooled | join kind=inner (clusters) on $left.one == $right.one2;
 edges MemberOf from nodePool to azureResource with (key = "poolInCluster") = poolsOfCluster | project nodePool = identity("nodePool", cluster, pool), azureResource;
 
-// A Deployment is part of each Service one of its pods backs now, by the Service's EndpointSlices (a pod that is not ready stays in them).
-// One none of whose pods backs a Service is a part of the workload itself: a client, a Deployment scaled to 0, or one whose pods all left the EndpointSlices, which moves it from its Service to the workload until a pod is back.
-let backing = graph("master")
-    | graph-match (pod)-[b]->(service) where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
-      project bpid = pod.id, service;
-let served = pods | join kind=inner (backing) on $left.pid == $right.bpid | project service, deployment, sdid = did;
+// A Deployment is part of each Service that selects it: the Service's selector matches its pod template's labels. That holds whatever its pods do,
+// scaled to 0, not ready or without an address. One that no Service selects is a part of the workload itself: a client such as a load generator.
+let served = graph("master")
+    | graph-match (service)-[s]->(deployment) where labels(service) has "Service" and labels(s) has "Selects" and labels(deployment) has "Deployment" and service.namespace == workloadNamespace
+      project service, deployment, sdid = deployment.id;
 edges Contains from service to deployment with (key = "serviceDeployment") = served | project service, deployment;
 let unserved = union (deployments | project udid = did, isServed = 0), (served | project udid = sdid, isServed = 1)
     | summarize isServed = max(isServed) by udid | where isServed == 0
@@ -109,9 +108,8 @@ let viaIdentity = accounts
     | join kind=inner (assignments) on $left.iprincipal == $right.aprincipal
     | project serviceAccount, managedIdentity, assignment, src, tkey = scope, how = "identity", detail = strcat("service account ", account, " runs as identity ", identityName, ", which has a role on the resource");
 let configured = graph("master")
-    | graph-match (hostReference)-[cf]->(deployment), (pod)-[cb]->(deployment), (pod)-[b]->(service)
-      where labels(hostReference) has "HostReference" and labels(cf) has "Configures" and labels(deployment) has "Deployment" and labels(pod) has "Pod" and labels(cb) has "ControlledBy"
-        and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
+    | graph-match (hostReference)-[cf]->(deployment), (service)-[s]->(deployment)
+      where labels(hostReference) has "HostReference" and labels(cf) has "Configures" and labels(deployment) has "Deployment" and labels(s) has "Selects" and labels(service) has "Service" and service.namespace == workloadNamespace
       project hostReference, src = svcKey(service.cluster, service.namespace, service.name), variable = hostReference.variable, chost = hostReference.host;
 let viaConfigResource = configured | join kind=inner (named) on $left.chost == $right.host
     | project hostReference, azureResource, src, tkey = rkey, how = "configuration", detail = strcat("environment variable ", variable, " names ", chost);
@@ -196,7 +194,10 @@ nodes DependencyEvidence on evidence = gateways
 edges EvidenceFor from evidence to service with (key = "evidenceBackend") = gateways | project evidence = identity("dependencyEvidence", rkey, skey4, "backend"), service;
 
 // ---- communication: who talks to whom, with its flows per window ----
-let backsHere = backing | project pod = bpid, service = service.id;
+// the pods that carry a Service's traffic now, by its EndpointSlices
+let backsHere = graph("master")
+    | graph-match (pod)-[b]->(service) where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
+      project pod = pod.id, service = service.id;
 // to resources and services outside: the destination'service address leads to assignment private endpoint or assignment resolved name
 let destinations = graph("master") | graph-match (destination) where labels(destination) has "Destination" project daddr = destination.address, dname = tolower(coalesce(destination.hostName, ""));
 let destinationOf = union

@@ -277,17 +277,18 @@ public class WorkloadTests
     static HashSet<string> KeyEdges(Graph g, string type) =>
         [.. g.Rels.Where(r => Ids.Name(r.Type) == type).Select(r => (g.Entity(r.Source) is { } s ? P(s, "key") : r.Source) + " -> " + (g.Entity(r.Target) is { } t ? P(t, "key") : r.Target))];
 
-    /// <summary>A Deployment stays in the workload whatever happens to its pods. At 10:02 the api EndpointSlice empties ("leave"), or api is scaled to 0: its pods deleted, the slice emptied ("scale0"); with "return" a pod is back in the slice at 10:03.
-    /// A Deployment none of whose pods is in a Service's EndpointSlices is under the workload instead of its Service (not ready pods stay in the slice, so this takes pods without an address); one scaled to 0 keeps its node with no pods and is Unknown. Either way the Service has nothing left under it and is Unknown until a pod is back. The replay stops at 10:03:30, before scenario A; api-5c9-2 is first seen at 10:05:30.</summary>
+    /// <summary>A Deployment stays under the Service that selects it whatever happens to its pods. At 10:02 the api EndpointSlice empties, as when no pod of api is ready ("leave"), or api is scaled to 0: its pods deleted, the slice emptied ("scale0");
+    /// one scaled to 0 keeps its node with no pods and is Unknown, and so is its Service. When the Service's selector stops matching the pod template ("unselect"), the Deployment is under the workload; the pods still in the Service's EndpointSlice keep its traffic, so its state comes from what it depends on.
+    /// The replay stops at 10:03:30, before scenario A; api-5c9-2 is first seen at 10:05:30.</summary>
     [Theory]
-    [InlineData("leave", "ns/synth/shop -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "svc/synth/shop/api -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Unknown, workload:shop=Healthy")]
-    [InlineData("scale0", "ns/synth/shop -> deploy/synth/shop/api", "svc/synth/shop/api -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "deployment:api=Unknown, service:api=Unknown, workload:shop=Healthy")]
-    [InlineData("return", "svc/synth/shop/api -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "ns/synth/shop -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Healthy, workload:shop=Healthy")]
-    public void A_deployment_stays_in_the_workload_when_its_pods_leave_the_EndpointSlice_or_it_is_scaled_to_0(string change, string contained, string notContained, string expected)
+    [InlineData("leave", "svc/synth/shop/api -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "ns/synth/shop -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Healthy, workload:shop=Healthy")]
+    [InlineData("scale0", "svc/synth/shop/api -> deploy/synth/shop/api", "ns/synth/shop -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "deployment:api=Unknown, service:api=Unknown, workload:shop=Healthy")]
+    [InlineData("unselect", "ns/synth/shop -> deploy/synth/shop/api,deploy/synth/shop/api -> pod/synth/shop/api-5c9-1", "svc/synth/shop/api -> deploy/synth/shop/api", "deployment:api=Healthy, service:api=Healthy, workload:shop=Healthy")]
+    public void A_deployment_stays_under_the_Service_that_selects_it_when_its_pods_leave_the_EndpointSlice_or_it_is_scaled_to_0(string change, string contained, string notContained, string expected)
     {
-        object Slice(params (string Address, string Pod)[] endpoints) => new
+        var emptySlice = new
         {
-            kind = "EndpointSlice", endpoints = endpoints.Select(e => new { addresses = new[] { e.Address }, targetRef = new { kind = "Pod", uid = e.Pod } }).ToArray(),
+            kind = "EndpointSlice", endpoints = Array.Empty<object>(),
             metadata = new { name = "api-slice", uid = "slice-api", resourceVersion = "980", @namespace = "shop", labels = new Dictionary<string, string> { ["kubernetes.io/service-name"] = "api" } },
         };
         object Pod(string name, string node) => new
@@ -295,14 +296,15 @@ public class WorkloadTests
             kind = "Pod", spec = new { nodeName = node, serviceAccountName = "api" }, status = new { phase = "Running" },
             metadata = new { name, uid = "uid-" + name, resourceVersion = "981", @namespace = "shop", ownerReferences = new[] { new { kind = "ReplicaSet", name = "api-5c9" } } },
         };
-        List<string> lines = [Watch(120, "MODIFIED", "EndpointSlice", "slice-api", 980, Slice())];
+        List<string> lines = change == "unselect"
+            ? [Watch(120, "MODIFIED", "Service", "svc-api", 980, new { kind = "Service", spec = new { clusterIP = "10.0.0.12", selector = new { app = "api-v2" } }, metadata = new { name = "api", uid = "svc-api", resourceVersion = "980", @namespace = "shop" } })]
+            : [Watch(120, "MODIFIED", "EndpointSlice", "slice-api", 980, emptySlice)];
         if (change == "scale0")
             lines.AddRange([
-                Watch(120.1, "MODIFIED", "Deployment", "dep-api", 982, new { kind = "Deployment", spec = new { replicas = 0 }, metadata = new { name = "api", uid = "dep-api", resourceVersion = "982", @namespace = "shop" } }),
+                Watch(120.1, "MODIFIED", "Deployment", "dep-api", 982, new { kind = "Deployment", spec = new { replicas = 0, template = new { metadata = new { labels = new { app = "api", tier = "shop" } } } }, metadata = new { name = "api", uid = "dep-api", resourceVersion = "982", @namespace = "shop" } }),
                 Watch(120.2, "DELETED", "Pod", "uid-api-5c9-1", 983, Pod("api-5c9-1", "node-a")),
                 Watch(120.2, "DELETED", "Pod", "uid-api-5c9-2", 984, Pod("api-5c9-2", "node-b")),
             ]);
-        if (change == "return") lines.Add(Watch(180, "MODIFIED", "EndpointSlice", "slice-api", 985, Slice(("10.0.1.1", "uid-api-5c9-1"))));
         using var engine = Changed(_ => true, [("kubernetes/changes.ndjson", [.. lines])], 210);
         var contains = KeyEdges(engine.Graph("workloadStructure").State, "Contains");
         foreach (var edge in contained.Split(',')) Assert.Contains(edge, contains);

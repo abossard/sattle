@@ -1,8 +1,8 @@
 /// Project ontology extension, authored business entities, the master ingestion and the ingestion of authored rows.
 module acme.ops @ 1.0.0;
 
-import sattle.infra         @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
-import sattle.source.k8s    @ 1.0.0 sha256:0b1c5d7a5474154d69611d57dfffbf1014ac7e809a34fa7fc61a95fb1b934c2a as k8s;
+import sattle.infra         @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee07fe0626fac5147e0c65ec689115 as infra;
+import sattle.source.k8s    @ 1.0.0 sha256:5e6031686b2731a54774a35f7126f1b8bc9ea9e8c3d34669588ffb61cc46aab7 as k8s;
 import sattle.source.hubble @ 1.0.0 sha256:95433584c514e135464e77fc445141fec30b87e7cd1545544e709026682cb857 as hubble;
 import sattle.azure          @ 1.0.0 sha256:dcb352c6e8f5b162a5c7139bb563be7ecd7e1d5afa433e3fac5a2a3124a2d12d as azure;
 import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a41f5d8d0498615a519734bc159d64 as azsrc;

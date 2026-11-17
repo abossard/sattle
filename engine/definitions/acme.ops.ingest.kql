@@ -8,6 +8,7 @@ input accounts : k8s.ServiceAccountRow;
 input hostRefs : k8s.HostReferenceRow;
 input deployments : k8s.DeploymentRow;
 input endpoints : k8s.EndpointRow;
+input selections : k8s.SelectsRow;
 input flows : hubble.FlowRow;
 input nodes : k8s.NodeRow;
 input events : k8s.EventRow;
@@ -34,6 +35,7 @@ edges Configures from h to d with (rule = "observedDeployments") = hostRefs
 nodes ServiceAccount on a with (rule = "observedServiceAccounts", description = "observed by the Kubernetes adapter") = accounts | project a = identity("serviceAccountName", cluster, namespace, name), cluster, namespace, name, clientId;
 nodes Service on s with (rule = "observedServices", description = "observed by the Kubernetes adapter") = services | project s = identity("serviceName", cluster, namespace, name), cluster, namespace, name, externalName, address;
 edges Backs from pod to s with (rule = "observedServices") = endpoints | project pod = identity("podUid", cluster, podUid), s = identity("serviceName", cluster, namespace, service);
+edges Selects from s to d with (rule = "observedServices") = selections | project s = identity("serviceName", cluster, namespace, service), d = identity("deploymentName", cluster, namespace, deployment);
 nodes Node on n with (rule = "observedNodes", description = "observed by the Kubernetes adapter") = nodes | project n = identity("nodeName", cluster, name), cluster, name, resourceId, pool;
 
 // ---- observed by Hubble: calls between pods, and flows to addresses that are no pod ----

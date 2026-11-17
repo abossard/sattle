@@ -125,6 +125,40 @@ public class ReplayTests
         Assert.Equal(0, r.Engine.Master.State.EntityCount);
     }
 
+    static string K8s(long seq, string type, string kind, string name, string ns, string spec) => Line("kubernetes-watch", $"2026-11-10T10:00:{seq:00}.000Z", seq, System.Text.Json.Nodes.JsonNode.Parse(
+        $$$"""{"type": "{{{type}}}", "object": {"kind": "{{{kind}}}", "metadata": {"uid": "u-{{{kind}}}-{{{name}}}", "name": "{{{name}}}", "namespace": "{{{ns}}}", "resourceVersion": "{{{seq}}}"}, "spec": """ + spec + "}}")!);
+    static string Deployment(long seq, string labels, string ns = "ns1", string type = "ADDED") => K8s(seq, type, "Deployment", "web", ns, """{"replicas": 0, "template": {"metadata": {"labels": """ + labels + "}}}");
+    static List<string> Selects(Engine e) => [.. e.Master.State.Rels.Where(r => Ids.Name(r.Type) == "Selects").Select(r => e.Master.State.Entity(r.Source)!.Props.Text("d:sattle.infra/prop:name") + " -> " + e.Master.State.Entity(r.Target)!.Props.Text("d:sattle.infra/prop:name"))];
+
+    /// <summary>A Service selects a Deployment of its namespace when the Deployment's pod template labels hold every pair of the Service's selector (Kubernetes label selection), whether the Deployment runs pods or not.</summary>
+    [Theory]
+    [InlineData("labels hold the selector", """{"selector": {"app": "web"}}""", """{"app": "web", "tier": "shop"}""", "ns1", true)]
+    [InlineData("a value differs", """{"selector": {"app": "web"}}""", """{"app": "api"}""", "ns1", false)]
+    [InlineData("a selector key is missing", """{"selector": {"app": "web", "tier": "shop"}}""", """{"app": "web"}""", "ns1", false)]
+    [InlineData("another namespace", """{"selector": {"app": "web"}}""", """{"app": "web"}""", "ns2", false)]
+    [InlineData("no selector", """{}""", """{"app": "web"}""", "ns1", false)]
+    [InlineData("an empty selector", """{"selector": {}}""", """{"app": "web"}""", "ns1", false)]
+    [InlineData("an ExternalName Service", """{"type": "ExternalName", "externalName": "db.example", "selector": {"app": "web"}}""", """{"app": "web"}""", "ns1", false)]
+    public void A_Service_selects_the_Deployments_of_its_namespace_whose_pod_template_labels_hold_its_selector(string @case, string serviceSpec, string labels, string ns, bool selects)
+    {
+        var e = Replay(Capture(K8s(1, "ADDED", "Service", "web", "ns1", serviceSpec), Deployment(2, labels, ns)), chunk: 1).Engine;
+        Assert.True(selects == (Selects(e).Count == 1), @case);
+    }
+
+    /// <summary>The selection follows the objects: it goes when the selector stops matching or the Deployment is deleted, and comes back when the selector matches again.</summary>
+    [Fact]
+    public void A_selection_follows_changes_of_the_selector_and_the_Deployment()
+    {
+        string Service(long seq, string app, string type = "MODIFIED") => K8s(seq, type, "Service", "web", "ns1", $$$"""{"selector": {"app": "{{{app}}}"}}""");
+        var steps = new (string Line, string[] Expected)[]
+        {
+            (Service(1, "web", "ADDED"), []), (Deployment(2, """{"app": "web"}"""), ["web -> web"]), (Service(3, "api"), []), (Service(4, "web"), ["web -> web"]),
+            (Deployment(5, """{"app": "web"}""", type: "DELETED"), []),
+        };
+        for (var i = 1; i <= steps.Length; i++)
+            Assert.Equal(steps[i - 1].Expected, Selects(Replay(Capture([.. steps.Take(i).Select(s => s.Line)]), chunk: 1).Engine));
+    }
+
     [Fact]
     public void Flows_between_unobserved_pods_make_dangling_calls_and_never_a_revision_per_window()
     {

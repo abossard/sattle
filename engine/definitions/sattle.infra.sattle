@@ -24,6 +24,8 @@ relationship Sends (Pod) -> (Destination) kind communication {
 relationship RunsAs (Pod) -> (ServiceAccount) kind dependency;
 
 relationship Backs (Pod) -> (Service) kind composition;
+/// The Service's label selector matches the labels of the Deployment's pod template: the Service sends its traffic to the pods the Deployment runs, whether it runs any now or not.
+relationship Selects (Service) -> (Deployment) kind composition;
 relationship RunsOn (Pod) -> (Node) kind composition;
 /// The Deployment that owns the pod through its ReplicaSet.
 relationship ControlledBy (Pod) -> (Deployment) kind composition;

@@ -1,9 +1,9 @@
 /// Business capability view. Rename, re-parent, create and retire capabilities here.
 module acme.biz @ 1.0.0;
 
-import sattle.infra @ 1.0.0 sha256:19546ef2ea99f86ed96fb4d8081307b0b29d28bb14f5dd9b1b5ee580f9959ec3 as infra;
-import acme.ops     @ 1.0.0 sha256:6b52c18dcc323e7de6b2abb4a62fefd2bb9f7edc5886ef84b4de37d7bc6a9d2a as ops;
-import acme.svc     @ 1.0.0 sha256:2329961ae27ee2000c2a66b10311a87e99de12a5863abdeb31cc3730f636b148 as svc;
+import sattle.infra @ 1.0.0 sha256:ba54f30c296e4c443921263456f1c4ff59ee07fe0626fac5147e0c65ec689115 as infra;
+import acme.ops     @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
+import acme.svc     @ 1.0.0 sha256:60c986c067aead62f18a758eacc7d6007e68057b6739e3388bfe48b20c289b72 as svc;
 
 entity BizCapability { name: Text label; serviceCount?: Integer; }
 relationship Under (BizCapability) -> (BizCapability) kind composition;
