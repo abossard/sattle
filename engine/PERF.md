@@ -578,6 +578,21 @@ Release build of f9e3121, which includes hogs 1 to 5, in a clone. Input from `sa
 - Work by operator, run 1 (ms, MB allocated): flush, apply and store commit 131,907 ms; `TraverseOp` 92,663, 9,204; `MatchOp` 88,271, 40,257; `EmitRelOp` 44,067, 14,147; `EmitEntityOp` 40,843, 18,901; `SeriesOp` 19,881, 12,072; `GroupOp` 18,315, 3,274; `JoinOp` 16,668, 3,714; `LinkOp` 3,577, 3,525. By graph, `healthTree` costs most (operators 134 s, commit 21 s), then `master` (49 s, 65 s) and `workloadStructure` (53 s).
 - Raw outputs: `tmp/orchestrator/n1m-phases.txt` and `n1m-census.txt` (not in git).
 
+### Efficiency stage 2, joins: a stored row holds what a change needs, in the width it needs (#115, 2026-11-17)
+Theory. A join keeps the rows of each side as a Z-set arranged by the join key. A row of one side needs the rows of the other side with the same key and all their columns, and its own side's row to add its weight to. A stored row was the join key, every column and a word of absent bits, 8 bytes each. Three things in it carry nothing: a join key part that is a column of the row (`on $left.dkey == $right.ekey`, the common case) was stored twice; a column of codes (a text, an element, a relationship, a decimal as its number) is an `int` and took 8 bytes; and a column of codes is never negative, so it can mark its own absence as -1. Now the arrangement reads a key part that is a column from that column, codes take 4 bytes, and only numbers (integer, instant, boolean) have an absent bit, in 4-byte words. The weight, the index on the whole row and the arrangement stay: without them a step would be proportional to a key's rows. Seal format 6 to 7.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 313 / 301 MB | 2,116 / 2,019 MB |
+| per master node | 31.3 / 30.1 KB | 21.2 / 20.2 KB |
+| `JoinOp` per master node | 3,519 / 2,307 B | 2,771 / 1,795 B |
+| allocated per input record | 60.9 / 60.6 KB | 58.8 / 58.5 KB |
+
+- Example: the reach that `healthTree/counts` joins, 42,458 rows of (`rkey`, `dkey`) at 10^4, stored 32 B of values per row, now 8.
+- What stays per stored row is mostly overhead: weight 8 B, index 8 to 16 B, arrangement 8 B and its index.
+- Before is f50d6fc. Release builds in clones; times are measured under load (load average 80 to 190, another worker's tests running) and are not comparable. Bytes are.
+- Digests unchanged: the generated estate at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`), and the pinned scenario digests (estate, deploy-health, estate-wide) and the lab fixtures.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

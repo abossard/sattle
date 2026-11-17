@@ -1074,20 +1074,41 @@ sealed class DistinctOp : PhysOp
 /// <summary>Equi-join of two data inputs. Each side keeps its rows as a Z-set (`Table`): a row is its join key, every column as its 8-byte code (a decimal as its number in the operator's `DecimalCodes`) and a bit per absent column, all of it the key of the row, with the multiplicity as its weight; an `Arrangement` by the join key gives the rows a probe matches. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join and are not kept.</summary>
 sealed class JoinOp : PhysOp
 {
+    /// <summary>The rows of one side as a Z-set (`Table`), arranged by the join key. A stored row is the join key's parts that are not a column of the row, then every column, then a bit per absent number in words of 31 bits; a part of the key that is a column is read from that column. A column of codes (a text, an element, a decimal as its number in `DecimalCodes`) takes 4 bytes and is -1 when absent; a number (an integer, an instant, a boolean) takes 8 bytes and its absence is a bit.</summary>
     sealed class Side
     {
         /// <summary>The join key's expressions, which of them compare as decimals, and the number of columns of a row.</summary>
         public readonly VExpr[] Keys; public readonly bool[] KeyDec; public readonly int N;
+        /// <summary>Per part of the key: the stored column that holds it, and whether it is a column of the row (then nothing else holds it).</summary>
+        public readonly int[] KeyAt; public readonly bool[] KeyIsCol;
+        /// <summary>Per column: its absent bit, or -1 for a column of codes.</summary>
+        public readonly int[] Bit;
+        /// <summary>Where the row's columns and the absent bits start.</summary>
+        public readonly int ColsAt, BitsAt;
         public readonly Table Rows; public readonly Arrangement ByKey;
-        public Side(Layout layout, VExpr[] keys, bool[] keyDec)
+        public Side(Layout layout, VExpr[] keys, bool[] keyDec, int[] keyField, bool[] keyCode)
         {
             Keys = keys; KeyDec = keyDec; N = layout.Count;
-            var width = keys.Length + N + Words(N);
-            Rows = new Table([.. Enumerable.Repeat(8, width)], keyColumns: width);
-            ByKey = Rows.Arrange([.. Enumerable.Range(0, keys.Length)]);
+            var widths = new List<int>();
+            KeyAt = new int[keys.Length]; KeyIsCol = new bool[keys.Length];
+            for (var i = 0; i < keys.Length; i++) if (keyField[i] < 0) { KeyAt[i] = widths.Count; widths.Add(keyDec[i] || keyCode[i] ? 4 : 8); }
+            ColsAt = widths.Count;
+            Bit = new int[N]; var bits = 0;
+            for (var c = 0; c < N; c++)
+            {
+                var code = layout.IsDec[c] || layout.Interned?[c] == true;
+                widths.Add(code ? 4 : 8); Bit[c] = code ? -1 : bits++;
+            }
+            BitsAt = widths.Count;
+            for (var w = 0; w < Words(bits); w++) widths.Add(4);
+            for (var i = 0; i < keys.Length; i++) if (keyField[i] >= 0) { KeyAt[i] = ColsAt + keyField[i]; KeyIsCol[i] = true; }
+            Rows = new Table([.. widths], keyColumns: widths.Count);
+            ByKey = Rows.Arrange(KeyAt);
         }
+
+        public bool Absent(int r, int c) => Bit[c] < 0 ? Rows.Get(r, ColsAt + c) < 0 : (Rows.Get(r, BitsAt + Bit[c] / 31) >> (Bit[c] % 31) & 1) != 0;
     }
-    static int Words(int n) => (n + 63) >> 6;
+    static int Words(int n) => (n + 30) / 31;
     readonly Side left, right;
     readonly DecimalCodes decimals = new();
     /// <summary>The join key of the batch in hand, evaluated once per half.</summary>
@@ -1096,27 +1117,30 @@ sealed class JoinOp : PhysOp
     public JoinOp(TJoin t, Layout lL, Layout rL, OpContext cx) : base(t)
     {
         VExpr[] C(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => ExprCompiler.Compile(e, l, cx.It, cx.Faults))];
-        left = new Side(lL, C(t.Keys.Select(k => k.Left), lL), [.. t.Keys.Select(k => k.Left.Type.Ty.Tag == Tag.Decimal)]);
-        right = new Side(rL, C(t.Keys.Select(k => k.Right), rL), [.. t.Keys.Select(k => k.Right.Type.Ty.Tag == Tag.Decimal)]);
+        static int[] Fields(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => e is TField f ? l.Index(f.Name) : -1)];
+        static bool[] Codes(IEnumerable<TExpr> es) => [.. es.Select(e => e.Type.Ty.Tag is Tag.Text or Tag.Ent or Tag.Rel)];
+        var ls = t.Keys.Select(k => k.Left).ToList(); var rs = t.Keys.Select(k => k.Right).ToList();
+        left = new Side(lL, C(ls, lL), [.. ls.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(ls, lL), Codes(ls));
+        right = new Side(rL, C(rs, rL), [.. rs.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(rs, rL), Codes(rs));
         keyCols = new Column[t.Keys.Count];
     }
 
-    /// <summary>The stored form of a batch row: join key, columns, absent bits. False when a part of the join key is absent: such a row never joins.</summary>
-    bool Encode(Side s, Batch b, int row, Span<long> key)
+    /// <summary>The stored form of a batch row (`row`) and its join key (`key`). False when a part of the join key is absent: such a row never joins.</summary>
+    bool Encode(Side s, Batch b, int row, Span<long> stored, Span<long> key)
     {
-        var m = s.Keys.Length;
-        for (var i = 0; i < m; i++)
+        for (var i = 0; i < s.Keys.Length; i++)
         {
             var c = keyCols[i];
             if (!c.Present(row)) return false;
             key[i] = s.KeyDec[i] || c.IsDec ? decimals.Code(c.IsDec ? c.D[row] : c.L[row]) : c.L[row];
+            if (!s.KeyIsCol[i]) stored[s.KeyAt[i]] = key[i];
         }
-        key[(m + s.N)..].Clear();
+        stored[s.BitsAt..].Clear();
         for (var c = 0; c < s.N; c++)
         {
             var col = b.Cols[c];
-            if (!col.Present(row)) { key[m + c] = 0; key[m + s.N + (c >> 6)] |= 1L << (c & 63); }
-            else key[m + c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
+            if (!col.Present(row)) { var bit = s.Bit[c]; if (bit < 0) stored[s.ColsAt + c] = -1; else { stored[s.ColsAt + c] = 0; stored[s.BitsAt + bit / 31] |= 1L << (bit % 31); } }
+            else stored[s.ColsAt + c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
         }
         return true;
     }
@@ -1132,12 +1156,12 @@ sealed class JoinOp : PhysOp
             if (!src.Present(row)) { bb.Absent(o, mine + c); continue; }
             if (dst.IsDec) dst.D[o] = src.D[row]; else dst.L[o] = src.L[row];
         }
-        var t = other.Rows; var m = other.Keys.Length;
+        var t = other.Rows;
         for (var c = 0; c < other.N; c++)
         {
             var dst = cols[theirs + c];
-            if ((t.Get(r, m + other.N + (c >> 6)) >> (c & 63) & 1) != 0) { bb.Absent(o, theirs + c); continue; }
-            var v = t.Get(r, m + c);
+            if (other.Absent(r, c)) { bb.Absent(o, theirs + c); continue; }
+            var v = t.Get(r, other.ColsAt + c);
             if (dst.IsDec) dst.D[o] = decimals.Value(v); else dst.L[o] = v;
         }
     }
@@ -1147,14 +1171,15 @@ sealed class JoinOp : PhysOp
         if (b is null || b.Rows == 0) return;
         var m = self.Keys.Length;
         for (var i = 0; i < m; i++) keyCols[i] = self.Keys[i].Eval(b);
-        Span<long> key = stackalloc long[self.Rows.Columns];
+        Span<long> stored = stackalloc long[self.Rows.Columns];
+        Span<long> key = stackalloc long[m];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
-            if (!Encode(self, b, row, key)) continue;
+            if (!Encode(self, b, row, stored, key)) continue;
             var w = b.Weight(row);
-            for (var r = other.ByKey.First(key[..m]); r >= 0; r = other.ByKey.Next(r)) Emit(bb, self, b, row, other, r, selfIsLeft, w * other.Rows.Weight(r));
-            self.Rows.Add(key, w);
+            for (var r = other.ByKey.First(key); r >= 0; r = other.ByKey.Next(r)) Emit(bb, self, b, row, other, r, selfIsLeft, w * other.Rows.Weight(r));
+            self.Rows.Add(stored, w);
         }
     }
 
