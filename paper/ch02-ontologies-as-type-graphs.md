@@ -214,7 +214,33 @@ On a recording of a real cluster the projection finds 22 workloads; one of them,
 - **Types added at run time.** Kubernetes lets a cluster learn new types of objects at run time, with versions and explicit migrations of stored objects ([k8s-crd]). Here a migration is a projection (Def. 2.10). GraphQL lets one schema extend the types of another without copying them ([graphql]), as `Extension` does here.
 - **Change of ontologies** is surveyed in [mahfoudh2015]. Chapter 15 places the work as a whole.
 
-## 2.6 What the prototype does differently
+## 2.6 What definitions can and cannot express
+
+Since the kernel is the only part of the program that knows about definitions, the line between a new definition and a new program is the kernel.
+
+**What is a definition.** A new module of types, properties, constraints, identity domains, roles, kinds and labels; a new source of a kind the program reads; a new projection, among them a level of abstraction (Ch. 5, 5.8), a document or a tree; the same projection bound to another workload with other parameters (Ch. 5, Def. 5.14). Each is facts of the catalog, checked and versioned like any graph (Def. 2.1).
+
+**What needs a new release of the program.** A new operator kind, builtin function, aggregate, canonicalizer of an identity component, value kind or source reader, and a form of the text that the engine does not accept (Ch. 5, 5.6). Status: proved, since the kernel is a closed set (Def. 2.2) and the functions are fixed with the program (Ch. 5, Proposition 5.4); tested, since a test counts the 18 operator kinds of the kernel, and a form outside the language is refused when it is loaded, for example "percentile is not an aggregate of the profile (count, countif, count_distinct, sum, min, max, avg, arg_max)".
+
+**What the definitions compute.** Inside that line, the class of computations a projection can express is stated in Ch. 5, 5.9, with the evidence for each claim:
+
+| Claim | What it says | Status |
+|---|---|---|
+| E1 | every projection is a query of relational algebra with grouping, aggregates, arithmetic and order on numbers, with identities minted only where it writes | sketch |
+| E2 | every query of relational algebra over data, with grouping and aggregates, is expressible; measurements are kept out of filters, keys and joins | proved, tested |
+| E3 | every conjunctive graph pattern is expressible | proved, tested |
+| E4 | paths along one relationship type within a fixed number of edges, and their unions | proved, tested |
+| E5 | non-recursive Datalog with stratified negation and aggregation | proved, tested |
+| E6 | the only recursion is reach with a fixed bound; there is no recursion over rows and no cycle of graphs | proved, tested |
+| E7 | reachability without a bound is not expressible | sketch; that the bound is the limit: proved, tested |
+| E8 | tumbling and sliding windows, shifted times, recorded watermarks, revisions, time to live, hysteresis, roll-up, fill and no data | tested |
+| E9 | sessions, counters sampled at irregular times, ranks and percentiles of measurements are not expressible | each refusal tested |
+| E10 | quotients of a graph by a map of its nodes, edges included | proved, tested |
+| E11 | one step of graph rewriting, and no rewriting to a normal form | sketch |
+
+A migration (Def. 2.10) is a projection and has the same limits.
+
+## 2.7 What the prototype does differently
 
 - **Not built:** the program that classifies changes (Def. 2.9), migrations (Def. 2.10), the checks K7 and K8, and identity data as graph nodes (Def. 2.12). Bindings are a table that only grows (Ch. 1).
 - **Kernel in the prototype:** the 51 concrete types and 43 edge types of Def. 2.2 are those the prototype's tests count. The research review on which the kernel is based had 50 types, 18 operator kinds and 37 edge types; the prototype added value roles, kinds, labels and the operator `Retain`, and removed the operator `Fixpoint`. An operator `Lift` with a node type for its state clause was added and removed again (Ch. 5, 5.8).
