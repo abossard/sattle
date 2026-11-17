@@ -1,20 +1,23 @@
 using Sattle.Core;
+using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
 /// <summary>The hot layout (interned handles, byte pools, intrusive adjacency, open-addressing uniqueness index) against the reference model, on random edit sequences.</summary>
 public class HotGraphTests
 {
-    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 8).Select(i => new object[] { i });
+    /// <summary>Each seed with the graph's texts in a table of its own and in an engine's interner.</summary>
+    public static IEnumerable<object[]> Seeds() => Enumerable.Range(0, 8).SelectMany(i => new[] { new object[] { i, false }, [i, true] });
 
     [Theory, MemberData(nameof(Seeds))]
-    public void The_hot_graph_agrees_with_the_reference_graph_on_every_operation(int group)
+    public void The_hot_graph_agrees_with_the_reference_graph_on_every_operation(int group, bool interner)
     {
+        var texts = interner ? new Interner() : null;
         int accepted = 0, rejected = 0;
         for (var c = 0; c < 150; c++)
         {
             var gen = new Gen(group * 9973 + c);
-            var hot = new Graph(); var reference = new ReferenceGraph();
+            var hot = new Graph(texts); var reference = new ReferenceGraph();
             for (var i = 0; i < 12; i++)
             {
                 var p = gen.PatchFor(hot, i, guardOnly: true, @unchecked: true)!;      // not filtered by the graph under test: patches that must be rejected are compared too
@@ -83,5 +86,62 @@ public class HotGraphTests
         Assert.True(g.UniquenessHolds());
         Assert.Null(g.Apply([Edit.Create(new Rel("dup2", rels[0].Source, rels[0].Target, rels[0].Type, Props.Empty))])); // key freed by removal
         Assert.Equal(rels.Count - rels.Count(r => rels.IndexOf(r) % 3 == 0) + 1, g.RelCount);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-12.50")]
+    [InlineData("1.5000000000")]
+    [InlineData("0.0000000000000000000000000001")]
+    [InlineData("-18446744073709551615")]
+    [InlineData("18446744073709551616")]
+    [InlineData("79228162514264337593543950335")]
+    [InlineData("-7.9228162514264337593543950335")]
+    public void A_decimal_comes_back_bit_for_bit(string text)
+    {
+        var d = decimal.Parse(text, System.Globalization.CultureInfo.InvariantCulture);
+        var g = new Graph();
+        Assert.Null(g.Apply([Edit.Create(new Entity("e1", "T", Props.Of(("v", Value.Decimal(d)))))]));
+        var back = Assert.IsType<DecimalValue>(g.Entity("e1")!.Props.Items.Single().Value).Q;
+        Assert.Equal(decimal.GetBits(d), decimal.GetBits(back));
+    }
+
+    /// <summary>The props pool holds what the live elements have: an element that changes, or goes and comes back, reuses its block.</summary>
+    [Theory]
+    [InlineData("an update")]
+    [InlineData("an update of a list that grows and shrinks")]
+    [InlineData("a removal and a create")]
+    public void The_props_pool_stays_proportional_to_the_live_elements(string change)
+    {
+        var g = new Graph();
+        var names = Enumerable.Range(0, 200).Select(i => "e" + i).ToList();
+        Entity At(string id, int round) => new(id, "T", Props.Of(("n", Value.Integer(round)),
+            ("s", change == "an update of a list that grows and shrinks" ? Value.List([.. Enumerable.Range(0, round % 40).Select(i => Value.Integer(i))]) : Value.Text("t" + round % 7))));
+        Assert.Null(g.Apply([.. names.Select(n => Edit.Create(At(n, 0)))]));
+        long bytesAt100 = 0;
+        for (var round = 1; round <= 2000; round++)
+        {
+            var edits = change == "a removal and a create"
+                ? (round % 2 == 1 ? names.Select(n => Edit.Remove(At(n, round - 1))) : names.Select(n => Edit.Create(At(n, round)))).ToList()
+                : [.. names.Select(n => Edit.Change(At(n, round - 1), At(n, round)))];
+            Assert.Null(g.Apply(edits));
+            if (round == 100) bytesAt100 = g.ApproximateBytes;
+        }
+        Assert.Equal(At("e7", 2000), g.Entity("e7"));
+        Assert.True(g.ApproximateBytes <= 2 * bytesAt100, $"{g.ApproximateBytes:N0} bytes after 2,000 rounds against {bytesAt100:N0} after 100");
+    }
+
+    [Fact]
+    public void The_bytes_of_removed_elements_are_reclaimed()
+    {
+        var g = new Graph();
+        var all = Enumerable.Range(0, 20_000).Select(i => new Entity("e" + i, "T", Props.Of(("a", Value.Integer(i)), ("b", Value.Text("t" + i % 50)), ("c", Value.Decimal(i / 8m))))).ToList();
+        Assert.Null(g.Apply([.. all.Select(Edit.Create)]));
+        var full = g.ApproximateBytes;
+        Assert.Null(g.Apply([.. all.Skip(1000).Select(Edit.Remove)]));
+        Assert.True(g.ApproximateBytes < full, $"{g.ApproximateBytes:N0} bytes after removing 19,000 of 20,000 elements, {full:N0} before");
+        Assert.All(all.Take(1000), e => Assert.Equal(e, g.Entity(e.Id)));
+        Assert.Null(g.Apply([.. all.Skip(1000).Take(10).Select(Edit.Create)]));
+        Assert.Equal(all[1005], g.Entity("e1005"));
     }
 }

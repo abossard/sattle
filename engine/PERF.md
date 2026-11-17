@@ -643,6 +643,23 @@ Theory. A Series kept, per element with a row, the windows of its look-back with
 - Cost moved: a Series reads the store for a new row and at an advance, where it read its copy. SeriesOp time at 10^5 1,039 ms before, 1,609 ms after, both under load (another worker's tests ran): not comparable.
 - Before is the interner patch. Digests unchanged at 10^4 and 10^5.
 
+### Efficiency stage 2, hot graph byte pool: a text is a code, a block is reused (#115, 2026-11-17)
+Theory. Per graph, the properties of every element are a block in one byte array: count, then per property its key number, a tag and the value. A text was its UTF-8 bytes, a decimal its 16 bytes. At 10^4 the 13 graphs held 13.9 MB of pool (1,386 B per master node), 7.8 MB of it in live blocks, of which 6.6 MB were texts. These texts are all in the engine's interner already (the sinks keep an element's fragments as old interner codes, and an old code is never freed), and the same tree keys are in three graphs. An update wrote a new block, because removing the before state forgot the old one: dead bytes grew with the updates, not with the state. Capacity doubled, so up to half was unused. A read needs the values back and a put needs to store them; neither needs the text bytes in the graph. Now a text or an entity id in a block is its code in the graph's text table: the engine's interner for the graphs of an engine, a table of the graph's own otherwise (catalog, reference model, tests). A decimal whose mantissa fits 64 bits is a scale-and-sign byte and a varint, bit for bit. A removed element keeps its block, and its next put reuses it when the props fit; when more bytes are dead than live (and more than 64 KB), the live blocks are copied together.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 278 / 267 MB | 1,786 / 1,696 MB |
+| per master node | 27.8 / 26.7 KB | 17.9 / 17.0 KB |
+| byte pool per master node | 1,386 / 240 B | 1,180 / 273 B |
+| interner per master node | 1,010 / 1,067 B | 742 / 753 B |
+| allocated per input record | 60.7 / 58.8 KB | 59.3 / 57.7 KB |
+
+- At 10^5 the live blocks are 19.0 MB of 27.3 MB capacity; the rest is the slack of doubling. Dead bytes are at most what one graph's removals leave before the next copy (serviceTree 0.19 MB).
+- Cost moved: a text value is read through the interner's `Get` (its cache of 16,384 strings now holds graph texts too: the interner grows by 57 B per master node at 10^4 and 11 B at 10^5, a fixed amount). A put interns each text, a hash and a compare where it encoded UTF-8 before. Allocation per record falls by 1.6 KB: no UTF-8 arrays.
+- The interner's live texts do not change (127,466 at 10^4, 1,212,925 at 10^5): no text was kept for a graph alone.
+- One new concept: `ITextTable` (intern a text, get a text), implemented by the interner and by the graph's existing id table.
+- Before is the interner patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5 and on the lab fixtures. The seal format is unchanged: a seal writes a graph as its elements.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

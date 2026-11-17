@@ -8,7 +8,7 @@ namespace Sattle.Runtime;
 /// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.
 /// Which number a text gets therefore depends on where the input was cut into steps. No result may depend on code numbers, only on the texts: codes are compared for equality, and an order by code is an order of convenience that no output shows.
 /// Storage: no string object per text. A text is its bytes in pages of 64 KB, one byte per character when every character is below 256, else two; per code its place, its length with the young mark, and its hash; one open-addressing index of codes. `Get` makes the string; a small cache keeps the strings asked for last.</summary>
-public sealed class Interner
+public sealed class Interner : ITextTable
 {
     const int Page = 1 << 16, CacheSize = 16384;
     List<byte[]> pages = [new byte[Page]];

@@ -215,7 +215,8 @@ public sealed class GraphRuntime
     public required bool Ingests { get; init; }
     public required OpContext Cx { get; init; }
     public required OutputBuilder Out { get; init; }
-    public Graph State { get; } = new();
+    /// <summary>The elements of the graph; its texts are codes of the engine's interner.</summary>
+    public required Graph State { get; init; }
     public long Head { get; set; }
     public long TelemetryPosition { get; set; }
     public Dictionary<string, string> PortSources { get; } = []; // port -> source or upstream graph name
@@ -313,7 +314,7 @@ public sealed class Engine : IDisposable, IEngineInput
             var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
                 throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
-            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb };
+            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
             gr.Head = store.Head(key).Head;
