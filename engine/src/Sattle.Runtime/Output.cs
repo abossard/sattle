@@ -524,15 +524,14 @@ sealed class EmitRelOp : SinkOp
 /// <summary>Link: an equivalence between two identity keys. An asserted policy with confidence at or above its threshold binds the right key to the left identity (rule B2).</summary>
 sealed class LinkOp : SinkOp
 {
-    readonly TLink t; readonly VId left, right; readonly IdentityCatalog cat;
-    public LinkOp(TLink t, VId left, VId right, IdentityCatalog cat) : base(t) { this.t = t; this.left = left; this.right = right; this.cat = cat; }
+    readonly TLink t; readonly VId left, right; readonly IdentityCatalog cat; readonly long[] buf;
+    public LinkOp(TLink t, VId left, VId right, IdentityCatalog cat) : base(t) { this.t = t; this.left = left; this.right = right; this.cat = cat; buf = new long[right.Components]; }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         if (t.Mode != "assert" || t.Confidence < t.Threshold) return null;
         var lc = left.Eval(b);
         var rcols = right.EvalComponents(b, [], out _);
-        var buf = new long[rcols.Length];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);

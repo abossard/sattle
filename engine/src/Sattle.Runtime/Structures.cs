@@ -179,6 +179,16 @@ public sealed class Values
     public long Footprint() => pages.Sum(p => (long)p.Length) + start.Footprint + length.Footprint + uses.Footprint + freeCodes.Footprint + index.Length * 4L;
 }
 
+/// <summary>A cache from one interned code to another, of fixed size: 4,096 entries, direct mapped by the low bits of the code. A lookup makes nothing, a miss overwrites the entry, and memory does not grow with the input. Only for a value that is a function of the code.</summary>
+public sealed class CodeCache
+{
+    const int Size = 4096, Mask = Size - 1;
+    readonly int[] keys = new int[Size], values = new int[Size];
+    public CodeCache() => Array.Fill(keys, -1);
+    public bool TryGet(int code, out int value) { var i = code & Mask; value = values[i]; return keys[i] == code; }
+    public void Set(int code, int value) { var i = code & Mask; keys[i] = code; values[i] = value; }
+}
+
 /// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row, and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. One shape: a row is always found through the index on its whole key. An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
 public sealed class Table
 {

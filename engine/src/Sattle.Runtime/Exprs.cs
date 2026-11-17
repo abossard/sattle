@@ -271,7 +271,7 @@ sealed class VRate : VExpr
 sealed class VText : VExpr
 {
     readonly string fn; readonly VExpr[] args; readonly Interner it; readonly Column[] cols;
-    readonly Dictionary<int, int> cache = [];
+    readonly CodeCache cache = new();
     public VText(string fn, VExpr[] args, Interner it) { this.fn = fn; this.args = args; this.it = it; cols = new Column[args.Length]; }
     public override Column Eval(Batch batch)
     {
@@ -284,7 +284,7 @@ sealed class VText : VExpr
             if (absent) { Absent(o, i, n); continue; }
             if (fn == "Concat") { o.L[i] = it.Intern(string.Concat(cols.Select(c => it.Get((int)c.L[i])))); continue; }
             var code = (int)cols[0].L[i];
-            if (!cache.TryGetValue(code, out var r)) { var s = it.Get(code); cache[code] = r = it.Intern(fn == "Trim" ? s.Trim() : s.ToLowerInvariant()); }
+            if (!cache.TryGet(code, out var r)) { var s = it.Get(code); r = it.Intern(fn == "Trim" ? s.Trim() : s.ToLowerInvariant()); cache.Set(code, r); }
             o.L[i] = r;
         }
         return o;

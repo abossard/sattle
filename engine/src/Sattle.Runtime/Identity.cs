@@ -159,22 +159,22 @@ public sealed class IdentityCatalog(string tenant, Interner it)
 sealed class VId : VExpr
 {
     readonly IdDomain dom; readonly VExpr[] comps; readonly IdentityCatalog cat; readonly Interner it; readonly RuntimeFaults faults;
-    readonly Dictionary<int, int>[] caches;
-    readonly long[] buf;
+    readonly CodeCache[] caches;
+    readonly long[] buf; readonly Column[] cols;
     /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.OwnOf`).</summary>
     public bool TrackOwn { get; set; }
     public Column? Owns { get; private set; }
     public VId(IdDomain dom, VExpr[] comps, IdentityCatalog cat, Interner it, RuntimeFaults faults)
     {
         this.dom = dom; this.comps = comps; this.cat = cat; this.it = it; this.faults = faults;
-        caches = [.. comps.Select(_ => new Dictionary<int, int>())];
-        buf = new long[comps.Length];
+        caches = [.. comps.Select(_ => new CodeCache())];
+        buf = new long[comps.Length]; cols = new Column[comps.Length];
     }
     public override Column Eval(Batch b)
     {
-        var cols = comps.Select(c => c.Eval(b)).ToArray();
+        for (var k = 0; k < comps.Length; k++) cols[k] = comps[k].Eval(b);
         var n = b.N; var o = Scratch(n);
-        if (TrackOwn) { Owns ??= new Column(false); Owns.Ensure(n); Owns.P = null; }
+        if (TrackOwn) { Owns ??= new Column(false); Owns.Ensure(n); if (Owns.P is not null) Array.Fill(Owns.P, true, 0, n); }
         for (var r = 0; r < b.Rows; r++)        // only the selected rows: resolving a key mints and records an identity
         {
             var i = b.RowAt(r);
@@ -183,11 +183,11 @@ sealed class VId : VExpr
             {
                 if (cols[k].P is not null && !cols[k].P![i]) { ok = false; break; }
                 var code = (int)cols[k].L[i];
-                if (!caches[k].TryGetValue(code, out var cc))
+                if (!caches[k].TryGet(code, out var cc))
                 {
                     var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code));
                     cc = s is null ? -1 : it.Intern(s);
-                    caches[k][code] = cc;
+                    caches[k].Set(code, cc);
                 }
                 if (cc < 0) { faults.Overflow++; ok = false; break; }
                 buf[k] = cc;
@@ -199,11 +199,14 @@ sealed class VId : VExpr
         return o;
     }
     public IdDomain Domain => dom;
+    public int Components => comps.Length;
+    /// <summary>The component columns of a batch, in an array the next call overwrites.</summary>
     public Column[] EvalComponents(Batch b, long[][] scratch, out int n)
     {
         n = b.N;
         _ = scratch;
-        return [.. comps.Select(c => c.Eval(b))];
+        for (var k = 0; k < comps.Length; k++) cols[k] = comps[k].Eval(b);
+        return cols;
     }
     public bool CanonicalComponents(Column[] cols, int row, long[] into)
     {
@@ -211,7 +214,7 @@ sealed class VId : VExpr
         {
             if (cols[k].P is not null && !cols[k].P![row]) return false;
             var code = (int)cols[k].L[row];
-            if (!caches[k].TryGetValue(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); caches[k][code] = cc; }
+            if (!caches[k].TryGet(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); caches[k].Set(code, cc); }
             if (cc < 0) return false;
             into[k] = cc;
         }
