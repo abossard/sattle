@@ -98,8 +98,8 @@ public static class LiveInput
         _ => (state, LiveStopEffects.None),
     };
 
-    /// <summary>Runs `input` under the stop state machine (`Next`) and returns its counts and why it stopped. The host's stopping (ASP.NET's console lifetime turns Ctrl-C and SIGTERM into it) and the deadline cancel the input's token; when the input ends, by itself, cancelled or failing, the server is stopped, so it never goes on serving a state that no longer moves. A failure of the input is rethrown after the server was told to stop.</summary>
-    public static (LiveCounts Counts, string Reason) RunUntilStopped(IHostApplicationLifetime lifetime, TimeSpan? deadline, Func<CancellationToken, LiveCounts> input)
+    /// <summary>Runs `input` under the stop state machine (`Next`) and returns its counts and why it stopped. The host's stopping (ASP.NET's console lifetime turns Ctrl-C and SIGTERM into it) and the deadline (a token cancelled when it passes: `--seconds` in the CLI, the test itself in a test, so no test waits on the clock) cancel the input's token; when the input ends, by itself, cancelled or failing, the server is stopped, so it never goes on serving a state that no longer moves. A failure of the input is rethrown after the server was told to stop.</summary>
+    public static (LiveCounts Counts, string Reason) RunUntilStopped(IHostApplicationLifetime lifetime, CancellationToken deadline, Func<CancellationToken, LiveCounts> input)
     {
         using var cancel = new CancellationTokenSource();
         var gate = new object(); LiveStop state = new LiveStop.Running();
@@ -110,7 +110,7 @@ public static class LiveInput
             if (fx.HasFlag(LiveStopEffects.CancelInput)) cancel.Cancel();
             if (fx.HasFlag(LiveStopEffects.StopHost)) lifetime.StopApplication();
         }
-        using var timer = deadline is { } d ? new Timer(_ => Fire(LiveStopEvent.Deadline), null, d, Timeout.InfiniteTimeSpan) : null;
+        using var passed = deadline.Register(() => Fire(LiveStopEvent.Deadline));
         using var stopping = lifetime.ApplicationStopping.Register(() => Fire(LiveStopEvent.HostStopping));
         LiveCounts counts;
         try { counts = input(cancel.Token); }

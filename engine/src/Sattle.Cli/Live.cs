@@ -74,7 +74,9 @@ static class Live
         var outDir = o.Get("live-out") ?? Path.Combine("out", "live-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmss"));
         var seconds = long.TryParse(o.Get("seconds"), out var sv) ? sv : o.Duration("seconds", 0) / 1_000_000_000;
         var started = DateTimeOffset.UtcNow;
-        var (counts, reason) = LiveInput.RunUntilStopped(lifetime, seconds > 0 ? TimeSpan.FromSeconds(seconds) : null, ct =>
+        using var deadline = new CancellationTokenSource();
+        if (seconds > 0) deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
+        var (counts, reason) = LiveInput.RunUntilStopped(lifetime, deadline.Token, ct =>
         {
             var ns = o.Get("eh-namespace") ?? Discover(o.Get("eh-resource-group") ?? throw new ArgumentException("pass --eh-namespace NS or --eh-resource-group GROUP (the group the namespace is found in)"));
             var fqns = ns.Contains('.') ? ns : ns + ".servicebus.windows.net";

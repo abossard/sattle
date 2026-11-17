@@ -25,7 +25,7 @@ public class LiveStopTests
         Assert.Equal(reason, Assert.IsType<LiveStop.Stopped>(state).Reason);
     }
 
-    /// <summary>The edge with the real lifetime: whatever stops the run, the input's token is cancelled or the input ended by itself, the input's counts come back, and the server is stopped; a failing input is rethrown after the server was told to stop.</summary>
+    /// <summary>The edge with the real lifetime: whatever stops the run, the input's token is cancelled or the input ended by itself, the input's counts come back, and the server is stopped; a failing input is rethrown after the server was told to stop. The deadline and the signal are raised by the input itself, and their callbacks run on that thread before it reads its token, so nothing depends on a clock or on the load of the machine.</summary>
     [Theory]
     [InlineData("deadline", "--seconds ran out")]
     [InlineData("signal", "the server was stopped (Ctrl-C or SIGTERM)")]
@@ -34,17 +34,18 @@ public class LiveStopTests
     public void A_live_run_stops_with_the_server_and_returns_its_counts(string how, string? reason)
     {
         var lifetime = new ApplicationLifetime(NullLogger<ApplicationLifetime>.Instance);
+        using var deadline = new CancellationTokenSource();
         var counts = new LiveCounts(3, 1, 2);
         LiveCounts Input(CancellationToken ct)
         {
             if (how == "input fails") throw new InvalidOperationException("the hub went away");
-            if (how == "signal") Task.Delay(50).ContinueWith(_ => lifetime.StopApplication());
-            if (how != "input ends") Assert.True(ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(10)), "the input was not cancelled");
+            if (how == "deadline") deadline.Cancel();
+            if (how == "signal") lifetime.StopApplication();
+            Assert.Equal(how != "input ends", ct.IsCancellationRequested);
             return counts;
         }
-        var deadline = how == "deadline" ? TimeSpan.FromMilliseconds(50) : (TimeSpan?)null;
-        if (reason is null) Assert.Throws<InvalidOperationException>(() => LiveInput.RunUntilStopped(lifetime, deadline, Input));
-        else Assert.Equal((counts, reason), LiveInput.RunUntilStopped(lifetime, deadline, Input));
+        if (reason is null) Assert.Throws<InvalidOperationException>(() => LiveInput.RunUntilStopped(lifetime, deadline.Token, Input));
+        else Assert.Equal((counts, reason), LiveInput.RunUntilStopped(lifetime, deadline.Token, Input));
         Assert.True(lifetime.ApplicationStopping.IsCancellationRequested);
     }
 
