@@ -21,7 +21,8 @@ describe("the editor of a projection's language", () => {
   ])("%j opens editable: %s", async (language, editable) => {
     const Editor = editorFor(language);
     render(<Suspense fallback={null}><Editor port={port} file={{ projection: "m.p", file: `m.p.${language}`, language }} /></Suspense>);
-    expect((await screen.findAllByText((_, e) => e?.textContent === text)).length).toBeGreaterThan(0);
+    // shown, not only in the page: the KQL editor builds its text into a body that stays `hidden` until React renders it ready
+    expect((await screen.findAllByText((_, e) => e?.textContent === text && !e.closest("[hidden]"))).length).toBeGreaterThan(0);
     expect(screen.queryByRole("textbox", { name: "KQL text of m.p" }) !== null).toBe(editable);
     expect(screen.queryByText(/^The canvas has no editor for .*projections, so this text is read-only\.$/) === null).toBe(editable);
   });

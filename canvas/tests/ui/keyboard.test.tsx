@@ -16,7 +16,10 @@ describe("keyboard only", () => {
     await user.keyboard("?");
     // `hidden: true`: the modal management of the component library marks the page behind a dialog aria-hidden after a delay, and on a busy machine
     // a pass that is late can still be at work when the dialog is open (see tests/defects/ui.test.tsx, findDialog). The test is about what opens and closes.
-    const dialog = await screen.findByRole("dialog", { name: "Keyboard shortcuts", hidden: true });
+    // Such a pass can also mark the dialog's own portal, and a name computed under aria-hidden is empty: the title is read through aria-labelledby.
+    // The name in real Chrome is checked by `npm run a11y`: its axe pass on the open dialog fails on aria-dialog-name and aria-hidden-focus.
+    const dialog = await screen.findByRole("dialog", { hidden: true });
+    expect(document.getElementById(dialog.getAttribute("aria-labelledby") ?? "")?.textContent).toBe("Keyboard shortcuts");
     expect(within(dialog).getByRole("table", { hidden: true })).toBeTruthy();
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
