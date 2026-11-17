@@ -471,30 +471,33 @@ public sealed class Engine : IDisposable, IEngineInput
     GraphResult Execute(GraphRuntime g, Epoch ep, long seq, string cause)
     {
         var outputs = new Dictionary<string, Batch?>();
-        foreach (var op in g.Plan.Ops)
+        try
         {
-            var inputs = new Dictionary<string, Batch?>();
-            foreach (var (port, src) in op.Typed.Inputs)
-                inputs[port] = src.IsPort ? ep.Rows.GetValueOrDefault(src.Name) : outputs.GetValueOrDefault(src.Name);
-            // the one place a code reaches state: the input of a stateful step. A stateless step mints the texts it computes young.
-            var stateless = op is FilterOp or MapOp;
-            if (!stateless) foreach (var b in inputs.Values) if (b is not null) Interner.Escape(b);
-            Interner.MintYoung = stateless;
-            if (TrackAllocations)
+            foreach (var op in g.Plan.Ops)
             {
-                var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                var output = op.Run(g.Cx, ep, inputs);
-                var bytes = GC.GetAllocatedBytesForCurrentThread() - a0; var ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;     // read before the output is stored and the keys below are made, which would count as the operator's
-                outputs[op.Name] = output;
-                Trace(g, op, outputs[op.Name]);
-                OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + bytes;
-                OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + ms;
-                var kd = op.GetType().Name; var ks = KindStats.GetValueOrDefault(kd);
-                KindStats[kd] = (ks.Ms + ms, ks.Bytes + bytes, ks.Calls + 1);
+                var inputs = new Dictionary<string, Batch?>();
+                foreach (var (port, src) in op.Typed.Inputs)
+                    inputs[port] = src.IsPort ? ep.Rows.GetValueOrDefault(src.Name) : outputs.GetValueOrDefault(src.Name);
+                // the one place a code reaches state: the input of a stateful step. A stateless step mints the texts it computes young.
+                var stateless = op is FilterOp or MapOp;
+                if (!stateless) foreach (var b in inputs.Values) if (b is not null) Interner.Escape(b);
+                Interner.MintYoung = stateless;
+                if (TrackAllocations)
+                {
+                    var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
+                    var output = op.Run(g.Cx, ep, inputs);
+                    var bytes = GC.GetAllocatedBytesForCurrentThread() - a0; var ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;     // read before the output is stored and the keys below are made, which would count as the operator's
+                    outputs[op.Name] = output;
+                    Trace(g, op, outputs[op.Name]);
+                    OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + bytes;
+                    OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + ms;
+                    var kd = op.GetType().Name; var ks = KindStats.GetValueOrDefault(kd);
+                    KindStats[kd] = (ks.Ms + ms, ks.Bytes + bytes, ks.Calls + 1);
+                }
+                else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
             }
-            else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
         }
-        Interner.MintYoung = false;
+        finally { Interner.MintYoung = false; }       // a step that throws leaves no young minting behind
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
         var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);

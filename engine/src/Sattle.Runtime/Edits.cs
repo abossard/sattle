@@ -158,7 +158,7 @@ public sealed partial class SpaceHost
             // 4. accept: the rows become recorded input
             if (changed.Count > 0)
             {
-                var w = new RowWriter(RowLayout(inv.Source), interner);
+                using var w = new RowWriter(RowLayout(inv.Source), interner);
                 foreach (var (k, row) in changed)
                 {
                     if (before.TryGetValue(k, out var old)) { w.Begin(-1); WriteRow(w, old); }
@@ -177,7 +177,7 @@ public sealed partial class SpaceHost
     void StageRows(Engine staged, RowInverse inv, Dictionary<string, Dictionary<string, string?>> table, long seq)
     {
         if (table.Count == 0) return;
-        var w = new RowWriter(staged.RowLayout(inv.Source), interner);
+        using var w = new RowWriter(staged.RowLayout(inv.Source), interner);
         foreach (var row in table.Values.OrderBy(r => r[inv.KeyField], StringComparer.Ordinal)) { w.Begin(); WriteRow(w, row); }
         staged.Ingest(inv.Source, w.Build()!, seq);
     }

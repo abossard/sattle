@@ -434,8 +434,36 @@ public static class Worlds
         identity deployment for Deployment version "1" { k: Text by exact; }
         """, tail: """nodes Deployment on dep with (rule = "observed") = byShare | project dep = identity("deployment", k), k, own;""") with { Witnesses = ["prop:own=n:0", "prop:own=n:1", "prop:own=n:2", "prop:own=n:3"] };
 
+    /// <summary>#112: a world whose code numbers depend on how the log is cut. A `where` drops items, so the texts only they carry (their tag, a key or group seen first in a dropped row) are freed at the end of their step, and texts that come later take the freed numbers, the smallest first. A traverse walks its starts in code order: an output that depended on the numbers would differ between cuts and from the reference.</summary>
+    public static readonly World TraverseAfterWhere = new World("traverse over items a where thins", "Filter, Map, Traverse",
+        [
+            new SourceFile("w.base.sattle", BaseModule),
+            Kql("w.base", "ingest", """
+                graph ingest : w.base;
+                input a : R;
+                input b : R;
+                input edges : EdgeRow;
+                nodes Item on i with (rule = "observed") = a | extend tag = strcat(k, "-", g) | where n > 2 | project i = identity("item", k), k, g, n;
+                edges Edge from s to d with (rule = "observed") = edges | project s = identity("item", src), d = identity("item", dst);
+                """),
+            new SourceFile("w.view.sattle", """
+                module w.view @ 1.0.0;
+                import w.base @ 1.0.0 sha256:… as base;
+                entity Reach { a: Text; b: Text; g: Text; }
+                identity reach for Reach version "1" { a: Text by exact; b: Text by exact; }
+                """),
+            Kql("w.view", "v", """
+                graph v : w.view;
+                input master : base;
+                nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]->(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
+                    | project r = identity("reach", a, b), a, b, g;
+                """),
+            ViewSpace,
+        ], [Keyed("a"), Edges]) with { Witnesses = ["Reach"] };
+
     public static readonly IReadOnlyList<World> All =
     [
+        TraverseAfterWhere,
         Rows("filter", "Filter", """let x = a | where n > 2 and g != "g1";"""),
         Rows("map", "Map", """let x = a | project k = strcat(k, "/", g), g = tolower(g), n = n * 2 + 1;"""),
         Rows("union", "Union", "let x = union a, b;"),

@@ -66,4 +66,22 @@ public class KnownDefectTests
         Assert.Equal("IdentityLinked", code);
         Assert.Contains("keep its id (p.id)", message);
     }
+
+    /// <summary>#112: in this world the numbers the texts get depend on how the log is cut (one row per batch against the largest batches), so the differential comparison of the world would see an output that depends on them.</summary>
+    [Fact]
+    public void Code_numbers_depend_on_the_cut_where_a_where_drops_rows()
+    {
+        var w = Worlds.TraverseAfterWhere;
+        Dictionary<string, int> Codes(IReadOnlyList<Input> log, bool oneByOne)
+        {
+            using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+            long seq = 0; var batch = new List<RowInput>();
+            void Flush() { if (batch.Count > 0) EngineRun.Ingest(engine, [.. batch], ++seq); batch.Clear(); }
+            foreach (var row in log.Cast<RowInput>()) { if (oneByOne || (batch.Count > 0 && batch[0].Source != row.Source)) Flush(); batch.Add(row); }
+            Flush();
+            return engine.Interner.Slots.Select((t, i) => (t, i)).Where(x => x.t is not null).ToDictionary(x => x.t!, x => x.i);
+        }
+        var differ = Enumerable.Range(0, 12).Select(seed => w.Log(seed, 14)).Count(log => !Codes(log, true).OrderBy(x => x.Key, StringComparer.Ordinal).SequenceEqual(Codes(log, false).OrderBy(x => x.Key, StringComparer.Ordinal)));
+        Assert.True(differ > 0, "no default seed gives the texts other numbers under another cut");
+    }
 }

@@ -80,20 +80,29 @@ public abstract record EngineInput
     /// <summary>The engine inputs that journal entries stand for, in order. Rows, advances, progress and losses are inputs themselves. The envelopes of a live input are run again through `adapters` (a fresh set) with the options the live input was started with, and cut into batches where the recorded flushes cut them: what the live run did, done again. `layoutOf` and `interner` are those the rows are built with.</summary>
     public static IEnumerable<EngineInput> Derive(IEnumerable<Entry> entries, TypedSpace space, IReadOnlyList<ISourceAdapter> adapters, Func<string, Layout> layoutOf, Interner interner, bool wantsProgress)
     {
-        var collected = new Collector(layoutOf, interner, wantsProgress); Replay? live = null;
-        foreach (var entry in entries)
+        var collected = new Collector(layoutOf, interner, wantsProgress); Replay? live = null; List<EngineInput> taken = []; var next = 0;
+        try
         {
-            switch (entry)
+            foreach (var entry in entries)
             {
-                case Entry.Rows r: yield return new Rows(r.Source, r.Batch, r.Seq); break;
-                case Entry.Advance a: yield return new Advance(a.Lambda, a.Seq); break;
-                case Entry.Progress g: yield return new Progress(g.Source, g.Until, g.Seq); break;
-                case Entry.Loss l: yield return new Loss(l.Time, l.Count, l.Reason); break;
-                case Entry.LiveStart start: live = new Replay(collected, space, adapters, start.Options); break;
-                case Entry.Envelope e: { using var env = CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!; live!.Process(env, pace: false); break; }
-                case Entry.Flush: live!.FlushPending(); break;
+                switch (entry)
+                {
+                    case Entry.Rows r: yield return new Rows(r.Source, r.Batch, r.Seq); break;
+                    case Entry.Advance a: yield return new Advance(a.Lambda, a.Seq); break;
+                    case Entry.Progress g: yield return new Progress(g.Source, g.Until, g.Seq); break;
+                    case Entry.Loss l: yield return new Loss(l.Time, l.Count, l.Reason); break;
+                    case Entry.LiveStart start: live = new Replay(collected, space, adapters, start.Options); break;
+                    case Entry.Envelope e: { using var env = CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!; live!.Process(env, pace: false); break; }
+                    case Entry.Flush: live!.FlushPending(); break;
+                }
+                for (taken = collected.Take(), next = 0; next < taken.Count; next++) yield return taken[next];
             }
-            foreach (var input in collected.Take()) yield return input;
+        }
+        finally
+        {
+            // what was derived and is not applied: the input in hand when the reader stopped (a row limit, a failure), the ones not given yet, and the rows the live run had not flushed either. Their batches no longer keep the interner from freeing.
+            foreach (var input in taken.Skip(next).Concat(collected.Take())) if (input is Rows r) interner.Release(r.Batch);
+            live?.DropPending();
         }
     }
 

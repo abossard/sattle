@@ -5,7 +5,8 @@ using Sattle.Language;
 namespace Sattle.Runtime;
 
 /// <summary>String to dense int table. Text values, entity ids and relationship ids share one table per engine, so a handle names the same element in every graph.
-/// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.</summary>
+/// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.
+/// Which number a text gets therefore depends on where the input was cut into steps. No result may depend on code numbers, only on the texts: codes are compared for equality, and an order by code is an order of convenience that no output shows.</summary>
 public sealed class Interner
 {
     readonly Dictionary<string, int> map = new(StringComparer.Ordinal);
@@ -65,6 +66,8 @@ public sealed class Interner
     /// <summary>Registers something that holds young codes outside the engine (a row writer with rows, a batch not yet ingested): nothing is freed until it is released.</summary>
     public void Hold(object holder) => holders.Add(holder);
     public void Release(object holder) => holders.Remove(holder);
+    /// <summary>Whether a holder is registered (nothing is freed while one is).</summary>
+    public bool Holding => holders.Count > 0;
     /// <summary>The end of a step: frees the codes still young, unless a holder is registered.</summary>
     public void Collect()
     {
@@ -98,10 +101,12 @@ public sealed class Layout
     public string[] Names { get; }
     public bool[] IsDec { get; }
     readonly Dictionary<string, int> index;
-    /// <summary>Per column: true when the 64-bit code is an index into the interner (Text and entity references), false for raw numbers. Null when the layout was built without types.</summary>
+    /// <summary>Per column: true when the 64-bit code is an index into the interner, false for raw numbers (Integer, Decimal, Boolean, Instant). Any other type, the entity and relationship references and a type added later, counts as a code: a column the engine does not know to be a number is escaped (`Interner.Escape`), where a false hit only keeps a text. Null when the layout was built without types.</summary>
     public bool[]? Interned { get; }
     public Layout(string[] names, bool[] isDec, bool[]? interned = null) { Names = names; IsDec = isDec; Interned = interned; index = names.Select((n, i) => (n, i)).ToDictionary(x => x.n, x => x.i, StringComparer.Ordinal); }
-    public static Layout Of(Schema s) => new([.. s.Cols.Select(c => c.Name)], [.. s.Cols.Select(c => c.T.Ty.Tag == Tag.Decimal)], [.. s.Cols.Select(c => c.T.Ty.Tag is Tag.Text or Tag.Ent)]);
+    public static Layout Of(Schema s) => new([.. s.Cols.Select(c => c.Name)], [.. s.Cols.Select(c => c.T.Ty.Tag == Tag.Decimal)], [.. s.Cols.Select(c => IsCode(c.T.Ty.Tag))]);
+    /// <summary>Whether a column of this type holds codes of the text table: every type that is not a number.</summary>
+    public static bool IsCode(Tag t) => t is not (Tag.Integer or Tag.Decimal or Tag.Boolean or Tag.Instant);
     public int Count => Names.Length;
     public int Index(string name) => index.TryGetValue(name, out var i) ? i : throw new KeyNotFoundException($"column {name} not in layout [{string.Join(", ", Names)}]");
     public bool Has(string name) => index.ContainsKey(name);
@@ -195,7 +200,7 @@ public static class Codec
 }
 
 /// <summary>Writes source rows into a batch by field name (cold path) or column index (hot path). Optional fields given null are absent, and so is every column that is not written before the next row begins. Without a text table (`it` null: rows of a type no source binds, which are counted and never read) its texts are not kept.</summary>
-public sealed class RowWriter(Layout layout, Interner? it)
+public sealed class RowWriter(Layout layout, Interner? it) : IDisposable
 {
     BatchBuilder bb = new(layout);
     int row = -1;
@@ -219,5 +224,7 @@ public sealed class RowWriter(Layout layout, Interner? it)
     public Batch? Build() { Close(); var b = bb.Build(); bb = new BatchBuilder(Layout); row = -1; if (b is not null) it?.Hold(b); it?.Release(this); return b; }
     /// <summary>Takes back the rows written after the first `rows` (a record that turned out to be malformed after it had written some).</summary>
     public void Truncate(int rows) { if (rows >= bb.Batch.N) return; bb.Batch.N = rows; row = -1; if (rows == 0) it?.Release(this); }
+    /// <summary>Drops the rows not built yet and releases what they hold: a writer that a failure left behind does not keep the interner from freeing.</summary>
+    public void Dispose() => Truncate(0);
     void Close() { if (row < 0) return; for (var c = 0; c < written.Length; c++) if (!written[c]) bb.Absent(row, c); }
 }

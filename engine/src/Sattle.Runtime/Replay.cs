@@ -274,6 +274,8 @@ public sealed class Replay : IRowSink
 
     /// <summary>Sends the pending chunk to the engine (live input calls this when the stream pauses).</summary>
     public void FlushPending() { FlushCurrent(); current = null; }
+    /// <summary>Drops the pending chunk without sending it (a re-derivation that ends where the live run had not flushed).</summary>
+    public void DropPending() { current?.W.Dispose(); current = null; }
 
     public ReplayStats Run(string captureDir)
     {
