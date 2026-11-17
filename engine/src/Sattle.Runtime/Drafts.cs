@@ -10,12 +10,12 @@ sealed class Draft
 {
     public required string Id; public required long Base; public required Graph Graph; public List<Patch> Patches = [];
     public long Revision => Patches.Count;
-    /// <summary>The projection files the draft changed, by name: the text, and the head's text when the draft first changed it (null for a new file).</summary>
-    public Dictionary<string, (string? Base, string Text)> Files = new(StringComparer.Ordinal);
+    /// <summary>The projection files the draft changed, by name: the text (null for a file the draft removes), and the head's text when the draft first changed it (null for a new file).</summary>
+    public Dictionary<string, (string? Base, string? Text)> Files = new(StringComparer.Ordinal);
     /// <summary>The space's projection files when the draft was made: a draft's text is read with them, so a commit elsewhere after it does not enter the draft.</summary>
     public required IReadOnlyList<SourceFile> Others;
-    public Dictionary<string, string> FileTexts() => Files.ToDictionary(kv => kv.Key, kv => kv.Value.Text);
-    public Dictionary<string, string> ChangedFiles() => Files.Where(kv => kv.Value.Base != kv.Value.Text).ToDictionary(kv => kv.Key, kv => kv.Value.Text);
+    public Dictionary<string, string?> FileTexts() => Files.ToDictionary(kv => kv.Key, kv => kv.Value.Text);
+    public Dictionary<string, string?> ChangedFiles() => Files.Where(kv => kv.Value.Base != kv.Value.Text).ToDictionary(kv => kv.Key, kv => kv.Value.Text);
 }
 
 /// <summary>Drafts (an overlay on the catalog), structural edits, releases and previews (PROTOCOL.md v3). A draft's canonical text is the printer's output, so text and graph stay two views of one definition graph.</summary>
@@ -96,19 +96,19 @@ public sealed partial class SpaceHost
     public void DiscardDraft(string id) { lock (Gate) { GetDraft(id); drafts.Remove(id); } }
     public JsonNode DraftSnapshot(string id) { lock (Gate) { var d = GetDraft(id); return catalogExport.SnapshotOf(d.Graph, catalogExport.CatalogDescriptor(d.Revision)); } }
     public IReadOnlyList<JsonNode> DraftPatches(string id, long after) { lock (Gate) { var d = GetDraft(id); return [.. d.Patches.Where(p => p.To > after).Select(p => catalogExport.Patch(p))]; } }
-    /// <summary>The text of a projection file in the draft: the draft's text when it changed the file, else the head's.</summary>
+    /// <summary>The text of a projection file in the draft: the draft's text when it changed the file, else the head's. A file the draft removes is not found.</summary>
     public string DraftText(string id, string file)
     {
         lock (Gate)
         {
             var d = GetDraft(id);
             if (!IsFileName(file)) throw new HostError("BadRequest", $"{file} is no projection file: a module of a draft changes by patches", 400);
-            return d.Files.TryGetValue(file, out var f) ? f.Text : Definition(file);
+            return d.Files.TryGetValue(file, out var f) ? f.Text ?? throw new HostError("UnknownModule", $"the draft removes {file}", 404) : Definition(file);
         }
     }
 
-    /// <summary>Sets the text of a projection file in the draft. The draft's graph takes the facts the text lowers to, as one draft patch; a text that does not lower is kept with the facts it had, and the check result says why.</summary>
-    public JsonNode SetDraftText(string id, string file, string text, long expectedRevision)
+    /// <summary>Sets the text of a projection file in the draft; a null text removes the file. The draft's graph takes the facts the texts lower to, as one draft patch; a text that does not lower is kept with the facts it had, and the check result says why.</summary>
+    public JsonNode SetDraftText(string id, string file, string? text, long expectedRevision)
     {
         lock (Gate)
         {
@@ -117,9 +117,10 @@ public sealed partial class SpaceHost
             if (expectedRevision != d.Revision) throw new HostError("StaleRevision", $"draft {id} is at revision {d.Revision}", 409, new JsonObject { ["actual"] = Rev(d.Revision) });
             if (!IsFileName(file)) throw new HostError("BadRequest", $"{file} is no projection file: a module of a draft changes by patches", 400);
             var problems = new List<Diagnostic>();
-            var texts = TextsOf(d.Graph, problems);
+            var texts = TextsOf(d.Graph, problems).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
             if (problems.Count > 0) throw new HostError("Invalid", "the draft cannot be printed", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. problems.Select(DiagJson)]) });
             var baseText = d.Files.TryGetValue(file, out var had) ? had.Base : d.Others.FirstOrDefault(o => Path.GetFileName(o.Path) == file)?.Text;
+            if (text is null && (had.Text ?? baseText) is null) throw new HostError("UnknownModule", $"no definition file {file} in the draft", 404);
             var files = d.FileTexts(); files[file] = text;
             // the draft's own state: every module as the draft prints it, and the projection files as they were when it was made, with the draft's in their place
             foreach (var (n, t) in files) texts[n] = t;
@@ -188,9 +189,9 @@ public sealed partial class SpaceHost
     }
 
     /// <summary>What a draft changes: its module texts that differ from the texts at its base revision, and its projection files that differ from the head's text when it first changed them.</summary>
-    Dictionary<string, string> DraftChanges(Draft d, Dictionary<string, string> texts)
+    Dictionary<string, string?> DraftChanges(Draft d, Dictionary<string, string> texts)
     {
-        var res = ChangesOf(d, texts);
+        var res = ChangesOf(d, texts).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
         foreach (var (n, t) in d.ChangedFiles()) res[n] = t;
         return res;
     }
@@ -201,7 +202,7 @@ public sealed partial class SpaceHost
         var texts = TextsOf(d.Graph, problems);
         var changed = DraftChanges(d, texts);
         foreach (var f in others) texts.TryAdd(Path.GetFileName(f.Path), f.Text);
-        foreach (var (n, t) in d.FileTexts()) texts[n] = t;
+        foreach (var (n, t) in d.FileTexts()) if (t is null) texts.Remove(n); else texts[n] = t;
         var diags = new JsonArray([.. problems.Select(DiagJson)]);
         var ok = problems.Count == 0;
         JsonNode schemas = ok ? Schemas(Catalog) : new JsonObject();          // unchanged: the head catalog's
@@ -214,6 +215,7 @@ public sealed partial class SpaceHost
         }
         var modules = new JsonObject();
         foreach (var (m, t) in texts) modules[m] = new JsonObject { ["text"] = t, ["changed"] = changed.ContainsKey(m) };
+        foreach (var (n, t) in d.FileTexts()) if (t is null) modules[n] = new JsonObject { ["text"] = null, ["changed"] = changed.ContainsKey(n) };
         return new JsonObject { ["revision"] = Rev(d.Revision), ["ok"] = ok, ["diagnostics"] = diags, ["modules"] = modules, ["schemas"] = schemas };
     }
 
@@ -226,7 +228,7 @@ public sealed partial class SpaceHost
             var texts = TextsOf(d.Graph, problems);
             if (problems.Count > 0) throw new HostError("Invalid", "the draft cannot be printed", 422, new JsonObject { ["diagnostics"] = new JsonArray([.. problems.Select(DiagJson)]) });
             var baseTexts = d.Base == catalogHistory.Count ? HeadTexts() : TextsOf(StateAt("catalog", d.Base));
-            var touched = texts.Where(kv => !baseTexts.TryGetValue(kv.Key, out var b) || b != kv.Value).ToDictionary(kv => kv.Key, kv => kv.Value);
+            var touched = texts.Where(kv => !baseTexts.TryGetValue(kv.Key, out var b) || b != kv.Value).ToDictionary(kv => kv.Key, kv => (string?)kv.Value);
             var head = HeadTexts();
             foreach (var m in touched.Keys)
                 if (d.Base != catalogHistory.Count && head.TryGetValue(m, out var h) && baseTexts.TryGetValue(m, out var b0) && h != b0)

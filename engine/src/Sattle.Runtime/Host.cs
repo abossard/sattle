@@ -141,19 +141,19 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>A definition file is named by its module (a module text) or by its file name (a projection file that the catalog's source reads). Without a source every name is a module's.</summary>
     bool IsFileName(string name) => options.Projections?.Language(name) is not null;
     /// <summary>The module texts of a map of definition files.</summary>
-    IEnumerable<KeyValuePair<string, string>> ModuleTexts(IReadOnlyDictionary<string, string> texts) => texts.Where(kv => !IsFileName(kv.Key));
+    IEnumerable<KeyValuePair<string, string>> ModuleTexts(IReadOnlyDictionary<string, string?> texts) => texts.Where(kv => !IsFileName(kv.Key)).Select(kv => KeyValuePair.Create(kv.Key, kv.Value!));
     /// <summary>A name from a request is a plain name: it never reaches a path outside the definitions folder.</summary>
     static void CheckNames(IEnumerable<string> names)
     {
         foreach (var n in names)
             if (n.Length == 0 || Path.GetFileName(n) != n || n is "." or "..") throw new HostError("BadName", $"'{n}' is no module or file name", 400);
     }
-    /// <summary>The other files with the given texts in place of the ones of the same name, and the new ones added.</summary>
-    List<SourceFile> OthersWith(IReadOnlyDictionary<string, string> texts, IReadOnlyList<SourceFile>? from = null)
+    /// <summary>The other files with the given texts in place of the ones of the same name, the new ones added, and those whose text is null left out (removed).</summary>
+    List<SourceFile> OthersWith(IReadOnlyDictionary<string, string?> texts, IReadOnlyList<SourceFile>? from = null)
     {
         from ??= others;
-        var res = from.Select(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) ? new SourceFile(f.Path, t) : f).ToList();
-        foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && !from.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t));
+        var res = from.Where(f => !texts.TryGetValue(Path.GetFileName(f.Path), out var t) || t is not null).Select(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) ? new SourceFile(f.Path, t!) : f).ToList();
+        foreach (var (n, t) in texts.Where(kv => IsFileName(kv.Key) && kv.Value is not null && !from.Any(f => Path.GetFileName(f.Path) == kv.Key))) res.Add(new SourceFile(DefinitionsDir is null ? n : Path.Combine(DefinitionsDir, n), t!));
         return res;
     }
     readonly Dictionary<string, Served> served = new(StringComparer.Ordinal);
@@ -909,7 +909,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     // ---- definitions ----
-    (string Path, string Text)[] SourceList(IReadOnlyDictionary<string, string> texts)
+    (string Path, string Text)[] SourceList(IReadOnlyDictionary<string, string?> texts)
     {
         var list = sources.ToDictionary(kv => kv.Key, kv => kv.Value);
         foreach (var (module, text) in ModuleTexts(texts)) list[module] = (list.TryGetValue(module, out var old) ? old.Path : module + ".sattle", text);
@@ -919,9 +919,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     static readonly System.Text.RegularExpressions.Regex ModuleHeader = new(@"^module\s+(\S+?)\s*(?:@\s*(\S+?)\s*)?;", System.Text.RegularExpressions.RegexOptions.Multiline);
 
     /// <summary>A module whose version changes is imported as `m @ old` by its dependents; the candidate rewrites those import versions (the pins are re-sealed by the loader), so a version bump commits as one change.</summary>
-    Dictionary<string, string> WithImportVersions(IReadOnlyDictionary<string, string> texts)
+    Dictionary<string, string?> WithImportVersions(IReadOnlyDictionary<string, string?> texts)
     {
-        var res = new Dictionary<string, string>(texts);
+        var res = new Dictionary<string, string?>(texts);
         foreach (var (module, text) in ModuleTexts(texts))
         {
             var m = ModuleHeader.Match(text);
@@ -932,7 +932,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             foreach (var (dep, src) in sources.ToList())
             {
                 if (dep == module || texts.ContainsKey(dep)) continue;
-                var t = res.GetValueOrDefault(dep, src.Text);
+                var t = res.GetValueOrDefault(dep, src.Text)!;
                 var nt = rx.Replace(t, "${1}" + version);
                 if (nt != t) res[dep] = nt;
             }
@@ -941,7 +941,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>`baseOthers`: the projection files the texts are read with, the space's by default.</summary>
-    Catalog Candidate(IReadOnlyDictionary<string, string> texts, out LoadResult res, out Dictionary<string, string> fixedTexts, IReadOnlyList<SourceFile>? baseOthers = null)
+    Catalog Candidate(IReadOnlyDictionary<string, string?> texts, out LoadResult res, out Dictionary<string, string> fixedTexts, IReadOnlyList<SourceFile>? baseOthers = null)
     {
         var all = WithImportVersions(texts);
         List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. OthersWith(texts, baseOthers)];
@@ -949,7 +949,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         res = cat.Load(files, updatePins: true);
         fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes);
         foreach (var kv in all.Where(kv => !texts.ContainsKey(kv.Key)))      // dependents whose import version was rewritten
-            if (sources.TryGetValue(kv.Key, out var s) && !fixedTexts.ContainsKey(s.Path)) fixedTexts[s.Path] = kv.Value;
+            if (sources.TryGetValue(kv.Key, out var s) && !fixedTexts.ContainsKey(s.Path)) fixedTexts[s.Path] = kv.Value!;
         return cat;
     }
 
@@ -970,9 +970,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         catch (SyntaxError) { return module; }
     }
 
-    public JsonNode Check(string module, string text) => CheckTexts(new Dictionary<string, string> { [module] = text });
+    public JsonNode Check(string module, string text) => CheckTexts(new Dictionary<string, string?> { [module] = text });
 
-    JsonNode CheckTexts(IReadOnlyDictionary<string, string> texts)
+    JsonNode CheckTexts(IReadOnlyDictionary<string, string?> texts)
     {
         lock (Gate)
         {
@@ -1031,9 +1031,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>A configuration edit: commit the catalog patch, rebuild the plan, replay the retained inputs once in order into fresh state, emit only the final difference per graph (ADR-064 to 071).</summary>
-    public JsonNode Commit(string module, string text, long expectedRevision) => CommitTexts(new Dictionary<string, string> { [module] = text }, expectedRevision);
+    public JsonNode Commit(string module, string text, long expectedRevision) => CommitTexts(new Dictionary<string, string?> { [module] = text }, expectedRevision);
 
-    JsonNode CommitTexts(IReadOnlyDictionary<string, string> texts, long expectedRevision)
+    /// <summary>`texts`: module texts and projection files by name; a projection file whose text is null is removed.</summary>
+    JsonNode CommitTexts(IReadOnlyDictionary<string, string?> texts, long expectedRevision)
     {
         lock (Gate)
         {
@@ -1084,11 +1085,12 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             Engine = fresh; Catalog = cand;
             foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
-            var withFiles = OthersWith(texts); others.Clear(); others.AddRange(withFiles);
+            var withFiles = OthersWith(texts); var removed = others.Where(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) && t is null).ToList(); others.Clear(); others.AddRange(withFiles);
             if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying)
             {
                 foreach (var e in sources.Values) if (File.Exists(e.Path)) File.WriteAllText(e.Path, e.Text);
                 foreach (var f in others) if (texts.ContainsKey(Path.GetFileName(f.Path))) File.WriteAllText(f.Path, f.Text);
+                foreach (var f in removed) File.Delete(f.Path);
             }
             if (catPatch.Edits.Length > 0) catalogHistory.Add(catPatch); else catalogHistory.Add(new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, []));
             Rebuild();

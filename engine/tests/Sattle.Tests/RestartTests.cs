@@ -190,7 +190,7 @@ public class RestartTests
     [InlineData("skipped", """{"k":"p","s":"hub","p":"{\u0022n\u0022:4}"}""")]
     [InlineData("flush", """{"k":"F"}""")]
     [InlineData("sequenceStep", """{"k":"s"}""")]
-    [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;"}}""")]
+    [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;","acme.svc.serviceDeps.kql":null}}""")]
     [InlineData("commitRefused", """{"k":"x"}""")]
     [InlineData("header", """{"k":"h","tenant":"lab","lateHorizon":null,"cluster":"synth","space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
     public void A_journal_entry_has_the_stored_form_it_always_had_and_reads_back(string kind, string stored)
@@ -206,7 +206,7 @@ public class RestartTests
             "skipped" => new Entry.Skipped("hub", "{\"n\":4}"),
             "flush" => new Entry.Flush(),
             "sequenceStep" => new Entry.SequenceStep(),
-            "commit" => new Entry.Commit(12, new Dictionary<string, string> { ["acme.svc"] = "module acme.svc @ 1.0.0;" }),
+            "commit" => new Entry.Commit(12, new Dictionary<string, string?> { ["acme.svc"] = "module acme.svc @ 1.0.0;", ["acme.svc.serviceDeps.kql"] = null }),
             "commitRefused" => new Entry.CommitRefused(),
             _ => new Entry.Header("lab", null, "synth", "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
         };

@@ -47,7 +47,7 @@ public abstract record Entry
     /// <summary>An event that is not stored used a sequence number (a draft event).</summary>
     public sealed record SequenceStep : Entry;
     /// <summary>A definition commit: the new text of each module, against the catalog revision it expects.</summary>
-    public sealed record Commit(long Expected, IReadOnlyDictionary<string, string> Texts) : Entry;
+    public sealed record Commit(long Expected, IReadOnlyDictionary<string, string?> Texts) : Entry;
     /// <summary>The definition commit before this entry was refused when it was activated.</summary>
     public sealed record CommitRefused : Entry;
 
@@ -102,7 +102,7 @@ public abstract record Entry
             'p' => new Skipped(S("s"), S("p")),
             'F' => new Flush(),
             's' => new SequenceStep(),
-            'c' => new Commit(N("e"), r.GetProperty("t").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetString()!)),
+            'c' => new Commit(N("e"), r.GetProperty("t").EnumerateObject().ToDictionary(x => x.Name, x => x.Value.GetString())),
             'x' => new CommitRefused(),
             _ => throw new InvalidDataException("unknown journal entry " + text[..Math.Min(40, text.Length)]),
         };

@@ -365,6 +365,39 @@ public class DraftTests
         Assert.DoesNotContain(ids, id => id.StartsWith("d:acme.deployhealth", StringComparison.Ordinal));
     }
 
+    /// <summary>#36: a draft removes a projection file (a null text) and the space's graph it produces (a patch of the space). The removal alone does not check, since the space still binds the projection; with the graph gone too, the commit drops the graph and the file.</summary>
+    [Fact]
+    public void A_draft_removes_a_projection_file_and_the_commit_drops_its_graph()
+    {
+        using var h = HostTests.NewHost();
+        var file = h.ProjectionFile("acme.report.deploymentReport");
+        string[] Graphs() => [.. h.SpaceInfo()["graphs"]!.AsArray().Select(g => g!["id"]!.GetValue<string>())];
+        Assert.Contains("deploymentReport", Graphs());
+        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        var alone = h.SetDraftText(d, file, null, 0);
+        Assert.False(alone["ok"]!.GetValue<bool>());
+        Assert.Contains(alone["diagnostics"]!.AsArray(), x => x!["module"]!.GetValue<string>() == "acme.space");
+        Assert.Equal("UnknownModule", Assert.Throws<HostError>(() => h.DraftText(d, file)).Code);
+        var extent = h.DraftSnapshot(d)["extent"]!;
+        static string V(JsonNode? n) => n!["value"]!.GetValue<string>();
+        var g = V(extent["relationships"]!.AsArray().First(r => V(r!["type"]) == "producedBy" && V(r["target"]) == "d:acme.report/projection:deploymentReport")!["source"]);
+        var bindings = g.Replace("/graph:", "/binding:") + ".";
+        bool Mine(string id) => id == g || id.StartsWith(g + "/", StringComparison.Ordinal) || id.StartsWith(bindings, StringComparison.Ordinal);
+        var patch = new JsonObject { ["edits"] = new JsonArray([
+            .. extent["relationships"]!.AsArray().Where(r => Mine(V(r!["source"])) || Mine(V(r["target"]))).Select(r => (JsonNode)new JsonObject { ["kind"] = "relationship", ["id"] = V(r!["id"]), ["before"] = r.DeepClone() }),
+            .. extent["entities"]!.AsArray().Where(e => Mine(V(e!["id"]))).Select(e => (JsonNode)new JsonObject { ["kind"] = "entity", ["id"] = V(e!["id"]), ["before"] = e.DeepClone() })]) };
+        var check = h.ApplyDraftPatch(d, patch, 1);
+        Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
+        Assert.DoesNotContain("graph deploymentReport", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
+        Assert.Equal((null, true), (check["modules"]![file]!["text"], check["modules"]![file]!["changed"]!.GetValue<bool>()));
+        Assert.Contains("deploymentReport", Graphs());                    // the draft changes nothing live
+        var res = h.CommitDraft(d, h.CatalogRevision);
+        Assert.Contains(res["modules"]!.AsArray(), m => m!.GetValue<string>() == file);
+        Assert.DoesNotContain("deploymentReport", Graphs());
+        Assert.Equal("UnknownModule", Assert.Throws<HostError>(() => h.Definition(file)).Code);
+        Assert.DoesNotContain(h.DefinitionFiles(), f => Path.GetFileName(f.Path) == file);
+    }
+
     /// <summary>An edge from outside into a projection whose text is a file belongs to the other text: a patch that adds a graph to the space, produced by that projection, is accepted.</summary>
     [Fact]
     public void A_patch_adding_a_graph_produced_by_a_projection_written_in_a_file_is_accepted()

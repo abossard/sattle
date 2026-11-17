@@ -462,7 +462,7 @@ A projection may be written in a file of its own, `module.projection.kql`, besid
   - A structural patch (a skeleton or a refactoring until 3.46) that touches a projection from a projection file is refused (`KqlProjection`, `ProjectionText` since 3.50, with `file`): edit the file's text.
   - A commit whose projection file changed at the head after the draft first changed it gives `StaleRevision` with `file`.
 - **Stores.** A store whose space holds projection files, opened without a projection source, is refused before restore, naming the files.
-- **Not yet.** A projection file cannot be removed once the space holds it (until the editors).
+- **Not yet.** A projection file cannot be removed once the space holds it (until 3.53: a draft removes it).
 
 ## Version 3.27: a Union takes element columns (no change of the wire format)
 - **`Union`.** A column that names an element (an entity or a relationship of a `Match`) is allowed in a `Union` when both inputs have it with the same name, type and role. Before, every such union was refused ("union rows must be plain data columns"). The column of the result names the element and can be the endpoint or the subject of an emit. It no longer says which `Match` it came from: a property read on it is refused (read the property before the union), and a `Traverse` or a `Series` cannot start from it. The two inputs may have read different properties of their element. An element emitted from such a union names no source elements in its lineage.
@@ -624,6 +624,13 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Kernel.** `Window` has an optional `hop` (ns): windows of length `width` that start every `hop` (`hop` divides `width`); a row is in each of the `width/hop` windows that hold it, and a telemetry property written from them has the period `hop`. New scalar function `Shift(Instant, Integer) -> Instant`: an instant moved by a duration in ns. The kernel digest changed, so a seal written before 3.52 is rejected at restore and the journal is replayed.
 - **KQL.** `windowStart = hop(t, 5m, 1m)` as a summarize key (library function), and `t + 5m`, `t - 5m` lower to `Shift`.
 - **Palette.** `Window` lists the parameter `hop` (duration, ns). Additive.
+
+## Version 3.53: a draft removes a projection file (#36)
+- **`PUT /drafts/{id}/text/{file}`** with `{ "text": null, "expectedRevision" }` removes the projection file in the draft. `text` is required: a body without it is `BadRequest` (400). Removing a file the draft does not have is `UnknownModule` (404). Putting a text again brings the file back.
+- **The space binds by name.** A removal alone does not check while a graph of the space is produced by the projection: the space's diagnostic names it. The draft removes that graph with a patch of the space module (allowed, 3.47), and then the check passes.
+- **Check result.** `modules` lists a removed file with `"text": null` and `"changed": true`. `GET /drafts/{id}/kql/{projection}` of a removed file is `UnknownModule` (404).
+- **Commit.** The commit drops the file and every graph the draft removed from the space: `GET /space` no longer lists them, `GET /definitions/{file}` is `UnknownModule`, and a host that writes its definitions deletes the file. The journal records the removal as the file's text `null` in the commit entry (`"t": { "m.p.kql": null }`). A journal written before 3.53 reads as before.
+- **Structural patches of a projection** stay refused (`ProjectionText`). Since 3.46 a projection changes by its text, so the structural half of #36 is closed with this.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
