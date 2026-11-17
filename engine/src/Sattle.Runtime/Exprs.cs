@@ -20,11 +20,12 @@ public abstract class VExpr
     public bool IsDec { get; protected init; }
     protected Column Out = null!;
     public abstract Column Eval(Batch b);
+    /// <summary>The expression's output column for a batch of n rows, every row present. Its arrays, the presence array too, are kept from call to call: the column is valid until the next evaluation.</summary>
     protected Column Scratch(int n)
     {
         Out ??= new Column(IsDec);
         Out.Ensure(n);
-        Out.P = null;
+        if (Out.P is not null) Array.Fill(Out.P, true, 0, n);
         return Out;
     }
     /// <summary>Marks row i absent in the scratch column.</summary>
@@ -96,7 +97,7 @@ sealed class VLit : VExpr
         var o = Scratch(b.N);
         if (filled >= b.N && !isNull) return o;
         if (IsDec) Array.Fill(o.D, d, 0, b.N); else Array.Fill(o.L, l, 0, b.N);
-        if (isNull) { o.P = new bool[Math.Max(b.N, 1)]; }
+        if (isNull) for (var i = 0; i < Math.Max(b.N, 1); i++) Absent(o, i, Math.Max(b.N, 1));
         filled = b.N;
         return o;
     }
@@ -110,8 +111,7 @@ sealed class VCmp(string fn, VExpr a, VExpr b, bool dec) : VExpr
     {
         var x = a.Eval(batch); var y = b.Eval(batch);
         var n = batch.N;
-        Out ??= new Column(false); Out.Ensure(n); Out.P = null;
-        var o = Out;
+        var o = Scratch(n);
         for (var i = 0; i < n; i++)
         {
             if ((x.P is not null && !x.P[i]) || (y.P is not null && !y.P[i])) { Absent(o, i, n); continue; }
@@ -130,12 +130,12 @@ sealed class VCmp(string fn, VExpr a, VExpr b, bool dec) : VExpr
 
 sealed class VLogic(string fn, VExpr[] args) : VExpr
 {
+    readonly Column[] cols = new Column[args.Length];
     public override Column Eval(Batch batch)
     {
         var n = batch.N;
-        Out ??= new Column(false); Out.Ensure(n); Out.P = null;
-        var o = Out;
-        var cols = args.Select(x => x.Eval(batch)).ToArray();
+        var o = Scratch(n);
+        for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
         for (var i = 0; i < n; i++)
         {
             var absent = false; var all = fn != "Or"; var any = false;
@@ -228,14 +228,16 @@ sealed class VIf : VExpr
 
 sealed class VCoalesce : VExpr
 {
-    readonly VExpr[] args;
-    public VCoalesce(VExpr[] args, bool dec) { this.args = args; IsDec = dec; }
+    readonly VExpr[] args; readonly Column[] cols;
+    public VCoalesce(VExpr[] args, bool dec) { this.args = args; IsDec = dec; cols = new Column[args.Length]; }
     public override Column Eval(Batch batch)
     {
-        var cols = args.Select(a => a.Eval(batch)).ToArray(); var n = batch.N; var o = Scratch(n);
+        for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
+        var n = batch.N; var o = Scratch(n);
         for (var i = 0; i < n; i++)
         {
-            var hit = cols.FirstOrDefault(c => c.P is null || c.P[i]);
+            Column? hit = null;
+            foreach (var c in cols) if (c.P is null || c.P[i]) { hit = c; break; }
             if (hit is null) { Absent(o, i, n); continue; }
             if (IsDec) o.D[i] = hit.IsDec ? hit.D[i] : hit.L[i]; else o.L[i] = hit.L[i];
         }
@@ -247,9 +249,9 @@ sealed class VIsPresent(VExpr a) : VExpr
 {
     public override Column Eval(Batch batch)
     {
-        var x = a.Eval(batch); Out ??= new Column(false); Out.Ensure(batch.N); Out.P = null;
-        for (var i = 0; i < batch.N; i++) Out.L[i] = x.P is null || x.P[i] ? 1 : 0;
-        return Out;
+        var x = a.Eval(batch); var o = Scratch(batch.N);
+        for (var i = 0; i < batch.N; i++) o.L[i] = x.P is null || x.P[i] ? 1 : 0;
+        return o;
     }
 }
 
@@ -268,15 +270,18 @@ sealed class VRate : VExpr
 
 sealed class VText : VExpr
 {
-    readonly string fn; readonly VExpr[] args; readonly Interner it;
+    readonly string fn; readonly VExpr[] args; readonly Interner it; readonly Column[] cols;
     readonly Dictionary<int, int> cache = [];
-    public VText(string fn, VExpr[] args, Interner it) { this.fn = fn; this.args = args; this.it = it; }
+    public VText(string fn, VExpr[] args, Interner it) { this.fn = fn; this.args = args; this.it = it; cols = new Column[args.Length]; }
     public override Column Eval(Batch batch)
     {
-        var cols = args.Select(a => a.Eval(batch)).ToArray(); var n = batch.N; var o = Scratch(n);
+        for (var a = 0; a < args.Length; a++) cols[a] = args[a].Eval(batch);
+        var n = batch.N; var o = Scratch(n);
         for (var i = 0; i < n; i++)
         {
-            if (cols.Any(c => c.P is not null && !c.P[i])) { Absent(o, i, n); continue; }
+            var absent = false;
+            foreach (var c in cols) if (c.P is not null && !c.P[i]) { absent = true; break; }
+            if (absent) { Absent(o, i, n); continue; }
             if (fn == "Concat") { o.L[i] = it.Intern(string.Concat(cols.Select(c => it.Get((int)c.L[i])))); continue; }
             var code = (int)cols[0].L[i];
             if (!cache.TryGetValue(code, out var r)) { var s = it.Get(code); cache[code] = r = it.Intern(fn == "Trim" ? s.Trim() : s.ToLowerInvariant()); }

@@ -120,7 +120,7 @@ sealed class MatchOp : PhysOp
         if (!ep.Graphs.TryGetValue(t.GraphPort, out var gd) || gd.Patch is null) return null;
         var patch = gd.Patch;
         var newView = new NewView(gd.State); var oldView = new OldView(gd.State, patch);
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         var bound = new Element?[compCount];
         for (var seed = 0; seed < compCount; seed++)
         {

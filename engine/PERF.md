@@ -383,6 +383,22 @@ An element says which elements it is made of. That was lost whenever a `select` 
 - Rule that follows for every operator: a batch may hold columns behind those its layout names, and a reader goes by the layout. `Window` and `Join` took the number of columns from the batch and now take it from the layout.
 - Left as it is: an element emitted from the rows of two groups names the rows of one; a windowed group, a roll-up, a threshold and a series name the elements of the group key only.
 
+## Operators stream: each keeps one output batch and fixed working buffers (2026-11-17, #39)
+Every operator call built a new output batch, 64 rows of every column and the weights, even when it wrote no row, and the expressions rebuilt their presence arrays and argument arrays on every call. The rule now (decided by Andre on #39): **an operator's output batch belongs to the operator and is valid until it runs again; a reader that keeps rows copies them**, as a compiled expression's column already was. Each operator empties and refills one batch; the aggregating operators evaluate into working arrays they keep; an expression keeps its presence array and its argument array. A row of a reused batch starts zero and present, as in a new batch. A Debug build poisons the rows of an emptied batch, so a reader that kept them fails the tests; it found one writer that relied on new rows being zero (the roll-up writes its no-data column only on marker rows). Nothing else changes what is computed.
+
+`sattle replay` of the newest recording at chunk 1 with `--trace-alloc`. The allocation trace counted its own bookkeeping (the dictionary keys it made and the growth of the step's output map, about 400 B per call) as the operator's; it now reads the counter before either, and both builds below carry that fix. At chunk 1 a call carries at most one input row, so bytes per call bound bytes per input row.
+
+| | Windowed group allocated (per call, 1,277,240 calls) | Operators allocated (13 kinds) | Operator time (13 kinds, one run each) | Peak resident | Runtime lines |
+|---|---|---|---|---|---|
+| Before (main at #107) | 5,998 MB (4,696 B) | 24.9 GB | 8.3 s | 793 MB | |
+| Streaming operators | 61 MB (48 B) | 4.1 GB | 4.8 s | 781 MB | +83, −49 |
+
+- Per kind, before and after, MB: join 7,617 and 321, retain 2,925 and 59, match 2,328 and 394, series 1,865 and 55, filter 764 and 15, windowed group 5,998 and 61; union 2,054 and below the 14 kinds the trace lists. Unchanged: the emits (408, 106), link 1,222 and traverse 1,589 to 1,405, which make objects per row (property maps, paths); they are the next step.
+- What the windowed group still allocates is state: rows of new keys and a key table per new window (897 windows, 5.5 KB each, 4.9 MB). Counted inside the operator: about 15 MB in all, 12 B per call; the rest of the 61 MB is the granularity of the counter.
+- Peak memory hardly moves: what was removed was short-lived. Peak is the kept state of the graphs.
+- Wall time: the machine ran at a load average of 50 to 250 (other sessions), so single times say little: 23.9 to 61.4 s before and 21.0 to 41.2 s after over the alternating runs.
+- The state digests are unchanged (estate, `lab/fixtures`, both recordings).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

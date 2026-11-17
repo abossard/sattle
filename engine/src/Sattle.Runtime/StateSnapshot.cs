@@ -32,7 +32,8 @@ public static class StateSnapshot
         if (typeof(VExpr).IsAssignableFrom(c)) return true;                             // compiled expressions (their caches are rebuilt). Row layouts are written: an object that exists only in the snapshot (a row writer made when its first row came) needs its own
         if (c.Assembly == typeof(Catalog).Assembly || c == typeof(OntologyView)) return true;     // typed definitions and the ontology views built from them
         if (typeof(IGraphStore).IsAssignableFrom(c) || typeof(IJournalStore).IsAssignableFrom(c) || typeof(Engine) == c || typeof(SpaceHost) == c) return true;
-        if (c == typeof(IEngineInput) || c == typeof(IRowSink)) return true;            // the sink a replay writes to is the host, not part of its state
+        if (c == typeof(IEngineInput) || c == typeof(IRowSink)) return true;
+        if ((c == typeof(BatchBuilder) || c == typeof(Column)) && typeof(PhysOp).IsAssignableFrom(f.DeclaringType)) return true;   // an operator's output batch and working columns hold the rows of one call            // the sink a replay writes to is the host, not part of its state
         if (typeof(Stream).IsAssignableFrom(c) || typeof(Type).IsAssignableFrom(c)) return true;
         return false;
     }

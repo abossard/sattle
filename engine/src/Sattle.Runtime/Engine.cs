@@ -473,12 +473,14 @@ public sealed class Engine : IDisposable, IEngineInput
             if (TrackAllocations)
             {
                 var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                outputs[op.Name] = op.Run(g.Cx, ep, inputs);
+                var output = op.Run(g.Cx, ep, inputs);
+                var bytes = GC.GetAllocatedBytesForCurrentThread() - a0; var ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;     // read before the output is stored and the keys below are made, which would count as the operator's
+                outputs[op.Name] = output;
                 Trace(g, op, outputs[op.Name]);
-                OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + GC.GetAllocatedBytesForCurrentThread() - a0;
-                OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;
+                OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + bytes;
+                OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + ms;
                 var kd = op.GetType().Name; var ks = KindStats.GetValueOrDefault(kd);
-                KindStats[kd] = (ks.Ms + System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds, ks.Bytes + GC.GetAllocatedBytesForCurrentThread() - a0, ks.Calls + 1);
+                KindStats[kd] = (ks.Ms + ms, ks.Bytes + bytes, ks.Calls + 1);
             }
             else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
         }

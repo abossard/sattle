@@ -124,7 +124,7 @@ sealed class SeriesOp : PhysOp
     /// <summary>The Series with a fill or a time to live. Every change of the output is the difference between the record an element had at a window and the one it has now: after a structural row, a stored window, an advance, or the progress of a source.</summary>
     Batch? RunFilled(Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         var touched = new HashSet<int>();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
         if (ep.Loss is { } mark && (frontier == long.MinValue || mark + period > edge) && !lost.Contains(mark))
@@ -253,7 +253,7 @@ sealed class SeriesOp : PhysOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         if (Fills) return RunFilled(ep, inputs);
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         var rows = In(inputs, "in");
         // step A: changed structural rows against the windows seen before this step
         if (rows is not null)

@@ -58,24 +58,41 @@ public abstract class PhysOp
     public Layout OutLayout { get; protected init; }
     public abstract Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs);
     protected Batch? In(IReadOnlyDictionary<string, Batch?> inputs, string port) => inputs.GetValueOrDefault(port);
+
+    BatchBuilder? output;
+    /// <summary>This operator's output batch, emptied for the call in hand. It belongs to the operator and is valid until the operator runs again: a reader that keeps rows copies them, as a compiled expression's column is valid until its next evaluation. The engine keeps an operator's output for one step and runs each operator once per step.</summary>
+    protected BatchBuilder EmptyOutput() { output ??= new BatchBuilder(OutLayout); output.Reset(); return output; }
 }
 
-/// <summary>Row batch assembly with growth, weights always present.</summary>
+/// <summary>Row batch assembly with growth, weights always present. The batch is made when it is first needed, so an operator call that writes no row allocates none.</summary>
 public sealed class BatchBuilder(Layout layout)
 {
-    readonly Batch b = new(layout, 64) { W = new long[64] };
-    public Batch Batch => b;
+    Batch? made;
+    public Batch Batch => made ??= new(layout, 64) { W = new long[64] };
     public int Add(long weight)
     {
+        var b = Batch;
         var i = b.N;
         if (i >= b.W!.Length) { b.Ensure(i * 2); }
         b.W![i] = weight;
         b.N++;
-        for (var c = 0; c < b.Cols.Length; c++) if (b.Cols[c].P is { } p) p[i] = true;
+        // a row starts as in a new batch, zero and present: writers leave columns they do not set, and a reused batch holds the rows of the call before
+        foreach (var c in b.Cols) { if (c.IsDec) c.D[i] = 0; else c.L[i] = 0; if (c.P is { } p) p[i] = true; }
         return i;
     }
-    public void Absent(int row, int col) => b.Cols[col].SetAbsent(row, b.N);
-    public Batch? Build() => b.N == 0 ? null : b;
+    public void Absent(int row, int col) { var b = Batch; b.Cols[col].SetAbsent(row, b.N); }
+    public Batch? Build() => made is { N: > 0 } ? made : null;
+
+    /// <summary>Empties the batch and keeps its arrays (`PhysOp.EmptyOutput`). In a Debug build the rows given out before are poisoned first, so a reader that kept them past its step reads weights of 0 and values no row has, and the tests fail instead of computing a wrong answer.</summary>
+    public void Reset()
+    {
+        if (made is null) return;
+#if DEBUG
+        for (var i = 0; i < made.N; i++) made.W![i] = 0;
+        foreach (var c in made.Cols) { if (c.IsDec) Array.Fill(c.D, decimal.MinValue, 0, Math.Min(made.N, c.D.Length)); else Array.Fill(c.L, long.MinValue, 0, Math.Min(made.N, c.L.Length)); }
+#endif
+        made.N = 0; made.Sel = null; made.SelN = 0;
+    }
 }
 
 // ---- linear operators --------------------------------------------------------------------------------------
@@ -339,6 +356,8 @@ sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bo
 abstract class AggregatingOp : PhysOp
 {
     protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD; readonly bool hasLongs, hasDecimals; protected Column?[] orderCols = [];
+    /// <summary>The key and value columns of the batch in hand (with `orderCols`): working arrays that the next call overwrites (`Evaluate`).</summary>
+    protected Column[] keyCols = []; protected Column?[] valueCols = [];
     protected readonly int[] outKeyCol, outAggCol;
     protected readonly long[] keyBuf;
     readonly Interner it;
@@ -432,6 +451,14 @@ abstract class AggregatingOp : PhysOp
 
     /// <summary>The state of a group operator with `k` key columns.</summary>
     protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(nL, nD), hasLongs, hasDecimals, [.. rowSets.Select(m => m.Length)]);
+
+    /// <summary>Evaluates the key, value and order columns of a batch into the working arrays.</summary>
+    protected void Evaluate(Batch b)
+    {
+        if (keyCols.Length != keyExprs.Length || valueCols.Length != aggs.Length) { keyCols = new Column[keyExprs.Length]; valueCols = new Column?[aggs.Length]; orderCols = new Column?[aggs.Length]; }
+        for (var i = 0; i < keyExprs.Length; i++) keyCols[i] = keyExprs[i].Eval(b);
+        for (var a = 0; a < aggs.Length; a++) { valueCols[a] = aggs[a].Value?.Eval(b); orderCols[a] = aggs[a].Order?.Eval(b); }
+    }
 
     protected void Accumulate(KeyTable t, int slot, Batch b, Column?[] valueCols, int row, long w)
     {
@@ -564,9 +591,8 @@ sealed class GroupOp : AggregatingOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
-        var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
-        var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
-        var bb = new BatchBuilder(OutLayout);
+        Evaluate(b);
+        var bb = EmptyOutput();
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -613,15 +639,16 @@ sealed class WindowedGroupOp : AggregatingOp
     }
 
     KeyTable NewTable() => NewKeyTable(nKeys);
+    /// <summary>A loop, not a lambda: a lambda over the current window would make its closure on every call.</summary>
+    bool Revising(W win) { foreach (var r in revised) if (r.Win == win) return true; return false; }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         var b = In(inputs, "in");
         if (b is not null && b.Rows > 0)
         {
-            var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
-            var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
+            Evaluate(b);
             var wsCol = b.Cols[wsKey].L;
             W? cur = null; long curWs = long.MinValue;
             for (var k = 0; k < b.Rows; k++)
@@ -646,7 +673,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 {
                     // a revision of a closed window: what the key emitted is retracted before the row changes it
                     if (cur.Table.Touch(slot) && cur.Table.Emitted(slot)) WriteRow(bb, cur.Table, slot, -1, ws, ws + width, outWs, OutLayout.Has("windowEnd") ? OutLayout.Index("windowEnd") : -1);
-                    if (!revised.Any(r => r.Win == cur)) revised.Add((cur, ws));
+                    if (!Revising(cur)) revised.Add((cur, ws));
                 }
                 Accumulate(cur.Table, slot, b, valueCols, row, b.Weight(row));
             }
@@ -727,11 +754,10 @@ sealed class RollupOp : AggregatingOp
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var quiet = silence is null ? null : new List<Silence>();
-        var keyCols = keyExprs.Select(e => e.Eval(b)).ToArray();
-        var valueCols = aggs.Select(a => a.Value?.Eval(b)).ToArray(); orderCols = [.. aggs.Select(a => a.Order?.Eval(b))];
+        Evaluate(b);
         var wsCol = b.Cols[inWs].L;
         var n = keyCols.Length;
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -891,7 +917,7 @@ sealed class ThresholdOp : PhysOp
             else if (st.Windows.TryGetValue(ws, out var cur) && cur == window) st.Windows.Remove(ws);
             if (seen.Add(st)) touched.Add(st);
         }
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         foreach (var st in touched)
         {
             while (st.Windows.Count > 0 && st.Windows.First() is var oldest && oldest.Key < edge) { Step(ref st.State, ref st.Run, ref st.Last, oldest.Key, oldest.Value); st.Windows.Remove(oldest.Key); }
@@ -924,7 +950,7 @@ sealed class UnionOp : PhysOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         for (var p = 0; p < 2; p++)
         {
             var b = In(inputs, p == 0 ? "in0" : "in1"); if (b is null || b.Rows == 0) continue;
@@ -992,7 +1018,7 @@ sealed class DistinctOp : PhysOp
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         // decide per row in order: a row crossing zero is emitted at that moment, so batch-internal cancellation is visible
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         for (var k = 0; k < b.Rows; k++)
         {
             var src = b.RowAt(k); var key = new Key(KeyOf(b, src));
@@ -1108,7 +1134,7 @@ sealed class JoinOp : PhysOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         Half(In(inputs, "left"), left, right, true, bb);
         Half(In(inputs, "right"), right, left, false, bb);
         return bb.Build();
@@ -1209,7 +1235,7 @@ sealed class TraverseOp : PhysOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         HashSet<string>? changed = null;
         if (ep.Graphs.TryGetValue(t.GraphPort, out var gd)) { graph = gd.State; if (gd.Patch is { } p) { changed = []; foreach (var e in p.Edits) { changed.Add(e.Key.Id); foreach (var s in new[] { e.Before, e.After }) if (s is Rel r) { changed.Add(r.Source); changed.Add(r.Target); } } } }
         // (a) row deltas against the reach emitted so far
@@ -1259,7 +1285,7 @@ sealed class ValuesOp(TValues t, Interner it) : PhysOp(t)
     {
         if (emitted) return null;
         emitted = true;
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         foreach (var r in t.Rows)
         {
             var row = bb.Add(1);
@@ -1299,7 +1325,7 @@ sealed class RetainOp : PhysOp
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
-        var bb = new BatchBuilder(OutLayout);
+        var bb = EmptyOutput();
         void Emit(Held h, long weight)
         {
             var row = bb.Add(weight);
