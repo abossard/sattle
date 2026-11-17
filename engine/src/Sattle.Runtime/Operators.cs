@@ -1041,95 +1041,90 @@ sealed class DistinctOp : PhysOp
 
 // ---- join ------------------------------------------------------------------------------------------------
 
-/// <summary>Equi-join of two data inputs. Each side keeps its rows (with signed multiplicity) in a hash index on the join keys. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join.</summary>
+/// <summary>Equi-join of two data inputs. Each side keeps its rows as a Z-set (`Table`): a row is its join key, every column as its 8-byte code (a decimal as its number in the operator's `DecimalCodes`) and a bit per absent column, all of it the key of the row, with the multiplicity as its weight; an `Arrangement` by the join key gives the rows a probe matches. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join and are not kept.</summary>
 sealed class JoinOp : PhysOp
 {
-    readonly struct Cell(bool present, long l, decimal d) { public readonly bool Present = present; public readonly long L = l; public readonly decimal D = d; }
-    sealed class Entry(Cell[] cells) { public readonly Cell[] Cells = cells; public long Weight; }
-    sealed class Key(long[] v) : IEquatable<Key>
+    sealed class Side
     {
-        public readonly long[] V = v;
-        public bool Equals(Key? o) => o is not null && V.AsSpan().SequenceEqual(o.V);
-        public override bool Equals(object? o) => o is Key k && Equals(k);
-        public override int GetHashCode() { var h = new HashCode(); foreach (var x in V) h.Add(x); return h.ToHashCode(); }
+        /// <summary>The join key's expressions, which of them compare as decimals, and the number of columns of a row.</summary>
+        public readonly VExpr[] Keys; public readonly bool[] KeyDec; public readonly int N;
+        public readonly Table Rows; public readonly Arrangement ByKey;
+        public Side(Layout layout, VExpr[] keys, bool[] keyDec)
+        {
+            Keys = keys; KeyDec = keyDec; N = layout.Count;
+            var width = keys.Length + N + Words(N);
+            Rows = new Table([.. Enumerable.Repeat(8, width)], keyColumns: width);
+            ByKey = Rows.Arrange([.. Enumerable.Range(0, keys.Length)]);
+        }
     }
-    sealed class Side(Layout layout, VExpr[] keys, bool[] keyDec)
-    {
-        public readonly Layout Layout = layout; public readonly VExpr[] Keys = keys; public readonly bool[] KeyDec = keyDec;
-        public readonly Dictionary<Key, Dictionary<Key, Entry>> Index = [];
-    }
+    static int Words(int n) => (n + 63) >> 6;
     readonly Side left, right;
+    readonly DecimalCodes decimals = new();
+    /// <summary>The join key of the batch in hand, evaluated once per half.</summary>
+    readonly Column[] keyCols;
 
     public JoinOp(TJoin t, Layout lL, Layout rL, OpContext cx) : base(t)
     {
         VExpr[] C(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => ExprCompiler.Compile(e, l, cx.It, cx.Faults))];
         left = new Side(lL, C(t.Keys.Select(k => k.Left), lL), [.. t.Keys.Select(k => k.Left.Type.Ty.Tag == Tag.Decimal)]);
         right = new Side(rL, C(t.Keys.Select(k => k.Right), rL), [.. t.Keys.Select(k => k.Right.Type.Ty.Tag == Tag.Decimal)]);
+        keyCols = new Column[t.Keys.Count];
     }
 
-    static Key? KeyOf(Side s, Column[] cols, int row)
+    /// <summary>The stored form of a batch row: join key, columns, absent bits. False when a part of the join key is absent: such a row never joins.</summary>
+    bool Encode(Side s, Batch b, int row, Span<long> key)
     {
-        var v = new long[cols.Length * 2];
-        for (var i = 0; i < cols.Length; i++)
+        var m = s.Keys.Length;
+        for (var i = 0; i < m; i++)
         {
-            if (!cols[i].Present(row)) return null;
-            if (s.KeyDec[i] || cols[i].IsDec) (v[i * 2], v[i * 2 + 1]) = DecimalKey.Of(cols[i].IsDec ? cols[i].D[row] : cols[i].L[row]);
-            else v[i * 2] = cols[i].L[row];
+            var c = keyCols[i];
+            if (!c.Present(row)) return false;
+            key[i] = s.KeyDec[i] || c.IsDec ? decimals.Code(c.IsDec ? c.D[row] : c.L[row]) : c.L[row];
         }
-        return new Key(v);
-    }
-
-    static Cell[] CellsOf(Batch b, int row)
-    {
-        var cells = new Cell[b.Layout.Count];
-        for (var c = 0; c < cells.Length; c++) { var col = b.Cols[c]; cells[c] = col.Present(row) ? new Cell(true, col.IsDec ? 0 : col.L[row], col.IsDec ? col.D[row] : 0) : default; }
-        return cells;
-    }
-
-    static Key RowKey(Cell[] cells)
-    {
-        var v = new long[cells.Length * 4];
-        for (var c = 0; c < cells.Length; c++)
+        key[(m + s.N)..].Clear();
+        for (var c = 0; c < s.N; c++)
         {
-            if (!cells[c].Present) { v[c * 4] = 1; continue; }
-            v[c * 4 + 1] = cells[c].L; (v[c * 4 + 2], v[c * 4 + 3]) = DecimalKey.Of(cells[c].D);
+            var col = b.Cols[c];
+            if (!col.Present(row)) { key[m + c] = 0; key[m + s.N + (c >> 6)] |= 1L << (c & 63); }
+            else key[m + c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
         }
-        return new Key(v);
+        return true;
     }
 
-    void Emit(BatchBuilder bb, Cell[] l, Cell[] r, long weight)
+    /// <summary>One output row: the batch row of `self` and the stored row `r` of `other`, left columns first.</summary>
+    void Emit(BatchBuilder bb, Side self, Batch b, int row, Side other, int r, bool selfIsLeft, long weight)
     {
-        var row = bb.Add(weight);
-        var n = l.Length;
-        for (var c = 0; c < OutLayout.Count; c++)
+        var o = bb.Add(weight); var cols = bb.Batch.Cols;
+        var (mine, theirs) = selfIsLeft ? (0, self.N) : (other.N, 0);
+        for (var c = 0; c < self.N; c++)
         {
-            var cell = c < n ? l[c] : r[c - n]; var dst = bb.Batch.Cols[c];
-            if (!cell.Present) { bb.Absent(row, c); continue; }
-            if (dst.IsDec) dst.D[row] = cell.D; else dst.L[row] = cell.L;
+            var src = b.Cols[c]; var dst = cols[mine + c];
+            if (!src.Present(row)) { bb.Absent(o, mine + c); continue; }
+            if (dst.IsDec) dst.D[o] = src.D[row]; else dst.L[o] = src.L[row];
         }
-    }
-
-    void Update(Side s, Key jk, Cell[] cells, long w)
-    {
-        if (!s.Index.TryGetValue(jk, out var rows)) s.Index[jk] = rows = [];
-        var rk = RowKey(cells);
-        if (!rows.TryGetValue(rk, out var e)) rows[rk] = e = new Entry(cells);
-        e.Weight += w;
-        if (e.Weight == 0) { rows.Remove(rk); if (rows.Count == 0) s.Index.Remove(jk); }
+        var t = other.Rows; var m = other.Keys.Length;
+        for (var c = 0; c < other.N; c++)
+        {
+            var dst = cols[theirs + c];
+            if ((t.Get(r, m + other.N + (c >> 6)) >> (c & 63) & 1) != 0) { bb.Absent(o, theirs + c); continue; }
+            var v = t.Get(r, m + c);
+            if (dst.IsDec) dst.D[o] = decimals.Value(v); else dst.L[o] = v;
+        }
     }
 
     void Half(Batch? b, Side self, Side other, bool selfIsLeft, BatchBuilder bb)
     {
         if (b is null || b.Rows == 0) return;
-        var keyCols = self.Keys.Select(k => k.Eval(b)).ToArray();
+        var m = self.Keys.Length;
+        for (var i = 0; i < m; i++) keyCols[i] = self.Keys[i].Eval(b);
+        Span<long> key = stackalloc long[self.Rows.Columns];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
-            if (KeyOf(self, keyCols, row) is not { } jk) continue;
-            var cells = CellsOf(b, row); var w = b.Weight(row);
-            if (other.Index.TryGetValue(jk, out var matches))
-                foreach (var m in matches.Values) { if (selfIsLeft) Emit(bb, cells, m.Cells, w * m.Weight); else Emit(bb, m.Cells, cells, w * m.Weight); }
-            Update(self, jk, cells, w);
+            if (!Encode(self, b, row, key)) continue;
+            var w = b.Weight(row);
+            for (var r = other.ByKey.First(key[..m]); r >= 0; r = other.ByKey.Next(r)) Emit(bb, self, b, row, other, r, selfIsLeft, w * other.Rows.Weight(r));
+            self.Rows.Add(key, w);
         }
     }
 
