@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Unattended live feed: Hubble flows, Kubernetes watch events and metrics polls into one single-partition hub
+// Unattended live feed: Hubble flows, Kubernetes watch events, metrics polls, the Resource Graph inventory and its changes,
+// and the events of the hubs Azure writes to (sattle-activity, sattle-aks) into one single-partition hub
 // as envelopes. With --mirror-hubble the flows are also written to the hubble hub. Stream semantics: see CAPTURE-FORMAT.md.
 // usage: eh-forward.mjs --namespace <ns> --kubeconfig <file> [--hub sattle-ingest] [--seconds N] [--no-hubble] [--no-metrics] [--mirror-hubble] [--authoring FILE] [--cluster NAME]
 //   --authoring FILE  one authoring record per line (signal rules, policies, curations), sent as `authoring` envelopes at every start.
@@ -9,14 +10,15 @@
 //                     (in the canvas, for example). Leave --authoring out on a restart that must keep such edits.
 //   --cluster NAME    the cluster's name on Kubernetes and Prometheus records; default Cilium's cluster-name
 //   env HUBBLE_FILTER  observe filter flags, default "--namespace sattle-demo --namespace demo"
-//   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60), QUEUE_MAX_MB per hub (64)
+//   env PROM_POLL_SECONDS (60), AZURE_POLL_SECONDS (60, also the Resource Graph changes), QUEUE_MAX_MB per hub (64)
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { parseArgs, promisify } from 'node:util';
 import { AzureCliCredential } from '@azure/identity';
+import { argPoller } from './lib/arg-poll.mjs';
 import { azureMetricsPoller, cachedToken, nextPollMs } from './lib/azure-metrics-poll.mjs';
-import { producer } from './lib/eventhub.mjs';
-import { clusterName, envelope, withCluster } from './lib/envelope.mjs';
+import { consumer, producer } from './lib/eventhub.mjs';
+import { clusterName, envelope, hubEnvelope, withCluster } from './lib/envelope.mjs';
 import { sink } from './lib/sink.mjs';
 import { newSamples } from './lib/metrics-poll.mjs';
 import { startChild, supervise, sleep } from './lib/supervise.mjs';
@@ -142,6 +144,36 @@ const azureMetricsLoop = (everySec, windowSec) => (async () => {
     for (let waited = 0; waited < wait && !stopping; waited += 500) await sleep(500);
   }
 })();
+// Resource Graph: the inventory once, then its changes every `everySec`; a failed snapshot is asked again whole
+const subscription = async () => (await promisify(execFile)('bash', ['-c', `source "${here}lib.sh"; load_context; printf %s "$SUB"`], { env: kubeEnv })).stdout;
+const resourceGraphLoop = (everySec) => (async () => {
+  const getToken = cachedToken(new AzureCliCredential());
+  let p; let snapshotDone = false; let failures = 0;
+  while (!stopping) {
+    const t0 = Date.now();
+    try {
+      p ??= argPoller({ subscription: await subscription(), getToken });
+      if (snapshotDone) await p.poll(route); else { await p.snapshot(route); snapshotDone = true; }
+      failures = 0;
+    } catch (err) { failures++; if (!stopping) marker({ event: 'poll-failed', poll: 'resource-graph', failures, error: String(err.message).slice(0, 160) }); }
+    const wait = Math.max(5_000, nextPollMs(everySec, failures) - (Date.now() - t0));
+    for (let waited = 0; waited < wait && !stopping; waited += 500) await sleep(500);
+  }
+})();
+loops.push(resourceGraphLoop(Number(process.env.AZURE_POLL_SECONDS ?? 60)));
+
+// ---- The hubs Azure writes to (Activity Log and AKS diagnostic settings): every event goes on as it is, from 10 minutes
+// before this start, so a restart within 10 minutes loses nothing; the engine drops the events it has (same keys)
+const DIAGNOSTIC_LOOKBACK_MS = 10 * 60 * 1000;
+const diagnostics = ['sattle-activity', 'sattle-aks'].map((hub) => {
+  const client = consumer(a.namespace, hub, 'sattle-engine');
+  const subscription = client.subscribe({
+    processEvents: async (events, ctx) => { for (const event of events) route(hubEnvelope({ hub, partitionId: ctx.partitionId, event, capturedAt: new Date().toISOString(), seq: 0 })); },
+    processError: async (err) => { if (!stopping) console.error(`${hub} receive error`, String(err.message).slice(0, 160)); },
+  }, { startPosition: { enqueuedOn: new Date(startedAt - DIAGNOSTIC_LOOKBACK_MS) }, maxBatchSize: 100, maxWaitTimeInSeconds: 5 });
+  return { client, subscription };
+});
+
 if (!a['no-metrics']) {
   const prom = Number(process.env.PROM_POLL_SECONDS ?? 60);
   // Azure metrics: a minute is accepted while its window is within the late horizon (3 windows of 60 s past the
@@ -172,7 +204,7 @@ const stop = async (why) => {
   console.error(`stopping (${why})`);
   clearInterval(timer); clearInterval(statsTimer);
   for (const c of children) c.kill();
-  await Promise.race([Promise.allSettled(loops), sleep(8000)]);
+  await Promise.race([Promise.allSettled([...loops, ...diagnostics.map((d) => d.subscription.close())]), sleep(8000)]);
   marker({ event: 'stop', reason: why, counts });
   // retry until every queue is empty or the deadline passes; events left behind make the exit status non-zero
   const deadline = Date.now() + 15_000;
@@ -183,7 +215,7 @@ const stop = async (why) => {
     }
   }
   const lost = sinks.reduce((n, k) => n + k.stats().queued, 0);
-  await Promise.allSettled([ingestClient.close(), hubbleClient.close()]);
+  await Promise.allSettled([ingestClient.close(), hubbleClient.close(), ...diagnostics.map((d) => d.client.close())]);
   console.error(`eh-forward: sent ingest=${ingest.stats().sent} hubble=${hubbleSink.stats().sent}`, JSON.stringify(counts));
   if (lost) console.error(`eh-forward: ${lost} events were still queued at exit and are lost`);
   process.exit(lost ? 1 : 0);

@@ -41,7 +41,7 @@ azd down
 - Event Hubs namespace (Standard, 1 TU, local auth off, Entra RBAC) with hubs `sattle-activity`, `sattle-aks`, `sattle-hubble`, `sattle-ingest` (1 partition, one ordered stream), consumer groups `sattle-capture` and `sattle-engine`
 - Storage account for VNet flow logs (3 day lifecycle), private endpoint and private DNS zone for it
 - Role assignments for the signed-in user: Event Hubs Data Sender and Receiver, Storage Blob Data Reader
-- Hooks: Activity Log and AKS (`kube-audit-admin`, `cluster-autoscaler`) diagnostic settings to their hubs, VNet flow log `fl-sattle-aks-vnet` (format v2, 3 day retention), ACNS observability (runs Hubble relay), namespace `sattle-demo` (frontend, api, db, loadgen, and an intruder that network policy denies)
+- Hooks: Activity Log and AKS (`kube-audit-admin`, `cluster-autoscaler`) diagnostic settings to their hubs, VNet flow log `fl-sattle-aks-vnet` (format v2, 3 day retention), ACNS observability (runs Hubble relay), namespace `sattle-demo` (frontend, api, db, loadgen, and an intruder that network policy denies; db gets `BACKUP_URL` naming the lab's storage account, the workload's dependency on an Azure resource)
 
 ## Capture and stream
 ```bash
@@ -62,14 +62,14 @@ The lab reads the cluster in two ways, and both stay (decision 2026-11-16, #84).
 | Hubble flows | followed for the window (`sources/hubble.sh`) | followed with restart and replay of the gap; mirrored to `sattle-hubble` with `--mirror-hubble` |
 | Prometheus (managed) | range queries after the window (`sources/prometheus.sh`) | polled every 60 s over 120 s |
 | Azure platform metrics (cluster, load balancer, Event Hubs namespace) | after the window, through the az CLI (`sources/azure-metrics.sh`) | REST API every 60 s over 300 s, each datapoint once |
-| Resource Graph inventory | snapshot before the window (`sources/arg.sh`) | none |
-| Activity Log | diagnostic setting to hub `sattle-activity`, consumed to a file, plus a backfill of up to 5000 events (`sources/activity-log.sh`) | on its own hub `sattle-activity`, not routed into `sattle-ingest` |
-| AKS control plane logs (`kube-audit-admin`, `cluster-autoscaler`) | diagnostic setting to hub `sattle-aks`, consumed to a file | on its own hub `sattle-aks`, not routed into `sattle-ingest` |
+| Resource Graph inventory | snapshot before the window (`sources/arg.sh`) | snapshot at start, then the changes of the last 30 minutes every 60 s (`resourcechanges`, `resourcecontainerchanges`): deletes as change records, created and changed resources as their current rows |
+| Activity Log | diagnostic setting to hub `sattle-activity`, consumed to a file, plus a backfill of up to 5000 events (`sources/activity-log.sh`) | hub `sattle-activity` read by the forwarder (group `sattle-engine`, from 10 minutes before its start) and routed into `sattle-ingest` as it is |
+| AKS control plane logs (`kube-audit-admin`, `cluster-autoscaler`) | diagnostic setting to hub `sattle-aks`, consumed to a file | hub `sattle-aks`, routed the same way |
 | VNet flow logs | blobs read after the window (`sources/flowlogs.sh`) | none (blobs only, minutes late) |
 | Event Hubs | every hub consumed to `eventhub/*.ndjson` during the window | `sattle-ingest` is the stream itself |
 
 Azure inputs still missing for phase 2 (none is captured by either stack today):
-- In the live stream: Resource Graph inventory and its changes, the Activity Log and AKS logs (they are on their own hubs; the engine would read those hubs or the forwarder would route them), VNet flow logs.
+- In the live stream: VNet flow logs. Their blobs are readable only from inside the VNet and arrive minutes late, past the engine's late horizon (#97).
 - In both: AKS control plane log categories beyond the two above (API server, scheduler, controller manager), container and Kubernetes event logs of Container Insights, Resource Health availability per resource (only its Activity Log events arrive), application telemetry (Application Insights or OpenTelemetry), Azure Monitor alerts as their own source (only alert events in the Activity Log), and load balancer health: the cluster's load balancer reports no `VipAvailability` until a service with a public frontend and health probe exists.
 
 ## Fixtures

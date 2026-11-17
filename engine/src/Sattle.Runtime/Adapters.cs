@@ -485,10 +485,11 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
     }
 }
 
-/// <summary>Azure Resource Graph rows (resources and resource containers).</summary>
-public sealed class AzureResourceGraphAdapter : ISourceAdapter
+/// <summary>Azure Resource Graph rows (resources and resource containers), one row per resource id. A row read again replaces the one before (the live stream sends the inventory at every start and each changed resource again); a change record of a delete (query `resourcechanges` or `resourcecontainerchanges`) takes it back.</summary>
+public sealed class AzureResourceGraphAdapter : ISourceAdapter, IRedelivery
 {
     public string Id => "azure.resource-graph";
+    static readonly string[] Fields = ["id", "name", "type", "location", "resourceGroup", "subscriptionId", "parentId", "address", "linkedId", "clientId", "principalId", "scope"];
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
         new("ResourceRow", [RowDef.F("id", "Text"), RowDef.F("name", "Text"), RowDef.F("type", "Text"), RowDef.F("location", "Text", true), RowDef.F("resourceGroup", "Text", true), RowDef.F("subscriptionId", "Text", true), RowDef.F("parentId", "Text", true),
@@ -496,6 +497,13 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter
     ];
     public bool Handles(string s) => s == "arg";
     public long Resources { get; private set; }
+    /// <summary>The row written for each resource, by id (Azure ids compare without case).</summary>
+    readonly Dictionary<string, string?[]> rows = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A row delivered again counts when it differs from the row written for its resource.</summary>
+    public bool Counts(Envelope e) => !IsChange(e) && RowOf(e.Payload) is { } r && !(rows.TryGetValue(r[0]!, out var prev) && prev.SequenceEqual(r));
+
+    static bool IsChange(Envelope e) => e.HasMeta && e.Meta.S("query") is { } q && q.EndsWith("changes", StringComparison.Ordinal);
 
     /// <summary>A resource in an AKS node resource group (mc_{group}_{cluster}_{region}) belongs to that cluster. The group name is the only link Resource Graph rows carry without their properties.</summary>
     static string? ClusterOf(JsonElement row)
@@ -506,16 +514,14 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter
         return parts.Length == 4 ? $"/subscriptions/{sub}/resourcegroups/{parts[1]}/providers/microsoft.containerservice/managedclusters/{parts[2]}" : null;
     }
 
-    public void Consume(Envelope e, IRowSink sink)
+    /// <summary>The fields of the row, in the order of `Fields`; null when the record has no id, name or type.</summary>
+    static string?[]? RowOf(JsonElement row)
     {
-        var id = e.Payload.S("id"); var name = e.Payload.S("name"); var type = e.Payload.S("type");
-        if (id is null || name is null || type is null) { sink.Rejected("arg", "row without id, name or type"); return; }
-        var w = sink.Begin("ResourceRow"); w.Begin();
-        w.Text("id", id); w.Text("name", name); w.Text("type", type);
-        w.Text("location", J.NullIfEmpty(e.Payload.S("location"))); w.Text("resourceGroup", J.NullIfEmpty(e.Payload.S("resourceGroup"))); w.Text("subscriptionId", J.NullIfEmpty(e.Payload.S("subscriptionId")));
-        var p = e.Payload.P("properties") is { ValueKind: JsonValueKind.Object } props ? props : (JsonElement?)null;
+        var id = row.S("id"); var name = row.S("name"); var type = row.S("type");
+        if (id is null || name is null || type is null) return null;
+        var p = row.P("properties") is { ValueKind: JsonValueKind.Object } props ? props : (JsonElement?)null;
         string? Prop(params string[] path) => p is { } x ? J.NullIfEmpty(x.PathS(path)) : null;
-        string? address = null, linked = null, client = null, principal = null, scope = null, parent = ClusterOf(e.Payload);
+        string? address = null, linked = null, client = null, principal = null, scope = null, parent = ClusterOf(row);
         switch (type.ToLowerInvariant())
         {
             case "microsoft.network/privateendpoints":
@@ -535,7 +541,25 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter
                 principal = Prop("principalId"); scope = Prop("scope");
                 break;
         }
-        w.Text("parentId", parent); w.Text("address", address); w.Text("linkedId", linked); w.Text("clientId", client); w.Text("principalId", principal); w.Text("scope", scope);
+        return [id, name, type, J.NullIfEmpty(row.S("location")), J.NullIfEmpty(row.S("resourceGroup")), J.NullIfEmpty(row.S("subscriptionId")), parent, address, linked, client, principal, scope];
+    }
+
+    static void Write(IRowSink sink, long weight, string?[] r)
+    {
+        var w = sink.Begin("ResourceRow"); w.Begin(weight);
+        for (var i = 0; i < Fields.Length; i++) w.Text(Fields[i], r[i]);
+    }
+
+    public void Consume(Envelope e, IRowSink sink)
+    {
+        if (IsChange(e))
+        {
+            if (e.Payload.PathS("properties", "changeType") == "Delete" && e.Payload.PathS("properties", "targetResourceId") is { } gone && rows.Remove(gone, out var removed)) Write(sink, -1, removed);
+            return;
+        }
+        if (RowOf(e.Payload) is not { } r) { sink.Rejected("arg", "row without id, name or type"); return; }
+        if (rows.TryGetValue(r[0]!, out var prev)) { if (prev.SequenceEqual(r)) return; Write(sink, -1, prev); }
+        Write(sink, 1, r); rows[r[0]!] = r;
         Resources++;
     }
 }

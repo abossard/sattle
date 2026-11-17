@@ -27,3 +27,5 @@ fi
 
 az aks get-credentials -g "$SATTLE_AKS_RG" -n "$SATTLE_AKS_NAME" --overwrite-existing >/dev/null
 kubectl apply -f demo/sattle-demo.yaml
+# db backs up to the lab's storage account: the workload's dependency on an Azure resource, found by its configuration
+kubectl -n sattle-demo set env deploy/db BACKUP_URL="https://$SATTLE_FLOWLOG_STORAGE.blob.core.windows.net/" >/dev/null

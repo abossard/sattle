@@ -4,7 +4,7 @@
 import { appendFileSync } from 'node:fs';
 import { parseArgs } from 'node:util';
 import { consumer, earliestEventPosition, latestEventPosition } from './lib/eventhub.mjs';
-import { envelope } from './lib/envelope.mjs';
+import { hubEnvelope } from './lib/envelope.mjs';
 import { drainState } from './lib/drain.mjs';
 
 const { values: a } = parseArgs({
@@ -13,10 +13,6 @@ const { values: a } = parseArgs({
 const client = consumer(a.namespace, a.hub);
 const startPosition = a.from === 'latest' ? latestEventPosition : earliestEventPosition;
 
-// Event body is JSON for everything we send and for Azure diagnostic settings; keep text otherwise.
-const bodyOf = (b) => (typeof b === 'string' || b instanceof Uint8Array ? tryJson(Buffer.from(b).toString('utf8')) : b);
-const tryJson = (s) => { try { return JSON.parse(s); } catch { return { text: s }; } };
-
 let seq = 0;
 let lastEventAt = Date.now();
 const seen = new Map(); // partition id -> last sequence number received
@@ -24,15 +20,7 @@ const sub = client.subscribe(
   {
     processEvents: async (events, ctx) => {
       for (const ev of events) {
-        const e = envelope({
-          source: `eventhub:${a.hub}`,
-          capturedAt: new Date().toISOString(),
-          seq: seq++,
-          payload: bodyOf(ev.body),
-          meta: { partitionId: ctx.partitionId, sequenceNumber: ev.sequenceNumber, offset: ev.offset, enqueuedTimeUtc: ev.enqueuedTimeUtc.toISOString(), properties: ev.properties ?? {} },
-        });
-        // Delivery identity of an Event Hubs event is (partition, sequence number).
-        e.key = `eventhub:${a.hub}/${ctx.partitionId}/${ev.sequenceNumber}`;
+        const e = hubEnvelope({ hub: a.hub, partitionId: ctx.partitionId, event: ev, capturedAt: new Date().toISOString(), seq: seq++ });
         appendFileSync(a.out, JSON.stringify(e) + '\n');
         seen.set(ctx.partitionId, ev.sequenceNumber);
       }

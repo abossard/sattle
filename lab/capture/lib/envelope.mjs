@@ -41,6 +41,20 @@ export function envelope({ source, capturedAt, seq, payload, meta }) {
   return e;
 }
 
+// One event read from an Event Hub (a hub Azure writes to, such as a diagnostic setting's): the body as payload, JSON
+// when it parses, and its place in the hub. Its delivery identity is (hub, partition, sequence number), so reading the
+// hub again gives the same keys.
+export function hubEnvelope({ hub, partitionId, event, capturedAt, seq }) {
+  const b = event.body;
+  const text = typeof b === 'string' || b instanceof Uint8Array ? Buffer.from(b).toString('utf8') : null;
+  const e = envelope({
+    source: `eventhub:${hub}`, capturedAt, seq, payload: text === null ? b : payloadOf(text),
+    meta: { partitionId, sequenceNumber: event.sequenceNumber, offset: event.offset, enqueuedTimeUtc: event.enqueuedTimeUtc.toISOString(), properties: event.properties ?? {} },
+  });
+  e.key = `eventhub:${hub}/${partitionId}/${event.sequenceNumber}`;
+  return e;
+}
+
 // A text line becomes a payload: JSON when it parses, otherwise { text }.
 export function payloadOf(line) {
   try {

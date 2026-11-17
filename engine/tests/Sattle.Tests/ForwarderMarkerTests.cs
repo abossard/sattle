@@ -121,6 +121,33 @@ public class ForwarderMarkerTests
         Assert.Equal(["a"], h.Engine.Master.State.Entities.Where(x => Ids.Name(x.Type) == "Pod").Select(x => x.Props.Text("d:sattle.infra/prop:name")).Order());
     }
 
+    const string ResourceId = "/subscriptions/s/resourceGroups/rg/providers/Microsoft.Storage/storageAccounts/acct";
+    /// <summary>A Resource Graph row as the forwarder sends it: its key is the query and the resource, whatever the row says.</summary>
+    static string ArgRow(long seq, string location) => JsonSerializer.Serialize(new Dictionary<string, object?>
+    {
+        ["v"] = 1, ["source"] = "arg", ["capturedAt"] = $"2026-01-01T10:0{seq}:00.000Z", ["seq"] = seq, ["key"] = "arg/resources/" + ResourceId, ["meta"] = new { query = "resources" },
+        ["payload"] = new { id = ResourceId, name = "acct", type = "microsoft.storage/storageaccounts", location, resourceGroup = "rg", subscriptionId = "s" },
+    });
+    static string ArgChange(long seq, string changeType) => Line("arg", $"2026-01-01T10:0{seq}:00.000Z", seq,
+        new { id = ResourceId.ToUpperInvariant() + "/providers/Microsoft.Resources/changes/c" + seq, properties = new { changeType, targetResourceId = ResourceId.ToUpperInvariant() } }, new { query = "resourcechanges" });
+
+    /// <summary>#97: the live stream sends the Resource Graph inventory at every start and each changed resource again, under the key of the resource. The row read last is the resource's row; a delete in `resourcechanges` takes it back.</summary>
+    [Theory]
+    [InlineData("same", SpaceHost.LiveResult.Duplicate, new[] { "westeurope" })]
+    [InlineData("changed", SpaceHost.LiveResult.Consumed, new[] { "swedencentral" })]
+    [InlineData("updateRecord", SpaceHost.LiveResult.Consumed, new[] { "westeurope" })]
+    [InlineData("deleteRecord", SpaceHost.LiveResult.Consumed, new string[0])]
+    public void A_resource_graph_row_read_again_replaces_its_resource_and_a_delete_removes_it(string next, SpaceHost.LiveResult result, string[] locations)
+    {
+        using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Sattle.Language.Catalog.ReadDirectory(Repo.Definitions), new HostOptions { Projections = Repo.Projections, Cluster = "c" });
+        h.StartLive(new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "c", FlushAtEnd = false });
+        h.LiveEnvelope("fake", ArgRow(1, "westeurope"), "{\"n\":0}");
+        var line = next switch { "same" => ArgRow(2, "westeurope"), "changed" => ArgRow(2, "swedencentral"), "updateRecord" => ArgChange(2, "Update"), _ => ArgChange(2, "Delete") };
+        Assert.Equal(result, h.LiveEnvelope("fake", line, "{\"n\":1}"));
+        h.LiveFlush();
+        Assert.Equal(locations, h.Engine.Master.State.Entities.Where(x => Ids.Name(x.Type) == "AzureResource").Select(x => x.Props.Text("d:sattle.azure/prop:location")));
+    }
+
     [Theory]
     [InlineData("dropped", 7L, "forwarderDropped")]
     [InlineData("hubble-reconnect", 0L, "hubbleReconnect")]
