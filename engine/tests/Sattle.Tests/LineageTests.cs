@@ -123,15 +123,26 @@ public class LineageTests
     // ---- replay --out writes what the host serves -------------------------------------------------------------------------------------
 
     [Fact]
-    public void The_static_files_hold_the_lineage_and_the_documents_the_host_serves()
+    public void The_static_files_hold_every_graph_with_its_edges_and_the_lineage_and_the_documents_the_host_serves()
     {
-        var run = ReplayTests.Replay(Estate, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+        var run = Scenarios.Run(Estate);
         var dir = Path.Combine(Path.GetTempPath(), "sattle-out-" + Guid.NewGuid().ToString("N"));
         try
         {
             run.Export.WriteFiles(dir, Repo.LoadExamples(out _).Spaces.Values.Single());
             var h = OnEstate.Value;
             var manifest = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json")))!["graphs"]!.AsObject();
+            // every graph of the space is there with what it is, in the words of its projection, and with its edges in the final snapshot and in the patches
+            Assert.Equal(Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => g.Name).Append("master").Distinct().Order().ToList(), manifest.Select(g => g.Key).Order().ToList());
+            Assert.All(manifest, g => Assert.False(string.IsNullOrWhiteSpace(g.Value!["description"]!.GetValue<string>()), $"graph {g.Key} has no description"));
+            foreach (var g in manifest.Select(g => g.Key).Where(n => !ProjectionEdgesTests.Exempt.ContainsKey(n)))
+            {
+                var final = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, $"{g}.final.snapshot.json")))!["extent"]!;
+                var inPatches = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, $"{g}.patches.json")))!.AsArray().SelectMany(p => p!["edits"]!.AsArray()).Count(x => x!["kind"]!.GetValue<string>() == "relationship");
+                Assert.True(final["entities"]!.AsArray().Count > 0, $"{g}: no entities in the final snapshot");
+                Assert.True(final["relationships"]!.AsArray().Count > 0, $"{g}: no relationships in the final snapshot");
+                Assert.True(inPatches > 0, $"{g}: no relationship edit in the patches");
+            }
             Assert.All(manifest, g =>
             {
                 var name = g.Key;

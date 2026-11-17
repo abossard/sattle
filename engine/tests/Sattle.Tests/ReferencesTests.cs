@@ -122,7 +122,7 @@ public class ReferencesTests
     [Fact]
     public void The_estate_workload_graphs_have_no_edge_to_a_component_outside_the_model()
     {
-        var e = ReplayTests.Replay(Estate, cluster: "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }).Engine;
+        var e = Scenarios.Run(Estate).Engine;
         foreach (var g in new[] { e.Graph("workloadStructure").State, e.Graph("workload").State })
             Assert.DoesNotContain(g.Rels, r => g.Entity(r.Source) is null || g.Entity(r.Target) is null);
     }

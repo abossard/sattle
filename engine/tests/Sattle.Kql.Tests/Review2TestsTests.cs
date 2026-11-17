@@ -24,8 +24,8 @@ public class Review2TestsTests
         Assert.Contains("\"Deployment health\"", text);
         string Digest()
         {
-            var output = new StringWriter(); var saved = Console.Out; Console.SetOut(output);
-            try { Assert.Equal(0, Program.Main(["replay", estate, "--cluster", "synth", "--defs", defs])); } finally { Console.SetOut(saved); }
+            var output = new StringWriter();
+            Assert.Equal(0, Program.Run(["replay", estate, "--cluster", "synth", "--defs", defs], output));
             return output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal));
         }
         var before = Digest();

@@ -12,7 +12,7 @@ public class ProjectionEdgesTests
     static string Estate => EstateTests.EstateDir;
 
     /// <summary>Graphs of the space that declare relationship types in their output ontology and are exempt from "has relationships on the estate", with the reason. Everything else must have them.</summary>
-    static readonly Dictionary<string, string> Exempt = new()
+    internal static readonly Dictionary<string, string> Exempt = new()
     {
         ["deploymentReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
         ["healthReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
@@ -21,7 +21,7 @@ public class ProjectionEdgesTests
 
     public static IEnumerable<object[]> Graphs() => Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => new object[] { g.Name });
 
-    static readonly Lazy<Engine> OnEstate = new(() => ReplayTests.Replay(Estate, cluster: "synth").Engine);
+    static readonly Lazy<Engine> OnEstate = new(() => Scenarios.Run(Estate).Engine);
 
     [Theory]
     [MemberData(nameof(Graphs))]
@@ -170,33 +170,6 @@ public class ProjectionEdgesTests
             if (extraWebToDb) Assert.True(service["web -> db"] > 0);
         }
         finally { Directory.Delete(dir, true); }
-    }
-
-    // ---- the static space `replay --out` writes for the canvas ----------------------------------------------------------------------
-
-    [Fact]
-    public void The_static_space_written_for_the_canvas_has_every_graph_with_its_edges_in_the_final_snapshot_and_in_the_patches()
-    {
-        var run = ReplayTests.Replay(Estate, cluster: "synth");
-        var dir = Path.Combine(Path.GetTempPath(), "sattle-out-" + Guid.NewGuid().ToString("N"));
-        try
-        {
-            run.Export.WriteFiles(dir, Repo.LoadExamples(out _).Spaces.Values.Single());
-            var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, "manifest.json"))).RootElement.GetProperty("graphs");
-            var names = manifest.EnumerateObject().Select(x => x.Name).Order().ToList();
-            Assert.Equal(Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => g.Name).Append("master").Distinct().Order().ToList(), names);
-            Assert.All(manifest.EnumerateObject(), g => Assert.False(string.IsNullOrWhiteSpace(g.Value.GetProperty("description").GetString()), $"graph {g.Name} has no description"));       // what the graph is, in the words of its projection
-            foreach (var g in names.Where(n => !Exempt.ContainsKey(n)))
-            {
-                var final = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, $"{g}.final.snapshot.json"))).RootElement.GetProperty("extent");
-                var inPatches = JsonDocument.Parse(File.ReadAllText(Path.Combine(dir, $"{g}.patches.json"))).RootElement.EnumerateArray()
-                    .SelectMany(p => p.GetProperty("edits").EnumerateArray()).Count(x => x.GetProperty("kind").GetString() == "relationship");
-                Assert.True(final.GetProperty("entities").GetArrayLength() > 0, $"{g}: no entities in the final snapshot");
-                Assert.True(final.GetProperty("relationships").GetArrayLength() > 0, $"{g}: no relationships in the final snapshot");
-                Assert.True(inPatches > 0, $"{g}: no relationship edit in the patches");
-            }
-        }
-        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 
     // ---- a capture names its workload in an arguments file; the tracked space takes those values ---------------------------------------

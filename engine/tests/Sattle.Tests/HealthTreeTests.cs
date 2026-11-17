@@ -31,7 +31,9 @@ public class HealthTreeTests
         return dir;
     }
 
-    static Engine Run(string dir, int chunk = 2000) => ReplayTests.Replay(dir, chunk, Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }).Engine;
+    /// <summary>The engine after a replay of `dir`: the shared run of a tracked scenario (read, never changed), a replay of its own for a variant in a temporary folder.</summary>
+    static Engine Run(string dir) => dir == Wide || dir == Path.Combine(Fixtures, "estate") ? Scenarios.Run(dir).Engine
+        : ReplayTests.Replay(dir, 2000, Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }).Engine;
 
     static string P(Entity e, string prop) => e.Props.TryGet("d:acme.tree/prop:" + prop, out var v) ? v switch { TextValue t => t.S, IntegerValue i => i.N.ToString(), BooleanValue b => b.B ? "true" : "false", _ => v.ToString()! } : "";
     static Dictionary<string, Entity> Elements(Engine e, string graph = "healthTree") => e.Graph(graph).State.Entities.Where(x => Ids.Name(x.Type) == "Element").ToDictionary(x => P(x, "nodeKey"));
@@ -223,22 +225,20 @@ public class HealthTreeTests
     // ---- the graph is a tree for a viewer ------------------------------------------------------------------------------------------------
 
     [Fact]
-    public void The_ontology_marks_the_hierarchy_relationship_and_gives_the_states_value_roles()
+    public void The_ontology_marks_the_hierarchy_relationship()
     {
-        var run = ReplayTests.Replay(Wide, cluster: Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+        var run = Scenarios.Run(Wide);
         var onto = run.Export.Ontology(run.Engine.Graph("healthTree"));
         var rels = onto["relationshipTypes"]!.AsArray().Where(x => x!["hierarchy"] is not null).ToDictionary(x => x!["id"]!["value"]!.GetValue<string>(), x => x!["hierarchy"]!.GetValue<bool>());
         bool Marked(string name) => rels.Single(kv => kv.Key == name || kv.Key.EndsWith("." + name, StringComparison.Ordinal) && kv.Key.StartsWith("acme.tree", StringComparison.Ordinal)).Value;
         Assert.True(Marked("Contains")); Assert.False(Marked("Rolls")); Assert.False(Marked("EvidenceFor"));
         Assert.All(onto["relationshipTypes"]!.AsArray().Where(x => x!["id"]!["value"]!.GetValue<string>() != "NoType"), x => Assert.False(x!["rollup"]!.GetValue<bool>()));      // engine 3.49: the tree declares no roll-up type
-        var state = onto["properties"]!.AsArray().Single(p => p!["id"]!["value"]!.GetValue<string>() == "rolledState")!;
-        Assert.Equal("Degraded:warning,Healthy:ok,Unhealthy:danger,Unknown:unknown", string.Join(",", state["presentation"]!.AsArray().Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order()));
     }
 
     [Fact]
     public void The_ontology_serves_treeState_per_entity_type_so_a_viewer_needs_no_property_names()
     {
-        var run = ReplayTests.Replay(Wide, cluster: Cluster, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 });
+        var run = Scenarios.Run(Wide);
         var onto = run.Export.Ontology(run.Engine.Graph("healthTree"));
         var element = onto["entityTypes"]!.AsArray().Single(x => x!["id"]!["value"]!.GetValue<string>() == "Element")!["treeState"]!;
         Assert.Equal("ownState", element["own"]!.GetValue<string>()); Assert.Equal("rolledState", element["rolledUp"]!.GetValue<string>());

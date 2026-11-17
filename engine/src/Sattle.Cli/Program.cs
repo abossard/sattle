@@ -34,17 +34,20 @@ public static class Program
     /// <summary>The projection languages this build reads, the one place they are registered: KQL now (`module.projection.kql`).</summary>
     public static readonly IProjectionSource Projections = new ProjectionSources(new Sattle.Kql.KqlSource());
 
-    public static int Main(string[] args)
+    public static int Main(string[] args) => Run(args, Console.Out);
+
+    /// <summary>The command line with the writer its report goes to (`check`, `replay` and what `serve` says before it listens). `Main` passes the console; a caller in the same process passes its own, so two calls never share an output. Errors go to the error stream of the console, the tables of `bench` to the console.</summary>
+    public static int Run(string[] args, TextWriter output)
     {
         try
         {
-            if (args.Length == 0 || args[0] is "-h" or "--help") { Console.WriteLine(Usage); return args.Length == 0 ? 2 : 0; }
+            if (args.Length == 0 || args[0] is "-h" or "--help") { output.WriteLine(Usage); return args.Length == 0 ? 2 : 0; }
             var o = Options.Parse(args[1..]);
             return args[0] switch
             {
-                "check" => Check(o),
-                "replay" => Replay(o, serve: false),
-                "serve" => Replay(o, serve: true),
+                "check" => Check(o, output),
+                "replay" => Replay(o, serve: false, output),
+                "serve" => Replay(o, serve: true, output),
                 "bench" => Bench.Run(o),
                 _ => Fail($"unknown command '{args[0]}'\n{Usage}"),
             };
@@ -178,7 +181,7 @@ public static class Program
 
     // ---- check ----
 
-    static int Check(Options o)
+    static int Check(Options o, TextWriter output)
     {
         var dir = FindDefinitions(o);
         var files = Catalog.ReadDirectory(dir);
@@ -187,18 +190,18 @@ public static class Program
         if (o.Flags.Contains("update-pins") && res.PinFixes.Count > 0)
         {
             foreach (var (path, text) in Catalog.ApplyPinFixes(files, res.PinFixes)) File.WriteAllText(path, text);
-            Console.WriteLine($"updated {res.PinFixes.Count} import pin(s) in {res.PinFixes.Select(f => f.File).Distinct().Count()} file(s)");
+            output.WriteLine($"updated {res.PinFixes.Count} import pin(s) in {res.PinFixes.Select(f => f.File).Distinct().Count()} file(s)");
             files = Catalog.ReadDirectory(dir);
             cat = new Catalog(Program.Projections); res = cat.Load(files);
         }
         Print(res.Diagnostics);
         var errors = res.Diagnostics.Count(d => d.IsError);
-        Console.WriteLine($"{files.Count} file(s), {cat.Modules.Count - 1} module(s), {cat.Projections.Count} projection(s), {cat.Spaces.Count} graph space(s), catalog revision {cat.Log.Head}, {errors} error(s), {res.Diagnostics.Count - errors} warning(s)");
-        foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) Console.WriteLine($"  {m.Name} @ {m.Version} {m.Digest}");
+        output.WriteLine($"{files.Count} file(s), {cat.Modules.Count - 1} module(s), {cat.Projections.Count} projection(s), {cat.Spaces.Count} graph space(s), catalog revision {cat.Log.Head}, {errors} error(s), {res.Diagnostics.Count - errors} warning(s)");
+        foreach (var m in cat.Modules.Values.Where(m => m.Name != Ids.KernelModule)) output.WriteLine($"  {m.Name} @ {m.Version} {m.Digest}");
         if (o.Get("print") is { } mod)
         {
             if (!cat.Modules.ContainsKey(mod)) return Fail($"module {mod} is not loaded");
-            Console.Write(Printer.Print(cat.Graph, mod));
+            output.Write(Printer.Print(cat.Graph, mod));
         }
         if (o.Flags.Contains("plan") && errors == 0)
             foreach (var sp in cat.Spaces.Keys)
@@ -208,10 +211,10 @@ public static class Program
                 Print(bad); errors += bad.Count(x => x.IsError);
                 foreach (var g in e.Graphs)
                 {
-                    Console.WriteLine($"plan {g.Name} ({g.Plan.Info.Projection}) digest {g.Plan.Info.Digest}");
-                    foreach (var s in g.Plan.Info.Strategies) Console.WriteLine("  " + s);
-                    foreach (var c in g.Plan.Info.FusedChains) Console.WriteLine("  fused: " + string.Join(" > ", c));
-                    Console.WriteLine("  memory: " + g.Plan.Info.MemoryBound);
+                    output.WriteLine($"plan {g.Name} ({g.Plan.Info.Projection}) digest {g.Plan.Info.Digest}");
+                    foreach (var s in g.Plan.Info.Strategies) output.WriteLine("  " + s);
+                    foreach (var c in g.Plan.Info.FusedChains) output.WriteLine("  fused: " + string.Join(" > ", c));
+                    output.WriteLine("  memory: " + g.Plan.Info.MemoryBound);
                 }
             }
         return errors == 0 ? 0 : 1;
@@ -245,7 +248,7 @@ public static class Program
         return cosmos = CosmosGraphStore.Open(parts[0], Opt("db") ?? "sattle", parts.Skip(1).Contains("drop"));
     }
 
-    static int Replay(Options o, bool serve)
+    static int Replay(Options o, bool serve, TextWriter output)
     {
         var live = serve && o.Flags.Contains("live");
         if (live && o.Get("from") is { } from && from is not ("latest" or "earliest")) return Fail($"--from {from}: expected latest or earliest\n{Usage}");
@@ -253,7 +256,7 @@ public static class Program
         if (o.Positional.Count == 0 && !live && !resumeOnly) return Fail("a capture directory is needed\n" + Usage);
         var capture = live || resumeOnly ? "" : FindCapture(o.Positional[0]);
         if (!live && !resumeOnly && !Directory.Exists(capture)) return Fail($"capture directory {capture} does not exist");
-        if (resumeOnly) return Serve(o, "", o.Get("cluster") ?? "lab");
+        if (resumeOnly) return Serve(o, "", o.Get("cluster") ?? "lab", output);
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
             return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
@@ -265,7 +268,7 @@ public static class Program
         if (o.Get("cluster") is { } cl) cluster = cl;
         else if (live) { try { cluster = DetectCluster(FindCapture("latest")); } catch (ArgumentException) { cluster = "lab"; } }
         else cluster = DetectCluster(capture);
-        if (serve) return Serve(o, capture, cluster);
+        if (serve) return Serve(o, capture, cluster, output);
         var adapters = AdapterRegistry.Create(cluster);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], adapters);
         if (bad.Count > 0) { Print(bad); return 1; }
@@ -282,12 +285,12 @@ public static class Program
         export.Attach();
         var ropts = ReplayOptionsOf(o, cluster);
         var replay = new Replay(engine, cat.Spaces[spaceId], adapters, ropts);
-        Console.WriteLine($"capture {Path.GetFileName(capture.TrimEnd('/'))}, space {Ids.Name(spaceId)}, cluster {cluster}, store {store}, speed {(ropts.Speed > 0 ? ropts.Speed + "x" : "max")}");
+        output.WriteLine($"capture {Path.GetFileName(capture.TrimEnd('/'))}, space {Ids.Name(spaceId)}, cluster {cluster}, store {store}, speed {(ropts.Speed > 0 ? ropts.Speed + "x" : "max")}");
         var stats = replay.Run(capture);
-        Report(engine, cat, stats, adapters);
-        if (engine.TrackAllocations) { Console.WriteLine("operator kinds over the replay:"); Bench.KindTable(engine, Console.Out); }
-        if (o.Flags.Contains("census")) Bench.GcAndCensus(engine, Console.Out, ("canvas export", export), ("catalog", cat), ("adapters", adapters), ("replay", replay), ("replay stats", stats));
-        if (o.Get("out") is { } outDir) { export.WriteFiles(outDir, cat.Spaces[spaceId]); Console.WriteLine($"wrote canvas files to {outDir}"); }
+        Report(engine, cat, stats, adapters, output);
+        if (engine.TrackAllocations) { output.WriteLine("operator kinds over the replay:"); Bench.KindTable(engine, output); }
+        if (o.Flags.Contains("census")) Bench.GcAndCensus(engine, output, ("canvas export", export), ("catalog", cat), ("adapters", adapters), ("replay", replay), ("replay stats", stats));
+        if (o.Get("out") is { } outDir) { export.WriteFiles(outDir, cat.Spaces[spaceId]); output.WriteLine($"wrote canvas files to {outDir}"); }
         engine.Dispose();
         return 0;
     }
@@ -300,25 +303,25 @@ public static class Program
         Cluster = cluster, UntilNs = o.Get("until") is { } u && Norm.TryParseInstant(u, out var un) ? un : null,
     };
 
-    static void Report(Engine e, Catalog cat, ReplayStats s, IReadOnlyList<ISourceAdapter> adapters)
+    static void Report(Engine e, Catalog cat, ReplayStats s, IReadOnlyList<ISourceAdapter> adapters, TextWriter output)
     {
-        Console.WriteLine($"replayed {s.Records.Values.Sum():N0} record(s) in {s.Elapsed.TotalSeconds:F1} s, capture span {(s.LastCaptureNs - s.FirstCaptureNs) / 1e9:F0} s, {s.Advances} logical-time advance(s), {s.Chunks} chunk(s)");
-        Console.WriteLine("records by source: " + string.Join(", ", s.Records.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")) + (s.Skipped > 0 ? $" ({s.Skipped:N0} not consumed: no adapter in this slice)" : ""));
-        Console.WriteLine("rows by source:    " + string.Join(", ", s.Rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")));
-        if (s.Dropped.Count > 0) Console.WriteLine("dropped rows (no source of the space binds their type): " + string.Join(", ", s.Dropped.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key.Replace('|', ' ')}={x.Value:N0}")));
-        Console.WriteLine($"rejected records: {s.Rejected}" + (s.RejectionSamples.Count > 0 ? " e.g. " + string.Join("; ", s.RejectionSamples.Take(3)) : ""));
+        output.WriteLine($"replayed {s.Records.Values.Sum():N0} record(s) in {s.Elapsed.TotalSeconds:F1} s, capture span {(s.LastCaptureNs - s.FirstCaptureNs) / 1e9:F0} s, {s.Advances} logical-time advance(s), {s.Chunks} chunk(s)");
+        output.WriteLine("records by source: " + string.Join(", ", s.Records.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")) + (s.Skipped > 0 ? $" ({s.Skipped:N0} not consumed: no adapter in this slice)" : ""));
+        output.WriteLine("rows by source:    " + string.Join(", ", s.Rows.OrderBy(x => x.Key).Select(x => $"{x.Key}={x.Value:N0}")));
+        if (s.Dropped.Count > 0) output.WriteLine("dropped rows (no source of the space binds their type): " + string.Join(", ", s.Dropped.OrderBy(x => x.Key, StringComparer.Ordinal).Select(x => $"{x.Key.Replace('|', ' ')}={x.Value:N0}")));
+        output.WriteLine($"rejected records: {s.Rejected}" + (s.RejectionSamples.Count > 0 ? " e.g. " + string.Join("; ", s.RejectionSamples.Take(3)) : ""));
         var hub = adapters.OfType<HubbleAdapter>().First();
-        Console.WriteLine($"hubble: {hub.Flows:N0} flows, {hub.LostEventRecords} lost-event record(s) ({hub.LostEvents:N0} events lost)");
+        output.WriteLine($"hubble: {hub.Flows:N0} flows, {hub.LostEventRecords} lost-event record(s) ({hub.LostEvents:N0} events lost)");
         var k8s = adapters.OfType<KubernetesAdapter>().First();
-        Console.WriteLine($"kubernetes events consumed: {k8s.Events:N0}, azure resources: {adapters.OfType<AzureResourceGraphAdapter>().First().Resources:N0}, prometheus samples: {adapters.OfType<PrometheusAdapter>().First().Samples:N0}");
+        output.WriteLine($"kubernetes events consumed: {k8s.Events:N0}, azure resources: {adapters.OfType<AzureResourceGraphAdapter>().First().Resources:N0}, prometheus samples: {adapters.OfType<PrometheusAdapter>().First().Samples:N0}");
         foreach (var g in e.Graphs)
         {
             var byType = g.State.Entities.GroupBy(x => Ids.Name(x.Type)).Select(x => $"{x.Key}={x.Count():N0}")
                 .Concat(g.State.Rels.GroupBy(x => Ids.Name(x.Type)).Select(x => $"{x.Key}={x.Count():N0}")).OrderBy(x => x, StringComparer.Ordinal);
             var tel = e.Telemetry is InMemoryTelemetryStore mem ? mem.Dump(g.Key) : [];
             var partial = e.Telemetry is InMemoryTelemetryStore m2 ? m2.PartialWindows(g.Key).Count : 0;
-            Console.WriteLine($"graph {g.Name}: revision {g.Head:N0}, {g.State.EntityCount:N0} entities, {g.State.RelCount:N0} relationships, telemetry samples {tel.Count:N0} ({tel.Select(x => (x.Element, x.Ws)).Distinct().Count():N0} element-windows, {partial} partial window(s))");
-            Console.WriteLine("  " + string.Join(", ", byType));
+            output.WriteLine($"graph {g.Name}: revision {g.Head:N0}, {g.State.EntityCount:N0} entities, {g.State.RelCount:N0} relationships, telemetry samples {tel.Count:N0} ({tel.Select(x => (x.Element, x.Ws)).Distinct().Count():N0} element-windows, {partial} partial window(s))");
+            output.WriteLine("  " + string.Join(", ", byType));
         }
         var tree = e.Graphs.FirstOrDefault(g => g.Name == "serviceTree");
         if (tree is not null)
@@ -327,14 +330,14 @@ public static class Program
             var tel = ((InMemoryTelemetryStore)e.Telemetry).Dump(tree.Key);
             var flows = tel.Where(x => e.Interner.Get(x.Prop) == "d:acme.svc/prop:flows").GroupBy(x => x.Element).ToDictionary(g => g.Key, g => g.Sum(x => x.Value));
             var top = tree.State.Rels.Where(r => Ids.Name(r.Type) == "DependsOn").Select(r => (Rel: r, Flows: flows.GetValueOrDefault(e.Interner.TryFind(r.Id, out var h) ? h : -1))).OrderByDescending(x => x.Flows).Take(5).ToList();
-            Console.WriteLine($"service tree: {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceGroup"):N0} group(s), {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceNode"):N0} service(s), {tree.State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"):N0} dependencies, {tree.State.Rels.Count(r => Ids.Name(r.Type) == "Contains"):N0} containment edges");
-            foreach (var (rel, f) in top) Console.WriteLine($"  top dependency {idToName.GetValueOrDefault(rel.Source, rel.Source)} -> {idToName.GetValueOrDefault(rel.Target, rel.Target)}: {f:N0} flows, status {rel.Props.Text("d:acme.svc/prop:status") ?? "-"}");
+            output.WriteLine($"service tree: {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceGroup"):N0} group(s), {tree.State.Entities.Count(x => Ids.Name(x.Type) == "ServiceNode"):N0} service(s), {tree.State.Rels.Count(r => Ids.Name(r.Type) == "DependsOn"):N0} dependencies, {tree.State.Rels.Count(r => Ids.Name(r.Type) == "Contains"):N0} containment edges");
+            foreach (var (rel, f) in top) output.WriteLine($"  top dependency {idToName.GetValueOrDefault(rel.Source, rel.Source)} -> {idToName.GetValueOrDefault(rel.Target, rel.Target)}: {f:N0} flows, status {rel.Props.Text("d:acme.svc/prop:status") ?? "-"}");
         }
-        if (cosmos is not null) foreach (var (kind, (calls, ru)) in cosmos.Charges.OrderBy(x => x.Key)) Console.WriteLine($"cosmos {kind}: {calls:N0} request(s), charge {ru:N1}");
-        Console.WriteLine($"identities: {e.Identities.Minted:N0} minted, {e.Identities.Aliased:N0} aliased, {e.Identities.Merges:N0} merged, {e.Identities.Conflicts:N0} conflict(s); runtime faults: {e.Faults.DivisionByZero} division by zero, {e.Faults.Overflow} overflow or canonicalization failure, {e.Faults.InvalidParameter} row(s) with threshold parameters that are no state machine; late rows dropped {e.Graphs.Sum(g => g.Cx.LateDropped)}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Counts.Rejections)}");
-        Console.WriteLine($"merges: {e.Identities.Merges:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; telemetry windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
-        Console.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + (e.Telemetry is InMemoryTelemetryStore merged ? e.Graphs.Sum(g => merged.MergeConflicts(g.Key)) : 0):N0} telemetry window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
-        Console.WriteLine("state digest " + e.StateDigest());
+        if (cosmos is not null) foreach (var (kind, (calls, ru)) in cosmos.Charges.OrderBy(x => x.Key)) output.WriteLine($"cosmos {kind}: {calls:N0} request(s), charge {ru:N1}");
+        output.WriteLine($"identities: {e.Identities.Minted:N0} minted, {e.Identities.Aliased:N0} aliased, {e.Identities.Merges:N0} merged, {e.Identities.Conflicts:N0} conflict(s); runtime faults: {e.Faults.DivisionByZero} division by zero, {e.Faults.Overflow} overflow or canonicalization failure, {e.Faults.InvalidParameter} row(s) with threshold parameters that are no state machine; late rows dropped {e.Graphs.Sum(g => g.Cx.LateDropped)}; skipped emits {e.Graphs.Sum(g => g.Cx.SkippedEmits):N0}, uniqueness rejections {e.Graphs.Sum(g => g.Out.Counts.Rejections)}");
+        output.WriteLine($"merges: {e.Identities.Merges:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; telemetry windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
+        output.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + (e.Telemetry is InMemoryTelemetryStore merged ? e.Graphs.Sum(g => merged.MergeConflicts(g.Key)) : 0):N0} telemetry window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
+        output.WriteLine("state digest " + e.StateDigest());
     }
 
     /// <summary>The late horizon of a run: `--late-horizon` when given, 3 for a live source (it must bound its state), none for a recorded capture, whether it is replayed or served: serving a capture is a replay.</summary>
@@ -346,7 +349,7 @@ public static class Program
     public static Sattle.Runtime.HostOptions HostOptionsFor(Options o, string cluster, IDurableStore? durable) =>
         new Sattle.Runtime.HostOptions { Cluster = cluster, LateHorizonWindows = LateHorizonFor(o), SpaceName = o.Get("space"), SealEvery = o.Flags.Contains("no-seal") ? 0 : long.TryParse(o.Get("seal-every"), out var se) ? se : durable is null ? 0 : 5000, UseSeal = !o.Flags.Contains("verify-journal") && !o.Flags.Contains("no-seal"), VerifyJournal = o.Flags.Contains("verify-journal"), RetainPatches = int.TryParse(o.Get("retain-patches"), out var rp) ? rp : 2_000, RetainEvents = int.TryParse(o.Get("retain-events"), out var re) ? re : 20_000, Projections = Program.Projections };
 
-    static int Serve(Options o, string capture, string cluster)
+    static int Serve(Options o, string capture, string cluster, TextWriter output)
     {
         IReadOnlyList<SourceFile>? files = null;
         try { files = ReadDefinitions(o); } catch (ArgumentException) when (o.Get("store") is { } && o.Get("store") != "memory") { /* a store with a journal needs no definitions directory */ }
@@ -355,7 +358,7 @@ public static class Program
         var hopts = HostOptionsFor(o, cluster, durable);
         var host = durable is null ? new SpaceHost(files!, hopts) : SpaceHost.OpenDurable(durable, files, hopts);
         host.DefinitionsDir = files is null ? null : FindDefinitions(o); host.WriteDefinitions = o.Flags.Contains("write-definitions");
-        if (host.Restart is not null) Console.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
+        if (host.Restart is not null) output.WriteLine($"restored from {spec}: {host.RestoreSummary()}. Sequence {host.Seq}, catalog revision {host.CatalogRevision}, state digest {host.StateDigest()}");
         return Server.Run(host, o, capture, host.Cluster, files ?? []);
     }
 }

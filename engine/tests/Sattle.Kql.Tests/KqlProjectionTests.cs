@@ -46,11 +46,8 @@ public class KqlProjectionTests
     [Fact]
     public void Replaying_the_projections_in_KQL_ends_in_the_state_digest_of_the_estate()
     {
-        var output = new StringWriter(); var saved = Console.Out;
-        Console.SetOut(output);
-        int code;
-        try { code = Program.Main(["replay", Estate, "--cluster", "synth", "--defs", Definitions]); }
-        finally { Console.SetOut(saved); }
+        var output = new StringWriter();
+        var code = Program.Run(["replay", Estate, "--cluster", "synth", "--defs", Definitions], output);
         Assert.True(code == 0, output.ToString());
         var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
         Assert.Equal("sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422", digest);

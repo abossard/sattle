@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
@@ -211,20 +212,26 @@ public class EstateTests
         Assert.StartsWith("The service tree", graphs.Single(g => g!["id"]!.GetValue<string>() == "serviceTree")!["description"]!.GetValue<string>());
     }
 
-    [Fact]
-    public void The_ontology_endpoint_of_the_workload_graph_serves_value_roles_for_the_state_properties()
+    static readonly Lazy<SpaceHost> Examples = new(HostTests.NewHost);
+
+    /// <summary>PROTOCOL 3.2: nothing about health is in the engine. A property with a closed set of states declares a value role for each state, and the ontology endpoint of every graph that carries the property serves them; a property without such a set carries none.</summary>
+    [Theory]
+    [InlineData("workload", "state", "Degraded:warning,Healthy:ok,No data:unknown,Unhealthy:danger,Unknown:unknown")]
+    [InlineData("workload", "signalState", "nodata:unknown,off:ok,on:warning")]
+    [InlineData("healthTree", "rolledState", "Degraded:warning,Healthy:ok,Unhealthy:danger,Unknown:unknown")]
+    [InlineData("deploymentHealth", "acme.deployhealth.state", "Healthy:ok,Unhealthy:danger")]
+    public void The_ontology_endpoint_serves_the_value_roles_of_a_state_property(string graph, string property, string roles)
     {
-        using var h = new SpaceHost(Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
-        var onto = h.Ontology("workload");
-        string Roles(string property) => string.Join(",", onto["properties"]!.AsArray().Where(p => p!["id"]!["value"]!.GetValue<string>() == property).Select(p => p!["presentation"]).Single()!.AsArray()
-            .Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order());
-        var state = onto["properties"]!.AsArray().Select(p => p!["id"]!["value"]!.GetValue<string>()).Single(id => id.Split('.')[^1] == "state");
-        Assert.Equal("Degraded:warning,Healthy:ok,No data:unknown,Unhealthy:danger,Unknown:unknown", Roles(state));
-        var signalState = onto["properties"]!.AsArray().Select(p => p!["id"]!["value"]!.GetValue<string>()).Single(id => id.Split('.')[^1] == "signalState");
-        Assert.Equal("nodata:unknown,off:ok,on:warning", Roles(signalState));
-        // properties without a closed set of states carry none
-        Assert.DoesNotContain(onto["properties"]!.AsArray(), p => p!["presentation"] is not null && p["id"]!["value"]!.GetValue<string>() is var id && id != state && id != signalState);
-        // and the roll-up on the estate really holds states of more than one role
+        var properties = Examples.Value.Ontology(graph)["properties"]!.AsArray();
+        static string Id(JsonNode? p) => p!["id"]!["value"]!.GetValue<string>();
+        var served = properties.Single(p => Id(p) == property || !property.Contains('.') && Id(p).Split('.')[^1] == property)!;
+        Assert.Equal(roles, string.Join(",", served["presentation"]!.AsArray().Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order()));
+        Assert.All(properties.Where(p => Id(p).Split('.')[^1] == "name"), p => Assert.Null(p!["presentation"]));          // a property without a closed set of states carries none
+    }
+
+    [Fact]
+    public void On_the_estate_the_roll_up_holds_states_of_more_than_one_value_role()
+    {
         var roles = Plain.Value.Engine.Graph("workload").State.Entities.Select(c => c.Props.Text("d:acme.workload/prop:state")).Where(s => s is not null).Distinct().ToList();
         Assert.True(roles.Count >= 2, string.Join(",", roles));
     }

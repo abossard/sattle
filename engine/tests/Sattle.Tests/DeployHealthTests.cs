@@ -48,6 +48,7 @@ public class DeployHealthTests
     public void A_deployments_state_follows_its_ready_pods_by_patches_in_both_directions(int minReady, string web, string db, string edge)
     {
         var t = Replay(minReady);
+        Scenarios.AssertPinned(minReady == 0 ? "deploy-health" : "deploy-health minReady=" + minReady, t.Engine.StateDigest());          // 0 is the parameter's default: the state of the scenario itself
         Assert.Equal(web, string.Join(",", Clean(t.Nodes["web"])));
         Assert.Equal(db, string.Join(",", Clean(t.Nodes["db"])));
         Assert.Equal(edge, string.Join(",", Clean(t.Edges["web>db"])));
@@ -55,17 +56,6 @@ public class DeployHealthTests
 
     /// <summary>The creation of an element may first carry no state (the update arrives in the same commit or the next one); only real states count.</summary>
     static IEnumerable<string> Clean(List<string> l) => l.Where(x => x != "-");
-
-    [Fact]
-    public void Nothing_about_health_is_in_the_engine_the_state_property_declares_value_roles_the_ontology_serves()
-    {
-        var t = Replay(0);
-        var onto = new CanvasExport(t.Engine, t.Catalog).Ontology(t.Engine.Graph("deploymentHealth"));
-        var state = onto["properties"]!.AsArray().Where(p => p!["id"]!["value"]!.GetValue<string>() == "acme.deployhealth.state").ToList();
-        Assert.NotEmpty(state);
-        Assert.All(state, p => Assert.Equal(["Healthy:ok", "Unhealthy:danger"], p!["presentation"]!.AsArray().Select(x => x!["value"]!["value"]!.GetValue<string>() + ":" + x["role"]!.GetValue<string>()).Order()));
-        Assert.All(onto["properties"]!.AsArray().Where(p => p!["id"]!["value"]!.GetValue<string>() == "acme.deployhealth.name"), p => Assert.Null(p!["presentation"]));
-    }
 
     [Theory]
     [InlineData("""state: Text roles { "a": ok, 1: warning, 2.5: danger, true: unknown, "z": neutral };""", true)]
