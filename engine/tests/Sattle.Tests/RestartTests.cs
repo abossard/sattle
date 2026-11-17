@@ -152,6 +152,33 @@ public class RestartTests
         Assert.Contains("journal reproduces", e.Message);
     }
 
+    /// <summary>A stored commit whose body was changed after it was written (one property value of one element) is refused when the journal is replayed and verified: the recomputed commit at that revision differs from the stored one (Proposition 11.9).</summary>
+    [Fact]
+    public void A_stored_commit_with_an_edited_body_is_refused()
+    {
+        using var d = new Durable("sqlite");
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options)) Feed(h);
+        d.Close();
+        string graph; long rev;
+        using (var c = new SqliteConnection($"Data Source={d.Path_};Pooling=False"))
+        {
+            c.Open();
+            using var read = c.CreateCommand(); read.CommandText = "SELECT t, g, rev, edits_json FROM \"commit\" WHERE edits_json LIKE '%\"kind\":\"text\"%' ORDER BY g, rev LIMIT 1";
+            using var r = read.ExecuteReader();
+            Assert.True(r.Read());
+            var tenant = r.GetString(0); graph = r.GetString(1); rev = r.GetInt64(2);
+            var edits = System.Text.Json.Nodes.JsonNode.Parse(r.GetString(3))!.AsArray();
+            r.Close();
+            var value = edits.Select(x => x![2]).Where(a => a is not null).SelectMany(a => a!["props"]!.AsObject().Select(p => p.Value!)).First(v => v["kind"]!.GetValue<string>() == "text");
+            value["value"] = value["value"]!.GetValue<string>() + " edited";
+            using var write = c.CreateCommand(); write.CommandText = "UPDATE \"commit\" SET edits_json = $e WHERE t = $t AND g = $g AND rev = $r";
+            write.Parameters.AddWithValue("$e", edits.ToJsonString()); write.Parameters.AddWithValue("$t", tenant); write.Parameters.AddWithValue("$g", graph); write.Parameters.AddWithValue("$r", rev);
+            Assert.Equal(1, write.ExecuteNonQuery());
+        }
+        var e = Assert.ThrowsAny<Exception>(() => SpaceHost.OpenDurable(d.Open(), null, Options with { VerifyJournal = true }));
+        Assert.Contains($"the commit at revision {rev} of {graph} differs from the stored one", e.Message);
+    }
+
     /// <summary>Every kind of journal entry has one stored form, the one journals have always had, and reads back to an entry with that form.</summary>
     [Theory]
     [InlineData("advance", """{"k":"a","l":120000000000,"q":7}""")]

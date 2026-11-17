@@ -83,7 +83,7 @@ public class DifferentialTests
         Assert.Equal([expected ?? ""], seen);
     }
 
-    /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): pods named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. That a group by the merged identity counts one group over both keys is the world "a view grouped by a pod that a link merges".</summary>
+    /// <summary>T-B3 (Theorem 6.2 premise B3, Proposition 1.8): pods named by uid and by name, links that join random sets of them into classes, the first uses and the links in 20 random orders, each cut three ways. A uid named twice links two names, so a link can join two classes that already hold several keys. Every key resolves to the smallest own id of its class, every forwarding record points to a smaller id, and the state is the same for every order and cut. On the first order, the views that group by the merged pod (a count, and a sum through a union and joins) end equal to the reference under the three cuts: one group over all keys of a class.</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)]
     public void Identity_is_independent_of_key_arrival_order_on_generated_inputs(int seed)
@@ -92,7 +92,9 @@ public class DifferentialTests
         var rng = new Random(seed);
         var (uids, names) = (rng.Next(3, 21), rng.Next(2, 21));
         var rows = new List<Sattle.Reference.RowInput>();
-        for (var u = 0; u < uids; u++) rows.Add(new("pods", Logs.Row(("uid", Value.Text("u" + u)), ("name", Value.Text("P" + rng.Next(names))), ("g", Value.Text("g0"))), 1));
+        for (var u = 0; u < uids; u++)
+            foreach (var name in rng.Next(3) == 0 ? new[] { rng.Next(names), rng.Next(names) }.Distinct() : [rng.Next(names)])
+                rows.Add(new("pods", Logs.Row(("uid", Value.Text("u" + u)), ("name", Value.Text("P" + name)), ("g", Value.Text("g0"))), 1));
         for (var n = 0; n < names; n++) rows.Add(new("flows", Logs.Row(("src", Value.Text("p" + n)), ("dst", Value.Text("p" + rng.Next(names)))), 1));
         var links = rows.Where(r => r.Source == "pods").Select(r => new Sattle.Reference.LinkFact(
             new Sattle.Reference.IdentityKey("d:w/identity:podUid", [((TextValue)r.Fields["uid"]).S]), new Sattle.Reference.IdentityKey("d:w/identity:podName", [((TextValue)r.Fields["name"]).S.ToLowerInvariant()]))).ToList();
@@ -116,6 +118,16 @@ public class DifferentialTests
                     Assert.True(string.CompareOrdinal(engine.Interner.Get(survivor), engine.Interner.Get(loser)) < 0, "a forwarding record points to a greater id");
                 digests.Add(engine.StateDigest());
             }
+            if (order == 0)
+                foreach (var view in new[] { Worlds.LinkedView, Worlds.LinkedUnionJoin })
+                {
+                    var want = Sattle.Reference.ReferenceEvaluator.Evaluate(view.Catalog, view.Catalog.Spaces.Keys.Single(), log).Graphs;
+                    foreach (var cut in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Random(seed) })
+                    {
+                        var got = EngineRun.Final(view.Catalog, log, cut).Graphs;
+                        foreach (var (graph, facts) in want) Assert.True(facts.Lines().SequenceEqual(got[graph].Lines()), $"{view.Name}, {cut}, graph {graph}\nreference only:\n{string.Join("\n", facts.Lines().Except(got[graph].Lines()))}\nengine only:\n{string.Join("\n", got[graph].Lines().Except(facts.Lines()))}");
+                    }
+                }
         }
         Assert.Single(digests);
     }

@@ -169,7 +169,29 @@ public class HostTests
         Assert.Equal(h.Seq, asOf);
         new SyntheticWorld(h, 7, 3).LoadStructure(10);          // more pods and services than before: events after the snapshot
         var seqs = new List<long>();
-        while (snap.Messages.Reader.TryRead(out var t)) { var j = JsonNode.Parse(t)!; if (j["seq"] is { } sq) seqs.Add(long.Parse(sq.GetValue<string>())); }
+        // the snapshot event and the patch events after it fold into a replica of the graph (Ch. 12, structural replica)
+        static IEnumerable<(string Key, JsonNode? State)> Extent(JsonNode extent) =>
+            extent["entities"]!.AsArray().Select(x => ("entity " + x!["id"]!.ToJsonString(), (JsonNode?)x)).Concat(extent["relationships"]!.AsArray().Select(x => ("relationship " + x!["id"]!.ToJsonString(), (JsonNode?)x)));
+        var replica = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, state) in Extent(f["snapshot"]!["extent"]!)) replica[key] = state!.ToJsonString();
+        var patches = 0;
+        while (snap.Messages.Reader.TryRead(out var t))
+        {
+            var j = JsonNode.Parse(t)!;
+            if (j["seq"] is { } sq) seqs.Add(long.Parse(sq.GetValue<string>()));
+            if (j["type"]!.GetValue<string>() != "patch") continue;
+            patches++;
+            foreach (var edit in j["patch"]!["edits"]!.AsArray())
+            {
+                var key = edit!["kind"]!.GetValue<string>() + " " + edit["id"]!.ToJsonString();
+                if (edit["after"] is null) Assert.True(replica.Remove(key), "a patch removes " + key + ", which the replica does not hold");
+                else replica[key] = edit["after"]!.ToJsonString();
+            }
+        }
+        Assert.True(patches > 0);
+        var final = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (key, state) in Extent(h.Snapshot("master", null)["extent"]!)) final[key] = state!.ToJsonString();
+        Assert.Equal(final, replica);
         Assert.NotEmpty(seqs);
         Assert.All(seqs, x => Assert.True(x > asOf));
         Assert.Equal(seqs.Order(), seqs);

@@ -90,6 +90,7 @@ public class CheckerTests
         { "a no-data state without a time to live upstream", View(Quiet("telemetry(\"master\", 3m)", Said)), "Threshold", "needs telemetry with a time to live" },
         { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded("c = k, g"), LoadType), "B1", "grouped by 'g'" },
         { "a reference to another entity type than the property names", View("nodes Out on o = " + Items + " | project o = identity(\"out\", k), k, owner = i;\n"), "Set", "owner expects" },
+        { "a lens rule whose rows pass through a join: a join is not a lens step", View("nodes Out on o with (rule = \"items\", update = \"k\") = " + Items + " | join kind=inner (graph(\"master\") | graph-match (x) where labels(x) has \"Other\" project g = x.k) on g | project o = i, k;\n"), "DirectionOverclaim", "(Join) is many-to-one or lossy" },
     };
 
     [Theory, MemberData(nameof(Refused))]

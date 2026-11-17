@@ -28,10 +28,13 @@ public class IdentityMergeTests
     {
         var (c, a, b, it) = Make();
         var hs = Enumerable.Range(0, n).Select(i => R(c, a, it, "k" + i)).ToList();
+        var survivor = it.Get(hs[0]);                                                         // the smallest id of the class hs[i-1] is in
         for (var i = 1; i < n; i++)
         {
-            Assert.NotEqual(BindOutcome.Conflict, B(c, b, it, "x" + i, hs[i - 1]));           // the key x_i denotes hs[i-1] ...
-            Assert.NotEqual(BindOutcome.Conflict, B(c, b, it, "x" + i, hs[i]));               // ... and late evidence says it denotes hs[i] too
+            var own = OwnId(b, "x" + i);
+            Assert.Equal(string.CompareOrdinal(own, survivor) < 0 ? BindOutcome.Merged : BindOutcome.Bound, B(c, b, it, "x" + i, hs[i - 1]));   // the key x_i denotes hs[i-1]: its own id joins the class if it is smaller
+            Assert.Equal(BindOutcome.Merged, B(c, b, it, "x" + i, hs[i]));                    // ... and late evidence says it denotes hs[i] too
+            survivor = new[] { survivor, own, it.Get(hs[i]) }.Min(StringComparer.Ordinal);
         }
         foreach (var h in hs)
         {
@@ -79,9 +82,12 @@ public class IdentityMergeTests
         var it = new Interner(); var c = new IdentityCatalog("t", it);
         var a = c.Domain("d:a", "a", ["k"], ["Exact"], "T1"); var b = c.Domain("d:b", "b", ["k"], ["Exact"], "T2");
         var h1 = R(c, a, it, "one"); var h2 = R(c, b, it, "two");
-        B(c, b, it, "x", h2);
-        var forwarding = c.Forwarding.Count;
+        var own = OwnId(b, "x");
+        var merged = string.CompareOrdinal(own, it.Get(h2)) < 0;                              // the key's own id is smaller: h2 forwards to it
+        Assert.Equal(merged ? BindOutcome.Merged : BindOutcome.Bound, B(c, b, it, "x", h2));
+        (string, string)[] forwarding = merged ? [(it.Get(h2), own)] : [];
+        Assert.Equal(forwarding, c.Forwarding.Select(f => (it.Get(f.Key), it.Get(f.Value))));
         Assert.Equal(BindOutcome.Conflict, B(c, b, it, "x", h1, a));
-        Assert.Equal(1, c.Conflicts); Assert.Equal(forwarding, c.Forwarding.Count);
+        Assert.Equal(1, c.Conflicts); Assert.Equal(forwarding, c.Forwarding.Select(f => (it.Get(f.Key), it.Get(f.Value))));
     }
 }

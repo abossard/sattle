@@ -203,7 +203,7 @@ public class SealTests
         store = d.Open(); meta["digest"] = sealedDigest; meta["build"] = Guid.NewGuid().ToString();      // the true digest: only the build differs
         ((IJournalStore)store).SealPut(seal.Position + 2, meta.ToJsonString(), seal.Data);
         d.Close();
-        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.Restart!.FromSeal); Assert.Equal(digest, r.StateDigest()); }
+        using (var r = SpaceHost.OpenDurable(d.Open(), null, Options(25))) { Assert.False(r.Restart!.FromSeal); Assert.Contains("written by another build", r.Restart.SealRefusal); Assert.Equal(digest, r.StateDigest()); }
         d.Close();
         // 3: damaged bytes
         store = d.Open();
