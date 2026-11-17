@@ -608,6 +608,24 @@ Theory. A group keeps per key a row of accumulators and, for `arg_max` and `arg_
 - Before is the joins patch. Times are measured under load and not comparable; bytes are.
 - Digests unchanged, as for the joins.
 
+### Efficiency stage 2, interner: a text is its bytes, not a string object (#115, 2026-11-17)
+Theory. At 10^4 the interner holds 127,466 texts: 89,074 element ids (`e:` and `r:` with 26 base32 characters), 19,553 paths, the rest names, numbers and labels; at 10^6 about 12 per master node. Every one is live: an element id lives as long as its element, and its code is the handle in sinks, lineage, telemetry and operator tables. So the texts stay and their form changes. A text cost a .NET string (80 B for an id), a dictionary entry with its bucket, a list slot and a young flag, about 134 to 154 B. A lookup needs a hash and a comparison with the stored text; `Get` needs the characters. Now the texts are bytes in pages of 64 KB (one byte per character when every character is below 256, else two), and per code its place (8 B), its length with the young mark (4 B) and its hash (4 B); one open-addressing index at a load of at most 3/4. Freed texts leave dead bytes, and the pages are copied together when more bytes are dead than live, as `Values` does. Codes, young and old, the reuse of the smallest free code and the seal are unchanged.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 286 / 278 MB | 1,874 / 1,786 MB |
+| per master node | 28.6 / 27.8 KB | 18.7 / 17.9 KB |
+| interner per master node | 1,752 / 1,007 B | 1,624 / 745 B |
+| bytes per text | 137 / 79 | 134 / 61 |
+| allocated per input record | 60.0 / 60.5 KB | 58.3 / 59.3 KB |
+
+- Cost moved: `Get` makes a string. Most calls are the sinks resolving element ids into the elements of a patch. A direct-mapped cache of the last 16,384 strings (fixed, about 1.5 MB) keeps repeats; at 10^4 a cache of 4,096 cost 0.75 KB per record more, one of 65,536 0.2 KB and 6 MB. At 10^5 allocation rises by 1.0 KB per record (1.8 %).
+- At 10^4 the per-code columns are in segments of 65,536 codes, so their slack is large; at 10^5 a text costs 61 B, and about the same is expected at 10^6 (about 740 B per master node instead of 1,863).
+- A lookup by span allocates nothing: reading a flow of known texts costs 337 B per record, as before this change (`RecordReadingTests`). The test of whether a text needs two bytes per character is a loop; `ContainsAnyExceptInRange` allocated 96 B a call, 1,108 B per record in that test.
+- Not solved: the +1.0 KB per record at 10^5 is `Get`, mostly in the advance phase (17.7 KB per record against 16.9). Its callers that need a string are the sinks building the elements of a patch (`ElementLayer`: ids, types, property keys, text values), the identity catalog and text functions (`Concat`, `Trim`, `ToLower`). The patch and the hot graph take strings, so the edge is there.
+- Before is the groups patch. Times are measured under load and not comparable; bytes are.
+- Digests unchanged, as for the joins.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

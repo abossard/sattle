@@ -6,47 +6,118 @@ namespace Sattle.Runtime;
 
 /// <summary>String to dense int table. Text values, entity ids and relationship ids share one table per engine, so a handle names the same element in every graph.
 /// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.
-/// Which number a text gets therefore depends on where the input was cut into steps. No result may depend on code numbers, only on the texts: codes are compared for equality, and an order by code is an order of convenience that no output shows.</summary>
+/// Which number a text gets therefore depends on where the input was cut into steps. No result may depend on code numbers, only on the texts: codes are compared for equality, and an order by code is an order of convenience that no output shows.
+/// Storage: no string object per text. A text is its bytes in pages of 64 KB, one byte per character when every character is below 256, else two; per code its place, its length with the young mark, and its hash; one open-addressing index of codes. `Get` makes the string; a small cache keeps the strings asked for last.</summary>
 public sealed class Interner
 {
-    readonly Dictionary<string, int> map = new(StringComparer.Ordinal);
-    readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> alt;
-    readonly List<string?> strings = [];
-    readonly List<bool> young = [];
+    const int Page = 1 << 16, CacheSize = 16384;
+    List<byte[]> pages = [new byte[Page]];
+    int filling, used;
+    readonly Segments<long> start = new();            // page << 32 | offset; absent for a free code
+    readonly Segments<int> meta = new(), hashes = new();   // length << 2 | wide << 1 | young
+    int codes;
+    long liveBytes, deadBytes;
+    int[] index = new int[64]; int mask = 63;
     readonly List<int> minted = [];
     readonly PriorityQueue<int, int> free = new();
     readonly HashSet<object> holders = new(ReferenceEqualityComparer.Instance);
-    public Interner() { alt = map.GetAlternateLookup<ReadOnlySpan<char>>(); }
+    readonly string?[] cache = new string?[CacheSize]; readonly int[] cached = new int[CacheSize];
+    public Interner() => Array.Fill(cached, -1);
     /// <summary>The number of slots: live codes and freed ones.</summary>
-    public int Count => strings.Count;
+    public int Count => codes;
     /// <summary>The number of live texts.</summary>
-    public int Live => strings.Count - free.Count;
+    public int Live => codes - free.Count;
     /// <summary>On while the engine runs a stateless step (Filter, Map): `InternComputed` mints young.</summary>
     public bool MintYoung { get; set; }
-    public int Intern(string s)
-    {
-        if (map.TryGetValue(s, out var i)) { young[i] = false; return i; }
-        return Add(s, false);
-    }
-    public int Intern(ReadOnlySpan<char> s)
-    {
-        if (alt.TryGetValue(s, out var i)) { young[i] = false; return i; }
-        return Add(s.ToString(), false);
-    }
+    public int Intern(string s) => Intern(s.AsSpan());
+    public int Intern(ReadOnlySpan<char> s) { var i = Find(s); if (i >= 0) { Old(i); return i; } return Add(s, false); }
     /// <summary>The code of a text an adapter row carries: young when the text is new.</summary>
-    public int InternYoung(string s) => map.TryGetValue(s, out var i) ? i : Add(s, true);
-    public int InternYoung(ReadOnlySpan<char> s) => alt.TryGetValue(s, out var i) ? i : Add(s.ToString(), true);
+    public int InternYoung(string s) => InternYoung(s.AsSpan());
+    public int InternYoung(ReadOnlySpan<char> s) { var i = Find(s); return i >= 0 ? i : Add(s, true); }
     /// <summary>The code of a text an expression computed: young when new and a stateless step runs, else old.</summary>
     public int InternComputed(string s) => MintYoung ? InternYoung(s) : Intern(s);
-    int Add(string s, bool y)
+    public bool IsYoung(int code) => (uint)code < (uint)codes && (meta[code] & 1) != 0;
+    void Old(int code) { var m = meta[code]; if ((m & 1) != 0) meta[code] = m & ~1; }
+
+    /// <summary>The stored bytes of a text, in `buffer` when it fits, and whether it takes two bytes per character.</summary>
+    static ReadOnlySpan<byte> Encode(ReadOnlySpan<char> s, Span<byte> buffer, out bool wide, out byte[]? rented)
     {
-        if (free.TryDequeue(out var i, out _)) { strings[i] = s; young[i] = y; }
-        else { i = strings.Count; strings.Add(s); young.Add(y); }
-        map[s] = i;
-        if (y) minted.Add(i);
+        rented = null;
+        wide = false;
+        foreach (var c in s) if (c > 0xFF) { wide = true; break; }       // a loop: `ContainsAnyExceptInRange` allocated 96 B a call, so a known text cost an allocation
+        if (wide) return System.Runtime.InteropServices.MemoryMarshal.AsBytes(s);
+        if (s.Length > buffer.Length) buffer = rented = System.Buffers.ArrayPool<byte>.Shared.Rent(s.Length);
+        for (var i = 0; i < s.Length; i++) buffer[i] = (byte)s[i];
+        return buffer[..s.Length];
+    }
+
+    static int Hash(ReadOnlySpan<byte> v, bool wide)
+    {
+        var h = (ulong)v.Length << 1 | (wide ? 1UL : 0);
+        for (; v.Length >= 8; v = v[8..]) h = Table.Mix(h, BitConverter.ToInt64(v));
+        long tail = 0; foreach (var b in v) tail = tail << 8 | b;
+        h = Table.Mix(h, tail);
+        return (int)(h ^ h >> 32);
+    }
+
+    ReadOnlySpan<byte> Bytes(int code) { var m = meta[code]; var at = start[code]; return pages[(int)(at >> 32)].AsSpan((int)at, (m >> 2) << ((m >> 1) & 1)); }
+
+    int Find(ReadOnlySpan<char> s)
+    {
+        Span<byte> buffer = stackalloc byte[256];
+        var b = Encode(s, buffer, out var wide, out var rented);
+        var h = Hash(b, wide); var w = wide ? 2 : 0; var found = -1;
+        for (var k = h & mask; index[k] != 0; k = (k + 1) & mask)
+        {
+            var c = index[k] - 1;
+            if (hashes[c] == h && (meta[c] & 2) == w && Bytes(c).SequenceEqual(b)) { found = c; break; }
+        }
+        if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        return found;
+    }
+
+    int Add(ReadOnlySpan<char> s, bool young)
+    {
+        var i = free.TryDequeue(out var f, out _) ? f : codes++;
+        Store(i, s, young);
+        if (young) minted.Add(i);
         return i;
     }
-    public bool IsYoung(int code) => (uint)code < (uint)young.Count && young[code];
+
+    void Store(int code, ReadOnlySpan<char> s, bool young)
+    {
+        Span<byte> buffer = stackalloc byte[256];
+        var b = Encode(s, buffer, out var wide, out var rented);
+        Write(code, b);
+        meta[code] = s.Length << 2 | (wide ? 2 : 0) | (young ? 1 : 0);
+        hashes[code] = Hash(b, wide);
+        if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
+        liveBytes += b.Length;
+        if ((long)Live * 4 > (long)index.Length * 3) Rehash(); else Place(code);
+    }
+
+    void Write(int code, ReadOnlySpan<byte> b)
+    {
+        if (b.Length > Page) { pages.Add(b.ToArray()); start[code] = (long)(pages.Count - 1) << 32; return; }      // a long text is a page of its own
+        if (used + b.Length > Page) { pages.Add(new byte[Page]); filling = pages.Count - 1; used = 0; }
+        b.CopyTo(pages[filling].AsSpan(used));
+        start[code] = (long)filling << 32 | (uint)used;
+        used += b.Length;
+    }
+
+    void Place(int code)
+    {
+        var k = hashes[code] & mask;
+        while (index[k] != 0) k = (k + 1) & mask;
+        index[k] = code + 1;
+    }
+
+    void Rehash()
+    {
+        index = new int[index.Length * 2]; mask = index.Length - 1;
+        for (var c = 0; c < codes; c++) if (start.Has(c)) Place(c);
+    }
+
     /// <summary>Makes every young code of the batch's selected rows old: the batch is about to reach state. Columns the layout types as numbers are skipped; untyped ones are read as codes, where a false hit only keeps a text.</summary>
     public void Escape(Batch b)
     {
@@ -59,7 +130,7 @@ public sealed class Interner
             for (var k = 0; k < b.Rows; k++)
             {
                 var v = col.L[b.RowAt(k)];
-                if ((ulong)v < (ulong)young.Count) young[(int)v] = false;
+                if ((ulong)v < (ulong)codes) Old((int)v);
             }
         }
     }
@@ -74,25 +145,58 @@ public sealed class Interner
         if (holders.Count > 0 || minted.Count == 0) return;
         foreach (var i in minted)
         {
-            if (!young[i]) continue;
-            map.Remove(strings[i]!); strings[i] = null; young[i] = false; free.Enqueue(i, i);
+            if ((meta[i] & 1) == 0) continue;
+            var k = hashes[i] & mask;
+            while (index[k] != i + 1) k = (k + 1) & mask;
+            Table.Shift(index, mask, k, c => hashes[c - 1] & mask);
+            var n = Bytes(i).Length; liveBytes -= n; deadBytes += n;
+            start.Clear(i); meta.Clear(i); hashes.Clear(i);
+            if (cached[i & (CacheSize - 1)] == i) { cached[i & (CacheSize - 1)] = -1; cache[i & (CacheSize - 1)] = null; }
+            free.Enqueue(i, i);
         }
         minted.Clear();
+        if (deadBytes > liveBytes + Page) Compact();
     }
-    public bool TryFind(string s, out int i) => map.TryGetValue(s, out i);
+
+    /// <summary>Copies the texts in use together into new pages; their codes stay.</summary>
+    void Compact()
+    {
+        var old = pages; pages = [new byte[Page]]; filling = 0; used = 0; deadBytes = 0;
+        for (var c = 0; c < codes; c++)
+        {
+            if (!start.Has(c)) continue;
+            var m = meta[c]; var at = start[c];
+            Write(c, old[(int)(at >> 32)].AsSpan((int)at, (m >> 2) << ((m >> 1) & 1)));
+        }
+    }
+
+    public bool TryFind(string s, out int i) { i = Find(s); return i >= 0; }
     /// <summary>Every slot by code, null where the code is free (a seal).</summary>
-    public IReadOnlyList<string?> Slots => strings;
+    public IReadOnlyList<string?> Slots => [.. Enumerable.Range(0, codes).Select(c => start.Has(c) ? Get(c) : null)];
     /// <summary>Replaces the whole table (restoring a snapshot): the same strings get the same codes, the free slots are free again, every code is old.</summary>
     public void ReplaceAll(IReadOnlyList<string?> all)
     {
-        map.Clear(); strings.Clear(); young.Clear(); minted.Clear(); free.Clear(); holders.Clear();
+        pages = [new byte[Page]]; filling = 0; used = 0; liveBytes = 0; deadBytes = 0;
+        start.Release(); meta.Release(); hashes.Release();
+        index = new int[64]; mask = 63; codes = 0;
+        minted.Clear(); free.Clear(); holders.Clear();
+        Array.Fill(cached, -1); Array.Clear(cache);
         foreach (var x in all)
         {
-            var i = strings.Count; strings.Add(x); young.Add(false);
-            if (x is null) free.Enqueue(i, i); else map[x] = i;
+            var i = codes++;
+            if (x is null) free.Enqueue(i, i); else Store(i, x, false);
         }
     }
-    public string Get(int i) => strings[i] ?? throw new InvalidOperationException($"text {i} was freed");
+    public string Get(int i)
+    {
+        var slot = i & (CacheSize - 1);
+        if (cached[slot] == i) return cache[slot]!;
+        if ((uint)i >= (uint)codes || !start.Has(i)) throw new InvalidOperationException($"text {i} was freed");
+        var b = Bytes(i);
+        var s = (meta[i] & 2) != 0 ? new string(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, char>(b)) : System.Text.Encoding.Latin1.GetString(b);
+        cached[slot] = i; cache[slot] = s;
+        return s;
+    }
 }
 
 /// <summary>Column layout of a row type: names, and which columns hold decimals (all others hold 64-bit codes: Integer, Instant, Boolean, interned Text, element handles).</summary>
