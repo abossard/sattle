@@ -308,6 +308,39 @@ public class HostTests
         Assert.Contains("import acme.svc @ 1.1.0 sha256:" + served["digest"]!.GetValue<string>()[7..], h.Definition("acme.space"));
     }
 
+    /// <summary>#57: every revision of a graph has its commit time, the engine's logical time when it was committed: served by the revisions route and sent with the revision's patch event. Revisions before the first advance have none; a revision an advance commits is at that advance's time.</summary>
+    [Fact]
+    public void Every_revision_is_served_with_its_commit_time()
+    {
+        using var h = NewHost();
+        var sub = h.Subscribe(["master", "serviceTree"], false, null);
+        Drain(sub);
+        new SyntheticWorld2(h).Load();
+        var sent = new List<JsonNode>(); var atTheirAdvance = 0;
+        for (var w = 0; w < 9; w++)
+        {
+            Flows(h, w);                                                                          // the window's rows, then the advance that closes it
+            var now = Drain(sub).Where(m => m["type"]!.GetValue<string>() == "patch").ToList();
+            atTheirAdvance += now.Count(m => m["time"]?.GetValue<string>() == Norm.Instant(T0 + (w + 1) * Min + 1));
+            sent.AddRange(now);
+        }
+        Assert.NotEmpty(sent);
+        Assert.True(atTheirAdvance > 0, "no revision an advance committed is at that advance's time");
+        foreach (var graph in new[] { "master", "serviceTree" })
+        {
+            var revisions = h.Revisions(graph, 0);
+            Assert.Equal(Enumerable.Range(1, (int)h.Head(graph)).Select(r => r.ToString()), revisions.Select(r => r["revision"]!.GetValue<string>()));
+            var times = revisions.Select(r => r["time"]?.GetValue<string>()).ToList();
+            var known = times.Where(t => t is not null).Select(t => DateTimeOffset.Parse(t!)).ToList();
+            Assert.Equal(known.Order(), known);                                                   // a later revision is never earlier
+            Assert.DoesNotContain(null, times.SkipWhile(t => t is null));                  // no time only before the first advance
+            foreach (var m in sent.Where(m => m["graph"]!.GetValue<string>() == graph))
+                Assert.Equal(times[int.Parse(m["patch"]!["to"]!["revision"]!["value"]!.GetValue<string>()) - 1], m["time"]?.GetValue<string>());
+            Assert.Equal([revisions[^1].ToJsonString()], h.Revisions(graph, h.Head(graph) - 1).Select(r => r.ToJsonString()));
+        }
+        Assert.Null(h.Revisions("master", 0)[0]["time"]);                                         // the structure is loaded before any advance
+    }
+
     // ---- what a subscriber receives ----
 
     /// <summary>Review: Host.cs:542. A subscriber that reads every message is never a slow consumer, however many messages it has read.</summary>

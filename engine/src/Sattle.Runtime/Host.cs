@@ -55,7 +55,13 @@ public sealed class Subscription
     public bool Closed;
 }
 
-sealed class Served { public List<Patch> History = []; public long Dropped; public long Offset; public long Head => Dropped + History.Count; public long FirstWindow = long.MinValue; }
+/// <summary>What is served of one graph: its patches, and beside each the engine's logical time when it was committed (0 before the first advance).</summary>
+sealed class Served
+{
+    public List<Patch> History = []; public List<long> Times = []; public long Dropped; public long Offset; public long Head => Dropped + History.Count; public long FirstWindow = long.MinValue;
+    public void Add(Patch p, long time) { History.Add(p); Times.Add(time); }
+    public void DropOldest(int n) { History.RemoveRange(0, n); Times.RemoveRange(0, n); Dropped += n; }
+}
 /// <summary>What an engine takes, as a value: a batch of rows, an advance of logical time, the progress of a source, a loss. A journal entry of these kinds is one; an envelope of a live source gives several.</summary>
 public abstract record EngineInput
 {
@@ -283,8 +289,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         mutations++; fed++;
         inputRows += input.RowCount;
         if (kept is not null) { kept.Add(input); if (input is EngineInput.Rows r) interner.Escape(r.Batch); if (inputRows > options.InputRowCap) kept = null; }       // a kept batch is read again: its texts stay
+        if (input is EngineInput.Advance a) lambdaSeen = Math.Max(lambdaSeen, a.Lambda);     // before the engine runs: the revisions an advance commits are at its time
         input.ApplyTo(Engine);
-        if (input is EngineInput.Advance a) lambdaSeen = Math.Max(lambdaSeen, a.Lambda);
         if (input is EngineInput.Rows or EngineInput.Advance) Tick();
     }
 
@@ -457,8 +463,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
-    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
-    public const int SealFormat = 8;
+    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. 7: a join keeps a key part that is a column once, with 4-byte codes. 8: a group stores integers and codes as themselves, and text and decimal keys as 4-byte codes. 9: a served revision keeps its commit time. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    public const int SealFormat = 9;
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>
@@ -595,8 +601,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         if (e.Patch is not null)
         {
             var p = new Patch(e.Graph, e.Patch.From + sg.Offset, e.Patch.To + sg.Offset, e.Patch.Edits, e.Patch.Cause);
-            sg.History.Add(p); Trim(sg);
-            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.Graph, ["patch"] = export.Patch(p) }, e.Graph, telemetry: false);
+            sg.Add(p, lambdaSeen); Trim(sg);
+            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.Graph, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, e.Graph, telemetry: false);
         }
         // Def. 6.4: a conflict is reported with the commit it appeared, changed or ended in
         if (e.Conflicts.Count > 0)
@@ -619,8 +625,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         var cap = options.RetainPatches;
         if (cap <= 0 || sg.History.Count <= cap + cap / 10) return;
-        var drop = sg.History.Count - cap;
-        sg.History.RemoveRange(0, drop); sg.Dropped += drop;
+        sg.DropOldest(sg.History.Count - cap);
     }
 
     /// <summary>One window of one property: the elements with a (new) value, and under `removed` the elements whose window was retracted.</summary>
@@ -795,6 +800,22 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     public JsonNode Descriptor(string g) { lock (Gate) { return g == "catalog" ? catalogExport.CatalogDescriptor(catalogHistory.Count) : export.Descriptor(Engine.Graph(g), served[g].Head); } }
     public JsonNode Ontology(string g) { lock (Gate) { return g == "catalog" ? catalogExport.KernelOntology() : export.Ontology(Engine.Graph(g)); } }
+
+    /// <summary>A logical time as served: an instant, or null before the first advance.</summary>
+    static JsonNode? TimeJson(long t) => t == 0 ? null : Norm.Instant(t);
+
+    /// <summary>The revisions of a graph after `after`, each with its commit time: the engine's logical time when the revision was committed. The catalog's revisions have none.</summary>
+    public IReadOnlyList<JsonNode> Revisions(string g, long after, int limit = int.MaxValue)
+    {
+        lock (Gate)
+        {
+            HeadOf(g);
+            if (g == "catalog") return [.. catalogHistory.Where(p => p.To > after).Take(limit).Select(p => (JsonNode)new JsonObject { ["revision"] = Rev(p.To), ["time"] = null })];
+            var sg = served[g];
+            if (after < sg.Dropped) throw Gap(g, sg.Dropped);
+            return [.. sg.History.Select((p, i) => (p, i)).Where(x => x.p.To > after).Take(limit).Select(x => (JsonNode)new JsonObject { ["revision"] = Rev(x.p.To), ["time"] = TimeJson(sg.Times[x.i]) })];
+        }
+    }
 
     public IReadOnlyList<JsonNode> Patches(string g, long after, int limit = int.MaxValue)
     {
@@ -1094,11 +1115,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             }
             if (catPatch.Edits.Length > 0) catalogHistory.Add(catPatch); else catalogHistory.Add(new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, []));
             Rebuild();
-            foreach (var (g, p) in newPatches) { served[g].History.Add(p); Trim(served[g]); }
+            foreach (var (g, p) in newPatches) { served[g].Add(p, lambdaSeen); Trim(served[g]); }
             foreach (var g in fresh.Graphs) served[g.Name].Offset = served[g.Name].Head - g.Head;
             HookEngine();
             Publish(new JsonObject { ["type"] = "patch", ["graph"] = "catalog", ["patch"] = catalogExport.Patch(catalogHistory[^1]) }, "catalog");
-            foreach (var (g, p) in newPatches) Publish(new JsonObject { ["type"] = "patch", ["graph"] = g, ["patch"] = export.Patch(p) }, g);
+            foreach (var (g, p) in newPatches) Publish(new JsonObject { ["type"] = "patch", ["graph"] = g, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, g);
             Publish(new JsonObject { ["type"] = "activation", ["catalogRevision"] = Rev(catalogHistory.Count), ["graphs"] = new JsonArray([.. changed.Select(c => (JsonNode)new JsonObject { ["id"] = c.Id, ["from"] = Rev(c.From), ["to"] = Rev(c.To) })]) }, null);
             old.Dispose();
             return new JsonObject

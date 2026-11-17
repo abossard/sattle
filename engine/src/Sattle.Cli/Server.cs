@@ -166,6 +166,12 @@ public static class Server
             if (Rev(to) is { } t && t <= head) return Cached(c, host, $"patches-{g}-{a}-{t}", Cache.Revision, () => NdjsonP(host.Patches(g, a, (int)(t - a))));
             return Cached(c, host, $"patches-{g}-{a}-head-{head}-{limit}", Cache.Head, () => NdjsonP(host.Patches(g, a, limit ?? int.MaxValue)));
         }));
+        app.MapGet("/graphs/{g}/revisions", (HttpContext c, string g, string? after, string? to, int? limit) => Guard(() =>
+        {
+            var a = Rev(after) ?? 0; var head = host.Head(g);
+            if (Rev(to) is { } t && t <= head) return Cached(c, host, $"revisions-{g}-{a}-{t}", Cache.Revision, () => NdjsonP(host.Revisions(g, a, (int)(t - a))));
+            return Cached(c, host, $"revisions-{g}-{a}-head-{head}-{limit}", Cache.Head, () => NdjsonP(host.Revisions(g, a, limit ?? int.MaxValue)));
+        }));
         app.MapGet("/graphs/{g}/document", (HttpContext c, string g, string? revision, string? format) => Guard(() =>
         {
             var doc = host.Document(g, Rev(revision));
