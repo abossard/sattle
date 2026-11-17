@@ -63,7 +63,7 @@ public static class Support
     };
     public static readonly HashSet<string> Functions =
     [
-        "Equal", "NotEqual", "LessThan", "LessOrEqual", "GreaterThan", "GreaterOrEqual", "And", "Or", "Not", "Add", "Subtract", "Multiply", "Divide", "Negate",
+        "Equal", "NotEqual", "LessThan", "LessOrEqual", "GreaterThan", "GreaterOrEqual", "And", "Or", "Not", "Add", "Subtract", "Shift", "Multiply", "Divide", "Negate",
         "ToDecimal", "Concat", "Coalesce", "IsPresent", "If", "Rate", "LowerInvariant", "Trim", "EntityId",
     ];
     public static readonly Dictionary<string, string> RuleClasses = new() { ["readonly"] = "", ["bijective"] = "", ["lens"] = "putput", ["sync"] = "" };
@@ -105,7 +105,7 @@ public static class Palette
     public sealed record Quantity(string Kind, string Unit);
     static readonly Dictionary<string, Quantity> Quantities = new()
     {
-        ["width"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"), ["ttl"] = new("duration", "ns"), ["fill"] = new("value", "unit of the property read"),
+        ["width"] = new("duration", "ns"), ["hop"] = new("duration", "ns"), ["within"] = new("duration", "ns"), ["period"] = new("duration", "ns"), ["age"] = new("duration", "ns"), ["ttl"] = new("duration", "ns"), ["fill"] = new("value", "unit of the property read"),
         ["enterAfter"] = new("count", "windows"), ["exitAfter"] = new("count", "windows"),
         ["above"] = new("value", "unit of the thresholded value"), ["below"] = new("value", "unit of the thresholded value"),
         ["minDepth"] = new("count", "hops"), ["maxDepth"] = new("count", "hops"), ["minHops"] = new("count", "hops"), ["maxHops"] = new("count", "hops"),

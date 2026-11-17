@@ -15,7 +15,7 @@ public class KqlProjectionTests
 
     [Fact]
     public void The_kernel_is_the_one_the_contract_was_agreed_on() =>
-        Assert.Equal("sha256:d7491eded4c5663553d0589e588492ce6b99006cc93fb0aec5a0e2933e5059c3", Kernel.ComputeDigest());
+        Assert.Equal("sha256:dd5bb1df45cb491b5af743e3d92d5b0b688c78f594bcc43454ec83db01cd0ce6", Kernel.ComputeDigest());
 
     [Theory]
     [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "sha256:88c3217f415ec347fb21b80ab8fe6773b5f6e5482da048ba1b8d19e068eff3d3")]

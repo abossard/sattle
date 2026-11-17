@@ -84,7 +84,7 @@ public static class KernelTable
         T("Rule | name:T class:T putput:B reason:T? accept:L? onDelete:T? sourceVar:T? targetVar:T?"),
         T("Match : Operator |"), T("Filter : Operator |"), T("Map : Operator |"), T("Join : Operator |"),
         T("Union : Operator |"), T("Distinct : Operator |"), T("Group : Operator |"),
-        T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I late:T"), T("Retain : Operator | timestampField:T age:I"),
+        T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I hop:I? late:T"), T("Retain : Operator | timestampField:T age:I"),
         T("Values : Operator |"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
         T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
@@ -172,7 +172,7 @@ public static class KernelTable
         new("GreaterThan", "(o, o) -> Boolean", "scalar", null), new("GreaterOrEqual", "(o, o) -> Boolean", "scalar", null),
         new("And", "(Boolean, Boolean, ...) -> Boolean", "scalar", null), new("Or", "(Boolean, Boolean, ...) -> Boolean", "scalar", null),
         new("Not", "Boolean -> Boolean", "scalar", "Not"),
-        new("Add", "(n, n) -> n", "scalar", null), new("Subtract", "(n, n) -> n", "scalar", null),
+        new("Add", "(n, n) -> n", "scalar", null), new("Subtract", "(n, n) -> n", "scalar", null), new("Shift", "(Instant, Integer) -> Instant", "scalar", null),
         new("Multiply", "(n, m) -> n*m", "scalar", null), new("Divide", "(n, m) -> Decimal", "scalar", null),
         new("Negate", "n -> n", "scalar", "Negate"), new("ToDecimal", "Integer -> Decimal", "scalar", "ToInteger"),
         new("Concat", "(Text, Text, ...) -> Text", "scalar", null), new("Coalesce", "(a, ..., a) -> a", "scalar", null),
@@ -344,5 +344,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:d7491eded4c5663553d0589e588492ce6b99006cc93fb0aec5a0e2933e5059c3";
+    public const string CompiledDigest = "sha256:dd5bb1df45cb491b5af743e3d92d5b0b688c78f594bcc43454ec83db01cd0ce6";
 }

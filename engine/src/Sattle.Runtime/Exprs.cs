@@ -59,6 +59,7 @@ public static class ExprCompiler
                         "Not" => new VLogic("Not", args),
                         "Add" or "Subtract" or "Multiply" => new VArith(c.Fn, args[0], args[1], c.Type.Ty.Tag == Tag.Decimal, faults),
                         "Divide" => new VArith("Divide", args[0], args[1], true, faults),
+                        "Shift" => new VArith("Add", args[0], args[1], false, faults),
                         "Negate" => new VArith("Negate", args[0], args[0], c.Type.Ty.Tag == Tag.Decimal, faults),
                         "ToDecimal" => new VToDecimal(args[0]),
                         "If" => new VIf(args[0], args[1], args[2], c.Type.Ty.Tag == Tag.Decimal),

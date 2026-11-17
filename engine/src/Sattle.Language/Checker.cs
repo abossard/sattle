@@ -255,9 +255,11 @@ public sealed class ProjectionChecker(Graph defs)
                     if (c is null || c.T.Ty.Tag != Tag.Instant || !c.T.Req || !c.T.Role.IsData) { Err("Window", op, $"window field '{ts}' must be a required data Instant"); return null; }
                     var w = d.Int(op, "width");
                     if (w <= 0) { Err("Window", op, "window width must be positive"); return null; }
+                    var hop = d.Int(op, "hop", w);      // a sliding window moves by its hop; without one it moves by its width
+                    if (hop <= 0 || hop > w || w % hop != 0) { Err("Window", op, "the hop of a window must be positive and divide its width"); return null; }
                     if (R.Has("windowStart") || R.Has("windowEnd")) { Err("Window", op, "windowStart or windowEnd already exists"); return null; }
                     var inst = new FType(Ty.Instant, true, Role.Data);
-                    return new TWindow(name, op, inputs, R.With([new Col("windowStart", inst), new Col("windowEnd", inst)], w), ts, w);
+                    return new TWindow(name, op, inputs, R.With([new Col("windowStart", inst), new Col("windowEnd", inst)], hop), ts, w, hop);      // the grid of the windows' starts is the hop
                 }
             case "Group":
                 {
@@ -1062,6 +1064,14 @@ public sealed class ProjectionChecker(Graph defs)
                     if (!args[0].Type.Ty.IsNumeric || args[0].Type.Ty != args[1].Type.Ty) { Err("E-Call", node, $"{fn} needs two numbers of one kind and unit, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
                     role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }
                     return new TCall(fn, args, new FType(args[0].Type.Ty, true, role));
+                }
+            case "Shift":
+                {
+                    // an instant moved by a duration in nanoseconds: KQL's `t + 5m`, `t - 5m`
+                    if (!Arity(2, 2)) break;
+                    if (args[0].Type.Ty.Tag != Tag.Instant || args[1].Type.Ty.Tag != Tag.Integer) { Err("E-Call", node, $"Shift moves an Instant by a duration, found {args[0].Type.Ty} and {args[1].Type.Ty}"); return null; }
+                    role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }
+                    return new TCall(fn, args, new FType(Ty.Instant, args[0].Type.Req && args[1].Type.Req, role));
                 }
             case "Multiply":
                 {

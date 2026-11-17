@@ -141,11 +141,15 @@ public static class Denotation
     }
 
     static Relation Window(TWindow w, Relation rows) =>
-        new(Names(w), ZSet.Of(rows.Rows.Select(r =>
+        new(Names(w), ZSet.Of(rows.Rows.SelectMany(r =>
         {
             var t = Instant(rows.Reader(r.Row)(w.TimeField));
-            var start = t - ((t % w.WidthNs) + w.WidthNs) % w.WidthNs;       // Def. 7.5: floor(t / w) · w
-            return (Shape(w, With(Named(rows, r.Row), [("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + w.WidthNs))])), r.Weight);
+            // Def. 7.5 with a hop h: every window [s, s + w) with s on the grid of h that holds t (with h = w, the one window floor(t / w) · w)
+            return Enumerable.Range(0, (int)(w.WidthNs / w.HopNs)).Select(j =>
+            {
+                var start = t - ((t % w.HopNs) + w.HopNs) % w.HopNs - j * w.HopNs;
+                return (Shape(w, With(Named(rows, r.Row), [("windowStart", Value.Instant(start)), ("windowEnd", Value.Instant(start + w.WidthNs))])), r.Weight);
+            });
         })));
 
     /// <summary>The equijoin with weights multiplied (Def. 6.3). A row with an absent key component joins nothing. Keys are equal by value.</summary>

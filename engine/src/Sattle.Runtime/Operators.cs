@@ -154,11 +154,12 @@ sealed class MapOp : PhysOp
 
 sealed class WindowOp : PhysOp
 {
-    readonly int ts; readonly long width; readonly Column ws = new(false), we = new(false);
-    public WindowOp(TWindow t, Layout inLayout, OpContext cx) : base(t) { _ = cx; ts = inLayout.Index(t.TimeField); width = t.WidthNs; }
+    readonly int ts; readonly long width, hop; readonly Column ws = new(false), we = new(false);
+    public WindowOp(TWindow t, Layout inLayout, OpContext cx) : base(t) { _ = cx; ts = inLayout.Index(t.TimeField); width = t.WidthNs; hop = t.HopNs; }
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
+        if (hop != width) return Hop(b);
         ws.Ensure(b.N); we.Ensure(b.N);
         var src = b.Cols[ts].L;
         for (var k = 0; k < b.Rows; k++)
@@ -171,6 +172,33 @@ sealed class WindowOp : PhysOp
         Array.Copy(b.Cols, cols, cols.Length - 2);
         cols[^2] = ws; cols[^1] = we;
         return b.WithColumns(OutLayout, cols);
+    }
+
+    /// <summary>A sliding window: each row goes into the width/hop windows [s, s + width) with s on the grid of the hop and s &lt;= t &lt; s + width, one output row each, with the row's weight.</summary>
+    Batch Hop(Batch b)
+    {
+        var k = (int)(width / hop); var n = b.Rows * k; var own = OutLayout.Count - 2;
+        var o = new Batch(OutLayout, n) { W = new long[n] };
+        var src = b.Cols[ts].L;
+        for (var r = 0; r < b.Rows; r++)
+        {
+            var i = b.RowAt(r);
+            var m = src[i] % hop; if (m < 0) m += hop;
+            var last = src[i] - m;                              // the newest window that holds the row
+            for (var j = 0; j < k; j++)
+            {
+                var x = o.N++;
+                for (var c = 0; c < own; c++)
+                {
+                    Column from = b.Cols[c], to = o.Cols[c];
+                    if (to.IsDec) to.D[x] = from.D[i]; else to.L[x] = from.L[i];
+                    if (!from.Present(i)) to.SetAbsent(x, n);
+                }
+                o.Cols[^2].L[x] = last - j * hop; o.Cols[^1].L[x] = last - j * hop + width;
+                o.W[x] = b.Weight(i);
+            }
+        }
+        return o;
     }
 }
 

@@ -97,7 +97,7 @@ public sealed record TMap(string Name, string Id, IReadOnlyDictionary<string, Sr
 public sealed record TGroup(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(string Name, TExpr Value)> Keys, IReadOnlyList<TAgg> Aggs, bool ClosesWindows)
     : TOp(Name, Id, "Group", Inputs, Out);
 public sealed record TRetain(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long AgeNs) : TOp(Name, Id, "Retain", Inputs, Out);
-public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs) : TOp(Name, Id, "Window", Inputs, Out);
+public sealed record TWindow(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string TimeField, long WidthNs, long HopNs) : TOp(Name, Id, "Window", Inputs, Out);
 /// <summary>`Fill`: the value a covered window without a stored record has (Def. 7.15), or null.</summary>
 public sealed record TSeriesRead(string Var, string PropId, string OutName, string ValueKind, decimal? Fill = null);
 /// <summary>`TtlNs`: the time to live (Def. 7.16). With it the output has the column `noData`: true on the one record an element in no data has, which carries no values.</summary>

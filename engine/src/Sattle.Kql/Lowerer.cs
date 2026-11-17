@@ -755,11 +755,12 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         return r.Next(P(op, "out"));
     }
 
-    /// <summary>`bin(time, width)` as a key of a summary: the rows go into windows of their own time; a late row updates its window.</summary>
-    Rel Window(Rel r, string col, long widthNs, SyntaxNode at)
+    /// <summary>`bin(time, width)` or `hop(time, width, step)` as a key of a summary: the rows go into the windows of their own time that hold them; a late row updates its windows.</summary>
+    Rel Window(Rel r, string col, long widthNs, long hopNs, SyntaxNode at)
     {
         if (!r.Cols.Contains(col)) throw new Refused($"the rows have no column '{col}'", at);
-        var op = Op("Window", ("timestampField", T(col)), ("width", Value.Integer(widthNs)), ("late", T("revise")));
+        var op = hopNs == widthNs ? Op("Window", ("timestampField", T(col)), ("width", Value.Integer(widthNs)), ("late", T("revise")))
+                                  : Op("Window", ("timestampField", T(col)), ("width", Value.Integer(widthNs)), ("hop", Value.Integer(hopNs)), ("late", T("revise")));
         Wire(r.Port, op, "in");
         var next = r.Next(P(op, "out"));
         next.Cols.AddRange(["windowStart", "windowEnd"]);
@@ -871,7 +872,14 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             {
                 if (name != "windowStart" || bin.ArgumentList.Expressions.Select(a => a.Element).ToList() is not [NameReference tc, var width] || Const(width) is not TimeSpan w)
                     throw new Refused("a window of the rows' own time is the key windowStart = bin(time, 60s), with a fixed width", it);
-                r = Window(r, tc.SimpleName, w.Ticks * 100, it);
+                r = Window(r, tc.SimpleName, w.Ticks * 100, w.Ticks * 100, it);
+                byWindow = binned = true; continue;
+            }
+            if (e is FunctionCallExpression { Name.SimpleName: "hop" } hop)
+            {
+                if (name != "windowStart" || hop.ArgumentList.Expressions.Select(a => a.Element).ToList() is not [NameReference tc, var width, var step] || Const(width) is not TimeSpan w || Const(step) is not TimeSpan h)
+                    throw new Refused("a sliding window of the rows' own time is the key windowStart = hop(time, 5m, 1m), with a fixed width and step", it);
+                r = Window(r, tc.SimpleName, w.Ticks * 100, h.Ticks * 100, it);
                 byWindow = binned = true; continue;
             }
             if (name == "windowStart" && e is NameReference { SimpleName: "windowStart" }) { byWindow = true; continue; }
@@ -1227,6 +1235,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                         "and" => "And", "or" => "Or", "+" => "Add", "-" => "Subtract", "*" => "Multiply", "/" => "Divide",
                         var o => throw new Refused($"the operator '{o}' is not in the profile", be),
                     };
+                    if (fn is "Add" or "Subtract" && Const(be.Right) is TimeSpan d)      // shift: an instant moved by a fixed duration
+                        return new CallX("Shift", Scalar(be.Left, r, args), new LitX(Value.Integer((fn == "Add" ? 1 : -1) * d.Ticks * 100)));
                     return fn is "And" or "Or" or "Add" or "Subtract" or "Multiply" or "Divide" ? new CallX(fn, Scalar(be.Left, r, args), Scalar(be.Right, r, args))
                         : new CallX(fn, Text(be.Left, r, args), Text(be.Right, r, args));
                 }

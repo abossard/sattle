@@ -77,6 +77,15 @@ public static class Worlds
     /// <summary>Rows in windows of their own time. The KQL form has one late policy: a late row revises its window.</summary>
     static readonly World Windowed = Rows("window late revise", "Window, Group over windows", "", MeterType, 0.25,
         tail: """nodes Meter on m with (rule = "observed") = a | summarize hits = count(), total = sum(n) by k, windowStart = bin(t, 60s) | project m = identity("meter", k), k, windowStart, hits, total;""");
+    /// <summary>D3 (#101): sliding windows of 3 minutes that move by 60 s; a row counts in the three windows that hold it.</summary>
+    static readonly World Hopped = Rows("hop 3m by 60s", "Window with a hop, Group over windows", "", MeterType, 0.25,
+        tail: """nodes Meter on m with (rule = "observed") = a | summarize hits = count(), total = sum(n) by k, windowStart = hop(t, 3m, 60s) | project m = identity("meter", k), k, windowStart, hits, total;""");
+    /// <summary>D3 (#101): a window over a window: the 60 s windows of the rows, summed in sliding windows of 3 minutes.</summary>
+    static readonly World HopOverWindows = Rows("hop over windows", "Group over windows, Window with a hop over its windows", "", MeterType, 0.25,
+        tail: """nodes Meter on m with (rule = "observed") = a | summarize hits = count(), total = sum(n) by k, windowStart = bin(t, 60s) | project k, at = windowStart, hits, total | summarize hits = sum(hits), total = sum(total) by k, windowStart = hop(at, 3m, 60s) | project m = identity("meter", k), k, windowStart, hits, total;""");
+    /// <summary>D3 (#101): shift: the rows counted in the window 90 s after their own time, so a shifted row crosses window borders.</summary>
+    static readonly World Shifted = Rows("shift into the next window", "Shift, Window, Group over windows", "", MeterType, 0.25,
+        tail: """nodes Meter on m with (rule = "observed") = a | extend later = t + 90s, earlier = t - 30s | where later > earlier | summarize hits = count(), total = sum(n) by k, windowStart = bin(later, 60s) | project m = identity("meter", k), k, windowStart, hits, total;""");
 
     // ---- a master graph and a view over it ----
 
@@ -455,6 +464,9 @@ public static class Worlds
         Aggregate("countif", "v = countif(n > 2), total = count()", "v: Integer; total: Integer;", "v, total"),
         Windowed with { Witnesses = ["window "] },
         Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
+        Hopped with { Witnesses = ["window "] },
+        HopOverWindows with { Witnesses = ["window "] },
+        Shifted with { Witnesses = ["window "] },
         new World("link", "Link, EmitRelationship", [.. Linked, LinkedSpace], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
         LinkedSeries,

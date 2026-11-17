@@ -67,6 +67,7 @@ public static class Expressions
                     if (y == 0) return Value.Null;
                     try { return Value.Decimal(x / y); } catch (OverflowException) { return Value.Null; }
                 }
+            case "Shift": return Value.Instant(((InstantValue)args[0]).Ns + (long)Canon.Integer(args[1]));
             case "Negate": return args[0] is IntegerValue n ? Value.Integer(-n.N) : Value.Decimal(-Canon.Number(args[0]));
             case "ToDecimal": return Value.Decimal(Canon.Number(args[0]));
             case "Rate": return Value.Decimal(Canon.Number(args[0]) / (c.Args[0].Type.Role.Period / 1_000_000_000m));
