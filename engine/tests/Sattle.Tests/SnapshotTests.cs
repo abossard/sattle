@@ -105,7 +105,6 @@ public class SnapshotTests
     public void A_snapshot_of_the_estate_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(double at) =>
         A_snapshot_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original("estate", at);
 
-    [Trait("Category", "Fixtures")]
     [FixturesTheory]
     [InlineData(0.3)] [InlineData(0.7)]
     public void A_snapshot_of_the_fixtures_loaded_into_a_fresh_engine_saves_to_the_same_bytes_and_the_engine_continues_like_the_original(double at) =>

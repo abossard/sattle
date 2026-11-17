@@ -296,15 +296,6 @@ public class HealthTreeTests
 
     // ---- the engine properties --------------------------------------------------------------------------------------------------------------
 
-    [Theory]
-    [InlineData(1)] [InlineData(50)] [InlineData(100000)]
-    public void The_state_digest_of_the_health_tree_does_not_depend_on_the_chunk_size(int chunk)
-    {
-        var reference = Run(Wide, 2000); var e = Run(Wide, chunk);
-        Assert.Equal(reference.StateDigest(), e.StateDigest());
-        Assert.Equal(Elements(reference).OrderBy(x => x.Key).Select(x => P(x.Value, "rolledState")), Elements(e).OrderBy(x => x.Key).Select(x => P(x.Value, "rolledState")));
-    }
-
     [Fact]
     public void A_pod_that_starts_to_fail_changes_only_its_path_to_the_root_and_a_few_edits()
     {

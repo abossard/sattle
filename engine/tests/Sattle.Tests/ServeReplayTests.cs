@@ -42,9 +42,9 @@ public class ServeReplayTests
     {
         var (replayed, served) = Digests(Estate, "synth");
         Assert.Equal(replayed, served);
+        Assert.Equal(replayed, Scenarios.Of(Estate, Scenarios.Full).StateDigest);                   // the shared scenario runs have the settings of `sattle replay`
     }
 
-    [Trait("Category", "Fixtures")]
     [FixturesFact]
     public void Serving_lab_fixtures_gives_the_state_digest_of_replaying_them()
     {
@@ -58,8 +58,8 @@ public class ServeReplayTests
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
-        var replayed = CaptureRuns.Of(dir, CaptureRuns.Full).StateDigest;                           // the shared run has the settings of `sattle replay`; its chunk size does not change the digest (BatchInvarianceTests)
-        Assert.Equal(replayed, CaptureRuns.Gated(() => Served(dir, Repo.ClusterOf(dir))));
+        var replayed = Scenarios.Of(dir, Scenarios.Full).StateDigest;                           // the shared run has the settings of `sattle replay`; its chunk size does not change the digest (BatchInvarianceTests)
+        Assert.Equal(replayed, Scenarios.Gated(() => Served(dir, Repo.ClusterOf(dir))));
     }
 
     /// <summary>Code review 2, defect 5: `serve CAPTURE --write-definitions` is refused when a definition is not the text of its file, here the space bound with the capture's arguments file or replaced by an overlay. A commit writes every definition back, so the capture's values would be written into the definitions folder. Temporary folders, invented values.</summary>

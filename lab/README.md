@@ -103,7 +103,7 @@ Run in `lab/`, with the prerequisites above.
    It is `capture/capture.sh 420` followed by `fixtures/build.sh captures/<timestamp>` on exactly that capture; the two can also be run one after the other, and `build.sh` alone on any older capture. If a stream died during the capture it stops before the build and prints the `build.sh` command to use the incomplete capture anyway.
 3. Run the engine's tests that replay the fixtures (they are skipped on a clone without them). They assert properties that hold for any capture (no rejected record, rows of every source, determinism, batch invariance, retention, serve equals replay), not values of one capture. The second command prints the replay summary.
    ```bash
-   cd ../engine && dotnet test --settings tests/fixtures.runsettings
+   cd ../engine && dotnet test tests/Sattle.Tests --filter "FullyQualifiedName~ixtures"
    ```
    ```bash
    cd ../engine && dotnet run --project src/Sattle.Cli -- replay ../lab/fixtures

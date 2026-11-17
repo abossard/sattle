@@ -49,7 +49,6 @@ public class RetentionTests
     [InlineData(0.25)] [InlineData(0.5)] [InlineData(0.9)]
     public void The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier_on_the_estate(double q) => The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier(Repo.Estate, q);
 
-    [Trait("Category", "Fixtures")]
     [FixturesTheory]
     [InlineData(0.25)] [InlineData(0.5)] [InlineData(0.9)]
     public void The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier_on_the_fixtures(double q) => The_master_keeps_exactly_the_evidence_younger_than_the_age_at_the_frontier(Repo.Fixtures, q);
@@ -72,11 +71,7 @@ public class RetentionTests
         Assert.DoesNotContain(kept.Engine.Master.State.Rels, r => gone.Contains(r.Source));
     }
 
-    [Theory]
-    [InlineData(1)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
-    public void Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_estate(int chunk) => Retained_state_and_digests_do_not_depend_on_the_chunk_size(Repo.Estate, chunk);
-
-    [Trait("Category", "Fixtures")]
+    /// <summary>On real data, with an age that expires the older half of the evidence: the retained state does not depend on the chunk size. On generated logs every cut is compared with the reference by the Differential.</summary>
     [FixturesTheory]
     [InlineData(1)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
     public void Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_fixtures(int chunk) => Retained_state_and_digests_do_not_depend_on_the_chunk_size(Repo.Fixtures, chunk);
@@ -96,7 +91,7 @@ public class RetentionTests
 
     public static IEnumerable<object[]> CaptureNames() => CaptureDirs().Any() ? CaptureDirs().Select(d => new object[] { Path.GetFileName(d) }) : [[""]];
 
-    /// <summary>On the real captures: with an age that expires the older half of the evidence, what is left is exactly the evidence younger than the age at the frontier, and the digest is the same at chunk sizes 50 and 100000. Chunk size 1 of this definition variant is covered on the estate (`Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_estate`).</summary>
+    /// <summary>On the real captures: with an age that expires the older half of the evidence, what is left is exactly the evidence younger than the age at the frontier, and the digest is the same at chunk sizes 50 and 100000. Chunk size 1 of this definition variant is covered on `lab/fixtures` (`Retained_state_and_digests_do_not_depend_on_the_chunk_size_on_the_fixtures`).</summary>
     [Trait("Category", "Capture")]
     [CaptureTheory]
     [MemberData(nameof(CaptureNames))]
@@ -118,7 +113,7 @@ public class RetentionTests
     /// <summary>A replay of a real capture, kept as its digest, evidence and frontier; the engine is disposed.</summary>
     sealed record CaptureResult(string Digest, List<(string Id, string Type, long Time)> Evidence, long Frontier);
 
-    static CaptureResult CaptureRun(Catalog cat, string dir, int chunk, string cluster) => CaptureRuns.Gated(() =>
+    static CaptureResult CaptureRun(Catalog cat, string dir, int chunk, string cluster) => Scenarios.Gated(() =>
     {
         var r = Run(cat, dir, chunk, cluster);
         using (r.Engine) return new CaptureResult(r.Engine.StateDigest(), Evidence(r.Engine), r.Frontier);

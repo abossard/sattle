@@ -133,7 +133,7 @@ public class ReferencesTests
     {
         var dir = Repo.CaptureDirs.LastOrDefault();
         Assert.NotNull(dir);
-        var run = CaptureRuns.Run(dir);
+        var run = Scenarios.Run(dir);
         foreach (var g in run.Engine.Graphs.Where(g => !g.IsMaster))
             Assert.Empty(run.Export.Unresolved(g));
         var master = run.Export.Unresolved(run.Engine.Master);

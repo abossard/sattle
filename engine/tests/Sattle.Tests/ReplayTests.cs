@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Steps 5 and 7: adapters on the capture envelope, replay, determinism (T7) and batch invariance (T6).</summary>
+/// <summary>The scenarios replayed (Theorem 6.2, T6, and 6.3, T7): each tracked scenario ends in its pinned state digest at every chunk size, and a replay is deterministic patch by patch. Below them, the adapters on the capture envelope by small synthetic captures.</summary>
 public class ReplayTests
 {
     const long Min = 60_000_000_000;
@@ -33,7 +33,6 @@ public class ReplayTests
     [Fact]
     public void The_estate_replays_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Estate);
 
-    [Trait("Category", "Fixtures")]
     [FixturesFact]
     public void Fixtures_replay_into_a_master_graph_and_a_service_tree() => A_capture_replays_into_a_master_graph_and_a_service_tree(Repo.Fixtures);
 
@@ -53,7 +52,6 @@ public class ReplayTests
     [Fact]
     public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_estate() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Estate);
 
-    [Trait("Category", "Fixtures")]
     [FixturesFact]
     public void T7_replay_is_deterministic_same_inputs_same_patches_and_digests_on_the_fixtures() => T7_replay_is_deterministic_same_inputs_same_patches_and_digests(Repo.Fixtures);
 
@@ -69,25 +67,30 @@ public class ReplayTests
         }
     }
 
+    /// <summary>T6 and T7 on a tracked scenario, with the settings of `sattle replay`: chunk sizes 1 and 50 give the state digest, the graph digests and the integrated output of chunk size 100000, the integrated output of every graph is its final state (the sum of the signed deltas of its patches), and the state digest is the pinned one.</summary>
     [Theory]
-    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
-    public void T6_batch_invariance_chunking_changes_patches_but_not_the_result_on_the_estate(int chunk) => T6_batch_invariance_chunking_changes_patches_but_not_the_result(Repo.Estate, chunk);
-
-    [Trait("Category", "Fixtures")]
-    [FixturesTheory]
-    [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(7)] [InlineData(50)] [InlineData(100000)]
-    public void T6_batch_invariance_chunking_changes_patches_but_not_the_result_on_the_fixtures(int chunk) => T6_batch_invariance_chunking_changes_patches_but_not_the_result(Repo.Fixtures, chunk);
-
-    static void T6_batch_invariance_chunking_changes_patches_but_not_the_result(string dir, int chunk)
+    [InlineData("estate")] [InlineData("estate-wide")] [InlineData("deploy-health")]
+    public void A_tracked_scenario_ends_in_its_pinned_state_digest_at_chunk_sizes_1_50_and_100000(string scenario)
     {
-        var reference = Replay(dir, chunk: 2000);
-        var r = Replay(dir, chunk: chunk);
-        Assert.Equal(reference.Engine.StateDigest(), r.Engine.StateDigest());
-        foreach (var g in r.Engine.Graphs)
+        var dir = Scenarios.Tracked(scenario);
+        Scenarios.AssertPinned(dir, Scenarios.Of(dir, Scenarios.Full).StateDigest);
+        One_state_at_chunk_sizes_1_50_and_100000(dir);
+    }
+
+    /// <summary>The same on `lab/fixtures`, without a pin: the data differ per machine.</summary>
+    [FixturesFact]
+    public void The_lab_fixtures_end_in_one_state_digest_at_chunk_sizes_1_50_and_100000() => One_state_at_chunk_sizes_1_50_and_100000(Repo.Fixtures);
+
+    static void One_state_at_chunk_sizes_1_50_and_100000(string dir)
+    {
+        var reference = Scenarios.Of(dir, Scenarios.Full);
+        foreach (var chunk in new[] { 1, 50 })
         {
-            Assert.Equal(g.State.Digest(), reference.Engine.Graph(g.Name).State.Digest());
-            Assert.Equal(Integrated(reference, g.Name), Integrated(r, g.Name));                      // integrated output equals batch output (Quine invariant)
-            Assert.Equal(Delta.Chi(g.State), Integrated(r, g.Name));                                  // and equals the final graph
+            var r = Scenarios.Of(dir, chunk);
+            Assert.Equal(reference.StateDigest, r.StateDigest);
+            Assert.Equal(reference.GraphDigests, r.GraphDigests);
+            Assert.Equal(reference.Integrated, r.Integrated);                                       // integrated output equals batch output (Quine invariant)
+            Assert.All(r.IntegratedIsFinal.Concat(reference.IntegratedIsFinal), x => Assert.True(x.Value, $"{x.Key} at chunk size {chunk}: the integrated output is not the final graph"));
         }
     }
 
@@ -203,7 +206,7 @@ public class ReplayTests
     public void A_row_type_no_source_of_the_space_binds_is_dropped_and_counted(string @case, bool older, string dropped, int selects)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => older ? f with { Text = string.Join('\n', f.Text.Replace(" selections: selections,", "").Split('\n').Where(l => !l.Contains("selections", StringComparison.Ordinal))) } : f).ToList();
-        using var h = new SpaceHost(files, new HostOptions { Projections = new Sattle.Kql.KqlSource(), Cluster = "synth" });
+        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         var stats = h.RunCapture(Capture(K8s(1, "ADDED", "Service", "web", "ns1", """{"selector": {"app": "web"}}"""), Deployment(2, """{"app": "web"}""")), new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" });
         Assert.Equal(0, stats.Rejected);
         Assert.Equal(dropped, h.SpaceInfo()["input"]!["dropped"]!.ToJsonString());

@@ -1,6 +1,5 @@
 using System.Text.Json.Nodes;
 using Sattle.Core;
-using Sattle.Kql;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
@@ -23,8 +22,8 @@ public class BatchInvarianceTests
     public void Every_capture_gives_the_same_state_digest_at_chunk_sizes_1_50_and_100000(string capture, int chunk)
     {
         var dir = Path.Combine(Repo.Captures, capture);
-        var reference = CaptureRuns.Of(dir, CaptureRuns.Full);
-        var r = CaptureRuns.Of(dir, chunk);
+        var reference = Scenarios.Of(dir, Scenarios.Full);
+        var r = Scenarios.Of(dir, chunk);
         Assert.Equal(reference.StateDigest, r.StateDigest);
         Assert.Equal(0, reference.Conflicts);
         Assert.Equal(0, r.Conflicts);
@@ -175,7 +174,7 @@ public class BatchInvarianceTests
     [InlineData("168h", int.MaxValue)]
     public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
     {
-        var cat = new Sattle.Language.Catalog(new KqlSource());
+        var cat = new Sattle.Language.Catalog(Repo.Projections);
         Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.sattle", Wide), new Sattle.Language.SourceFile("d.ingest.kql", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.sattle", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
         using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
         var w = Sattle.Language.Lexer.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;

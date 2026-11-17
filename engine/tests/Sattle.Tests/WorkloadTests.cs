@@ -355,19 +355,9 @@ public class WorkloadTests
     }
 
     [Theory]
-    [InlineData(1)] [InlineData(50)] [InlineData(100000)]
-    public void The_workload_graphs_do_not_depend_on_the_chunk_size_and_conform_to_their_ontology(int chunk)
-    {
-        var cat = Repo.LoadExamples(out _);
-        var space = cat.Spaces.Keys.Single();
-        using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
-        foreach (var name in new[] { "workloadStructure", "workload" })
-        {
-            Assert.Equal(At(-1).Graph(name).State.Digest(), engine.Graph(name).State.Digest());
-            Assert.Empty(Conformance.Check(engine.Graph(name).State, cat.OntologyOf("acme.workload")));
-        }
-    }
+    [InlineData("workloadStructure")] [InlineData("workload")]
+    public void The_workload_graphs_conform_to_their_ontology(string graph) =>
+        Assert.Empty(Conformance.Check(At(-1).Graph(graph).State, Repo.LoadExamples(out _).OntologyOf("acme.workload")));
 
     [Trait("Category", "Capture")]
     [CaptureTheory]
@@ -375,7 +365,7 @@ public class WorkloadTests
     public void On_a_real_capture_the_workload_graphs_build_with_no_dangling_edge(string capture)
     {
         var dir = Path.Combine(Repo.Captures, capture);
-        var r = CaptureRuns.Run(dir);
+        var r = Scenarios.Run(dir);
         foreach (var name in new[] { "workloadStructure", "workload" })
         {
             var g = r.Engine.Graph(name).State;
