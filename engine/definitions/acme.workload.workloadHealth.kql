@@ -21,8 +21,8 @@ let windowsOf = (R:(m:string, ekey:string, meter:string, rid:string, severity:lo
       | project ekey, rid, severity, meter, windowStart, raw = toreal(value), v = toreal(value) * sign, above, enterAfter, below, exitAfter, noData
 };
 // a rule is on after enterAfter windows at or above its threshold, off after exitAfter windows at or below it, in no data while the meter is silent
-let signalsOf = (W:(ekey:string, rid:string, severity:long, meter:string, windowStart:datetime, v:real, above:real, enterAfter:long, below:real, exitAfter:long, noData:bool)) {
-    W | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter, noData | invoke hysteresis("on", "off", "off", "nodata")
+let signalsOf = (W:(ekey:string, rid:string, severity:long, meter:string, windowStart:datetime, v:real, above:real, enterAfter:long, below:real, exitAfter:long)) {
+    W | project ekey, rid, severity, meter, windowStart, value = v, above, enterAfter, below, exitAfter | invoke hysteresis("on", "off", "off", "nodata")
 };
 let resourceReadings = graph("master")
     | graph-match (m)-[o]->(r) where labels(m) has "Meter" and labels(o) has "MeterOf" and labels(r) has "AzureResource"
@@ -53,8 +53,7 @@ let dropped = graph("master")
     | join kind=inner (rules) on $left.meter == $right.rmeter
     | where rtype == "pod"
     | invoke windowsOf("drops", 0.0)
-    | summarize raw = sum(raw), v = sum(v), silent = countif(noData), n = count() by ekey, rid, severity, meter, windowStart, above, enterAfter, below, exitAfter
-    | project ekey, rid, severity, meter, windowStart, raw, v, above, enterAfter, below, exitAfter, noData = silent == n;
+    | summarize raw = sum(raw), v = sum(v) by ekey, rid, severity, meter, windowStart, above, enterAfter, below, exitAfter;
 extend nodes ComponentSignal on sig = dropped | summarize events = sum(raw) by ekey, rid, windowStart | project sig = identity("signal", ekey, rid), windowStart, events;
 
 // ---- the signals of the components and their severity: 0 off, 1 no data, 2 a degrading rule on, 3 an unhealthy rule on ----

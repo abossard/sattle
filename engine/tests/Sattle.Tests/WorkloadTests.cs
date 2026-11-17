@@ -315,11 +315,13 @@ public class WorkloadTests
         }
     }
 
-    /// <summary>The dropped calls of a pod (rule `pod-drops`) when its calls stop and when Hubble goes silent, both at 10:01. A pod that stops calling while Hubble reports has 0 dropped calls in every window, so its signal is off; when Hubble is silent the signal is in no data once a closed window is five minutes past its last flow (from 10:08 with a minute of lateness), and the pods it does not measure are not. The replay stops at `seconds` after 10:00; scenario C (web-7d4-3 crash-looping from 10:08) is why the silent cases look at web-7d4-1 and web-7d4-2.</summary>
+    /// <summary>The dropped calls of a pod (rule `pod-drops`) when its calls stop and when Hubble goes silent, both at 10:01. A pod that stops calling while Hubble reports has 0 dropped calls in every window, so its signal is off; when Hubble is silent the signal is in no data once a closed window is five minutes past its last flow (from 10:08 with a minute of lateness), and the pods it does not measure are not. The one call of web-7d4-2 is first matched at the 10:06 advance, so its time to live counts from there (Def. 7.16): it is in no data from 10:12, and until then it keeps the pod's signal out of no data (a roll-up key is in no data when every member with a record is). The replay stops at `seconds` after 10:00; scenario C (web-7d4-3 crash-looping from 10:08) is why the silent cases look at web-7d4-1 and web-7d4-2.</summary>
     [Theory]
     [InlineData("web-7d4-3 stops calling", 450, "pod:web-7d4-3=Healthy, pod:web-7d4-1=Healthy, pod:api-5c9-1=Healthy", "web-7d4-3", "off")]
     [InlineData("Hubble silent for 3 minutes", 240, "pod:web-7d4-1=Healthy, pod:web-7d4-2=Healthy, pod:api-5c9-1=Healthy", "web-7d4-1", "off")]
-    [InlineData("Hubble silent for more than 5 minutes", 540, "pod:web-7d4-1=No data, pod:web-7d4-2=No data, pod:api-5c9-1=Healthy", "web-7d4-1", "nodata", Skip = "#105: a source silent as a whole covers no more windows, so the signals it feeds keep their last state (here off, still at 10:18) instead of going to no data (Def. 7.16)")]
+    [InlineData("Hubble silent for more than 5 minutes", 540, "pod:web-7d4-1=No data, pod:web-7d4-2=Healthy, pod:api-5c9-1=Healthy", "web-7d4-1", "nodata")]
+    [InlineData("Hubble silent for more than 5 minutes", 540, "pod:web-7d4-1=No data, pod:web-7d4-2=Healthy, pod:api-5c9-1=Healthy", "web-7d4-2", "off")]
+    [InlineData("Hubble silent for more than 5 minutes", 720, "pod:web-7d4-1=No data, pod:web-7d4-2=No data, pod:api-5c9-1=Healthy", "web-7d4-2", "nodata")]
     public void A_pod_whose_calls_stop_is_healthy_and_one_Hubble_stopped_reporting_on_is_in_no_data(string change, int seconds, string expected, string pod, string signalState)
     {
         bool Keep(string line)
