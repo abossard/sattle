@@ -4,6 +4,7 @@ using Sattle.Language;
 using Sattle.Reference;
 using Sattle.Runtime;
 
+// One test at a time: a harness test spreads its seeds over every core itself (`Differential.Check`), so tests side by side would only wait for each other.
 [assembly: CollectionBehavior(DisableTestParallelization = true)]
 
 namespace Sattle.Differential;

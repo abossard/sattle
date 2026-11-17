@@ -62,13 +62,13 @@ public static class Differential
     /// <summary>Null when every seed agrees; otherwise the report of the first seed that differs, with its smallest log.</summary>
     public static string? Check(World world, int seeds, int length, bool reordered)
     {
-        for (var seed = 0; seed < seeds; seed++)
-        {
-            var log = world.Log(seed, length);
-            if (FirstMismatch(world, log, seed, reordered) is null) continue;
-            var small = Shrink(world, log, seed, reordered);
-            return $"world '{world.Name}' ({world.Kind}), seed {seed}, {log.Length} inputs shrunk to {small.Length}:\n{Logs.Print(small)}\n{FirstMismatch(world, small, seed, reordered)}";
-        }
-        return null;
+        _ = world.Catalog;      // loaded once, before the seeds share it
+        // the seeds are independent of each other, so they run on every core; the report is that of the smallest seed that differs, as when they ran in order
+        var differing = Enumerable.Range(0, seeds).AsParallel().Where(seed => FirstMismatch(world, world.Log(seed, length), seed, reordered) is not null).ToArray();
+        if (differing.Length == 0) return null;
+        var first = differing.Min();
+        var log = world.Log(first, length);
+        var small = Shrink(world, log, first, reordered);
+        return $"world '{world.Name}' ({world.Kind}), seed {first}, {log.Length} inputs shrunk to {small.Length}:\n{Logs.Print(small)}\n{FirstMismatch(world, small, first, reordered)}";
     }
 }

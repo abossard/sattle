@@ -204,6 +204,35 @@ public static class Worlds
 
     public static readonly World LinkedLoads = LinkedLoadsUnder("delta sum");
 
+    /// <summary>A view reads the load windows of the pods through a series. A link merges two identities of one pod and moves their windows; the view has the survivor's window in the step of the merge (code review 2, defect 22).</summary>
+    public static readonly World LinkedSeries = new("a view's series over a pod that a link merges", "Link, Series, Rollup in a view",
+        [
+            .. LinkedLoads.Files.Take(2),        // the types and the ingestion, without the space
+            new SourceFile("w.view.sattle", """
+                module w.view @ 1.0.0;
+                import w @ 1.0.0 sha256:… as base;
+                entity Seen { load?: Integer telemetry delta sum every 60s; }
+                """),
+            Kql("w.view", "v", """
+                graph v : w.view;
+                input master : base;
+                nodes Seen on p = graph("master") | graph-match (p) where labels(p) has "Pod" project p = p.id
+                    | join kind=inner (telemetry("master", 30m) | where property == "load" | project p = id, windowStart, property, value) on p
+                    | summarize load = sum(value) by p, windowStart;
+                """),
+            Space("import w @ 1.0.0 sha256:… as base;\nimport w.view @ 1.0.0 sha256:… as view;", """
+                  source pods adapter "sattle.authoring" rows base.PodRow;
+                  source flows adapter "sattle.authoring" rows base.FlowRow;
+                  source loads adapter "sattle.authoring" rows base.LoadRow;
+                  master graph master = base.ingest(pods: pods, flows: flows, loads: loads);
+                  graph view = view.v(master: master);
+                """),
+        ], LinkedLoads.Sources, LinkedLoads.AdvanceShare) { Witnesses = ["d:w.view/prop:load "] };
+
+    /// <summary>A view names its elements by the element it matches, so it follows a merge of the master (a key of a linked domain is refused there, `IdentityLinked`).</summary>
+    public static readonly World LinkedNamed = LinkedWith("a view named by the element of a linked domain", "Link, Match, EmitEntity in a view", "entity Tag { name?: Text; }",
+        """nodes Tag on t = graph("master") | graph-match (p) where labels(p) has "Pod" project p = p.id, name = p.name | project t = p, name;""") with { Witnesses = ["d:w.view/prop:name="] };
+
     /// <summary>Law 7.5 item 3, "rows after the link" (D37): the load of a pod aggregated per window once by its uid and once by its name, both writing one telemetry property. A link merges the two identities before, between or after the rows; the window is what both groups give together, as if every row had been written under the survivor.
     /// The load property is declared `{kind} telemetry {rule} every 60s` (a temporality and a combine rule); `aggregate` is the aggregate of each group in KQL: `sum(n)`, `avg(n)`, or `arg_max(t, n)` for the n of the latest row.</summary>
     public static World LinkedLoadsUnder(string rule, string aggregate = "sum(n)", string kind = "Integer")
@@ -222,7 +251,7 @@ public static class Worlds
         { Witnesses = ["prop:load"] };
     }
 
-    // ---- worlds of the known-defect tests (their inputs are written out, not generated) ----
+    // ---- worlds outside `All`: their inputs are written out, not generated ----
 
     const string OneEntity = """
         entity E { k: Text; d?: Decimal; }
@@ -261,7 +290,11 @@ public static class Worlds
     public static readonly World SharedWindow = View("shared window", "Series, Rollup, EmitEntity", """
         entity Signal { k: Text; v?: Integer telemetry delta sum every 60s; }
         identity signal for Signal version "1" { k: Text by lowerInvariant; }
-        """, "nodes Signal on s = " + Hits("k", "telemetry(\"master\", 30m)") + "\n    | summarize v = sum(value) by c, windowStart\n    | project s = identity(\"signal\", c), k = tolower(c), windowStart, v;");
+        """, "nodes Signal on s = " + Hits("k", "telemetry(\"master\", 30m)") + "\n    | summarize v = sum(value) by c, windowStart\n    | project s = identity(\"signal\", c), k = tolower(c), windowStart, v;", 0.3,
+        [   // items whose keys differ only in the case of a letter: two items, one signal, so two rows support one window of the signal
+            new("a", (r, now) => Row(("k", Pick(r, Value.Text("k0"), Value.Text("K0"), Value.Text("k1"), Value.Text("K1"))), ("g", Value.Text("g0")), ("n", Value.Integer(1)), ("d", Value.Null), ("t", Value.Instant(now))), f => ((TextValue)f["k"]).S),
+            new("b", (r, now) => Row(("k", Pick(r, Value.Text("k0"), Value.Text("K0"), Value.Text("k1"), Value.Text("K1"))), ("g", Value.Text("g0")), ("n", Value.Integer(r.Next(5))), ("d", Value.Null), ("t", Value.Instant(now + r.Next(-6, 2) * 30 * Second)))),
+        ]) with { Witnesses = ["d:w.view/prop:v "] };
 
     const string GroupsTypes = """
         module w @ 1.0.0;
@@ -422,8 +455,10 @@ public static class Worlds
         Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
         new World("link", "Link, EmitRelationship", [.. Linked, LinkedSpace], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
         LinkedLoads,
+        LinkedSeries,
         LinkedView,
         LinkedUnionJoin,
+        LinkedNamed,
         References,
         ShareRule,
         MembersLeave,
@@ -455,7 +490,7 @@ public static class Worlds
             """) with { Witnesses = ["degree=n:"] },
         View("series and rollup", "Series, Rollup", Signal,
             "nodes Signal on s = " + Hits("g", "telemetry(\"master\", 3m)") + "\n    | summarize v = sum(value) by c, windowStart\n    | project s = identity(\"signal\", c), k = c, windowStart, v;", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, Fill, FillAroundLoss, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency,
+        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

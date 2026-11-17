@@ -136,6 +136,24 @@ public class DifferentialTests
         Assert.All(engine.Master.State.Entities, e => Assert.Equal("observed", lineage.Forward("master", e.Id)["rule"]?.GetValue<string>()));
     }
 
+    /// <summary>PROTOCOL 3.22: the state digest does not depend on whether the link comes before or after the rows of the two ids (code review 2, defect 22).</summary>
+    [Fact]
+    public void The_state_digest_does_not_depend_on_the_order_of_the_link_and_the_rows()
+    {
+        static Sattle.Reference.RowInput Load(string? uid, string? name, long n, long seconds) => new("loads", Logs.Row(("uid", uid is null ? Value.Null : Value.Text(uid)), ("name", name is null ? Value.Null : Value.Text(name)), ("n", Value.Integer(n)), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), 1);
+        var link = new Sattle.Reference.RowInput("pods", Logs.Row(("uid", Value.Text("u0")), ("name", Value.Text("Web")), ("g", Value.Text("g0"))), 1);
+        string Digest(params Sattle.Reference.Input[] log)
+        {
+            using var engine = new Engine(Worlds.LinkedLoads.Catalog, Worlds.LinkedLoads.Catalog.Spaces.Keys.Single());
+            long seq = 0;
+            foreach (var i in log)
+                if (i is Sattle.Reference.AdvanceInput a) engine.Advance(a.Frontier, ++seq); else EngineRun.Ingest(engine, [(Sattle.Reference.RowInput)i], ++seq);
+            return engine.StateDigest();
+        }
+        var rows = new Sattle.Reference.Input[] { Load(null, "Web", 5, 10), Load(null, "web", 7, 20), Load("u0", null, 3, 30), new Sattle.Reference.AdvanceInput(Logs.Origin + 90 * Logs.Second) };
+        Assert.Equal(Digest([.. rows, link]), Digest([link, .. rows]));
+    }
+
     /// <summary>The support of windows written under two ids of one class is engine state: a snapshot taken after the merge restores it, and both engines continue to the same state (premise S1 for the new state).</summary>
     [Fact]
     public void A_snapshot_keeps_the_windows_written_under_two_ids()
