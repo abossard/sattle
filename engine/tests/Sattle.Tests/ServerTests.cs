@@ -6,12 +6,15 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>The HTTP skin (Server.cs) on a real listener: who may call it from a browser, what a bad body and an unknown graph answer, and that a served replay adapts its input under the host's lock.</summary>
+/// <summary>The HTTP form of PROTOCOL.md on a real listener: who may call it from a browser, what a bad body and an unknown graph answer, and that a served replay adapts its input under the host's lock (the one test here that looks inside, at the lock and the interner). The requests only read or are refused, so they share one host.</summary>
 public class ServerTests
 {
-    static async Task<T> Serving<T>(Func<HttpClient, Task<T>> call)
+    static readonly Lazy<SpaceHost> Shared = new(HostTests.NewHost);
+    static Task<T> Serving<T>(Func<HttpClient, Task<T>> call) => Serving(Shared.Value, call);
+
+    /// <summary>`call` against `host` behind the HTTP skin on a free port of this machine.</summary>
+    internal static async Task<T> Serving<T>(SpaceHost host, Func<HttpClient, Task<T>> call)
     {
-        using var host = HostTests.NewHost();
         await using var app = Server.Build(host, 0);
         await app.StartAsync();
         using var http = new HttpClient { BaseAddress = new Uri(app.Urls.First()) };
@@ -33,7 +36,6 @@ public class ServerTests
         { "GET", "/space", "https://elsewhere.example", 403, null },                             // a foreign page may not read
         { "POST", "/drafts", "https://elsewhere.example", 403, null },                           // nor change
         { "POST", "/check", "https://elsewhere.example", 403, null },
-        { "POST", "/kql/analyse", "https://elsewhere.example", 403, null },
     };
 
     [Theory, MemberData(nameof(Origins))]
@@ -65,62 +67,6 @@ public class ServerTests
         var (status, body) = await Serving(async http => { var r = await http.GetAsync(path); return ((int)r.StatusCode, await r.Content.ReadAsStringAsync()); });
         Assert.Equal(expected, status);
         if (code is not null) Assert.Equal(code, JsonNode.Parse(body)!["error"]!["code"]!.GetValue<string>());
-    }
-
-    const string Deps = "acme.svc.serviceDeps";
-    static string DepsText => File.ReadAllText(Path.Combine(Repo.Definitions, Deps + ".kql"));
-
-    static async Task<(int Status, JsonNode Body)> Send(HttpClient http, HttpMethod method, string path, JsonNode? body = null)
-    {
-        var r = await http.SendAsync(Request(method, path, null, body?.ToJsonString()));
-        return ((int)r.StatusCode, JsonNode.Parse(await r.Content.ReadAsStringAsync())!);
-    }
-
-    /// <summary>The editors read a projection's text with its digest (research 11, section 2), and each call on that text answers with the same digest; the shipped text has nothing wrong at either depth.</summary>
-    [Theory]
-    [InlineData("/kql/analyse", "{}")]
-    [InlineData("/kql/analyse", "{\"depth\":\"full\"}")]
-    [InlineData("/kql/complete", "{\"offset\":0}")]
-    [InlineData("/kql/hover", "{\"offset\":10}")]
-    [InlineData("/kql/related", "{\"offset\":10}")]
-    public async Task A_call_on_a_projections_text_answers_with_the_digest_of_the_text_it_read(string path, string fields) => await Serving(async http =>
-    {
-        var (_, read) = await Send(http, HttpMethod.Get, "/kql/" + Deps);
-        Assert.Equal(DepsText, read["text"]!.GetValue<string>());
-        var body = JsonNode.Parse(fields)!; body["projection"] = Deps; body["text"] = DepsText;
-        var (status, answer) = await Send(http, HttpMethod.Post, path, body);
-        Assert.Equal((200, read["digest"]!.GetValue<string>()), (status, answer["digest"]!.GetValue<string>()));
-        if (path == "/kql/analyse") Assert.Empty(answer["diagnostics"]!.AsArray());
-        return 0;
-    });
-
-    /// <summary>A draft's text of a projection is read from the draft; outside it the file's text stays.</summary>
-    [Fact]
-    public async Task A_projections_text_in_a_draft_is_read_from_the_draft() => await Serving(async http =>
-    {
-        var (_, draft) = await Send(http, HttpMethod.Post, "/drafts", new JsonObject());
-        var id = draft["draft"]!.GetValue<string>(); var edited = DepsText + "// edited\n";
-        var (put, _) = await Send(http, HttpMethod.Put, $"/drafts/{id}/text/{Deps}.kql", new JsonObject { ["text"] = edited, ["expectedRevision"] = "0" });
-        var (_, inDraft) = await Send(http, HttpMethod.Get, $"/drafts/{id}/kql/{Deps}");
-        var (_, atHead) = await Send(http, HttpMethod.Get, "/kql/" + Deps);
-        Assert.Equal((200, edited, DepsText), (put, inDraft["text"]!.GetValue<string>(), atHead["text"]!.GetValue<string>()));
-        return 0;
-    });
-
-    /// <summary>What a call on a projection's text refuses, with the code it answers.</summary>
-    [Theory]
-    [InlineData("GET", "/kql/acme.svc.nosuch", null, 404, "UnknownModule")]
-    [InlineData("POST", "/kql/analyse", "{\"projection\":\"nosuch.thing\",\"text\":\"\"}", 404, "UnknownModule")]
-    [InlineData("POST", "/kql/analyse", "{\"projection\":\"acme.svc.serviceDeps\"}", 400, "BadRequest")]
-    [InlineData("POST", "/kql/analyse", "{\"projection\":\"acme.svc.serviceDeps\",\"text\":\"\",\"depth\":\"deep\"}", 400, "BadRequest")]
-    [InlineData("POST", "/kql/complete", "{\"projection\":\"acme.svc.serviceDeps\",\"text\":\"ab\",\"offset\":3}", 400, "BadRequest")]
-    [InlineData("POST", "/kql/hover", "{\"projection\":\"acme.svc.serviceDeps\",\"text\":\"ab\",\"offset\":1,\"depth\":\"full\"}", 400, "BadRequest")]
-    [InlineData("POST", "/kql/hover", "{\"projection\":\"acme.svc.serviceDeps\",\"text\":\"ab\",\"offset\":\"1\"}", 400, "BadRequest")]
-    [InlineData("POST", "/kql/analyse", "{\"projection\":5,\"text\":\"\"}", 400, "BadRequest")]
-    public async Task A_call_on_a_projections_text_refuses_what_it_cannot_read(string method, string path, string? body, int expected, string code)
-    {
-        var (status, answer) = await Serving(http => Send(http, new HttpMethod(method), path, body is null ? null : JsonNode.Parse(body)));
-        Assert.Equal((expected, code), (status, answer["error"]!["code"]!.GetValue<string>()));
     }
 
     /// <summary>Review: Server.cs:182. The replay of `serve` runs on its own thread while request handlers intern under the host's lock. Given that lock, the replay interns only while it holds it: nothing is interned while the test holds the lock.</summary>

@@ -1,3 +1,4 @@
+using Sattle.Core;
 using Sattle.Cli;
 using Sattle.Runtime;
 
@@ -118,5 +119,17 @@ public class RestartSmokeTests
         }
         finally { foreach (var f in Directory.GetFiles(Path.GetTempPath(), Path.GetFileName(path) + "*")) File.Delete(f); }
     }
-}
 
+    sealed class WriterRoot { public List<RowWriter> Writers = []; }
+
+    /// <summary>Review: StateSnapshot.cs:32. A row writer that went through a seal still writes rows: the snapshot keeps its layout. Without it the host threw on the first journal entry after the seal and replayed the whole journal without saying so.</summary>
+    [Fact]
+    public void A_row_writer_that_went_through_a_snapshot_still_has_its_layout()
+    {
+        var layout = new Layout(["k", "n"], [false, false]);
+        var saved = StateSnapshot.Save(new WriterRoot { Writers = [new RowWriter(layout, new Interner())] });
+        var restored = new WriterRoot();                    // as in a host that creates its writers when the first row of a source arrives
+        StateSnapshot.Load(saved, restored);
+        Assert.NotNull(Assert.Single(restored.Writers).Layout);
+    }
+}

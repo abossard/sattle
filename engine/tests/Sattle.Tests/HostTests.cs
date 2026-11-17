@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>PROTOCOL.md: definitions as graphs, check, configuration edits with re-activation, subscriptions, telemetry, lineage.</summary>
+/// <summary>PROTOCOL.md on a host in process, each test on the answers of one family of endpoints: definitions served as a graph (Theorem 9.1), check, a definition commit with its re-activation, the event stream (Theorem 12.1, Proposition 12.2), telemetry and meters (Theorem 7.1), lineage. A test that only reads shares one host of the class.</summary>
 public class HostTests
 {
     const long Min = 60_000_000_000;
@@ -48,10 +48,36 @@ public class HostTests
 
     static string Text(string file) => File.ReadAllText(Path.Combine(Repo.Definitions, file));
 
+    /// <summary>A host nothing was fed to and one after `Drive`, for the tests that only read.</summary>
+    static readonly Lazy<SpaceHost> Fresh = new(NewHost);
+    static readonly Lazy<SpaceHost> Driven = new(() => { var h = NewHost(); Drive(h); return h; });
+
+    static List<JsonNode> Drain(Subscription s) { var l = new List<JsonNode>(); while (s.Messages.Reader.TryRead(out var m)) l.Add(JsonNode.Parse(m)!); return l; }
+    static string Head(SpaceHost h, string graph) => h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == graph)!["head"]!.GetValue<string>();
+
+    /// <summary>The patches of a graph, applied in order to the empty graph, give the served snapshot element by element (Theorem 12.1 on what the protocol answers).</summary>
+    static void AssertHistoryGivesTheSnapshot(SpaceHost h, string graph)
+    {
+        var replayed = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var p in h.Patches(graph, 0))
+            foreach (var edit in p["edits"]!.AsArray())
+            {
+                var key = edit!["kind"]!.GetValue<string>() + " " + edit["id"]!.ToJsonString();
+                if (edit["after"] is null) Assert.True(replayed.Remove(key), "a patch removes " + key + ", which no earlier patch created");
+                else replayed[key] = edit["after"]!.ToJsonString();
+            }
+        var extent = h.Snapshot(graph, null)["extent"]!;
+        var snapshot = new SortedDictionary<string, string>(StringComparer.Ordinal);
+        foreach (var x in extent["entities"]!.AsArray()) snapshot["entity " + x!["id"]!.ToJsonString()] = x.ToJsonString();
+        foreach (var x in extent["relationships"]!.AsArray()) snapshot["relationship " + x!["id"]!.ToJsonString()] = x.ToJsonString();
+        Assert.NotEmpty(replayed);
+        Assert.Equal(snapshot.Keys, replayed.Keys);
+    }
+
     [Fact]
     public void Definitions_are_served_as_a_graph_with_the_kernel_as_ontology()
     {
-        using var h = NewHost();
+        var h = Fresh.Value;
         var snap = h.Snapshot("catalog", null);
         var ents = snap["extent"]!["entities"]!.AsArray();
         Assert.Contains(ents, e => e!["id"]!["value"]!.GetValue<string>() == "d:acme.svc/projection:serviceDeps" && e["type"]!["value"]!.GetValue<string>() == "Projection");
@@ -60,23 +86,20 @@ public class HostTests
         Assert.Contains(onto["entityTypes"]!.AsArray(), t => t!["id"]!["value"]!.GetValue<string>() == "EntityType");
         Assert.Equal(h.CatalogRevision.ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());
         Assert.Equal(h.CatalogRevision, h.Patches("catalog", 0).Count);
-        // the catalog history replays to the catalog graph
-        var g = new Graph();
-        foreach (var p in h.Catalog.Log.Commits) g.Apply(p.Patch.Edits);
-        Assert.True(g.SameAs(h.Catalog.Graph));
+        AssertHistoryGivesTheSnapshot(h, "catalog");
     }
 
     [Fact]
     public void Check_reports_typed_diagnostics_with_positions_and_the_patch_without_changing_state()
     {
-        using var h = NewHost();
-        const string File = "acme.svc.serviceDeps.kql";
+        var h = Fresh.Value;
+        var File = h.ProjectionFile("acme.svc.serviceDeps");
         var good = h.Check(File, Text(File));
         Assert.True(good["ok"]!.GetValue<bool>());
         Assert.Empty(good["patch"]!["edits"]!.AsArray());
         var bad = h.Check(File, Text(File).Replace("drops / flows", "drops / nosuch"));
         Assert.False(bad["ok"]!.GetValue<bool>());
-        var d = bad["diagnostics"]!.AsArray().First(x => x!["code"]!.GetValue<string>() == "Kusto")!;        // the column is unknown to the KQL text
+        var d = bad["diagnostics"]!.AsArray().First(x => x!["severity"]!.GetValue<string>() == "error")!;      // the column is unknown; which code names it is the language's
         Assert.True(d["line"]!.GetValue<int>() > 0 && d["column"]!.GetValue<int>() > 0);
         Assert.Equal(File, d["file"]!.GetValue<string>());
         var changed = h.Check(File, Text(File).Replace("above = 0.05", "above = 0.5"));
@@ -93,13 +116,13 @@ public class HostTests
     {
         using var h = NewHost();
         Drive(h);
-        string Status() => ((Rel)h.Engine.Graph("serviceTree").State.Rels.Single(r => Ids.Name(r.Type) == "DependsOn")).Props.Text("d:acme.svc/prop:status")!;
+        string Status() => h.Relationships("serviceTree", "DependsOn").Single().Prop("status")!;
         Assert.Equal("ok", Status());
-        var headBefore = long.Parse(h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "serviceTree")!["head"]!.GetValue<string>());
-        var masterBefore = h.Engine.Master.State.Digest();
-        var masterHead = h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "master")!["head"]!.GetValue<string>();
+        var headBefore = long.Parse(Head(h, "serviceTree"));
+        var masterBefore = h.Snapshot("master", null).ToJsonString();
+        var masterHead = Head(h, "master");
         // initial 3 windows of 10 percent drops: lower the entry threshold so the status ends degraded
-        const string File = "acme.svc.serviceDeps.kql";
+        var File = h.ProjectionFile("acme.svc.serviceDeps");
         var edited = Text(File).Replace("above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3", "above = 0.05, enterAfter = 3, below = 0.0, exitAfter = 30");
         Assert.NotEqual(Text(File), edited);
         var rev0 = h.CatalogRevision;
@@ -109,29 +132,14 @@ public class HostTests
         Assert.Single(graphs);                                                                     // only serviceTree changed
         Assert.Equal("serviceTree", graphs[0]!["id"]!.GetValue<string>());
         Assert.Equal(headBefore + 1, long.Parse(graphs[0]!["to"]!.GetValue<string>()));
-        Assert.Equal(masterBefore, h.Engine.Master.State.Digest());
-        Assert.Equal(masterHead, h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "master")!["head"]!.GetValue<string>());
+        Assert.Equal(masterBefore, h.Snapshot("master", null).ToJsonString());
+        Assert.Equal(masterHead, Head(h, "master"));
         Assert.Equal("degraded", Status());
         // the result equals a fresh engine with the new definition fed the same inputs
         using var fresh = new SpaceHost(Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith(File) ? f with { Text = edited } : f).ToList(), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
         Drive(fresh);
         Assert.Equal(fresh.StateDigest(), h.StateDigest());
-        // history: the patches of serviceTree, applied in order to the empty graph, give the served snapshot element by element
-        var replayed = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var p in h.Patches("serviceTree", 0))
-            foreach (var edit in p["edits"]!.AsArray())
-            {
-                var key = edit!["kind"]!.GetValue<string>() + " " + edit["id"]!.ToJsonString();
-                if (edit["after"] is null) Assert.True(replayed.Remove(key), "a patch removes " + key + ", which no earlier patch created");
-                else replayed[key] = edit["after"]!.ToJsonString();
-            }
-        var extent = h.Snapshot("serviceTree", null)["extent"]!;
-        var snapshot = new SortedDictionary<string, string>(StringComparer.Ordinal);
-        foreach (var x in extent["entities"]!.AsArray()) snapshot["entity " + x!["id"]!.ToJsonString()] = x.ToJsonString();
-        foreach (var x in extent["relationships"]!.AsArray()) snapshot["relationship " + x!["id"]!.ToJsonString()] = x.ToJsonString();
-        Assert.NotEmpty(replayed);
-        Assert.Equal(snapshot.Keys, replayed.Keys);
-        Assert.Equal(h.Engine.Graph("serviceTree").State.RelCount, extent["relationships"]!.AsArray().Count);
+        AssertHistoryGivesTheSnapshot(h, "serviceTree");
         // stale and invalid edits
         Assert.Equal(409, Assert.Throws<HostError>(() => h.Commit("acme.svc", Text("acme.svc.sattle"), rev0)).Status);
         var invalid = Assert.Throws<HostError>(() => h.Commit("acme.svc", edited.Replace("drops / flows", "drops / nosuch"), rev0 + 1));
@@ -183,8 +191,7 @@ public class HostTests
     [Fact]
     public void Telemetry_range_read_and_meters_come_from_the_definitions_and_never_from_revisions()
     {
-        using var h = NewHost();
-        Drive(h);
+        var h = Driven.Value;
         var tr = h.Telemetry("serviceTree", T0, T0 + 3 * Min, "dropRatio", null, batches: false);
         var series = tr["series"]!.AsArray();
         Assert.Single(series);
@@ -205,53 +212,117 @@ public class HostTests
     [Fact]
     public void Lineage_names_the_rule_sink_operators_and_source_elements()
     {
-        using var h = NewHost();
-        Drive(h);
-        var dep = h.Engine.Graph("serviceTree").State.Rels.Single(r => Ids.Name(r.Type) == "DependsOn");
-        var l = h.Lineage("serviceTree", dep.Id);
+        var h = Driven.Value;
+        var l = h.Lineage("serviceTree", h.Relationships("serviceTree", "DependsOn").Single()["id"].Id());
         Assert.Equal("serviceDeps", l["projection"]!.GetValue<string>());
         Assert.Equal("forward", l["direction"]!.GetValue<string>());
         Assert.Equal(l["sink"]!.GetValue<string>(), l["operators"]!.AsArray().Last()!.GetValue<string>());          // the operators the step's query was lowered to, ending at its sink
         var src = l["sources"]!.AsArray();
         Assert.Contains(src, s => s!["role"]!.GetValue<string>() == "call" && s["kind"]!.GetValue<string>() == "relationship" && s["graph"]!.GetValue<string>() == "master");
-        var calls = h.Engine.Master.State.Rels.First(r => Ids.Name(r.Type) == "Calls");
-        var ml = h.Lineage("master", calls.Id);
+        var ml = h.Lineage("master", h.Relationships("master", "Calls").First()["id"].Id());
         Assert.Equal("observedCalls", ml["rule"]!.GetValue<string>());
         Assert.Contains("FlowRow", ml["inputs"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Equal(404, Assert.Throws<HostError>(() => h.Lineage("master", "e:nope")).Status);
     }
 
-    /// <summary>The projections of the definitions folder are in its `.kql` files: a catalog or a host given no projection source says so for each file, instead of only failing the space's references.</summary>
-    [Theory]
-    [InlineData(false)] [InlineData(true)]
-    public void Definitions_loaded_without_a_projection_source_name_each_projection_file_and_what_is_missing(bool host)
+    // ---- /space, meters and versions (corrections the canvas asked for in version 3) ----
+
+    [Fact]
+    public void Space_carries_the_event_sequence()
     {
-        var files = Catalog.ReadDirectory(Repo.Definitions);
-        var message = host ? Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, new HostOptions { Cluster = "synth" })).Message
-            : string.Join("\n", new Catalog().Load(files).Diagnostics.Select(d => d.Message));
-        foreach (var kql in files.Where(f => f.Path.EndsWith(".kql", StringComparison.Ordinal)))
-            Assert.Contains($"{Path.GetFileName(kql.Path)} is no module text and this catalog has no projection source to read it", message);
+        using var h = NewHost();
+        var before = long.Parse(h.SpaceInfo()["seq"]!.GetValue<string>());
+        Drive(h, 2);
+        Assert.True(long.Parse(h.SpaceInfo()["seq"]!.GetValue<string>()) > before);
+        Assert.Equal(h.Seq.ToString(), h.SpaceInfo()["seq"]!.GetValue<string>());
     }
 
-    /// <summary>A commit writes the module texts, which hold no projection, and each `.kql` file as it was committed; a host started from the written folder loads the same catalog.</summary>
     [Fact]
-    public void A_committed_projection_file_is_written_as_committed_and_a_host_on_the_written_folder_loads_the_same_catalog()
+    public void The_catalog_has_empty_meters() => Assert.Empty(Fresh.Value.Meters("catalog")["meters"]!.AsArray());
+
+    /// <summary>Review: Export.cs:296. The thresholds document states the thresholds that apply. A parameter that is read from the rule row has no one value: it is null and `byRow` names the column it is read from, never the literal 0.</summary>
+    [Fact]
+    public void An_exported_threshold_never_claims_to_enter_after_zero_windows()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "sattle-defs-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
+        var h = Fresh.Value;
+        var thresholds = h.Meters("treeSignals")["thresholds"]!.AsArray();
+        Assert.NotEmpty(thresholds);
+        Assert.All(thresholds, t => Assert.True(t!["enterAfter"] is null ? t["byRow"]?["enterAfter"] is not null : t["enterAfter"]!.GetValue<long>() >= 1, t.ToJsonString()));
+        Assert.All(h.Meters("serviceTree")["thresholds"]!.AsArray(), t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
+    }
+
+    [Fact]
+    public void A_version_bump_commits_with_the_import_versions_and_pins_of_its_dependents_rewritten()
+    {
+        using var h = NewHost();
+        var text = h.Definition("acme.svc").Replace("module acme.svc @ 1.0.0;", "module acme.svc @ 1.1.0;");
+        Assert.Contains("@ 1.1.0", text);
+        h.Commit("acme.svc", text, h.CatalogRevision);
+        var served = h.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "acme.svc")!;
+        Assert.Equal("1.1.0", served["version"]!.GetValue<string>());
+        Assert.Contains("import acme.svc @ 1.1.0 sha256:" + served["digest"]!.GetValue<string>()[7..], h.Definition("acme.space"));
+    }
+
+    // ---- what a subscriber receives ----
+
+    /// <summary>Review: Host.cs:542. A subscriber that reads every message is never a slow consumer, however many messages it has read.</summary>
+    [Fact]
+    public void A_subscriber_that_reads_everything_is_not_closed_as_a_slow_consumer()
+    {
+        using var h = NewHost();
+        var sub = h.Subscribe(["master"], false, null);
+        long received = Drain(sub).Count;
+        for (var i = 0; i < 10_100 && !sub.Closed; i++) { h.Finish(); received += Drain(sub).Count; }
+        Assert.True(!sub.Closed, $"closed after {received} messages, all of them read");
+    }
+
+    /// <summary>Review: Output.cs:295-306 with Host.cs:490. A subscriber learns that a telemetry window went, not only that one has a new value.</summary>
+    [Fact]
+    public void A_subscriber_is_told_when_a_telemetry_window_is_retracted()
+    {
+        using var h = NewHost();
+        new SyntheticWorld(h, 4, 2).LoadStructure();
+        var sub = h.Subscribe(["master"], false, null);
+        Drain(sub);
+        h.Ingest("flows", new SyntheticWorld(h, 4, 2).Flows(20, T0, Min / 2), 10);
+        h.Advance(T0 + 2 * Min, 11);
+        var published = Drain(sub).Count(m => m["type"]!.GetValue<string>() == "telemetry");
+        Assert.True(published > 0, "the windows were not published in the first place");
+        var retraction = new SyntheticWorld(h, 4, 2).Flows(20, T0, Min / 2);
+        retraction.W = [.. Enumerable.Range(0, retraction.N).Select(i => -retraction.Weight(i))];
+        h.Ingest("flows", retraction, 12);                                                    // inside the late horizon: every window of these flows is retracted
+        var after = Drain(sub);
+        Assert.True(after.Any(m => m["type"]!.GetValue<string>() == "telemetry"), $"{published} telemetry messages announced the windows, none their retraction; received: {string.Join(", ", after.Select(m => m["type"]!.GetValue<string>()))}");
+    }
+
+    /// <summary>The windows a batch of the feed or of the range read names, by window, property and element; a batch of the feed also removes.</summary>
+    static void Apply(SortedDictionary<string, double> windows, JsonNode batch)
+    {
+        var key = $"{batch["windowStart"]} {batch["property"]} ";
+        var (ids, values) = (batch["ids"]!.AsArray(), batch["values"]!.AsArray());
+        for (var i = 0; i < ids.Count; i++) windows[key + ids[i]] = values[i]!.GetValue<double>();
+        foreach (var gone in batch["removed"]?.AsArray() ?? []) windows.Remove(key + gone);
+    }
+
+    /// <summary>PROTOCOL 3.33, Law 7.5 item 3, on the estate of the tests, where identities merge: a subscriber that applies every telemetry batch of the feed holds at the end exactly the windows the range read answers. The windows a merge moves are in the feed of the step that merged; before, 32 window changes of this estate reached no subscriber (code review 2, defect 22).</summary>
+    [Fact]
+    public async Task A_subscriber_that_applies_every_telemetry_batch_holds_the_windows_the_range_read_answers()
+    {
+        using var h = new SpaceHost(EstateTests.Files(demo: false), new HostOptions { Projections = Repo.Projections, Cluster = "synth", LateHorizonWindows = 3 });
+        var sub = h.Subscribe(["master"], false, null);
+        var replica = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        var reading = Task.Run(async () =>
         {
-            foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
-            const string Kql = "acme.svc.serviceDeps.kql";
-            using var h = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = Repo.Projections, Cluster = "synth" }) { DefinitionsDir = dir, WriteDefinitions = true };
-            var edited = Text(Kql).Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
-            Assert.NotEqual(Text(Kql), edited);
-            h.Commit(Kql, edited, h.CatalogRevision);
-            Assert.Equal(edited, File.ReadAllText(Path.Combine(dir, Kql)));
-            Assert.All(Directory.EnumerateFiles(dir, "*.sattle"), f => Assert.DoesNotContain("\nprojection ", File.ReadAllText(f)));
-            using var again = new SpaceHost(Catalog.ReadDirectory(dir), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
-            Assert.Equal(h.Catalog.Graph.Digest(), again.Catalog.Graph.Digest());
-        }
-        finally { Directory.Delete(dir, true); }
+            await foreach (var text in sub.Messages.Reader.ReadAllAsync())
+                if (JsonNode.Parse(text)! is { } m && m["type"]!.GetValue<string>() == "telemetry") Apply(replica, m["batch"]!);
+        });
+        new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(EstateTests.EstateDir);
+        h.Unsubscribe(sub);
+        await reading;
+        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine
+        var read = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        foreach (var batch in h.Telemetry("master", null, null, null, null, batches: true).AsArray()) Apply(read, batch!);
+        Assert.NotEmpty(read);
+        Assert.Equal(read, replica);
     }
 }

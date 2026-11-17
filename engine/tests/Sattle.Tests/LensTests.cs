@@ -5,7 +5,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Example 3 of research 03: the capability view as a lens with a complement. Backward edits, typed rejections, GetPut, PutGet (open question Q3) and the absence of PutPut.</summary>
+/// <summary>Theorem 8.1, 8.5, 8.6 on the capability view of the examples, a lens with a complement (research 03, example 3): backward edits land in the authored graph, refusals are typed and change nothing, PutGet holds on generated sequences of entity and relationship edits, and PutPut does not hold. GetPut and the laws per step kind are `LensLawTests` (T-LENS).</summary>
 [Trait("Category", "Slow")]
 public class LensTests
 {
@@ -133,20 +133,6 @@ public class LensTests
         // cycle: payments under billing while billing is under payments
         var cyc = Rejected(h, Edit(h, CreateUnder(pay.Id, bil.Id)));
         Assert.Contains(cyc.Code, new[] { "ConstraintViolation", "PutGetViolation" });
-    }
-
-    /// <summary>What GetPut is in an API of edits: an edit whose after state is its before state is no change of the view. The host drops it before any lens is evaluated (Edits.cs), so this shows that such an edit is accepted and leaves state, heads and journal alone; it does not exercise the backward path of the lens (test T-LENS of the paper's inventory is still wanted).</summary>
-    [Fact]
-    public void GetPut_putting_back_the_unchanged_view_changes_nothing()
-    {
-        using var h = NewHost();
-        Seed(h);
-        var digest = h.StateDigest(); var head = Heads(h, "authored");
-        var edits = View(h).Entities.Select(e => (JsonNode)new JsonObject { ["kind"] = "entity", ["id"] = e.Id, ["before"] = Ent(e.Id, e.Props.Text("d:acme.biz/prop:name")!), ["after"] = Ent(e.Id, e.Props.Text("d:acme.biz/prop:name")!) }).ToArray();
-        var res = h.ApplyEdits("capabilities", Edit(h, edits));
-        Assert.True(res["accepted"]!.GetValue<bool>());
-        Assert.Equal(digest, h.StateDigest());
-        Assert.Equal(head, Heads(h, "authored"));
     }
 
     [Fact]

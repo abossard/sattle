@@ -1,11 +1,10 @@
 using System.Text.Json.Nodes;
-using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Lineage of lifted elements: an edge or node of a higher level names every lower element it is made of (complete, paged), and a lower element names the higher elements it is part of. `replay --out` writes the same answers as files.</summary>
+/// <summary>Theorem 9.7, lineage of lifted elements: an edge or node of a higher level names every lower element it is made of (complete, paged), and a lower element names the higher elements it is part of. `replay --out` writes the same answers as files.</summary>
 public class LineageTests
 {
     static string Estate => EstateTests.EstateDir;
@@ -107,9 +106,9 @@ public class LineageTests
     public void Every_pod_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id()
     {
         var h = OnEstate.Value;
-        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");
-        var pods = h.Engine.Master.State.Entities.Where(x => Ids.Name(x.Type) == "Pod").ToList();
-        var without = pods.Count(p => h.Lineage("master", p.Id)["rule"] is null);
+        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine
+        var pods = h.Entities("master", "Pod");
+        var without = pods.Count(p => h.Lineage("master", p["id"].Id())["rule"] is null);
         Assert.True(pods.Count > 0 && without == 0, $"{without} of {pods.Count} pods have no lineage");
     }
 
