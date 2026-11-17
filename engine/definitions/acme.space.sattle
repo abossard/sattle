@@ -7,7 +7,7 @@ import sattle.source.azure   @ 1.0.0 sha256:be995c31959e6102a8ed54512c6d5a3fb7a4
 import sattle.source.prometheus @ 1.0.0 sha256:2a01c41a1b364e8b156d289f2afedf42ad97e508c7f1c870872d47b44b5da0d5 as prom;
 import acme.ops             @ 1.0.0 sha256:619705b4710be2545e0b3cd897e0373b67ac236ac5deab008c85b73f7429babe as ops;
 import acme.svc             @ 1.0.0 sha256:60c986c067aead62f18a758eacc7d6007e68057b6739e3388bfe48b20c289b72 as svc;
-import acme.workload @ 1.0.0 sha256:d18f69c3c60ed9303af420dc37a6620cd72abc1da0d76c7807c2b0bf9757913d as wl;
+import acme.workload @ 1.0.0 sha256:7708046c640f4c6523d3a4ae9122d961e32110a5446aacbbae5e25564c43f93d as wl;
 import acme.deployhealth @ 1.0.0 sha256:2edc7f71d06ec65add1f7bbe75cf5260b17f5ddafd05fc2a8059cfc05e23d8e3 as dh;
 import acme.report @ 1.0.0 sha256:76ca070efe167d7b99de6ebc5646cecc5f3274608cf94b604e5f1996f4883b9d as rpt;
 import acme.treereport @ 1.0.0 sha256:deda821960ec3940abc4e72688d7a421e3f38718b0cddfa95d3f5e4bdb069a90 as trep;

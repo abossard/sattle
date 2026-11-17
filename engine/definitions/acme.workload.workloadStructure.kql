@@ -198,8 +198,8 @@ edges EvidenceFor from evidence to service with (key = "evidenceBackend") = gate
 let backsHere = graph("master")
     | graph-match (pod)-[b]->(service) where labels(pod) has "Pod" and labels(b) has "Backs" and labels(service) has "Service" and service.namespace == workloadNamespace
       project pod = pod.id, service = service.id;
-// to resources and services outside: the destination'service address leads to assignment private endpoint or assignment resolved name
-let destinations = graph("master") | graph-match (destination) where labels(destination) has "Destination" project daddr = destination.address, dname = tolower(coalesce(destination.hostName, ""));
+// to resources and services outside: the destination's address leads to a private endpoint or a resolved name; only the destinations the workload's pods send to
+let destinations = sent | project daddr = address, dname = dhost | distinct *;
 let destinationOf = union
         (destinations | join kind=inner (endpoints) on $left.daddr == $right.peAddress | project daddr, tkey = linked),
         (destinations | join kind=inner (named) on $left.dname == $right.host | project daddr, tkey = rkey)

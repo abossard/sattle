@@ -515,6 +515,26 @@ Per graph at 10^5, MB: `healthTree` 1,031; shared (interner, telemetry, identiti
 
 **What blocks 10^6.** Linear structures would put about 32 KB per master node, so 32 GB live, against the 2.2 KB budget (a gap of 14.5 times). The traversal is quadratic: 487 s at 10^5 would be about 13 h at 10^6. The merges would allocate about 3.9 TB. The theory notes of the hogs are on #49, one per hog, before any fix.
 
+### Hog 5: the workload views read only what the workload has (#49, 2026-11-17)
+Theory. A view of one namespace should keep state for that namespace. Two reads came before the filter that narrows them to it. In `workload`, the meters of every Azure resource and node went through the joins with the rules, the `Series`, the roll-up of `ComponentSignal` and the hysteresis; only `measured` joined them with the workload's components. In `workloadStructure`, `destinationOf` resolved every Destination of the estate, not only those the workload's pods send to. Now the meter reads join `comps` before `windowsOf`, and `destinations` comes from `sent`. No engine change.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 422 / 403 MB | 3,191 / 3,031 MB |
+| per master node | 42.2 / 40.3 KB | 31.9 / 30.3 KB |
+| `workload` | 36.7 / 24.3 MB | 264.2 / 149.8 MB |
+| `workloadStructure` | 53.1 / 51.3 MB | 374.9 / 350.8 MB |
+| telemetry store | 18.5 / 16.5 MB | 182.9 / 162.9 MB |
+| allocated | 47,588 / 47,496 MB | 571,251 / 570,471 MB |
+
+- Times are not comparable: load average 128 to 300 during all four runs, and another project was rendering during the after-runs. Bytes are valid under load.
+- What stays is the `Series` state: a `Series` keeps the windows of every element of the read graph, whatever its other side joins. The three `Series` of `workloadStructure` alone hold 20 MB at 10^4. That is hog 4, and no definitions change reaches it.
+- Digests:
+  - estate unchanged (`sha256:32bcad1f...a422`), deploy-health unchanged;
+  - estate-wide moves from `sha256:825fead7...a533` to `sha256:debc3276...8cc`.
+- Why estate-wide moves: its graphs are identical (`workload` 20 entities, 20 relationships). Its `workload` telemetry falls from 146 to 56 windows, and 9 fewer identities are minted (246 to 237). Before, `extend nodes ComponentSignal` wrote reading windows for the signals of meters outside the workload. Those signal elements are never created, so the windows had no element. The estate has no such meters.
+- The `acme.workload` pin in `acme.space` moves.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
