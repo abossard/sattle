@@ -336,11 +336,11 @@ public sealed class Engine : IDisposable, IEngineInput
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{written.r.OutName}', which an authored source feeds ({string.Join(", ", series.Feeding[st.Reads.ToList().IndexOf(written.r)].Where(authored.Contains))}): authored data records no progress (Def. 7.15)");
             }
         // the rows of a graph that ingests are not evaluated again: each one's sink follows a merge
+        var ingesting = graphs.Where(g => g.Ingests).Select(g => (Graph: g, Properties: catalog.OntologyOf(g.Typed.OutputModule).Props)).ToList();      // a function of the catalog, which an engine never changes: built once, not per merge
         Identities.OnMerge = (loser, survivor) =>
         {
-            foreach (var g in graphs.Where(g => g.Ingests))
+            foreach (var (g, properties) in ingesting)
             {
-                var properties = catalog.OntologyOf(g.Typed.OutputModule).Props;
                 foreach (var (from, to) in g.Out.Remap(loser, survivor))
                     g.Out.MoveTelemetry(Telemetry, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
             }
