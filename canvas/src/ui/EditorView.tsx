@@ -35,6 +35,8 @@ const useStyles = makeStyles({
   bottom: { minHeight: 0, overflow: "auto", borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
   grow: { flexGrow: 1 },
   mono: { fontFamily: tokens.fontFamilyMonospace, width: "100%" },
+  /** the graphs of one level of the stack: side by side, no divider between them (none is computed from another) */
+  level: { display: "flex", flexWrap: "wrap", columnGap: tokens.spacingHorizontalXS },
   pick: { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", alignItems: "center", columnGap: tokens.spacingHorizontalS, width: "min(360px, 38%)", minWidth: "160px", flex: "0 1 auto", "& .fui-Select": { minWidth: 0 }, "@media (max-width: 1000px)": { width: "100%" } },
 });
 
@@ -244,9 +246,9 @@ export function EditorView() {
         </div>
         <div className={s.bar}>
           <Breadcrumb aria-label="Stacked projections" size="small">
-            {stack.up.flatMap((u) => [
-              <BreadcrumbItem key={u.graph}>{u.projection ? <BreadcrumbButton onClick={() => openProjection(u.projection!)}>{c.name(u.graph)} ({c.name(u.projection)})</BreadcrumbButton> : <BreadcrumbButton disabled>{c.name(u.graph)}</BreadcrumbButton>}</BreadcrumbItem>,
-              <BreadcrumbDivider key={`${u.graph}>`} />,
+            {stack.up.flatMap((level, i) => [
+              <BreadcrumbItem key={i} className={s.level}>{level.map((u) => u.projection ? <BreadcrumbButton key={u.graph} onClick={() => openProjection(u.projection!)}>{c.name(u.graph)} ({c.name(u.projection)})</BreadcrumbButton> : <BreadcrumbButton key={u.graph} disabled>{c.name(u.graph)}</BreadcrumbButton>)}</BreadcrumbItem>,
+              <BreadcrumbDivider key={`${i}>`} />,
             ])}
             <BreadcrumbItem><BreadcrumbButton current>{c.name(ed.projection)}</BreadcrumbButton></BreadcrumbItem>
             {stack.down.length > 0 && <BreadcrumbDivider />}

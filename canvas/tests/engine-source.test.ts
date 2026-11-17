@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EngineSource } from "../src/source/engine";
-import { parseDiagnostics, parseSpace, parseWsMessage, batchFromWire, parseMeters } from "../src/source/engine-protocol";
+import { parseDiagnostics, parseSpace, parseWsMessage, batchFromWire, parseMeters, revisionTimes } from "../src/source/engine-protocol";
 import type { StreamEvent } from "../src/source/types";
 import type { Rejection } from "../src/core/validate";
 
@@ -16,6 +16,13 @@ describe("protocol parsing", () => {
     [{ type: "patch", graph: "g", patch: {} }, "patch"], [{ type: "gap", firstSeq: "5" }, "gap"], [{ type: "draft", draft: "d1", revision: "2", ok: true, diagnostics: [] }, "draft"], [{ type: "time", logicalTime: "x", rows: "1" }, "time"],
     [{ type: "activation", catalogRevision: "11", graphs: [] }, "activation"], [{ type: "end" }, "end"], [{ type: "future" }, "other"], [null, "other"],
   ])("ws message %j is %s", (m, t) => expect(parseWsMessage(m).type).toBe(t));
+  it.each<[string, unknown, number | undefined]>([["an instant", "2026-11-09T20:01:00Z", Date.parse("2026-11-09T20:01:00Z") / 1000], ["null, before the first advance", null, undefined], ["absent (an engine before 3.54)", undefined, undefined], ["not an instant", "x", undefined]])("the commit time of a patch event: %s", (_, time, want) => {
+    const m = parseWsMessage({ type: "patch", graph: "g", patch: {}, time });
+    expect(m.type === "patch" && m.time).toBe(want);
+  });
+  it("the commit times of /revisions are keyed by revision; one without a time is left out", () => {
+    expect(revisionTimes([{ revision: "1", time: null }, { revision: "2", time: "2026-11-09T20:01:00Z" }, null])).toEqual({ "2": Date.parse("2026-11-09T20:01:00Z") / 1000 });
+  });
   it("telemetry batches keep the window start as epoch seconds", () => {
     const r = batchFromWire(tel("2026-11-10T10:41:00Z", 3));
     expect(r.ok && r.batch.t).toBe(Date.parse("2026-11-10T10:41:00Z") / 1000);
@@ -60,6 +67,19 @@ describe("EngineSource", () => {
     expect(events.map((e) => (e.type === "patch" ? `p${e.patch.to.revision}` : e.type === "telemetry" ? `t${e.batch.values[0]}` : e.type))).toEqual(["p1", "p2", "t1", "t2", "caught-up"]);
     expect(rejected.some((r) => r.where === "patch #2")).toBe(true);
     expect(rejected.some((r) => r.where === "line 3")).toBe(true);
+    src.dispose();
+  });
+
+  it.each<[string, Record<string, () => { body: unknown }>, (number | undefined)[]]>([
+    ["with /revisions (engine 3.54) each patch has its commit time", { "GET /graphs/master/revisions?after=0&to=3": () => ({ body: ndjson([{ revision: "1", time: null }, { revision: "2", time: "2026-11-09T20:01:00Z" }]) }) }, [undefined, Date.parse("2026-11-09T20:01:00Z") / 1000]],
+    ["without it (an older engine) the patches come without a time", {}, [undefined, undefined]],
+  ])("the history: %s", async (_, extra, want) => {
+    const routes = baseRoutes({ "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1), wirePatch(1, 2)]) }), "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }), ...extra });
+    const src = new EngineSource(BASE, { fetch: makeFetch(routes), WebSocket: FakeSocket as never });
+    await src.open();
+    const { events } = collect(src, "master");
+    await settle();
+    expect(events.flatMap((e) => (e.type === "patch" ? [e.time] : []))).toEqual(want);
     src.dispose();
   });
 

@@ -73,7 +73,7 @@ public static class Support
     {
         ["Series.read"] = new("fieldRef", [], "var.property of the pattern variables of the graph the series reads"),
     };
-    /// <summary>What a reference of a definition node must name, for an editor (`Type.edge`; the kernel's edge table gives the edge's name and target types). `Scope` says where the target is looked up: `outputOntology` (the projection's output ontology), `inputGraph` (the ontology of the graph port the operator reads), `module` (a declaration in scope of the module: this one or an import), `pattern` (a node of the same pattern), `domain` (a component of the identity domain the node names), `emittedType` (a property of the type the enclosing emit writes), `kernel` (a built-in). The checker refuses a node whose required reference is missing or out of scope.</summary>
+    /// <summary>What a reference of a definition node must name, for an editor (`Type.edge`; the kernel's edge table gives the edge's name and target types). `Scope` says where the target is looked up: `outputOntology` (the projection's output ontology), `inputGraph` (the ontology of the graph port the operator reads), `module` (a declaration in scope of the module: this one or an import), `pattern` (a node of the same pattern), `domain` (a component of the identity domain the node names), `emittedType` (a property of the type the enclosing emit writes), `constrainedType` (a property of the type the constraint names), `kernel` (a built-in). The checker refuses a node whose required reference is missing or out of scope.</summary>
     public sealed record Reference(bool Required, string Multiplicity, string Scope, string Meaning);
     public static readonly Dictionary<string, Reference> References = new()
     {
@@ -91,6 +91,12 @@ public static class Support
         ["Call.function"] = new(true, "1", "kernel", "the built-in function called"),
         ["Rule.governs"] = new(true, "+", "projection", "the sinks of the rule"),
         ["Rule.createKey"] = new(false, "1", "module", "the identity domain the rule creates keys in"),
+        ["Constraint.constrains"] = new(true, "1", "module", "the entity or relationship type the constraint applies to"),
+        ["Constraint.onProperty"] = new(false, "+", "constrainedType", "the properties the constraint uses, in order (ordinal 0, 1, ...): one, several for a key, none for a kind that does not use onProperty"),
+        ["EquivalencePolicy.between"] = new(true, "+", "module", "the two identity domains the policy binds, in order (ordinal 0 and 1)"),
+        ["PropertyType.valueKind"] = new(true, "1", "kernel", "the value kind of the property"),
+        ["Field.valueKind"] = new(true, "1", "kernel", "the value kind of the field"),
+        ["KeyComponent.valueKind"] = new(true, "1", "kernel", "the value kind of the key component"),
     };
 
     public static readonly HashSet<string> SinkKinds = ["EmitEntity", "EmitRelationship", "Link"];
@@ -180,17 +186,17 @@ public static class Palette
             if (!supported) o["unsupportedReason"] = Support.Unsupported.GetValueOrDefault(kind, "not built");
             ops.Add(o);
         }
-        JsonObject Declaration(string slot, string type) => new() { ["slot"] = slot, ["type"] = type, ["container"] = "Module", ["params"] = Params(type), ["slots"] = Slots(type) };
+        JsonObject Declaration(string slot, string type) => new() { ["slot"] = slot, ["type"] = type, ["container"] = "Module", ["params"] = Params(type), ["references"] = References(type), ["slots"] = Slots(type) };
         var decls = new JsonArray();
         foreach (var (slot, type) in new[] { ("entity", "EntityType"), ("rel", "RelationshipType"), ("extend", "Extension"), ("identity", "IdentityDomain"), ("equivalence", "EquivalencePolicy"), ("rows", "RowType"), ("projection", "Projection"), ("space", "GraphSpace") })
             decls.Add(Declaration(slot, type));
         var constraint = new JsonObject
         {
-            ["slot"] = "constraint", ["type"] = "Constraint", ["container"] = "Module", ["params"] = Params("Constraint"), ["slots"] = Slots("Constraint"),
+            ["slot"] = "constraint", ["type"] = "Constraint", ["container"] = "Module", ["params"] = Params("Constraint"), ["references"] = References("Constraint"), ["slots"] = Slots("Constraint"),
             ["kinds"] = new JsonArray([.. Support.ConstraintKinds.Select(k => (JsonNode)new JsonObject { ["kind"] = k.Key, ["target"] = k.Value.Target, ["uses"] = new JsonArray([.. k.Value.Uses.Select(u => (JsonNode)u)]), ["text"] = k.Value.Text })]),
         };
         decls.Add(constraint);
-        var rowType = new JsonObject { ["type"] = "RowType", ["fieldSlot"] = "field", ["field"] = new JsonObject { ["type"] = "Field", ["params"] = Params("Field"), ["valueKinds"] = new JsonArray([.. KernelTable.ValueKinds.Where(k => k is not ("Any" or "List" or "Entity")).Select(k => (JsonNode)k)]) } };
+        var rowType = new JsonObject { ["type"] = "RowType", ["fieldSlot"] = "field", ["field"] = new JsonObject { ["type"] = "Field", ["params"] = Params("Field"), ["references"] = References("Field"), ["valueKinds"] = new JsonArray([.. KernelTable.ValueKinds.Where(k => k is not ("Any" or "List" or "Entity")).Select(k => (JsonNode)k)]) } };
         var equivalence = new JsonObject { ["type"] = "EquivalencePolicy", ["modes"] = new JsonArray([.. enums["EquivalencePolicy.mode"].First().Select(x => (JsonNode)x)]), ["between"] = "two identity domains (edge between)", ["params"] = Params("EquivalencePolicy") };
         var rule = new JsonObject
         {

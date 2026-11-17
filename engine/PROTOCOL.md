@@ -638,6 +638,13 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Stream.** A `patch` event of a graph has `time` beside `patch`, the same value. A catalog `patch` event has none. Additive: a client of 3.53 ignores the key. The `GraphPatch` record is unchanged.
 - **Seal format 7:** a served revision keeps its time. A seal of format 6 is refused and the journal is replayed.
 
+## Version 3.55: the references that connect a declaration's parts (#118)
+- **`/palette`.** Every entry of `declarations` and `rowTypes.field` carries `references`, as operators do since 3.21. New entries, also in the top-level `references` by node type:
+  - `Constraint`: `constrains` (EntityType or RelationshipType, required, `1`, scope `module`) and `onProperty` (PropertyType, optional, `+`, ordered by `ordinal`, scope `constrainedType`: a property of the type the constraint names). A constraint kind's `uses` names `onProperty` when the kind takes properties.
+  - `EquivalencePolicy`: `between` (IdentityDomain, required, `+`: the two domains in order, `ordinal` 0 and 1, scope `module`).
+  - `PropertyType`, `Field`, `KeyComponent`: `valueKind` (ValueKind, required, `1`, scope `kernel`).
+- A declaration without such references has an empty list. Additive: a client of 3.54 ignores the key.
+
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.

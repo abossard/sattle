@@ -1,14 +1,14 @@
 // Module-level declarations as catalog edits: row types with fields, constraints, equivalence policies, value roles, and a new projection's
 // KQL file and place in the graph space. Pure: graph and palette in, edits (or a reason) out. The slots, types, parameters, constraint kinds, modes
-// and value kinds all come from `GET /palette` (engine 3.2: declarations, rowTypes, equivalencePolicies, valueRoles); an engine
-// that does not describe them gets a message, not a guess. Only the relationship names that connect the parts (`constrains`,
-// `onProperty`, `between`, `valueKind`) are written here, because the palette names slots but not relationships.
+// and value kinds all come from `GET /palette` (engine 3.2: declarations, rowTypes, equivalencePolicies, valueRoles), and so do the
+// relationships that connect the parts (engine 3.55: `references` of Constraint, EquivalencePolicy, Field and PropertyType); an engine
+// that does not describe them gets a message, not a guess.
 import { Catalog } from "../core/catalog";
 import type { Graph } from "../core/graph";
 import type { Edit } from "../core/model";
 import type { GraphValue } from "../core/wire-types";
 import { contains, ent, rel, setPropEdit, text } from "./patches";
-import type { Palette, PaletteDeclaration, PaletteParam } from "./palette";
+import type { Palette, PaletteDeclaration, PaletteParam, PaletteReference } from "./palette";
 import type { ProjectionFile } from "./service";
 
 /** A computed edit, or the reason it cannot be made. */
@@ -23,6 +23,11 @@ const KERNEL = "d:sattle.kernel/builtin:";
 function decl(palette: Palette, slot: string): Result<PaletteDeclaration> {
   const d = palette.declarations[slot];
   return d ? ok(d) : no(`the engine's palette does not describe ${slot} declarations (it needs protocol 3.2)`);
+}
+/** The reference from a node of type `owner` to one of type `target` (its relationship name and the types it may point at), or the reason the palette cannot say. */
+function refTo(palette: Palette, owner: string, target: string): Result<PaletteReference> {
+  const r = palette.references?.[owner]?.find((x) => x.targets.includes(target));
+  return r ? ok(r) : no(`the engine's palette does not say how a ${owner} names a ${target} (it needs protocol 3.55)`);
 }
 /** A parameter value as the palette types it (Boolean, Integer, Decimal, List of text, enumerations, Text). */
 export function typedValue(p: PaletteParam, raw: string): Result<GraphValue> {
@@ -64,10 +69,12 @@ export function addFieldEdits(g: Graph, rows: string, name: string, kind: string
   if (!rt) return no("the engine's palette does not describe row types (it needs protocol 3.2)");
   if (!nameOk(name)) return no("a name is letters, digits and _");
   if (!rt.field.valueKinds.includes(kind)) return no(`a field is one of ${rt.field.valueKinds.join(", ")}`);
+  const valueKind = refTo(palette, rt.field.type, "ValueKind");
+  if (!valueKind.ok) return valueKind;
   const id = `${rows}/${rt.fieldSlot}:${name}`;
   if (g.entity(id)) return no(`field ${name} already exists`);
   const n = new Catalog(g).children(rows, rt.fieldSlot).length;
-  return ok([ent(id, rt.field.type, { name: text(name), optional: { kind: "boolean", value: optional } }), rel(id, "valueKind", `${KERNEL}${kind}`), contains(rows, id, rt.fieldSlot, n)]);
+  return ok([ent(id, rt.field.type, { name: text(name), optional: { kind: "boolean", value: optional } }), rel(id, valueKind.value.name, `${KERNEL}${kind}`), contains(rows, id, rt.fieldSlot, n)]);
 }
 
 // ---- constraints ----
@@ -86,8 +93,14 @@ export function addConstraintEdits(g: Graph, module: string, kind: string, targe
   if (!d.ok) return d;
   const k = constraintKinds(palette).find((x) => x.kind === kind);
   if (!k) return no(`the engine has no constraint kind ${kind}`);
-  if (!g.entity(target)) return no("choose what the constraint applies to");
-  if (k.uses.includes("onProperty")) {
+  const t = g.entity(target);
+  if (!t) return no("choose what the constraint applies to");
+  const constrains = refTo(palette, d.value.type, "EntityType");
+  if (!constrains.ok) return constrains;
+  if (!constrains.value.targets.includes(t.type)) return no(`a constraint applies to one of: ${constrains.value.targets.join(", ")}`);
+  const onProperty = refTo(palette, d.value.type, "PropertyType");
+  if (!onProperty.ok) return onProperty;
+  if (k.uses.includes(onProperty.value.name)) {
     if (!properties.length || properties.some((x) => !g.entity(x))) return no("choose the property");
     if (kind !== "key" && properties.length > 1) return no("this constraint uses one property");
   }
@@ -97,11 +110,11 @@ export function addConstraintEdits(g: Graph, module: string, kind: string, targe
   const sev = typedValue(d.value.params.find((p) => p.name === "severity") ?? { name: "severity", kind: "Text", required: true }, severity || "error");
   if (!sev.ok) return sev;
   // the engine's default name, which its printer leaves out: kind and type, plus the property when exactly one is constrained (a key has several)
-  const name = `${kind}-${last(target)}${k.uses.includes("onProperty") && properties.length === 1 ? `.${last(properties[0])}` : ""}`;
+  const name = `${kind}-${last(target)}${k.uses.includes(onProperty.value.name) && properties.length === 1 ? `.${last(properties[0])}` : ""}`;
   const id = `${module}/${d.value.slot}:${name}`;
   if (g.entity(id)) return no(`${name} already exists`);
-  return ok([ent(id, d.value.type, { name: text(name), kind: text(kind), severity: sev.value, ...props.value }), rel(id, "constrains", target),
-    ...(k.uses.includes("onProperty") ? properties.map((x, i) => rel(id, "onProperty", x, { ordinal: { kind: "integer", value: String(i) } })) : []), contains(module, id, d.value.slot)]);
+  return ok([ent(id, d.value.type, { name: text(name), kind: text(kind), severity: sev.value, ...props.value }), rel(id, constrains.value.name, target),
+    ...(k.uses.includes(onProperty.value.name) ? properties.map((x, i) => rel(id, onProperty.value.name, x, { ordinal: { kind: "integer", value: String(i) } })) : []), contains(module, id, d.value.slot)]);
 }
 
 // ---- equivalence policies ----
@@ -115,7 +128,9 @@ export function addEquivalenceEdits(g: Graph, module: string, name: string, mode
   if (g.entity(id)) return no(`${name} already exists`);
   const props = propsOf(d.value.params, { mode, threshold }, ["name", "description"]);
   if (!props.ok) return props;
-  return ok([ent(id, d.value.type, { name: text(name), ...props.value }), ...between.map((b, i) => rel(id, "between", b, { ordinal: { kind: "integer", value: String(i) } })), contains(module, id, d.value.slot)]);
+  const by = refTo(palette, d.value.type, "IdentityDomain");
+  if (!by.ok) return by;
+  return ok([ent(id, d.value.type, { name: text(name), ...props.value }), ...between.map((b, i) => rel(id, by.value.name, b, { ordinal: { kind: "integer", value: String(i) } })), contains(module, id, d.value.slot)]);
 }
 // ---- value roles ----
 /** The last id segment of a value, as the engine writes it (`Ids.ValueSegment`): text escaped, numbers and booleans tagged. */
@@ -135,8 +150,10 @@ export function addValueRoleEdits(g: Graph, property: string, raw: string, role:
   if (g.entity(property)?.type !== slot.container) return no("choose a property");
   if (!palette.valueRoles.includes(role)) return no(`a role is one of ${palette.valueRoles.join(", ")}`);
   if (!raw.trim()) return no("a value is required");
+  const valueKind = refTo(palette, slot.container, "ValueKind");
+  if (!valueKind.ok) return valueKind;
   // the property's value kind decides how the text is read: "1" is an integer for an Integer property, "true" a boolean for a Boolean one
-  const kind = last([...g.relationships()].find((r) => r.source === property && r.type === "valueKind")?.target ?? "Text");
+  const kind = last([...g.relationships()].find((r) => r.source === property && r.type === valueKind.value.name)?.target ?? "Text");
   const t = typedValue({ name: "value", kind: kind === "Entity" || kind === "List" ? "Text" : kind, required: true }, raw);
   if (!t.ok) return t;
   const id = `${property}/${slot.slot}:${valueSegment(t.value)}`;

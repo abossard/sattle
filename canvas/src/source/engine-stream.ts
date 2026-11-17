@@ -23,8 +23,8 @@ export interface GraphStream {
   subscribed: boolean;
   /** a read of patches or telemetry is in flight: one at a time per graph */
   reading: boolean;
-  /** a patch of the stream that skipped a revision, held until the read that fills the hole is back */
-  parked: Patch | null;
+  /** a patch of the stream that skipped a revision, with its commit time, held until the read that fills the hole is back */
+  parked: { patch: Patch; time: number | undefined } | null;
   /** failed catch-ups in a row; the graph is behind while this is not 0 */
   failures: number;
   /**
@@ -41,7 +41,7 @@ export interface StreamState {
   space: string[];
   /** server-wide sequence number of the newest event seen: where a reconnect resumes */
   seq: string | undefined;
-  /** the engine's logical time (epoch seconds) from the newest `time` message: the commit time of live patches */
+  /** the engine's logical time (epoch seconds) from the newest `time` message: the commit time of a live patch from an engine before 3.54, whose patch events carry none */
   logicalTime: number;
   /** where the socket is: one value, so a late answer cannot bring back a socket the engine ended or the view closed */
   link: Link;
@@ -58,7 +58,8 @@ export type Why = "history" | "reconnect" | "retry" | "activation" | "gap-in-str
 
 export type Event =
   | { t: "subscribed"; graph: string }
-  | { t: "patches"; graph: string; gen: number; why: Why; patches: Patch[] }
+  /** `times`: the commit time of each revision the read knows one for (engine 3.54) */
+  | { t: "patches"; graph: string; gen: number; why: Why; patches: Patch[]; times?: Record<string, number> }
   | { t: "windows"; graph: string; gen: number; why: Why; batches: TelemetryBatch[] }
   | { t: "readFailed"; graph: string; gen: number; why: Why; error: string }
   | { t: "meta"; graph: string; gen: number; meta: GraphMeta }
@@ -70,7 +71,7 @@ export type Event =
   | { t: "reconnectDue" }
   /** this environment has no WebSocket */
   | { t: "socketUnavailable" }
-  | { t: "wsPatch"; graph: string; patch: Patch; seq?: string }
+  | { t: "wsPatch"; graph: string; patch: Patch; seq?: string; time?: number }
   | { t: "wsTelemetry"; graph: string; batch: TelemetryBatch; seq?: string }
   | { t: "wsTime"; logicalTime: number }
   | { t: "wsActivation"; catalogRevision: string; graphs: string[]; seq?: string }
@@ -104,10 +105,12 @@ type Out = { state: StreamState; effects: Effect[] };
 const out = (state: StreamState, ...effects: Effect[]): Out => ({ state, effects });
 const withGraph = (s: StreamState, id: string, g: GraphStream): StreamState => ({ ...s, graphs: { ...s.graphs, [id]: g } });
 
-/** Deliver a patch: the revision moves to its end and the sinks get it (a live one with the logical time). */
-function deliver(s: StreamState, graph: string, g: GraphStream, patch: Patch, live: boolean): { g: GraphStream; effect: Effect } {
-  return { g: { ...g, lastRevision: patch.to.revision }, effect: { k: "emit", graph, event: { type: "patch", patch, time: live && Number.isFinite(s.logicalTime) ? s.logicalTime : undefined } } };
+/** Deliver a patch with its commit time: the revision moves to its end and the sinks get it. */
+function deliver(graph: string, g: GraphStream, patch: Patch, time: number | undefined): { g: GraphStream; effect: Effect } {
+  return { g: { ...g, lastRevision: patch.to.revision }, effect: { k: "emit", graph, event: { type: "patch", patch, time } } };
 }
+/** The commit time of a live patch: its own, else (an engine before 3.54) the newest logical time. */
+const liveTime = (s: StreamState, time: number | undefined): number | undefined => time ?? (Number.isFinite(s.logicalTime) ? s.logicalTime : undefined);
 
 /** The reads of a graph start: the patches after the last revision, then the telemetry (the continuation is in the patches' result). */
 function startRead(s: StreamState, graph: string, why: Why): Out {
@@ -197,10 +200,10 @@ function step(s: StreamState, e: Event): Out {
       if (last !== undefined && num(e.patch.to.revision) <= num(last)) return out(s); // already delivered by the history
       if (last !== undefined && e.patch.from.revision !== last) {
         // a revision was skipped: hold the patch, read what is missing; the read's result releases it
-        const held = withGraph(s, e.graph, { ...g, parked: e.patch });
+        const held = withGraph(s, e.graph, { ...g, parked: { patch: e.patch, time: liveTime(s, e.time) } });
         return g.reading ? out(held) : startRead(held, e.graph, "gap-in-stream");
       }
-      const d = deliver(s, e.graph, g, e.patch, true);
+      const d = deliver(e.graph, g, e.patch, liveTime(s, e.time));
       return out(withGraph(s, e.graph, d.g), d.effect);
     }
     case "wsTelemetry": {
@@ -222,14 +225,14 @@ function step(s: StreamState, e: Event): Out {
       let delivered = 0;
       for (const p of e.patches) {
         if (cur.lastRevision !== undefined && num(p.to.revision) <= num(cur.lastRevision)) continue;
-        const d = deliver(s, e.graph, cur, p, false);
+        const d = deliver(e.graph, cur, p, e.times?.[p.to.revision]);
         cur = d.g; effects.push(d.effect); delivered++;
       }
       // the stream's own patch that was waiting for this read: delivered unless the read brought it, and then it follows in order even if a hole is left
       if (cur.parked) {
-        const p = cur.parked;
+        const { patch: p, time } = cur.parked;
         cur = { ...cur, parked: null };
-        if (cur.lastRevision === undefined || num(p.to.revision) > num(cur.lastRevision)) { const d = deliver(s, e.graph, cur, p, true); cur = d.g; effects.push(d.effect); }
+        if (cur.lastRevision === undefined || num(p.to.revision) > num(cur.lastRevision)) { const d = deliver(e.graph, cur, p, time); cur = d.g; effects.push(d.effect); }
       }
       if (delivered && e.why !== "history") effects.push({ k: "status", detail: `${e.why}: filled ${delivered} revision(s)`, gapFilled: true });
       if (cur.telemetry) {

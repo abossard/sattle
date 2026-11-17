@@ -14,6 +14,8 @@ export const ENGINE_ENDPOINTS = {
   ontology: (g: string) => `/graphs/${encodeURIComponent(g)}/ontology`,
   /** with an explicit `to` at or below the head the answer is immutable and the browser caches it for good */
   patches: (g: string, after: string, to?: string) => `/graphs/${encodeURIComponent(g)}/patches?after=${encodeURIComponent(after)}${to ? `&to=${encodeURIComponent(to)}` : ""}`,
+  /** engine 3.54: the commit time of each revision of the same range as `patches`, NDJSON `{ revision, time }` */
+  revisions: (g: string, after: string, to?: string) => `/graphs/${encodeURIComponent(g)}/revisions?after=${encodeURIComponent(after)}${to ? `&to=${encodeURIComponent(to)}` : ""}`,
   meters: (g: string) => `/graphs/${encodeURIComponent(g)}/meters`,
   /** window starts are RFC 3339 instants; `from` is inclusive */
   telemetry: (g: string, from?: string) => `/graphs/${encodeURIComponent(g)}/telemetry?format=batches${from ? `&from=${encodeURIComponent(from)}` : ""}`,
@@ -51,6 +53,11 @@ export function parseSpace(raw: unknown): SpaceDoc {
 
 /** RFC 3339 instant to seconds since the epoch. NaN when it does not parse. */
 export const instantSeconds = (s: string): number => Date.parse(s) / 1000;
+/** A commit time as the engine sends it (3.54): an instant, or null for a revision before the first advance; undefined when absent or unreadable. */
+export const commitTime = (raw: unknown): number | undefined => { const t = typeof raw === "string" ? instantSeconds(raw) : NaN; return Number.isFinite(t) ? t : undefined; };
+/** The commit times of `GET /graphs/{g}/revisions` records, keyed by revision; a revision without a time is left out. */
+export const revisionTimes = (records: unknown[]): Record<string, number> =>
+  Object.fromEntries(records.flatMap((r) => { const o = r as Record<string, unknown> | null; const t = commitTime(o?.time); return o && t !== undefined ? [[String(o.revision), t]] : []; }));
 
 /** The telemetry batch of the wire (windowStart present) as the seam batch: `t` is the window start in epoch seconds. */
 export function batchFromWire(raw: unknown): { ok: true; batch: import("./types").TelemetryBatch } | { ok: false; errors: string[] } {
@@ -85,7 +92,7 @@ export function parseMeters(raw: unknown): { meters: Meter[]; defaults: Partial<
 export type WsMessage =
   | { type: "hello"; space: unknown }
   | { type: "snapshot"; graph: string; seq?: string }
-  | { type: "patch"; graph: string; patch: unknown; seq?: string }
+  | { type: "patch"; graph: string; patch: unknown; seq?: string; time?: number }
   | { type: "telemetry"; graph: string; batch: unknown; seq?: string }
   | { type: "gap"; firstSeq: string }
   | { type: "activation"; catalogRevision: string; graphs: { id: string; from: string; to: string }[]; seq?: string }
@@ -101,7 +108,7 @@ export function parseWsMessage(raw: unknown): WsMessage {
   switch (m?.type) {
     case "hello": return { type: "hello", space: m.space };
     case "snapshot": return { type: "snapshot", graph: String(m.graph), seq };
-    case "patch": return { type: "patch", graph: String(m.graph), patch: m.patch, seq };
+    case "patch": return { type: "patch", graph: String(m.graph), patch: m.patch, seq, time: commitTime(m.time) };
     case "telemetry": return { type: "telemetry", graph: String(m.graph), batch: m.batch, seq };
     case "gap": return { type: "gap", firstSeq: String(m.firstSeq) };
     case "activation": return { type: "activation", catalogRevision: String(m.catalogRevision), graphs: Array.isArray(m.graphs) ? (m.graphs as { id: string; from: string; to: string }[]) : [], seq };

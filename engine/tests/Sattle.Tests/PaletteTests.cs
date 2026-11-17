@@ -130,6 +130,26 @@ public class PaletteTests
         Assert.Equal("createKey:IdentityDomain:optional:module governs:EmitEntity|EmitRelationship|Link:required:projection", Refs(Built["rules"]!["references"]!));
     }
 
+    /// <summary>The relationships that connect a declaration's parts are in the palette, so an editor builds a constraint, a policy or a field without naming them itself (#118).</summary>
+    [Theory]
+    [InlineData("constraint", "constrains:EntityType|RelationshipType:required:module onProperty:PropertyType:optional:constrainedType")]
+    [InlineData("equivalence", "between:IdentityDomain:required:module")]
+    [InlineData("rows", "")]
+    public void Each_declaration_lists_the_references_that_connect_its_parts(string slot, string expected)
+    {
+        Assert.Equal(expected, Refs(Built["declarations"]!.AsArray().Single(d => d!["slot"]!.GetValue<string>() == slot)!["references"]!));
+    }
+
+    [Theory]
+    [InlineData("Field", "valueKind:ValueKind:required:kernel")]
+    [InlineData("PropertyType", "valueKind:ValueKind:required:kernel")]
+    [InlineData("KeyComponent", "valueKind:ValueKind:required:kernel")]
+    public void The_parts_of_a_declaration_name_their_value_kind_through_a_reference(string type, string expected)
+    {
+        Assert.Equal(expected, Refs(Built["references"]![type]!));
+        if (type == "Field") Assert.Equal(expected, Refs(Built["rowTypes"]!["field"]!["references"]!));
+    }
+
     /// <summary>Every edge the kernel draws from an operator or a node inside one is described: a new edge without a description fails here, not in an editor.</summary>
     [Fact]
     public void Every_kernel_edge_from_a_definition_node_of_a_projection_has_a_description()

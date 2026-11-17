@@ -6,7 +6,7 @@ import type { Patch, Snapshot } from "../core/model";
 import { checkOntology, type Rejection } from "../core/validate";
 import { RejectionBus } from "./base";
 import {
-  ENGINE_ENDPOINTS, batchFromWire, instantSeconds, parseLineage, parseReferencePage, parseReverseLineage, parseMeters, parseModules, parseSpace, parseWsMessage, subscribeMessage,
+  ENGINE_ENDPOINTS, batchFromWire, instantSeconds, parseLineage, parseReferencePage, parseReverseLineage, parseMeters, parseModules, parseSpace, parseWsMessage, revisionTimes, subscribeMessage,
   type SpaceDoc,
 } from "./engine-protocol";
 import { initialStream, transition, type Effect, type Event as StreamInput, type StreamState, type Why } from "./engine-stream";
@@ -167,14 +167,17 @@ export class EngineSource implements GraphSource {
     try {
       const head = this.heads.get(graph);
       // up to the head seen at open: immutable, so cached; later reads use the moving head
-      const path = ENGINE_ENDPOINTS.patches(graph, after, head !== undefined && num(after) < num(head) && !this.filled.has(graph) ? head : undefined);
+      const to = head !== undefined && num(after) < num(head) && !this.filled.has(graph) ? head : undefined;
+      const path = ENGINE_ENDPOINTS.patches(graph, after, to), timesPath = ENGINE_ENDPOINTS.revisions(graph, after, to);
       this.filled.add(graph);
+      // the commit times of the same range (engine 3.54); an older engine has none, and its revisions are placed by order
+      const [text, timesText] = await Promise.all([this.text(path), this.text(timesPath).catch(() => "")]);
       const patches: Patch[] = [];
-      for (const [i, raw] of parseRecords(await this.text(path), path, true, (r) => this.reject(r)).entries()) {
+      for (const [i, raw] of parseRecords(text, path, true, (r) => this.reject(r)).entries()) {
         const p = parsePatch(raw, path, `patch #${i + 1}`, (r) => this.reject(r));
         if (p) patches.push(p);
       }
-      this.step({ t: "patches", graph, gen, why, patches });
+      this.step({ t: "patches", graph, gen, why, patches, times: revisionTimes(parseRecords(timesText, timesPath, true, (r) => this.reject(r))) });
     } catch (e) { this.step({ t: "readFailed", graph, gen, why, error: (e as Error).message }); }
   }
 
@@ -233,7 +236,7 @@ export class EngineSource implements GraphSource {
     try { m = parseWsMessage(JSON.parse(raw)); } catch (e) { this.reject({ source: "ws", where: "message", errors: [`not JSON: ${(e as Error).message}`] }); return; }
     if ("seq" in m && m.seq !== undefined) this.step({ t: "seq", seq: m.seq });
     switch (m.type) {
-      case "patch": { const p = parsePatch(m.patch, "ws", `patch of ${m.graph}`, (r) => this.reject(r)); if (p) this.step({ t: "wsPatch", graph: m.graph, patch: p, seq: m.seq }); return; }
+      case "patch": { const p = parsePatch(m.patch, "ws", `patch of ${m.graph}`, (r) => this.reject(r)); if (p) this.step({ t: "wsPatch", graph: m.graph, patch: p, seq: m.seq, time: m.time }); return; }
       case "telemetry": {
         const r = batchFromWire(m.batch);
         if (!r.ok) { this.reject({ source: "ws", where: `telemetry of ${m.graph}`, errors: r.errors }); return; }

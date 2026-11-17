@@ -12,8 +12,13 @@ const mk = (...es: Edit[]) => Graph.fromSnapshot({ version: { tenant: "t", graph
 const g = mk(ent(M, "Module"), ent(`${M}/entity:Cap`, "EntityType"), ent(`${M}/rel:Under`, "RelationshipType"), ent(`${M}/prop:status`, "PropertyType"), ent(`${M}/prop:owner`, "PropertyType"), ent(`${M}/identity:a`, "IdentityDomain"), ent(`${M}/identity:b`, "IdentityDomain"),
   ent(`${M}/projection:p/rule:r`, "Rule", { class: text("lens"), accept: { kind: "list", items: [text("create")] } }), ent(`${M}/projection:p/op:l`, "Link"));
 const params = (...n: [string, string, boolean, string[]?][]) => n.map(([name, kind, required, values]) => ({ name, kind, required, ...(values ? { values } : {}) }));
-const palette = parsePalette({
-  operators: [], functions: [], valueKinds: ["Text", "Integer", "Decimal", "Boolean", "Instant", "Entity", "List"], valueRoles: ["ok", "warning", "danger", "unknown", "neutral"],
+const ref = (name: string, ...targets: string[]) => ({ name, targets, required: true, multiplicity: "1", scope: "", meaning: "" });
+const references = (named: (n: string) => string = (n) => n) => ({
+  Constraint: [ref(named("constrains"), "EntityType", "RelationshipType"), ref(named("onProperty"), "PropertyType")], EquivalencePolicy: [ref(named("between"), "IdentityDomain")],
+  Field: [ref(named("valueKind"), "ValueKind")], PropertyType: [ref(named("valueKind"), "ValueKind")],
+});
+const paletteWith = (refs: unknown) => parsePalette({
+  operators: [], references: refs, functions: [], valueKinds: ["Text", "Integer", "Decimal", "Boolean", "Instant", "Entity", "List"], valueRoles: ["ok", "warning", "danger", "unknown", "neutral"],
   valueRoleSlot: { container: "PropertyType", slot: "presentation", type: "ValueRole" },
   declarations: [
     { slot: "rows", type: "RowType", container: "Module", params: params(["name", "Text", true]), slots: [] },
@@ -26,6 +31,7 @@ const palette = parsePalette({
   equivalencePolicies: { type: "EquivalencePolicy", modes: ["assert", "review"], params: [] },
   rules: { type: "Rule", slots: [], onDelete: ["remove", "set"], params: params(["name", "Text", true], ["putput", "Boolean", true], ["accept", "List", false], ["onDelete", "Text", false, ["remove", "set"]]) },
 });
+const palette = paletteWith(references());
 const ids = (r: { ok: boolean; value?: Edit[] }) => (r.value ?? []).map((e) => (e as { id: string }).id.replace(/d:m\//g, ""));
 
 describe("row types and fields", () => {
@@ -89,6 +95,29 @@ describe("equivalence policies and value roles", () => {
     expect(E(setValueRoleEdits(g, `${M}/prop:status`, "danger")[0]).after!.props.role).toEqual(text("danger"));
   });
 
+});
+
+describe("the relationships that connect a declaration's parts come from the palette's references", () => {
+  const renamed = paletteWith(references((n) => `${n}2`));
+  const old = paletteWith(undefined);
+  // the kind lists name the reference a kind uses; with renamed references they name the renamed one
+  const kindsOf = (p: typeof palette) => ({ ...p, declarations: { ...p.declarations, constraint: { ...p.declarations.constraint!, kinds: p.declarations.constraint!.kinds!.map((k) => ({ ...k, uses: k.uses.map((u) => (u === "onProperty" ? "onProperty2" : u)) })) } } });
+  const rels = (r: { ok: boolean; value?: Edit[] }) => (r.value ?? []).filter((e) => e.kind === "relationship" && R(e).after!.type !== "contains").map((e) => R(e).after!.type);
+  const cases: [string, (p: typeof palette) => { ok: boolean; value?: Edit[] }, string[]][] = [
+    ["a field", (p) => addFieldEdits(g, `${M}/rows:Row`, "a", "Integer", true, p), ["valueKind"]],
+    ["a key constraint", (p) => addConstraintEdits(g, M, "key", `${M}/entity:Cap`, [`${M}/prop:status`], "error", {}, p === renamed ? kindsOf(p) : p), ["constrains", "onProperty"]],
+    ["an equivalence policy", (p) => addEquivalenceEdits(g, M, "eq", "assert", "1", [`${M}/identity:a`, `${M}/identity:b`], p), ["between", "between"]],
+  ];
+  it.each(cases)("%s names its parts by the palette", (_, make, want) => {
+    expect(rels(make(palette))).toEqual(want);
+    expect(rels(make(renamed))).toEqual(want.map((n) => `${n}2`));
+  });
+  it.each([...cases.map(([what, make]): [string, () => { ok: boolean }] => [what, () => make(old)]), ["a value role", () => addValueRoleEdits(g, `${M}/prop:status`, "Healthy", "ok", old)]])("%s from an engine without references gets a message, not a guess", (_, make) => {
+    expect(make()).toMatchObject({ ok: false, reason: expect.stringContaining("(it needs protocol 3.55)") });
+  });
+  it("a constraint applies only to what its reference may point at", () => {
+    expect(addConstraintEdits(g, M, "acyclic", `${M}/prop:status`, [], "error", {}, palette)).toEqual({ ok: false, reason: "a constraint applies to one of: EntityType, RelationshipType" });
+  });
 });
 
 describe("a new projection: its KQL file and its place in the space", () => {

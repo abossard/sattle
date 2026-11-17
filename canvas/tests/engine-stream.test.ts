@@ -72,6 +72,19 @@ describe("patches of the stream", () => {
     const r = live([{ t: "wsTime", logicalTime: 1800 }, { t: "wsPatch", graph: "g", patch: patch("1", "2", []) }]);
     expect(r.effects.at(-1)).toMatchObject({ k: "emit", event: { type: "patch", time: 1800 } });
   });
+  it.each<[string, Event[], number | undefined]>([
+    ["its own commit time (engine 3.54) wins over the newest logical time", [{ t: "wsTime", logicalTime: 1800 }, { t: "wsPatch", graph: "g", patch: patch("1", "2", []), time: 1740 }], 1740],
+    ["without a time of its own and before any logical time it has none", [{ t: "wsPatch", graph: "g", patch: patch("1", "2", []) }], undefined],
+  ])("one that continues the log: %s", (_, events, time) => {
+    const e = live(events).effects.at(-1) as Extract<Effect, { k: "emit" }>;
+    expect(e).toMatchObject({ k: "emit", event: { type: "patch" } });
+    expect((e.event as { time?: number }).time).toBe(time);
+  });
+  it("a read delivers each patch with the commit time of its revision, and one held while the hole is read keeps its own", () => {
+    const held = live([{ t: "wsPatch", graph: "g", patch: patch("2", "3", []), time: 300 }]);
+    const filled = run([{ t: "patches", graph: "g", gen: 0, why: "gap-in-stream", patches: [patch("1", "2", [])], times: { "2": 200 } }], held.state);
+    expect(filled.effects.flatMap((f) => (f.k === "emit" && f.event.type === "patch" ? [f.event.time] : []))).toEqual([200, 300]);
+  });
   it("one the history already delivered is dropped", () => {
     expect(live([{ t: "wsPatch", graph: "g", patch: patch("0", "1", []) }]).effects.filter((f) => f.k === "emit" && f.event.type === "patch")).toEqual([]);
   });
