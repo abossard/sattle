@@ -1,6 +1,21 @@
 using Sattle.Core;
+using Sattle.Language;
 
 namespace Sattle.Runtime;
+
+/// <summary>What every fragment of one emit shares: its sink, entity or relationship, create or update, type, and its graph-data properties in the canonical order (by name, ordinal), each as its name's number, its column among the emit's evaluated columns and its kind. Fixed when the operator is built, so a row is encoded from its columns with no lookup, sort or object.</summary>
+public sealed class FragmentShape
+{
+    internal readonly int Sink, Type; internal readonly bool IsRel, Update;
+    internal readonly int[] Names, Cols; internal readonly Tag[] Tags;
+    public FragmentShape(Interner it, int sink, bool isRel, bool update, string type, IEnumerable<(string Name, int Col, Tag Tag)> props)
+    {
+        Sink = sink; IsRel = isRel; Update = update; Type = it.Intern(type);
+        var ps = props.ToArray();
+        Array.Sort(ps, static (x, y) => string.CompareOrdinal(x.Name, y.Name));            // the order of `Props.Of`
+        Names = [.. ps.Select(p => it.Intern(p.Name))]; Cols = [.. ps.Select(p => p.Col)]; Tags = [.. ps.Select(p => p.Tag)];
+    }
+}
 
 /// <summary>Which elements the rows of a projection say exist, with which type, endpoints and properties. Per (element, fragment) it keeps the summed weight of the rows that say it; `Flush` gives the edits that bring the graph to what the touched elements resolve to (Def. 6.4). Nothing outside reads its tables.</summary>
 sealed class ElementLayer(Interner it, ConflictSet conflicts)
@@ -19,9 +34,9 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             foreach (var (code, w) in RowsOf(loser))
             {
                 var fragment = values.Bytes(code).ToArray();                                    // an entity's fragment names no endpoint, so it is the same fragment under the survivor
-                AddFragment(loser, fragment, -w, null, null);
+                AddFragment(loser, fragment, -w, -1, -1);
                 if (!kinds.Has(survivor)) kinds[survivor] = Entity;
-                AddFragment(survivor, fragment, w, null, null);
+                AddFragment(survivor, fragment, w, -1, -1);
                 Touch(survivor);
             }
             moved.Add((loser, survivor));
@@ -34,7 +49,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             if (kinds[elem] != Relationship || at.Count == 0) continue;
             foreach (var (code, w, f) in at)
             {
-                AddFragment(elem, values.Bytes(code).ToArray(), -w, f.Source, f.Target);
+                AddFragment(elem, values.Bytes(code).ToArray(), -w, Code(f.Source), Code(f.Target));
                 var ns = f.Source == lid ? sid : f.Source; var nt = f.Target == lid ? sid : f.Target;
                 var idOf = relSinks[f.Sink];
                 var ne = it.Intern(idOf(ns!, nt!));
@@ -116,13 +131,36 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         }
     }
 
-    /// <summary>Writes a fragment into `buffer` in its canonical form: sink, create or update, type, endpoints, then each property by its name's number.</summary>
-    ReadOnlySpan<byte> CanonicalFragment(int sink, bool update, string type, string? source, string? target, Props props)
+    /// <summary>The cell of a column at `row` in its canonical form: the bytes `WriteCanonical` gives for the value `Codec.ToValue` reads from it, written from the cell itself (a text and an entity id are already the engine's numbers for them).</summary>
+    void WriteCanonical(Column c, int row, Tag tag)
+    {
+        switch (tag)
+        {
+            case Tag.Text: buffer.Add(1); Varint(buffer, (ulong)(int)c.L[row]); break;
+            case Tag.Integer: buffer.Add(2); Varint(buffer, Zig(c.L[row])); break;
+            case Tag.Decimal: { buffer.Add(4); var (lo, hi) = DecimalKey.Of(c.D[row]); Number(lo); Number(hi); break; }
+            case Tag.Boolean: buffer.Add(c.L[row] != 0 ? (byte)6 : (byte)5); break;
+            case Tag.Instant: buffer.Add(7); Varint(buffer, Zig(c.L[row])); break;
+            case Tag.Ent: buffer.Add(8); Varint(buffer, (ulong)(int)c.L[row]); break;
+            default: throw new InvalidOperationException($"no value for {tag}");
+        }
+    }
+
+    /// <summary>Starts a fragment in `buffer`: sink, create or update, type, endpoints (-1 for none) and the number of properties that follow, each by its name's number.</summary>
+    void Header(int sink, bool update, int type, int source, int target, int count)
     {
         buffer.Clear();
-        Varint(buffer, (ulong)sink); buffer.Add(update ? (byte)1 : (byte)0); Varint(buffer, (ulong)it.Intern(type));
-        Varint(buffer, source is null ? 0UL : (ulong)it.Intern(source) + 1); Varint(buffer, target is null ? 0UL : (ulong)it.Intern(target) + 1);
-        Varint(buffer, (ulong)props.Count);
+        Varint(buffer, (ulong)sink); buffer.Add(update ? (byte)1 : (byte)0); Varint(buffer, (ulong)type);
+        Varint(buffer, source < 0 ? 0UL : (ulong)source + 1); Varint(buffer, target < 0 ? 0UL : (ulong)target + 1);
+        Varint(buffer, (ulong)count);
+    }
+
+    int Code(string? s) => s is null ? -1 : it.Intern(s);
+
+    /// <summary>Writes a fragment into `buffer` in its canonical form.</summary>
+    ReadOnlySpan<byte> CanonicalFragment(int sink, bool update, string type, int source, int target, Props props)
+    {
+        Header(sink, update, it.Intern(type), source, target, props.Count);
         foreach (var (k, v) in props.Items) { Varint(buffer, (ulong)it.Intern(k)); WriteCanonical(v); }
         return System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer);
     }
@@ -147,22 +185,30 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     }
 
     /// <summary>Adds `w` to the weight of a fragment of an element. A new row holds its fragment, a row that goes releases it. The endpoint index follows: an endpoint is in it while some fragment of the relationship names it.</summary>
-    void AddFragment(int elem, ReadOnlySpan<byte> fragment, long w, string? source, string? target)
+    void AddFragment(int elem, ReadOnlySpan<byte> fragment, long w, int source, int target)
     {
         if (w == 0) return;
         var code = values.Find(fragment);
         if (code < 0 || contributions.Find([elem, code]) < 0)
         {
             code = values.Hold(fragment);
-            foreach (var end in new[] { source, target })
-                if (end is not null && ends.Find([it.Intern(end), elem]) < 0) ends.Add([it.Intern(end), elem], 1);
+            if (source >= 0 && ends.Find([source, elem]) < 0) ends.Add([source, elem], 1);
+            if (target >= 0 && ends.Find([target, elem]) < 0) ends.Add([target, elem], 1);
             contributions.Add([elem, code], w);
             return;
         }
         if (contributions.Add([elem, code], w) >= 0) return;
-        foreach (var end in new[] { source, target }.Distinct())
-            if (end is not null && !RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == end || e.Target == end))) ends.Add([it.Intern(end), elem], -1);
+        Unend(elem, source);
+        if (target != source) Unend(elem, target);
         values.Release(code);
+    }
+
+    /// <summary>An endpoint leaves the index when no fragment of the relationship names it any more.</summary>
+    void Unend(int elem, int end)
+    {
+        if (end < 0) return;
+        var name = it.Get(end);
+        if (!RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == name || e.Target == name))) ends.Add([end, elem], -1);
     }
 
     /// <summary>The fragments of an element with their weights, as fragment codes.</summary>
@@ -181,8 +227,33 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
 
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight)
     {
+        var (s, t) = (Code(source), Code(target));
+        Add(elem, isRel, CanonicalFragment(sink, update, type, s, t, props), weight, s, t);
+    }
+
+    /// <summary>A row of an emit, read from its evaluated columns at `row` in the order of `shape`: the same bytes as the properties of the row through `Contribute(..., Props, ...)`. An update that sets no property says nothing and gives false.</summary>
+    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight)
+    {
+        var n = 0;
+        foreach (var c in shape.Cols) if (cols[c].Present(row)) n++;
+        if (shape.Update && n == 0) return false;
+        Header(shape.Sink, shape.Update, shape.Type, source, target, n);
+        var last = -1;
+        for (var i = 0; i < shape.Names.Length; i++)
+        {
+            var col = cols[shape.Cols[i]];
+            if (!col.Present(row)) continue;
+            if (shape.Names[i] == last) throw new ArgumentException($"duplicate property {it.Get(last)}");
+            Varint(buffer, (ulong)(last = shape.Names[i])); WriteCanonical(col, row, shape.Tags[i]);
+        }
+        Add(elem, shape.IsRel, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer), weight, source, target);
+        return true;
+    }
+
+    void Add(int elem, bool isRel, ReadOnlySpan<byte> fragment, long weight, int source, int target)
+    {
         if (!kinds.Has(elem)) kinds[elem] = isRel ? Relationship : Entity;
-        AddFragment(elem, CanonicalFragment(sink, update, type, source, target, props), weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
+        AddFragment(elem, fragment, weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
         Touch(elem);
     }
 

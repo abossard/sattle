@@ -386,6 +386,8 @@ public sealed class OutputBuilder
 
     /// <summary>A row says something about an element: its type, endpoints and properties, with the row's weight.</summary>
     public void Contribute(int elem, bool isRel, int sink, bool update, string type, string? source, string? target, Props props, long weight) => elements.Contribute(elem, isRel, sink, update, type, source, target, props, weight);
+    /// <summary>The same for a row of an emit, read from its evaluated columns at `row` in the order of `shape`; endpoints are text numbers, -1 for none. An update that sets no property says nothing and gives false.</summary>
+    public bool Contribute(FragmentShape shape, int elem, int source, int target, Column[] cols, int row, long weight) => elements.Contribute(shape, elem, source, target, cols, row, weight);
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => elements.RegisterRelSink(sink, idOf);
     /// <summary>A telemetry row of the step: the window it writes, its value and weight, and the id it was written under before any link (`own`, Law 7.5 item 3); `combine` is the property's combine rule.</summary>
@@ -429,6 +431,10 @@ abstract class SinkOp : PhysOp
         : inLayout.Has(f.Name + "#sum") ? (inLayout.Index(f.Name + "#sum"), inLayout.Index(f.Name + "#count"))
         : inLayout.Has(f.Name + "#order") ? (inLayout.Index(f.Name + "#order"), -1) : (-1, -1))];
 
+    /// <summary>The graph-data properties of an emit's sets, by their column among the evaluated sets: what its fragments carry.</summary>
+    protected static IEnumerable<(string, int, Tag)> GraphProps(IReadOnlyList<TSet> sets) =>
+        sets.Select((s, i) => (s.PropId, i, s.Value.Type.Ty.Tag, s.Telemetry)).Where(x => !x.Telemetry).Select(x => (x.PropId, x.i, x.Tag));
+
     protected static TVal ValueOf(Column col, int row, Batch b, (int A, int B) pair) =>
         new(col.IsDec ? col.D[row] : col.L[row], pair.A >= 0 && b.Cols[pair.A].Present(row) ? (b.Cols[pair.A].D[row], pair.B >= 0 ? b.Cols[pair.B].L[row] : 0) : null);
 }
@@ -437,12 +443,13 @@ abstract class SinkOp : PhysOp
 sealed class EmitEntityOp : SinkOp
 {
     readonly (int A, int B)[] pairs;
-    readonly TEmitEntity t; readonly int sink; readonly VExpr id; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
-    readonly LineageOrigin origin;
+    readonly TEmitEntity t; readonly VExpr id; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
+    readonly LineageOrigin origin; readonly FragmentShape shape; readonly Column[] cols;
     public EmitEntityOp(TEmitEntity t, int sink, Layout inLayout, OpContext cx, Func<TExpr, VExpr> compile, (string, int, bool, string)[] lineage, (string, int[])? groupRef = null) : base(t)
     {
-        this.t = t; this.sink = sink; it = cx.It; id = compile(t.EntityId); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
-        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
+        this.t = t; it = cx.It; id = compile(t.EntityId); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
+        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))]; cols = new Column[sets.Length];
+        shape = new(it, sink, false, t.Update, t.TypeId, GraphProps(t.Sets));
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
         if (id is VId v && t.Sets.Any(s => s.Telemetry)) v.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
@@ -450,43 +457,37 @@ sealed class EmitEntityOp : SinkOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
-        var idc = id.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        var idc = id.Eval(b); for (var s = 0; s < sets.Length; s++) cols[s] = sets[s].Value.Eval(b);
         var owns = (id as VId)?.Owns;
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
             if (idc.P is not null && !idc.P[row]) { cx.SkippedEmits++; continue; }
             var elem = (int)idc.L[row]; var w = b.Weight(row);
-            var props = new List<KeyValuePair<string, Value>>();
             for (var s = 0; s < sets.Length; s++)
             {
                 var set = sets[s].Set; var col = cols[s];
-                if (!col.Present(row)) continue;
-                if (set.Telemetry)
-                {
+                if (set.Telemetry && col.Present(row))
                     cx.Out.Telemetry(new WindowKey(elem, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[s]), w, set.Period, owns is null ? elem : owns.L[row], set.Combine);
-                }
-                else props.Add(KeyValuePair.Create(set.PropId, ToValue(col, row, set.Value.Type.Ty)));
             }
-            if (t.Update && props.Count == 0) continue;
-            cx.Out.Contribute(elem, false, sink, t.Update, t.TypeId, null, null, Props.Of(props), w);
+            if (!cx.Out.Contribute(shape, elem, -1, -1, cols, row, w)) continue;
             cx.Out.Lineage.Support(elem, origin, b, row, w);
         }
         return null;
     }
-    Value ToValue(Column c, int row, Ty ty) => Codec.ToValue(c, row, ty, it);
 }
 
 sealed class EmitRelOp : SinkOp
 {
     readonly (int A, int B)[] pairs;
-    readonly TEmitRel t; readonly int sink; readonly VExpr src, tgt; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
+    readonly TEmitRel t; readonly VExpr src, tgt; readonly (TSet Set, VExpr Value)[] sets; readonly int ws; readonly Interner it;
     readonly Dictionary<(int, int), int> relIds = [];
-    readonly LineageOrigin origin;
+    readonly LineageOrigin origin; readonly FragmentShape shape; readonly Column[] cols;
     public EmitRelOp(TEmitRel t, int sink, Layout inLayout, OpContext cx, Func<TExpr, VExpr> compile, (string, int, bool, string)[] lineage, (string, int[])? groupRef = null) : base(t)
     {
-        this.t = t; this.sink = sink; it = cx.It; src = compile(t.Source); tgt = compile(t.Target); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
-        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))];
+        this.t = t; it = cx.It; src = compile(t.Source); tgt = compile(t.Target); origin = new(t.Name, t.Rule, t.Update, lineage, groupRef);
+        sets = [.. t.Sets.Select(s => (s, compile(s.Value)))]; cols = new Column[sets.Length];
+        shape = new(it, sink, true, t.Update, t.TypeId, GraphProps(t.Sets));
         ws = inLayout.Has("windowStart") ? inLayout.Index("windowStart") : -1;
         if (t.Sets.Any(s => s.Telemetry)) foreach (var e in new[] { src, tgt }.OfType<VId>()) e.TrackOwn = true;
         pairs = PairColumns(t.Sets, inLayout);
@@ -495,7 +496,7 @@ sealed class EmitRelOp : SinkOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
-        var sc = src.Eval(b); var tc = tgt.Eval(b); var cols = sets.Select(s => s.Value.Eval(b)).ToArray();
+        var sc = src.Eval(b); var tc = tgt.Eval(b); for (var i = 0; i < sets.Length; i++) cols[i] = sets[i].Value.Eval(b);
         var (so, to) = ((src as VId)?.Owns, (tgt as VId)?.Owns);
         for (var k = 0; k < b.Rows; k++)
         {
@@ -504,17 +505,13 @@ sealed class EmitRelOp : SinkOp
             var s = (int)sc.L[row]; var d = (int)tc.L[row]; var w = b.Weight(row);
             if (!relIds.TryGetValue((s, d), out var rel))
                 relIds[(s, d)] = rel = it.Intern(IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, it.Get(s), it.Get(d)));
-            var props = new List<KeyValuePair<string, Value>>();
             for (var i = 0; i < sets.Length; i++)
             {
                 var set = sets[i].Set; var col = cols[i];
-                if (!col.Present(row)) continue;
-                if (set.Telemetry) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
+                if (set.Telemetry && col.Present(row)) cx.Out.Telemetry(new WindowKey(rel, it.Intern(set.PropId), b.Cols[ws].L[row]), ValueOf(col, row, b, pairs[i]), w, set.Period,
                     ((so is null ? s : so.L[row]) << 32) | (uint)(to is null ? d : to.L[row]), set.Combine);          // a relationship is written under the own ids of its two endpoints
-                else props.Add(KeyValuePair.Create(set.PropId, Codec.ToValue(col, row, set.Value.Type.Ty, it)));
             }
-            if (t.Update && props.Count == 0) continue;
-            cx.Out.Contribute(rel, true, sink, t.Update, t.TypeId, it.Get(s), it.Get(d), Props.Of(props), w);
+            if (!cx.Out.Contribute(shape, rel, s, d, cols, row, w)) continue;
             cx.Out.Lineage.Support(rel, origin, b, row, w);
         }
         return null;

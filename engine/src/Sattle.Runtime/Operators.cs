@@ -983,7 +983,8 @@ static class DecimalKey
 {
     public static (long Lo, long Hi) Of(decimal d)
     {
-        var bits = decimal.GetBits(d / 1.0000000000000000000000000000m);      // dividing by one at full scale drops trailing zeros
+        Span<int> bits = stackalloc int[4];
+        decimal.GetBits(d / 1.0000000000000000000000000000m, bits);      // dividing by one at full scale drops trailing zeros
         return (((long)bits[0] << 32) | (uint)bits[1], ((long)bits[2] << 32) | (uint)bits[3]);
     }
 }

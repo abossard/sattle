@@ -1,4 +1,5 @@
 using Sattle.Core;
+using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
@@ -179,6 +180,42 @@ public class StructureTests
         sink.Contribute(e, false, 0, false, "T", null, null, Props.Of(("d", Value.Decimal(decimal.Parse(retracted, inv)))), -1); g.Apply(sink.Flush(g));
         Assert.Null(g.Entity("e:x"));
         Assert.Equal((0, 0, 0L), sink.Held);
+    }
+
+    /// <summary>#110: an emit writes its fragment straight from its columns, with the bytes of the same properties given as a map, so a row written one way is cancelled by its retraction written the other way, and written both ways it is one fragment. Every kind of cell an emit reads, an absent one, and properties named out of order; for an entity and a relationship.</summary>
+    [Theory]
+    [InlineData(Tag.Text, "Main Street")] [InlineData(Tag.Text, "")] [InlineData(Tag.Integer, "-42")] [InlineData(Tag.Integer, "9223372036854775807")]
+    [InlineData(Tag.Decimal, "2.5")] [InlineData(Tag.Decimal, "2.50")] [InlineData(Tag.Decimal, "-1.10")] [InlineData(Tag.Decimal, "0.000")] [InlineData(Tag.Decimal, "79228162514264337593543950335")] [InlineData(Tag.Decimal, "0.0000000000000000000000000001")]
+    [InlineData(Tag.Boolean, "true")] [InlineData(Tag.Boolean, "false")] [InlineData(Tag.Instant, "-1")] [InlineData(Tag.Instant, "1762784742000000000")] [InlineData(Tag.Ent, "e:other")] [InlineData(Tag.Text, null)]
+    public void An_emit_row_written_from_its_columns_is_the_fragment_of_its_property_map(Tag tag, string? cell)
+    {
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        foreach (var rel in new[] { false, true })
+        {
+            var it = new Interner(); var sink = new OutputBuilder(it);
+            Value v = tag switch
+            {
+                Tag.Text => Value.Text(cell ?? ""), Tag.Integer => Value.Integer(long.Parse(cell!, inv)), Tag.Decimal => Value.Decimal(decimal.Parse(cell!, inv)),
+                Tag.Boolean => Value.Boolean(bool.Parse(cell!)), Tag.Instant => Value.Instant(long.Parse(cell!, inv)), _ => Value.Entity(cell!),
+            };
+            var col = new Column(tag == Tag.Decimal); col.Ensure(1);
+            if (cell is null) col.SetAbsent(0, 1); else Codec.Set(col, 0, v, it);
+            var other = new Column(false); other.Ensure(1); Codec.Set(other, 0, Value.Integer(7), it);
+            Column[] cols = [other, col];
+            var shape = new FragmentShape(it, 3, rel, false, "T", [("z", 0, Tag.Integer), ("a", 1, tag)]);
+            var props = cell is null ? Props.Of(("z", Value.Integer(7))) : Props.Of(("z", Value.Integer(7)), ("a", v));
+            var (e, s, d) = (it.Intern("e:x"), rel ? it.Intern("e:s") : -1, rel ? it.Intern("e:t") : -1);
+            var (sn, tn) = rel ? ("e:s", "e:t") : ((string?)null, (string?)null);
+
+            Assert.True(sink.Contribute(shape, e, s, d, cols, 0, 1));
+            sink.Contribute(e, rel, 3, false, "T", sn, tn, props, -1);
+            Assert.Equal((0, 0, 0L), sink.Held);
+            Assert.True(sink.Contribute(shape, e, s, d, cols, 0, 1));
+            sink.Contribute(e, rel, 3, false, "T", sn, tn, props, 1);
+            Assert.Equal((1, 1), (sink.Held.Contributions, sink.Held.Fragments));
+            if (cell is null) Assert.False(sink.Contribute(new FragmentShape(it, 3, rel, true, "T", [("a", 1, tag)]), e, s, d, cols, 0, 1));      // an update that sets nothing says nothing
+            Assert.Equal((1, 1), (sink.Held.Contributions, sink.Held.Fragments));
+        }
     }
 
     /// <summary>Code review 2: a sink keeps a value only while a row uses it. One element whose property takes 20,000 values in turn holds one value at the end, and 20,000 elements that came and went hold nothing. Before, every value ever written stayed.</summary>
