@@ -319,6 +319,7 @@ public sealed class Engine : IDisposable, IEngineInput
             gr.Head = store.Head(key).Head;
             if (gr.Ingests) foreach (var (port, from) in next.Bindings) sourcePort[from] = (next.Name, port);
         }
+        WantsProgress = graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills));
         // Def. 7.14: the sources that feed what a filling Series reads are fixed here
         foreach (var g in graphs)
             foreach (var series in g.Plan.Ops.OfType<SeriesOp>().Where(s => s.Fills))
@@ -382,7 +383,8 @@ public sealed class Engine : IDisposable, IEngineInput
         return found;
     }
 
-    public bool WantsProgress => graphs.Any(g => g.Plan.Ops.OfType<SeriesOp>().Any(s => s.Fills));
+    /// <summary>Whether a graph reads source progress (a filling Series). Fixed when the graphs are built: the replay asks it for every record.</summary>
+    public bool WantsProgress { get; }
 
     /// <summary>How far each source has reported (Def. 7.14): the greatest `until` of its progress records.</summary>
     readonly Dictionary<string, long> covered = new(StringComparer.Ordinal);

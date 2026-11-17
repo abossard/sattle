@@ -1,12 +1,23 @@
+using System.Buffers;
 using System.Globalization;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.Json;
 using Sattle.Core;
 using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>One line of a capture: the envelope of lab/CAPTURE-FORMAT.md.</summary>
-public sealed record Envelope(string Source, long CapturedNs, long Seq, string File, JsonElement Payload, JsonElement Meta, bool HasMeta);
+/// <summary>One line of a capture: the envelope of lab/CAPTURE-FORMAT.md. Its elements point into the token index of the record (`CaptureReader.Parse`), which is valid until the envelope is disposed: a reader that keeps a value copies it.</summary>
+public sealed record Envelope(string Source, long CapturedNs, long Seq, string File, JsonElement Payload, JsonElement Meta, bool HasMeta) : IDisposable
+{
+    JsonDocument? index; string? key; bool keyRead;
+    internal Envelope Owning(JsonDocument doc) { index = doc; return this; }
+    /// <summary>The delivery key of the envelope (`key`), read when first asked: only live input deduplicates by it.</summary>
+    public string? Key { get { if (!keyRead) { key = index?.RootElement.S("key"); keyRead = true; } return key; } }
+    /// <summary>Returns the token index to the pool.</summary>
+    public void Dispose() => index?.Dispose();
+}
 
 /// <summary>Where adapters write rows. Rows of one type accumulate into a chunk; a row of another type flushes the current chunk first, so input order is kept across row types.</summary>
 public interface IRowSink
@@ -64,9 +75,50 @@ static class J
 {
     public static JsonElement? P(this JsonElement e, string name) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind != JsonValueKind.Null ? v : null;
     public static string? S(this JsonElement e, string name) => e.P(name) is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
-    public static JsonElement? Path(this JsonElement e, params string[] path) { JsonElement? cur = e; foreach (var p in path) { cur = cur?.P(p); if (cur is null) return null; } return cur; }
-    public static string? PathS(this JsonElement e, params string[] path) => e.Path(path) is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
+    public static JsonElement? Path(this JsonElement e, params ReadOnlySpan<string> path) { JsonElement? cur = e; foreach (var p in path) { cur = cur?.P(p); if (cur is null) return null; } return cur; }
+    public static string? PathS(this JsonElement e, params ReadOnlySpan<string> path) => e.Path(path) is { ValueKind: JsonValueKind.String } v ? v.GetString() : null;
     public static string? NullIfEmpty(string? s) => string.IsNullOrEmpty(s) ? null : s;
+
+    /// <summary>The text of a string value: decoded into `buffer` when it fits and has no escapes (then its UTF-8 bytes are its text), else made a string.</summary>
+    public static ReadOnlySpan<char> Chars(JsonElement s, Span<char> buffer)
+    {
+        var utf8 = JsonMarshal.GetRawUtf8Value(s)[1..^1];
+        return utf8.Length <= buffer.Length && utf8.IndexOf((byte)'\\') < 0 ? buffer[..Encoding.UTF8.GetChars(utf8, buffer)] : s.GetString();
+    }
+
+    /// <summary>Writes a string value straight into a row: decoded on the stack (`Chars`) and looked up in the interner by span, so a text the interner has costs no allocation. Not a string: `orElse`; an empty string is absent too unless `keepEmpty`.</summary>
+    public static void Text(this RowWriter w, int col, JsonElement? v, string? orElse = null, bool keepEmpty = false)
+    {
+        if (v is not { ValueKind: JsonValueKind.String } s) { w.Text(col, orElse); return; }
+        var t = Chars(s, stackalloc char[256]);
+        if (t.IsEmpty && !keepEmpty) w.Text(col, orElse); else w.Text(col, t);
+    }
+
+    /// <summary>The instant a string value holds (`Norm.TryParseInstant`), read without making a string.</summary>
+    public static bool Instant(JsonElement? v, out long ns)
+    {
+        ns = 0;
+        return v is { ValueKind: JsonValueKind.String } s && Norm.TryParseInstant(Chars(s, stackalloc char[64]), out ns);
+    }
+
+    /// <summary>A string value that is itself a JSON text (AKS audit's `properties.log`), unescaped into a rented buffer and indexed there. `Dispose` returns both.</summary>
+    public readonly struct Inner(JsonDocument doc, byte[] buffer) : IDisposable
+    {
+        public JsonElement Root => doc.RootElement;
+        public void Dispose() { doc.Dispose(); ArrayPool<byte>.Shared.Return(buffer); }
+        /// <summary>Throws `JsonException` when the value is not a JSON text.</summary>
+        public static Inner Parse(JsonElement s)
+        {
+            var raw = JsonMarshal.GetRawUtf8Value(s);
+            var buffer = ArrayPool<byte>.Shared.Rent(Math.Max(1, raw.Length));
+            try
+            {
+                var r = new Utf8JsonReader(raw); r.Read();
+                return new Inner(JsonDocument.Parse(buffer.AsMemory(0, r.CopyString(buffer))), buffer);
+            }
+            catch { ArrayPool<byte>.Shared.Return(buffer); throw; }
+        }
+    }
 }
 
 public static class RowDef
@@ -218,13 +270,32 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     /// <summary>The host a value names: without a scheme, user, port or path (`postgres://u@db.example:5432/x` names `db.example`). Null for a value that is no host name or address.</summary>
     public static string? HostOf(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return null;
-        var v = value.Trim();
+        if (value is null) return null;
+        Span<char> lower = value.Length <= 256 ? stackalloc char[value.Length] : new char[value.Length];
+        var h = Host(value, lower);
+        return h.Length == 0 ? null : h.SequenceEqual(value) ? value : new string(h);
+    }
+
+    /// <summary>Writes the host a string value names (`HostOf`) into a row without making a string. Absent when the value names none.</summary>
+    internal static void HostOf(RowWriter w, int col, JsonElement value)
+    {
+        if (value.ValueKind != JsonValueKind.String) { w.Text(col, HostOf(value.GetString())); return; }   // null is absent, another kind is a malformed record
+        var v = J.Chars(value, stackalloc char[256]);
+        Span<char> lower = v.Length <= 256 ? stackalloc char[v.Length] : new char[v.Length];
+        var h = Host(v, lower);
+        if (h.Length == 0) w.Absent(col); else w.Text(col, h);
+    }
+
+    /// <summary>The host a value names, lowercased into `into` (at least as long as the value): empty when it names none.</summary>
+    static ReadOnlySpan<char> Host(ReadOnlySpan<char> v, Span<char> into)
+    {
+        v = v.Trim();
         if (v.IndexOf("://", StringComparison.Ordinal) is var s and >= 0) v = v[(s + 3)..];
         if (v.IndexOf('@') is var at and >= 0) v = v[(at + 1)..];
         var end = v.IndexOfAny(['/', '?', '#', ':', ';', ',']); if (end >= 0) v = v[..end];
-        v = v.ToLowerInvariant();
-        return v.Length > 0 && v.All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-') ? v : null;
+        var h = into[..v.ToLowerInvariant(into)];
+        foreach (var c in h) if (!(char.IsAsciiLetterOrDigit(c) || c is '.' or '-')) return [];
+        return h;
     }
 
     /// <summary>The environment variables of a Deployment's containers that name a host (by their name: `*HOST`, `*HOSTNAME`, `*SERVER`, `*ENDPOINT`, `*URL`, `*URI`), as one row per variable with the host it names. Other variables are not read: their values may be secrets.</summary>
@@ -389,30 +460,27 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
                 _ => 0,
             };
             LostEvents += n;
-            var t = e.Payload.S("time");
-            sink.SourceLoss(t is not null && Norm.TryParseInstant(t, out var ns) ? ns : e.CapturedNs, n, "sourceLoss");
+            sink.SourceLoss(J.Instant(e.Payload.P("time"), out var ns) ? ns : e.CapturedNs, n, "sourceLoss");
             return;
         }
         if (e.Payload.P("flow") is not { } flow) { sink.Rejected("hubble", "record has neither flow nor lost_events"); return; }
-        var time = flow.S("time") ?? e.Payload.S("time");
-        if (time is null || !Norm.TryParseInstant(time, out var tns)) { sink.Rejected("hubble", "flow without a parseable time"); return; }
-        var verdict = flow.S("verdict");
-        if (verdict is null) { sink.Rejected("hubble", "flow without verdict"); return; }
+        if (!J.Instant(flow.P("time") is { ValueKind: JsonValueKind.String } ft ? ft : e.Payload.P("time"), out var tns)) { sink.Rejected("hubble", "flow without a parseable time"); return; }
+        if (flow.P("verdict") is not { ValueKind: JsonValueKind.String } verdict) { sink.Rejected("hubble", "flow without verdict"); return; }
         // Hubble reports the answer of a connection as a flow of its own, from the callee back to the caller, marked `is_reply`. A row runs in the direction of the connection, from the caller to the callee, so the ends of an answer change places. A flow without the mark (a dropped one) is taken as it is.
         var reply = flow.P("is_reply") is { ValueKind: JsonValueKind.True };
-        var (from, to) = reply ? ("destination", "source") : ("source", "destination");
+        var (from, to, toNames) = reply ? ("destination", "source", "source_names") : ("source", "destination", "destination_names");
         var src = flow.P(from); var dst = flow.P(to);
         var w = sink.Begin("FlowRow");
         if (cTime < 0) { cTime = w.Col("time"); cCluster = w.Col("cluster"); cVerdict = w.Col("verdict"); cSn = w.Col("srcNamespace"); cSp = w.Col("srcPod"); cDn = w.Col("dstNamespace"); cDp = w.Col("dstPod"); cDa = w.Col("dstAddress"); cDnm = w.Col("dstName"); }
         w.Begin();
         w.Instant(cTime, tns);
-        w.Text(cCluster, J.NullIfEmpty(src?.S("cluster_name") ?? dst?.S("cluster_name")) ?? cluster);
-        w.Text(cVerdict, verdict);
-        w.Text(cSn, J.NullIfEmpty(src?.S("namespace"))); w.Text(cSp, J.NullIfEmpty(src?.S("pod_name")));
-        w.Text(cDn, J.NullIfEmpty(dst?.S("namespace"))); w.Text(cDp, J.NullIfEmpty(dst?.S("pod_name")));
+        w.Text(cCluster, src?.P("cluster_name") is { ValueKind: JsonValueKind.String } sc ? sc : dst?.P("cluster_name"), cluster);
+        w.Text(cVerdict, verdict, keepEmpty: true);
+        w.Text(cSn, src?.P("namespace")); w.Text(cSp, src?.P("pod_name"));
+        w.Text(cDn, dst?.P("namespace")); w.Text(cDp, dst?.P("pod_name"));
         // the address a flow went to, and the first name Hubble resolved for it: what a flow to a destination outside the cluster says about it
-        w.Text(cDa, J.NullIfEmpty(flow.PathS("IP", to)));
-        w.Text(cDnm, flow.P(to + "_names") is { ValueKind: JsonValueKind.Array } names && names.GetArrayLength() > 0 ? KubernetesAdapter.HostOf(names[0].GetString()) : null);
+        w.Text(cDa, flow.Path("IP", to));
+        if (flow.P(toNames) is { ValueKind: JsonValueKind.Array } names && names.GetArrayLength() > 0) KubernetesAdapter.HostOf(w, cDnm, names[0]); else w.Absent(cDnm);
         Flows++;
     }
 }
@@ -488,13 +556,14 @@ public sealed class PrometheusAdapter(string defaultCluster) : ISourceAdapter
         cluster = e.HasMeta && e.Meta.S("cluster") is { Length: > 0 } mc ? mc : defaultCluster;
         var metric = e.Meta.S("name");
         if (metric is null || e.Payload.Path("data", "result") is not { ValueKind: JsonValueKind.Array } result) { sink.Rejected("prometheus", "no metric name or result"); return; }
+        Span<char> chars = stackalloc char[64];
         foreach (var series in result.EnumerateArray())
         {
             if (series.P("values") is not { ValueKind: JsonValueKind.Array } values) continue;
             var (labels, instance) = (LabelsOf(series), series.PathS("metric", "instance"));       // a query that aggregates `instance` away has series all the same
             foreach (var v in values.EnumerateArray())
             {
-                if (v.GetArrayLength() != 2 || !v[0].TryGetDouble(out var ts) || !decimal.TryParse(v[1].GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var val)) continue; // NaN and gaps are not samples
+                if (v.GetArrayLength() != 2 || !v[0].TryGetDouble(out var ts) || !decimal.TryParse(v[1].ValueKind == JsonValueKind.String ? J.Chars(v[1], chars) : v[1].GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var val)) continue; // NaN and gaps are not samples
                 var w = sink.Begin("MetricRow"); w.Begin();
                 w.Instant("time", (long)(ts * 1_000_000_000d)); w.Text("cluster", cluster); w.Text("metric", metric); w.Text("series", labels); w.Text("instance", instance); w.Dec(w.Col("value"), val);
                 Samples++;
@@ -660,6 +729,7 @@ public sealed class VnetFlowLogAdapter : ISourceAdapter
     {
         var vnet = e.Payload.S("targetResourceID");
         if (vnet is null || e.Payload.Path("flowRecords", "flows") is not { ValueKind: JsonValueKind.Array } flows) { sink.Rejected("vnet-flow-log", "no targetResourceID or flows"); return; }
+        Span<char> chars = stackalloc char[256]; Span<Range> at = stackalloc Range[14];
         foreach (var flow in flows.EnumerateArray())
         {
             if (flow.P("flowGroups") is not { ValueKind: JsonValueKind.Array } groups) continue;
@@ -669,19 +739,20 @@ public sealed class VnetFlowLogAdapter : ISourceAdapter
                 if (group.P("flowTuples") is not { ValueKind: JsonValueKind.Array } tuples) continue;
                 foreach (var t in tuples.EnumerateArray())
                 {
-                    var f = t.GetString()?.Split(',');
-                    if (f is null || f.Length != 13 || !long.TryParse(f[0], NumberStyles.None, CultureInfo.InvariantCulture, out var ms)) { sink.Rejected("vnet-flow-log", "malformed tuple"); continue; }
+                    // the 13 fields of a tuple, read in place: `time,srcIp,dstIp,srcPort,dstPort,protocol,direction,state,encryption,packets,bytes,packetsBack,bytesBack`
+                    var line = t.ValueKind == JsonValueKind.String ? J.Chars(t, chars) : t.GetString();       // null is a malformed tuple, another kind a malformed record
+                    if (t.ValueKind != JsonValueKind.String || line.Split(at, ',') != 13 || !long.TryParse(line[at[0]], NumberStyles.None, CultureInfo.InvariantCulture, out var ms)) { sink.Rejected("vnet-flow-log", "malformed tuple"); continue; }
                     var w = sink.Begin("FlowLogRow"); w.Begin();
-                    w.Instant("time", ms * 1_000_000L); w.Text("vnetId", vnet); w.Text("rule", rule); w.Text("direction", f[6]); w.Text("state", f[7]);
-                    Num(w, "protocol", f[5]); w.Text("srcIp", f[1]); w.Text("dstIp", f[2]); Num(w, "srcPort", f[3]); Num(w, "dstPort", f[4]);
-                    Num(w, "packets", f[9]); Num(w, "bytes", f[10]); Num(w, "packetsBack", f[11]); Num(w, "bytesBack", f[12]);
+                    w.Instant("time", ms * 1_000_000L); w.Text("vnetId", vnet); w.Text("rule", rule); w.Text(w.Col("direction"), line[at[6]]); w.Text(w.Col("state"), line[at[7]]);
+                    Num(w, "protocol", line[at[5]]); w.Text(w.Col("srcIp"), line[at[1]]); w.Text(w.Col("dstIp"), line[at[2]]); Num(w, "srcPort", line[at[3]]); Num(w, "dstPort", line[at[4]]);
+                    Num(w, "packets", line[at[9]]); Num(w, "bytes", line[at[10]]); Num(w, "packetsBack", line[at[11]]); Num(w, "bytesBack", line[at[12]]);
                     Tuples++;
                 }
             }
         }
     }
 
-    static void Num(RowWriter w, string col, string v) => w.Int(w.Col(col), long.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0);
+    static void Num(RowWriter w, string col, ReadOnlySpan<char> v) => w.Int(w.Col(col), long.TryParse(v, NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 0);
 }
 
 /// <summary>Activity Log records written by the subscription's diagnostic setting to the `sattle-activity` hub: `{records:[...]}` in the diagnostic-settings schema (upper-case resource ids, operationName a string, resultType Start, Success, Failure or Unknown). Same rows as the management API adapter.</summary>
@@ -722,18 +793,18 @@ public sealed class AksAuditAdapter : ISourceAdapter
         if (e.Payload.P("records") is not { ValueKind: JsonValueKind.Array } records) { sink.Rejected("eventhub:sattle-aks", "no records array"); return; }
         foreach (var r in records.EnumerateArray())
         {
-            if (r.S("category") != "kube-audit-admin") continue;
-            JsonDocument doc;
-            try { doc = JsonDocument.Parse(r.PathS("properties", "log") ?? ""); } catch (JsonException) { sink.Rejected("eventhub:sattle-aks", "properties.log is not JSON"); continue; }
-            using (doc)
+            if (r.P("category") is not { ValueKind: JsonValueKind.String } cat || !cat.ValueEquals("kube-audit-admin")) continue;
+            J.Inner log;
+            try { log = J.Inner.Parse(r.Path("properties", "log") is { ValueKind: JsonValueKind.String } l ? l : throw new JsonException()); } catch (JsonException) { sink.Rejected("eventhub:sattle-aks", "properties.log is not JSON"); continue; }
+            using (log)
             {
-                var a = doc.RootElement;
-                if (a.S("stage") != "ResponseComplete") continue;
-                var id = a.S("auditID"); var verb = a.S("verb"); var res = a.PathS("objectRef", "resource");
-                if (id is null || verb is null || res is null || a.S("requestReceivedTimestamp") is not { } ts || !Norm.TryParseInstant(ts, out var ns)) { sink.Rejected("eventhub:sattle-aks", "audit record without id, verb, resource or time"); continue; }
+                var a = log.Root;
+                if (a.P("stage") is not { ValueKind: JsonValueKind.String } stage || !stage.ValueEquals("ResponseComplete")) continue;
+                var id = a.P("auditID"); var verb = a.P("verb"); var res = a.Path("objectRef", "resource");
+                if (id is not { ValueKind: JsonValueKind.String } || verb is not { ValueKind: JsonValueKind.String } || res is not { ValueKind: JsonValueKind.String } || !J.Instant(a.P("requestReceivedTimestamp"), out var ns)) { sink.Rejected("eventhub:sattle-aks", "audit record without id, verb, resource or time"); continue; }
                 var w = sink.Begin("AuditRow"); w.Begin();
-                w.Text("eventId", id); w.Instant("time", ns); w.Text("verb", verb); w.Text("resource", res);
-                w.Text("namespace", J.NullIfEmpty(a.PathS("objectRef", "namespace"))); w.Text("name", J.NullIfEmpty(a.PathS("objectRef", "name"))); w.Text("user", J.NullIfEmpty(a.PathS("user", "username")));
+                w.Text(w.Col("eventId"), id, keepEmpty: true); w.Instant("time", ns); w.Text(w.Col("verb"), verb, keepEmpty: true); w.Text(w.Col("resource"), res, keepEmpty: true);
+                w.Text(w.Col("namespace"), a.Path("objectRef", "namespace")); w.Text(w.Col("name"), a.Path("objectRef", "name")); w.Text(w.Col("user"), a.Path("user", "username"));
                 if (a.Path("responseStatus", "code") is { ValueKind: JsonValueKind.Number } c) w.Int(w.Col("code"), c.GetInt64()); else w.Absent(w.Col("code"));
                 Events++;
             }

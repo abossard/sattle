@@ -90,7 +90,7 @@ public abstract record EngineInput
                 case Entry.Progress g: yield return new Progress(g.Source, g.Until, g.Seq); break;
                 case Entry.Loss l: yield return new Loss(l.Time, l.Count, l.Reason); break;
                 case Entry.LiveStart start: live = new Replay(collected, space, adapters, start.Options); break;
-                case Entry.Envelope e: live!.Process(CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!, pace: false); break;
+                case Entry.Envelope e: { using var env = CaptureReader.Parse(e.Body, "eventhub:" + e.Source, 0)!; live!.Process(env, pace: false); break; }
                 case Entry.Flush: live!.FlushPending(); break;
             }
             foreach (var input in collected.Take()) yield return input;
@@ -394,7 +394,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     public enum LiveResult { Consumed, Duplicate, Rejected }
 
-    static string? KeyOf(string text) { try { using var d = System.Text.Json.JsonDocument.Parse(text); return d.RootElement.TryGetProperty("key", out var k) && k.ValueKind == System.Text.Json.JsonValueKind.String ? k.GetString() : null; } catch (System.Text.Json.JsonException) { return null; } }
+    /// <summary>The envelope `LiveEnvelope` parsed, for the apply of its own journal entry (`LiveApply`): one parse serves the duplicate check, the dedup window and the adapter. Null between envelopes and on a restart, which parses each journaled envelope once.</summary>
+    Envelope? parsedLive;
 
     /// <summary>One envelope of a live source, with the position of the source after it. It is journaled before it is processed, together with its position, so a restart resumes after the last envelope the space has seen, and an envelope delivered twice (at least once delivery) is dropped by its key.</summary>
     public LiveResult LiveEnvelope(string source, string text, string position, Action<string>? record = null)
@@ -402,15 +403,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         lock (Gate)
         {
             if (live is null) throw new InvalidOperationException("the live input has not been started");
-            var key = KeyOf(text);
-            var env = CaptureReader.Parse(text, "eventhub:" + source, 0);
-            if (env is null || (key is not null && liveKeys.Contains(key) && !(Adapters.FirstOrDefault(x => x.Handles(env.Source)) is IRedelivery again && again.Counts(env))))
+            using var env = CaptureReader.Parse(text, "eventhub:" + source, 0);
+            if (env is null || (env.Key is { } key && liveKeys.Contains(key) && !(Adapters.FirstOrDefault(x => x.Handles(env.Source)) is IRedelivery again && again.Counts(env))))
             {
                 Accept(new Entry.Skipped(source, position));
                 return env is null ? LiveResult.Rejected : LiveResult.Duplicate;
             }
             // the recording is written after the journal and before the engine: it never has an envelope the journal lacks, and a journaled one it lacks is added at the next start
-            Accept(new Entry.Envelope(source, text, position), () => { LiveStep?.Invoke("journaled"); record?.Invoke(text); LiveStep?.Invoke("recorded"); });
+            parsedLive = env;
+            try { Accept(new Entry.Envelope(source, text, position), () => { LiveStep?.Invoke("journaled"); record?.Invoke(text); LiveStep?.Invoke("recorded"); }); }
+            finally { parsedLive = null; }
             LiveStep?.Invoke("processed");
             return LiveResult.Consumed;
         }
@@ -421,8 +423,9 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     void LiveApply(string source, string text, string position)
     {
-        var env = CaptureReader.Parse(text, "eventhub:" + source, 0)!;
-        if (KeyOf(text) is { } key && liveKeys.Add(key)) { liveKeyOrder.Enqueue(key); if (liveKeyOrder.Count > LiveKeyWindow) liveKeys.Remove(liveKeyOrder.Dequeue()); }
+        using var own = parsedLive is null ? CaptureReader.Parse(text, "eventhub:" + source, 0)! : null;
+        var env = parsedLive ?? own!;
+        if (env.Key is { } key && liveKeys.Add(key)) { liveKeyOrder.Enqueue(key); if (liveKeyOrder.Count > LiveKeyWindow) liveKeys.Remove(liveKeyOrder.Dequeue()); }
         sourcePositions[source] = position;
         live!.Process(env, pace: false);
     }

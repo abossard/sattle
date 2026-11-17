@@ -438,6 +438,35 @@ Measured on the estate of the tests (73 master nodes, 2,266 records) and capture
 - Proofs: `The_texts_of_dropped_rows_stay_out_of_the_interner` (fails before: the text is interned), `Selections_of_several_Services_and_Deployments_follow_each_object_in_its_namespace` and the Selects, dropped-row, forwarder and restart tests as before. On 955c66f with this change: `Sattle.Differential` 241 of 241, X12 16 of 16, the KQL tests 229 of 229, the default run of `Sattle.Tests` 674 passed and 2 skipped, and the slow restart, seal, live-crash and forwarder tests 63 of 63. A seal of a live space holds one text table: the writers of unbound rows hold none, which a first variant with a second, emptied table broke.
 - Left as it is, by measurement: a live envelope's JSON is parsed four times (its key and its envelope, once to decide on duplicates and again when its journal entry is applied); the parse costs 28 KB per record on the capture, so the live path pays about twice that. It does not grow with the input.
 
+## Streaming record reading: one parse per record, texts straight into rows (#45, 2026-11-17)
+Theory. A record is read once, as the UTF-8 bytes it is stored in, into one token index, and everyone who reads it reads that index: the duplicate check, the dedup window and the adapter on the live path, the adapter on a replay. Texts go from the record's bytes into the interner without a string; only a text the interner does not have yet becomes one, so what a record allocates is the rows it writes and the new values it brings. The 1.9 MB per Kubernetes record of #108 is not reading: on that synthetic capture reading costs 2.6 KB and the adapters 5.0 KB per record, and `TraverseOp` (8.6 GB) and `JoinOp` (3.3 GB) of the graph `healthTree` make the rest (#110, #3, #49).
+
+| Structure | Per record: time | Per record: bytes | Retained |
+|---|---|---|---|
+| line buffer: one byte array per open capture file, rented, grown to the longest line, reused | one vectorized search for the line end | 0 | the longest line per open file |
+| token index: `JsonDocument` over the line's bytes (no copy), its table of 12 B per token rented and returned when the next line of the file is read | one tokenizing pass | 72 (the document object); with the envelope and its source text, 217 per Hubble flow | none |
+| field lookup (`TryGetProperty`, paths as `params ReadOnlySpan<string>`) | linear in the members of the searched object | 0 | none |
+| text into a row: the value's UTF-8 decoded into a stack buffer of 256 characters, looked up in the interner by span (longer or escaped values: a string) | one hash lookup | 0 for a known text, one string for a new one | the interner, which grows with new values only |
+| AKS `properties.log`: unescaped into a rented buffer and indexed there | one unescape and one tokenizing pass | 0 | none |
+| VNet flow tuple: split in place into 13 ranges | one scan | 0 | none |
+| live: `LiveEnvelope` hands its parsed envelope to the apply of its own journal entry; a restart parses each journaled envelope once | one parse instead of four | the key, when the envelope is consumed | the 20,000-key dedup window, unchanged |
+| replay writers keyed by (adapter, row type) | one lookup | 0 (before: the key text per row) | one writer per row type |
+| whether a graph reads source progress: computed when the engine's graphs are built | none | 0 (before: a walk over every graph's operators per record, about 1.2 KB) | one boolean |
+
+Rejected: a `Utf8JsonReader` state machine per adapter. A forward pass over a Hubble flow costs 10.6 µs and 0 B, the pooled index 14.4 µs and 72 B. JSON member order is not fixed (a watch event may put `kind` after `spec`, and `is_reply` decides which end of a flow is the caller), so a forward reader keeps what it read until it knows what it means, which is an index written by hand per adapter: ten adapters as state machines for about 4 µs per record. `JsonDocument` is the read-only DOM of System.Text.Json, held here as a flat token table over the bytes with no object per node; that departs from "no DOM parse" in the issue's done-when, on these numbers.
+
+`sattle bench phases` of the estate (`--cluster synth`) and of capture 20261110T140542Z (with the space overlay), Release builds of 9211a7f and of this change, alternating, two runs each, load average 35 to 145.
+
+| | Estate: read, B per record | Estate: adapters, B per record | Capture: read, B per record (µs per record) | Capture: adapters, B per record (s) | Capture: allocated in all |
+|---|---|---|---|---|---|
+| before (9211a7f) | 2,809 | 4,220 | 28,318 (19 to 26) | 9,993 (4.3 to 6.2) | 9,762 MB |
+| this change | 523 | 2,465 | 271 (15 to 18) | 1,797 (2.6 to 2.9) | 3,952 MB |
+
+- By source on the capture (adapters, B per record, before and after): Hubble flows 1,977 and 184 (146,759 records; what is left is the row batch the engine takes), AKS audit 245,326 and 15,248 (new audit ids and the rows), VNet flow logs 398,075 and 129,955 (the rows of about 350 tuples per record), Kubernetes 2,544 and 1,070. The Hubble adapter's time fell from 4.1 s to 0.4 s: most of it was the walk over the operators per record.
+- Live path, 20,000 Hubble envelopes through `LiveEnvelope` with the journal in memory (engine included), two runs each: 106 to 113 µs and 38,960 B per envelope before; 99 to 100 µs and 15,480 B after.
+- `RecordReadingTests`: the lines of a file with LF, CRLF, a byte order mark, no final newline, empty lines and a line longer than the buffer give the envelopes of their texts; texts with escapes, beyond ASCII, empty and longer than the stack buffer are written as their values; hosts as `HostOf` gives them; an audit event inside a string with its escapes; reading and consuming a flow of known texts allocates under 1 KB per record (3,227 B before, which fails it).
+- State digests unchanged: estate `sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422`, `lab/fixtures` `sha256:4a1560a5b4df685d764a5a491fa008594b36f583bfd4a0df5d8ae09128b6ffd0`, 20261110T105738Z `sha256:de8fe8a84f6567ff4a2630571a49ca671d4741e745a1a9d44779d6d5a2aa4520` and 20261110T140542Z `sha256:bd7dd35664dec61df5868c9d35c8bc97620ecc5fa7670b2b9439d15f074ccb13` (both with the overlay).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

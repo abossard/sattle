@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -41,45 +42,94 @@ public static class CaptureReader
         return rel.StartsWith("eventhub", StringComparison.Ordinal) && Path.GetFileNameWithoutExtension(file) is "sattle-ingest" or "sattle-hubble";
     }
 
-    /// <summary>All envelopes of the capture, merged by (capturedAt, file order, line). Streaming: one line per file in memory.</summary>
+    /// <summary>All envelopes of the capture, merged by (capturedAt, file order, line). Streaming: one line per file in memory. An envelope is valid until the next one is read (`Envelope`).</summary>
     public static IEnumerable<Envelope> Read(string dir)
     {
         var files = Directory.EnumerateFiles(dir, "*.ndjson", SearchOption.AllDirectories)
             .Where(f => !IsMirror(dir, f)) // the hubs sattle-ingest and sattle-hubble mirror the direct sources; the hubs written by Azure (sattle-activity, sattle-aks) are sources of their own
             .Order(StringComparer.Ordinal).ToList();
         var its = files.Select((f, i) => (Index: i, It: ReadFile(f).GetEnumerator())).ToList();
-        var pq = new PriorityQueue<(int File, Envelope E), (long, int, long)>();
-        foreach (var (i, it) in its) if (it.MoveNext()) pq.Enqueue((i, it.Current), (it.Current.CapturedNs, i, it.Current.Seq));
-        while (pq.TryDequeue(out var top, out _))
+        try
         {
-            yield return top.E;
-            var it = its[top.File].It;
-            if (it.MoveNext()) pq.Enqueue((top.File, it.Current), (it.Current.CapturedNs, top.File, it.Current.Seq));
+            var pq = new PriorityQueue<(int File, Envelope E), (long, int, long)>();
+            foreach (var (i, it) in its) if (it.MoveNext()) pq.Enqueue((i, it.Current), (it.Current.CapturedNs, i, it.Current.Seq));
+            while (pq.TryDequeue(out var top, out _))
+            {
+                yield return top.E;
+                var it = its[top.File].It;
+                if (it.MoveNext()) pq.Enqueue((top.File, it.Current), (it.Current.CapturedNs, top.File, it.Current.Seq));
+            }
         }
+        finally { foreach (var (_, it) in its) it.Dispose(); }
     }
 
+    /// <summary>The envelopes of one file. Each line is read as UTF-8 bytes into one buffer of the file and indexed where it lies; the envelope of a line is disposed, and the buffer reused, when the next line is asked for.</summary>
     static IEnumerable<Envelope> ReadFile(string path)
     {
+        using var lines = new Utf8Lines(path);
         long line = 0;
-        foreach (var text in File.ReadLines(path))
+        while (lines.Next() is { } bytes)
         {
             line++;
-            if (Parse(text, path, line) is { } e) yield return e;
+            using var e = Parse(bytes, path, line);
+            if (e is not null) yield return e;
         }
     }
 
-    /// <summary>One envelope line of lab/CAPTURE-FORMAT.md; null when it is empty, not JSON or not an envelope.</summary>
+    /// <summary>The lines of a file as UTF-8 bytes, without `\n` or `\r\n` and without a byte order mark. One buffer, grown to the longest line; a line is valid until the next one is read.</summary>
+    sealed class Utf8Lines(string path) : IDisposable
+    {
+        readonly FileStream file = new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.SequentialScan);
+        byte[] buf = ArrayPool<byte>.Shared.Rent(1 << 16);
+        int start, end; bool eof, first = true;
+        public ReadOnlyMemory<byte>? Next()
+        {
+            while (true)
+            {
+                var nl = buf.AsSpan(start, end - start).IndexOf((byte)'\n');
+                if (nl >= 0 || (eof && end > start))
+                {
+                    var len = nl >= 0 ? nl : end - start; var at = start;
+                    start += nl >= 0 ? nl + 1 : len;
+                    if (first) { first = false; if (buf.AsSpan(at, len).StartsWith("\uFEFF"u8)) { at += 3; len -= 3; } }
+                    if (len > 0 && buf[at + len - 1] == (byte)'\r') len--;
+                    return buf.AsMemory(at, len);
+                }
+                if (eof) return null;
+                if (start > 0) { buf.AsSpan(start, end - start).CopyTo(buf); end -= start; start = 0; }
+                if (end == buf.Length) { var bigger = ArrayPool<byte>.Shared.Rent(buf.Length * 2); buf.AsSpan(0, end).CopyTo(bigger); ArrayPool<byte>.Shared.Return(buf); buf = bigger; }
+                var n = file.Read(buf, end, buf.Length - end);
+                if (n == 0) eof = true; else end += n;
+            }
+        }
+        public void Dispose() { file.Dispose(); ArrayPool<byte>.Shared.Return(buf); }
+    }
+
+    /// <summary>One envelope line of lab/CAPTURE-FORMAT.md; null when it is empty, not JSON or not an envelope. The envelope owns the token index of the line (to be disposed); the index points into `utf8`, which must stay unchanged until then.</summary>
+    public static Envelope? Parse(ReadOnlyMemory<byte> utf8, string file, long line)
+    {
+        if (utf8.IsEmpty) return null;
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(utf8); } catch (JsonException) { return null; }
+        return Of(doc, file, line);
+    }
+
+    /// <summary>One envelope text (live input, the journal); see `Parse` of bytes. The text is copied to UTF-8 into a rented buffer that the envelope returns.</summary>
     public static Envelope? Parse(string text, string file, long line)
     {
         if (text.Length == 0) return null;
         JsonDocument doc;
         try { doc = JsonDocument.Parse(text); } catch (JsonException) { return null; }
+        return Of(doc, file, line);
+    }
+
+    static Envelope? Of(JsonDocument doc, string file, long line)
+    {
         var r = doc.RootElement;
-        var cap = r.S("capturedAt");
-        if (cap is null || !Norm.TryParseInstant(cap, out var ns) || r.P("payload") is not { } payload) return null;
+        if (!J.Instant(r.P("capturedAt"), out var ns) || r.P("payload") is not { } payload) { doc.Dispose(); return null; }
         var seq = r.P("seq") is { ValueKind: JsonValueKind.Number } s ? s.GetInt64() : line;
         var meta = r.P("meta");
-        return new Envelope(r.S("source") ?? "", ns, seq, file, payload, meta ?? default, meta is not null);
+        return new Envelope(r.S("source") ?? "", ns, seq, file, payload, meta ?? default, meta is not null).Owning(doc);
     }
 }
 
@@ -104,10 +154,12 @@ public sealed class Replay : IRowSink
     /// <summary>The sources of the space an adapter feeds, and how far each source has reported since its progress was last recorded: the capture time of its newest envelope less the lateness.</summary>
     readonly Dictionary<string, List<string>> sourcesOfAdapter = new(StringComparer.Ordinal);
     readonly Dictionary<string, long> reported = new(StringComparer.Ordinal);       // a plain dictionary: it is part of the state a live host seals
-    readonly Dictionary<string, RowWriter> writers = new(StringComparer.Ordinal);
+    /// <summary>The writer of each (adapter, row type) the adapters wrote, its name `adapter|RowType` (the key of the statistics) and the source it feeds (null: unbound).</summary>
+    readonly Dictionary<(string Adapter, string RowType), Out> writers = [];
+    sealed class Out(RowWriter w, string name, string? source) { public readonly RowWriter W = w; public readonly string Name = name; public readonly string? Source = source; }
     /// <summary>The unbound row types the record being consumed wrote rows of: counted and emptied once it is consumed.</summary>
-    readonly List<string> unbound = [];
-    string curAdapter = ""; string? current; long seq; long lastLambda = long.MinValue;
+    readonly List<Out> unbound = [];
+    string curAdapter = ""; Out? current; long seq; long lastLambda = long.MinValue;
     public ReplayStats Stats { get; } = new();
     public event Action<long>? Progress;
 
@@ -122,7 +174,7 @@ public sealed class Replay : IRowSink
     /// <summary>Added to the event times of the rows written from now on (see `RowWriter.InstantOffset`).</summary>
     public long TimeShiftNs { get; set; }
     /// <summary>Rows read from envelopes that have not been sent to the engine yet (the current chunk).</summary>
-    public int PendingRows => current is not null && writers.TryGetValue(current, out var w) ? w.Rows : 0;
+    public int PendingRows => current?.W.Rows ?? 0;
     readonly object gate;
     /// <summary>`gate`: the lock of the engine input when other threads use it too (a served host). Adapters intern text and write rows into the input's tables, so each envelope is consumed while the lock is held.</summary>
     public Replay(IEngineInput engine, TypedSpace space, IReadOnlyList<ISourceAdapter> adapters, ReplayOptions options, object? gate = null)
@@ -135,24 +187,20 @@ public sealed class Replay : IRowSink
     // ---- IRowSink ----
     public RowWriter Begin(string rowType)
     {
-        var key = curAdapter + "|" + rowType;
-        if (!sourceOfRowType.ContainsKey(key)) return Unbound(key, rowType);
-        if (current is not null && current != key) FlushCurrent();
-        current = key;
-        if (!writers.TryGetValue(key, out var w)) writers[key] = w = new RowWriter(engine.RowLayout(sourceOfRowType[key]), engine.Interner);
-        w.InstantOffset = TimeShiftNs;
-        return w;
+        if (!writers.TryGetValue((curAdapter, rowType), out var o)) writers[(curAdapter, rowType)] = o = Writer(rowType);
+        if (o.Source is null) { if (!unbound.Contains(o)) unbound.Add(o); return o.W; }       // never joins a chunk and never cuts one: the space sees the input of an adapter that does not deliver the type
+        if (current is not null && current != o) FlushCurrent();
+        current = o;
+        o.W.InstantOffset = TimeShiftNs;
+        return o.W;
     }
-    /// <summary>A writer for rows of a type no source of the space binds. Its rows never join a chunk and never cut one: the space sees the input of an adapter that does not deliver the type.</summary>
-    RowWriter Unbound(string key, string rowType)
+    /// <summary>The writer of a row type of the current adapter. Rows of a type no source of the space binds get a writer without a text table: they are counted and never read.</summary>
+    Out Writer(string rowType)
     {
-        if (!writers.TryGetValue(key, out var w))
-        {
-            var c = adapters.First(a => a.Id == curAdapter).Contracts.First(x => x.RowType == rowType);
-            writers[key] = w = new RowWriter(new Layout([.. c.Fields.Select(f => f.Name)], [.. c.Fields.Select(f => f.Kind == "Decimal")]), null);
-        }
-        if (!unbound.Contains(key)) unbound.Add(key);
-        return w;
+        var name = curAdapter + "|" + rowType;
+        if (sourceOfRowType.TryGetValue(name, out var source)) return new(new RowWriter(engine.RowLayout(source), engine.Interner), name, source);
+        var c = adapters.First(a => a.Id == curAdapter).Contracts.First(x => x.RowType == rowType);
+        return new(new RowWriter(new Layout([.. c.Fields.Select(f => f.Name)], [.. c.Fields.Select(f => f.Kind == "Decimal")]), null), name, null);
     }
 
     public void Rejected(string source, string reason)
@@ -165,11 +213,11 @@ public sealed class Replay : IRowSink
     void FlushCurrent()
     {
         if (current is null) return;
-        var w = writers[current];
+        var w = current.W;
         if (w.Rows == 0) return;
         var b = w.Build();
         if (b is null) return;
-        var src = sourceOfRowType[current];
+        var src = current.Source!;
         Stats.Rows[src] = Stats.Rows.GetValueOrDefault(src) + b.Rows;
         Stats.Chunks++;
         engine.Ingest(src, b, ++seq);
@@ -185,7 +233,8 @@ public sealed class Replay : IRowSink
         if (first == 0) { first = e.CapturedNs; wallStart = wall.ElapsedTicks; }
         last = e.CapturedNs;
         Stats.Records[e.Source] = Stats.Records.GetValueOrDefault(e.Source) + 1;
-        var adapter = adapters.FirstOrDefault(a => a.Handles(e.Source));
+        ISourceAdapter? adapter = null;
+        foreach (var a in adapters) if (a.Handles(e.Source)) { adapter = a; break; }
         if (adapter is null) { Stats.Skipped++; return true; }
         if (engine.WantsProgress && sourcesOfAdapter.TryGetValue(adapter.Id, out var fed))
             foreach (var source in fed) reported[source] = Math.Max(reported.GetValueOrDefault(source, long.MinValue), e.CapturedNs - opt.LatenessNs);       // every envelope of an adapter is progress of its sources, a marker or a heartbeat without rows as well
@@ -205,7 +254,7 @@ public sealed class Replay : IRowSink
         lock (gate)
         {
             curAdapter = adapter.Id;
-            var (writer, written) = current is not null && writers.TryGetValue(current, out var before) ? (current, before.Rows) : (null, 0);
+            var (writer, written) = (current, current?.W.Rows ?? 0);
             var consumed = true;
             try { adapter.Consume(e, this); } // the rows of one record are never split across chunks, so a retraction and its insertion stay together
             catch (Exception x) when (x is InvalidOperationException or FormatException or KeyNotFoundException or ArgumentException or IndexOutOfRangeException or System.Text.Json.JsonException or OverflowException)
@@ -214,11 +263,11 @@ public sealed class Replay : IRowSink
                 // An exception here would stop a replay, and a live space could never start again, because the record is in its journal. The rows the record wrote into the current chunk are taken back.
                 consumed = false;
                 Rejected(e.Source, $"malformed record ({x.GetType().Name}: {x.Message})");
-                if (current is not null && writers.TryGetValue(current, out var now)) now.Truncate(current == writer ? written : 0);
+                current?.W.Truncate(current == writer ? written : 0);
             }
-            foreach (var key in unbound) { var w = writers[key]; if (consumed) Stats.Dropped[key] = Stats.Dropped.GetValueOrDefault(key) + w.Rows; w.Truncate(0); }
+            foreach (var o in unbound) { if (consumed) Stats.Dropped[o.Name] = Stats.Dropped.GetValueOrDefault(o.Name) + o.W.Rows; o.W.Truncate(0); }
             unbound.Clear();
-            if (current is not null && writers[current].Rows >= opt.ChunkRows) FlushCurrent();
+            if (current is not null && current.W.Rows >= opt.ChunkRows) FlushCurrent();
         }
         return true;
     }
