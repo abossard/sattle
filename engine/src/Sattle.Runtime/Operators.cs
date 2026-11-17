@@ -1139,135 +1139,192 @@ sealed class JoinOp : PhysOp
 
 // ---- traversal -------------------------------------------------------------------------------------------
 
-/// <summary>Bounded traversal: for every input row, the elements reachable from its start element over one relationship type. Input rows are kept per start element together with the reach last emitted for it. A row delta is joined with the old reach; a start is recomputed when a visited element or edge appears in the graph patch, and the difference between old and new reach is emitted once per row. Reached elements that are not in the graph are skipped (they appear when the entity does).</summary>
+/// <summary>Bounded traversal: for every input row, the elements reachable from its start element over one relationship type. Input rows are kept per start element together with the reach last emitted for it. A row delta is joined with the old reach; a start is recomputed when a visited element or edge appears in the graph patch, and the difference between old and new reach is emitted once per row. Reached elements that are not in the graph are skipped (they appear when the entity does).
+/// State: the rows as a Z-set (`Table`: every column as its 8-byte code, a decimal as its number in `DecimalCodes`, and a bit per absent column) arranged by start; per start its reach (the entities reached, in the walk's order, and a 64-bit hash of them and the properties read); and which ids each start's walk visited (`Table` of (id, start), arranged both ways), so a patch finds the starts it reaches through its ids. The walk's set and lists belong to the operator and are emptied after each walk.</summary>
 sealed class TraverseOp : PhysOp
 {
-    readonly struct Cell(bool present, long l, decimal d) { public readonly bool Present = present; public readonly long L = l; public readonly decimal D = d; }
-    sealed class Row(Cell[] cells) { public readonly Cell[] Cells = cells; public long Weight; }
-    sealed class RowKey(long[] v) : IEquatable<RowKey>
-    {
-        readonly long[] v = v;
-        public bool Equals(RowKey? o) => o is not null && v.AsSpan().SequenceEqual(o.v);
-        public override bool Equals(object? o) => o is RowKey k && Equals(k);
-        public override int GetHashCode() { var h = new HashCode(); foreach (var x in v) h.Add(x); return h.ToHashCode(); }
-    }
-    sealed class Reach { public List<Entity> Items = []; public HashSet<string> Touched = []; public string Signature = ""; }
+    sealed class Reach { public readonly List<Entity> Items = []; public ulong Signature; }
 
     readonly TTraverse t; readonly Interner it; readonly OntologyView view;
     readonly int inN, startCol, reachedCol;
     readonly (string PropId, int OutCol)[] reads;
-    readonly Dictionary<long, Dictionary<RowKey, Row>> rows = [];
+    readonly Table rows; readonly Arrangement rowsOf;
+    readonly DecimalCodes decimals = new();
     readonly Dictionary<long, Reach> reach = [];
+    readonly Table visits = new([4, 4], keyColumns: 2); readonly Arrangement startsOf, visitsOf;
+    /// <summary>Starts with rows and no reach yet: they are walked when the graph is there.</summary>
+    readonly List<long> pending = [];
     Graph? graph;
+    // the walk's working sets, empty between calls
+    readonly HashSet<string> seen = []; List<string> frontier = [], next = [];
+    readonly List<Entity> items = []; readonly List<long> todo = [];
 
     public TraverseOp(TTraverse t, Layout inL, OntologyView view, Interner it) : base(t)
     {
         this.t = t; this.it = it; this.view = view;
         inN = inL.Count; startCol = inL.Index(t.Start); reachedCol = OutLayout.Index(t.Target);
         reads = [.. t.Reads.Select(r => (r.PropId, OutLayout.Index(r.Col)))];
+        rows = new Table([.. Enumerable.Repeat(8, inN + Words)], keyColumns: inN + Words); rowsOf = rows.Arrange(startCol);
+        startsOf = visits.Arrange(0); visitsOf = visits.Arrange(1);
     }
+    int Words => (inN + 63) >> 6;
 
-    static RowKey KeyOf(Cell[] cells)
+    /// <summary>The stored form of a batch row: every column, then the absent bits.</summary>
+    void Encode(Batch b, int row, Span<long> key)
     {
-        var v = new long[cells.Length * 4];
-        for (var c = 0; c < cells.Length; c++)
-        {
-            if (!cells[c].Present) { v[c * 4] = 1; continue; }
-            v[c * 4 + 1] = cells[c].L; (v[c * 4 + 2], v[c * 4 + 3]) = DecimalKey.Of(cells[c].D);
-        }
-        return new RowKey(v);
-    }
-
-    /// <summary>Whether the reach touched an id of the patch; walks the smaller set (a big patch against many small reaches stays linear).</summary>
-    static bool Overlaps(HashSet<string> touched, HashSet<string> changed)
-    {
-        var (small, big) = touched.Count <= changed.Count ? (touched, changed) : (changed, touched);
-        foreach (var id in small) if (big.Contains(id)) return true;
-        return false;
-    }
-
-    Reach Bfs(string startId, Graph g)
-    {
-        var res = new Reach { Touched = [startId] };
-        var seen = new HashSet<string> { startId }; var frontier = new List<string> { startId };
-        for (var depth = 0; ; depth++)
-        {
-            foreach (var id in frontier.Order(StringComparer.Ordinal))
-                if (depth >= t.Min && g.Entity(id) is { } e) res.Items.Add(e);
-            if (depth == t.Max) { foreach (var id in frontier) res.Touched.Add(id); break; }      // an entity that appears or changes at the last depth changes the reach
-            var next = new List<string>();
-            foreach (var id in frontier)
-            {
-                res.Touched.Add(id);
-                if (t.Direction is "out" or "either")
-                    foreach (var rid in g.OutRels(id)) if (g.Rel(rid) is { } r && view.IsSubtype(r.Type, t.RelTypeId) && seen.Add(r.Target)) next.Add(r.Target);
-                if (t.Direction is "in" or "either")
-                    foreach (var rid in g.InRels(id)) if (g.Rel(rid) is { } r && view.IsSubtype(r.Type, t.RelTypeId) && seen.Add(r.Source)) next.Add(r.Source);
-            }
-            if (next.Count == 0) break;
-            frontier = next;
-        }
-        res.Signature = string.Join(";", res.Items.Select(x => x.Id + ":" + string.Join(",", reads.Select(r => x.Props.Get(r.PropId)?.ToString() ?? "-"))));
-        return res;
-    }
-
-    void Emit(BatchBuilder bb, Cell[] cells, Entity item, long weight)
-    {
-        var row = bb.Add(weight); var b = bb.Batch;
+        key[inN..].Clear();
         for (var c = 0; c < inN; c++)
         {
-            var dst = b.Cols[c];
-            if (!cells[c].Present) { bb.Absent(row, c); continue; }
-            if (dst.IsDec) dst.D[row] = cells[c].D; else dst.L[row] = cells[c].L;
+            var col = b.Cols[c];
+            if (!col.Present(row)) { key[c] = 0; key[inN + (c >> 6)] |= 1L << (c & 63); }
+            else key[c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
         }
-        b.Cols[reachedCol].L[row] = it.Intern(item.Id);
+    }
+
+    // ---- the signature of a reach: a 64-bit hash, the same in every process (a seal keeps it) ----
+    static ulong Mix(ulong h, ulong x) { var z = h + x + 0x9E3779B97F4A7C15UL; z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL; z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL; return z ^ (z >> 31); }
+    static ulong Mix(ulong h, string s) { h = Mix(h, (ulong)s.Length); foreach (var ch in s) h = Mix(h, ch); return h; }
+    /// <summary>Equal values give equal hashes; a decimal is hashed with its scale (2.5 and 2.50 are emitted as they are written), an absent property apart from a null.</summary>
+    static ulong Mix(ulong h, Value? v)
+    {
+        switch (v)
+        {
+            case null: return Mix(h, 0UL);
+            case NullValue: return Mix(h, 1UL);
+            case TextValue x: return Mix(Mix(h, 2UL), x.S);
+            case EntityValue x: return Mix(Mix(h, 3UL), x.Id);
+            case IntegerValue x when x.N >= long.MinValue && x.N <= long.MaxValue: return Mix(Mix(h, 4UL), (ulong)(long)x.N);
+            case IntegerValue x: { h = Mix(h, 5UL); foreach (var b in x.N.ToByteArray()) h = Mix(h, b); return h; }
+            case DecimalValue x: { Span<int> bits = stackalloc int[4]; decimal.GetBits(x.Q, bits); h = Mix(h, 6UL); foreach (var b in bits) h = Mix(h, (uint)b); return h; }
+            case BooleanValue x: return Mix(Mix(h, 7UL), x.B ? 1UL : 0UL);
+            case InstantValue x: return Mix(Mix(h, 8UL), (ulong)x.Ns);
+            case ListValue x: { h = Mix(Mix(h, 9UL), (ulong)x.Items.Length); foreach (var i in x.Items) h = Mix(h, i); return h; }
+            default: throw new InvalidOperationException($"no hash for {v.Kind}");
+        }
+    }
+
+    /// <summary>The breadth-first walk from a start: the entities reached at depths `Min` to `Max` into `items` (by depth, then by id) and every id visited into `seen`. Gives the signature of the reach.</summary>
+    ulong Walk(string startId, Graph g)
+    {
+        seen.Clear(); items.Clear(); frontier.Clear();
+        seen.Add(startId); frontier.Add(startId);
+        var h = 0UL;
+        for (var depth = 0; ; depth++)
+        {
+            frontier.Sort(StringComparer.Ordinal);
+            if (depth >= t.Min)
+                foreach (var id in frontier)
+                    if (g.Entity(id) is { } e) { items.Add(e); h = Mix(h, e.Id); foreach (var r in reads) h = Mix(h, e.Props.Get(r.PropId)); }
+            if (depth == t.Max) break;      // an entity that appears or changes at the last depth changes the reach: it is visited
+            next.Clear();
+            foreach (var id in frontier)
+            {
+                if (t.Direction is "out" or "either")
+                    foreach (var (type, other) in g.Neighbors(id, true)) if (view.IsSubtype(type, t.RelTypeId) && seen.Add(other)) next.Add(other);
+                if (t.Direction is "in" or "either")
+                    foreach (var (type, other) in g.Neighbors(id, false)) if (view.IsSubtype(type, t.RelTypeId) && seen.Add(other)) next.Add(other);
+            }
+            if (next.Count == 0) break;
+            (frontier, next) = (next, frontier);
+        }
+        return h;
+    }
+
+    /// <summary>Forgets which ids a start's walk visited.</summary>
+    void Unvisit(long start) { for (int r; (r = startsOf.First([start])) >= 0;) visits.Add([start, visits.Get(r, 1)], -1); }
+
+    /// <summary>One output row: the input columns of a batch row (`b` not null) or of stored row `r`, then the reached entity and the properties read.</summary>
+    void Emit(BatchBuilder bb, Batch? b, int r, Entity item, long weight)
+    {
+        var row = bb.Add(weight); var o = bb.Batch;
+        var bits = 0L;
+        for (var c = 0; c < inN; c++)
+        {
+            var dst = o.Cols[c];
+            if (b is not null)
+            {
+                var src = b.Cols[c];
+                if (!src.Present(r)) { bb.Absent(row, c); continue; }
+                if (dst.IsDec) dst.D[row] = src.D[r]; else dst.L[row] = src.L[r];
+                continue;
+            }
+            if ((c & 63) == 0) bits = rows.Get(r, inN + (c >> 6));
+            if ((bits >> (c & 63) & 1) != 0) { bb.Absent(row, c); continue; }
+            var v = rows.Get(r, c);
+            if (dst.IsDec) dst.D[row] = decimals.Value(v); else dst.L[row] = v;
+        }
+        o.Cols[reachedCol].L[row] = it.Intern(item.Id);
         foreach (var (propId, outCol) in reads)
         {
-            var col = b.Cols[outCol];
+            var col = o.Cols[outCol];
             if (item.Props.TryGet(propId, out var v) && v is not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
-            else col.SetAbsent(row, b.N);
+            else col.SetAbsent(row, o.N);
         }
     }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var bb = EmptyOutput();
-        HashSet<string>? changed = null;
-        if (ep.Graphs.TryGetValue(t.GraphPort, out var gd)) { graph = gd.State; if (gd.Patch is { } p) { changed = []; foreach (var e in p.Edits) { changed.Add(e.Key.Id); foreach (var s in new[] { e.Before, e.After }) if (s is Rel r) { changed.Add(r.Source); changed.Add(r.Target); } } } }
+        Patch? patch = null;
+        if (ep.Graphs.TryGetValue(t.GraphPort, out var gd)) { graph = gd.State; patch = gd.Patch; }
         // (a) row deltas against the reach emitted so far
         var b = In(inputs, "in");
         if (b is not null && b.Rows > 0)
+        {
+            Span<long> key = stackalloc long[inN + Words];
             for (var k = 0; k < b.Rows; k++)
             {
                 var src = b.RowAt(k);
                 if (!b.Cols[startCol].Present(src)) continue;
-                var cells = new Cell[inN];
-                for (var c = 0; c < inN; c++) { var col = b.Cols[c]; cells[c] = col.Present(src) ? new Cell(true, col.IsDec ? 0 : col.L[src], col.IsDec ? col.D[src] : 0) : default; }
-                var start = cells[startCol].L; var w = b.Weight(src);
-                if (reach.TryGetValue(start, out var old)) foreach (var item in old.Items) Emit(bb, cells, item, w);
-                if (!rows.TryGetValue(start, out var set)) rows[start] = set = [];
-                var key = KeyOf(cells);
-                if (!set.TryGetValue(key, out var row)) set[key] = row = new Row(cells);
-                row.Weight += w;
-                if (row.Weight == 0) set.Remove(key);
-                if (set.Count == 0) { rows.Remove(start); reach.Remove(start); }
-            }
-        // (b) starts whose reach changed: retract the old reach and insert the new one for every row
-        if (graph is not null)
-            foreach (var start in rows.Keys.Order().ToList())
-            {
+                var start = b.Cols[startCol].L[src]; var w = b.Weight(src);
                 var had = reach.TryGetValue(start, out var old);
-                if (had && (changed is null || !Overlaps(old!.Touched, changed))) continue;
-                var now = Bfs(it.Get((int)start), graph);
-                if (had && old!.Signature == now.Signature) { old.Touched = now.Touched; continue; }
-                foreach (var row in rows[start].Values)
-                {
-                    if (had) foreach (var item in old!.Items) Emit(bb, row.Cells, item, -row.Weight);
-                    foreach (var item in now.Items) Emit(bb, row.Cells, item, row.Weight);
-                }
-                reach[start] = now;
+                if (had) foreach (var item in old!.Items) Emit(bb, b, src, item, w);
+                var first = rowsOf.First([start]) < 0;
+                Encode(b, src, key);
+                rows.Add(key, w);
+                if (rowsOf.First([start]) < 0) { if (reach.Remove(start)) Unvisit(start); }
+                else if (first && !had) pending.Add(start);
             }
+        }
+        // (b) starts whose reach changed: retract the old reach and insert the new one for every row. A start is walked when it has no reach yet, or when the patch names an id its last walk visited (an element or an endpoint of a relationship).
+        if (graph is null) return bb.Build();
+        todo.AddRange(pending); pending.Clear();
+        if (patch is not null)
+            foreach (var e in patch.Edits)
+            {
+                Visited(e.Key.Id);
+                foreach (var s in (ReadOnlySpan<Element?>)[e.Before, e.After]) if (s is Rel r) { Visited(r.Source); Visited(r.Target); }
+            }
+        todo.Sort();
+        for (var i = 0; i < todo.Count; i++)
+        {
+            var start = todo[i];
+            if (i > 0 && todo[i - 1] == start || rowsOf.First([start]) < 0) continue;
+            var had = reach.TryGetValue(start, out var old);
+            var signature = Walk(it.Get((int)start), graph);
+            if (had) Unvisit(start);
+            foreach (var id in seen) visits.Add([start, it.Intern(id)], 1);
+            if (!had || old!.Signature != signature)
+            {
+                for (var r = rowsOf.First([start]); r >= 0; r = rowsOf.Next(r))
+                {
+                    var w = rows.Weight(r);
+                    if (had) foreach (var item in old!.Items) Emit(bb, null, r, item, -w);
+                    foreach (var item in items) Emit(bb, null, r, item, w);
+                }
+                if (!had) reach[start] = old = new Reach();
+                old!.Items.Clear(); old.Items.AddRange(items); old.Signature = signature;
+            }
+        }
+        todo.Clear(); seen.Clear(); items.Clear(); frontier.Clear(); next.Clear();
         return bb.Build();
+    }
+
+    /// <summary>The starts whose last walk visited `id` go on the list of starts to walk.</summary>
+    void Visited(string id)
+    {
+        if (!it.TryFind(id, out var code)) return;
+        for (var r = visitsOf.First([code]); r >= 0; r = visitsOf.Next(r)) todo.Add(visits.Get(r, 0));
     }
 }
 

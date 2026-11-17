@@ -232,6 +232,14 @@ public sealed class Graph
         if (ix < 0) yield break;
         for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return rels.Get(r - 1);
     }
+    /// <summary>The relationships at an entity, out-going or in-coming, as their type and the entity at the other end: what a walk reads, without making the relationships.</summary>
+    public IEnumerable<(string Type, string Other)> Neighbors(string entityId, bool outgoing)
+    {
+        var ix = ents.Find(entityId);
+        if (ix < 0) yield break;
+        if (outgoing) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) yield return (types.Get(rType[r - 1]), ents.Get(rTgt[r - 1]));
+        else for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return (types.Get(rType[r - 1]), ents.Get(rSrc[r - 1]));
+    }
     /// <summary>Out-going relationships as materialized elements, without the id round trip.</summary>
     public IEnumerable<Rel> OutEdges(string entityId)
     {
