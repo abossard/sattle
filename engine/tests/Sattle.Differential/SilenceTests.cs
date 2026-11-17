@@ -50,6 +50,25 @@ public class SilenceTests
         Assert.Null(Differential.FirstMismatch(w, [.. reported], 0, reordered: false)?.ToString());
     }
 
+    /// <summary>#111, world `fill and no data over hop windows`: the hits are in windows of 3 minutes every 60 s, so the hit at 10 s is in the windows from -120, -60 and 0 s. A window is covered, and filled, only once the source has reported past its end, not the end of its grid window.</summary>
+    public static TheoryData<string, Input[], string> HopCases => new()
+    {
+        { "reported to 240 s: the window [120 s, 300 s) has not ended, so it is not filled and the state stands", [.. On, Reported(240), Advance(240)], "on" },
+        { "reported to 360 s: the windows from 60 and 120 s ended without hits, are filled with 0 and end the state", [.. On, Reported(360), Advance(360)], "off" },
+        { "a hit late in a window: the window from 120 s holds it and is not filled with 0", [.. On, Reported(240), Advance(240), Hits("k0", 5, 250), Reported(360), Advance(360)], "on" },
+        { "a loss at 250 s: only the window from 120 s reaches it; it is not covered, so one window of 0 does not end the state", [.. On, Lost(250), Reported(360), Advance(360)], "on" },
+        { "the loss mark arrives after the windows were filled: the fill of the window from 120 s is taken back", [.. On, Reported(360), Advance(360), Lost(250)], "on" },
+    };
+
+    [Theory, MemberData(nameof(HopCases))]
+    public void A_fill_over_hop_windows_waits_for_the_end_of_each_window(string what, Input[] log, string state)
+    {
+        var w = Worlds.FillOverHop;
+        var reference = ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log).Graphs["view"].Lines();
+        Assert.True(reference.Length == 1 && reference[0].Contains($"state=t:{state}", StringComparison.Ordinal), $"{what}: the reference gives\n{string.Join("\n", reference)}\nfor\n{Print(log)}");
+        Assert.Null(Differential.FirstMismatch(w, [.. log], 0, reordered: false)?.ToString());
+    }
+
     [Theory, MemberData(nameof(Cases))]
     public void A_series_with_a_fill_and_a_time_to_live_gives_the_state_the_definitions_say(string what, Input[] log, string state)
     {

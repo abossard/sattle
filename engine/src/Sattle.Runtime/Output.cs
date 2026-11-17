@@ -16,10 +16,12 @@ sealed class SeriesOp : PhysOp
     // ---- fill and time to live (Def. 7.14 to 7.16) ----
     /// <summary>Per read, the sources that feed the property it reads (a function of the definitions, set at activation).</summary>
     public string[][] Feeding = [];
+    /// <summary>Per read, how much later than its grid window a window of the property ends (a hop window, #111): it is covered that much later.</summary>
+    public long[] Lag = [];
     readonly decimal?[] fills; readonly long? ttl; readonly int outNoData = -1;
     /// <summary>The windows with a loss mark, by their start, while they are in the look-back: such a window is not covered and holds no fill (Def. 7.14).</summary>
     readonly SortedSet<long> lost = [];
-    bool Lost(long start) => lost.Count > 0 && lost.GetViewBetween(start, start + period - 1).Count > 0;
+    bool Lost(long start, long lag) => lost.Count > 0 && lost.GetViewBetween(start, start + period + lag - 1).Count > 0;
     /// <summary>Since which advance an element has had a row here (presence is sampled at advances), and the window of the no-data record an element has.</summary>
     readonly Dictionary<int, long> since = []; readonly Dictionary<int, long> marker = [];
     /// <summary>Per read, the time up to which its windows are covered and closed, as applied to the output so far: min(frontier, coveredUntil).</summary>
@@ -29,7 +31,7 @@ sealed class SeriesOp : PhysOp
     long Floor(long time) => time - ((time % period) + period) % period;
 
     long[] HiAt(long f, IReadOnlyDictionary<string, long> covered) =>
-        [.. fills.Select((fill, i) => fill is null || f == long.MinValue || i >= Feeding.Length || Feeding[i].Length == 0 || !Feeding[i].All(covered.ContainsKey) ? long.MinValue : Math.Min(f, Feeding[i].Min(s => covered[s])))];
+        [.. fills.Select((fill, i) => fill is null || f == long.MinValue || i >= Feeding.Length || Feeding[i].Length == 0 || !Feeding[i].All(covered.ContainsKey) ? long.MinValue : Math.Min(f, Feeding[i].Min(s => covered[s]) - Lag[i]))];
 
     /// <summary>True when the progress of a source lets a window become covered that the output does not hold yet.</summary>
     public bool CoverageMoved(long f, IReadOnlyDictionary<string, long> covered) => Fills && HiAt(f, covered).Zip(hi).Any(x => x.First != long.MinValue && (x.Second == long.MinValue || Floor(x.First) != Floor(x.Second)));
@@ -80,7 +82,7 @@ sealed class SeriesOp : PhysOp
         for (var i = 0; i < fills.Length; i++)
         {
             var x = stored?[i];
-            if (x is null && fills[i] is { } fill && h[i] != long.MinValue && start + period <= h[i] && since.TryGetValue(elem, out var from) && start >= from && !Lost(start)) x = fill;
+            if (x is null && fills[i] is { } fill && h[i] != long.MinValue && start + period <= h[i] && since.TryGetValue(elem, out var from) && start >= from && !Lost(start, Lag[i])) x = fill;
             if (x is null) return null;
             res[i] = x;
         }
@@ -102,7 +104,8 @@ sealed class SeriesOp : PhysOp
     bool InNoData(int elem)
     {
         var life = ttl!.Value;
-        for (var a = Floor(frontier - life - 1); a + period <= frontier; a += period) if (Record(elem, a, hi, frontier) is not null) return false;
+        var reachBack = Lag.Length == 0 ? 0 : Lag.Max();      // a hop window ends this much after its grid window (#111)
+        for (var a = Floor(frontier - life - reachBack - 1); a + period <= frontier; a += period) if (Record(elem, a, hi, frontier) is not null) return false;
         var known = since.TryGetValue(elem, out var from);
         if (known) return from < frontier - life;
         if (windows.TryGetValue(elem, out var ws)) foreach (var a in ws.Keys) if (Record(elem, a, hi, frontier) is not null) return true;
@@ -127,21 +130,26 @@ sealed class SeriesOp : PhysOp
         var bb = EmptyOutput();
         var touched = new HashSet<int>();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
-        if (ep.Loss is { } mark && (frontier == long.MinValue || mark + period > edge) && !lost.Contains(mark))
+        var reachBack = Lag.Length == 0 ? 0 : Lag.Max();      // a window ends this much after its grid window (a hop window, #111)
+        if (ep.Loss is { } mark && (frontier == long.MinValue || mark + period + reachBack > edge) && !lost.Contains(mark))
         {
-            // a loss mark on a window: the fills of the window that contains it go
-            var start = Floor(mark);
-            var held = arrangement.Where(x => x.Value.Count > 0).Select(x => (Elem: x.Key, Rows: x.Value, Before: Record(x.Key, start, hi, frontier))).ToList();
+            // a loss mark on a window: the fills of the windows that contain it go (with a hop, every window that reaches the mark)
+            var starts = new List<long>();
+            for (var a = Floor(mark) - reachBack; a <= Floor(mark); a += period) starts.Add(a);
+            var held = arrangement.Where(x => x.Value.Count > 0).Select(x => (Elem: x.Key, Rows: x.Value, Before: starts.Select(a => Record(x.Key, a, hi, frontier)).ToArray())).ToList();
             lost.Add(mark);
             foreach (var (elem, list, before) in held)
             {
-                var after = Record(elem, start, hi, frontier);
                 touched.Add(elem);
-                if (Same(before, after)) continue;
-                foreach (var r in list)
+                for (var j = 0; j < starts.Count; j++)
                 {
-                    if (before is not null) WriteRow(bb, r, start, before, -r.Weight);
-                    if (after is not null) WriteRow(bb, r, start, after, r.Weight);
+                    var after = Record(elem, starts[j], hi, frontier);
+                    if (Same(before[j], after)) continue;
+                    foreach (var r in list)
+                    {
+                        if (before[j] is { } was) WriteRow(bb, r, starts[j], was, -r.Weight);
+                        if (after is not null) WriteRow(bb, r, starts[j], after, r.Weight);
+                    }
                 }
             }
         }
@@ -212,7 +220,7 @@ sealed class SeriesOp : PhysOp
             foreach (var elem in since.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) since.Remove(elem);
             foreach (var (elem, list) in arrangement) if (list.Count > 0) since.TryAdd(elem, ep.Lambda);
             frontier = ep.Lambda;
-            lost.RemoveWhere(m => m + period <= edgeAfter);
+            lost.RemoveWhere(m => m + period + (Lag.Length == 0 ? 0 : Lag.Max()) <= edgeAfter);
         }
         var reach = HiAt(frontier, ep.Covered);
         var moved = reach.Zip(hi).Any(x => x.First != x.Second);

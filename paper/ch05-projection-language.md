@@ -281,6 +281,8 @@ A **projection** is a file of KQL, the Kusto Query Language of Microsoft, stored
 | `where time > ago(24h)` | `Retain` on a required data `Instant` column, age a duration (Def. 5.15) |
 | `summarize n = count(), s = sum(x) by k` | `Group`; the aggregates are `count`, `countif`, `count_distinct`, `sum`, `min`, `max`, `avg` (the `mean` of the kernel) and `arg_max(order, value)` (the `last` with its ordering) |
 | `summarize … by k, windowStart = bin(time, 60s)` | `Window`, then `Group` over the windows of the rows' own time |
+| `summarize … by k, windowStart = hop(time, 3m, 60s)` | `Window` with a hop: a row is in each of the windows of length 3 minutes that start every 60 seconds and hold it; then `Group` over those windows |
+| `t + 5m`, `t - 5m` | `Shift`: an instant moved by a fixed duration |
 | `join kind=inner (telemetry("g", 24h) \| …) on id` | `Series` (5.5): the closed windows of the measurements of an element within the look-back |
 | `summarize v = sumif(value, property == "p") by k, windowStart` over such rows | `Rollup` with `sum`, `min` or `max` (and `maxif`, `minif`) per key and window |
 | `… \| project k, windowStart, value, above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3 \| invoke hysteresis("high", "low", "initial")` | `Threshold` (Def. 7.10) |
@@ -290,7 +292,7 @@ A **projection** is a file of KQL, the Kusto Query Language of Microsoft, stored
 | `… with (rule = "r", accept = "create, delete", update = "name", onCreate = "f", onDelete = "g")` | `Rule` that governs the sinks written with the same `rule`, with its class and its edit policies (Ch. 8) |
 | `identity("domain", k1, k2)` | the id that the identity domain gives to the key components (Def. 1.9) |
 
-The functions `telemetry`, `telemetry_filled`, `identity`, `hysteresis` and `rate` come with the engine as a library written in plain KQL, so that tools for KQL check every call, and the engine recognises each by its name and maintains it from changes. Definitions in KQL stay close to the notation of the paper: a projection is a list of named tables (`let`) and of statements that write nodes and edges.
+The functions `telemetry`, `telemetry_filled`, `identity`, `hysteresis`, `rate` and `hop` come with the engine as a library written in plain KQL, so that tools for KQL check every call, and the engine recognises each by its name and maintains it from changes. Definitions in KQL stay close to the notation of the paper: a projection is a list of named tables (`let`) and of statements that write nodes and edges.
 
 A text is not printed back from the definition graph: the file is the source of its projection, and a draft of the definitions refuses a patch that touches a projection, which is edited as text (Ch. 12). The operators lowered from a file carry its places, so that a message of the checker names a line.
 

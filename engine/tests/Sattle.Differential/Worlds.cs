@@ -285,6 +285,12 @@ public static class Worlds
     public static readonly World Fill = Silence("fill and no data", "Series with fill and ttl, Map, Threshold", Hits("k", "telemetry_filled(\"master\", 5m, 3m, 0.0)", WithNoData));
     /// <summary>Def. 7.14: a window in which the source lost events is not covered, so it holds no fill; a loss mark that arrives after the window was filled takes the fill back.</summary>
     public static readonly World FillAroundLoss = Silence("fill around a loss", "Series with fill and ttl, loss marks, Map, Threshold", Hits("k", "telemetry_filled(\"master\", 5m, 3m, 0.0)", WithNoData)) with { LossShare = 0.12 };
+    /// <summary>#111: fill and no data over hop windows: the hits of an item in windows of 3 minutes every 60 s, read with a fill and a time to live, with gaps and loss marks. A filled window is one the source covered to its end, so a fill is neither early nor doubled.</summary>
+    public static readonly World FillOverHop = Fill with
+    {
+        Name = "fill and no data over hop windows", Kind = "Window with a hop, Series with fill and ttl, loss marks, Threshold", LossShare = 0.12,
+        Files = [.. Fill.Files.Select(f => f == BaseIngest ? f with { Text = f.Text.Replace("bin(t, 60s)", "hop(t, 3m, 60s)", StringComparison.Ordinal) } : f)],
+    };
     public static readonly World TimeToLive = Silence("no data without a fill", "Series with ttl, Map, Threshold", Hits("k", "telemetry_filled(\"master\", 5m, 2m, real(null))", WithNoData));
     public static readonly World RollupAll = Silence("roll-up in no data when all members are", "Series with fill and ttl, Rollup, Threshold",
         Hits("g", "telemetry_filled(\"master\", 5m, 2m, 0.0)", WithNoData) + "\n    | summarize v = sum(value) by c, windowStart", rolledUp: true);
@@ -511,7 +517,7 @@ public static class Worlds
             """) with { Witnesses = ["degree=n:"] },
         View("series and rollup", "Series, Rollup", Signal,
             "nodes Signal on s = " + Hits("g", "telemetry(\"master\", 3m)") + "\n    | summarize v = sum(value) by c, windowStart\n    | project s = identity(\"signal\", c), k = c, windowStart, v;", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
+        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, FillOverHop, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

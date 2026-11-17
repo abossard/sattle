@@ -326,7 +326,8 @@ public sealed class Engine : IDisposable, IEngineInput
             {
                 var st = (TSeries)series.Typed;
                 // the time to live is at most `within` (the checker), and `within` at most the retention (above): Def. 7.16 asks no more
-                series.Feeding = [.. st.Reads.Select(r => Feeding(g.PortSources[st.GraphPort], r.PropId).ToArray())];
+                var fed = st.Reads.Select(r => Feeding(g.PortSources[st.GraphPort], r.PropId)).ToArray();
+                series.Feeding = [.. fed.Select(x => x.Sources.ToArray())]; series.Lag = [.. fed.Select(x => x.Lag)];
                 if (st.Reads.Select((r, i) => (r, i)).FirstOrDefault(x => x.r.Fill is not null && series.Feeding[x.i].Length == 0) is { r: not null } unfed)
                     throw new InvalidOperationException($"graph {g.Name}: {st.Name} fills '{unfed.r.OutName}', and no source feeds that property: a window cannot be known to be covered (Def. 7.15)");
                 // authored rows come when someone writes them: their source does not report, so nothing it feeds is ever covered
@@ -365,22 +366,24 @@ public sealed class Engine : IDisposable, IEngineInput
     }
 
     /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
-    SortedSet<string> Feeding(string graph, string propId)
+    /// The lag is how much later than its grid window a window of the property ends: a window of length w on the grid of its hop h ends w − h after its grid window (#111), so it is covered that much later.
+    (SortedSet<string> Sources, long Lag) Feeding(string graph, string propId)
     {
-        var found = new SortedSet<string>(StringComparer.Ordinal);
-        if (!byName.TryGetValue(graph, out var g)) return found;
+        var found = new SortedSet<string>(StringComparer.Ordinal); long lag = 0;
+        if (!byName.TryGetValue(graph, out var g)) return (found, lag);
         var plan = g.Typed; var seen = new HashSet<string>(StringComparer.Ordinal);
         void Walk(TOp op)
         {
             if (!seen.Add(op.Name)) return;
-            if (op is TSeries s) foreach (var read in s.Reads) found.UnionWith(Feeding(g.PortSources[s.GraphPort], read.PropId));
+            if (op is TWindow w) lag = Math.Max(lag, w.WidthNs - w.HopNs);
+            if (op is TSeries s) foreach (var read in s.Reads) { var (f, l) = Feeding(g.PortSources[s.GraphPort], read.PropId); found.UnionWith(f); lag = Math.Max(lag, l); }
             foreach (var src in op.Inputs.Values)
                 if (!src.IsPort) Walk(plan.Ops.First(o => o.Name == src.Name));
                 else if (plan.Port(src.Name).Kind == "rows") found.Add(g.PortSources[src.Name]);
         }
         foreach (var sink in plan.Ops)
             if ((sink switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => null })?.Any(x => x.PropId == propId) == true) Walk(sink);
-        return found;
+        return (found, lag);
     }
 
     /// <summary>Whether a graph reads source progress (a filling Series). Fixed when the graphs are built: the replay asks it for every record.</summary>

@@ -79,8 +79,10 @@ public static class ReferenceEvaluator
     }
 
     /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
-    static ImmutableSortedSet<string> Feeding(Catalog catalog, TypedSpace space, string graphName, string propId)
+    /// The lag is how much later than its grid window a window of the property ends: w − h for a window of length w on the grid of its hop h (#111).
+    static (ImmutableSortedSet<string> Sources, long Lag) Feeding(Catalog catalog, TypedSpace space, string graphName, string propId)
     {
+        long lag = 0;
         var graph = space.Graphs.First(g => g.Name == graphName);
         var plan = PlanOf(catalog, graph);
         var found = ImmutableSortedSet.CreateBuilder<string>(StringComparer.Ordinal);
@@ -88,14 +90,15 @@ public static class ReferenceEvaluator
         void Walk(TOp op)
         {
             if (!seen.Add(op.Name)) return;
-            if (op is TSeries s) foreach (var read in s.Reads) found.UnionWith(Feeding(catalog, space, graph.Bindings[s.GraphPort], read.PropId));
+            if (op is TWindow w) lag = Math.Max(lag, w.WidthNs - w.HopNs);
+            if (op is TSeries s) foreach (var read in s.Reads) { var (f, l) = Feeding(catalog, space, graph.Bindings[s.GraphPort], read.PropId); found.UnionWith(f); lag = Math.Max(lag, l); }
             foreach (var src in op.Inputs.Values)
                 if (!src.IsPort) Walk(plan.Ops.First(o => o.Name == src.Name));
                 else if (plan.Ports.First(p => p.Name == src.Name).Kind == "rows") found.Add(graph.Bindings[src.Name]);
         }
         foreach (var sink in plan.Ops)
             if ((sink switch { TEmitEntity e => e.Sets, TEmitRel r => r.Sets, _ => null })?.Any(x => x.PropId == propId) == true) Walk(sink);
-        return found.ToImmutable();
+        return (found.ToImmutable(), lag);
     }
 
     static TypedProjection PlanOf(Catalog catalog, TGraph g) => g.Instance ?? catalog.Projections[g.ProjectionId];
@@ -184,9 +187,9 @@ public static class ReferenceEvaluator
                             since = rows.Rows.Where(r => r.Weight > 0).Select(r => rows.Reader(r.Row)(series.TargetVar)).OfType<EntityValue>().Select(e => e.Id).Distinct(StringComparer.Ordinal)
                                 .ToImmutableSortedDictionary(id => id, id => since.TryGetValue(id, out var kept) ? kept : now, StringComparer.Ordinal);
                         p = p with { Since = p.Since.SetItem(slot, since) };
-                        long? Covered(TSeriesRead read) =>
-                            Feeding(catalog, space, graph.Bindings[series.GraphPort], read.PropId) is { Count: > 0 } feeding && feeding.All(p.Covered.ContainsKey) ? feeding.Min(s => p.Covered[s]) : null;
-                        outs = outs.SetItem(op.Name, Denotation.Series(series, rows, inputs.Graphs[series.GraphPort], frontier, since, [.. series.Reads.Select(Covered)], p.Lost));
+                        var fed = series.Reads.Select(read => Feeding(catalog, space, graph.Bindings[series.GraphPort], read.PropId)).ToArray();
+                        long? Covered(int i) => fed[i].Sources is { Count: > 0 } feeding && feeding.All(p.Covered.ContainsKey) ? feeding.Min(s => p.Covered[s]) : null;
+                        outs = outs.SetItem(op.Name, Denotation.Series(series, rows, inputs.Graphs[series.GraphPort], frontier, since, [.. series.Reads.Select((_, i) => Covered(i))], [.. fed.Select(x => x.Lag)], p.Lost));
                         break;
                     }
                 default: outs = outs.SetItem(op.Name, Denotation.Of(op, In, inputs)); break;
