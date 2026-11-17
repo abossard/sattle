@@ -19,35 +19,29 @@ public interface IProjectionSource
     string? Language(string fileName);
 }
 
-/// <summary>Several projection sources as one: each source gets only the files it claims, and their facts are merged. A file that two sources read and a projection written in two files are errors.</summary>
+/// <summary>Several projection sources as one: each source gets only the files it alone claims, and their facts are merged. A file that two sources claim is an error before anything is lowered, and so is a projection written in two files.</summary>
 public sealed class ProjectionSources(params IProjectionSource[] sources) : IProjectionSource
 {
-    public string? Language(string fileName) => sources.Select(s => s.Language(fileName)).OfType<string>().ToList() is [var one] ? one : null;
+    /// <summary>The language of the first source that claims the file: a file two sources claim is still a projection file, and `Lower` reports it.</summary>
+    public string? Language(string fileName) => sources.Select(s => s.Language(fileName)).FirstOrDefault(l => l is not null);
 
     public ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files)
     {
+        var claims = files.ToDictionary(f => f.Path, f => sources.Select(s => s.Language(Path.GetFileName(f.Path))).OfType<string>().ToList(), StringComparer.Ordinal);
+        var diags = claims.Where(c => c.Value.Count > 1).Select(c => new Diagnostic("ProjectionFile", "error", "", $"{Path.GetFileName(c.Key)} is claimed by {c.Value.Count} projection languages: {string.Join(", ", c.Value)}", c.Key, 1, 1)).ToList();
+        var lows = sources.Select(s => files.Where(f => claims[f.Path].Count == 1 && s.Language(Path.GetFileName(f.Path)) is not null).ToList()).Zip(sources)
+            .Where(x => x.First.Count > 0).Select(x => x.Second.Lower(catalog, module, x.First)).ToList();
         var projections = new Dictionary<string, IReadOnlyList<Element>>(StringComparer.Ordinal);
-        var places = new Dictionary<string, (string File, Pos Pos)>(StringComparer.Ordinal);
-        var diags = new List<Diagnostic>();
-        var readBy = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var s in sources)
+        foreach (var low in lows)
         {
-            var mine = files.Where(f => s.Language(Path.GetFileName(f.Path)) is not null).ToList();
-            if (mine.Count == 0) continue;
-            var low = s.Lower(catalog, module, mine);
             diags.AddRange(low.Diagnostics);
-            var language = s.Language(Path.GetFileName(mine[0].Path))!;
-            foreach (var file in low.Places.Values.Select(p => p.File).Distinct(StringComparer.Ordinal))
-                if (!readBy.TryAdd(file, language)) diags.Add(new Diagnostic("ProjectionFile", "error", "", $"{Path.GetFileName(file)} is read by two projection languages, {readBy[file]} and {language}", file, 1, 1));
             foreach (var (id, facts) in low.Projections)
-                if (!projections.TryAdd(id, facts)) diags.Add(new Diagnostic("ProjectionFile", "error", id, $"projection {Ids.Name(id)} is written in two files, {Path.GetFileName(places[id].File)} and {Path.GetFileName(low.Places[id].File)}", low.Places[id].File, 1, 1));
-            foreach (var (id, place) in low.Places) places.TryAdd(id, place);
+                if (!projections.TryAdd(id, facts)) diags.Add(new Diagnostic("ProjectionFile", "error", id, $"projection {Ids.Name(id)} is written in two files", low.Places[id].File, 1, 1));
         }
-        return new ProjectionFacts(projections, places, diags);
+        return new ProjectionFacts(projections, lows.SelectMany(l => l.Places).DistinctBy(kv => kv.Key).ToDictionary(), diags);
     }
 }
 
-/// <summary>The facts of a module's projections, by projection id; the file and position each element comes from; and what is wrong.</summary>
 public sealed record ProjectionFacts(IReadOnlyDictionary<string, IReadOnlyList<Element>> Projections, IReadOnlyDictionary<string, (string File, Pos Pos)> Places, IReadOnlyList<Diagnostic> Diagnostics);
 
 public sealed class LoadResult(List<Diagnostic> diagnostics, List<PinFix> pinFixes)
@@ -171,7 +165,7 @@ public sealed class Catalog
             if (diags.Skip(before).Any(x => x.IsError)) { /* module not committed; dependents report UnknownImport */ }
         }
         diags.AddRange(Unread(others, read, projections is not null));
-        return new LoadResult([.. diags.Select(Locate)], fixes);
+        return new LoadResult([.. diags.Distinct().Select(Locate)], fixes);   // a file claimed twice is reported by every module's lowering: once is enough
     }
 
     /// <summary>A definition file that is not a module text and that no module read: an error with its name, never ignored.</summary>

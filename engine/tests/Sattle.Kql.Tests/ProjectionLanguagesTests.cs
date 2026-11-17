@@ -11,11 +11,12 @@ public class ProjectionLanguagesTests
     static readonly string Definitions = Path.Combine(Repo(), "engine", "definitions");
     static string Repo() { var d = new DirectoryInfo(AppContext.BaseDirectory); while (!Directory.Exists(Path.Combine(d!.FullName, "engine", "definitions"))) d = d.Parent; return d.FullName; }
 
-    /// <summary>A language of one statement, `heading "Text" from input : module`, in a file `module.projection.heading`: a document projection with one heading block. It stands for a KQL text and is lowered by the KQL source; places and diagnostics name the `.heading` file.</summary>
-    sealed class HeadingSource : IProjectionSource
+    /// <summary>A language of one statement, `heading "Text" from input : module`, in a file `module.projection.heading`: a document projection with one heading block. It stands for a KQL text and is lowered by the KQL source; places and diagnostics name the `.heading` file.
+    /// What it proves: the seam dispatches files by kind to their source, merges the facts of two sources, a space binds a projection of each, and the protocol names each file's language. It does not prove a language whose lowering is independent of the KQL front end: it reuses that front end to produce its facts. `alsoKql` makes it claim `.kql` files too, for the conflict.</summary>
+    sealed class HeadingSource(bool alsoKql = false) : IProjectionSource
     {
         static readonly Regex Statement = new(@"^heading ""(?<text>[^""]*)"" from (?<input>\w+) : (?<module>[\w.]+)$");
-        public string? Language(string fileName) => fileName.EndsWith(".heading", StringComparison.Ordinal) ? "heading" : null;
+        public string? Language(string fileName) => fileName.EndsWith(".heading", StringComparison.Ordinal) || alsoKql && fileName.EndsWith(".kql", StringComparison.Ordinal) ? "heading" : null;
         public ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files)
         {
             var kql = new List<SourceFile>(); var diags = new List<Diagnostic>();
@@ -67,16 +68,18 @@ public class ProjectionLanguagesTests
     [InlineData("acme.report.title.heading", "heading")]
     [InlineData("acme.report.sattle", null)]
     [InlineData("notes.md", null)]
-    public void Each_file_is_claimed_by_at_most_one_language(string file, string? language) => Assert.Equal(language, Both.Language(file));
+    public void The_language_of_a_file_is_that_of_the_source_that_claims_it(string file, string? language) => Assert.Equal(language, Both.Language(file));
 
     [Fact]
-    public void A_file_two_sources_read_is_an_error_that_names_the_file()
+    public void A_file_two_sources_claim_is_an_error_that_names_the_file_once()
     {
-        var files = Catalog.ReadDirectory(Definitions);
-        var res = new Catalog(new ProjectionSources(new KqlSource(), new KqlSource())).Load(files, updatePins: true);
-        var named = res.Diagnostics.Where(d => d.Code == "ProjectionFile" && d.IsError).Select(d => Path.GetFileName(d.File)).ToHashSet();
-        Assert.NotEmpty(named);                                                 // the first module with projection files fails, and the modules after it are not read
-        Assert.All(named, f => Assert.EndsWith(".kql", f, StringComparison.Ordinal));
+        var both = new ProjectionSources(new KqlSource(), new HeadingSource(alsoKql: true));
+        Assert.Equal("kql", both.Language("acme.report.deploymentReport.kql"));     // still a projection file, not a module text
+        var res = new Catalog(both).Load(Files(), updatePins: true);
+        var claimed = res.Diagnostics.Where(d => d.Code == "ProjectionFile" && d.IsError).ToList();
+        var report = Assert.Single(claimed, d => Path.GetFileName(d.File) == "acme.report.deploymentReport.kql");
+        Assert.Equal("acme.report.deploymentReport.kql is claimed by 2 projection languages: kql, heading", report.Message);
+        Assert.DoesNotContain(claimed, d => Path.GetFileName(d.File) == "acme.report.title.heading");
     }
 
     [Fact]

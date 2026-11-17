@@ -451,7 +451,7 @@ Additive for a client: no endpoint changed. New in the definition language, the 
 - **Seal format 4.** The tables that hold the results of a projection and the state of its groups have one index on the whole key (before, some were found through the rows of their first key column). A seal therefore holds other objects than before and records `format` 4. A seal of format 3 is not used: the start reports "seal format 3, this build reads seal format 4" and replays the journal. Nothing else on the wire changes, and the state digests are the same.
 
 ## Version 3.19: projections in their own definition files (KQL)
-A projection may be written in a file of its own, `module.projection.kql`, beside the module texts. The host reads it with a projection source (since 3.38 the command line always gives it one); its text is the only text of that projection. Additive for a client of 3.18: module names mean what they meant.
+A projection may be written in a file of its own, `module.projection.kql`, beside the module texts (since 3.50 in any language a projection source reads; KQL is the first). The host reads it with a projection source (since 3.38 the command line always gives it one); its text is the only text of that projection. Additive for a client of 3.18: module names mean what they meant.
 - **Definition files.** Wherever a module text is named, a projection file may be named instead by its file name: `POST /check` (`module`), `GET /definitions/{name}`, `POST /definitions/{name}`. A name that is no plain file name is refused (`BadName`, 400). A projection file the source does not read, or one of a module the space does not have, is an error of the load (`UnreadFile`).
 - **Printed modules.** `GET /definitions/{module}`, a draft's module text and a release's text leave out the projections that come from a projection file: a module text never holds a projection twice.
 - **Diagnostics** have `file`: the module name for a module text, the file name for a projection file. `line` and `column` are in that file.
@@ -459,7 +459,7 @@ A projection may be written in a file of its own, `module.projection.kql`, besid
   - `PUT /drafts/{id}/text/{file}` with `{ "text", "expectedRevision" }` sets the text of a projection file in the draft (projection files only; a module of a draft changes by patches). It returns what `POST /drafts/{id}/patches` returns and publishes the `draft` event, with `file`. A text that does not lower is kept with no change of the draft's facts; its errors are in the check result.
   - `GET /drafts/{id}/text/{name}` returned a projection file's draft text or a module text (removed in 3.46: read a projection file with `GET /drafts/{id}/kql/{projection}`).
   - The check result's `modules` lists the projection files too (`text`, `changed`). Check, preview and commit include the changed files.
-  - A structural patch (a skeleton or a refactoring until 3.46) that touches a projection from a projection file is refused (`KqlProjection`, with `file`): edit the file's text.
+  - A structural patch (a skeleton or a refactoring until 3.46) that touches a projection from a projection file is refused (`KqlProjection`, `ProjectionText` since 3.50, with `file`): edit the file's text.
   - A commit whose projection file changed at the head after the draft first changed it gives `StaleRevision` with `file`.
 - **Stores.** A store whose space holds projection files, opened without a projection source, is refused before restore, naming the files.
 - **Not yet.** A projection file cannot be removed once the space holds it (until the editors).
@@ -613,7 +613,7 @@ The text editor of a projection reads and checks its `.kql` text through these c
 
 ## Version 3.50: projection languages behind one seam
 - **`GET /definitions`**: every module has `projections`, a list of `{ "projection": "module.name", "file", "language" }` for its projections in files of their own (`language` is `kql` today). A client picks the editor for a projection by its language. Additive: a client of 3.49 ignores the key.
-- **Draft patches.** A patch that touches a projection is refused with the code `ProjectionText` (was `KqlProjection`), with `file` as before.
+- **Draft patches.** A patch that touches a projection is refused with the code `ProjectionText` (was `KqlProjection`), with `file` as before. Not additive for a client that matches the old code: it must match `ProjectionText`.
 - **Definitions folder.** Every file of the folder except hidden ones is read: a module text or a projection file that a source claims. Any other file is the error `UnreadFile` at load, as a projection file of a module that did not load already was.
 
 ## After 3.16 (no change of the wire format)
