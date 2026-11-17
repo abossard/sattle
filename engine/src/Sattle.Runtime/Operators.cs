@@ -1189,6 +1189,12 @@ sealed class TraverseOp : PhysOp
     readonly Dictionary<string, int> seen = new(StringComparer.Ordinal); List<string> frontier = [], next = [];
     readonly Dictionary<int, Entity> was = [], now = [];
     readonly List<long> todo = [];
+    readonly HashSet<long> walked = [];
+    readonly List<(string From, string To)> added = [];
+    readonly List<(long Start, int Depth)> from = [];
+    readonly Queue<(string Id, int Depth)> queue = [];
+    /// <summary>Per (start, id) that this step's patch touched without a walk: its depth before the patch, -1 when it was not visited.</summary>
+    readonly Dictionary<(long Start, int Id), int> touched = [];
 
     public TraverseOp(TTraverse t, Layout inL, OntologyView view, Interner it) : base(t)
     {
@@ -1311,21 +1317,29 @@ sealed class TraverseOp : PhysOp
                 else if (first && !walked) pending.Add(start);
             }
         }
-        // (b) starts whose reach may have changed: walked again, and the difference emitted for every row. A start is walked when it has no walk yet, or when the patch names an id its last walk visited (an element or an endpoint of a relationship).
+        // (b) what the patch changed. A start without a walk yet, or whose walk visited an end of a lost edge, is walked again and the difference emitted. An added edge only lowers depths: from each start that visited its near end, the depths are lowered from its far end on, and only the ids whose depth fell are touched. An edited entity touches the starts that visited it. A relationship the walk does not follow changes nothing.
         if (graph is not null)
         {
             todo.AddRange(pending); pending.Clear();
             if (patch is not null)
                 foreach (var e in patch.Edits)
                 {
-                    Visited(e.Key.Id);
-                    foreach (var x in (ReadOnlySpan<Element?>)[e.Before, e.After]) if (x is Rel r) { Visited(r.Source); Visited(r.Target); }
+                    if (e.Key.Kind == 'e') { Touch(e.Key.Id); continue; }
+                    var (lost, got) = (Edge(e.Before), Edge(e.After));
+                    if (lost == got) continue;
+                    if (lost is { } l) { Visited(l.Source); Visited(l.Target); }
+                    if (got is { } g)
+                    {
+                        if (t.Direction is "out" or "either") added.Add((g.Source, g.Target));
+                        if (t.Direction is "in" or "either") added.Add((g.Target, g.Source));
+                    }
                 }
             todo.Sort();
             for (var i = 0; i < todo.Count; i++)
             {
                 var start = todo[i];
                 if (i > 0 && todo[i - 1] == start || rowsOf.First([start]) < 0) continue;
+                walked.Add(start);
                 Reached(start, was);
                 Walk(it.Get((int)start), graph);
                 now.Clear();
@@ -1339,9 +1353,63 @@ sealed class TraverseOp : PhysOp
                 Unvisit(start);
                 foreach (var (id, depth) in seen) depths.Set(depths.Add([start, it.Intern(id)], 1), Depth, depth);
             }
+            foreach (var (near, far) in added)
+            {
+                from.Clear();
+                if (it.TryFind(near, out var code))
+                    for (var r = visitsOf.First([code]); r >= 0; r = visitsOf.Next(r))
+                        if (depths.Get(r, Depth) < t.Max && !walked.Contains(depths.Get(r, 0))) from.Add((depths.Get(r, 0), (int)depths.Get(r, Depth)));
+                foreach (var (start, depth) in from) Lower(start, far, depth + 1);
+            }
+            foreach (var ((start, n), old) in touched)
+            {
+                if (walked.Contains(start)) continue;
+                var row = depths.Find([start, n]); var id = it.Get(n);
+                var wasItem = old >= t.Min ? Before(id) : null;
+                var nowItem = row >= 0 && depths.Get(row, Depth) >= t.Min ? graph.Entity(id) : null;
+                if (wasItem is not null && nowItem is not null && SameReads(wasItem, nowItem)) continue;
+                for (var r = rowsOf.First([start]); r >= 0; r = rowsOf.Next(r))
+                {
+                    var w = rows.Weight(r);
+                    if (wasItem is not null) Emit(bb, null, r, wasItem, -w);
+                    if (nowItem is not null) Emit(bb, null, r, nowItem, w);
+                }
+            }
         }
+        walked.Clear(); added.Clear(); from.Clear(); queue.Clear(); touched.Clear();
         todo.Clear(); seen.Clear(); frontier.Clear(); next.Clear(); was.Clear(); now.Clear(); before.Clear();
         return bb.Build();
+    }
+
+    /// <summary>The ends of a relationship the walk follows; null for any other element.</summary>
+    (string Source, string Target)? Edge(Element? x) => x is Rel r && view.IsSubtype(r.Type, t.RelTypeId) ? (r.Source, r.Target) : null;
+
+    /// <summary>An entity the patch edits: every start that visited it is touched there, at the depth it has.</summary>
+    void Touch(string id)
+    {
+        if (!it.TryFind(id, out var code)) return;
+        for (var r = visitsOf.First([code]); r >= 0; r = visitsOf.Next(r)) touched.TryAdd((depths.Get(r, 0), code), (int)depths.Get(r, Depth));
+    }
+
+    /// <summary>An added edge reached `id` from `start` at `depth`: breadth first from there, every id whose depth falls gets the lower depth and is touched with the depth it had before the patch.</summary>
+    void Lower(long start, string id, int depth)
+    {
+        queue.Clear(); queue.Enqueue((id, depth));
+        while (queue.TryDequeue(out var x))
+        {
+            var code = it.Intern(x.Id);
+            var row = depths.Find([start, code]);
+            var old = row >= 0 ? (int)depths.Get(row, Depth) : -1;
+            if (old >= 0 && old <= x.Depth) continue;
+            touched.TryAdd((start, code), old);
+            if (row < 0) row = depths.Add([start, code], 1);
+            depths.Set(row, Depth, x.Depth);
+            if (x.Depth == t.Max) continue;
+            if (t.Direction is "out" or "either")
+                foreach (var (type, other) in graph!.Neighbors(x.Id, true)) if (view.IsSubtype(type, t.RelTypeId)) queue.Enqueue((other, x.Depth + 1));
+            if (t.Direction is "in" or "either")
+                foreach (var (type, other) in graph!.Neighbors(x.Id, false)) if (view.IsSubtype(type, t.RelTypeId)) queue.Enqueue((other, x.Depth + 1));
+        }
     }
 
     /// <summary>The starts whose last walk visited `id` go on the list of starts to walk.</summary>
