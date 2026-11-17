@@ -219,20 +219,41 @@ sealed class KeyTable
     readonly Table? decimals;
     /// <summary>The entries of one aggregate of one key's row, in each of the two tables.</summary>
     readonly Arrangement? longsOf, decimalsOf;
-    /// <summary>Per group of `last` aggregates that take their values from one row: (slot, order, the value of each member, which members have a value), then the digits of every number. One entry per distinct row of the group.</summary>
-    readonly Table[] rowSets; readonly Arrangement[] rowSetsOf; readonly int[] rowMembers;
+    /// <summary>Per group of `last` aggregates that take their values from one row: (slot, order, the value of each member, which members have a value), then the digits of every decimal. One entry per distinct row of the group. A decimal is keyed by its number (two 8-byte halves) and keeps its digits; a code (a text, an element) takes 4 bytes, any other value 8.</summary>
+    readonly RowSet[] rowSets;
+    sealed class RowSet
+    {
+        public readonly Table T; public readonly Arrangement Of;
+        /// <summary>Per value, the order first and then each member: whether it is a decimal, the column it is keyed by, and for a decimal the column of its digits.</summary>
+        public readonly bool[] Dec; public readonly int[] At, DigitsAt;
+        public readonly int HasAt, Members;
+        /// <summary>`widths`: per value, the order first, 16 for a decimal, else 4 or 8 bytes.</summary>
+        public RowSet(int[] widths)
+        {
+            var n = widths.Length; Members = n - 1;
+            Dec = [.. widths.Select(w => w == 16)]; At = new int[n]; DigitsAt = new int[n];
+            var cols = new List<int> { 4 };
+            for (var v = 0; v < n; v++) { At[v] = cols.Count; if (Dec[v]) { cols.Add(8); cols.Add(8); } else cols.Add(widths[v]); }
+            HasAt = cols.Count; cols.Add(Members <= 31 ? 4 : 8);
+            var keys = cols.Count;
+            for (var v = 0; v < n; v++) if (Dec[v]) { DigitsAt[v] = cols.Count; cols.Add(8); cols.Add(8); }
+            T = new Table([.. cols], keyColumns: keys);
+            Of = T.Arrange(0);
+        }
+        /// <summary>Value `v` (0 the order, 1 + m member m) of a row.</summary>
+        public decimal Get(int row, int v) => Dec[v] ? Unpack(T.Get(row, DigitsAt[v]), T.Get(row, DigitsAt[v] + 1)) : T.Get(row, At[v]);
+    }
     /// <summary>Counts the changes of the row sets: what was read from one holds until the next change.</summary>
     public long RowChanges { get; private set; }
 
     /// <summary>`nIndex`: one more than the greatest index an aggregate's multiset is filed under.</summary>
-    public KeyTable(int k, int nL, int nD, int nIndex, bool longs, bool decimals, int[] rowMembers)
+    /// <summary>`keyWidths`: 4 or 8 bytes per key column. `rowSetWidths`: per row set, per value (the order first, then each member) 16 for a decimal, else 4 or 8 bytes.</summary>
+    public KeyTable(int[] keyWidths, int nL, int nD, int nIndex, bool longs, bool decimals, int[][] rowSetWidths)
     {
-        this.rowMembers = rowMembers;
-        rowSets = [.. rowMembers.Select(n => new Table([4, .. Enumerable.Repeat(8, 3 + 2 * n), .. Enumerable.Repeat(8, 2 + 2 * n)], keyColumns: 4 + 2 * n))];
-        rowSetsOf = [.. rowSets.Select(t => t.Arrange(0))];
-        this.k = k; this.nL = nL; this.nD = nD; this.nIndex = nIndex;
+        rowSets = [.. rowSetWidths.Select(w => new RowSet(w))];
+        k = keyWidths.Length; this.nL = nL; this.nD = nD; this.nIndex = nIndex;
         cnt = k; accL = cnt + 1; accD = accL + nL; emitted = accD + 2 * nD;
-        rows = new Table([.. Enumerable.Repeat(8, emitted), 4], keyColumns: k);
+        rows = new Table([.. keyWidths, .. Enumerable.Repeat(8, emitted - k), 4], keyColumns: k);
         key = new long[k];
         if (longs) { this.longs = new Table([4, 4, 8], keyColumns: 3); longsOf = this.longs.Arrange(0, 1); }
         if (decimals) { this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4); decimalsOf = this.decimals.Arrange(0, 1); }
@@ -337,24 +358,34 @@ sealed class KeyTable
     /// <summary>Adds a weight to a row of a row set: its order, the value of each member, and `has`, a bit per member that has a value.</summary>
     public void AddRow(int slot, int set, decimal ord, ReadOnlySpan<decimal> values, long has, long w)
     {
-        var n = rowMembers[set]; var t = rowSets[set];
-        Span<long> key = stackalloc long[4 + 2 * n];
-        key[0] = slot; (key[1], key[2]) = DecimalKey.Of(ord);
-        for (var i = 0; i < n; i++) if ((has >> i & 1) != 0) (key[3 + 2 * i], key[4 + 2 * i]) = DecimalKey.Of(values[i]);
-        key[3 + 2 * n] = has;
+        var rs = rowSets[set]; var t = rs.T;
+        Span<long> key = stackalloc long[rs.HasAt + 1];
+        key.Clear();
+        key[0] = slot;
+        for (var v = 0; v <= rs.Members; v++)
+        {
+            if (v > 0 && (has >> (v - 1) & 1) == 0) continue;
+            var x = v == 0 ? ord : values[v - 1];
+            if (rs.Dec[v]) (key[rs.At[v]], key[rs.At[v] + 1]) = DecimalKey.Of(x); else key[rs.At[v]] = (long)x;
+        }
+        key[rs.HasAt] = has;
         var had = t.Find(key) >= 0;
         var row = t.Add(key, w);
         RowChanges++;
         if (row < 0 || had) return;
-        var (p, q) = Pack(ord); t.Set(row, 4 + 2 * n, p); t.Set(row, 5 + 2 * n, q);
-        for (var i = 0; i < n; i++) { var (x, y) = Pack((has >> i & 1) != 0 ? values[i] : 0); t.Set(row, 6 + 2 * n + 2 * i, x); t.Set(row, 7 + 2 * n + 2 * i, y); }
+        for (var v = 0; v <= rs.Members; v++)
+        {
+            if (!rs.Dec[v]) continue;
+            var (x, y) = Pack(v == 0 ? ord : (has >> (v - 1) & 1) != 0 ? values[v - 1] : 0);
+            t.Set(row, rs.DigitsAt[v], x); t.Set(row, rs.DigitsAt[v] + 1, y);
+        }
     }
     /// <summary>The rows of a row set of one key: the first, and the one after `row`; -1 when there is none.</summary>
-    public int FirstRow(int slot, int set) => rowSetsOf[set].First([slot]);
-    public int NextRow(int set, int row) => rowSetsOf[set].Next(row);
-    public decimal RowOrder(int set, int row) { var n = rowMembers[set]; return Unpack(rowSets[set].Get(row, 4 + 2 * n), rowSets[set].Get(row, 5 + 2 * n)); }
-    public bool RowHas(int set, int row, int member) => (rowSets[set].Get(row, 3 + 2 * rowMembers[set]) >> member & 1) != 0;
-    public decimal RowValue(int set, int row, int member) { var n = rowMembers[set]; return Unpack(rowSets[set].Get(row, 6 + 2 * n + 2 * member), rowSets[set].Get(row, 7 + 2 * n + 2 * member)); }
+    public int FirstRow(int slot, int set) => rowSets[set].Of.First([slot]);
+    public int NextRow(int set, int row) => rowSets[set].Of.Next(row);
+    public decimal RowOrder(int set, int row) => rowSets[set].Get(row, 0);
+    public bool RowHas(int set, int row, int member) => (rowSets[set].T.Get(row, rowSets[set].HasAt) >> member & 1) != 0;
+    public decimal RowValue(int set, int row, int member) => rowSets[set].Get(row, 1 + member);
 
     /// <summary>Whether a slot holds nothing: no rows, nothing emitted, every accumulator and multiset empty.</summary>
     bool Dead(int s)
@@ -364,7 +395,7 @@ sealed class KeyTable
         for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
         for (var a = 0; a < nIndex; a++)
             if (longsOf?.First([s, a]) >= 0 || decimalsOf?.First([s, a]) >= 0) return false;
-        foreach (var of in rowSetsOf) if (of.First([s]) >= 0) return false;
+        foreach (var rs in rowSets) if (rs.Of.First([s]) >= 0) return false;
         return true;
     }
 
@@ -399,6 +430,10 @@ abstract class AggregatingOp : PhysOp
 
     /// <summary>The aggregates of each row set, in their order: the members whose values one row gives.</summary>
     readonly int[][] rowSets = [];
+    /// <summary>How a key table stores the key (4 or 8 bytes per column) and the values of each row set (`KeyTable`).</summary>
+    readonly int[] keyWidths; readonly int[][] rowSetWidths = [];
+    /// <summary>The bytes a value of this type takes in a key table: 16 for a decimal, 4 for a code (a text, an element, a relationship), 8 for any other.</summary>
+    static int WidthOf(TExpr e) => e.Type.Ty.Tag switch { Tag.Decimal => 16, Tag.Text or Tag.Ent or Tag.Rel => 4, _ => 8 };
     (KeyTable? Table, long Changes, int Slot, int Set, int Row) winner;
 
     /// <summary>The row a row set's members take their values from: the greatest order, on a tie the greatest values in the order of the members, where no value is below every value and a text compares as text. -1 when the key has no row. Remembered until a row set changes, since every member of a key asks.</summary>
@@ -444,7 +479,7 @@ abstract class AggregatingOp : PhysOp
             }
         }
         keyExprs = [.. keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
-        var list = new List<AggSpec>(); int l = 0, d = 0; var sets = new List<(string Mark, List<int> Members)>();
+        var list = new List<AggSpec>(); int l = 0, d = 0; var sets = new List<(string Mark, List<int> Members, List<int> Widths)>();
         foreach (var a in aggSpecs)
         {
             var v = a.Value is null ? null : ExprCompiler.Compile(a.Value, inLayout, cx.It, cx.Faults);
@@ -460,9 +495,9 @@ abstract class AggregatingOp : PhysOp
                     {
                         var order = ExprCompiler.Compile(a.Order!, inLayout, cx.It, cx.Faults);
                         var set = sets.FindIndex(x => x.Mark == a.Row);
-                        if (set < 0) { set = sets.Count; sets.Add((a.Row!, [])); }
+                        if (set < 0) { set = sets.Count; sets.Add((a.Row!, [], [WidthOf(a.Order!)])); }
                         list.Add(new AggSpec(AggKind.Last, dec ? d++ : l++, v, false, false, -1, order, dec, a.Value!.Type.Ty.Tag is Tag.Text or Tag.Ent) { RowSet = set, Member = sets[set].Members.Count });
-                        sets[set].Members.Add(list.Count - 1);
+                        sets[set].Members.Add(list.Count - 1); sets[set].Widths.Add(WidthOf(a.Value!));
                         break;
                     }
                 case "min" or "max" when dec: list.Add(new AggSpec(AggKind.ExtD, d++, v, true, a.Fn == "max")); hasDecimals = true; break;       // the accumulator holds the extreme of a key with more than one value
@@ -471,14 +506,15 @@ abstract class AggregatingOp : PhysOp
             }
         }
         _ = telemetryInput; it = cx.It;
-        aggs = [.. list]; nL = l; nD = d; rowSets = [.. sets.Select(x => x.Members.ToArray())];
+        aggs = [.. list]; nL = l; nD = d; rowSets = [.. sets.Select(x => x.Members.ToArray())]; rowSetWidths = [.. sets.Select(x => x.Widths.ToArray())];
+        keyWidths = [.. keys.Select(k => WidthOf(k.Value) is 8 ? 8 : 4)];      // a decimal key is its number's code
         outKeyCol = [.. outKeyNames.Select(n => OutLayout.Index(n))];
         outAggCol = [.. aggSpecs.Select(a => OutLayout.Index(a.Target))];
         keyBuf = new long[keyExprs.Length + 1];
     }
 
     /// <summary>The state of a group operator with `k` key columns.</summary>
-    protected KeyTable NewKeyTable(int k) => new(k, nL, nD, Math.Max(nL, nD), hasLongs, hasDecimals, [.. rowSets.Select(m => m.Length)]);
+    protected KeyTable NewKeyTable(int k) => new([.. keyWidths, .. Enumerable.Repeat(8, k - keyWidths.Length)], nL, nD, Math.Max(nL, nD), hasLongs, hasDecimals, rowSetWidths);
 
     /// <summary>Evaluates the key, value and order columns of a batch into the working arrays.</summary>
     protected void Evaluate(Batch b)

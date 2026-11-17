@@ -593,6 +593,21 @@ Theory. A join keeps the rows of each side as a Z-set arranged by the join key. 
 - Before is f50d6fc. Release builds in clones; times are measured under load (load average 80 to 190, another worker's tests running) and are not comparable. Bytes are.
 - Digests unchanged: the generated estate at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`), and the pinned scenario digests (estate, deploy-health, estate-wide) and the lab fixtures.
 
+### Efficiency stage 2, groups: an `arg_max` row stores integers and codes as themselves (#115, 2026-11-17)
+Theory. A group keeps per key a row of accumulators and, for `arg_max` and `arg_min` (`last` aggregates), every distinct input row of the key, since the next winner comes from the key's other rows when the winning row goes. That row stored every value as a decimal: two 8-byte halves as its key (so 2.5 and 2.50 are one value) and two more for its digits, 32 B per value, also for integers and codes. Now only decimals keep that form; an integer is one 8-byte column, a code one 4-byte column, and the bits of which members have a value take 4 bytes up to 31 members. The key columns of a group (also windowed groups and roll-ups) take 4 bytes for a text, an element or a decimal (its number's code). Nothing kept changes; it is stored in fewer bytes. Seal format 7 to 8.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 301 / 286 MB | 2,019 / 1,874 MB |
+| per master node | 30.1 / 28.6 KB | 20.2 / 18.7 KB |
+| `GroupOp` per master node | 2,836 / 1,837 B | 2,578 / 1,564 B |
+| `WindowedGroupOp` per master node | 1,742 / 1,220 B | 1,346 / 930 B |
+| allocated per input record | 60.6 / 60.0 KB | 58.5 / 58.3 KB |
+
+- Example: `healthTree/rolledAll`, `arg_max(rank, healthy, degraded, unhealthy, monitored, severity) by key`, two rows per key: 204 B per row before, 56 B now.
+- Before is the joins patch. Times are measured under load and not comparable; bytes are.
+- Digests unchanged, as for the joins.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
