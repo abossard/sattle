@@ -362,6 +362,7 @@ public sealed class Engine : IDisposable, IEngineInput
         var ep = new Epoch { Id = ++epochId };
         ep.Rows[port] = rows;
         InputRows += rows.Rows;
+        Interner.Release(rows);
         Run(ep, seq, source, gname);
     }
 
@@ -429,7 +430,7 @@ public sealed class Engine : IDisposable, IEngineInput
     void Run(Epoch master, long seq, string cause, string? rowsFor = null)
     {
         var mergesBefore = Identities.Merges;
-        try { RunEpoch(master, seq, cause, rowsFor); }
+        try { RunEpoch(master, seq, cause, rowsFor); Interner.Collect(); }       // the texts that no stateful step took in this step are freed
         finally
         {
             var merged = Identities.Merges - mergesBefore;
@@ -475,6 +476,10 @@ public sealed class Engine : IDisposable, IEngineInput
             var inputs = new Dictionary<string, Batch?>();
             foreach (var (port, src) in op.Typed.Inputs)
                 inputs[port] = src.IsPort ? ep.Rows.GetValueOrDefault(src.Name) : outputs.GetValueOrDefault(src.Name);
+            // the one place a code reaches state: the input of a stateful step. A stateless step mints the texts it computes young.
+            var stateless = op is FilterOp or MapOp;
+            if (!stateless) foreach (var b in inputs.Values) if (b is not null) Interner.Escape(b);
+            Interner.MintYoung = stateless;
             if (TrackAllocations)
             {
                 var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -489,6 +494,7 @@ public sealed class Engine : IDisposable, IEngineInput
             }
             else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
         }
+        Interner.MintYoung = false;
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
         var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);

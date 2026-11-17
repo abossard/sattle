@@ -180,7 +180,7 @@ public static class StateSnapshot
             switch (o)
             {
                 case Interner it:
-                    w.Write(KInterner); V(it.Count); for (var i = 0; i < it.Count; i++) w.Write(it.Get(i)); return;
+                    w.Write(KInterner); V(it.Count); foreach (var s in it.Slots) { w.Write(s is not null); if (s is not null) w.Write(s); } return;       // a free code is a slot without text
                 case Graph g:
                     {
                         w.Write(KGraph);
@@ -255,7 +255,7 @@ public static class StateSnapshot
 
     sealed record RefVal(int Id);
     sealed record StructVal(Type Type, (string Name, object? Val)[] Fields);
-    sealed class Rec { public byte Comparer; public byte Kind; public Type Type = null!; public (string Name, object? Val)[] Fields = []; public object?[] Items = []; public byte[]? Raw; public string[]? Strings; }
+    sealed class Rec { public byte Comparer; public byte Kind; public Type Type = null!; public (string Name, object? Val)[] Fields = []; public object?[] Items = []; public byte[]? Raw; public string?[]? Strings; }
 
     sealed class Reader
     {
@@ -313,7 +313,7 @@ public static class StateSnapshot
             var rec = new Rec { Kind = r.ReadByte() };
             switch (rec.Kind)
             {
-                case KInterner: { var n = r.Read7BitEncodedInt(); rec.Strings = new string[n]; for (var i = 0; i < n; i++) rec.Strings[i] = r.ReadString(); rec.Type = typeof(Interner); break; }
+                case KInterner: { var n = r.Read7BitEncodedInt(); rec.Strings = new string?[n]; for (var i = 0; i < n; i++) rec.Strings[i] = r.ReadBoolean() ? r.ReadString() : null; rec.Type = typeof(Interner); break; }
                 case KGraph: { rec.Type = typeof(Graph); var n = r.Read7BitEncodedInt(); rec.Items = new object?[n]; for (var i = 0; i < n; i++) rec.Items[i] = Val(); break; }
                 case KArray:
                     {
@@ -349,8 +349,8 @@ public static class StateSnapshot
     public sealed class Opened
     {
         internal object Records = null!;
-        /// <summary>The texts of the snapshot's text table, by number; empty when it has none.</summary>
-        public IReadOnlyList<string> Texts { get; internal set; } = [];
+        /// <summary>The texts of the snapshot's text table, by number, null where a number is free; empty when it has none.</summary>
+        public IReadOnlyList<string?> Texts { get; internal set; } = [];
     }
 
     public static Opened Open(byte[] data)

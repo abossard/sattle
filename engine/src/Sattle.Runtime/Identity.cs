@@ -187,7 +187,7 @@ sealed class VId : VExpr
                 {
                     var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code));
                     cc = s is null ? -1 : it.Intern(s);
-                    caches[k].Set(code, cc);
+                    if (!it.IsYoung(code)) caches[k].Set(code, cc);          // a young code may be freed and given to another text
                 }
                 if (cc < 0) { faults.Overflow++; ok = false; break; }
                 buf[k] = cc;
@@ -214,7 +214,7 @@ sealed class VId : VExpr
         {
             if (cols[k].P is not null && !cols[k].P![row]) return false;
             var code = (int)cols[k].L[row];
-            if (!caches[k].TryGet(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); caches[k].Set(code, cc); }
+            if (!caches[k].TryGet(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); if (!it.IsYoung(code)) caches[k].Set(code, cc); }
             if (cc < 0) return false;
             into[k] = cc;
         }

@@ -4,28 +4,92 @@ using Sattle.Language;
 
 namespace Sattle.Runtime;
 
-/// <summary>Append-only string to dense int table. Text values, entity ids and relationship ids share one table per engine, so a handle names the same element in every graph.</summary>
+/// <summary>String to dense int table. Text values, entity ids and relationship ids share one table per engine, so a handle names the same element in every graph.
+/// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.</summary>
 public sealed class Interner
 {
     readonly Dictionary<string, int> map = new(StringComparer.Ordinal);
     readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> alt;
-    readonly List<string> strings = [];
+    readonly List<string?> strings = [];
+    readonly List<bool> young = [];
+    readonly List<int> minted = [];
+    readonly PriorityQueue<int, int> free = new();
+    readonly HashSet<object> holders = new(ReferenceEqualityComparer.Instance);
     public Interner() { alt = map.GetAlternateLookup<ReadOnlySpan<char>>(); }
+    /// <summary>The number of slots: live codes and freed ones.</summary>
     public int Count => strings.Count;
+    /// <summary>The number of live texts.</summary>
+    public int Live => strings.Count - free.Count;
+    /// <summary>On while the engine runs a stateless step (Filter, Map): `InternComputed` mints young.</summary>
+    public bool MintYoung { get; set; }
     public int Intern(string s)
     {
-        if (map.TryGetValue(s, out var i)) return i;
-        i = strings.Count; strings.Add(s); map[s] = i; return i;
+        if (map.TryGetValue(s, out var i)) { young[i] = false; return i; }
+        return Add(s, false);
     }
     public int Intern(ReadOnlySpan<char> s)
     {
-        if (alt.TryGetValue(s, out var i)) return i;
-        return Intern(s.ToString());
+        if (alt.TryGetValue(s, out var i)) { young[i] = false; return i; }
+        return Add(s.ToString(), false);
+    }
+    /// <summary>The code of a text an adapter row carries: young when the text is new.</summary>
+    public int InternYoung(string s) => map.TryGetValue(s, out var i) ? i : Add(s, true);
+    public int InternYoung(ReadOnlySpan<char> s) => alt.TryGetValue(s, out var i) ? i : Add(s.ToString(), true);
+    /// <summary>The code of a text an expression computed: young when new and a stateless step runs, else old.</summary>
+    public int InternComputed(string s) => MintYoung ? InternYoung(s) : Intern(s);
+    int Add(string s, bool y)
+    {
+        if (free.TryDequeue(out var i, out _)) { strings[i] = s; young[i] = y; }
+        else { i = strings.Count; strings.Add(s); young.Add(y); }
+        map[s] = i;
+        if (y) minted.Add(i);
+        return i;
+    }
+    public bool IsYoung(int code) => (uint)code < (uint)young.Count && young[code];
+    /// <summary>Makes every young code of the batch's selected rows old: the batch is about to reach state. Columns the layout types as numbers are skipped; untyped ones are read as codes, where a false hit only keeps a text.</summary>
+    public void Escape(Batch b)
+    {
+        if (minted.Count == 0) return;
+        var typed = b.Layout.Interned;
+        for (var c = 0; c < b.Cols.Length; c++)
+        {
+            var col = b.Cols[c];
+            if (col.IsDec || (typed is not null && c < typed.Length && !typed[c])) continue;
+            for (var k = 0; k < b.Rows; k++)
+            {
+                var v = col.L[b.RowAt(k)];
+                if ((ulong)v < (ulong)young.Count) young[(int)v] = false;
+            }
+        }
+    }
+    /// <summary>Registers something that holds young codes outside the engine (a row writer with rows, a batch not yet ingested): nothing is freed until it is released.</summary>
+    public void Hold(object holder) => holders.Add(holder);
+    public void Release(object holder) => holders.Remove(holder);
+    /// <summary>The end of a step: frees the codes still young, unless a holder is registered.</summary>
+    public void Collect()
+    {
+        if (holders.Count > 0 || minted.Count == 0) return;
+        foreach (var i in minted)
+        {
+            if (!young[i]) continue;
+            map.Remove(strings[i]!); strings[i] = null; young[i] = false; free.Enqueue(i, i);
+        }
+        minted.Clear();
     }
     public bool TryFind(string s, out int i) => map.TryGetValue(s, out i);
-    /// <summary>Replaces the whole table (restoring a snapshot): the same strings get the same codes.</summary>
-    public void ReplaceAll(IReadOnlyList<string> all) { map.Clear(); strings.Clear(); foreach (var x in all) { map[x] = strings.Count; strings.Add(x); } }
-    public string Get(int i) => strings[i];
+    /// <summary>Every slot by code, null where the code is free (a seal).</summary>
+    public IReadOnlyList<string?> Slots => strings;
+    /// <summary>Replaces the whole table (restoring a snapshot): the same strings get the same codes, the free slots are free again, every code is old.</summary>
+    public void ReplaceAll(IReadOnlyList<string?> all)
+    {
+        map.Clear(); strings.Clear(); young.Clear(); minted.Clear(); free.Clear(); holders.Clear();
+        foreach (var x in all)
+        {
+            var i = strings.Count; strings.Add(x); young.Add(false);
+            if (x is null) free.Enqueue(i, i); else map[x] = i;
+        }
+    }
+    public string Get(int i) => strings[i] ?? throw new InvalidOperationException($"text {i} was freed");
 }
 
 /// <summary>Column layout of a row type: names, and which columns hold decimals (all others hold 64-bit codes: Integer, Instant, Boolean, interned Text, element handles).</summary>
@@ -141,9 +205,9 @@ public sealed class RowWriter(Layout layout, Interner? it)
     public Layout Layout { get; } = layout;
     public int Rows => bb.Batch.N;
     public int Col(string name) => Layout.Index(name);
-    public void Begin(long weight = 1) { Close(); row = bb.Add(weight); Array.Clear(written); }
-    public void Text(int col, string? v) { written[col] = true; if (v is null) bb.Absent(row, col); else bb.Batch.Cols[col].L[row] = it?.Intern(v) ?? 0; }
-    public void Text(int col, ReadOnlySpan<char> v) { written[col] = true; bb.Batch.Cols[col].L[row] = it is null ? 0 : it.Intern(v); }
+    public void Begin(long weight = 1) { Close(); it?.Hold(this); row = bb.Add(weight); Array.Clear(written); }
+    public void Text(int col, string? v) { written[col] = true; if (v is null) bb.Absent(row, col); else bb.Batch.Cols[col].L[row] = it?.InternYoung(v) ?? 0; }
+    public void Text(int col, ReadOnlySpan<char> v) { written[col] = true; bb.Batch.Cols[col].L[row] = it is null ? 0 : it.InternYoung(v); }
     public void Code(int col, long code) { written[col] = true; bb.Batch.Cols[col].L[row] = code; }
     public void Int(int col, long v) { written[col] = true; bb.Batch.Cols[col].L[row] = v; }
     public void Instant(int col, long ns) { written[col] = true; bb.Batch.Cols[col].L[row] = ns + InstantOffset; }
@@ -151,8 +215,9 @@ public sealed class RowWriter(Layout layout, Interner? it)
     public void Absent(int col) { written[col] = true; bb.Absent(row, col); }
     public void Text(string col, string? v) => Text(Col(col), v);
     public void Instant(string col, long ns) => Instant(Col(col), ns);
-    public Batch? Build() { Close(); var b = bb.Build(); bb = new BatchBuilder(Layout); row = -1; return b; }
+    /// <summary>The rows written so far. The batch holds their young codes until the engine ingests it.</summary>
+    public Batch? Build() { Close(); var b = bb.Build(); bb = new BatchBuilder(Layout); row = -1; if (b is not null) it?.Hold(b); it?.Release(this); return b; }
     /// <summary>Takes back the rows written after the first `rows` (a record that turned out to be malformed after it had written some).</summary>
-    public void Truncate(int rows) { if (rows >= bb.Batch.N) return; bb.Batch.N = rows; row = -1; }
+    public void Truncate(int rows) { if (rows >= bb.Batch.N) return; bb.Batch.N = rows; row = -1; if (rows == 0) it?.Release(this); }
     void Close() { if (row < 0) return; for (var c = 0; c < written.Length; c++) if (!written[c]) bb.Absent(row, c); }
 }

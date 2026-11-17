@@ -283,9 +283,13 @@ sealed class VText : VExpr
             var absent = false;
             foreach (var c in cols) if (c.P is not null && !c.P[i]) { absent = true; break; }
             if (absent) { Absent(o, i, n); continue; }
-            if (fn == "Concat") { o.L[i] = it.Intern(string.Concat(cols.Select(c => it.Get((int)c.L[i])))); continue; }
+            if (fn == "Concat") { o.L[i] = it.InternComputed(string.Concat(cols.Select(c => it.Get((int)c.L[i])))); continue; }
             var code = (int)cols[0].L[i];
-            if (!cache.TryGet(code, out var r)) { var s = it.Get(code); r = it.Intern(fn == "Trim" ? s.Trim() : s.ToLowerInvariant()); cache.Set(code, r); }
+            if (!cache.TryGet(code, out var r))
+            {
+                var s = it.Get(code); r = it.InternComputed(fn == "Trim" ? s.Trim() : s.ToLowerInvariant());
+                if (!it.IsYoung(code) && !it.IsYoung(r)) cache.Set(code, r);         // a young code may be freed and given to another text: only old to old is kept
+            }
             o.L[i] = r;
         }
         return o;

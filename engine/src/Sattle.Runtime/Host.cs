@@ -206,7 +206,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded) : this(files, options, loaded, null, Phase.Running, 0, null) { }
 
     /// <summary>`texts`: the text table of the seal this host will take its state from. The plans are compiled against it, so a text they name has the number it had when the seal was taken.</summary>
-    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IDurableStore? durable, Phase phase, int generation, IReadOnlyList<string>? texts)
+    SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options, LoadedDefinitions loaded, IDurableStore? durable, Phase phase, int generation, IReadOnlyList<string?>? texts)
     {
         this.options = options;
         if (texts is not null) interner.ReplaceAll(texts);
@@ -273,7 +273,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         mutations++; fed++;
         inputRows += input.RowCount;
-        if (kept is not null) { kept.Add(input); if (inputRows > options.InputRowCap) kept = null; }
+        if (kept is not null) { kept.Add(input); if (input is EngineInput.Rows r) interner.Escape(r.Batch); if (inputRows > options.InputRowCap) kept = null; }       // a kept batch is read again: its texts stay
         input.ApplyTo(Engine);
         if (input is EngineInput.Advance a) lambdaSeen = Math.Max(lambdaSeen, a.Lambda);
         if (input is EngineInput.Rows or EngineInput.Advance) Tick();
@@ -448,8 +448,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
-    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
-    public const int SealFormat = 4;
+    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    public const int SealFormat = 5;
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>
