@@ -56,6 +56,14 @@ public class SmallestLogTests
         { "a sink adds weights whatever the order inside a batch: a retraction before its insertion leaves nothing", "match nodes",
             [Row("a", 1, "k0", "g1", 5, 0), Row("a", -1, "k0", "g1", 5, 0)], null },
 
+        // ---- the second code review, defect 20: one number at two scales (1.5 and 1.50) is one value; a row that comes at one scale and goes at the other leaves nothing ----
+        { "two scales of one number cancel at a sink", "optional property",
+            [Row("a", 1, "k0", "g0", 1, 0, 1.5m), Row("a", 1, "k1", "g0", 1, 0, 1.50m), Row("a", -1, "k0", "g0", 1, 0, 1.50m), Row("a", -1, "k1", "g0", 1, 0, 1.5m)], null },
+        { "two scales of one number cancel through Distinct", "distinct over a decimal",
+            [Row("a", 1, "k0", "g0", 1, 0, 1.5m), Row("a", 1, "k1", "g0", 1, 0, 1.50m), Row("a", -1, "k0", "g0", 1, 0, 1.50m), Row("a", -1, "k1", "g0", 1, 0, 1.5m)], null },
+        { "two scales of one number cancel through a Join on the number", "join on a decimal key",
+            [Row("b", 1, "k9", "g0", 1, 0, 1.5m), Row("a", 1, "k0", "g0", 1, 0, 1.5m), Row("a", 1, "k1", "g0", 1, 0, 1.50m), Row("a", -1, "k0", "g0", 1, 0, 1.50m), Row("a", -1, "k1", "g0", 1, 0, 1.5m)], null },
+
         // ---- the second code review, defect 22: telemetry of merged identities (Law 7.5 item 3) ----
         { "a view reads the windows of a merged pod in the step of the merge", "a view's series over a pod that a link merges",
             [Edge(1, "web", "web", "flows"), Load(null, "Web", 2, 20), Advance(90), Pod("u0", "Web")], "d:w.view/prop:load " },

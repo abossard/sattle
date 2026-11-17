@@ -258,7 +258,7 @@ public static class Worlds
         identity e for E version "1" { k: Text by exact; }
         """;
     public static readonly World FilteredEmit = Rows("filtered emit", "Filter, EmitEntity", "let x = a | where n > 2;", OneEntity, tail: """nodes E on e with (rule = "observed") = x | project e = identity("e", k), k;""");
-    public static readonly World OptionalProperty = Rows("optional property", "EmitEntity", "", OneEntity, tail: """nodes E on e with (rule = "observed") = a | project e = identity("e", k), k, d;""");
+    public static readonly World OptionalProperty = Rows("optional property", "EmitEntity", "", OneEntity, tail: """nodes E on e with (rule = "observed") = a | project e = identity("e", k), k, d;""") with { Witnesses = ["prop:d="] };
     /// <summary>A threshold whose look-back (3 minutes) is shorter than the logs: the state has to outlive the windows that set it.</summary>
     public static readonly World Hysteresis = View("threshold over a short look-back", "Series, Rollup, Threshold", Signal,
         "nodes Signal on s = " + Hits("k", "telemetry(\"master\", 3m)") + "\n    | summarize v = sum(value) by c, windowStart\n" + State("3.0", "2", "1.0", "2"), 0.3, Dense) with { Witnesses = ["state=t:on", "state=t:off"] };
@@ -451,6 +451,8 @@ public static class Worlds
         Aggregate("countDistinct over a decimal", "v = count_distinct(d)", "v: Integer;", "v"),
         Rows("group by a decimal key", "Group", "let x = a | project k = g, g, n, d = coalesce(d, 0.0) | summarize n = sum(n) by k, g, d | project k, g, n;"),
         Aggregate("count with countDistinct", "c = count(), v = count_distinct(k)", "c: Integer; v: Integer;", "c, v"),
+        Aggregate("extremes with countDistinct", "lo = min(n), v = count_distinct(k), hi = max(n)", "lo?: Integer; v: Integer; hi?: Integer;", "lo, v, hi") with { Witnesses = ["lo=n:", "hi=n:"] },
+        Aggregate("countif", "v = countif(n > 2), total = count()", "v: Integer; total: Integer;", "v, total"),
         Windowed with { Witnesses = ["window "] },
         Windowed with { Name = "window late revise, retention 2 minutes", Kind = "Window, telemetry retention", RetentionNs = 2 * Minute, Witnesses = ["window "] },
         new World("link", "Link, EmitRelationship", [.. Linked, LinkedSpace], [Pods, Flows]) with { Witnesses = ["prop:name=t:web,d:w/prop:uid=t:u0", "rel "] },
@@ -481,6 +483,13 @@ public static class Worlds
             nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]->(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
                 | project r = identity("reach", a, b), a, b, g;
             """) with { Witnesses = ["Reach"] },
+        View("traverse either way", "Traverse", """
+            entity Reach { a: Text; b: Text; g: Text; }
+            identity reach for Reach version "1" { a: Text by exact; b: Text by exact; }
+            """, """
+            nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]-(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
+                | project r = identity("reach", a, b), a, b, g;
+            """) with { Witnesses = ["Reach"] },
         View("emit update", "EmitEntity update", """
             entity Copy { k: Text; g?: Text; degree?: Integer; }
             identity copy for Copy version "1" { k: Text by exact; }
@@ -490,7 +499,7 @@ public static class Worlds
             """) with { Witnesses = ["degree=n:"] },
         View("series and rollup", "Series, Rollup", Signal,
             "nodes Signal on s = " + Hits("g", "telemetry(\"master\", 3m)") + "\n    | summarize v = sum(value) by c, windowStart\n    | project s = identity(\"signal\", c), k = c, windowStart, v;", 0.25) with { Witnesses = ["d:w.view/prop:v"] },
-        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency,
+        Hysteresis, RowParameters, SharedWindow, Fill, FillAroundLoss, TimeToLive, RollupAll, TwoKeyRules, LiftedDependency, OptionalProperty,
         Rows("conflicting fragments", "EmitEntity, Def. 6.4", "", """
             entity E { k: Text; g?: Text; n?: Integer; }
             identity e for E version "1" { k: Text by exact; }

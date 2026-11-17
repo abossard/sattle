@@ -83,6 +83,7 @@ public class KqlProjectionTests
     [InlineData("edges DependsOn from service to service = services | project service;\nedges DependsOn from service to service = services | project service", "two steps make DependsOn edges")]
     [InlineData("nodes on service labels name = services", "one step per type")]
     [InlineData("nodes ServiceNode service = services", "starts like a statement of a projection and is none")]
+    [InlineData("nodes ServiceNode on service = graph(\"master\") | graph-match (a)-[p*2..3]->(b) where labels(a) has \"Service\" and all(p, labels(p) has \"Calls\") project service = a.id, cluster = a.cluster, namespace = a.namespace, name = a.name", "a path starts at 0 or 1 edges")]
     public void The_profile_refuses_what_the_engine_cannot_keep_up_to_date_and_says_what_to_write(string step, string says)
     {
         var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
@@ -91,6 +92,18 @@ public class KqlProjectionTests
         var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
         Assert.False(low.Ok);
         Assert.Contains(low.Diagnostics, d => d.Code == "Profile" && d.Message.Contains(says, StringComparison.Ordinal));
+    }
+
+    /// <summary>A join compares a column of each side for equality. Kusto refuses any other condition before the engine sees the text, so the engine joins on equal keys only.</summary>
+    [Fact]
+    public void A_join_on_anything_but_an_equality_is_refused()
+    {
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
+            + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
+            + "nodes ServiceNode on service = services | join kind=inner (services | project other = service) on $left.service != $right.other | project service, name, cluster, namespace;\n";
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
+        Assert.False(low.Ok);
+        Assert.Contains(low.Diagnostics, d => d.Message.Contains("$left.<column> == $right.<column>", StringComparison.Ordinal));
     }
 
     /// <summary>Kusto orders no texts: a less-than between two texts is refused, so the engine compares texts only for equality.</summary>
