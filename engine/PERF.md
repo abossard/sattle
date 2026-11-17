@@ -556,6 +556,28 @@ Theory. A `Series` joins the structural rows with the closed windows of the read
 - The telemetry store grows by 2.3 MB at 10^5: two 24 B wrappers (`Keys`, `Values`) that a `SortedList` caches once its scan touches a series. That is about one object per master node.
 - Digests: unchanged. estate, deploy-health, estate-wide and the lab fixtures equal the pins with hog 5.
 
+### The run at 10^6 (#49, 2026-11-17)
+Release build of f9e3121, which includes hogs 1 to 5, in a clone. Input from `sattle bench gen-estate --nodes 1000000`: 55,046 namespaces, 1,000,006 master nodes (275,230 pods, 165,138 Services, 559,638 Azure resources), 9,175 Kubernetes nodes, 240,001 active pod pairs and 220,184 endpoint flows per minute, 10 minutes: 8,159,533 records, 3.9 GB. Command: `sattle bench phases --capture DIR`, then again with `--census`. Machine: Apple M1 Max, 10 cores, 64 GB. Other sessions were paused. Short jobs of another project still ran, with a load average of 20 to 90 during the runs. So the machine was quiet, not idle, and it is not the reference hardware of Def. 13.4.
+
+| | run 1 | run 2 (`--census`) | budget (research 04, 1.2) |
+|---|---|---|---|
+| load average at start | 54 | 20 | |
+| wall | 677 s | 590 s | |
+| engine ingest, wall | 424 s | 391 s | |
+| engine advance (12 window closes), wall | 219 s | 170 s | |
+| process CPU | 746 s | 711 s | |
+| allocated per input record (whole path) | 58.6 KB | 58.6 KB | 1 KB |
+| GC pause | 37 s (5 %) | 22 s (4 %) | 5 % |
+| peak resident set | 15.3 GB | 16.1 GB | |
+| live bytes at the end | | 19,955 MB | |
+| per master node | | **19.95 KB** | 2.2 KB |
+
+- From 10^5 to 10^6, live bytes per master node fell from 26.0 KB to 19.95 KB, and the replay grows about linearly with the input: 55 s at 10^5 (hogs 1 to 3) against 590 to 677 s at 10^6. Before the hogs, 10^6 was estimated at about 13 h and 32 GB.
+- The gap to the budget is about 9 times for memory and 59 times for allocation per record.
+- Retained bytes per master node by structure (census, 42.7 M objects, coverage 100 %, walk 30 s): `JoinOp` 2,585; `GroupOp` 2,311; interner 1,863 (12.1 M strings); telemetry store 1,657; hot graph byte pool 1,485; `SeriesOp` 1,307; `WindowedGroupOp` 1,099; `TraverseOp` 987; sink contributions 772; sink values 629; identities 452; lineage sinks 422; entity and relationship tables 410 and 386; sink ends 386; `MatchOp` 329; `ThresholdOp` 325 (2.9 M tree nodes); telemetry windows of the sinks 302; `EmitRelOp` 279; `MapOp` 244.
+- Work by operator, run 1 (ms, MB allocated): flush, apply and store commit 131,907 ms; `TraverseOp` 92,663, 9,204; `MatchOp` 88,271, 40,257; `EmitRelOp` 44,067, 14,147; `EmitEntityOp` 40,843, 18,901; `SeriesOp` 19,881, 12,072; `GroupOp` 18,315, 3,274; `JoinOp` 16,668, 3,714; `LinkOp` 3,577, 3,525. By graph, `healthTree` costs most (operators 134 s, commit 21 s), then `master` (49 s, 65 s) and `workloadStructure` (53 s).
+- Raw outputs: `tmp/orchestrator/n1m-phases.txt` and `n1m-census.txt` (not in git).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
