@@ -23,6 +23,36 @@ public interface ILiveRecording
     void Append(string text);
 }
 
+/// <summary>The recording of `serve --live`: one envelope per line, appended and flushed at once. A last line without its end of line is a write that a kill cut off: it is not a record, and opening the recording cuts it away, so the live input appends that envelope again, whole, from the journal (`LiveInput.Run`).</summary>
+public sealed class FileRecording : ILiveRecording, IDisposable
+{
+    readonly StreamWriter w;
+    public long Count { get; private set; }
+    public FileRecording(string path)
+    {
+        if (File.Exists(path))
+        {
+            var (lines, whole) = WholeLines(path);
+            if (whole < new FileInfo(path).Length) { using var f = new FileStream(path, FileMode.Open, FileAccess.Write); f.SetLength(whole); }
+            Count = lines;
+        }
+        w = new StreamWriter(path, append: true, new System.Text.UTF8Encoding(false)) { AutoFlush = true };
+    }
+    public void Append(string text) { w.WriteLine(text); Count++; }
+    public void Dispose() => w.Dispose();
+
+    /// <summary>The number of lines that end with an end of line, and the length in bytes of the file up to the last of them.</summary>
+    static (long Lines, long Whole) WholeLines(string path)
+    {
+        using var f = File.OpenRead(path);
+        var buffer = new byte[1 << 20];
+        long lines = 0, whole = 0, at = 0;
+        for (int n; (n = f.Read(buffer, 0, buffer.Length)) > 0; at += n)
+            for (var i = 0; i < n; i++) if (buffer[i] == (byte)'\n') { lines++; whole = at + i + 1; }
+        return (lines, whole);
+    }
+}
+
 /// <summary>The live input loop, independent of the source. For each envelope the order is fixed: receive, journal (with the position of the source after it), record, process. The journal is the truth and is written first, so a kill leaves at most one envelope that is journaled and not processed, and the next start processes it from the journal (exactly once); the recording is written after the journal, so it never holds an envelope the journal lacks, and a start that finds the recording shorter than the journal appends the missing envelopes before it reads the source. After a kill and the next start the recording is therefore exactly the envelopes the space has, in order, and replaying it gives the state of the space. The pending chunk is flushed when the source goes idle or every `flushEvery`; a restart resumes after the last position the space has seen.</summary>
 public static class LiveInput
 {

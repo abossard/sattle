@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Azure.Identity;
@@ -51,20 +50,6 @@ static class Live
             try { foreach (var ev in LiveInput.Batches(Receive, lag => Lag = lag)) yield return ev; }
             finally { receiver.CloseAsync(CancellationToken.None).Wait(TimeSpan.FromSeconds(5)); }
         }
-    }
-
-    /// <summary>One envelope per line, appended and flushed at once.</summary>
-    sealed class FileRecording : ILiveRecording, IDisposable
-    {
-        readonly StreamWriter w;
-        public long Count { get; private set; }
-        public FileRecording(string path)
-        {
-            Count = File.Exists(path) ? File.ReadLines(path).LongCount() : 0;
-            w = new StreamWriter(path, append: true, new UTF8Encoding(false)) { AutoFlush = true };
-        }
-        public void Append(string text) { w.WriteLine(text); Count++; }
-        public void Dispose() => w.Dispose();
     }
 
     /// <summary>The live input of `serve --live`, run under the stop state machine (`LiveInput.RunUntilStopped`): Ctrl-C, SIGTERM or `--seconds` stop it, and its end stops the server. It prints the counts, the position and the state digest when it stopped; the server waits for that before the process ends.</summary>

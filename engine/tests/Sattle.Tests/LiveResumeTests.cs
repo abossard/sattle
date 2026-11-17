@@ -295,4 +295,43 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         }
         finally { Directory.Delete(dir, true); }
     }
+
+    /// <summary>T-LIVE on the recording of `serve --live` (Proposition 10.7, premise LV1): a kill cuts the write of the last envelope in half, after the journal took it. Opening the recording counts only whole lines and cuts the torn one away; the next run appends that envelope again, whole, from the journal, and goes on. The recording then holds every envelope once, in arrival order, and its replay ends in the live digest.</summary>
+    [Theory]
+    [InlineData(1, 0)] [InlineData(4, 8)]
+    public void The_file_recording_does_not_count_a_torn_last_line_and_its_replay_reproduces_the_live_run(int seed, int distance)
+    {
+        var envelopes = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed, distance);
+        var arrival = new List<string>(envelopes);
+        arrival.Insert(arrival.Count / 3, arrival[0]);                                                  // delivered again
+        var dir = Path.Combine(Path.GetTempPath(), "sattle-tlive-file-" + Guid.NewGuid().ToString("N"));
+        var path = Path.Combine(dir, "live", "stream.ndjson");
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        try
+        {
+            var files = EstateTests.Files(demo: true);
+            using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0));
+            var first = arrival.Take(arrival.Count / 2).ToList();
+            using (var recording = new FileRecording(path)) LiveInput.Run(h, new Scripted(first, []), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
+            var whole = File.ReadAllLines(path);
+            // the kill: the last line is cut in half and loses its end of line
+            var text = File.ReadAllText(path);
+            var lastStart = text.LastIndexOf('\n', text.Length - 2) + 1;
+            File.WriteAllText(path, text[..(lastStart + (text.Length - 1 - lastStart) / 2)]);
+            using (var recording = new FileRecording(path))
+            {
+                Assert.Equal(whole.Length - 1, recording.Count);
+                var counts = LiveInput.Run(h, new Scripted(arrival, []), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
+                Assert.True(counts.Duplicates > 0, "the second run reads the first half again");
+            }
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            Assert.Equal(arrival.Where(a => seen.Add(a)).ToList(), File.ReadAllLines(path));
+            var cat = new Catalog(new KqlSource()); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
+            var space = cat.Spaces.Keys.Single();
+            using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
+            new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Ro with { FlushAtEnd = false }).Run(dir);
+            Assert.Equal(h.StateDigest(), engine.StateDigest());
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 }
