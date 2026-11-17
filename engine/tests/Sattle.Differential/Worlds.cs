@@ -541,6 +541,7 @@ public static class Worlds
         Aggregate("min and max", "lo = min(n), hi = max(n), top = max(d)", "lo?: Integer; hi?: Integer; top?: Decimal;", "lo, hi, top") with { Witnesses = ["hi=n:", "top=n:"] },
         Aggregate("mean", "v = avg(n), w = avg(d)", "v?: Decimal; w?: Decimal;", "v, w"),
         Aggregate("last of one row", "arg_max(n, k, d)", "v?: Text; w?: Decimal; x?: Integer;", "v = k, w = d, x = n") with { Witnesses = ["v=t:k", "prop:x=n:"] },
+        Aggregate("first of one row", "arg_min(n, k, d)", "v?: Text; w?: Decimal; x?: Integer;", "v = k, w = d, x = n") with { Witnesses = ["v=t:k", "prop:x=n:"] },
         Aggregate("countDistinct over a decimal", "v = count_distinct(d)", "v: Integer;", "v"),
         Rows("group by a decimal key", "Group", "let x = a | project k = g, g, n, d = coalesce(d, 0.0) | summarize n = sum(n) by k, g, d | project k, g, n;"),
         Aggregate("count with countDistinct", "c = count(), v = count_distinct(k)", "c: Integer; v: Integer;", "c, v"),

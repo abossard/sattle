@@ -86,17 +86,20 @@ public class KqlOperatorTests
         Assert.True(got.SequenceEqual(["H1-O1", "H2-O1", "O1-H1", "O1-H2"]), $"{what}: " + string.Join(", ", got));
     }
 
-    /// <summary>The atom of each element that arrived last: arg_max with its columns named, with * for every other column, and with the greatest order named.</summary>
+    /// <summary>The atom of each element that arrived last (arg_max) or first (arg_min, case 6 of note 13), with its columns named, with * for every other column, and with the order named. Hydrogen tells them apart: H1 arrived before H2.</summary>
     [Theory]
-    [InlineData("summarize arg_max(arrived, newest) by symbol")]
-    [InlineData("summarize arg_max(arrived, *) by symbol")]
-    [InlineData("summarize greatest = arg_max(arrived, newest) by symbol | project symbol, newest, arrived = greatest")]
-    public void Arg_max_gives_the_atom_of_each_element_that_arrived_last(string summary)
+    [InlineData("summarize arg_max(arrived, newest) by symbol", "C:C1 H:H2 O:O1")]
+    [InlineData("summarize arg_max(arrived, *) by symbol", "C:C1 H:H2 O:O1")]
+    [InlineData("summarize greatest = arg_max(arrived, newest) by symbol | project symbol, newest, arrived = greatest", "C:C1 H:H2 O:O1")]
+    [InlineData("summarize arg_min(arrived, newest) by symbol", "C:C1 H:H1 O:O1")]
+    [InlineData("summarize arg_min(arrived, *) by symbol", "C:C1 H:H1 O:O1")]
+    [InlineData("summarize least = arg_min(arrived, newest) by symbol | project symbol, newest, arrived = least", "C:C1 H:H1 O:O1")]
+    public void Arg_max_and_arg_min_give_the_atom_of_each_element_that_arrived_last_or_first(string summary, string atoms)
     {
         var g = Near(Head + "nodes Element on el = graph(\"master\") | graph-match (a) where labels(a) has \"Atom\" project symbol = a.symbol, newest = a.tag, arrived = a.arrived"
             + $" | {summary} | project el = identity(\"element\", symbol), symbol, newest, arrived;\n");
         var got = g.Entities.Where(x => Ids.Name(x.Type) == "Element").Select(x => $"{Text(x, "symbol")}:{Text(x, "newest")}").Order(StringComparer.Ordinal);
-        Assert.Equal(["C:C1", "H:H2", "O:O1"], got);
+        Assert.Equal(atoms.Split(' '), got);
     }
 
     /// <summary>Per element, the elements its atoms bond to: count_distinct counts each partner element once, count every bond. Both bonds of oxygen go to hydrogen, so oxygen has one partner and two bonds.</summary>

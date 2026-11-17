@@ -621,6 +621,7 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         TakeOperator or SampleOperator or SampleDistinctOperator => "take and sample pick arbitrary rows, so the result would depend on the order rows arrive in: filter or summarize instead",
         SortOperator or TopOperator or TopNestedOperator or TopHittersOperator => "rows of a graph have no order: summarize with min, max or arg_max instead",
         ScanOperator => "a general scan is not kept up to date: write a threshold with invoke hysteresis(...)",
+        MvExpandOperator or MvApplyOperator => "mv-expand and mv-apply take arrays apart, and a row of a projection holds no array: keep one row per value",
         EvaluateOperator => "plugins are not in the profile",
         _ => $"{op.GetType().Name.Replace("Operator", "", StringComparison.Ordinal).ToLowerInvariant()} is not in the KQL profile",
     };
@@ -897,11 +898,12 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
         var aggs = new List<(string Target, string Fn, X? Value, X? Weight, string? Row)>();
         foreach (var it in s.Aggregates.Select(x => x.Element))
         {
-            // arg_max(order, a, b): the values of the row with the greatest order, and that order (named n in n = arg_max(...)); * is every other column
+            // arg_max(order, a, b): the values of the row with the greatest order, and that order (named n in n = arg_max(...)); * is every other column.
+            // arg_min is the same last with the order negated, so it orders by a number: the kernel negates numbers only
             var (named0, am) = it switch
             {
-                FunctionCallExpression { Name.SimpleName: "arg_max" } f => (null, f),
-                SimpleNamedExpression { Expression: FunctionCallExpression { Name.SimpleName: "arg_max" } f } n => (n.Name.SimpleName, f),
+                FunctionCallExpression { Name.SimpleName: "arg_max" or "arg_min" } f => (null, f),
+                SimpleNamedExpression { Expression: FunctionCallExpression { Name.SimpleName: "arg_max" or "arg_min" } f } n => (n.Name.SimpleName, f),
                 _ => (null, null),
             };
             if (!telemetry && am is not null && am.ArgumentList.Expressions.Select(a => a.Element).ToList() is [NameReference order, .. var values] && values.All(v => v is NameReference or StarExpression))
@@ -910,10 +912,14 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
                 List<(string Name, X Value)> cols = values.Any(v => v is StarExpression)
                     ? [.. r.Visible.Where(c => c != order.SimpleName && !next.Visible.Contains(c) && c != first).Select(c => (c, (X)F(c)))]
                     : [.. values.Select(v => (((NameReference)v).SimpleName, Scalar(v, r)))];
+                var fn = am.Name.SimpleName;
                 foreach (var (c, _) in cols.Where(c => r.Types.ContainsKey(c.Name) || r.Idents.ContainsKey(c.Name)))
-                    throw new Refused($"arg_max gives values, and '{c}' is an element: project its properties or its id first", am);
-                aggs.Add((first, "last", Scalar(order, r), Scalar(order, r), first)); next.Cols.Add(first);
-                foreach (var (c, x) in cols) { aggs.Add((c, "last", x, Scalar(order, r), first)); next.Cols.Add(c); }
+                    throw new Refused($"{fn} gives values, and '{c}' is an element: project its properties or its id first", am);
+                if (fn == "arg_min" && order.ResultType is var ot && (ot == ScalarTypes.String || ot == ScalarTypes.DateTime))
+                    throw new Refused("arg_min orders by a number: the engine finds the least by negating the order, and it orders no texts and negates no instants; order by a number, or write arg_max", am);
+                var by = fn == "arg_min" ? new CallX("Negate", Scalar(order, r)) : Scalar(order, r);
+                aggs.Add((first, "last", Scalar(order, r), by, first)); next.Cols.Add(first);
+                foreach (var (c, x) in cols) { aggs.Add((c, "last", x, by, first)); next.Cols.Add(c); }
                 continue;
             }
             if (it is not SimpleNamedExpression { Expression: FunctionCallExpression call } named) throw new Refused("name each aggregate: n = count()", it);
@@ -967,7 +973,8 @@ sealed class Lowerer(Graph catalog, string module, IReadOnlyDictionary<string, s
             "count_distinct" when args.Count == 1 => (target, "countDistinct", A(0), null),
             "count_distinctif" => throw new Refused("count_distinctif: filter first, where ... | summarize n = count_distinct(x)", call),
             "take_any" or "take_anyif" or "any" => throw new Refused("take_any picks an arbitrary value: write min, max or arg_max", call),
-            _ => throw new Refused($"{fn} is not an aggregate of the profile (count, countif, count_distinct, sum, min, max, avg, arg_max)", call),
+            "make_set" or "make_set_if" or "make_list" or "make_list_if" or "make_bag" or "make_bag_if" => throw new Refused($"{fn} builds an array, and a row of a projection holds no array: count each value with countif, or keep one row per value", call),
+            _ => throw new Refused($"{fn} is not an aggregate of the profile (count, countif, count_distinct, sum, min, max, avg, arg_max, arg_min)", call),
         };
     }
 
