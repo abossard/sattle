@@ -42,7 +42,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     static IReadOnlyList<string> Events() => Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
-    /// <summary>The definitions with the space of the estate folder.</summary>
+    /// <summary>The definitions as shipped: their space binds the workload of the estate.</summary>
     static List<SourceFile> Files => EstateTests.Files(demo: false);
     static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
     static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, Cluster = "synth", SealEvery = sealEvery };

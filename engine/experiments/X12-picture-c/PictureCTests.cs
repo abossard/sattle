@@ -45,7 +45,6 @@ public class PictureCTests(ITestOutputHelper output)
     {
         var dir = FixtureDir(fixture);
         var files = Catalog.ReadDirectory(Path.Combine(Root, "engine", "definitions")).ToList();
-        if (fixture == "estate") files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(dir, "space", "acme.space.sattle")) } : f)];
         if (Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments) files = Sattle.Cli.Program.WithArguments(files, arguments);
         files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("dh.deploymentHealth(master: master)", $"dh.deploymentHealth(master: master, minReady: {minReady})") } : f)];
         if (program) files = [.. files.Where(f => !f.Path.EndsWith(Twin, StringComparison.Ordinal)), new SourceFile(Path.Combine(Here(), Program), File.ReadAllText(Path.Combine(Here(), Program)))];

@@ -8,7 +8,7 @@ namespace Sattle.Tests;
 public class LineageTests
 {
     static string Estate => EstateTests.EstateDir;
-    static List<SourceFile> EstateFiles() => Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList();
+    static List<SourceFile> EstateFiles() => Catalog.ReadDirectory(Repo.Definitions).ToList();
 
     static SpaceHost Serve(string dir)
     {

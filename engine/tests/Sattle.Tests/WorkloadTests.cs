@@ -140,7 +140,7 @@ public class WorkloadTests
         }
     }
 
-    /// <summary>The share rule keeps the rank of no data (content review): the web deployment's pods are given as values in place of their signals, and the estate runs to the minute before the first scenario, when everything else is healthy. A pod without a severity does not count; a deployment none of whose pods has one is Unknown.</summary>
+    /// <summary>The share rule keeps the rank of no data (content review): the web deployment's pods are given as values in place of their signals, and the estate runs to the minute before the first scenario, when everything else is healthy. A pod without a severity does not count; a deployment none of whose pods has one is Unknown. The test writes the pods as a table into the text of the projection: a parameter cannot be a table.</summary>
     [Theory]
     [InlineData("all three pods in no data", "1,1,1", "No data", "No data")]
     [InlineData("one of three pods in no data", "0,0,1", "Healthy", "Healthy")]

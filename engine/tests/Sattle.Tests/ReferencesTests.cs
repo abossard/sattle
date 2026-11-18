@@ -29,7 +29,7 @@ public class ReferencesTests
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")).Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
+        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
             .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
         files.AddRange([new SourceFile("acme.callsview.sattle", CallsView), new SourceFile("acme.callsview.calls.kql", Calls)]);
         return files;
@@ -57,7 +57,7 @@ public class ReferencesTests
     [Fact]
     public void The_estate_has_no_relationship_without_an_endpoint_and_so_no_references_except_the_service_ends_of_what_people_wrote()
     {
-        var (h, space) = Serve(Estate, Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList());
+        var (h, space) = Serve(Estate, Catalog.ReadDirectory(Repo.Definitions).ToList());
         using (h)
             foreach (var g in space["graphs"]!.AsArray().Where(x => x!["id"]!.GetValue<string>() != "catalog"))
             {
@@ -82,7 +82,7 @@ public class ReferencesTests
         var dir = FlowsOnly();
         try
         {
-            var (h, space) = Serve(dir, Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList());
+            var (h, space) = Serve(dir, Catalog.ReadDirectory(Repo.Definitions).ToList());
             using (h)
             {
                 var refs = h.Snapshot("master", null)["extent"]!["references"]!.AsArray();
@@ -150,7 +150,7 @@ public class ReferencesTests
         var dir = FlowsOnly();
         try
         {
-            var (h, _) = Serve(dir, Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList());
+            var (h, _) = Serve(dir, Catalog.ReadDirectory(Repo.Definitions).ToList());
             using (h)
             {
                 var inSnapshot = h.Snapshot("master", null)["extent"]!["references"]!.AsArray().Select(x => x!.ToJsonString()).ToList();
@@ -180,7 +180,7 @@ public class ReferencesTests
         var dir = FlowsOnly(); var outDir = Path.Combine(Path.GetTempPath(), "sattle-out-" + Guid.NewGuid().ToString("N"));
         try
         {
-            var files = Catalog.ReadDirectory(Repo.Definitions).ToList().Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle")) } : f).ToList();
+            var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
             var (h, _) = Serve(dir, files);
             using (h)
             {

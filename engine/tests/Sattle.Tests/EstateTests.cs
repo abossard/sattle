@@ -86,7 +86,7 @@ public class EstateTests
         .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");",
             "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph demoClosure = demo.closure(st: workloadStructure);\n  graph demoBoth = demo.both(st: workload);\n  graph demoSeries = demo.series(master: master);\n  graph demoValues = demo.values(master: master);");
 
-    /// <summary>The definitions with the estate's space binding, and with the demo projections and their graphs when `demo` is set.</summary>
+    /// <summary>The definitions (their space binds the workload of the estate), and with the demo projections and their graphs when `demo` is set.</summary>
     public static Catalog LoadCatalog(bool demo)
     {
         var files = Files(demo);
@@ -99,20 +99,18 @@ public class EstateTests
     public static List<SourceFile> Files(bool demo)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
-        var spaceText = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
+        if (!demo) return files;
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = demo ? Space(spaceText) : spaceText };
-        if (demo) files.AddRange([new SourceFile("acme.estatedemo.sattle", Demo), .. DemoProjections]);
+        files[i] = files[i] with { Text = Space(files[i].Text) };
+        files.AddRange([new SourceFile("acme.estatedemo.sattle", Demo), .. DemoProjections]);
         return files;
     }
 
     public static string EstateDir => Estate;
 
-    /// <summary>A replay of the estate with the space of the estate folder (its workload binding), with the demo module or without. The tests read its graphs as they are served.</summary>
-    static ReplayTests.Run Run(bool demo) => ReplayTests.Replay(Estate, 50, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo));
-
-    static readonly Lazy<ReplayTests.Run> Plain = new(() => Run(false));
-    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => Run(true));
+    /// <summary>The estate as the tests read it: the scenario run the assembly shares, and one more replay with the demo module. The tests read the graphs as they are served.</summary>
+    static readonly Lazy<ReplayTests.Run> Plain = new(() => Scenarios.Run(Repo.Estate));
+    static readonly Lazy<ReplayTests.Run> WithDemo = new(() => ReplayTests.Replay(Estate, 50, "synth", o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 }, cat: LoadCatalog(demo: true)));
 
     [Theory]
     [InlineData("master")] [InlineData("serviceTree")] [InlineData("capabilities")] [InlineData("workloadStructure")] [InlineData("workload")] [InlineData("deploymentHealth")] [InlineData("deploymentReport")]

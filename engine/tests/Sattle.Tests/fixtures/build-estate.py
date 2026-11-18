@@ -2,7 +2,7 @@
 """Writes the synthetic capture `estate/` next to this script: a small invented estate (one cluster with two nodes, the workload namespace shop with the services web, api and database,
 and the Azure platform the workload uses) with every source the engine reads, so that every operator of the projection language has data in the master graph and in the
 health chain. No real identifiers: all names are invented. Deterministic: running it again rewrites identical files.
-The tracked definitions have the workload arguments of this estate (namespace shop, cluster label synth, cluster aks-synth), so it is served with no overlay (estate/space/acme.space.sattle is a copy of the tracked space file, kept for launch entries that pass it)."""
+The tracked definitions have the workload arguments of this estate (namespace shop, cluster label synth, cluster aks-synth), so it is served with no overlay."""
 import json, os, math
 from datetime import datetime, timedelta, timezone
 
@@ -180,7 +180,3 @@ for path, lines in files.items():
         for line in lines: f.write(json.dumps(line, separators=(",", ":")) + "\n")
 print(f"wrote {sum(len(v) for v in files.values())} records in {len(files)} files to {OUT}")
 
-# ---- the space binding for this estate: the tracked space file already carries these invented workload arguments, so the copy under estate/space is the tracked file itself ----
-import shutil
-os.makedirs(os.path.join(OUT, "space"), exist_ok=True)
-shutil.copyfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "definitions", "acme.space.sattle"), os.path.join(OUT, "space", "acme.space.sattle"))

@@ -165,7 +165,6 @@ public class HealthModelTests(ITestOutputHelper output)
             }
             File.AppendAllLines(Path.Combine(dir, "healthmodel", "model.ndjson"), extra);
             var files = Catalog.ReadDirectory(Path.Combine(Root, "engine", "definitions")).ToList();
-            if (fixture == "estate") files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = File.ReadAllText(Path.Combine(dir, "space", "acme.space.sattle")) } : f)];
             files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = WithModel(f.Text, minReady) } : f)];
             files.AddRange(Directory.EnumerateFiles(Model).Where(f => !f.EndsWith(ProgramSource.Extension, StringComparison.Ordinal) && !(program && Programs.Any(p => f.EndsWith(p + ".kql", StringComparison.Ordinal))))
                 .Select(f => new SourceFile(f, File.ReadAllText(f))));

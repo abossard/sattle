@@ -4,7 +4,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Evidence retention is a declaration in the projection (`|> retain on time for 24h`): the master keeps an event while the logical frontier is less than its time plus the age, and not longer. The retained state is a function of the frontier, so it does not depend on the chunk size.</summary>
+/// <summary>Evidence retention is a declaration in the projection (`|> retain on time for 24h`): the master keeps an event while the logical frontier is less than its time plus the age, and not longer. The retained state is a function of the frontier, so it does not depend on the chunk size. The tests write the age into the text of the ingest projection: `ago()` takes a literal, and a parameter cannot be a duration.</summary>
 public class RetentionTests
 {
     const long Min = 60_000_000_000;

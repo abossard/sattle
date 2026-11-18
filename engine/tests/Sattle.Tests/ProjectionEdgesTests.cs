@@ -199,19 +199,13 @@ public class ProjectionEdgesTests
         finally { Directory.Delete(dir, true); }
     }
 
-    [Fact]
-    public void The_estate_space_copy_is_the_tracked_space()
-    {
-        Assert.Equal(WithoutBinding(File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"))), WithoutBinding(File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"))));
-    }
-
     // ---- the image is a function: policy for a node with two images, composition of two lifts, ratio and state of a lifted edge -------------
 
     static ReplayTests.Run RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graphLine)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
         var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        var space = File.ReadAllText(Path.Combine(Estate, "space", "acme.space.sattle"));
+        var space = files[i].Text;
         if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
         files[i] = files[i] with { Text = space };
         files.AddRange(moduleFiles);
