@@ -195,6 +195,8 @@ Screenshots of the running engine on the synthetic estate ([generator](engine/te
 
 ![Master graph](docs/screenshots/master-graph.png)
 
+![The master graph from every source, Azure included: a database that depends on a storage account (live, 2026-11-17)](docs/evidence/97/2-master-graph-all-sources.png)
+
 - Everything the sources reported, one entity per thing: [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) under [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle). Theory: [Ch. 1](paper/ch01-values-and-identity.md), [Ch. 3](paper/ch03-graphs-and-revisions.md).
 
 ### 2. Services
@@ -345,11 +347,27 @@ What holds today:
 
   Memory went from 20 KB per node in the first run to 7.7 KB, by storing codes instead of text, keeping data only where something reads it, and running a join before a tree walk instead of after it. Graph fingerprints are now a sum of one hash per element, so no graph is ever sorted or written out whole ([research note 15](paper/research/15-graph-comparison.md)). Details per change: [PERF.md](engine/PERF.md).
 
+  ```mermaid
+  xychart-beta
+    title "Memory held per master node at one million nodes (KB, limit 8)"
+    x-axis ["First run 17 Nov", "Second run 18 Nov", "Latest run 18 Nov"]
+    y-axis "KB per node" 0 --> 22
+    bar [19.95, 9.04, 7.69]
+    line [8, 8, 8]
+  ```
+
 What does not hold yet:
 
 - **Speed.** CPU time per record is 44 µs against 37 µs ([#123](https://github.com/abossard/sattle/issues/123), parked). Window closes: the derived graphs are being changed to update side by side, in waves by what they read ([#119](https://github.com/abossard/sattle/issues/119)).
 - **Expressiveness gaps.** Unbounded reachability, comparison of a window with an earlier one, and "no data for N windows" cannot be expressed. See [research note 05](paper/research/05-expressiveness-and-flexibility.md).
 - **Always live.** The engine follows the lab cluster live through Event Hubs since 2026-11-16 ([#70](https://github.com/abossard/sattle/issues/70): a scaled deployment turned Unhealthy in 34 s and back in 4 s, two hard kills resumed from the store). The source cluster runs again ([`source-cluster.sh`](lab/source-cluster.sh)).
+
+  ![Live cause tree: the intruder deployment and its pod are the origin of Unhealthy, marked as changed in this revision](docs/evidence/96/live-1-tree-intruder.png)
+
+  | Before | Scaled to 0: Unhealthy after 34 s | Scaled back to 1: Healthy after 4 s |
+  | --- | --- | --- |
+  | ![Before: all healthy](docs/evidence/70/1-before-intruder-healthy.png) | ![Scaled to 0: the intruder deployment Unhealthy](docs/evidence/70/2-after-scale-0-intruder-unhealthy.png) | ![Scaled back to 1: healthy again](docs/evidence/70/3-after-scale-1-intruder-healthy.png) |
+
 - **Persistence.** A local journal with snapshots works. A store-agnostic design that scales is a concept, not built.
 - **Known defects** in the canvas and the lab from the [code review](paper/research/07-code-review-findings.md) are not all fixed.
 
