@@ -512,13 +512,15 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
     readonly Dictionary<(string Source, string Target, string Type), HashSet<string>> contested = [];
     readonly Dictionary<string, (string Source, string Target, string Type)> contestedBy = new(StringComparer.Ordinal);
+    /// <summary>The working sets of a flush: what each touched element resolves to, the tuples claimed in it by the first claimant seen, the tuples whose claimants changed. Cleared, not made, by each flush; let go after a flush that grew them past 4,096.</summary>
+    Dictionary<ElementKey, Element?> want = [];
+    Dictionary<(string, string, string), string> claims = [];
+    HashSet<(string, string, string)> affected = [];
 
     /// <summary>Edits that bring the graph to the resolved states of the touched elements. Where several relationships claim one (source, target, type), the one with the smallest id is present, whatever arrived first; each such tuple is counted.</summary>
     public List<Edit> Flush(Graph g)
     {
-        var want = new Dictionary<ElementKey, Element?>();
-        var claims = new Dictionary<(string, string, string), string>();          // tuples claimed in this flush, by the first claimant seen
-        var affected = new HashSet<(string, string, string)>();
+        want.Clear(); claims.Clear(); affected.Clear();
         var inCodes = g.Uses(it);
         if (inCodes) Collapse(g);
         resolved.Clear();
@@ -562,13 +564,15 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
                 want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && known.Has(h) ? Resolve(h) : null;
             if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }
         }
-        var edits = new List<Edit>();
+        var edits = new List<Edit>(want.Count);
         foreach (var (key, after) in want)
         {
             if (key.Kind == 'r' && it.TryFind(key.Id, out var elem)) Settle(elem, after is not null);
             var before = g.Get(key);
             if (!Equals(before, after)) edits.Add(new Edit(key, before, after));
         }
+        if (want.Count > 4096 || claims.Count > 4096 || affected.Count > 4096) (want, claims, affected) = ([], [], []);
+        else { want.Clear(); claims.Clear(); affected.Clear(); }
         return edits;
     }
 }

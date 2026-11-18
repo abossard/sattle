@@ -971,6 +971,21 @@ Theory. A canonical component is a text code of the interner, which is 4 bytes, 
 - The census now has a root for the pool of working arrays (thread statics of a generic class, which the statics root missed): 5.3 MB at 10^4 and 32.0 MB at 10^5 (320 B per master node). Coverage at 10^5 is 99 %.
 - Before is the binding records section's after, on main 493fbbc with the segments patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
 
+### Efficiency stage 2, allocation per record: the working sets of a flush and of a patch check (#115, 2026-11-18)
+At 10^4 the flush of the elements and the apply of the patch allocated 111 and 58 MB. Measured in parts with a temporary diagnostic (not in the patch): 18 MB went to the three dictionaries each flush made (what each touched element resolves to, the tuples claimed, the tuples whose claimants changed; 44,666 flushes), and the patch check's set of seen keys and map of added tuples regrew by doubling in every patch (202,367 edits in 12,226 patches). The check's guard, making the graph's element again to compare with the edit's before-state, is not where it goes: only 12,621 edits have a before-state.
+
+Theory. A flush's dictionaries are needed only while the flush runs; flushes of a graph do not overlap, so its layer keeps one set of them, cleared, not made, at each flush, and let go after a flush that grew them past 4,096 (as a traverse's working state). The check's sets hold one entry per edit, and the number of edits is known when the check starts: they are made at that size, so they never regrow. The flush's list of edits is made at the size of what it resolved. Same edits in the same order.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 8.87 / 8.53 KB | 8.86 / 8.51 KB |
+| flush of the elements | 111 / 90 MB | 1,230 / 1,025 MB |
+| patch and apply | 58 / 51 MB | 599 / 518 MB |
+| live bytes | 192 / 192 MB | 1,041 / 1,041 MB |
+
+- What remains in the flush at 10^4: resolving the elements an edit needs (53 MB: the elements, their props and values), the touched relationships' holders (about 23 MB: the id strings, a holder made as a relationship), the before-states read for the edits (17 MB). In the apply, the puts (40 MB: the graph's arrays and props pool growing).
+- Before is the identities section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 40 to 110) and not comparable; bytes are. Nothing is sealed; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

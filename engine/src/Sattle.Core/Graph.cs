@@ -481,7 +481,7 @@ public sealed class Graph
     /// <summary>Guard check, uniqueness check U and key consistency (Def. 3.7, 3.9). Returns null when the edit set is applicable.</summary>
     public string? Check(IReadOnlyCollection<Edit> edits)
     {
-        var seen = new HashSet<ElementKey>();
+        var seen = new HashSet<ElementKey>(edits.Count);          // made at its size: a patch of the engine has thousands of edits
         foreach (var e in edits)
         {
             if (!e.WellKeyed) return $"edit {e.Key}: state is not under its own key (WF1)";
@@ -497,7 +497,7 @@ public sealed class Graph
             if (e.After is not Rel a) continue;
             if (FindRel(a.Source, a.Target, a.Type) is { } other && other.Id != a.Id && (gone is null || !gone.Contains(other.Id)))
                 return $"relationship {a.Id}: duplicates {other.Id} on (source, target, type) (U)";
-            added ??= [];
+            added ??= new(edits.Count);
             var key = (a.Source, a.Target, a.Type);
             if (!added.TryAdd(key, a.Id)) return $"relationship {a.Id}: duplicates {added[key]} on (source, target, type) inside the patch (U)";
         }
