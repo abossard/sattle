@@ -5,41 +5,53 @@ namespace Sattle.Runtime;
 
 interface IGraphView
 {
-    Entity? Entity(string id);
-    Rel? Rel(string id);
-    IEnumerable<Rel> OutRels(string entity);
-    IEnumerable<Rel> InRels(string entity);
+    /// <summary>The type of an entity of the view, without its props (null when it has none), and the entity itself when the view has it already made (the old view's entities of the patch).</summary>
+    string? EntityType(string id, out Entity? made);
+    /// <summary>The relationships at an entity whose type passes `type`.</summary>
+    IEnumerable<Rel> OutRels(string entity, Func<string, bool> type);
+    IEnumerable<Rel> InRels(string entity, Func<string, bool> type);
 }
 
-sealed class NewView(Graph g) : IGraphView
+sealed class NewView : IGraphView
 {
-    public Entity? Entity(string id) => g.Entity(id);
-    public Rel? Rel(string id) => g.Rel(id);
-    public IEnumerable<Rel> OutRels(string e) => g.OutEdges(e);
-    public IEnumerable<Rel> InRels(string e) => g.InEdges(e);
+    Graph g = null!;
+    public NewView Reset(Graph graph) { g = graph; return this; }
+    public string? EntityType(string id, out Entity? made) { made = null; return g.EntityType(id); }
+    public IEnumerable<Rel> OutRels(string e, Func<string, bool> type) => g.OutEdges(e, type);
+    public IEnumerable<Rel> InRels(string e, Func<string, bool> type) => g.InEdges(e, type);
 }
 
 /// <summary>The graph before a patch: the current graph with the patch's edits undone, without copying the graph. The relationships the patch changed are indexed by their ends before it at the first walk that needs them.</summary>
-sealed class OldView(Graph g, Patch p) : IGraphView
+sealed class OldView : IGraphView
 {
-    Dictionary<string, List<Rel>>? outBefore, inBefore;
-    public Entity? Entity(string id) => p.TryGet(ElementKey.Entity(id), out var e) ? e.Before as Entity : g.Entity(id);
-    public Rel? Rel(string id) => p.TryGet(ElementKey.Rel(id), out var e) ? e.Before as Rel : g.Rel(id);
-    public IEnumerable<Rel> OutRels(string e)
+    Graph g = null!; Patch p = null!; bool indexed;
+    readonly Dictionary<string, List<Rel>> outBefore = new(StringComparer.Ordinal), inBefore = new(StringComparer.Ordinal);
+    public OldView Reset(Graph graph, Patch patch)
     {
-        foreach (var r in g.OutEdges(e)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
-        if (Before(outgoing: true).TryGetValue(e, out var l)) foreach (var r in l) yield return r;
+        g = graph; p = patch;
+        if (indexed) { outBefore.Clear(); inBefore.Clear(); indexed = false; }
+        return this;
     }
-    public IEnumerable<Rel> InRels(string e)
+    public string? EntityType(string id, out Entity? made)
     {
-        foreach (var r in g.InEdges(e)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
-        if (Before(outgoing: false).TryGetValue(e, out var l)) foreach (var r in l) yield return r;
+        if (p.TryGet(ElementKey.Entity(id), out var e)) { made = e.Before as Entity; return made?.Type; }
+        made = null; return g.EntityType(id);
+    }
+    public IEnumerable<Rel> OutRels(string e, Func<string, bool> type)
+    {
+        foreach (var r in g.OutEdges(e, type)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
+        if (Before(outgoing: true).TryGetValue(e, out var l)) foreach (var r in l) if (type(r.Type)) yield return r;
+    }
+    public IEnumerable<Rel> InRels(string e, Func<string, bool> type)
+    {
+        foreach (var r in g.InEdges(e, type)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
+        if (Before(outgoing: false).TryGetValue(e, out var l)) foreach (var r in l) if (type(r.Type)) yield return r;
     }
     Dictionary<string, List<Rel>> Before(bool outgoing)
     {
-        if (outBefore is null)
+        if (!indexed)
         {
-            outBefore = new(StringComparer.Ordinal); inBefore = new(StringComparer.Ordinal);
+            indexed = true;
             foreach (var e in p.Edits)
                 if (e.Before is Rel r)
                 {
@@ -49,7 +61,7 @@ sealed class OldView(Graph g, Patch p) : IGraphView
                     i.Add(r);
                 }
         }
-        return outgoing ? outBefore : inBefore!;
+        return outgoing ? outBefore : inBefore;
     }
 }
 
@@ -63,6 +75,13 @@ sealed class MatchOp : PhysOp
     readonly Dictionary<(string, string), bool> subtype = [];
     readonly int[] varCol;                // out column per component (entity or rel handle), -1 if the component has no output column
     readonly (int Comp, string PropId, int OutCol, Ty Ty)[] reads;
+
+    /// <summary>Per edge: whether a relationship type fits it, so a walk makes only the relationships that fit.</summary>
+    readonly Func<string, bool>[] edgeFits;
+
+    /// <summary>The working state of the call in progress on this thread (calls do not overlap): the two views, the bindings per component, and per component whether its entity was bound from the graph by id and type, so that `Emit` reads its properties from the graph.</summary>
+    sealed class Scratch { public readonly NewView New = new(); public readonly OldView Old = new(); public Element?[] Bound = []; public bool[] FromGraph = []; public Graph Graph = null!; }
+    [ThreadStatic] static Scratch? scratchOfThread;
 
     /// <summary>Per node: a reference. It names the end of a matched edge by its id and has no entity in this graph, so it binds without one and never seeds a match.</summary>
     readonly bool[] reference;
@@ -89,6 +108,7 @@ sealed class MatchOp : PhysOp
             rs.Add((comp, r.PropId, OutLayout.Index(r.Col), t.Out.Find(r.Col)!.T.Ty));
         }
         reads = [.. rs];
+        edgeFits = [.. edges.Select(e => (Func<string, bool>)(type => Sub(type, e.TypeId)))];
     }
 
     int NodeIndex(string v) => Array.IndexOf(nodeVars, v);
@@ -122,27 +142,33 @@ sealed class MatchOp : PhysOp
     {
         if (!ep.Graphs.TryGetValue(t.GraphPort, out var gd) || gd.Patch is null) return null;
         var patch = gd.Patch;
-        var newView = new NewView(gd.State); var oldView = new OldView(gd.State, patch);
+        var s = scratchOfThread ??= new();
+        if (s.Bound.Length < compCount) { s.Bound = new Element?[compCount]; s.FromGraph = new bool[compCount]; }
+        var newView = s.New.Reset(gd.State); var oldView = s.Old.Reset(gd.State, patch); s.Graph = gd.State;
         var bb = EmptyOutput();
-        var bound = new Element?[compCount];
-        for (var seed = 0; seed < compCount; seed++)
+        var bound = s.Bound;
+        try
         {
-            var isNode = seed < nodeCount;
-            if (isNode && reference[seed]) continue;
-            foreach (var edit in patch.Edits)
+            for (var seed = 0; seed < compCount; seed++)
             {
-                if (isNode ? edit.Key.Kind != 'e' : edit.Key.Kind != 'r') continue;
-                Seed(seed, edit.Before, -1, bound, newView, oldView, bb);
-                Seed(seed, edit.After, 1, bound, newView, oldView, bb);
+                var isNode = seed < nodeCount;
+                if (isNode && reference[seed]) continue;
+                foreach (var edit in patch.Edits)
+                {
+                    if (isNode ? edit.Key.Kind != 'e' : edit.Key.Kind != 'r') continue;
+                    Seed(seed, edit.Before, -1, bound, newView, oldView, bb);
+                    Seed(seed, edit.After, 1, bound, newView, oldView, bb);
+                }
             }
         }
+        finally { Array.Clear(bound); newView.Reset(null!); oldView.Reset(null!, null!); s.Graph = null!; }        // holds no graph, patch or element between calls
         return bb.Build();
     }
 
     void Seed(int seed, Element? state, long sign, Element?[] bound, IGraphView nv, IGraphView ov, BatchBuilder bb)
     {
         if (state is null || !Fits(seed, state)) return;
-        Array.Clear(bound);
+        Array.Clear(bound); Array.Clear(scratchOfThread!.FromGraph);
         bound[seed] = state;
         Extend(0, seed, sign, bound, nv, ov, bb);
     }
@@ -167,14 +193,22 @@ sealed class MatchOp : PhysOp
                     if (edges[i].From == v) id = r.Source; else if (edges[i].To == v) id = r.Target;
                 }
             if (id is null) return;
-            if ((reference[comp] ? new Entity(id, nodes[comp].TypeId, Props.Empty) : view.Entity(id)) is { } e && Fits(comp, e)) { bound[comp] = e; Extend(step + 1, seed, sign, bound, nv, ov, bb); bound[comp] = null; }
+            Entity? e; var fromGraph = scratchOfThread!.FromGraph;
+            if (reference[comp]) { e = new Entity(id, nodes[comp].TypeId, Props.Empty); fromGraph[comp] = false; }
+            else
+            {
+                var type = view.EntityType(id, out var made);
+                e = made ?? (type is not null && Sub(type, nodes[comp].TypeId) ? new Entity(id, type, Props.Empty) : null);
+                fromGraph[comp] = made is null;
+            }
+            if (e is not null && Fits(comp, e)) { bound[comp] = e; Extend(step + 1, seed, sign, bound, nv, ov, bb); bound[comp] = null; }
             return;
         }
         var edge = edges[comp - nodeCount];
         var fromNode = NodeIndex(edge.From); var toNode = NodeIndex(edge.To);
         IEnumerable<Rel> candidates;
-        if (bound[fromNode] is Entity f) candidates = view.OutRels(f.Id);
-        else if (bound[toNode] is Entity to) candidates = view.InRels(to.Id);
+        if (bound[fromNode] is Entity f) candidates = view.OutRels(f.Id, edgeFits[comp - nodeCount]);
+        else if (bound[toNode] is Entity to) candidates = view.InRels(to.Id, edgeFits[comp - nodeCount]);
         else return;
         foreach (var r in candidates)
         {
@@ -193,11 +227,18 @@ sealed class MatchOp : PhysOp
         var b = bb.Batch;
         for (var c = 0; c < compCount; c++)
             if (varCol[c] >= 0) b.Cols[varCol[c]].L[row] = bound[c] switch { Entity e => it.Intern(e.Id), Rel r => it.Intern(r.Id), _ => 0 };
+        var s = scratchOfThread!;
         foreach (var (comp, propId, outCol, ty) in reads)
         {
-            var props = bound[comp] switch { Entity e => e.Props, Rel r => r.Props, _ => Props.Empty };
+            var v = bound[comp] switch
+            {
+                Entity e when s.FromGraph[comp] => s.Graph.EntityProp(e.Id, propId),
+                Entity e => e.Props.TryGet(propId, out var x) ? x : null,
+                Rel r => r.Props.TryGet(propId, out var x) ? x : null,
+                _ => null,
+            };
             var col = b.Cols[outCol];
-            if (props.TryGet(propId, out var v) && v is not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
+            if (v is not null and not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
             else col.SetAbsent(row, b.N);
         }
     }

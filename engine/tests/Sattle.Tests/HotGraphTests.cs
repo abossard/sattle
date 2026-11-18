@@ -168,6 +168,29 @@ public class HotGraphTests
         Assert.Equal(new Rel("r", "a", "b", "R", Props.Empty), g.FindRel("a", "b", "R"));
     }
 
+    /// <summary>`EntityProp` and `EntityType` read one property or the type of an entity without making it: the same as reading the made entity, null where it has none.</summary>
+    [Theory]
+    [InlineData("a", "n")]
+    [InlineData("a", "s")]
+    [InlineData("a", "d")]
+    [InlineData("a", "l")]
+    [InlineData("a", "w")]
+    [InlineData("a", "absent")]
+    [InlineData("b", "n")]
+    [InlineData("gone", "n")]
+    [InlineData("nobody", "n")]
+    [InlineData("r", "w")]
+    public void One_property_or_the_type_reads_as_from_the_entity(string id, string key)
+    {
+        var g = new Graph(new Interner());
+        var a = new Entity("a", "T", Props.Of(("n", Value.Integer(3)), ("s", Value.Text("x")), ("d", Value.Decimal(1.50m)), ("l", Value.List([Value.Entity("b"), Value.Text("y")])), ("w", Value.Boolean(false))));
+        Assert.Null(g.Apply([Edit.Create(a), Edit.Create(new Entity("b", "U", Props.Empty)), Edit.Create(new Entity("gone", "T", Props.Of(("n", Value.Integer(1))))), Edit.Create(new Rel("r", "a", "b", "R", Props.Of(("w", Value.Boolean(true)))))]));
+        Assert.Null(g.Apply([Edit.Remove(g.Entity("gone")!)]));
+        var made = g.Entity(id);
+        Assert.Equal(made?.Type, g.EntityType(id));
+        Assert.Equal(made is not null && made.Props.TryGet(key, out var v) ? v : null, g.EntityProp(id, key));
+    }
+
     /// <summary>`Holds` compares an element given in interner codes with the graph's, without making a string or an element.</summary>
     [Theory]
     [InlineData("the same entity", true)]

@@ -219,6 +219,26 @@ static class PropCodec
         foreach (var (k, v) in props.Items) { w.Key(texts.Intern(k)); Val(w, v, texts); }
     }
 
+    /// <summary>The value under key code `key` in the block at `p`, decoding that value only; null when the block has no such key.</summary>
+    public static Value? Find(byte[] b, int p, int key, ITextTable texts)
+    {
+        var n = (int)ReadVarint(b, ref p);
+        for (var i = 0; i < n; i++) { if ((int)ReadVarint(b, ref p) == key) return ReadVal(b, ref p, texts); Skip(b, ref p); }
+        return null;
+    }
+
+    static void Skip(byte[] b, ref int p)
+    {
+        switch (b[p++])
+        {
+            case 1 or 2 or 7 or 8: ReadVarint(b, ref p); break;
+            case 3: { var n = (int)ReadVarint(b, ref p); p += n; break; }
+            case 4: p += 16; break;
+            case 10: p++; ReadVarint(b, ref p); break;
+            case 9: { var n = (int)ReadVarint(b, ref p); for (var i = 0; i < n; i++) Skip(b, ref p); break; }
+        }
+    }
+
     public static Props Decode(byte[] b, int p, ITextTable texts)
     {
         var n = (int)ReadVarint(b, ref p);
@@ -343,6 +363,14 @@ public sealed class Graph
 
     // ---- reads ----
     public Entity? Entity(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? MakeEntity(ix) : null; }
+    /// <summary>One property of an entity the graph has, without making the entity or its other properties: null when it has no such entity or property.</summary>
+    public Value? EntityProp(string id, string key)
+    {
+        var ix = ents.Find(id);
+        return ix < 0 || eKind[ix] != 1 || eProps[ix] == 0 || !texts.TryFind(key, out var k) ? null : PropCodec.Find(pool, eProps[ix], k, texts);
+    }
+    /// <summary>The type of an entity the graph has, without making the entity: null when it has none.</summary>
+    public string? EntityType(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? texts.Get(eType[ix]) : null; }
     public Rel? Rel(string id) { var ix = rels.Find(id); return ix >= 0 && rKind[ix] == 1 ? MakeRel(ix) : null; }
     public bool HasEntity(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1; }
     public IEnumerable<Entity> Entities { get { for (var i = 0; i < ents.Count; i++) if (eKind[i] == 1) yield return MakeEntity(i); } }
@@ -377,18 +405,18 @@ public sealed class Graph
         if (outgoing) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) yield return (texts.Get(rType[r - 1]), ents.Get(rTgt[r - 1]));
         else for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return (texts.Get(rType[r - 1]), ents.Get(rSrc[r - 1]));
     }
-    /// <summary>Out-going relationships as materialized elements, without the id round trip.</summary>
-    public IEnumerable<Rel> OutEdges(string entityId)
+    /// <summary>Out-going relationships whose type passes `type`, as materialized elements, without the id round trip; the others are not made.</summary>
+    public IEnumerable<Rel> OutEdges(string entityId, Func<string, bool> type)
     {
         var ix = ents.Find(entityId);
         if (ix < 0) yield break;
-        for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) yield return MakeRel(r - 1);
+        for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) if (type(texts.Get(rType[r - 1]))) yield return MakeRel(r - 1);
     }
-    public IEnumerable<Rel> InEdges(string entityId)
+    public IEnumerable<Rel> InEdges(string entityId, Func<string, bool> type)
     {
         var ix = ents.Find(entityId);
         if (ix < 0) yield break;
-        for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return MakeRel(r - 1);
+        for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) if (type(texts.Get(rType[r - 1]))) yield return MakeRel(r - 1);
     }
     public int OutDegree(string entityId) { var ix = ents.Find(entityId); var n = 0; if (ix >= 0) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) n++; return n; }
     public int InDegree(string entityId) { var ix = ents.Find(entityId); var n = 0; if (ix >= 0) for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) n++; return n; }

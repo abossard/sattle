@@ -810,6 +810,21 @@ Theory. A join keeps the rows of both its inputs, arranged by its key. At 10^5 t
 - A self-join in the projection language reads its input on one side and a renamed copy on the other, so one table is never both sides of one join. The step handles that case all the same.
 - Before is the one-create elements patch. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Load average 80 to 120 during the runs.
 
+### Efficiency stage 2, allocation per record: Match (#115, 2026-11-18)
+At 10^4, Match read 210,337 entities from the graph, each made with all its properties, and walked 122,574 relationships, each made with its id, ends, type and properties, of which 19,682 (16 %) fit the pattern's edge type. Every call also made two views and an array of bindings.
+
+Theory. A walk from a bound entity takes the relationships at it whose type is a subtype of the edge's type. The type is a column of the graph, so the walk tests it first and makes only the relationships that fit: the same candidates in the same order. A node bound from the graph is used for its id, its type and the properties the pattern reads. So it binds by id and type (`Graph.EntityType`), and a read takes its one property from the graph when the row is emitted (`Graph.EntityProp`, which decodes that value only). A node the old view has from the patch is the entity the patch made, as before. Calls do not overlap, so the views and the bindings are one working state per thread, refilled by each call and holding no graph, patch or element between calls. Same bindings, same rows.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 12.9 / 11.7 KB | 12.4 / 11.2 KB |
+| Match | 166 / 73 MB | 1,750 / 705 MB |
+| live bytes | 242 / 242 MB | 1,449 / 1,449 MB |
+
+- What remains in Match at 10^4: the walks' enumerators and the relationships that fit, the props of a relationship the pattern reads (made with the relationship), the rows emitted.
+- `OutEdges` and `InEdges` take the type test (Match is their only caller).
+- Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added (the working state is per thread, not sealed); the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
