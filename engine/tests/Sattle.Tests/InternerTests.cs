@@ -29,6 +29,36 @@ public class InternerTests
         }
         """;
 
+    /// <summary>Every text reads back as written and interns to one code, whatever form it is stored in: an element id packed, a text near one stored as it is, a wide text, an empty one, one longer than a page; and the same after a restore from the slots.</summary>
+    [Theory]
+    [InlineData("e:kmhdy6y657njixw3ienqx2wxw7")]
+    [InlineData("r:aaaaaaaaaaaaaaaaaaaaaaaaaa")]
+    [InlineData("z:77777777777777777777777777")]
+    [InlineData("e:kmhdy6y657njixw3ienqx2wxw")]            // 25 characters after the colon
+    [InlineData("e:kmhdy6y657njixw3ienqx2wxw71")]          // 27, and a 1
+    [InlineData("e:Kmhdy6y657njixw3ienqx2wxw7")]           // an upper-case letter
+    [InlineData("e:kmhdy6y657njixw3ienqx2wxw8")]           // an 8
+    [InlineData("E:kmhdy6y657njixw3ienqx2wxw7")]
+    [InlineData("e;kmhdy6y657njixw3ienqx2wxw7")]
+    [InlineData("e:kmhdy6y657njixw3ienqx2wxw€")]           // two bytes per character
+    [InlineData("")]
+    [InlineData("long")]                                    // 70,000 characters, longer than a page
+    public void A_text_reads_back_as_written_and_interns_to_one_code(string text)
+    {
+        if (text == "long") text = new string('x', 70_000);
+        var it = new Interner();
+        var others = new[] { "e:kmhdy6y657njixw3ienqx2wxw6", "e:kmhdy6y657njixw3ienqx2wxw", "x" };
+        foreach (var o in others) it.Intern(o);
+        var code = it.Intern(text);
+        Assert.Equal(text, it.Get(code));
+        Assert.Equal(code, it.Intern(text));
+        Assert.Equal(others.Contains(text) ? 1 : 0, others.Count(o => it.TryFind(o, out var c) && c == code));
+        var restored = new Interner();
+        restored.ReplaceAll(it.Slots);
+        Assert.True(restored.TryFind(text, out var again));
+        Assert.Equal((code, text), (again, restored.Get(again)));
+    }
+
     static Engine Start()
     {
         var cat = new Catalog(Repo.Projections);

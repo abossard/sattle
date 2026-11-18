@@ -1167,6 +1167,21 @@ The three changes of this day together, against the previous section's after (th
 - Thread CPU falls 23 to 28 % at 10^5. Linear to 10^6 from 334 to 425 ms: 4.6 to 5.9 s per steady close. The machine ran at load 250 to 460 on 10 cores (other sessions' test runs), so the figures are pessimistic; a quiet run decides it.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`).
 
+### Efficiency stage 2, interner: an element id is stored in 19 bytes, a text's place in 4 (#115, 2026-11-18)
+At 10^5 the interner held 748 B per master node. Most of its texts are element ids (`e:` or `r:` and 26 base32 characters, 70 % of the texts at 10^4), stored at one byte per character, 28 B; and every code kept its place as an 8-byte page and offset.
+
+Theory. A text with the shape of an id as `KeyText.Id` mints it (a letter, a colon, 26 base32 characters) is stored packed: the letter, then 5 bits per character in three words, 19 B instead of 28. A text has exactly one form (a packed id, one byte per character, or two), so equal texts have equal bytes; the form is part of the hash and of the comparison, and a text has one code as before. The length word holds the stored bytes and the form, and a place is an int, page << 16 | offset. Codes, young and old, what `Get` returns and the seal format are unchanged (a seal writes the interner as its texts).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 179 / 177 MB | 934 / 921 MB |
+| interner per master node | 976 / 844 B | 748 / 618 B |
+| allocated per input record | | 7.73 / 7.71 KB |
+
+- Cost moved: an intern packs an id before it hashes, and `Get` of a packed id builds its 28 characters from the three words. On the 10^5 replay with workstation GC (instruction counts stable to about 2 %) the process ran 427 and 442 G instructions against 418 to 437 G before, 2 to 6 % more. A first version that packed bit by bit cost 17 %. Thread CPU is not separable from the load (300 to 560 on 10 cores).
+- Limit: 65,536 pages of 64 KB, 4 GB of stored text; a text of 64 KB or more is a page of its own, and the interner throws past the last page. At 10^5 the texts take 509 pages (33 MB); linear to 10^6 about 5,100, 8 % of the limit. One text is at most 256 MB (the length word holds its bytes shifted by 3).
+- Before is main 5e86f36; the interner is the same in the statics, telemetry and #119 changes this applies on. Digests unchanged (estate, lab fixtures, 10^4, 10^5 `sha256:0ab80689...41140`). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

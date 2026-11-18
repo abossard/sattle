@@ -13,8 +13,8 @@ public sealed class Interner : ITextTable
     const int Page = 1 << 16, CacheSize = 16384;
     List<byte[]> pages = [new byte[Page]];
     int filling, used;
-    readonly Segments<long> start = new();            // page << 32 | offset; absent for a free code
-    readonly Segments<int> meta = new(), hashes = new();   // length << 2 | wide << 1 | young
+    readonly Segments<int> start = new();             // page << 16 | offset (pages are 64 KB, a long text is a page of its own); absent for a free code
+    readonly Segments<int> meta = new(), hashes = new();   // stored bytes << 3 | form << 1 | young; form: 0 one byte per character, 1 two, 2 an id (`IdForm`)
     int codes;
     long liveBytes, deadBytes;
     int[] index = new int[64]; int mask = 63;
@@ -38,40 +38,72 @@ public sealed class Interner : ITextTable
     /// <summary>The code of a text an expression computed: young when new and a stateless step runs, else old.</summary>
     public int InternComputed(string s) => MintYoung ? InternYoung(s) : Intern(s);
     public bool IsYoung(int code) => (uint)code < (uint)codes && (meta[code] & 1) != 0;
+    const int Narrow = 0, Wide = 1, IdForm = 2;
+    /// <summary>The value of a base32 character (a to z, 2 to 7) by its code, 255 for any other character below 128.</summary>
+    static ReadOnlySpan<byte> Base32Value => [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 26, 27, 28, 29, 30, 31, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+        255, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 255, 255, 255, 255, 255];
+    const string Base32Chars = "abcdefghijklmnopqrstuvwxyz234567";
+    /// <summary>An element id as `KeyText.Id` mints it, a letter, a colon and 26 base32 characters (130 bits), packed into `into`: the letter, then the characters 5 bits each in three little-endian words of 12, 12 and 2 characters (8, 8 and 2 bytes), 19 bytes for 28 characters. False for any other text.</summary>
+    static bool TryPackId(ReadOnlySpan<char> s, Span<byte> into)
+    {
+        if (s.Length != 28 || s[1] != ':' || s[0] is < 'a' or > 'z') return false;
+        ulong a = 0, b = 0, c = 0;
+        for (var i = 0; i < 26; i++)
+        {
+            var ch = s[2 + i];
+            if (ch >= 128 || Base32Value[ch] is var v && v == 255) return false;
+            if (i < 12) a = a << 5 | v; else if (i < 24) b = b << 5 | v; else c = c << 5 | v;
+        }
+        into[0] = (byte)s[0];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(into[1..], a);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt64LittleEndian(into[9..], b);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16LittleEndian(into[17..], (ushort)c);
+        return true;
+    }
+    static string UnpackId(ReadOnlySpan<byte> p) => string.Create(28, (p[0], System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(p[1..]), System.Buffers.Binary.BinaryPrimitives.ReadUInt64LittleEndian(p[9..]), (ulong)System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian(p[17..])), static (into, w) =>
+    {
+        into[0] = (char)w.Item1; into[1] = ':';
+        for (var i = 0; i < 12; i++) into[2 + i] = Base32Chars[(int)(w.Item2 >> (5 * (11 - i)) & 31)];
+        for (var i = 0; i < 12; i++) into[14 + i] = Base32Chars[(int)(w.Item3 >> (5 * (11 - i)) & 31)];
+        for (var i = 0; i < 2; i++) into[26 + i] = Base32Chars[(int)(w.Item4 >> (5 * (1 - i)) & 31)];
+    });
     void Old(int code) { var m = meta[code]; if ((m & 1) != 0) meta[code] = m & ~1; }
 
-    /// <summary>The stored bytes of a text, in `buffer` when it fits, and whether it takes two bytes per character.</summary>
-    static ReadOnlySpan<byte> Encode(ReadOnlySpan<char> s, Span<byte> buffer, out bool wide, out byte[]? rented)
+    /// <summary>The stored bytes of a text, in `buffer` when it fits, and its form: an id packed, else one or two bytes per character. A text has one form, so equal texts have equal bytes.</summary>
+    static ReadOnlySpan<byte> Encode(ReadOnlySpan<char> s, Span<byte> buffer, out int form, out byte[]? rented)
     {
         rented = null;
-        wide = false;
-        foreach (var c in s) if (c > 0xFF) { wide = true; break; }       // a loop: `ContainsAnyExceptInRange` allocated 96 B a call, so a known text cost an allocation
-        if (wide) return System.Runtime.InteropServices.MemoryMarshal.AsBytes(s);
+        if (TryPackId(s, buffer)) { form = IdForm; return buffer[..19]; }
+        form = Narrow;
+        foreach (var c in s) if (c > 0xFF) { form = Wide; break; }       // a loop: `ContainsAnyExceptInRange` allocated 96 B a call, so a known text cost an allocation
+        if (form == Wide) return System.Runtime.InteropServices.MemoryMarshal.AsBytes(s);
         if (s.Length > buffer.Length) buffer = rented = System.Buffers.ArrayPool<byte>.Shared.Rent(s.Length);
         for (var i = 0; i < s.Length; i++) buffer[i] = (byte)s[i];
         return buffer[..s.Length];
     }
 
-    static int Hash(ReadOnlySpan<byte> v, bool wide)
+    static int Hash(ReadOnlySpan<byte> v, int form)
     {
-        var h = (ulong)v.Length << 1 | (wide ? 1UL : 0);
+        var h = (ulong)v.Length << 2 | (uint)form;
         for (; v.Length >= 8; v = v[8..]) h = Table.Mix(h, BitConverter.ToInt64(v));
         long tail = 0; foreach (var b in v) tail = tail << 8 | b;
         h = Table.Mix(h, tail);
         return (int)(h ^ h >> 32);
     }
 
-    ReadOnlySpan<byte> Bytes(int code) { var m = meta[code]; var at = start[code]; return pages[(int)(at >> 32)].AsSpan((int)at, (m >> 2) << ((m >> 1) & 1)); }
+    ReadOnlySpan<byte> Bytes(int code) { var at = start[code]; return pages[(int)((uint)at >> 16)].AsSpan(at & 0xFFFF, meta[code] >> 3); }
 
     int Find(ReadOnlySpan<char> s)
     {
         Span<byte> buffer = stackalloc byte[256];
-        var b = Encode(s, buffer, out var wide, out var rented);
-        var h = Hash(b, wide); var w = wide ? 2 : 0; var found = -1;
+        var b = Encode(s, buffer, out var form, out var rented);
+        var h = Hash(b, form); var w = form << 1; var found = -1;
         for (var k = h & mask; index[k] != 0; k = (k + 1) & mask)
         {
             var c = index[k] - 1;
-            if (hashes[c] == h && (meta[c] & 2) == w && Bytes(c).SequenceEqual(b)) { found = c; break; }
+            if (hashes[c] == h && (meta[c] & 6) == w && Bytes(c).SequenceEqual(b)) { found = c; break; }
         }
         if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         return found;
@@ -88,10 +120,10 @@ public sealed class Interner : ITextTable
     void Store(int code, ReadOnlySpan<char> s, bool young)
     {
         Span<byte> buffer = stackalloc byte[256];
-        var b = Encode(s, buffer, out var wide, out var rented);
+        var b = Encode(s, buffer, out var form, out var rented);
         Write(code, b);
-        meta[code] = s.Length << 2 | (wide ? 2 : 0) | (young ? 1 : 0);
-        hashes[code] = Hash(b, wide);
+        meta[code] = b.Length << 3 | form << 1 | (young ? 1 : 0);
+        hashes[code] = Hash(b, form);
         if (rented is not null) System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         liveBytes += b.Length;
         if ((long)Live * 4 > (long)index.Length * 3) Rehash(); else Place(code);
@@ -99,11 +131,18 @@ public sealed class Interner : ITextTable
 
     void Write(int code, ReadOnlySpan<byte> b)
     {
-        if (b.Length > Page) { pages.Add(b.ToArray()); start[code] = (long)(pages.Count - 1) << 32; return; }      // a long text is a page of its own
-        if (used + b.Length > Page) { pages.Add(new byte[Page]); filling = pages.Count - 1; used = 0; }
+        if (b.Length >= Page) { NewPage(b.ToArray()); start[code] = (pages.Count - 1) << 16; return; }      // a long text is a page of its own
+        if (used + b.Length >= Page) { NewPage(new byte[Page]); filling = pages.Count - 1; used = 0; }       // an offset stays below 65,536
         b.CopyTo(pages[filling].AsSpan(used));
-        start[code] = (long)filling << 32 | (uint)used;
+        start[code] = filling << 16 | used;
         used += b.Length;
+    }
+
+    /// <summary>A page number takes the high 16 bits of a start: 65,536 pages, 4 GB of text.</summary>
+    void NewPage(byte[] page)
+    {
+        if (pages.Count == 1 << 16) throw new InvalidOperationException("the interner holds 4 GB of text, its limit");
+        pages.Add(page);
     }
 
     void Place(int code)
@@ -166,8 +205,8 @@ public sealed class Interner : ITextTable
         for (var c = 0; c < codes; c++)
         {
             if (!start.Has(c)) continue;
-            var m = meta[c]; var at = start[c];
-            Write(c, old[(int)(at >> 32)].AsSpan((int)at, (m >> 2) << ((m >> 1) & 1)));
+            var at = start[c];
+            Write(c, old[(int)((uint)at >> 16)].AsSpan(at & 0xFFFF, meta[c] >> 3));
         }
     }
 
@@ -200,7 +239,12 @@ public sealed class Interner : ITextTable
         if (cached[slot] == i) return cache[slot]!;
         if ((uint)i >= (uint)codes || !start.Has(i)) throw new InvalidOperationException($"text {i} was freed");
         var b = Bytes(i);
-        var s = (meta[i] & 2) != 0 ? new string(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, char>(b)) : System.Text.Encoding.Latin1.GetString(b);
+        var s = ((meta[i] >> 1) & 3) switch
+        {
+            Wide => new string(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, char>(b)),
+            IdForm => UnpackId(b),
+            _ => System.Text.Encoding.Latin1.GetString(b),
+        };
         cached[slot] = i; cache[slot] = s; values[slot] = null;
         return s;
     }
