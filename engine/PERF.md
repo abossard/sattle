@@ -1109,6 +1109,22 @@ Theory. A flush past 4,096 windows or samples lets the thread's working state go
 - Cost moved: every window close of a large estate allocates its flush state again, 4.5 % (10^4) and 4.8 % (10^5) more allocation per record; GC pause 0.59 / 0.49 s at 10^5. Without the sizing once it was 13.5 % (8.75 KB per record at 10^5).
 - Before is main c57264e. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 100 to 300) and not comparable; bytes are.
 
+### Efficiency stage 2, telemetry store: a window's start in 4 bytes and its value in 8 (#115, 2026-11-18)
+At 10^5 the telemetry store held 1,030 B per master node: 199,964 series of about 16 windows each, every start a long (8 B) and every value a decimal (16 B), in arrays grown by doubling.
+
+Theory. A series keeps a window start as an int number of window widths from the first start the series had, and a value as its mantissa and scale in one long (the mantissa below 2^58). A start off that grid or more than 2^31 widths away turns the series' starts to longs once, a value that does not pack (a wider mantissa, a negative zero) its values to decimals once, so every start and value reads back exactly as written, sign and scale too. Nothing a caller reads changes: the same windows in the same order. Seal format 20 to 21 (a snapshot writes the series in the form it has).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 177 / 174 MB | 910 / 878 MB |
+| telemetry per master node | 1,041 / 714 B | 1,030 / 703 B |
+| allocated per input record | 8.07 / 8.01 KB | 8.07 / 8.00 KB |
+| peak resident set | 515 / 455 MB | 1,880 / 1,798 MB |
+
+- What remains at 10^5: values 29 MB, starts 19 MB, and the 199,964 series objects 14 MB (72 B each); the arrays carry the slack of growth by doubling.
+- A series of hop windows (starts on the hop, not on the width) keeps plain starts.
+- Before is the statics patch on main c57264e. Digests unchanged (estate, lab fixtures, 10^4 and 10^5 as in the statics section). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

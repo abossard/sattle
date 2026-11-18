@@ -328,6 +328,31 @@ public class TelemetryStoreTests
         Assert.Equal("Complete", read[0].Completeness);
     }
 
+    public static TheoryData<long, long, decimal> Windows_to_read_back => new()
+    {
+        { W, 2 * W, 2.50m },                                  // on the grid; the scale stays
+        { W, -W, 7m },                                        // before the series' first start
+        { W, W / 2, 7m },                                     // off the grid: plain starts
+        { 1, 3_000_000_000, 7m },                             // too many widths from the first start for an int: plain starts
+        { W, 2 * W, 288_230_376_151_711_743m },               // the largest mantissa that packs
+        { W, 2 * W, -288_230_376_151_711_744m },              // one more: plain values
+        { W, 2 * W, decimal.MaxValue },
+        { W, 2 * W, new decimal(0, 0, 0, true, 1) },          // negative zero: plain values
+        { W, 2 * W, 0.0000000000000000000000000001m },
+    };
+
+    /// <summary>A series reads back every window start and value exactly as written (sign and scale too), in start order, after an insert in the middle and a rewrite, whatever form the series keeps them in.</summary>
+    [Theory, MemberData(nameof(Windows_to_read_back))]
+    public void A_series_reads_back_every_start_and_value_exactly(long width, long start, decimal value)
+    {
+        var s = new InMemoryTelemetryStore();
+        var written = new SortedDictionary<long, decimal> { [0] = 1.5m, [5 * width] = -3m, [start] = value };
+        s.Append(G, [new Sample(1, 1, 0, width, 1.5m, 1), new Sample(1, 1, 5 * width, width, -3m, 2), new Sample(1, 1, start, width, 9m, 3), new Sample(1, 1, start, width, value, 4)]);
+        var points = s.ReadWindow(G, [1], [1], long.MinValue, long.MaxValue)[0].Points;
+        Assert.Equal(written.Keys, points.Select(x => x.WindowStart));
+        Assert.Equal(written.Values.Select(decimal.GetBits), points.Select(x => decimal.GetBits(x.Value)));
+    }
+
     /// <summary>Law 7.5: when two ids merge, a window both have combines as if every row had been written under the survivor: by the property's rule for sum, min and max; otherwise equal values are one value and different values leave the window without one.</summary>
     [Theory]
     [InlineData("sum", 3, 4, 7)]

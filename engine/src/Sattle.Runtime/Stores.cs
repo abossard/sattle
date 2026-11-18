@@ -558,27 +558,97 @@ public interface ITelemetryStore
 
 public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelemetryStore
 {
-    /// <summary>The windows of one series in start order: their starts and values in two arrays, the first `Count` slots used, and the width of its windows (to know where they end).</summary>
+    /// <summary>
+    /// The windows of one series in start order, the first `Count` slots used, and the width of its windows (to know where they end). Compact: a
+    /// start is an int number of widths from the first start the series had, a value its mantissa and scale in one long. A start off that grid
+    /// or too far from it turns the series' starts to plain longs, a value whose mantissa needs more than 58 bits (or a negative zero) its values
+    /// to plain decimals, so every start and value reads back exactly as written.
+    /// </summary>
     sealed class Windows(long width)
     {
         public readonly long Width = width;
-        public long[] Starts = []; public decimal[] Values = []; public int Count;
+        public int Count { get; private set; }
+        long origin; int[] steps = []; long[]? starts;      // `starts`: the plain form, once a start is off the grid
+        long[] packed = []; decimal[]? values;               // `values`: the plain form, once a value does not pack
+        public long Start(int i) => starts is null ? origin + (long)steps[i] * Width : starts[i];
+        public decimal Value(int i) => values is null ? Unpack(packed[i]) : values[i];
+        public void SetValue(int i, decimal v)
+        {
+            if (values is null && TryPack(v, out var code)) { packed[i] = code; return; }
+            PlainValues(); values![i] = v;
+        }
         /// <summary>The slot of a window start, or the complement of the slot it would take.</summary>
-        public int Find(long start) => Array.BinarySearch(Starts, 0, Count, start);
+        public int Find(long start)
+        {
+            int lo = 0, hi = Count - 1;
+            while (lo <= hi)
+            {
+                var mid = (lo + hi) >>> 1; var at = Start(mid);
+                if (at == start) return mid;
+                if (at < start) lo = mid + 1; else hi = mid - 1;
+            }
+            return ~lo;
+        }
         /// <summary>The first slot whose window starts at or after an instant.</summary>
         public int From(long start) { var i = Find(start); return i < 0 ? ~i : i; }
         public void Insert(int i, long start, decimal value)
         {
-            if (Count == Starts.Length) { var cap = Count == 0 ? 4 : 2 * Count; Array.Resize(ref Starts, cap); Array.Resize(ref Values, cap); }
-            Array.Copy(Starts, i, Starts, i + 1, Count - i); Array.Copy(Values, i, Values, i + 1, Count - i);
-            Starts[i] = start; Values[i] = value; Count++;
+            if (Count == 0 && starts is null) origin = start;
+            var d = start - origin;
+            var onGrid = starts is null && d % Width == 0 && d / Width is >= int.MinValue and <= int.MaxValue;
+            if (starts is null && !onGrid) PlainStarts();
+            if (Count == Capacity) Grow();
+            if (starts is null) { Array.Copy(steps, i, steps, i + 1, Count - i); steps[i] = (int)(d / Width); }
+            else { Array.Copy(starts, i, starts, i + 1, Count - i); starts[i] = start; }
+            if (values is null) Array.Copy(packed, i, packed, i + 1, Count - i); else Array.Copy(values, i, values, i + 1, Count - i);
+            Count++;
+            SetValue(i, value);
         }
-        public void Set(long start, decimal value) { var i = Find(start); if (i >= 0) Values[i] = value; else Insert(~i, start, value); }
+        public void Set(long start, decimal value) { var i = Find(start); if (i >= 0) SetValue(i, value); else Insert(~i, start, value); }
         /// <summary>Removes `n` slots from slot `i`.</summary>
         public void RemoveAt(int i, int n = 1)
         {
-            Array.Copy(Starts, i + n, Starts, i, Count - i - n); Array.Copy(Values, i + n, Values, i, Count - i - n);
+            if (starts is null) Array.Copy(steps, i + n, steps, i, Count - i - n); else Array.Copy(starts, i + n, starts, i, Count - i - n);
+            if (values is null) Array.Copy(packed, i + n, packed, i, Count - i - n); else Array.Copy(values, i + n, values, i, Count - i - n);
             Count -= n;
+        }
+
+        int Capacity => starts?.Length ?? steps.Length;
+        void Grow()
+        {
+            var cap = Count == 0 ? 4 : 2 * Count;
+            if (starts is null) Array.Resize(ref steps, cap); else Array.Resize(ref starts, cap);
+            if (values is null) Array.Resize(ref packed, cap); else Array.Resize(ref values, cap);
+        }
+        void PlainStarts()
+        {
+            var plain = new long[Capacity];
+            for (var k = 0; k < Count; k++) plain[k] = Start(k);
+            starts = plain; steps = [];
+        }
+        void PlainValues()
+        {
+            if (values is not null) return;
+            var plain = new decimal[Capacity];
+            for (var k = 0; k < Count; k++) plain[k] = Unpack(packed[k]);
+            values = plain; packed = [];
+        }
+        // a value as its signed mantissa shifted by 5 and its scale (0 to 28) in the low 5 bits; the mantissa below 2^58
+        static bool TryPack(decimal v, out long code)
+        {
+            Span<int> b = stackalloc int[4];
+            decimal.GetBits(v, b);
+            code = 0;
+            if (b[2] != 0 || (uint)b[1] >= 1u << 26) return false;
+            var m = (long)((ulong)(uint)b[1] << 32 | (uint)b[0]); var neg = b[3] < 0;
+            if (neg && m == 0) return false;
+            code = (neg ? -m : m) << 5 | (long)((b[3] >> 16) & 0xFF);
+            return true;
+        }
+        static decimal Unpack(long code)
+        {
+            var m = code >> 5; var neg = m < 0; if (neg) m = -m;
+            return new decimal((int)(uint)m, (int)(uint)(m >>> 32), 0, neg, (byte)(code & 31));
         }
     }
 
@@ -618,7 +688,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                     p.Series[key] = ser = new Windows(s.WidthNs);
                 }
                 var at = ser.Find(s.WindowStart);
-                var old = at >= 0 ? ser.Values[at] : 0;
+                var old = at >= 0 ? ser.Value(at) : 0;
                 if (s.Deleted)
                 {
                     if (at < 0) continue;
@@ -628,7 +698,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                     continue;
                 }
                 p.NoValue.Remove(wk);
-                if (at >= 0) { var same = old == s.Value; ser.Values[at] = s.Value; if (same) continue; }      // the same value: a duplicate delivery or a rewrite, no change
+                if (at >= 0) { var same = old == s.Value; ser.SetValue(at, s.Value); if (same) continue; }      // the same value: a duplicate delivery or a rewrite, no change
                 else ser.Insert(~at, s.WindowStart, s.Value);
                 p.Log.Add(new WindowChange(wk, at >= 0 ? old : null, s.Value));
             }
@@ -646,7 +716,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 foreach (var pr in props)
                 {
                     if (!p.Series.TryGetValue((e, pr), out var ser)) continue;
-                    for (var i = ser.From(fromNs); i < ser.Count && ser.Starts[i] < toNs; i++) { visit(e, pr, ser.Starts[i], ser.Values[i]); n++; }
+                    for (var i = ser.From(fromNs); i < ser.Count && ser.Start(i) < toNs; i++) { visit(e, pr, ser.Start(i), ser.Value(i)); n++; }
                 }
             return n;
         }
@@ -666,7 +736,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                     {
                         int lo = ser.From(fromNs), end = Math.Max(lo, ser.From(toNs));
                         pts = new List<SeriesPoint>(end - lo);
-                        for (var i = lo; i < end; i++) pts.Add(new SeriesPoint(ser.Starts[i], ser.Values[i]));
+                        for (var i = lo; i < end; i++) pts.Add(new SeriesPoint(ser.Start(i), ser.Value(i)));
                     }
                     else pts = [];
                     var partial = p.Partials.Count == 0 ? default : pts.Select(x => p.Partials.GetValueOrDefault(x.WindowStart)).FirstOrDefault(x => x.Reason is not null);
@@ -694,7 +764,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
 
     public decimal? ValueOf(GraphKey g, WindowKey key)
     {
-        lock (gate) return Get(g).Series.TryGetValue((key.Element, key.Prop), out var ser) && ser.Find(key.WindowStart) is var i and >= 0 ? ser.Values[i] : null;
+        lock (gate) return Get(g).Series.TryGetValue((key.Element, key.Prop), out var ser) && ser.Find(key.WindowStart) is var i and >= 0 ? ser.Value(i) : null;
     }
     public (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key) { lock (gate) return Get(g).Aux.TryGetValue(key, out var a) ? a : null; }
     /// <summary>The (element, property) series the plane holds.</summary>
@@ -722,9 +792,9 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 if (!p.Series.TryGetValue(dst, out var target)) p.Series[dst] = target = new Windows(src.Width);
                 for (var i = 0; i < src.Count; i++)
                 {
-                    var ws = src.Starts[i]; var value = src.Values[i];
+                    var ws = src.Start(i); var value = src.Value(i);
                     p.Log.Add(new WindowChange(new WindowKey(from, key.Item2, ws), value, null));
-                    var slot = target.Find(ws); var had = slot >= 0; var old = had ? target.Values[slot] : 0;
+                    var slot = target.Find(ws); var had = slot >= 0; var old = had ? target.Value(slot) : 0;
                     var at = new WindowKey(to, key.Item2, ws);
                     var fromKey = new WindowKey(from, key.Item2, ws);
                     (decimal A, decimal B)? auxFrom = p.Aux.TryGetValue(fromKey, out var af) ? af : null, auxTo = p.Aux.TryGetValue(at, out var at2) ? at2 : null;
@@ -747,7 +817,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
                 p.NoValue.Add(at);
                 if (p.Series.TryGetValue((to, mark.Prop), out var target) && target.Find(mark.WindowStart) is >= 0 and var slot)
                 {
-                    var gone = target.Values[slot]; target.RemoveAt(slot);
+                    var gone = target.Value(slot); target.RemoveAt(slot);
                     if (target.Count == 0) p.Series.Remove((to, mark.Prop));
                     p.Log.Add(new WindowChange(at, gone, null));
                 }
@@ -764,7 +834,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             foreach (var (key, ser) in p.Series)
             {
                 var n = 0;
-                while (n < ser.Count && ser.Starts[n] + ser.Width <= from) { if (p.Aux.Count > 0) p.Aux.Remove(new WindowKey(key.Item1, key.Item2, ser.Starts[n])); n++; }
+                while (n < ser.Count && ser.Start(n) + ser.Width <= from) { if (p.Aux.Count > 0) p.Aux.Remove(new WindowKey(key.Item1, key.Item2, ser.Start(n))); n++; }
                 if (n > 0) ser.RemoveAt(0, n);
             }
             foreach (var key in p.Series.Where(kv => kv.Value.Count == 0).Select(kv => kv.Key).ToList()) p.Series.Remove(key);
@@ -788,7 +858,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         lock (gate)
         {
             var p = Get(g);
-            return [.. p.Series.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Key.Item2).SelectMany(kv => Enumerable.Range(0, kv.Value.Count).Select(i => (kv.Key.Item1, kv.Key.Item2, kv.Value.Starts[i], kv.Value.Values[i])))];
+            return [.. p.Series.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Key.Item2).SelectMany(kv => Enumerable.Range(0, kv.Value.Count).Select(i => (kv.Key.Item1, kv.Key.Item2, kv.Value.Start(i), kv.Value.Value(i))))];
         }
     }
 }
