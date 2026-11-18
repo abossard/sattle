@@ -13,6 +13,8 @@ User decisions already taken: the design point is **10⁶ master nodes** with th
 
 ## 1. Targets as budgets
 
+**Revised 2026-11-18, after the first run at 10⁶.** The unit budgets below were derived from the machine and are kept as guidance per structure. The gates are now the machine's and the user's limits, stated in Ch. 13, 13.1: at 10⁶ master nodes live memory at most 8 GB (about 8 KB per master node) and peak resident at most 12 GB on 16 GB; the reference input (about 13,600 records per second) on at most half a core, at most 37 µs per record with parsing; collection pauses at most 5 percent with allocation proportional to changes, in place of 1 KB per record; the latencies of Section 2 and restart within 30 s unchanged.
+
 ### 1.1 Information content (first principles)
 
 | Item | Information | Bits | Basis |

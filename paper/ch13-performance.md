@@ -2,7 +2,7 @@
 
 **Question.** How fast must the engine be, how much memory may it use, and how is a claim about speed decided rather than asserted?
 
-**What you can state at the end.** The target of gate 1c is a budget of memory, work and stored bytes per node, per edge and per measurement, met at one million master nodes on one machine. Budgets are stated for memory per master node and for work per input record; one run at one million master nodes misses them by about 9 and 36 times. Before that target existed, fourteen hypotheses H1 to H14 were written against an estate of 750,000 entities, each with a benchmark and a rule that refutes it. A status is decided by a written rule and holds only for a named configuration: a store, a machine and its load. By that rule three hypotheses are supported, each for one configuration; one has no status for the store it names; the rest are met in one run, or not met, or not measured. Four cost statements are proved: a join costs in proportion to what it produces; grouping commits lowers the cost per commit; a chain of stages runs at most at the rate of its slowest stage; and latency budgets of stacked steps add up by a union bound.
+**What you can state at the end.** The target of gate 1c is one million master nodes on one machine of 16 GB, with memory, throughput, collection pauses and latencies inside stated limits. One run at one million master nodes misses the memory limit by about 2.5 times and the throughput limit by about 2 times; the engine has been made smaller since and is to be measured again. Before that target existed, fourteen hypotheses H1 to H14 were written against an estate of 750,000 entities, each with a benchmark and a rule that refutes it. A status is decided by a written rule and holds only for a named configuration: a store, a machine and its load. By that rule three hypotheses are supported, each for one configuration; one has no status for the store it names; the rest are met in one run, or not met, or not measured. Four cost statements are proved: a join costs in proportion to what it produces; grouping commits lowers the cost per commit; a chain of stages runs at most at the rate of its slowest stage; and latency budgets of stacked steps add up by a union bound.
 
 This chapter uses the log of versions (Ch. 3), the size of patches (Ch. 4), the evaluation step by step (Ch. 6), closed windows and thresholds (Ch. 7), and the stores, the estimate of a large estate and the hot graph of Ch. 11.
 
@@ -10,17 +10,32 @@ This chapter uses the log of versions (Ch. 3), the size of patches (Ch. 4), the 
 
 ## 13.1 The target of gate 1c, and what the hypotheses are
 
-**The target.** Gate 1c of the research plan is a budget per node, per edge and per measurement, met at 1 million master nodes on one machine, with persistence that does not depend on one store and that scales.
+**The target.** Gate 1c of the research plan is 1 million master nodes on one machine of 8 cores and 16 GB, with persistence that does not depend on one store and that scales.
 
-**The budgets and one run against them.** The budgets come from the study of compute and memory efficiency, for 10⁶ master nodes on one machine of 8 cores and 16 GB, with one hour of measurements hot. The measured column is one run at 1,000,006 master nodes: a synthetic estate of 55,046 namespaces, 240,001 active pod pairs and 220,184 endpoint flows per minute, ten minutes, 8.16 million records, replayed with the memory store on a laptop of 10 cores and 64 GB. Other work on the machine was paused but not stopped (load average 20 to 90), so it is not the reference hardware, and one run is not a distribution.
+**The limits.** The first statement of the target, in the study of compute and memory efficiency, gave budgets per unit derived from the machine: 2.2 KB of memory per master node (2.2 GB steady, 14 percent of the machine), 2 µs of work per input record (which assumed binary or pre-aggregated input) and 1 KB allocated per input record (a stand-in for the pressure on the collector). After the first run at one million master nodes they were replaced by the limits the machine and the user actually set. The budgets per structure of that study (bytes per hot element, per interned text, per telemetry window) remain as guidance for where to look, not as limits.
 
-| Per | Memory | Work per change | Stored bytes |
-|---|---|---|---|
-| master node, whole engine with the tree graphs and readings | budget 2.2 KB; measured 19.95 KB live after a compacting collection (about 9 times); peak resident set 16.1 GB | per input record end to end: budget 2 µs; measured 72 µs (590 s for 8.16 million records, about 36 times); allocation 58.6 KB per record against 1 KB, of which about 11 KB was the benchmark's own measurement (keys made per operator call); without it the engine allocated 46.1 KB per record at 10⁵ master nodes, and not measured at 10⁶ | not stated; the run used the memory store |
-| master edge | inside the budget per node | inside the budget per record | not stated |
-| measurement | not measured separately at 10⁶ | inside the budget per record | not stated |
+| Limit | Value at 10⁶ master nodes | Why |
+|---|---|---|
+| live memory after a compacting collection | at most 8 GB, about 8 KB per master node | half the machine; the rest is page cache for the journal and room for a peak |
+| peak resident set | at most 12 GB | three quarters of the machine |
+| throughput | the input of the reference estate (about 13,600 records per second) on at most half of one core, that is at most 37 µs per record, parsing included | room for bursts and for the other stages; the chain runs at the rate of its slowest stage (Theorem 13.3) |
+| collection pauses | at most 5 percent of wall time, and allocation proportional to the changes of a step | the stand-in replaced by what it stood for |
+| structural change to committed health state | p99 at most 1 s | what a user sees as live |
+| close of a telemetry window to committed health state | p99 at most 5 s | as above |
+| commit to an open view | p99 at most 500 ms | as above |
+| restart to live | at most 30 s | as above |
 
-The largest shares of the measured bytes per master node are the state of joins (2.6 KB) and groups (2.3 KB), the interned strings (1.9 KB, against a budget of 50 B), the telemetry store (1.7 KB) and the hot graph's byte pool (1.5 KB). From 10⁵ to 10⁶ master nodes the bytes per node fell from 26.0 to 19.95 KB and the time grew about linearly.
+**One run against them.** One run at 1,000,006 master nodes: a synthetic estate of 55,046 namespaces, 240,001 active pod pairs and 220,184 endpoint flows per minute, ten minutes, 8.16 million records, replayed with the memory store on a laptop of 10 cores and 64 GB. Other work on the machine was paused but not stopped (load average 20 to 90), so it is not the reference hardware, and one run is not a distribution.
+
+| Limit | Measured | Against the limit |
+|---|---|---|
+| live memory | 19.95 KB per master node, 19.95 GB | about 2.5 times over |
+| peak resident set | 16.1 GB | over |
+| throughput | 72 µs per record (590 s for 8.16 million records) | about 2 times over |
+| collection pauses | 4 percent of wall time | met; allocation was 46.1 KB per record at 10⁵ master nodes |
+| latencies of a window close | not measured in this run | open |
+
+The largest shares of the measured bytes per master node were the state of joins (2.6 KB) and groups (2.3 KB), the interned strings (1.9 KB), the telemetry store (1.7 KB) and the hot graph's byte pool (1.5 KB). From 10⁵ to 10⁶ master nodes the bytes per node fell from 26.0 to 19.95 KB and the time grew about linearly. Since that run the engine keeps about 9.4 KB per master node at 10⁵ and allocates about 7.7 KB per record; the run at 10⁶ is to be repeated.
 
 **What H1 to H14 are.** They were written before the gate, against a reference estate of about 750,000 entities (Ch. 11, 11.4), a machine of 8 cores and 32 GB, and Cosmos DB as the store. They and their measurements stay as the record against that estate. None of them is a budget per element.
 
@@ -32,7 +47,7 @@ The largest shares of the measured bytes per master node are the state of joins 
 | H5 from source to graph | the engine's part yes, the store's part per store | supported on memory and SQLite at the scale of the recordings only |
 | H6 reads of the hot graph, H8 view of an element | yes | figures of the engine; the sizes they name are those of the old estate |
 | H7 durable reads | not as stated | it names the Cosmos store; it becomes a read time per store |
-| H9 memory | replaced | it bounds the hot graph only (about 100 bytes per element, met in one run), not the whole engine, which holds 5.4 GB on the estate run; the budgets replace it |
+| H9 memory | replaced | it bounds the hot graph only (about 100 bytes per element, met in one run), not the whole engine, which holds 5.4 GB on the estate run; the limits of 13.1 replace it |
 | H10 restart | yes | measured on SQLite, with nothing specific to a store |
 | H11 time of a definition edit, H14 cost of a join | yes | figures of the engine, not measured |
 | H13 delay before version rows are written | no | it measures a step that no store of the prototype has |
