@@ -359,7 +359,7 @@ public sealed class Engine : IDisposable, IEngineInput
         {
             foreach (var (g, properties) in ingesting)
             {
-                foreach (var (from, to) in g.Out.Remap(loser, survivor))
+                foreach (var (from, to) in g.Out.Remap(loser, survivor, g.State))
                     g.Out.MoveTelemetry(Telemetry, g.Key, from, to, prop => properties.TryGetValue(Interner.Get(prop), out var p) ? p.Combine : null, epochId);
             }
         };

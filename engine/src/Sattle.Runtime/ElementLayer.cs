@@ -24,8 +24,8 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>The relationship id function of a sink (the id hashes its endpoints), needed to re-key relationships when an identity merges.</summary>
     public void RegisterRelSink(int sink, Func<string, string, string> idOf) => relSinks[sink] = idOf;
 
-    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). Gives the elements whose rows moved, old and new. The old elements resolve to nothing and are removed by the next flush.</summary>
-    public List<(int From, int To)> Move(int loser, int survivor)
+    /// <summary>Two identities merged: what was emitted under the loser moves to the survivor (an entity's rows as they are; a relationship with the loser as an endpoint gets the id of its new endpoints). `g` is the graph as the last flush left it. Gives the elements whose rows moved, old and new. The old elements resolve to nothing and are removed by the next flush.</summary>
+    public List<(int From, int To)> Move(int loser, int survivor, Graph g)
     {
         var moved = new List<(int From, int To)>();
         var lid = it.Get(loser); var sid = it.Get(survivor);
@@ -42,12 +42,14 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             moved.Add((loser, survivor));
             Touch(loser);
         }
-        // the relationships at the loser, by their numbers: the order they were first named in, whatever rows they have now
-        foreach (var elem in ByEnd.Rows([loser]).Select(r => (int)ends.Get(r, 1)).Order().ToList())
+        // the relationships at the loser, by their numbers: the order they were first named in, whatever rows they have now. Those the graph holds at the loser are in its adjacency, the others in `ends`
+        var at = ByEnd.Rows([loser]).Select(r => (int)ends.Get(r, 1)).ToList();
+        foreach (var id in g.OutRels(lid).Concat(g.InRels(lid))) if (it.TryFind(id, out var c)) at.Add(c);
+        foreach (var elem in at.Distinct().Order().ToList())
         {
-            var at = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
-            if (!rels.Has(elem) || at.Count == 0) continue;
-            foreach (var (code, w, f) in at)
+            var named = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
+            if (!rels.Has(elem) || named.Count == 0) continue;
+            foreach (var (code, w, f) in named)
             {
                 AddFragment(elem, values.Bytes(code).ToArray(), -w, Code(f.Source), Code(f.Target));
                 var ns = f.Source == lid ? sid : f.Source; var nt = f.Target == lid ? sid : f.Target;
@@ -72,7 +74,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     Arrangement ByElement => byElement ??= contributions.Arrange(0);
     /// <summary>The element handles the sink has seen, and of these the relationships: entity or relationship, from its first fragment. One bit per handle each.</summary>
     readonly Bits known = new(), rels = new();
-    /// <summary>(endpoint, relationship) while a fragment of the relationship names the endpoint, so a merge visits those and not every element.</summary>
+    /// <summary>(endpoint, relationship) while a fragment of the relationship names the endpoint and the graph does not hold the relationship at it, so a merge visits those and the graph's adjacency at the endpoint, not every element. A relationship the graph holds at the endpoints its fragments name, the normal case, has no row here once flushed.</summary>
     readonly Table ends = new([4, 4], keyColumns: 2);
     Arrangement? byEnd;
     /// <summary>The relationships at one endpoint: every one of them is wanted when the endpoint merges.</summary>
@@ -205,9 +207,37 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>An endpoint leaves the index when no fragment of the relationship names it any more.</summary>
     void Unend(int elem, int end)
     {
-        if (end < 0) return;
+        if (end < 0 || ends.Find([end, elem]) < 0) return;
         var name = it.Get(end);
         if (!RowsOf(elem).Any(x => EndsOf(x.Code) is var e && (e.Source == name || e.Target == name))) ends.Add([end, elem], -1);
+    }
+
+    /// <summary>The graph will hold relationship `elem` (`held`) or not: an endpoint its fragments name is in `ends` exactly when the graph does not hold the relationship there. A relationship the graph holds is at the endpoints of each of its positive create fragments (they agree, or it would be absent).</summary>
+    void Settle(int elem, bool held)
+    {
+        int s = -1, t = -1;
+        if (held)
+            for (var row = ByElement.First([elem]); row >= 0 && s < 0; row = ByElement.Next(row))
+                if (contributions.Weight(row) > 0 && EndCodes((int)contributions.Get(row, 1)) is var (source, target, update) && !update) (s, t) = (source, target);
+        for (var row = ByElement.First([elem]); row >= 0; row = ByElement.Next(row))
+        {
+            var (source, target, _) = EndCodes((int)contributions.Get(row, 1));
+            foreach (var end in (ReadOnlySpan<int>)[source, target])
+            {
+                if (end < 0) continue;
+                var there = end == s || end == t; var listed = ends.Find([end, elem]) >= 0;
+                if (there && listed) ends.Add([end, elem], -1);
+                else if (!there && !listed) ends.Add([end, elem], 1);
+            }
+        }
+    }
+
+    /// <summary>The endpoints a fragment names, as text numbers (-1 for none), and whether it is an update.</summary>
+    (int Source, int Target, bool Update) EndCodes(int code)
+    {
+        var (b, p) = values.Slice(code);
+        ReadVarint(b, ref p); var update = b[p++] == 1; ReadVarint(b, ref p);
+        return ((int)ReadVarint(b, ref p) - 1, (int)ReadVarint(b, ref p) - 1, update);
     }
 
     /// <summary>The sink that creates an element: the smallest sink with a create fragment of positive weight, as `Resolve` picks it; -1 when none does.</summary>
@@ -429,7 +459,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         {
             var isRel = rels.Has(elem);
             // the graph holds what the element resolves to, and the element has no conflict to clear and no contested tuple: no edit, nothing to note
-            if (inCodes && !conflicts.AnyAboutElements && (!isRel || contested.Count == 0) && Unchanged(g, elem, isRel)) continue;
+            if (inCodes && !conflicts.AnyAboutElements && (!isRel || contested.Count == 0) && Unchanged(g, elem, isRel)) { if (isRel) Settle(elem, true); continue; }
             var after = Resolve(elem);
             var id = it.Get(elem);
             want[isRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;
@@ -461,6 +491,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         var edits = new List<Edit>();
         foreach (var (key, after) in want)
         {
+            if (key.Kind == 'r' && it.TryFind(key.Id, out var elem)) Settle(elem, after is not null);
             var before = g.Get(key);
             if (!Equals(before, after)) edits.Add(new Edit(key, before, after));
         }

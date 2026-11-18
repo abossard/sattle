@@ -770,6 +770,19 @@ Theory. The sink's fragments and the graph's prop blocks are canonical forms in 
 - `PropBlockWriter.Decimal` writes a decimal without an array.
 - Before is main 416b561 with the operators, id tables, sink bitmaps and `Graph.Holds` patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
 
+### Efficiency stage 2, sink: the endpoints of a relationship come from its graph (#115, 2026-11-18)
+Theory. A merge of two identities moves every relationship whose fragments name the loser. The sink kept a row (endpoint, relationship) for each endpoint a fragment names, about one row per relationship endpoint: 116,524 rows at 10^4, 43 B each with the weight, the index and the arrangement. The graph of the sink already links each relationship it holds to both its endpoints, and only the sink's flush writes that graph. So the row is needed only where the graph does not hold the relationship at that endpoint: held back by another with the same (source, target, type), only updated, its create taken back, or not flushed yet. A row of an emit still adds the endpoint row; the flush drops it for each relationship the graph will hold there and restores it for one the graph will not. A merge reads the graph's adjacency at the loser and the rows left. Seal format 12 to 13.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 242 / 239 MB | 1,449 / 1,419 MB |
+| endpoint rows per master node | 497 / 139 B | 422 / 120 B |
+| allocated per input record | 12.87 / 12.85 KB | 12.44 / 12.44 KB |
+
+- What stays is mostly the capacity the table reached within a step: its columns do not shrink when rows go.
+- Cost: the flush reads each relationship's fragments once more, and a new relationship's endpoint rows are written and removed in one step. At 10^5 the flush of the elements took 3.8 s before and 4.4 s after (one run each, load about 30), allocating 1,052 and 1,090 MB; the engine ingest thread CPU was 32.2 and 31.6 s.
+- Before is main 416b561 with the operators, id tables, `Graph.Holds`, sink bitmaps, lineage and element flush patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

@@ -458,10 +458,10 @@ public sealed class OutputBuilder
     /// <summary>The samples that bring the store's windows to what the rows of the step give.</summary>
     public List<Sample> FlushTelemetry(ITelemetryStore store, GraphKey g, long inputId) => windows.Flush(store, g, inputId);
 
-    /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor. Gives the elements whose telemetry must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
-    public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor)
+    /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
+    public IReadOnlyList<(int From, int To)> Remap(int loser, int survivor, Graph g)
     {
-        var moved = elements.Move(loser, survivor);
+        var moved = elements.Move(loser, survivor, g);
         foreach (var (from, to) in moved) Lineage.Move(from, to);
         return moved.Contains((loser, survivor)) ? moved : [(loser, survivor), .. moved];
     }

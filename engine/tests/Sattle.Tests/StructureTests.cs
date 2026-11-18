@@ -182,6 +182,27 @@ public class StructureTests
         Assert.True(one < 20 * Math.Max(spread, 0.05), $"{spread:F2} s at distinct endpoints, {one:F2} s at one endpoint");
     }
 
+    /// <summary>#115: a merge finds every relationship at the loser, whether its graph holds it there (the sink keeps no endpoint row for it then, the graph's adjacency has it) or not: held back by another with the same (source, target, type), only updated, or with its create taken back.</summary>
+    [Theory]
+    [InlineData("held")] [InlineData("heldBack")] [InlineData("updateOnly")] [InlineData("createRetracted")]
+    public void A_merge_moves_a_relationship_at_the_loser_whether_or_not_its_graph_holds_it(string state)
+    {
+        var it = new Interner(); var sink = new OutputBuilder(it); var g = new Graph(it);
+        sink.RegisterRelSink(0, (s, t) => $"r:{s}>{t}");
+        const string id = "r:e:b>e:c";
+        void Rel(string rel, bool update, long w) => sink.Contribute(it.Intern(rel), true, 0, update, "T", "e:b", "e:c", update ? Props.Of(("p", Value.Integer(1))) : Props.Empty, w);
+        switch (state)
+        {
+            case "held": Rel(id, false, 1); break;
+            case "heldBack": Rel("r:0", false, 1); Rel(id, false, 1); break;                       // the smaller id holds the tuple
+            case "updateOnly": Rel(id, true, 1); break;
+            case "createRetracted": Rel(id, false, 1); Rel(id, true, 1); g.Apply(sink.Flush(g)); Rel(id, false, -1); break;
+        }
+        g.Apply(sink.Flush(g));
+        Assert.Equal(state == "held", g.Rel(id) is not null);
+        Assert.Contains((it.Intern(id), it.Intern("r:e:a>e:c")), sink.Remap(it.Intern("e:b"), it.Intern("e:a"), g));
+    }
+
     /// <summary>Code review 2, defect 20: what a sink keeps about an element is compared as a value, so a number retracted at another scale (2.5 and 2.50) cancels what it was added with. Before, the two were two entries, one at +1 and one at -1, and the element stayed.</summary>
     [Theory]
     [InlineData("2.5", "2.50")] [InlineData("0", "0.000")] [InlineData("-1.10", "-1.1")] [InlineData("100", "100.0000000000")] [InlineData("0.0000000000000000000000000001", "0.0000000000000000000000000001")]
