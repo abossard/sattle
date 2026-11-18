@@ -1,389 +1,350 @@
 WEBVTT
 
-00:00:00.350 --> 00:00:02.375
-This shop runs on Azure.
+00:00:00.700 --> 00:00:04.700
+A dependency is something a service needs
+to do its job.
 
-00:00:02.375 --> 00:00:03.775
-Start at the gateway.
+00:00:04.700 --> 00:00:08.475
+Follow the arrows from the shop’s web
+service to the API,
 
-00:00:03.775 --> 00:00:08.400
-It sends requests to the API, and so does
-the web service below it.
+00:00:08.475 --> 00:00:12.675
+then through the database service to the
+server called pg-shop.
 
-00:00:08.400 --> 00:00:10.050
-Follow either path to the right
+00:00:14.200 --> 00:00:17.425
+An observation is one report from one
+source.
 
-00:00:10.050 --> 00:00:13.675
-and you’ll reach pg-shop, the shop’s
-database server.
+00:00:17.425 --> 00:00:20.300
+Kubernetes names the shop’s services.
 
-00:00:14.058 --> 00:00:16.208
-How did Sattle draw those arrows?
+00:00:20.300 --> 00:00:22.975
+Network records show calls between them.
 
-00:00:16.208 --> 00:00:18.633
-Kubernetes lists the services.
-
-00:00:18.633 --> 00:00:21.008
-Network records show who called whom.
-
-00:00:21.008 --> 00:00:22.983
+00:00:22.975 --> 00:00:25.000
 Azure lists the database server,
 
-00:00:22.983 --> 00:00:25.733
-and Azure Monitor tells us whether it
+00:00:25.000 --> 00:00:27.900
+and its meter tells us whether the server
 answered.
 
-00:00:26.167 --> 00:00:30.192
-Sattle puts those records together in a
-map called the master graph.
+00:00:29.450 --> 00:00:33.175
+A health model is a map of what’s healthy
+and who depends on it.
 
-00:00:30.192 --> 00:00:34.192
-One query finds the parts of the shop and
-the links between them.
+00:00:33.175 --> 00:00:36.425
+Sattle joins the observations in a master
+graph.
 
-00:00:34.192 --> 00:00:38.067
-A second query uses your rules to work out
-which parts are healthy.
+00:00:36.425 --> 00:00:38.475
+One query draws the shop.
 
-00:00:38.700 --> 00:00:40.950
-The replay comes with a working model.
+00:00:38.475 --> 00:00:40.625
+A second applies your health rules.
 
-00:00:40.950 --> 00:00:43.475
-For your own shop, give Sattle read access
+00:00:42.575 --> 00:00:44.825
+Scope tells Sattle where to look.
 
-00:00:43.475 --> 00:00:46.175
-to your sources and tell it where to look.
+00:00:44.825 --> 00:00:47.125
+The replay comes with working rules.
 
-00:00:46.175 --> 00:00:51.100
-Here, that’s one Kubernetes cluster and
-the services in its shop namespace.
+00:00:47.125 --> 00:00:50.275
+For your own shop, connect the sources you
+can read,
 
-00:00:51.475 --> 00:00:54.800
-You decide when to raise an alarm and when
-to clear it.
+00:00:50.275 --> 00:00:54.150
+then choose the cluster and the namespace
+that holds your services.
 
-00:00:54.800 --> 00:00:59.075
-For pg-shop, one bad minute trips the
-database alarm.
+00:00:55.700 --> 00:00:58.700
+A signal rule turns readings into an
+alarm.
 
-00:00:59.075 --> 00:01:01.875
-It takes two good minutes in a row to
-clear it.
+00:00:58.700 --> 00:01:01.375
+Your team sets the threshold and the wait.
 
-00:01:01.875 --> 00:01:04.850
-The same rule covers other servers of this
-type.
+00:01:01.375 --> 00:01:05.850
+For servers like pg-shop, one bad minute
+raises the alarm.
 
-00:01:05.250 --> 00:01:08.600
-You also know which calls your service can
-do without.
+00:01:05.850 --> 00:01:07.375
+Two good minutes clear it.
 
-00:01:08.600 --> 00:01:12.125
-If the API needs the database to answer a
-request,
+00:01:08.908 --> 00:01:12.558
+Your team also chooses which failures
+should affect a caller.
 
-00:01:12.125 --> 00:01:14.950
-its health should reflect a database
-outage.
+00:01:12.558 --> 00:01:15.083
+The API needs its database.
 
-00:01:14.950 --> 00:01:16.625
-If it can work without a cache,
+00:01:15.083 --> 00:01:18.558
+If your own API can serve a request
+without its cache,
 
-00:01:16.625 --> 00:01:19.500
-you can leave that call out of the health
-calculation.
+00:01:18.558 --> 00:01:20.933
+you can leave that call out of its health
+rule.
 
-00:01:20.167 --> 00:01:23.067
-Azure inventory names pg-shop.
+00:01:22.892 --> 00:01:26.692
+Identity tells Sattle when two records
+describe the same thing.
 
-00:01:23.067 --> 00:01:26.017
-The meter reading carries the same
-resource ID,
+00:01:26.692 --> 00:01:28.717
+Compare the Azure resource ID in the
 
-00:01:26.017 --> 00:01:29.267
-so Sattle can attach both records to one
-server.
+00:01:28.717 --> 00:01:31.792
+inventory with the ID on the meter
+reading.
 
-00:01:29.267 --> 00:01:33.117
-The Kubernetes service called database has
-its own ID.
+00:01:31.792 --> 00:01:32.942
+They match.
 
-00:01:33.117 --> 00:01:36.267
-An arrow connects the service to the
-server it uses.
+00:01:32.942 --> 00:01:35.542
+Both records belong to pg-shop.
 
-00:01:36.617 --> 00:01:41.117
-The white paper calls the names for things
-and their links an ontology.
+00:01:37.050 --> 00:01:40.150
+A projection is a query that builds a new
+view.
 
-00:01:41.117 --> 00:01:43.567
-A projection gives you a simpler map.
+00:01:40.150 --> 00:01:44.175
+Here, several copies of the web service
+call the API.
 
-00:01:43.567 --> 00:01:46.967
-Several copies of the web service call the
-API.
+00:01:44.175 --> 00:01:48.275
+The projection groups those calls into one
+arrow between the services.
 
-00:01:46.967 --> 00:01:49.917
-On the shop map those calls become one
-arrow,
+00:01:49.825 --> 00:01:52.775
+An ontology is the map’s vocabulary.
 
-00:01:49.917 --> 00:01:52.067
-and you can trace it back to the records.
+00:01:52.775 --> 00:01:56.175
+It names kinds of things, like a service
+or a server,
 
-00:01:52.475 --> 00:01:55.450
-Each minute adds a reading to the database
-chart.
+00:01:56.175 --> 00:01:58.050
+and the links they can have.
 
-00:01:55.450 --> 00:01:58.100
-Most minutes leave the map just as it was.
+00:01:58.050 --> 00:02:01.900
+Here the database service uses a server
+called pg-shop.
 
-00:01:58.100 --> 00:02:00.825
-When a reading trips or clears the alarm,
+00:02:03.825 --> 00:02:07.725
+A time series keeps readings in the order
+of their sample times.
 
-00:02:00.825 --> 00:02:04.250
-Sattle records the change in a new version
-of the health map.
+00:02:07.725 --> 00:02:11.125
+At 10:11, pg-shop reports zero.
 
-00:02:04.917 --> 00:02:08.392
-At 10:11 the database meter drops to zero.
-
-00:02:08.392 --> 00:02:11.892
+00:02:11.125 --> 00:02:14.475
 The recorder gets that sample a minute and
 a second later.
 
-00:02:11.892 --> 00:02:15.492
-The alarm belongs to 10:11, the minute on
-the chart.
+00:02:14.475 --> 00:02:16.575
+The chart puts it at 10:11.
 
-00:02:15.892 --> 00:02:19.567
-Start at pg-shop and follow the dots back
-to the left.
+00:02:18.117 --> 00:02:20.692
+Impact travels back toward the callers.
 
-00:02:19.567 --> 00:02:22.167
-The database service needs that server.
+00:02:20.692 --> 00:02:24.117
+Start at pg-shop and follow the dots to
+the left.
 
-00:02:22.167 --> 00:02:25.367
-The API needs the service, and both the
-gateway
+00:02:24.117 --> 00:02:26.417
+The alarm reaches the database service,
 
-00:02:25.367 --> 00:02:27.992
-and the web service use the API.
+00:02:26.417 --> 00:02:29.692
+the API, then the gateway and web service.
 
-00:02:27.992 --> 00:02:30.342
-The cache and storage stay healthy.
+00:02:29.692 --> 00:02:31.417
+The cache stays healthy.
 
-00:02:30.750 --> 00:02:33.550
-At 10:14 the database answers again.
+00:02:32.975 --> 00:02:35.700
+At 10:14 the meter rises to one.
 
-00:02:33.550 --> 00:02:35.300
-The alarm stays on.
+00:02:35.700 --> 00:02:37.375
+That’s the first good minute.
 
-00:02:35.300 --> 00:02:38.375
-At 10:15 we have two good minutes in a
-row.
+00:02:37.375 --> 00:02:39.950
+Pause there and the map is still red.
 
-00:02:38.375 --> 00:02:40.725
-The alarm clears, and the services that
+00:02:39.950 --> 00:02:44.800
+At 10:15 the next good minute clears the
+alarm, and the callers turn green.
 
-00:02:40.725 --> 00:02:43.400
-depend on the database turn green again.
+00:02:46.767 --> 00:02:50.992
+Degraded means the model sees trouble that
+falls short of an outage.
 
-00:02:44.083 --> 00:02:47.908
-Let’s go back a few minutes, to when the
-cache was under heavy load.
+00:02:50.992 --> 00:02:54.467
+Earlier in the replay, the cache comes
+under heavy load.
 
-00:02:47.908 --> 00:02:51.358
-In the original replay the web service
-uses the cache.
+00:02:54.467 --> 00:02:57.217
+The web service uses it and turns amber.
 
-00:02:51.358 --> 00:02:54.183
-The shop and its web service show
-Degraded.
+00:02:57.217 --> 00:02:58.992
+The gateway stays green.
 
-00:02:54.183 --> 00:02:56.933
-The API and gateway stay healthy.
+00:03:00.558 --> 00:03:03.908
+Evidence is a record that supports
+something on the map.
 
-00:02:57.333 --> 00:03:00.283
-Now replay the same minutes with one
-change.
+00:03:03.908 --> 00:03:06.983
+Give the API the existing cache address.
 
-00:03:00.283 --> 00:03:03.458
-We put the cache address in the API’s
-settings.
-
-00:03:03.458 --> 00:03:06.258
-Sattle finds that address in Azure
+00:03:06.983 --> 00:03:09.983
+Sattle matches that setting to Azure
 inventory
 
-00:03:06.258 --> 00:03:09.683
-and draws a new arrow from the API to the
+00:03:09.983 --> 00:03:12.908
+and adds an arrow from the API to the
 cache.
 
-00:03:09.683 --> 00:03:12.683
-Sattle keeps the setting as evidence for
-that arrow.
+00:03:14.425 --> 00:03:18.100
+Compare the gateways at 10:06:30.
 
-00:03:13.033 --> 00:03:16.933
-Pause both runs at 10:06:30.
+00:03:18.100 --> 00:03:21.100
+In the original run, the gateway is
+healthy.
 
-00:03:16.933 --> 00:03:21.483
-In the second run the API and its gateway
-both show Degraded.
+00:03:21.100 --> 00:03:25.600
+In the changed run, it depends on the busy
+cache through the API.
 
-00:03:21.483 --> 00:03:24.633
-The cache readings and alarm rules are the
-same.
+00:03:25.600 --> 00:03:28.775
+The same readings now give the gateway an
+amber light.
 
-00:03:24.633 --> 00:03:28.008
-The gateway now depends on the cache
-through the API.
+00:03:30.700 --> 00:03:35.025
+Suppose the API now names a different
+cache, offers-cache.
 
-00:03:28.642 --> 00:03:33.017
-This time, point the API at a new cache
-called offers-cache.
+00:03:35.025 --> 00:03:37.800
+The setting gives Sattle an address to
+look for.
 
-00:03:33.017 --> 00:03:36.592
-So far, all Sattle has is an address in a
-setting.
+00:03:37.800 --> 00:03:40.400
+Until Azure reports a resource at that
+address,
 
-00:03:36.592 --> 00:03:41.442
-Until Azure reports a matching resource,
-the map has no cache at that address.
+00:03:40.400 --> 00:03:43.275
+the shop map has no target for the new
+arrow.
 
-00:03:41.900 --> 00:03:45.175
-Now Azure Resource Graph lists
-offers-cache.
+00:03:44.875 --> 00:03:48.000
+Now Azure Resource Graph lists the new
+cache.
 
-00:03:45.175 --> 00:03:48.650
-Its address matches the one in the API
-settings.
+00:03:48.000 --> 00:03:50.775
+Its address matches the API setting.
 
-00:03:48.650 --> 00:03:50.750
-Both caches are the same type,
+00:03:50.775 --> 00:03:53.450
+Since the shop already uses this kind of
+cache,
 
-00:03:50.750 --> 00:03:54.250
-so the rule that found the first one can
-draw this new link too.
+00:03:53.450 --> 00:03:55.875
+the existing query adds the new link.
 
-00:03:54.617 --> 00:03:56.917
-The new cache shows up as Unknown.
+00:03:57.483 --> 00:04:01.433
+Unknown means the model has too little
+evidence to judge health.
 
-00:03:56.917 --> 00:03:58.792
-Azure told us it exists.
+00:04:01.433 --> 00:04:03.908
+Azure tells us offers-cache exists.
 
-00:03:58.792 --> 00:04:02.942
-To tell whether it’s healthy, Sattle needs
-readings for that cache.
+00:04:03.908 --> 00:04:05.658
+We still need its readings.
 
-00:04:02.942 --> 00:04:05.542
-For a different kind of resource, you may
-need a new rule
+00:04:05.658 --> 00:04:09.758
+A new kind of resource may also need a new
+matching rule or meter.
 
-00:04:05.542 --> 00:04:09.567
-to match its address, or a way to collect
-and interpret its readings.
+00:04:11.675 --> 00:04:13.775
+A patch is a list of changes.
 
-00:04:10.200 --> 00:04:12.100
-When a source reports a change,
+00:04:13.775 --> 00:04:15.650
+When a source reports an update,
 
-00:04:12.100 --> 00:04:15.400
-the engine updates the parts of the map
-that depend on it.
+00:04:15.650 --> 00:04:20.100
+the engine sends the affected parts to the
+Canvas, Sattle’s viewer.
 
-00:04:15.400 --> 00:04:18.825
-It sends those edits to the Canvas,
-Sattle’s viewer.
+00:04:20.100 --> 00:04:23.850
+A gap in reporting leaves the last known
+resource on the map.
 
-00:04:18.825 --> 00:04:22.925
-If a source stops reporting, Sattle keeps
-the last evidence.
+00:04:25.408 --> 00:04:28.458
+A revision marks a point in the history of
+the map.
 
-00:04:22.925 --> 00:04:26.150
-A quiet source can’t tell us the database
-is gone.
+00:04:28.458 --> 00:04:31.483
+The Canvas can return to it by taking a
+saved map
 
-00:04:26.533 --> 00:04:30.658
-The Canvas opens a saved map and applies
-the edits in order.
+00:04:31.483 --> 00:04:33.783
+and applying the next few patches.
 
-00:04:30.658 --> 00:04:34.908
-In this recording, version 16 shows the
-database outage.
+00:04:33.783 --> 00:04:37.333
+In this replay, revision 16 shows the
+outage.
 
-00:04:34.908 --> 00:04:37.958
-Skip to version 18 to see it recover.
+00:04:37.333 --> 00:04:39.683
+Revision 18 shows recovery.
 
-00:04:37.958 --> 00:04:40.733
-The version numbers count changes to the
-map.
+00:04:41.242 --> 00:04:46.317
+To test a replay, Sattle feeds the same
+records and rules to two programs.
 
-00:04:40.733 --> 00:04:43.508
-The times on the chart belong to the
-readings.
+00:04:46.317 --> 00:04:48.992
+One updates the graph as records arrive.
 
-00:04:43.867 --> 00:04:45.367
-The white paper explains
+00:04:48.992 --> 00:04:51.167
+The other rebuilds it from scratch.
 
-00:04:45.367 --> 00:04:48.317
-when updating the map one change at a time
-gives
+00:04:51.167 --> 00:04:54.167
+The white paper explains when their
+answers should agree.
 
-00:04:48.317 --> 00:04:51.692
-the same answer as rebuilding it from the
-beginning.
+00:04:56.117 --> 00:04:59.142
+An origin has a failing signal of its own.
 
-00:04:51.692 --> 00:04:54.342
-Sattle tests this with a second program.
+00:04:59.142 --> 00:05:04.267
+In the Canvas workload tree, select
+pg-shop at revision 16.
 
-00:04:54.342 --> 00:04:56.292
-Both programs get the same records
-
-00:04:56.292 --> 00:04:59.267
-and rules, and the test compares their
-maps.
-
-00:04:59.892 --> 00:05:05.367
-Open the workload tree in the Canvas at
-version 16 and select pg-shop.
-
-00:05:05.367 --> 00:05:09.517
-The origin marker tells you the server’s
-own meter tripped the alarm.
-
-00:05:09.517 --> 00:05:12.442
-Select the web service and you can see why
-it turned
-
-00:05:12.442 --> 00:05:15.642
-red even though the alarm came from the
+00:05:04.267 --> 00:05:07.417
+Its origin marker singles out the
 database.
 
-00:05:16.042 --> 00:05:19.442
-In the Inspector, follow the health result
-back to the rule,
+00:05:07.417 --> 00:05:10.967
+The web service is red because it depends
+on that database.
 
-00:05:19.442 --> 00:05:23.017
-then follow the database link back to its
-source records.
+00:05:12.517 --> 00:05:15.442
+Select the database link in the Inspector.
 
-00:05:23.017 --> 00:05:26.042
-On a running engine, you can edit a copy
-of the query
+00:05:15.442 --> 00:05:16.642
+Follow it through the health
 
-00:05:26.042 --> 00:05:28.142
-and preview the rows it returns.
+00:05:16.642 --> 00:05:20.342
+and structure queries to the recorded
+names and IDs.
 
-00:05:28.492 --> 00:05:31.317
-Try the two cache changes in the
-walkthrough.
+00:05:20.342 --> 00:05:24.167
+Those records let a teammate check why
+Sattle connected the service
 
-00:05:31.317 --> 00:05:35.667
-First give the API the existing cache
-address and watch the gateway.
+00:05:24.167 --> 00:05:25.892
+to this particular server.
 
-00:05:35.667 --> 00:05:38.892
-Then give it the new address and add the
-Azure record.
+00:05:27.450 --> 00:05:31.950
+To try a different rule, open the
+projection editor on a running engine.
 
-00:05:38.892 --> 00:05:41.467
-This time, look at the new cache’s health.
+00:05:31.950 --> 00:05:34.650
+Edit a draft, then preview its rows.
+
+00:05:34.650 --> 00:05:37.800
+You can see what your query would return
+before you save it.

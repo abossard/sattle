@@ -100,15 +100,18 @@ def generate_voice(lesson, temp):
         beats = []
         for focus, text in scene["cues"]:
             start = len(audio) / (2*RATE)
+            # Give the viewer a moment to find the new term before it is spoken.
+            audio.extend(bytes(round(.35 * RATE) * 2))
+            speech_start = len(audio) / (2*RATE)
             pcm, cues = narrate(narrator, style, text)
             audio.extend(pcm)
             for first, last, phrase in cues:
-                captions.append(f"{clock(start + first/RATE)} --> {clock(start + last/RATE)}\n"
+                captions.append(f"{clock(speech_start + first/RATE)} --> {clock(speech_start + last/RATE)}\n"
                                 + "\n".join(textwrap.wrap(phrase, 42, break_on_hyphens=False))+"\n")
-            # The model supplies pauses within and between passages. Align the
-            # next shot to a video frame and leave one extra beat between chapters.
-            gap = .25 if len(beats) + 1 == len(scene["cues"]) else 0
-            end = math.ceil((len(audio)/(2*RATE)+gap)*FPS)/FPS
+            # Hold the finished diagram after the explanation, especially at a
+            # chapter boundary. Keep short definitions on screen for eight seconds.
+            pause = 1.2 if len(beats) + 1 == len(scene["cues"]) else .8
+            end = math.ceil(max(len(audio)/(2*RATE) + pause, start + 8) * FPS) / FPS
             audio.extend(bytes(round(end*RATE)*2-len(audio)))
             beats.append(dict(focus=focus, text=text, start=start, end=end))
         times.append(dict(id=scene["id"],chapter=scene["chapter"],title=scene["title"],beats=beats))
@@ -129,15 +132,15 @@ def composition(story):
         for b, beat in enumerate(scene["beats"]):
             start, end = beat["start"],beat["end"]
             shots.append(f'''<section class="clip shot" id="{scene['id']}-{b}" data-start="{start:.5f}" data-duration="{end-start:.5f}" data-track-index="0">
-<header><b>Sattle</b><span>Field guide / Shop on Azure</span><span>{i+1:02d} / {len(story):02d}</span></header>
-<div class="chapter">{html.escape(scene['chapter'])}</div><h1>{html.escape(scene['title'])}</h1>
+<header><b>Sattle</b><span>Field guide</span><span class="chapter">{html.escape(scene['chapter'])}</span><span>{i+1:02d} / {len(story):02d}</span></header>
+<h1>{html.escape(beat['focus'])}</h1>
 <div class="story-board" data-topic="{scene['id']}" data-beat="{b}"></div>
-<footer><span>{html.escape(beat['focus'])}</span><small>Whole workload above · Evidence below</small></footer></section>''')
+<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>''')
     demo=next(s for s in story if s["id"]=="inspect")["beats"][0]
     shots.append(f'<video class="clip recording" id="replay-recording" muted playsinline src="assets/canvas-replay.mp4" data-start="{demo["start"]:.5f}" data-duration="7" data-track-index="2"></video>')
     total=story[-1]["beats"][-1]["end"]
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><title>How the shop gets its health model</title>
-<script src="vendor/gsap.min.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
+<script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
 <body><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="{total:.5f}">
 {chr(10).join(shots)}
 <audio id="voice" class="clip" data-start="0" data-duration="{total:.5f}" data-track-index="3" src="assets/voice.m4a"></audio></main><script>{(HERE/"motion.js").read_text()}</script></body></html>'''

@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><title>Sattle field guide · The pg-shop replay</title>
-  <link rel="stylesheet" href="learn.css">
-  <script defer src="film/shop-map.js"></script><script defer src="story-data.js"></script><script defer src="change-data.js"></script><script defer src="captions-local.js"></script>
-  <script defer src="replay-data.js"></script><script defer src="walkthrough.js"></script>
+  <link rel="stylesheet" href="learn.css?v=c333c8cf59d90f3f">
+  <script defer src="film/terms.js?v=2619a0c870312d8b"></script><script defer src="film/shop-map.js?v=953caa9352a72006"></script><script defer src="story-data.js?v=27a6ec78fc66f7c9"></script><script defer src="change-data.js"></script><script defer src="captions-local.js?v=2cb2cb88905e0f46"></script>
+  <script defer src="replay-data.js"></script><script defer src="walkthrough.js?v=4353a82b6b8d8545"></script>
 </head>
 <body>
 <a href="#lesson" class="skip">Skip to the lesson</a>
@@ -15,9 +15,13 @@
   <nav class="contents" aria-label="Field guide chapters"><p class="eyebrow">Contents</p><div id="chapters"></div><a class="paper-link" href="../../paper/README.md">Read the white paper ↗</a></nav>
   <main id="lesson" tabindex="-1">
     <p id="eyebrow" class="eyebrow"></p><h1 id="title"></h1><p id="intro" class="intro"></p>
-    <div id="animation" class="plate"><div id="map" data-responsive="true" data-asset-base="film/assets/"></div>
+    <div id="animation" class="plate">
+      <dl class="concept-card" aria-live="polite" aria-atomic="true"><dt id="concept-term"></dt><dd id="concept-meaning"></dd></dl>
+      <div id="map" data-responsive="true" data-asset-base="film/assets/"></div>
       <div class="player"><button id="listen">▶ Play with narration</button><label for="scene-position" class="sr">Position in chapter</label><input type="range" id="scene-position" min="0" max="1000" value="0" step="1"><output id="elapsed">0:00</output><button id="mute" aria-pressed="false">Mute</button></div>
-    </div><audio id="narrator" preload="metadata" src="film/assets/voice.m4a"></audio><div id="beat-buttons" class="options" aria-label="Jump to a moment"></div><p id="spoken" class="spoken"></p>
+    </div><audio id="narrator" preload="metadata" src="film/assets/voice.m4a?v=510335b15b8dda6e"></audio>
+    <div id="beat-buttons" class="options" role="group" aria-label="Jump to a moment"></div>
+    <details class="passage"><summary>Read this part of the narration</summary><p id="spoken" class="spoken"></p></details>
     <p class="context-line"><b>Shop on Azure</b> · Gateway, web and API · PostgreSQL, cache and storage</p>
     <div id="activity"></div><aside id="reading"></aside>
     <div class="pager"><button id="back">← Previous</button><span id="count"></span><button id="next">Next chapter →</button></div>

@@ -183,13 +183,16 @@ window.addEventListener("hashchange",()=>show(true));
 $(".skip").onclick=e=>{e.preventDefault();$("#lesson").focus();};
 // Some basic static servers omit byte ranges. A local Blob makes their media seekable.
 const mediaReady=new WeakMap();
-function prepareMedia(media){
+function prepareMedia(media, source){
   if(mediaReady.has(media))return mediaReady.get(media);
   const prepare=async()=>{
     if(location.protocol==="file:")return;
-    const url=media.currentSrc || media.src || media.querySelector("source").src;
+    const url=source || media.currentSrc || media.src;
     const headers=await fetch(url,{method:"HEAD"});
-    if(headers.headers.get("accept-ranges")?.includes("bytes"))return;
+    if(headers.headers.get("accept-ranges")?.includes("bytes")){
+      if(source)media.src=source;
+      return;
+    }
     const response=await fetch(url);
     if(!response.ok)throw Error("Media unavailable: "+response.status);
     const blob=await response.blob();
@@ -199,12 +202,48 @@ function prepareMedia(media){
     });
     media.preload="metadata";media.src=URL.createObjectURL(blob);media.load();await loaded;
   };
-  const ready=prepare().catch(()=>{mediaReady.delete(media);});
+  const ready=prepare().catch(()=>{
+    mediaReady.delete(media);
+    if(source)media.src=source;
+  });
   mediaReady.set(media,ready);return ready;
 }
 const cinema=$("#cinema"), video=cinema.querySelector("video");
-$("#film-captions").src=location.protocol==="file:"?URL.createObjectURL(new Blob([localCaptions],{type:"text/vtt"})):"captions.vtt";
-$("#watch").onclick=async()=>{player.pause();await prepareMedia(video);cinema.showModal();};
+const filmSource=video.querySelector("source"), filmCaptions=$("#film-captions");
+filmCaptions.src=location.protocol==="file:"?URL.createObjectURL(new Blob([localCaptions],{type:"text/vtt"})):"captions.vtt";
+
+async function prepareFilm(){
+  if(location.protocol==="file:")return;
+  // An open guide can outlive a render. Check the small digest before reusing
+  // a movie from the browser cache or the blob kept for servers without ranges.
+  let version;
+  try{
+    const response=await fetch("film-version.txt",{cache:"no-store"});
+    if(response.ok)version=(await response.text()).trim();
+  }catch{/* Some static hosts serve only the media files. */}
+  if(!/^[a-f0-9]{64}$/.test(version || ""))version=String(Date.now());
+
+  const url=new URL(filmSource.src);
+  url.searchParams.set("v",version);
+  const changed=filmSource.src!==url.href, oldBlob=video.getAttribute("src");
+  if(changed)mediaReady.delete(video);
+  // Choose a native stream or a blob before changing the <source>. Starting
+  // both requests for the same movie can block playback on a no-range server.
+  await prepareMedia(video,url.href);
+  if(changed){
+    filmSource.src=url.href;
+    cinema.querySelector("a[download]").href=url.href;
+    filmCaptions.src="captions.vtt?v="+version;
+    video.poster="film/poster.jpg?v="+version;
+    if(oldBlob?.startsWith("blob:")&&oldBlob!==video.src)URL.revokeObjectURL(oldBlob);
+  }
+}
+const watch=$("#watch");
+watch.onclick=async()=>{
+  player.pause();watch.disabled=true;
+  try{await prepareFilm();cinema.showModal();}
+  finally{watch.disabled=false;}
+};
 $("#close").onclick=()=>{video.pause();cinema.close();};
 cinema.addEventListener("cancel",()=>video.pause());
 cinema.addEventListener("close",()=>video.pause());
@@ -224,6 +263,9 @@ const player=(()=>{
     const beat=scene.beats[i];
     if(i!==activeBeat){
       activeBeat=i;map=ShopMap.mount($("#map"),scene.id,i);
+      const [term, meaning]=ShopTerms[scene.id][i];
+      $("#concept-term").textContent=term;
+      $("#concept-meaning").textContent=meaning;
       [...$("#beat-buttons").children].forEach((b,k)=>b.setAttribute("aria-pressed",String(k===i)));
       $("#spoken").textContent=beat.text;
     }
@@ -233,6 +275,11 @@ const player=(()=>{
     const clock=Math.floor(seconds/60)+":"+String(Math.floor(seconds)%60).padStart(2,"0");
     $("#elapsed").value=clock;range.setAttribute("aria-valuetext",clock+" · "+beat.focus);
   }
+  matchMedia("(max-width:640px)").addEventListener("change",()=>{
+    if(!scene || activeBeat<0)return;
+    map=ShopMap.mount($("#map"),scene.id,activeBeat);
+    showTime(position);
+  });
   function tick() {
     showTime(audio.currentTime);
     if(position>=scene.beats.at(-1).end-.06){pause();return;}

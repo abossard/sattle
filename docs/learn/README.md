@@ -2,7 +2,9 @@
 
 [Open the interactive guide](index.html) · [Watch the narrated film](sattle.mp4) · [Read the transcript](transcript.md)
 
-Open the HTML file in a browser from a local checkout. Select **Play with narration** to hear the chapter, click a moment to jump ahead, or drag the time control. The upper diagram keeps the whole shop in view. The lower diagram shows the observation, rule or change currently being explained. Arrows point from a component to what it needs. During a failure, the animated dots travel back toward the affected callers.
+Open the HTML file in a browser and select **Play with narration**. Choose a term to jump to its scene, or drag the time control to see a change again. Each term stays on screen with its definition while the diagram plays.
+
+Read arrows from a caller to the service it needs. During an outage the dots travel back toward the callers. Green with a check means Healthy, amber with a triangle means Degraded, red with a cross means Unhealthy, and violet with a question mark means Unknown.
 
 Both lessons work offline. To view them through a local server, run this from the repository root, then open the [field guide](http://127.0.0.1:8397/docs/learn/).
 
@@ -33,7 +35,7 @@ python3 -B docs/learn/build_evidence.py
 python3 -B docs/learn/replay_change.py
 ```
 
-Edit the words in [lesson.json](film/lesson.json). The film and walkthrough use the same voice recording, captions and [diagrams](film/shop-map.js). Each passage gets one take. The builder uses the timing of the spoken sounds to place the captions.
+Edit the narration in [lesson.json](film/lesson.json) and the on-screen definitions in [terms.js](film/terms.js). The film and walkthrough share the voice recording, captions and [diagrams](film/shop-map.js). Each passage gets one take. The builder uses the timing of the spoken sounds to place the captions.
 
 To record a new take, install Python 3.12 and FFmpeg. The setup script downloads the Kokoro model and its voices once into `film/.narrator/`. After that, you can record offline. This lesson uses the American English voice Heart. Playback needs only a browser. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 
