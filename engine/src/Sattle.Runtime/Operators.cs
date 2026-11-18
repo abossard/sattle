@@ -60,7 +60,7 @@ public abstract class PhysOp
     protected Batch? In(IReadOnlyDictionary<string, Batch?> inputs, string port) => inputs.GetValueOrDefault(port);
 
     BatchBuilder? output;
-    /// <summary>This operator's output batch, emptied for the call in hand. It belongs to the operator and is valid until the operator runs again: a reader that keeps rows copies them, as a compiled expression's column is valid until its next evaluation. The engine keeps an operator's output for one step and runs each operator once per step.</summary>
+    /// <summary>This operator's output batch, emptied for the call in hand. It belongs to the operator and is valid until the operator runs again or the step ends (`WorkingArrays` may cut it then): a reader that keeps rows copies them, as a compiled expression's column is valid until its next evaluation. The engine keeps an operator's output for one step and runs each operator once per step.</summary>
     protected BatchBuilder EmptyOutput() { output ??= new BatchBuilder(OutLayout); output.Reset(); return output; }
 }
 
@@ -150,6 +150,7 @@ sealed class MapOp : PhysOp
         for (var c = 0; c < OutLayout.Count; c++) cols[c] = passthrough[c] >= 0 ? b.Cols[passthrough[c]] : compute[c]!.Eval(b);
         for (var c = 0; c < carry.Length; c++) cols[OutLayout.Count + c] = b.Cols[carry[c]];
         view.N = b.N; view.W = b.W; view.Sel = b.Sel; view.SelN = b.SelN;
+        if (b.N > WorkingArrays.Small) WorkingArrays.Shows(view);
         return view;
     }
     /// <summary>The output: a view of the input's rows with this operator's columns, refilled by every call. Like `EmptyOutput`, it is valid until the operator runs again.</summary>

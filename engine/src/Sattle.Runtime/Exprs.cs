@@ -86,20 +86,18 @@ sealed class VField : VExpr
 sealed class VLit : VExpr
 {
     readonly long l; readonly decimal d; readonly bool isNull;
-    int filled = -1;
     public VLit(Value v, Interner it)
     {
         if (v is DecimalValue q) { IsDec = true; d = q.Q; }
         else if (v is NullValue) isNull = true;
         else l = Codec.ToCode(v, it);
     }
+    /// <summary>Filled on every call: the column's arrays are working arrays that another expression may have used since (`WorkingArrays`).</summary>
     public override Column Eval(Batch b)
     {
         var o = Scratch(b.N);
-        if (filled >= b.N && !isNull) return o;
         if (IsDec) Array.Fill(o.D, d, 0, b.N); else Array.Fill(o.L, l, 0, b.N);
         if (isNull) for (var i = 0; i < Math.Max(b.N, 1); i++) Absent(o, i, Math.Max(b.N, 1));
-        filled = b.N;
         return o;
     }
 }

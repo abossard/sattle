@@ -216,7 +216,7 @@ public sealed class Layout
     public bool Has(string name) => index.ContainsKey(name);
 }
 
-public sealed class Column
+public sealed class Column : IWorkingArrays
 {
     public long[] L = [];
     public decimal[] D = [];
@@ -225,9 +225,18 @@ public sealed class Column
     public Column(bool isDec) { IsDec = isDec; }
     public void Ensure(int n)
     {
-        if (IsDec) { if (D.Length < n) Array.Resize(ref D, Math.Max(n, 64)); }
-        else if (L.Length < n) Array.Resize(ref L, Math.Max(n, 64));
-        if (P is not null && P.Length < n) { var old = P.Length; Array.Resize(ref P, Math.Max(n, 64)); Array.Fill(P, true, old, P.Length - old); }
+        if (IsDec) { if (D.Length < n) D = WorkingArrays.Grow(D, n, this); }
+        else if (L.Length < n) L = WorkingArrays.Grow(L, n, this);
+        if (P is not null && P.Length < n) { var old = P.Length; P = WorkingArrays.Grow(P, n, this); Array.Fill(P, true, old, P.Length - old); }
+    }
+    bool IWorkingArrays.Listed { get; set; }
+    /// <summary>Back to the first size, every row present; large arrays go back to the pool (`WorkingArrays`).</summary>
+    void IWorkingArrays.Cut()
+    {
+        if (IsDec) { WorkingArrays.Return(D); D = new decimal[WorkingArrays.Small]; }
+        else { WorkingArrays.Return(L); L = new long[WorkingArrays.Small]; }
+        if (P is not null) WorkingArrays.Return(P);
+        P = null;
     }
     public bool Present(int i) => P is null || P[i];
     public void ClearPresence() => P = null;
@@ -235,7 +244,7 @@ public sealed class Column
 }
 
 /// <summary>A signed row batch (a Z-set slice): columns, weights (null means +1 for every row), optional selection vector. `Cols` may hold columns behind those the layout names: the ones a `Map` carries for lineage, which only a `Group` and a sink read; every other reader goes by the layout.</summary>
-public sealed class Batch
+public sealed class Batch : IWorkingArrays
 {
     public Layout Layout { get; }
     public Column[] Cols { get; }
@@ -248,12 +257,22 @@ public sealed class Batch
         Layout = layout; Cols = new Column[layout.Count];
         for (var i = 0; i < Cols.Length; i++) { Cols[i] = new Column(layout.IsDec[i]); if (capacity > 0) Cols[i].Ensure(capacity); }
     }
-    Batch(Layout layout, Column[] cols, int n, long[]? w) { Layout = layout; Cols = cols; N = n; W = w; }
+    Batch(Layout layout, Column[] cols, int n, long[]? w) { Layout = layout; Cols = cols; N = n; W = w; view = true; }
+    /// <summary>The batch shows another batch's columns and weights (`Project`, `WithSelection`, `WithColumns`).</summary>
+    readonly bool view;
+    bool IWorkingArrays.Listed { get; set; }
+    /// <summary>Empty, its weights back to the first size; a view lets go of the columns and weights it shows (`WorkingArrays`).</summary>
+    void IWorkingArrays.Cut()
+    {
+        N = 0; Sel = null; SelN = 0;
+        if (view) { Array.Clear(Cols); W = null; }
+        else if (W is not null) { WorkingArrays.Return(W); W = new long[WorkingArrays.Small]; }
+    }
 
     public int Rows => Sel is null ? N : SelN;
     public int RowAt(int k) => Sel is null ? k : Sel[k];
     public long Weight(int row) => W is null ? 1 : W[row];
-    public void Ensure(int n) { foreach (var c in Cols) c.Ensure(n); if (W is not null && W.Length < n) Array.Resize(ref W, Math.Max(n, 64)); }
+    public void Ensure(int n) { foreach (var c in Cols) c.Ensure(n); if (W is not null && W.Length < n) W = WorkingArrays.Grow(W, n, this); }
     public void Clear() { N = 0; Sel = null; SelN = 0; foreach (var c in Cols) c.P = null; }
 
     /// <summary>A view sharing the column arrays with a new layout and column mapping (no data copy).</summary>
@@ -267,6 +286,68 @@ public sealed class Batch
     public Batch WithColumns(Layout layout, Column[] cols) => new(layout, cols, N, W) { Sel = Sel, SelN = SelN };
 
     public bool IsEmpty => Rows == 0;
+}
+
+/// <summary>An owner of working arrays: a column, or a batch's weights.</summary>
+interface IWorkingArrays { bool Listed { get; set; } void Cut(); }
+
+/// <summary>The working arrays of a step: the output batches and columns that operators and compiled expressions keep from call to call. One that grows past its first size (`Small` rows) while the engine runs a step takes a power-of-two array from a pool, and when the step ends it is cut back to its first size and its array goes back to the pool. The arrays of a large change are shared by the operators of the steps that follow instead of each keeping its own largest call; the pool drops an array that no step took for `Keep` steps. Nothing read after a step lives in them: the engine reads an operator's output within its step.</summary>
+public static class WorkingArrays
+{
+    public const int Small = 64, Keep = 256;
+    [ThreadStatic] static List<IWorkingArrays>? grown;
+    [ThreadStatic] static bool open;
+    /// <summary>Steps closed on this thread: the age of an array in the pool.</summary>
+    [ThreadStatic] static long steps;
+    /// <summary>The engine starts the operators of a step on this thread.</summary>
+    public static void Open() => open = true;
+    /// <summary>A reused view that shows a batch past its first size: it lets go of it when the step ends.</summary>
+    public static void Shows(Batch view) => List(view);
+    /// <summary>The step's operators are done and their outputs read: what grew is cut and its arrays go back to the pool.</summary>
+    public static void Close()
+    {
+        open = false; steps++;
+        Pool<long>.Drop(); Pool<decimal>.Drop(); Pool<bool>.Drop();
+        if (grown is not { Count: > 0 }) return;
+        foreach (var x in grown) { x.Cut(); x.Listed = false; }
+        grown.Clear();
+    }
+
+    /// <summary>`a` grown to hold `n` rows, its rows kept and the rest zero. Past `Small` while a step is open, from the pool; the owner is cut when the step ends.</summary>
+    internal static T[] Grow<T>(T[] a, int n, IWorkingArrays owner)
+    {
+        if (!open || n <= Small) { Array.Resize(ref a, Math.Max(n, Small)); return a; }
+        var b = Pool<T>.Rent(n);
+        Array.Copy(a, b, a.Length); Array.Clear(b, a.Length, b.Length - a.Length);
+        Return(a);
+        List(owner);
+        return b;
+    }
+    internal static void Return<T>(T[] a) { if (a.Length > Small && System.Numerics.BitOperations.IsPow2(a.Length)) Pool<T>.Give(a); }
+    static void List(IWorkingArrays x) { if (!open || x.Listed) return; x.Listed = true; (grown ??= []).Add(x); }
+
+    /// <summary>Free arrays by power-of-two length, the oldest first.</summary>
+    static class Pool<T>
+    {
+        [ThreadStatic] static List<(T[] A, long Given)>?[]? free;
+        public static T[] Rent(int n)
+        {
+            var k = System.Numerics.BitOperations.Log2(System.Numerics.BitOperations.RoundUpToPowerOf2((uint)n));
+            if (free?[k] is { Count: > 0 } f) { var a = f[^1].A; f.RemoveAt(f.Count - 1); return a; }
+            return new T[1 << k];
+        }
+        public static void Give(T[] a) { free ??= new List<(T[], long)>?[32]; (free[System.Numerics.BitOperations.Log2((uint)a.Length)] ??= []).Add((a, steps)); }
+        public static void Drop()
+        {
+            if (free is null) return;
+            foreach (var f in free)
+            {
+                if (f is null) continue;
+                var n = 0; while (n < f.Count && steps - f[n].Given > Keep) n++;
+                if (n > 0) f.RemoveRange(0, n);
+            }
+        }
+    }
 }
 
 /// <summary>Per-engine element id handles and a few conversions between values and columns.</summary>

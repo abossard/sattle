@@ -493,6 +493,7 @@ public sealed class Engine : IDisposable, IEngineInput
     {
         var outputs = g.StepOutputs; var ops = g.Plan.Ops; var keys = TrackAllocations ? g.MeasureKeys : null;
         long a = TrackAllocations ? GC.GetAllocatedBytesForCurrentThread() : 0, t = System.Diagnostics.Stopwatch.GetTimestamp();
+        WorkingArrays.Open();
         try
         {
             for (var i = 0; i < ops.Count; i++)
@@ -525,6 +526,7 @@ public sealed class Engine : IDisposable, IEngineInput
             // the step's batches belong to their operators: the reused views let go of them
             outputs.Clear();
             for (var i = 0; i < ops.Count; i++) foreach (var (port, _) in g.StepPorts[i]) g.StepInputs[i][port] = null;
+            WorkingArrays.Close();
         }
         Charge("(step dispatch)", ref a, ref t);
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();

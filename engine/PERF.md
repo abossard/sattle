@@ -903,6 +903,23 @@ Theory. The segment is the allocation unit of every column (operator state, grap
 - GC pause at 10^5 0.69 / 0.77 s.
 - Before is the traverse rows patch. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load and not comparable; bytes are.
 
+### Efficiency stage 2, working arrays: a large step's batches and expression columns go to a shared pool after the step (#115, 2026-11-18)
+Every operator keeps its output batch and every compiled expression its column from call to call (#39), so a call allocates nothing for a change that fits. They grew to the largest call each one ever saw (the first load, an advance that closes every window) and stayed at that size, though between steps they hold nothing: the engine reads an output only within its step. At 10^5 that was 363 MB of 1,350 MB live, counted with a temporary diagnostic (not in the patch) over every operator's output batch, its expressions' columns and the input columns a reused view still showed.
+
+Theory. The working arrays live for one step. One that grows past its first size (64 rows) while a step runs takes a power-of-two array from a pool on the engine's thread; when the step's operators are done, it is cut back to 64 rows and its array goes back to the pool, and a reused view lets go of the batch it showed. The next steps take their arrays from the pool, so the arrays of a large change are shared by all operators instead of each keeping its own largest call; an array no step took for 256 steps is dropped. A literal's column is filled on every call, since its array may have served another expression since. Same rows, same output; no state and no seal change.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 234 / 200 MB | 1,350 / 1,131 MB |
+| operators' working arrays (diagnostic) | 61.0 / 3.2 MB | 362.7 / 3.6 MB |
+| allocated per input record | 10.08 / 9.52 KB | 9.69 / 9.41 KB |
+| peak resident set | 592 / 526 MB | 2,231 / 2,031 MB |
+
+- The allocation falls because operators share the pool: a step whose batches are larger than those of the step before takes arrays another operator let go instead of growing its own. Bounds tried at 10^4 (live, allocated): a cut past 4,096 rows without a pool 224 and 826 MB; past 1,024 rows without a pool 199 and 975 MB; with the pool, a cut past 64 to 1,024 rows and a drop after 16 to 256 steps 200 to 201 and 778 to 866 MB, after 512 steps 208 and 787 MB, after 1,024 steps 213 and 822 MB. 64 rows and 256 steps was the lowest allocation.
+- What the pool holds after the replay is not attributed by the census (coverage 99 to 96 % at 10^5, about 44 MB): the arrays the last 256 steps let go.
+- Cost: a cut column is given a new array of 64 rows (24 MB at 10^5 in the step dispatch).
+- Before is main fa0be02 with the ones, joins, Match, telemetry flush state, mint, traverse and traverse rows patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 30 to 60) and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
