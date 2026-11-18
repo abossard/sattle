@@ -1,4 +1,5 @@
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Sattle.Core;
@@ -23,7 +24,8 @@ public sealed class IdentityCatalog(string tenant, Interner it)
 {
     /// <summary>A key: its domain's index and up to four canonical component codes. A component is a text code of the interner, so it is held in 4 bytes.</summary>
     internal readonly record struct Key(int Dom, int A, int B, int C, int D);
-    readonly Dictionary<Key, int> bound = [];
+    /// <summary>Per bound key: the identity it is bound to (`To`), and the key's own id once computed (`Own`, -1 before; `Resolve` with `own`). One lookup gives both.</summary>
+    readonly Dictionary<Key, (int To, int Own)> bound = [];
     readonly List<IdDomain> domains = [];
     public List<IdentityBinding> Pending { get; } = [];
     /// <summary>The store took the pending bindings: the list is emptied, and a list grown past 4,096 by a large step is let go.</summary>
@@ -39,13 +41,13 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     public Action<int, int>? OnMerge { get; set; }
 
     /// <summary>The representative of an identity: follow forwarding records until none applies.</summary>
-    public int Rep(int h) { while (forward.TryGetValue(h, out var s)) h = s; return h; }
+    public int Rep(int h) { if (forward.Count == 0) return h; while (forward.TryGetValue(h, out var s)) h = s; return h; }
     public int Count => bound.Count;
 
     /// <summary>Every key bound to an identity with its domain and canonical component texts, by the representative id of the identity. Read-only view for explaining an id (a reference to an element that is not in a graph).</summary>
     public IEnumerable<(IdDomain Domain, string Id, string[] Components)> Bindings()
     {
-        foreach (var (k, h) in bound)
+        foreach (var (k, (h, _)) in bound)
         {
             var d = domains[k.Dom]; var comps = new string[d.CompNames.Length];
             for (var i = 0; i < comps.Length; i++) comps[i] = it.Get(i switch { 0 => k.A, 1 => k.B, 2 => k.C, _ => k.D });
@@ -78,36 +80,40 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     /// <summary>The canonicalizer leaves every text as it is.</summary>
     public static bool KeepsText(string canon) => canon is not ("LowerInvariant" or "Trim" or "IpCanonical" or "UuidLower");
 
-    public int Resolve(IdDomain d, ReadOnlySpan<long> canon)
+    public int Resolve(IdDomain d, ReadOnlySpan<long> canon) => Rep(Entry(d, canon).To);
+
+    /// <summary>`Resolve`, and in `own` the id allocated for the key itself, whatever it is bound or forwarded to: a pure function of tenant, domain and components (Def. 1.9). The telemetry sink tells rows written under two ids of one class apart by it (Law 7.5 item 3); computed once per key.</summary>
+    public int Resolve(IdDomain d, ReadOnlySpan<long> canon, out int own)
+    {
+        ref var e = ref Entry(d, canon);
+        if (e.Own < 0) e.Own = Mint(d, canon);
+        own = e.Own;
+        return Rep(e.To);
+    }
+
+    /// <summary>The binding of a key, minted and recorded when the key is not bound yet (its own id is then the identity).</summary>
+    ref (int To, int Own) Entry(IdDomain d, ReadOnlySpan<long> canon)
     {
         var k = K(d, canon);
-        if (bound.TryGetValue(k, out var h)) return Rep(h);
-        h = Mint(d, canon);
-        bound[k] = h;
+        ref var e = ref CollectionsMarshal.GetValueRefOrAddDefault(bound, k, out var found);
+        if (found) return ref e;
+        var h = Mint(d, canon);
+        e = (h, h);
         Minted++;
         Pending.Add(IdentityBinding.Bound(this, k, h));
-        return h;
+        return ref e;
     }
 
-    public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var h) ? Rep(h) : null;
-
-    readonly Dictionary<Key, int> own = [];
-    /// <summary>The id allocated for the key itself, whatever it is bound or forwarded to: a pure function of tenant, domain and components (Def. 1.9). The telemetry sink tells rows written under two ids of one class apart by it (Law 7.5 item 3); computed once per key.</summary>
-    public int OwnOf(IdDomain d, ReadOnlySpan<long> canon)
-    {
-        var k = K(d, canon);
-        if (!own.TryGetValue(k, out var h)) own[k] = h = Mint(d, canon);
-        return h;
-    }
+    public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var e) ? Rep(e.To) : null;
 
     /// <summary>Rule B2 (alias): binds an unbound key to an existing identity. A key already bound to another identity of the same entity type means late evidence that two identities denote one entity: they merge (forwarding record, survivor the smaller id). Identities of different entity types are a conflict and the link is ignored.</summary>
     public BindOutcome Bind(IdDomain d, ReadOnlySpan<long> canon, int entity, IdDomain? left = null)
     {
         var k = K(d, canon);
         entity = Rep(entity);
-        if (bound.TryGetValue(k, out var h))
+        if (bound.TryGetValue(k, out var e))
         {
-            var rh = Rep(h);
+            var rh = Rep(e.To);
             if (rh == entity) return BindOutcome.AlreadyBound;
             if (left is not null && left.IdentifiesType != d.IdentifiesType && left.IdentifiesType is not null && d.IdentifiesType is not null) { Conflicts++; return BindOutcome.Conflict; }
             var (survivor, loser) = string.CompareOrdinal(it.Get(entity), it.Get(rh)) <= 0 ? (entity, rh) : (rh, entity);
@@ -122,14 +128,14 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         if (((ReadOnlySpan<char>)ownId).SequenceCompareTo(it.Get(entity)) < 0)
         {
             var own = it.Intern(ownId);
-            bound[k] = own; Aliased++;
+            bound[k] = (own, own); Aliased++;
             Pending.Add(IdentityBinding.Bound(this, k, own));
             forward[entity] = own; Merges++;
             Pending.Add(IdentityBinding.Forward(this, entity, own));
             OnMerge?.Invoke(entity, own);
             return BindOutcome.Merged;
         }
-        bound[k] = entity;
+        bound[k] = (entity, -1);
         Aliased++;
         Pending.Add(IdentityBinding.Bound(this, k, entity));
         return BindOutcome.Bound;
@@ -245,7 +251,7 @@ sealed class VId : VExpr
     readonly IdDomain dom; readonly VExpr[] comps; readonly IdentityCatalog cat; readonly Interner it; readonly RuntimeFaults faults;
     readonly CodeCache[] caches; readonly bool[] keepsText;
     readonly long[] buf; readonly Column[] cols;
-    /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.OwnOf`).</summary>
+    /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.Resolve` with `own`).</summary>
     public bool TrackOwn { get; set; }
     public Column? Owns { get; private set; }
     public VId(IdDomain dom, VExpr[] comps, IdentityCatalog cat, Interner it, RuntimeFaults faults)
@@ -278,8 +284,8 @@ sealed class VId : VExpr
                 buf[k] = cc;
             }
             if (!ok) { Absent(o, i, n); continue; }
-            o.L[i] = cat.Resolve(dom, buf);
-            if (TrackOwn) Owns!.L[i] = cat.OwnOf(dom, buf);
+            if (TrackOwn) { o.L[i] = cat.Resolve(dom, buf, out var own); Owns!.L[i] = own; }
+            else o.L[i] = cat.Resolve(dom, buf);
         }
         return o;
     }

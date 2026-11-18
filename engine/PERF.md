@@ -1214,6 +1214,17 @@ Theory. A link that was never written reads 0 (none): a new segment is zero, and
 - At 10^5 live is now 8.26 KB per master node. Projected to 10^6 with the ratios of the second 10^6 run (same code at both scales), about 7.8 KB per structure, or 8.0 KB with that run's overall ratio of 0.97.
 - Before is main 4afb044 with the interner and the join below a traverse. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Times are measured under load (load average 250 to 380) and not comparable; bytes are.
 
+### Window close: one catalog lookup per row gives the identity and the key's own id (#119, 2026-11-18)
+Theory. An emit that writes telemetry evaluates the identity of every row twice in the catalog: the identity through the bindings (then `Rep` through the forwarding records), and the key's own id through a second table by the same key. Both tables hold an entry per key, so each row paid two lookups in a large table (1,965,821 rows in the twelve closes at 10^5; 491 ms for both under load 460, by the sub-timers of the previous section). A binding now holds both: the identity and the key's own id, filled on first use; a key that `Resolve` mints has its own id as its identity. One lookup per row, and `Rep` returns at once while no identities merged. The second table goes: a bound key holds 4 bytes more, a key whose own id is read holds about 36 bytes less.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| steady close, thread CPU median | 42 / 74 ms | 441 / 453 ms |
+| allocated per steady close | 8.9 / 8.9 MB | 90.2 / 90.2 MB |
+
+- One pair at load 460 to 530: thread CPU at that load moves by more than the change. The last section of the day has the pairs that decide it.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
