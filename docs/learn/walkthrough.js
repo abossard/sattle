@@ -3,14 +3,14 @@
 const $ = (selector) => document.querySelector(selector);
 const root = "../../";
 const lessons = {
-  origins: ["The whole shop", "Follow the shop from its web front end and API to the Azure resources they use. The upper map stays in view while the lower diagram shows how each part of the model is built.", observations, [["Capture format","lab/CAPTURE-FORMAT.md"],["Azure lab","lab/README.md"],["Graph space","engine/definitions/acme.space.sattle"]]],
-  rules: ["What you contribute", "Start with the supplied definitions. Choose the workload boundary, decide which signals matter, and say how a dependency should affect its callers.", author, [["Scope and bindings","engine/definitions/acme.space.sattle"],["Shipped signal rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["Health calculation","engine/definitions/acme.workload.workloadHealth.kql"]]],
-  layers: ["The theory", "Identity connects reports about the same thing. Projections turn detailed observations into a higher-level view. Lineage records what supports an answer.", identity, [["Paper · Identity","paper/ch01-values-and-identity.md"],["Paper · Ontologies","paper/ch02-ontologies-as-type-graphs.md"],["Paper · Projections","paper/ch05-projection-language.md"]]],
-  incident: ["The pg-shop incident", "Trace a real reading in the synthetic fixture. The model distinguishes the database that fails from the web service and gateway that feel its effects.", incident, [["Database readings","engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson"],["Paper · Measurements","paper/ch07-telemetry-plane.md"]]],
-  dependency: ["Add a dependency", "Compare two engine runs through 10:06:30 UTC. One API deployment update changes who depends on the overloaded cache. Both runs use the same KQL and health rules.", compareChange, [["Reproduce the experiment","docs/learn/replay_change.py"],["How dependencies are matched","engine/definitions/acme.workload.workloadStructure.kql"]]],
-  azure: ["Change Azure inventory", "In a separate experiment, the API names offers-cache before Azure reports it. Supply the missing inventory record to see what the engine can now infer.", compareAzure, [["Reproduce both inventory cases","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
-  replay: ["Change and replay", "The source clock tells you when a sample was taken. A graph revision tells you when the model changed. Step through the engine’s exported revisions to see the difference.", revisions, [["Exported workload patches","canvas/public/demo/estate/workload.patches.ndjson"],["Paper · Incremental updates","paper/ch06-semantics-and-incrementality.md"],["Revisions","paper/ch03-graphs-and-revisions.md"]]],
-  inspect: ["Check the evidence", "Use the real Canvas views to trace a result back to its inputs. Open the repository links to follow the same example into the lab, engine, tests, and white paper.", inspectProject, [["Engine","engine/README.md"],["Canvas","canvas/README.md"],["Paper · Evidence and lineage","paper/ch09-evolution-evidence-provenance.md"],["Paper · Evaluation","paper/ch14-evaluation.md"]]]
+  origins: ["The whole shop", "Start at the web service and follow its calls to the database. Pick a source below the map to see what it tells Sattle about pg-shop.", observations, [["Capture format","lab/CAPTURE-FORMAT.md"],["Azure lab","lab/README.md"],["Graph space","engine/definitions/acme.space.sattle"]]],
+  rules: ["What you contribute", "The replay comes with a database alarm. Try changing how many good readings it takes for your shop to turn green again.", author, [["Scope and bindings","engine/definitions/acme.space.sattle"],["Shipped signal rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["Health calculation","engine/definitions/acme.workload.workloadHealth.kql"]]],
+  layers: ["The theory", "Azure sends two reports about pg-shop. Which field tells you they describe the same server?", identity, [["Paper · Identity","paper/ch01-values-and-identity.md"],["Paper · Ontologies","paper/ch02-ontologies-as-type-graphs.md"],["Paper · Projections","paper/ch05-projection-language.md"]]],
+  incident: ["The pg-shop incident", "Drag the clock through the recorded outage. The database starts answering at 10:14. Watch when the alarm clears.", incident, [["Database readings","engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson"],["Paper · Measurements","paper/ch07-telemetry-plane.md"]]],
+  dependency: ["Add a dependency", "Compare the gateway at the same moment in two runs. In the second run, the API also needs the cache.", compareChange, [["Reproduce the experiment","docs/learn/replay_change.py"],["How dependencies are matched","engine/definitions/acme.workload.workloadStructure.kql"]]],
+  azure: ["Change Azure inventory", "The API already has the address for offers-cache. Add the Azure inventory record and see what the map can tell you about the new cache.", compareAzure, [["Reproduce both inventory cases","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
+  replay: ["Change and replay", "Move between versions 15 and 18 of the saved shop map. Which services change when the database goes down?", revisions, [["Exported workload patches","canvas/public/demo/estate/workload.patches.ndjson"],["Paper · Incremental updates","paper/ch06-semantics-and-incrementality.md"],["Revisions","paper/ch03-graphs-and-revisions.md"]]],
+  inspect: ["Check the evidence", "Open the workload tree to find pg-shop. Then use the other two Canvas views to find the query behind its health.", inspectProject, [["Engine","engine/README.md"],["Canvas","canvas/README.md"],["Paper · Evidence and lineage","paper/ch09-evolution-evidence-provenance.md"],["Paper · Evaluation","paper/ch14-evaluation.md"]]]
 };
 const chapters=story.map(scene=>{
   const [nav,intro,activity,sources]=lessons[scene.id];
@@ -52,7 +52,7 @@ function incident() {
   const path = 'M'+x(0)+' '+y(samples[0].value)+samples.slice(1).map((s,i) => 'H'+x(i+1)+'V'+y(s.value)).join('');
   const grid = [38,117].map(h => '<line x1="53" x2="715" y1="'+h+'" y2="'+h+'" stroke="#486165" stroke-dasharray="3 5"/>').join('');
   const ticks = samples.map((s,i) => '<circle cx="'+x(i)+'" cy="'+y(s.value)+'" r="3.4" fill="#adddc9"/>'+([0,3,6,9].includes(i)?'<text x="'+x(i)+'" y="153" text-anchor="middle" fill="#c5d7d0">'+s.minute+'</text>':'')).join('');
-  setActivity(plate("Database signal / pg-shop","Synthetic replay",'<div class="headline"><div class="clock"><span id="time"></span> <small>UTC</small></div><strong id="health" class="state"></strong></div><svg class="chart" viewBox="0 0 740 166" role="img" aria-label="Database meter. One until 10:10, zero from 10:11 through 10:13, then one again."><g font-family="monospace" font-size="15">'+grid+'<text x="22" y="43" fill="#c5d7d0">1</text><text x="22" y="122" fill="#c5d7d0">0</text><path d="'+path+'" fill="none" stroke="#9be2be" stroke-width="4" stroke-linejoin="round"/>'+ticks+'<g class="cursor" id="marker"><circle r="13" fill="#fff2bd" opacity=".25"/><circle r="6" fill="#f9db89"/></g></g></svg><div class="scrub"><label for="minute">Sample minute</label><input id="minute" type="range" min="0" max="9" value="3" step="1"></div>')+'<p class="note" id="signal-note"></p><details><summary>Why does the alarm stay on after a good reading?</summary><p>The authored rule trips after one minute at or below 0.5. It clears after two consecutive minutes at or above 0.9. Remembering the previous state keeps the alarm from switching back and forth after every reading.</p></details>');
+  setActivity(plate("Database signal / pg-shop","Synthetic replay",'<div class="headline"><div class="clock"><span id="time"></span> <small>UTC</small></div><strong id="health" class="state"></strong></div><svg class="chart" viewBox="0 0 740 166" role="img" aria-label="Database meter. One until 10:10, zero from 10:11 through 10:13, then one again."><g font-family="monospace" font-size="15">'+grid+'<text x="22" y="43" fill="#c5d7d0">1</text><text x="22" y="122" fill="#c5d7d0">0</text><path d="'+path+'" fill="none" stroke="#9be2be" stroke-width="4" stroke-linejoin="round"/>'+ticks+'<g class="cursor" id="marker"><circle r="13" fill="#fff2bd" opacity=".25"/><circle r="6" fill="#f9db89"/></g></g></svg><div class="scrub"><label for="minute">Sample minute</label><input id="minute" type="range" min="0" max="9" value="3" step="1"></div>')+'<p class="note" id="signal-note"></p><details><summary>Why does the alarm stay on after a good reading?</summary><p>One minute at or below 0.5 trips this alarm. Two minutes in a row at or above 0.9 clear it. That’s why the first good reading leaves the database red.</p></details>');
   const slider = $("#minute");
   function update() {
     const i=Number(slider.value), s=samples[i], unhealthy=states[i];
@@ -70,10 +70,10 @@ function incident() {
 function observations() {
   const sourceRows=[
     ["Azure inventory","What exists?","Resource name","pg-shop","Azure lists a PostgreSQL server. The inventory supplies its resource ID and type. It takes another source to tell us how the server is doing."],
-    ["Kubernetes","Where does the service point?","External name","pg-shop.postgres.database.azure.com","The service named database points to this network name. The workload structure projection uses this evidence to link the service to its backing server."],
-    ["Azure metrics","What happened at 10:11?","Meter / value","is_db_alive / 0","The 10:11 sample reached the capture at 10:12:01 UTC. An adapter reads the original report and emits rows with known fields and types."]
+    ["Kubernetes","Where does the service point?","External name","pg-shop.postgres.database.azure.com","The service named database points to this network name. Sattle matches this name to the Azure server and draws the link."],
+    ["Azure metrics","What happened at 10:11?","Meter / value","is_db_alive / 0","The 10:11 sample reached the capture at 10:12:01 UTC. An adapter picks out the time, server ID and value so Sattle can use the reading."]
   ];
-  setActivity(radioArea()+plate("Source record","Synthetic estate",'<div id="record" aria-live="polite"></div>')+'<p class="note">A missing report leaves a gap in the evidence. A deletion needs its own evidence. In the lab, capture files and the live stream use the same envelope format.</p>');
+  setActivity(radioArea()+plate("Source record","Synthetic estate",'<div id="record" aria-live="polite"></div>')+'<p class="note">If Azure skips a report, Sattle keeps the server on the map. It needs evidence of deletion to remove it.</p>');
   choices(sourceRows.map(s=>s[0]),i=>{
     const s=sourceRows[i];
     $("#record").innerHTML='<h2>'+s[1]+'</h2><dl><dt>Source</dt><dd>'+s[0]+'</dd><dt>'+s[2]+'</dt><dd class="mono">'+s[3]+'</dd></dl><p>'+s[4]+'</p>';
@@ -81,7 +81,7 @@ function observations() {
 }
 
 function identity() {
-  setActivity(plate("Compare two records","Azure",'<dl><dt>Inventory</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Choose the field you would trust.</p><details><summary>How does the paper describe this?</summary><p>An identity domain says how to name a thing from a key that stays stable. An ontology is the vocabulary of types and relationships. Sattle stores these definitions as data, so a projection can use them and the Canvas can display them.</p></details>');
+  setActivity(plate("Compare two records","Azure",'<dl><dt>Inventory</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Choose the field you would trust.</p><details><summary>How does the paper describe this?</summary><p>An identity rule tells Sattle which key to use. Here it’s the Azure resource ID. An ontology names the kinds of things on the map and the links they can have. Sattle stores those definitions as data.</p></details>');
   const buttons = $("#choices");
   ["The display name","The shared resource ID","The same arrival minute"].forEach((label,i)=>{
     const b=document.createElement("button"); b.className="pick";b.textContent=label;b.setAttribute("aria-pressed","false");
@@ -120,7 +120,7 @@ function canvas() {
 }
 
 function author() {
-  setActivity('<h2>Try one policy decision</h2><p>The recorded meter rises to one at 10:14 after three low minutes. Choose how many good minutes your rule requires to clear the alarm.</p>'+radioArea()+'<p class="note" id="rule-result" role="status"></p><details><summary>What do I supply for my own workload?</summary><p>Connect capture or live sources with read access. Bind the graph space to your namespace and cluster. Reuse the supplied ontology and KQL where they match. Author the thresholds, time windows, severity, and dependency or roll-up rules that express your service’s behavior. Add a source mapping when the evidence you need is missing.</p></details>');
+  setActivity('<h2>When should the alarm clear?</h2><p>The recorded meter rises to one at 10:14 after three low minutes. Choose how many good minutes your rule requires to clear the alarm.</p>'+radioArea()+'<p class="note" id="rule-result" role="status"></p><details><summary>What do I supply for my own workload?</summary><p>Give Sattle read access to the sources you use. Choose the cluster and namespace for your shop. Start with the supplied queries and rules. Set the readings that count as trouble, how long trouble must last, and which services it affects. If you need a reading Sattle doesn’t collect yet, add a source mapping.</p></details>');
   choices(["1 good minute · what-if","2 good minutes · shipped rule"],i=>{
     $("#rule-result").textContent=i===0?"With this hypothetical rule, pg-shop recovers at the 10:14 sample. The meter values are identical.":"The shipped rule keeps pg-shop unhealthy at 10:14 and clears it at the 10:15 sample.";
   },$("#choices"),1);
@@ -142,20 +142,20 @@ function comparison(title, labels, runs, names, explain, beats) {
 }
 function compareChange(){
   comparison("Give the API a cache dependency",["Original recording","Add CACHE_HOST"],["original","changed"],["shopcache","web","api","apim-shop","pg-shop","shop"],[
-    "Only web in this service pair needs the cache. API and its gateway stay healthy.",
-    "The new deployment setting points to shopcache.redis.cache.windows.net. The structure query adds one dependency. The same cache condition now also affects API and its gateway."
+    "The web service uses the cache. The API and its gateway stay healthy.",
+    "The API now points to shopcache.redis.cache.windows.net. Sattle draws the new link. The overloaded cache now affects the API and its gateway."
   ],[0,2]);
 }
 function compareAzure(){
   comparison("Introduce a new Azure cache",["API names a host","Azure reports offers-cache"],["waiting","discovered"],["offers-cache","api","apim-shop","shopcache","pg-shop","shop"],[
     "The host name in the API deployment has no matching inventory record yet. The workload graph has no offers-cache component.",
-    "A Resource Graph row matching the supported Redis type and host creates the component and link. Its health is Unknown because the experiment supplies no readings for it."
+    "Azure lists a Redis cache at that address, so Sattle adds the cache and its link to the API. Its health reads Unknown until a meter tells us how it’s doing."
   ],[0,2]);
 }
 function inspectProject(){
   canvas();
   const more=document.createElement("div");
-  more.innerHTML='<details><summary>How do the repository and paper fit together?</summary><p>'+link('The lab','lab/README.md')+' captures reports. '+link('The engine','engine/README.md')+' computes levels and changes. '+link('The Canvas','canvas/README.md')+' exposes revisions, evidence, and editable rules. '+link('The white paper','paper/README.md')+' describes the theory and the assumptions behind it. Its real-world evaluation covers a small Azure lab. '+link('Chapter 15','paper/ch15-related-work-and-limitations.md')+' discusses scale and open questions.</p></details>';
+  more.innerHTML='<details><summary>How do the repository and paper fit together?</summary><p>'+link('The lab','lab/README.md')+' captures reports. '+link('The engine','engine/README.md')+' builds the maps and tracks what changed. '+link('The Canvas','canvas/README.md')+' lets you step through past maps, inspect the evidence and edit rules. '+link('The white paper','paper/README.md')+' describes the theory and the assumptions behind it. Its real-world evaluation covers a small Azure lab. '+link('Chapter 15','paper/ch15-related-work-and-limitations.md')+' discusses scale and open questions.</p></details>';
   $("#activity").append(more);
 }
 const chapterNav=$("#chapters");

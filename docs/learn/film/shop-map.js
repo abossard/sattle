@@ -30,32 +30,32 @@ const ShopMap = (() => {
   const detail={
     origins:[
       ["Service path","Web request","API call","PostgreSQL"],
-      ["Inputs to the lab","Kubernetes watch","Network flows","Azure inventory + meters"],
-      ["Two projections","Master graph","workloadStructure","workloadHealth"]],
+      ["What the lab records","Kubernetes services","Network flows","Azure inventory + meters"],
+      ["How the shop map is built","Master graph","workloadStructure","workloadHealth"]],
     rules:[
-      ["Team chooses scope","Source access","Namespace: shop","Cluster: aks-synth"],
-      ["Team sets database-down","Meter: is_db_alive","1 low minute → trip","2 good minutes → clear"],
-      ["Team defines meaning","Observed pod call","Caller needs callee?","Include in health roll-up"]],
+      ["Where Sattle should look","Source access","Namespace: shop","Cluster: aks-synth"],
+      ["When to raise the alarm","Meter: is_db_alive","1 low minute → trip","2 good minutes → clear"],
+      ["Which calls matter?","One pod calls another","Does the caller need it?","Count it in caller health"]],
     layers:[
-      ["Resolve one resource","Inventory: resource ID","One server key","Meter: resource ID"],
-      ["Lift pod calls","web · pod 1 / 2 / 3","Group by service","web → api"],
-      ["Two kinds of change","Meter samples","Threshold with memory","Graph revision"]],
+      ["Match two records","Inventory: resource ID","One database server","Meter: resource ID"],
+      ["From pod calls to one link","web · pod 1 / 2 / 3","Group by service","web → api"],
+      ["Two kinds of change","Meter samples","1 bad / 2 good minutes","New map version"]],
     incident:[["Meter samples"],["Impact travels back to callers"],["Recovery waits for a second good minute"]],
     dependency:[
       ["Original run · 10:06:30 UTC","Cache: degraded","API: healthy","Gateway: healthy"],
       ["Changed recording · 10:04:00 UTC","API: CACHE_HOST","Match Redis host","Add API → cache"],
       ["Changed run · 10:06:30 UTC","Cache: degraded","API: degraded","Gateway: degraded"]],
     azure:[
-      ["What-if · deployment update","API: CACHE_HOST","offers-cache host","Await matching inventory"],
-      ["What-if · Azure inventory update","Resource Graph row","Match type + host","Add offers-cache"],
-      ["Topology and health","Resource: present","Matching dependency","Health: unknown"]],
+      ["New API setting","API: CACHE_HOST","offers-cache host","Wait for Azure"],
+      ["New Azure record","Azure lists a Redis cache","Match the API’s address","Add offers-cache"],
+      ["What we know about the cache","Resource: present","Matching dependency","Health: unknown"]],
     replay:[
-      ["Live path","Source envelope","Engine patch","WebSocket → Canvas"],
+      ["Live path","Source reports a change","Engine sends edits","WebSocket → Canvas"],
       ["Static workload export","Revision 15: healthy","Revision 16: unhealthy","Revision 18: healthy"],
-      ["Replay check","Same recorded input","Incremental / full rebuild","Compare final graphs"]],
+      ["Replay check","Same recorded input","Update / rebuild","Compare final graphs"]],
     inspect:[
       ["Canvas · pg-shop selected","Workload tree","Own signal: unhealthy","Inspect its evidence"],
-      ["Trace this conclusion","Health projection","Structure projection","Source observations"],
+      ["Why the map changed","Health projection","Structure projection","Source observations"],
       ["Use the local lab","Change configuration","Add Azure inventory","Compare the results"]]
   };
   const focusSets={origins:[["web","api","pg"],["gateway","web","pg","cache"],["web","api","database","pg"]],rules:[["web","api","database"],["pg"],["web","api"]],layers:[["database","pg"],["web","api"],["pg"]],incident:[["pg"],["pg","database","api","gateway","web"],["pg"]],dependency:[["cache","web"],["api","cache"],["gateway","api","cache"]],azure:[["api"],["offers","api"],["offers"]],replay:[["pg","api"],["pg","database","api","web"],["web","api","pg"]],inspect:[["pg"],["pg","database","api"],["gateway","api","pg","cache"]]};

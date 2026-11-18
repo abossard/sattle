@@ -9,6 +9,10 @@ import textwrap
 import wave
 from pathlib import Path
 
+import numpy as np
+from kokoro_onnx import Kokoro
+from kokoro_onnx.config import MAX_PHONEME_LENGTH
+
 HERE = Path(__file__).resolve().parent
 FPS, RATE = 24, 24000
 
@@ -22,38 +26,96 @@ def clock(seconds):
     return f'{ms//3600000:02d}:{ms//60000%60:02d}:{ms//1000%60:02d}.{ms%1000:03d}'
 
 
-def display(text):
-    return (text.replace("P G Shop","pg-shop").replace("a k s synth","aks-synth")
-            .replace("offers cache","offers-cache"))
+# Keep captions and diagrams in the project's spelling. Only the narrator sees
+# the spoken forms, including clock times that a general text reader may misread.
+PRONUNCIATIONS = {
+    "pg-shop": "P G shop", "offers-cache": "offers cache",
+    "10:06:30": "thirty seconds past ten oh six", "10:11": "ten eleven",
+    "10:14": "ten fourteen", "10:15": "ten fifteen",
+}
+
+
+def caption_phrases(passage):
+    """Give long sentences a second caption at a clause or word boundary."""
+    for sentence in re.split(r"(?<=[.!?])\s+", passage):
+        while len(sentence) > 78:
+            middle = len(sentence) // 2
+            breaks = [m.end() for m in re.finditer(r"[,;] | (?=(?:and|but|because|so|then|when|to) )", sentence)]
+            nearby = [i for i in breaks if 25 <= i <= 76 and len(sentence) - i >= 20]
+            if not nearby:
+                nearby = [m.start() for m in re.finditer(" ", sentence) if 25 <= m.start() <= 76]
+            if not nearby:
+                break
+            cut = min(nearby, key=lambda i: abs(i-middle))
+            yield sentence[:cut].strip()
+            sentence = sentence[cut:].strip()
+        yield sentence
+
+
+def narrate(narrator, style, passage):
+    """Read a whole diagram beat. Use the model's phoneme durations for captions."""
+    phrases = list(caption_phrases(passage))
+    tokens, offsets = [0], []
+    for phrase in phrases:
+        spoken = phrase.replace("’", "'")
+        for written, pronunciation in PRONUNCIATIONS.items():
+            spoken = spoken.replace(written, pronunciation)
+        if offsets:
+            tokens.extend(narrator.tokenizer.tokenize(" "))
+        offsets.append(len(tokens))
+        phones = narrator.tokenizer.phonemize(spoken, "en-us")
+        tokens.extend(narrator.tokenizer.tokenize(phones))
+    count = len(tokens) - 1
+    if count > MAX_PHONEME_LENGTH:
+        raise ValueError(f"Split this passage into two beats: {passage}")
+    tokens.append(0)
+    # This v1.1 export returns both a waveform and the duration of each token.
+    samples, durations = narrator.sess.run(["waveform", "duration"], {
+        "input_ids": np.array([tokens], dtype=np.int64),
+        "style": style[count], "speed": np.array([1.0], dtype=np.float32),
+    })
+    boundaries = np.concatenate(([0], np.cumsum(durations)))
+    if len(durations) != len(tokens) or not np.all(np.isfinite(samples)):
+        raise ValueError("Invalid narration or token timings")
+    samples_per_tick, remainder = divmod(len(samples), int(boundaries[-1]))
+    if remainder or samples_per_tick == 0:
+        raise ValueError("Audio and caption clocks disagree")
+    ends = offsets[1:] + [len(tokens) - 1]
+    cues = [
+        (int(boundaries[first]) * samples_per_tick, int(boundaries[last]) * samples_per_tick, phrase)
+        for first, last, phrase in zip(offsets, ends, phrases)
+    ]
+    pcm = np.rint(np.clip(samples, -1, 1)*32767).astype("<i2").tobytes()
+    return pcm, cues
 
 
 def generate_voice(lesson, temp):
+    directory = HERE / ".narrator"
+    narrator = Kokoro(str(directory/"kokoro-v1.0.onnx"), str(directory/"voices-v1.0.bin"))
+    style = narrator.get_voice_style("af_heart")
     audio, captions = bytearray(), ["WEBVTT\n"]
     times = []
     for scene in lesson:
+        print(f"Recording {scene['chapter']}", flush=True)
         beats = []
         for focus, text in scene["cues"]:
-            start = len(audio)/(2*RATE)
-            for sentence in re.split(r'(?<=[.!?])\s+', text):
-                run("say","-v","Samantha","-r","166","-o",str(temp/"speech.aiff"),sentence)
-                run("ffmpeg","-loglevel","error","-y","-i",str(temp/"speech.aiff"),"-ar",str(RATE),"-ac","1",str(temp/"speech.wav"))
-                with wave.open(str(temp/"speech.wav")) as clip:
-                    pcm = clip.readframes(clip.getnframes())
-                if len(pcm)<4000:
-                    raise RuntimeError("The installed voice returned empty audio")
-                begin = len(audio)/(2*RATE)
-                audio.extend(pcm)
-                captions.append(f"{clock(begin)} --> {clock(len(audio)/(2*RATE))}\n"
-                                + "\n".join(textwrap.wrap(display(sentence), 55))+"\n")
-                audio.extend(bytes(round(RATE*.13)*2))
-            end = math.ceil((len(audio)/(2*RATE)+.26)*FPS)/FPS
+            start = len(audio) / (2*RATE)
+            pcm, cues = narrate(narrator, style, text)
+            audio.extend(pcm)
+            for first, last, phrase in cues:
+                captions.append(f"{clock(start + first/RATE)} --> {clock(start + last/RATE)}\n"
+                                + "\n".join(textwrap.wrap(phrase, 42, break_on_hyphens=False))+"\n")
+            # The model supplies pauses within and between passages. Align the
+            # next shot to a video frame and leave one extra beat between chapters.
+            gap = .25 if len(beats) + 1 == len(scene["cues"]) else 0
+            end = math.ceil((len(audio)/(2*RATE)+gap)*FPS)/FPS
             audio.extend(bytes(round(end*RATE)*2-len(audio)))
-            beats.append(dict(focus=focus, text=display(text), start=start, end=end))
+            beats.append(dict(focus=focus, text=text, start=start, end=end))
         times.append(dict(id=scene["id"],chapter=scene["chapter"],title=scene["title"],beats=beats))
     with wave.open(str(temp/"voice.wav"),"wb") as out:
         out.setparams((1,2,RATE,0,"NONE","not compressed"))
         out.writeframes(audio)
-    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-c:a","aac","-b:a","96k",str(HERE/"assets/voice.m4a"))
+    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-af","loudnorm=I=-16:TP=-1.5:LRA=9","-ar",str(RATE),"-c:a","aac","-b:a","112k",str(HERE/"assets/voice.m4a"))
     vtt="\n".join(captions)
     (HERE.parent/"captions.vtt").write_text(vtt)
     # Keep the captions usable in browsers which restrict file:// text tracks.

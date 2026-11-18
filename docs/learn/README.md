@@ -33,11 +33,14 @@ python3 -B docs/learn/build_evidence.py
 python3 -B docs/learn/replay_change.py
 ```
 
-For film editing, the narration script is in [lesson.json](film/lesson.json). The film and walkthrough share the same [animated diagrams](film/shop-map.js) and recorded audio. The narration build uses the installed macOS Samantha voice, Python 3 and FFmpeg. Install HyperFrames under the film folder for local rendering; the ready-to-watch files need no installation.
+Edit the words in [lesson.json](film/lesson.json). The film and walkthrough use the same voice recording, captions and [diagrams](film/shop-map.js). Each passage gets one take. The builder uses the timing of the spoken sounds to place the captions.
+
+To record a new take, install Python 3.12 and FFmpeg. The setup script downloads the Kokoro model and its voices once into `film/.narrator/`. After that, you can record offline. This lesson uses the American English voice Heart. Playback needs only a browser. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 
 ```sh
+sh docs/learn/film/setup-voice.sh
+docs/learn/film/.narrator/venv/bin/python -B docs/learn/film/build.py
 npm --prefix docs/learn/film ci
-python3 -B docs/learn/film/build.py
 npm --prefix docs/learn/film run check
 npm --prefix docs/learn/film run render
 ```
