@@ -232,4 +232,113 @@ public class LineageTests
             }
         }
     }
+
+    // ---- lineage through the steps of a projection, on a small world of items and tags ----------------------------------------------
+
+    const string MiniBase = """
+        module t.base @ 1.0.0;
+        entity Item { key: Text; group: Text; score: Text; }
+        entity Tag { key: Text; label: Text; }
+        identity item for Item version "1" { key: Text by exact; }
+        identity tag for Tag version "1" { key: Text by exact; }
+        /// the row shapes of the authoring adapter, the rows a host takes from a test: an item is a capability row (its name the group, its owner the score), a tag a realizes row (its cluster the label)
+        rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
+        rows RealizesRow { capId: Text; cluster: Text; namespace: Text; service: Text; }
+        """;
+
+    const string MiniIngest = """
+        graph ingest : t.base;
+        input items : CapabilityRow;
+        input tags : RealizesRow;
+        nodes Item on item with (rule = "observed", description = "test") = items | project item = identity("item", capId), key = capId, group = name, score = owner;
+        nodes Tag on tag with (rule = "observed") = tags | project tag = identity("tag", capId), key = capId, label = cluster;
+        """;
+
+    /// <summary>A host over the small world: items and tags as authored rows in the master, the module `t.view` with `ontology` and its projection `roll` with `steps`, the space with `graphs`; `imports` and `more` add a module.</summary>
+    static SpaceHost Mini(string ontology, string steps, string graphs = "graph rolled = v.roll(master: master);", string imports = "", params SourceFile[] more) =>
+        new(
+        [
+            new("t.base.sattle", MiniBase), new("t.base.ingest.kql", MiniIngest),
+            new("t.view.sattle", $"module t.view @ 1.0.0;\nimport t.base @ 1.0.0 sha256:… as base;\n{ontology}\n"),
+            new("t.view.roll.kql", "graph roll : t.view;\ninput master : t.base;\n" + steps),
+            .. more,
+            new("t.space.sattle", $$"""
+                module t.space @ 1.0.0;
+                import t.base @ 1.0.0 sha256:… as base;
+                import t.view @ 1.0.0 sha256:… as v;
+                {{imports}}
+                space s {
+                  source items adapter "sattle.authoring" rows base.CapabilityRow;
+                  source tags adapter "sattle.authoring" rows base.RealizesRow;
+                  master graph master = base.ingest(items: items, tags: tags);
+                  {{graphs}}
+                }
+                """),
+        ], new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+
+    static void Items(SpaceHost h, long seq, params (string Key, string Group, string Score, long W)[] rows)
+    {
+        var rw = new RowWriter(h.RowLayout("items"), h.Interner);
+        foreach (var (key, group, score, w) in rows) { rw.Begin(w); rw.Text("capId", key); rw.Text("name", group); rw.Text("owner", score); rw.Text("status", "live"); }
+        h.Ingest("items", rw.Build()!, seq);
+    }
+
+    const string Summary = "entity Summary { group: Text; best?: Integer; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
+
+    /// <summary>The items of the master with their properties.</summary>
+    const string Matched = "graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project key = i.key, group = i.group, score = i.score";
+
+    /// <summary>Code review 2, defect 16: an element names the elements it is made of also when a `project` or a `where` stands between the match and the summary, between the summary and the step, or between the match and the step. Before, only the first shape named anything.</summary>
+    [Theory]
+    [InlineData("the summary read directly", "items | summarize best = count() by group | project x = identity(\"summary\", group), group, best", "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a project and a where before the summary", "items | project grp = group, s = score | where s != \"0\" | summarize best = count() by group = grp | project x = identity(\"summary\", group), group, best", "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a project and a where after the summary", "items | summarize best = count() by group | project name = group, n = best | where n > 0 | project x = identity(\"summary\", name), group = name, best = n", "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("projects on both sides, the second without the key as it was", "items | project grp = group | summarize best = count() by group = grp | project name = strcat(group, \"!\"), n = best | project name, n | project x = identity(\"summary\", name), group = name, best = n", "a!=a1+a2 b!=b1", "a!=a1 b!=b1")]
+    [InlineData("row by row through a project", "items | project k = key, s = score | where s != \"0\" | project x = identity(\"summary\", k), group = k", "a1=a1 a2=a2 b1=b1", "a1=a1 b1=b1")]
+    public void An_element_names_what_it_is_made_of_through_project_and_where(string shape, string query, string named, string afterOneWent)
+    {
+        using var h = Mini(Summary, $"let items = {Matched};\nnodes Summary on x = {query};\n");
+        string Named()
+        {
+            var keyOf = h.Entities("master").ToDictionary(x => x["id"].Id(), x => x.Prop("key")!);
+            return string.Join(' ', h.Entities("rolled").Select(x => x.Prop("group") + "="
+                + string.Join('+', h.Lineage("rolled", x["id"].Id())["sources"]!.AsArray().Select(s => keyOf[s!["element"]!.GetValue<string>()]).Order(StringComparer.Ordinal))).Order(StringComparer.Ordinal));
+        }
+        Items(h, 1, ("a1", "a", "1", 1), ("a2", "a", "2", 1), ("b1", "b", "3", 1));
+        Assert.True(named == Named(), $"{shape}: {Named()}");
+        Items(h, 2, ("a2", "a", "2", -1));
+        Assert.True(afterOneWent == Named(), $"{shape}, after a2 went: {Named()}");
+    }
+
+    /// <summary>The lineage of a row that binds a reference (Def. 3.14): the graph `rolled` holds only relationships between items and tags of the master, so both ends are references there. A reference is an entity of another graph: it is named in the input of the projection whose graph holds its type, and not at all when the projection reads no such graph. The relationship is named in the graph it was matched in.</summary>
+    [Theory]
+    [InlineData(true, "i@master p@rolled t@master")]
+    [InlineData(false, "p@rolled")]
+    public void A_reference_is_named_in_the_graph_that_holds_it(bool masterToo, string named)
+    {
+        const string top = """
+            module t.top @ 1.0.0;
+            import t.base @ 1.0.0 sha256:… as base;
+            import t.view @ 1.0.0 sha256:… as v;
+            entity Top { n: Integer; }
+            identity top for Top version "1" { name: Text by exact; }
+            relationship Seen (base.Item) -> (base.Tag);
+            """;
+        using var h = Mini(Summary + "\nrelationship Paired (base.Item) -> (base.Tag);",
+            "edges Paired from item to t = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project item = i.id, g = i.group"
+            + " | join kind=inner (graph(\"master\") | graph-match (t) where labels(t) has \"Tag\" project t = t.id, tk = t.key) on $left.g == $right.tk | project item, t;\n",
+            $"graph rolled = v.roll(master: master);\n  graph top = t2.top(rolled: rolled{(masterToo ? ", master: master" : "")});", "import t.top @ 1.0.0 sha256:… as t2;",
+            new SourceFile("t.top.sattle", top),
+            new SourceFile("t.top.top.kql", "graph top : t.top;\ninput rolled : t.view;\n" + (masterToo ? "input master : t.base;\n" : "")
+                + "let pairs = graph(\"rolled\") | graph-match (i)-[p]->(t) where labels(i) has \"Item\" and labels(p) has \"Paired\" and labels(t) has \"Tag\" project i = i.id, t = t.id;\nedges Seen from i to t = pairs;\n"));
+        var tags = new RowWriter(h.RowLayout("tags"), h.Interner);
+        tags.Begin(1); tags.Text("capId", "g1"); tags.Text("cluster", "L"); tags.Text("namespace", "n"); tags.Text("service", "s");
+        h.Ingest("tags", tags.Build()!, 1);
+        Items(h, 2, ("a1", "g1", "1", 1));
+        var seen = h.Relationships("top", "Seen").Single()["id"].Id();
+        var lineage = h.Lineage("top", seen);
+        Assert.Equal(named, string.Join(' ', Sources(lineage).Order(StringComparer.Ordinal)));
+        foreach (var s in lineage["sources"]!.AsArray())                                // each named element is in the graph it is named in, and knows what it is part of
+            Assert.Contains(h.LineageReverse(s!["graph"]!.GetValue<string>(), s["element"]!.GetValue<string>())["partOf"]!.AsArray(), p => p!["element"]!.GetValue<string>() == seen);
+    }
 }

@@ -220,4 +220,50 @@ public class DifferentialTests
         var report = Differential.Check(Worlds.All.Single(w => w.Name == world), seeds, length, reordered);
         Assert.True(report is null, report);
     }
+
+    // ---- facts of a world that are no comparison with the reference ----
+
+    static Sattle.Reference.RowInput PlainRow(string source, long weight, string k, string g, long n, long seconds, decimal? d = null) =>
+        new(source, Logs.Row(("k", Value.Text(k)), ("g", Value.Text(g)), ("n", Value.Integer(n)), ("d", d is { } q ? Value.Decimal(q) : Value.Null), ("t", Value.Instant(Logs.Origin + seconds * Logs.Second))), weight);
+
+    /// <summary>Review: Identity.cs:165 with Exprs.cs:107. An identity is allocated for the rows a sink emits (Def. 5.9), not for rows a Filter rejected.</summary>
+    [Fact]
+    public void A_row_that_a_filter_rejected_mints_no_identity()
+    {
+        var w = Worlds.FilteredEmit;
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+        EngineRun.Ingest(engine, [PlainRow("a", 1, "k0", "g0", 0, 0), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("a", 1, "k2", "g0", 5, 0)], 1);
+        Assert.Single(engine.Master.State.Entities);
+        Assert.Equal(1, engine.Identities.Minted);
+    }
+
+    /// <summary>Review: Operators.cs:58, Columnar.cs:59 (Synthetic.cs:22, Bench.cs:75). A column that a row writer never sets is absent. The row builder marks every column present, so it reads as the value with code 0.</summary>
+    [Fact]
+    public void A_column_that_the_writer_never_sets_is_absent()
+    {
+        var w = Worlds.OptionalProperty;
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+        var writer = new RowWriter(engine.RowLayout("a"), engine.Interner);
+        writer.Begin(1); writer.Text("k", "k0"); writer.Text("g", "g0"); writer.Int(writer.Col("n"), 1); writer.Instant("t", Logs.Origin);       // d is not set
+        engine.Ingest("a", writer.Build()!, 1);
+        Assert.DoesNotContain(EngineRun.FactsOf(engine).Graphs["master"].Lines(), l => l.Contains("prop:d="));
+    }
+
+    /// <summary>#112: in this world the numbers the texts get depend on how the log is cut (one row per batch against the largest batches), so the differential comparison of the world would see an output that depends on them.</summary>
+    [Fact]
+    public void Code_numbers_depend_on_the_cut_where_a_where_drops_rows()
+    {
+        var w = Worlds.TraverseAfterWhere;
+        Dictionary<string, int> Codes(IReadOnlyList<Sattle.Reference.Input> log, bool oneByOne)
+        {
+            using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+            long seq = 0; var batch = new List<Sattle.Reference.RowInput>();
+            void Flush() { if (batch.Count > 0) EngineRun.Ingest(engine, [.. batch], ++seq); batch.Clear(); }
+            foreach (var row in log.Cast<Sattle.Reference.RowInput>()) { if (oneByOne || (batch.Count > 0 && batch[0].Source != row.Source)) Flush(); batch.Add(row); }
+            Flush();
+            return engine.Interner.Slots.Select((t, i) => (t, i)).Where(x => x.t is not null).ToDictionary(x => x.t!, x => x.i);
+        }
+        var differ = Enumerable.Range(0, 12).Select(seed => w.Log(seed, 14)).Count(log => !Codes(log, true).OrderBy(x => x.Key, StringComparer.Ordinal).SequenceEqual(Codes(log, false).OrderBy(x => x.Key, StringComparer.Ordinal)));
+        Assert.True(differ > 0, "no default seed gives the texts other numbers under another cut");
+    }
 }

@@ -3,13 +3,12 @@ using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
 
-namespace Sattle.Kql.Tests;
+namespace Sattle.Tests;
 
 /// <summary>#106: projection languages behind one seam. A second, tiny language loads next to KQL in one space; each file is read by the one source that claims it.</summary>
 public class ProjectionLanguagesTests
 {
-    static readonly string Definitions = Path.Combine(Repo(), "engine", "definitions");
-    static string Repo() { var d = new DirectoryInfo(AppContext.BaseDirectory); while (!Directory.Exists(Path.Combine(d!.FullName, "engine", "definitions"))) d = d.Parent; return d.FullName; }
+    static string Definitions => Repo.Definitions;
 
     /// <summary>A language of one statement, `heading "Text" from input : module`, in a file `module.projection.heading`: a document projection with one heading block. It stands for a KQL text and is lowered by the KQL source; places and diagnostics name the `.heading` file.
     /// What it proves: the seam dispatches files by kind to their source, merges the facts of two sources, a space binds a projection of each, and the protocol names each file's language. It does not prove a language whose lowering is independent of the KQL front end: it reuses that front end to produce its facts. `alsoKql` makes it claim `.kql` files too, for the conflict.</summary>
@@ -33,13 +32,13 @@ public class ProjectionLanguagesTests
                         | project block = identity("block", "title", k), ['kind'] = "heading", ['order'] = "0", level = 1, text = "{{m.Groups["text"]}}";
                     """));
             }
-            var low = new KqlSource().Lower(catalog, module, kql);
+            var low = Repo.Projections.Lower(catalog, module, kql);
             static string? Back(string? p) => p is null ? null : Path.ChangeExtension(p, ".heading");
             return new ProjectionFacts(low.Projections, low.Places.ToDictionary(kv => kv.Key, kv => (Back(kv.Value.File)!, kv.Value.Pos)), [.. diags, .. low.Diagnostics.Select(d => d with { File = Back(d.File) })]);
         }
     }
 
-    static readonly IProjectionSource Both = new ProjectionSources(new KqlSource(), new HeadingSource());
+    static readonly IProjectionSource Both = new ProjectionSources(Repo.Projections, new HeadingSource());
 
     /// <summary>The definitions folder with a heading projection in acme.report, bound by the acme space next to the report written in KQL.</summary>
     static List<SourceFile> Files()
@@ -73,7 +72,7 @@ public class ProjectionLanguagesTests
     [Fact]
     public void A_file_two_sources_claim_is_an_error_that_names_the_file_once()
     {
-        var both = new ProjectionSources(new KqlSource(), new HeadingSource(alsoKql: true));
+        var both = new ProjectionSources(Repo.Projections, new HeadingSource(alsoKql: true));
         Assert.Equal("kql", both.Language("acme.report.deploymentReport.kql"));     // still a projection file, not a module text
         var res = new Catalog(both).Load(Files(), updatePins: true);
         var claimed = res.Diagnostics.Where(d => d.Code == "ProjectionFile" && d.IsError).ToList();

@@ -4,7 +4,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Definitions that the checker accepted although they are wrong, refused although they are right, or answered with an exception instead of a diagnostic (code review, section on the language checker).</summary>
+/// <summary>The checker on whole definitions (Ch. 2 and 5; Prop. 5.8, Def. 3.14, Def. 7.15): a wrong definition is refused with a diagnostic of a stated code that says what is wrong, a right one loads, and no input is answered with an exception. Definitions in, diagnostics and the definition graph out. The cases come from the code reviews of the checker.</summary>
 public class CheckerTests
 {
     const string Base = """
@@ -86,11 +86,56 @@ public class CheckerTests
         return (catalog, [.. catalog.Load(files, updatePins: true).Diagnostics.Where(d => d.IsError)]);
     }
 
+    /// <summary>A graph `view` that holds only relationships between items and others of the master, so both ends are references there, and a projection `w` over it whose steps are `body`.</summary>
+    static SourceFile[] OverReferences(string body)
+    {
+        var files = View("edges Paired from i to o2 = " + Items + " | join kind=inner (graph(\"master\") | graph-match (x) where labels(x) has \"Other\" project o2 = x.id, ok = x.k) on $left.g == $right.ok | project i, o2;\n",
+            "relationship Paired (t.Item) -> (t.Other);", "graph view = v.v(master: master);\n  graph top = w.w(g: view);");
+        var space = files.Single(f => f.Path == "s.sattle");
+        return
+        [
+            .. files.Where(f => f != space),
+            new("w.sattle", "module w @ 1.0.0;\nimport t @ 1.0.0 sha256:… as t;\nimport v @ 1.0.0 sha256:… as v;\nentity Top { n: Integer; }\nidentity top for Top version \"1\" { name: Text by exact; }\n"),
+            new("w.w.kql", "graph w : w;\ninput g : v;\n" + body),
+            space with { Text = space.Text.Replace("import v @ 1.0.0 sha256:… as v;", "import v @ 1.0.0 sha256:… as v;\nimport w @ 1.0.0 sha256:… as w;") },
+        ];
+    }
+
+    /// <summary>A view with one text parameter `only`, bound by the space as `binding` says (Prop. 5.8: a parameter is a constant of the binding; `DeployHealthTests` runs one projection under two bindings).</summary>
+    static SourceFile[] Bound(string binding) =>
+        View("declare query_parameters(only:string);\nnodes Out on o = " + Items + " | where g == only | project o = identity(\"out\", k), k;\n", space: $"graph view = v.v(master: master{binding});");
+
+    /// <summary>Pods with two keys, a uid and a name, that an equivalence joins, and a view `v` over them whose steps are `body`.</summary>
+    static SourceFile[] OverLinked(string body) =>
+    [
+        new("l.sattle", """
+            module l @ 1.0.0;
+            entity Pod { uid?: Text; name?: Text; }
+            identity podUid for Pod version "1" { uid: Text by exact; }
+            identity podName for Pod version "1" { name: Text by lowerInvariant; }
+            equivalence uidIsName between podUid, podName assert threshold 1.0;
+            rows PodRow { uid: Text; name: Text; }
+            """),
+        new("l.ingest.kql", """
+            graph ingest : l;
+            input pods : PodRow;
+            nodes Pod on p with (rule = "observed") = pods | project p = identity("podUid", uid), uid, name;
+            link uidIsName from byUid to byName with (confidence = 1.0, rule = "observed") = pods | project byUid = identity("podUid", uid), byName = identity("podName", name);
+            """),
+        new("lv.sattle", "module lv @ 1.0.0;\nimport l @ 1.0.0 sha256:… as base;\nentity Tag { name?: Text; }\n"),
+        new("lv.v.kql", "graph v : lv;\ninput master : base;\n" + body),
+    ];
+
     public static TheoryData<string, SourceFile[], string, string> Refused => new()
     {
+        { "a union of element columns of two types", View("let a = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project x = i;\nlet b = graph(\"master\") | graph-match (t) where labels(t) has \"Other\" project x = t;\nnodes Out on o = union a, b | project o = identity(\"out\", \"k\"), k = \"k\";\n"), "Union", "union inputs must have the same columns" },
+        { "a row of a table of values with another type than its column", View("let names = datatable(tk:string, label:string)[\"g1\", \"L1\", \"g2\", 2];\nnodes Out on o = " + Items + " | join kind=inner (names) on $left.g == $right.tk | project o = identity(\"out\", k), k, flag = label;\n"), "Values", "all rows of values need the same columns of the same types" },
+        { "a property read of a reference: the graph holds the relationship, not its ends (Def. 3.14)", OverReferences("nodes Top on x = graph(\"g\") | graph-match (i)-[p]->(o) where labels(i) has \"Item\" and labels(p) has \"Paired\" and labels(o) has \"Other\" project g = i.g | summarize n = count() by k = g | project x = identity(\"top\", k), n;\n"), "S4", "graph view holds no Item" },
+        { "a parameter the space does not bind (Prop. 5.8)", Bound(""), "S2", "parameter only of v is not bound" },
+        { "a parameter bound with a constant of another kind (Prop. 5.8)", Bound(", only: 5"), "S2", "parameter only is Text, the binding gives Integer" },
+        { "a binding of a parameter the projection does not have (Prop. 5.8)", Bound(", only: \"a\", other: 1"), "UnknownPort", "has no port 'other'" },
+        { "a view that names its elements by a key of a domain an equivalence joins: after a link the row that leaves would compute the survivor's id", OverLinked("nodes Tag on t = graph(\"master\") | graph-match (p) where labels(p) has \"Pod\" project p = p.id, name = p.name | project t = identity(\"podName\", name), name;\n"), "IdentityLinked", "keep its id (p.id)" },
         { "the condition of an if is telemetry, so its result is: it is no value of a data property", View("nodes Out on o = " + Signals + " | project o = identity(\"out\", k), k, flag = iff(value > 2, \"hot\", \"cold\");\n"), "RoleInterference", "telemetry value" },
-        { "two columns of one name in a select", View("let m = " + Items + " | project k, k = g;\nnodes Out on o = m | project o = identity(\"out\", k), k;\n"), "Kusto", "A column with the name 'k' is already declared" },
-        { "a key and an aggregate of one name", View("nodes Out on o = " + Items + " | summarize k = count() by k | project o = identity(\"out\", k), k;\n"), "Kusto", "A column with the name 'k' is already declared" },
         { "a key and the state of a threshold of one name", View("nodes Out on o = " + Signals + " | project state = k, windowStart, value, above = 3.0, enterAfter = 2, below = 1.0, exitAfter = 2 | invoke hysteresis(\"on\", \"off\", \"off\")\n    | project o = identity(\"out\", state), k = state;\n"), "DuplicateColumn", "'state'" },
         { "two declarations of one id: two key constraints would be one key over both properties", View(Plain, "constraint key Out (k);\nconstraint key Out (flag);"), "Duplicate", "constraint 'key-Out'" },
         { "two labels on one type", View(Plain, "entity Named { k: Text label; title: Text label; }"), "Label", "second" },
@@ -185,6 +230,18 @@ public class CheckerTests
         Assert.True(errors.Count == 0, string.Join("; ", errors.Select(e => e.ToString())));
         if (refusal is null) { using var engine = new Engine(catalog, catalog.Spaces.Keys.Single()); Assert.True(engine.WantsProgress); }
         else Assert.Contains(refusal, Assert.Throws<InvalidOperationException>(() => new Engine(catalog, catalog.Spaces.Keys.Single())).Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>A Match reads the properties its own projection uses. One checker serves every projection of a module and keeps its demand set; before, a Match also read what a same-named operator of an earlier projection demanded.</summary>
+    [Fact]
+    public void A_match_reads_only_the_properties_its_own_projection_uses()
+    {
+        const string Copies = "nodes Out on o = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project ";
+        var (catalog, errors) = Load([.. View(Copies + "k = i.k, g = i.g | project o = identity(\"out\", k), k, flag = g;\n"),
+            new SourceFile("v.second.kql", "graph second : v;\ninput master : t;\n" + Copies + "k = i.k | project o = identity(\"out\", k), k;\n")]);
+        Assert.Empty(errors);
+        var second = catalog.Projections.Values.Single(p => p.Name == "second").Ops.OfType<TMatch>().Single();
+        Assert.Equal(["k"], second.Reads.Select(r => Ids.Name(r.PropId)));
     }
 
     [Fact]

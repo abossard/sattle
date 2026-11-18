@@ -79,6 +79,20 @@ public class KqlProjectionTests
         Assert.Contains(low.Diagnostics, d => d.Message.Contains("$left.<column> == $right.<column>", StringComparison.Ordinal));
     }
 
+    /// <summary>Kusto refuses a second column of a name, in a `project` and between a key and an aggregate of a `summarize`, before the engine sees the text.</summary>
+    [Theory]
+    [InlineData("two columns of one name in a project", "nodes ServiceNode on service = services | project service, name, name = cluster, namespace")]
+    [InlineData("a key and an aggregate of one name", "nodes ServiceNode on service = services | summarize name = count() by name | project service = identity(\"service\", name), name")]
+    public void Two_columns_of_one_name_are_refused(string what, string step)
+    {
+        var text = "graph serviceDeps : acme.svc;\ninput master : acme.ops;\n"
+            + "let services = graph(\"master\") | graph-match (s) where labels(s) has \"Service\" project service = s.id, cluster = s.cluster, namespace = s.namespace, name = s.name;\n"
+            + step + ";\n";
+        var low = KqlFrontEnd.Lower(text, Defs.Value.Catalog.Graph, "acme.svc");
+        Assert.False(low.Ok, what);
+        Assert.Contains(low.Diagnostics, d => d.Code == "Kusto" && d.Message.Contains("A column with the name 'name' is already declared", StringComparison.Ordinal));
+    }
+
     /// <summary>Kusto orders no texts: a less-than between two texts is refused, so the engine compares texts only for equality.</summary>
     [Fact]
     public void A_text_ordered_with_less_than_is_refused()
