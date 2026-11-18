@@ -57,6 +57,25 @@ Why LtHash over MuHash:
 
 Security: our use is not adversarial (determinism and replay checks). Lewi et al. give at least 200 bits for these parameters; a 2026 ePrint asks to re-examine that estimate, which still leaves a margin far beyond our need.
 
+### Decided 2026-11-18: the plain sum, not LtHash
+
+Measured on the Mac per element, with a 224-byte pair and other work on the machine:
+
+| Expansion | Cost per element |
+|---|---|
+| SHA-256 of the pair | 1.2 µs |
+| SHA-256 in counter mode to 2 KB | 64 µs |
+| SHA-256 seed, then an AES keystream | 4.9 µs |
+
+SHAKE128 is not available in .NET 11 on macOS.
+
+So the digest is `H( graph name ‖ Σ SHA-256(key text ‖ canonical JSON) mod 2^256 )`: AdHash with 4 lanes of 64 bits.
+- Against chance it collides with negligible probability.
+- Its known weakness at 256 bits is a generalized-birthday attack, which needs an attacker who chooses the inputs, and our use has none.
+- It keeps the incremental property.
+
+Keeping the digest current per change (step 2) would cost about 8 µs per record (about 7 hashed elements per record at 10^5). That is deferred while time per record is over its limit. Checks recompute with one streaming pass in any order, with no sort.
+
 ## Where they differ
 
 When two digests differ, `Graph.Diff` walks both graphs by key in O(n). That is fine for a failing test.
