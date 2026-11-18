@@ -27,6 +27,42 @@ public class DifferentialTests
         Assert.All(w.Witnesses, witness => Assert.Contains(lines, l => l.Contains(witness, StringComparison.Ordinal)));
     }
 
+    /// <summary>The worlds of a join on the start of a traverse check the plan as run: the engine joins the start rows before the walk.</summary>
+    [Theory]
+    [InlineData("join on the start of a traverse")]
+    [InlineData("join on the start of a traverse on its right")]
+    public void The_engine_joins_the_start_rows_before_the_walk(string world)
+    {
+        var catalog = EngineRun.Load(Worlds.All.Single(w => w.Name == world).Files);
+        using var engine = new Engine(catalog, catalog.Spaces.Keys.Single());
+        var ops = engine.Graphs.Single(g => !g.IsMaster).Plan.Ops.Select(o => o.Typed.Kind).ToList();
+        Assert.True(ops.IndexOf("Join") >= 0 && ops.IndexOf("Join") < ops.IndexOf("Traverse"), string.Join(", ", ops));
+    }
+
+    /// <summary>A traced graph runs its plan as written, the walk before the join, and gives the outputs of the same graph untraced, which runs the join below the walk.</summary>
+    [Theory]
+    [InlineData("join on the start of a traverse")]
+    [InlineData("join on the start of a traverse on its right")]
+    public void A_traced_run_gives_the_outputs_of_an_untraced_one(string world)
+    {
+        var w = Worlds.All.Single(x => x.Name == world);
+        var traced = new EngineOptions { TraceGraphs = w.Catalog.Spaces.Values.Single().Graphs.Select(g => g.Name).ToHashSet() };
+        using (var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single(), traced))
+        {
+            var ops = engine.Graphs.Single(g => !g.IsMaster).Plan.Ops.Select(o => o.Typed.Kind).ToList();
+            Assert.True(ops.IndexOf("Traverse") >= 0 && ops.IndexOf("Traverse") < ops.IndexOf("Join"), string.Join(", ", ops));
+        }
+        foreach (var seed in Enumerable.Range(0, 8))
+        {
+            var log = w.Log(seed, 24);
+            foreach (var cut in new[] { Chunking.OneByOne, Chunking.Largest })
+            {
+                var (want, got) = (EngineRun.Final(w.Catalog, log, cut).Graphs, EngineRun.Final(w.Catalog, log, cut, traced).Graphs);
+                foreach (var (graph, facts) in want) Assert.True(facts.Lines().SequenceEqual(got[graph].Lines()), $"seed {seed}, {cut}, graph {graph}");
+            }
+        }
+    }
+
     /// <summary>T-RETAIN: retention keeps exactly the rows younger than the age at the frontier (Proposition 5.9), on logs with rows that are expired when they arrive, retractions of held rows and frontier advances, however the log is cut.</summary>
     [Fact]
     public void Retention_keeps_exactly_the_rows_younger_than_the_age_under_generated_frontiers()

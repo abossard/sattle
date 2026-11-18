@@ -26,7 +26,7 @@ public static class Differential
         {
             try
             {
-                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking, world.RetentionNs))
+                foreach (var (consumed, engine) in EngineRun.States(world.Catalog, log, chunking, new Sattle.Runtime.EngineOptions { TelemetryRetentionNs = world.RetentionNs }))
                     foreach (var (graph, expected) in reference[consumed].Graphs)
                     {
                         // the elements and windows, and the conflicts that hold (Def. 6.4): both are part of what a graph is after an input

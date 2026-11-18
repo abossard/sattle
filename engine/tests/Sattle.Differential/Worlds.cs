@@ -484,6 +484,18 @@ public static class Worlds
     public static readonly World TraverseOneToThree = View("traverse from depth 1 to 3", "Traverse", ReachType, Reach("-[p*1..3]->"), 0.1, FiveItems) with { Witnesses = ["Reach"] };
     /// <summary>#113: a traverse against the direction of the edges: an item reaches the items with edges into it.</summary>
     public static readonly World TraverseIn = View("traverse in", "Traverse", ReachType, Reach("<-[p*1..3]-"), 0.1, FiveItems) with { Witnesses = ["Reach"] };
+    /// <summary>#115: a join on the start of a traverse, which the engine runs below the traverse (`PlanCompiler.JoinsBelowTraverses`). The other side are the out-edges of the items whose `n` is above 3, so an item's rows add and remove its start rows, one per out-edge (a start joined twice is walked twice), and the edges change both the walks and the other side.</summary>
+    public static readonly World JoinOnTraverseStart = View("join on the start of a traverse", "Traverse, Map, Join", ReachType, """
+        nodes Reach on r = graph("master") | graph-match (i)-[p*0..2]->(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g
+            | join kind=inner (graph("master") | graph-match (c)-[q]->(x) where labels(c) has "Item" and labels(q) has "Edge" and c.n > 3 project ck = c.k, xk = x.k) on $left.a == $right.ck
+            | project r = identity("reach", a, b), a, b, g;
+        """, 0.1, FiveItems) with { Witnesses = ["Reach"] };
+    /// <summary>#115: the same with the traverse on the right of the join, from depth 1.</summary>
+    public static readonly World JoinOnTraverseStartRight = View("join on the start of a traverse on its right", "Traverse, Map, Join", ReachType, """
+        nodes Reach on r = graph("master") | graph-match (c) where labels(c) has "Item" and c.n > 3 project ck = c.k
+            | join kind=inner (graph("master") | graph-match (i)-[p*1..3]->(d) where labels(i) has "Item" and all(p, labels(p) has "Edge") project a = i.k, b = d.k, g = d.g) on $left.ck == $right.a
+            | project r = identity("reach", a, b), a, b, g;
+        """, 0.1, FiveItems) with { Witnesses = ["Reach"] };
     /// <summary>#113: a traverse over `Edge` follows `Fast`, a sub-type of `Edge`, and not `Other`, a relationship type of its own between the same items.</summary>
     public static readonly World TraverseSubtype = new("traverse over a sub-type, not over another type", "Traverse",
         [
@@ -586,7 +598,7 @@ public static class Worlds
             """) with { Witnesses = ["Pair"] },
         View("traverse", "Traverse", ReachType, Reach("-[p*0..2]->")) with { Witnesses = ["Reach"] },
         View("traverse either way", "Traverse", ReachType, Reach("-[p*0..2]-")) with { Witnesses = ["Reach"] },
-        TraverseOneToThree, TraverseIn, TraverseSubtype,
+        TraverseOneToThree, TraverseIn, TraverseSubtype, JoinOnTraverseStart, JoinOnTraverseStartRight,
         View("emit update", "EmitEntity update", """
             entity Copy { k: Text; g?: Text; degree?: Integer; }
             identity copy for Copy version "1" { k: Text by exact; }

@@ -18,6 +18,8 @@ public sealed record EngineOptions
     public long TelemetryRetentionNs { get; init; } = 48L * 3_600_000_000_000;
     /// <summary>When set, only these graphs and the graphs they derive from are activated (a staged evaluation of one view needs no other graph).</summary>
     public IReadOnlySet<string>? Only { get; init; }
+    /// <summary>Graphs whose operator outputs are integrated for inspection (a draft preview, `include: rows`): per graph and operator, the rows the operator holds now with their summed weights. A traced graph runs its plan as written. Null: nothing is traced.</summary>
+    public IReadOnlySet<string>? TraceGraphs { get; init; }
 }
 
 public sealed record PlanInfo(string Projection, string Digest, IReadOnlyList<string> Strategies, IReadOnlyList<IReadOnlyList<string>> FusedChains, string MemoryBound);
@@ -97,9 +99,64 @@ public static class PlanCompiler
         return null;
     }
 
-    /// <summary>`held`: per graph port, the entity types the graph bound to it holds (`TypedProjection.EntityTypes` of the projection that produces it).</summary>
-    public static CompiledProjection Compile(TypedProjection tp, Catalog catalog, OpContext cx, IReadOnlyDictionary<string, IReadOnlySet<string>> held)
+    /// <summary>
+    /// The plan as run, from the plan as written: a join whose one input is a traverse, directly or through one map, and whose keys on that
+    /// side read only the traverse's start rows, is moved below the traverse. Rule: for start rows S, a traverse T, a map M and rows R,
+    /// Join(M(T(S)), R) on k(s) = k'(r) is M'(T(Join(S, R) on k(s) = k'(r))), where k reads M's columns through M's assignments and M' is M
+    /// with R's columns carried through in the join's column order. It holds row for row and weight for weight: T emits, per start row and per
+    /// element the row's start element reaches, the start row's columns with that element, so a key of the start row joins the same R rows
+    /// before the walk as after it, and a start row that joins two R rows is walked once per row, as its reach was joined twice. Incrementally
+    /// an R row that comes is a start row that comes, walked as any other, and one that goes takes its walk with it. A traverse keeps the walks
+    /// of the start rows that join, not of every start row. Applied when the traverse and the map have no other reader and no column of R is
+    /// named as a column of the traverse's output; the operators keep their names, and the join of the start rows is named after the join.
+    /// A traced preview shows the plan as written; the rewrite applies only to untraced runs.
+    /// </summary>
+    internal static TypedProjection JoinsBelowTraverses(TypedProjection tp)
     {
+        var ops = tp.Ops.ToList();
+        int Readers(string name) => ops.Sum(o => o.Inputs.Values.Count(s => !s.IsPort && s.Name == name));
+        TOp? Op(Src s) => s.IsPort ? null : ops.FirstOrDefault(o => o.Name == s.Name);
+        Schema Rows(Src s) => s.IsPort ? tp.Port(s.Name).Rows! : Op(s)!.Out;
+        var changed = false;
+        foreach (var j in tp.Ops.OfType<TJoin>())
+            foreach (var (side, other) in (ReadOnlySpan<(string, string)>)[("left", "right"), ("right", "left")])
+            {
+                var x = Op(j.Inputs[side]);
+                var m = x as TMap;
+                if ((m is null ? x : Op(m.Inputs["in"])) is not TTraverse t || Readers(t.Name) != 1 || (m is not null && Readers(m.Name) != 1)) continue;
+                var r = Rows(j.Inputs[other]);
+                var walked = t.Out.Cols.Count - 1 - t.Reads.Count;     // the start rows' columns come first, then the reached element and its reads
+                var starts = t.Out.Cols.Take(walked).ToList();
+                if (r.Cols.Any(c => t.Out.Has(c.Name))) continue;
+                TExpr Through(TExpr e) => e switch
+                {
+                    TField f when m is not null => m.Assigns.First(a => a.Name == f.Name).Value,
+                    TCall c => c with { Args = [.. c.Args.Select(Through)] },
+                    TId i => i with { Comps = [.. i.Comps.Select(c => c with { Value = Through(c.Value) })] },
+                    _ => e,
+                };
+                static void Fields(TExpr e, HashSet<string> into) { switch (e) { case TField f: into.Add(f.Name); break; case TCall c: foreach (var a in c.Args) Fields(a, into); break; case TId i: foreach (var c in i.Comps) Fields(c.Value, into); break; } }
+                var keys = j.Keys.Select(k => side == "left" ? (Through(k.Left), k.Right) : (k.Left, Through(k.Right))).ToList();
+                var read = new HashSet<string>(); foreach (var k in keys) Fields(side == "left" ? k.Item1 : k.Item2, read);
+                if (!read.IsSubsetOf(starts.Select(c => c.Name))) continue;
+                var startsJoined = new TJoin(j.Name + ".starts", j.Id, new Dictionary<string, Src> { [side] = t.Inputs["in"], [other] = j.Inputs[other] }, new Schema(side == "left" ? [.. starts, .. r.Cols] : [.. r.Cols, .. starts]), keys);
+                var walk = t with { Inputs = new Dictionary<string, Src>(t.Inputs) { ["in"] = new(false, startsJoined.Name) }, Out = new Schema([.. startsJoined.Out.Cols, .. t.Out.Cols.Skip(walked)]) };
+                IEnumerable<(string, TExpr)> Carry(IEnumerable<Col> cols) => cols.Select(c => (c.Name, (TExpr)new TField(c.Name, c.T)));
+                var own = m is null ? Carry(t.Out.Cols) : m.Assigns;
+                var map = new TMap(j.Name, m?.Id ?? j.Id, new Dictionary<string, Src> { ["in"] = new(false, walk.Name) }, j.Out, side == "left" ? [.. own, .. Carry(r.Cols)] : [.. Carry(r.Cols), .. own]);
+                var at = ops.IndexOf(j);
+                ops[at] = map; ops.Insert(at, walk); ops.Insert(at, startsJoined);
+                ops.Remove(t); if (m is not null) ops.Remove(m);
+                changed = true;
+                break;
+            }
+        return changed ? new TypedProjection { Id = tp.Id, Name = tp.Name, Module = tp.Module, Purpose = tp.Purpose, Forward = tp.Forward, Retain = tp.Retain, OutputModule = tp.OutputModule, Ports = tp.Ports, Ops = ops, Rules = tp.Rules, Params = tp.Params } : tp;
+    }
+
+    /// <summary>`held`: per graph port, the entity types the graph bound to it holds (`TypedProjection.EntityTypes` of the projection that produces it). `traced`: the graph's operators are traced, so its plan runs as written.</summary>
+    public static CompiledProjection Compile(TypedProjection tp, Catalog catalog, OpContext cx, IReadOnlyDictionary<string, IReadOnlySet<string>> held, bool traced)
+    {
+        if (!traced) tp = JoinsBelowTraverses(tp);
         var ops = new List<PhysOp>(); var byName = new Dictionary<string, PhysOp>();
         var joinInputs = new JoinInputs();
         var strategies = new List<string>();
@@ -261,14 +318,12 @@ public sealed class Engine : IDisposable, IEngineInput
     /// <summary>Diagnostic: bytes allocated per operator, accumulated over all steps (PERF.md method).</summary>
     public bool TrackAllocations { get; set; }
 
-    /// <summary>Graphs whose operator outputs are integrated for inspection (a draft preview, `include: rows`): per graph and operator, the rows the operator holds now with their summed weights. Null: nothing is traced.</summary>
-    public HashSet<string>? TraceGraphs { get; set; }
     /// <summary>The traced rows, by graph name and operator name: each row by its cells (null absent, decimal, a text or element id, or the raw integer of an Integer, Instant or Boolean) with its weight.</summary>
     public Dictionary<string, Dictionary<string, Dictionary<string, (long Weight, object?[] Cells)>>> Traced { get; } = [];
 
     void Trace(GraphRuntime g, PhysOp op, Batch? b)
     {
-        if (b is null || TraceGraphs is null || !TraceGraphs.Contains(g.Name)) return;
+        if (b is null || options.TraceGraphs is not { } traced || !traced.Contains(g.Name)) return;
         if (!Traced.TryGetValue(g.Name, out var byOp)) Traced[g.Name] = byOp = [];
         if (!byOp.TryGetValue(op.Name, out var rows)) byOp[op.Name] = rows = new(StringComparer.Ordinal);
         var layout = op.OutLayout;
@@ -325,7 +380,7 @@ public sealed class Engine : IDisposable, IEngineInput
             var cx = new OpContext(Interner, Faults, Identities, this.options.Tenant, tp.OutputModule, key, outb) { LateHorizonFactor = this.options.LateHorizonWindows, RetentionNs = this.options.TelemetryRetentionNs };
             foreach (var series in tp.Ops.OfType<TSeries>().Where(x => x.WithinNs > this.options.TelemetryRetentionNs))
                 throw new InvalidOperationException($"graph {next.Name}: {series.Name} reads {Lexer.DurationText(series.WithinNs)} back, and telemetry is retained for {Lexer.DurationText(this.options.TelemetryRetentionNs)} (Def. 7.13)");
-            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes)), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
+            var gr = new GraphRuntime { Name = next.Name, Key = key, Plan = PlanCompiler.Compile(tp, catalog, cx, next.Bindings.Where(kv => active.Any(x => x.Name == kv.Value)).ToDictionary(kv => kv.Key, kv => ProjectionOf(active.First(x => x.Name == kv.Value)).EntityTypes), this.options.TraceGraphs?.Contains(next.Name) == true), IsMaster = next.Master, Ingests = tp.Purpose == "ingestion", Cx = cx, Out = outb, State = new Graph(Interner) };
             foreach (var (port, from) in next.Bindings) gr.PortSources[port] = from;
             graphs.Add(gr); byName[next.Name] = gr;
             gr.Head = store.Head(key).Head;

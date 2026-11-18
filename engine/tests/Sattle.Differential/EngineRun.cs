@@ -35,12 +35,12 @@ public static class EngineRun
     }
 
     /// <summary>The facts of every graph after the whole log.</summary>
-    public static SpaceFacts Final(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking) => States(catalog, log, chunking).Last().Facts;
+    public static SpaceFacts Final(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, EngineOptions? options = null) => States(catalog, log, chunking, options).Last().Facts;
 
     /// <summary>The facts after each batch, with the number of inputs consumed so far.</summary>
-    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, long? retentionNs = null)
+    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, EngineOptions? options = null)
     {
-        using var engine = new Engine(catalog, catalog.Spaces.Keys.Single(), retentionNs is { } age ? new EngineOptions { TelemetryRetentionNs = age } : null);
+        using var engine = new Engine(catalog, catalog.Spaces.Keys.Single(), options);
         yield return (0, FactsOf(engine));
         long seq = 0;
         foreach (var batch in Batches(log, chunking))

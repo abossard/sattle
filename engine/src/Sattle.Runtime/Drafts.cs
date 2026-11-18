@@ -332,13 +332,9 @@ public sealed partial class SpaceHost
             if (maxRows > 5_000_000) throw new HostError("ScopeTooLarge", "maxRows is capped at 5,000,000", 422);
             var sw = Stopwatch.StartNew();
             var include = (body["include"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? ["counts", "diff"];
-            HashSet<string> want = [];
+            var want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? cand.Spaces[newSpace].Graphs.Select(g => g.Name).ToHashSet();
             // own in-memory stores: the live ones are not touched; the late horizon of the live engine
-            var (activated, rows, complete) = Reactivate(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows }, maxRows, e =>
-            {
-                want = (body["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToHashSet()) ?? e.Graphs.Select(g => g.Name).ToHashSet();
-                if (include.Contains("rows")) e.TraceGraphs = want;
-            });
+            var (activated, rows, complete) = Reactivate(cand, newSpace, new EngineOptions { Tenant = options.Tenant, LateHorizonWindows = options.LateHorizonWindows, TraceGraphs = include.Contains("rows") ? want : null }, maxRows);
             using var fresh = activated;
             var exp = new CanvasExport(fresh, cand);
             var limit = int.TryParse(body["limit"]?.GetValue<string>(), out var lm) ? lm : 5000;

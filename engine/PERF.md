@@ -1182,6 +1182,22 @@ Theory. A text with the shape of an id as `KeyText.Id` mints it (a letter, a col
 - Limit: 65,536 pages of 64 KB, 4 GB of stored text; a text of 64 KB or more is a page of its own, and the interner throws past the last page. At 10^5 the texts take 509 pages (33 MB); linear to 10^6 about 5,100, 8 % of the limit. One text is at most 256 MB (the length word holds its bytes shifted by 3).
 - Before is main 5e86f36; the interner is the same in the statics, telemetry and #119 changes this applies on. Digests unchanged (estate, lab fixtures, 10^4, 10^5 `sha256:0ab80689...41140`). Times are measured under load and not comparable; bytes are.
 
+### Efficiency stage 2, plan: a join on the start of a traverse runs below it (#115, 2026-11-18)
+At 10^5 the hidden rows of the health tree walked from every one of its 106,437 elements over `Contains` (256 B per master node in that traverse), and a join then kept the walks from the few roots a "hide" curation names (143 B per master node in that join).
+
+Theory. `PlanCompiler.JoinsBelowTraverses`: for start rows S, a traverse T, a map M and rows R, a join on a key that reads only the start rows' columns, Join(M(T(S)), R) on k(s) = k'(r), is M'(T(Join(S, R) on k(s) = k'(r))), where M' is M with R's columns carried through. T emits, per start row and per element its start element reaches, the start row's columns with that element, so a key of the start row pairs the same rows with the same weights before the walk as after it; a start row that joins two rows of R is walked twice, as its reach was joined twice. Incrementally a row of R that comes is a start row that comes. Only the plan the engine runs changes: the definitions, and the reference evaluator of the differential tests, keep the plan as written, and the worlds `join on the start of a traverse` (left and right) check one against the other under every cut. Applied when the traverse and the map have no other reader. A traced preview shows the plan as written; the rewrite applies only to untraced runs (`EngineOptions.TraceGraphs`). Seal format 23 to 24 (the health tree's operators change).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 179 / 175 MB | 934 / 899 MB |
+| traverse per master node | 749 / 431 B | 514 / 263 B |
+| joins per master node | 1,265 / 1,154 B | 856 / 757 B |
+| allocated per input record | 7.74 / 7.49 KB | 7.73 / 7.46 KB |
+
+- The join of the start rows stores the start rows (every element, by its key), so the joins fall by 99 B at 10^5, not by the 143 B of the old join.
+- The reach of the rolled-up severity (`counts`) joins on the reached element's key, not on a start column, and is unchanged.
+- Before is main 5e86f36. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 300 to 400) and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
