@@ -1094,6 +1094,21 @@ Theory. A windowed group never retracts a closed window: its state goes when the
 - Linear to 10^6: about 4.5 s per steady close, under the 5 s limit with little room.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Load 75 to 90.
 
+### Efficiency stage 2, statics: a large flush's telemetry working state does not stay (#115, 2026-11-18)
+At 10^6 the statics held 390 B per master node, 218 MB of it one `Sample[]`: the working state of the telemetry flush on the engine's thread (the windows of the step by key, their order, and the samples) was kept at the size of the largest step, the first window close of the run. At 10^5 it was 23 of the 30 MB of statics.
+
+Theory. A flush past 4,096 windows or samples lets the thread's working state go; the step that called it still holds the samples until it has appended them, and the next flush starts small. A flush of a large step sizes its working state once from its row count instead of growing it by doubling. Same samples in the same order. The seal format is unchanged (the state is the thread's, not the engine's).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 179 / 177 MB | 934 / 910 MB |
+| statics per master node | 409 / 193 B | 303 / 69 B |
+| allocated per input record | 7.73 / 8.07 KB | 7.70 / 8.07 KB |
+| flush telemetry, MB allocated | 18 / 47 | 173 / 475 |
+
+- Cost moved: every window close of a large estate allocates its flush state again, 4.5 % (10^4) and 4.8 % (10^5) more allocation per record; GC pause 0.59 / 0.49 s at 10^5. Without the sizing once it was 13.5 % (8.75 KB per record at 10^5).
+- Before is main c57264e. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 100 to 300) and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

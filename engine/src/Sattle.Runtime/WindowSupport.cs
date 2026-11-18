@@ -110,7 +110,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return moved;
     }
 
-    /// <summary>The working state of a flush on this thread (flushes do not overlap): the step's windows by key, in the order their first row came, and the samples. Sized by the largest step and kept, so a flush allocates nothing for it.</summary>
+    /// <summary>The working state of a flush on this thread (flushes do not overlap): the step's windows by key, in the order their first row came, and the samples. Kept from flush to flush, so a flush allocates nothing for it; a flush past `Large` windows or samples lets it go, so a large step's working state does not stay.</summary>
     sealed class FlushState
     {
         public readonly Dictionary<WindowKey, int> WindowOf = [];
@@ -118,10 +118,11 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         public readonly List<(long Own, TVal Value, long Weight)> ByRow = [];
         public readonly List<(TVal Value, long Weight)> Net = [];
         public readonly List<Sample> Samples = [];
+        public const int Large = 4096;
     }
     [ThreadStatic] static FlushState? flushOfThread;
 
-    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came. The list is the thread's and holds the samples until the next flush on the thread.</summary>
+    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came. The list is the thread's and holds the samples until the next flush on the thread; after a large flush the thread lets go of it, and it lives while the caller holds it.</summary>
     public List<Sample> Flush(ITelemetryStore store, GraphKey g, long inputId)
     {
         var fs = flushOfThread ??= new();
@@ -130,6 +131,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         // the windows of the step, and per window its rows in order as a chain: first row, last row, and per row the next one
         var windowOf = fs.WindowOf; windowOf.Clear();
         var windows = fs.Windows; windows.Clear();
+        if (tele.Count > FlushState.Large) { windowOf.EnsureCapacity(tele.Count); windows.EnsureCapacity(tele.Count); }     // a large step sizes its working state once instead of growing it
         var next = System.Buffers.ArrayPool<int>.Shared.Rent(tele.Count);
         try
         {
@@ -146,6 +148,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
                 if (windowOf.TryGetValue(key, out var w)) { next[windows[w].Last] = i; windows[w] = windows[w] with { Last = i }; }
                 else { windowOf[key] = windows.Count; windows.Add((key, period, i, i)); }
             }
+            if (windows.Count > FlushState.Large) res.EnsureCapacity(windows.Count);
             var byRow = fs.ByRow; var scratch = fs.Net;
             foreach (var (key, period, first, _) in windows)
             {
@@ -164,6 +167,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         }
         finally { System.Buffers.ArrayPool<int>.Shared.Return(next); }
         tele.Clear();
+        if (windows.Count > FlushState.Large || res.Count > FlushState.Large) flushOfThread = null;
         return res;
     }
 
