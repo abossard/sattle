@@ -403,7 +403,7 @@ Streams: one journal per graph space, one commit log per graph, one manifest per
 
 ### 7.6 Conformance and qualification of a backend
 
-The storage contract tests (`StoreConformanceTests`, parametrized over memory, SQLite and Cosmos), `LiveCrashTests`, and the restart and seal tests are the start. A backend must also pass:
+The storage contract tests (`StoreConformanceTests`, parametrized over memory, SQLite and Cosmos), `LiveResumeTests`, and the restart and seal tests are the start. A backend must also pass:
 - compare-and-append under two concurrent writers (one wins, no forked positions), fencing by epoch;
 - torn-write and crash at every step (chunk written, commit record written, acknowledgement sent), with recovery to a consistent prefix;
 - ordered read after reopen, gap detection, idempotent retry of the same batch;

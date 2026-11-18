@@ -22,7 +22,7 @@ This chapter uses identity (Ch. 1), graphs, versions and snapshots (Ch. 3), patc
 
 *Proof.* The replica starts at `G_{r_s}`: the snapshot is the state at its version (Theorem 6.4). Each accepted patch passes the guard of Def. 3.7, so applying it gives the next state by Def. 3.8. By Theorem 11.5 the received patches are the log in order, so no version is skipped. A rejected patch stops the replica and is visible, so a replica is never silently ahead of or behind the log. ∎
 
-The proof has been read, not checked by a program. That the viewer implements Def. 12.2 is tested: on the viewer's side, the rules for applying and rejecting, against a fake connection; on the engine's side, order, resuming, gaps and a reader ahead of the head. The statement end to end, a replica digest compared with the engine's state digest at every version, has not been checked.
+The proof has been read, not checked by a program. That the viewer implements Def. 12.2 is tested: on the viewer's side, the rules for applying and rejecting, against a fake connection; on the engine's side, order, resuming, gaps and a reader ahead of the head. The statement end to end is checked on one input: a replica of the viewer follows a running engine that serves the synthetic estate, and after every patch of every graph its state is compared with the state the engine serves for that version. The two are equal up to the head. Digests are not compared, because the replica computes none. The feed of that check is the history of a finished replay: patches that arrive while the replica follows, and a real recording, are not checked end to end.
 
 **Proposition 12.2 (joining late).** A reader that joins late reads the past through snapshots and patches, and follows the present through a stream. The two parts agree if following starts at the version after the last patch read.
 
@@ -140,7 +140,7 @@ That rendering is a function holds by definition and is tested. Escaping is test
 
 - **No `rev_of`.** Versions carry no time (12.2).
 - **No edits of data in the viewer.** The engine accepts edits of views (Ch. 8); the viewer has no way to make them.
-- **A replica digest is not compared** with the engine's at each version (Theorem 12.1).
+- **A replica is compared with the engine on one input only.** On the synthetic estate its state equals the engine's after every patch (Theorem 12.1). Digests are not compared, and neither a real recording nor a feed that is still arriving is checked.
 - **Documents** have no truncation; a document over a large graph renders in full.
 - **What the viewer reads of newer engine features** (references served alone, named stubs, measurements in the default content) was checked in a browser at the state of this revision, and is not asserted by a script. In the default content a document is the head only, and measurements arrive all at once after the history, not with the patches.
 - **The color chosen per graph** is kept in the browser, not on the engine.
