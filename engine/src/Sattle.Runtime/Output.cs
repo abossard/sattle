@@ -17,6 +17,8 @@ sealed class SeriesOp : PhysOp
     /// <summary>Visits the stored windows of elements' read properties in [from, to), in the read graph (set at activation). The read graph steps before this one, so the store holds the windows after this step's changes; and it keeps every window of the look-back until the epoch ends, so a window leaving the look-back can still be read to be retracted.</summary>
     public Func<IReadOnlyList<int>, IReadOnlyList<int>, long, long, WindowVisitor, long> Stored = null!;
     long frontier = long.MinValue;
+    /// <summary>The earliest window start of a record this Series wrote, `long.MaxValue` before the first. An advance retracts only records it wrote, so it reads the store for the windows that leave the look-back only once the look-back passes this start.</summary>
+    long oldest = long.MaxValue;
 
     // ---- the windows, read from the store ----
     SortedList<long, decimal?[]>? scanned;
@@ -172,6 +174,7 @@ sealed class SeriesOp : PhysOp
 
     void WriteRow(BatchBuilder bb, Arr r, long ws, decimal?[] vals, long w, bool noData = false)
     {
+        if (ws < oldest) oldest = ws;
         var row = bb.Add(w);
         var b = bb.Batch;
         for (var c = 0; c < inLayout.Count; c++)
@@ -308,9 +311,10 @@ sealed class SeriesOp : PhysOp
         {
             var edgeAfter = ep.Lambda - within;
             // the records that leave the look-back
-            foreach (var (elem, list) in arrangement)
-                foreach (var a in Starts(elem, edge, edgeAfter, hi))
-                    if (Record(elem, a, hi, frontier) is { } vals) foreach (var r in list) WriteRow(bb, r, a, vals, -r.Weight);
+            if (edgeAfter > oldest)
+                foreach (var (elem, list) in arrangement)
+                    foreach (var a in Starts(elem, edge, edgeAfter, hi))
+                        if (Record(elem, a, hi, frontier) is { } vals) foreach (var r in list) WriteRow(bb, r, a, vals, -r.Weight);
             // presence is sampled at the advance (Def. 7.14)
             foreach (var elem in since.Keys.Where(e => !arrangement.TryGetValue(e, out var l) || l.Count == 0).ToList()) since.Remove(elem);
             foreach (var (elem, list) in arrangement) if (list.Count > 0) since.TryAdd(elem, ep.Lambda);
@@ -389,10 +393,11 @@ sealed class SeriesOp : PhysOp
         if (ep.HasAdvance && ep.Lambda > frontier)
         {
             frontier = ep.Lambda;
-            foreach (var (elem, list) in arrangement)
-                if (Windows(elem, edge, frontier - within) is { } ws)
-                    foreach (var (wstart, vals) in ws)
-                        if (Complete(vals)) foreach (var r in list) WriteRow(bb, r, wstart, vals, -r.Weight);
+            if (frontier - within > oldest)
+                foreach (var (elem, list) in arrangement)
+                    if (Windows(elem, edge, frontier - within) is { } ws)
+                        foreach (var (wstart, vals) in ws)
+                            if (Complete(vals)) foreach (var r in list) WriteRow(bb, r, wstart, vals, -r.Weight);
         }
         return bb.Build();
     }

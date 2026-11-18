@@ -1148,6 +1148,25 @@ Theory. An emit evaluates the identity of every row: per component the canonical
 - At 10^4 before, every miss was a code whose canonical code is itself (61,010 of 435,541 reads), 81 % of them under `Exact`.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: an advance reads the store for leaving windows only once the look-back reaches a written one (#119, 2026-11-18)
+Theory. At an advance a Series retracts its records of the windows that leave the look-back, [old edge, new edge). It read the store for every element it holds a row of, to find them. A Series retracts only records it wrote, and every record goes through one write, so it keeps the earliest window start it wrote: while the new edge is at or before it, no written window leaves, and the advance reads nothing. In the generated estates no window leaves the look-back (30 minutes and one day, against 12 minutes of capture), so every advance read the store once per element for nothing: 638,334 reads in the nine steady closes at 10^5. In a long steady run a 30-minute Series reads again once the look-back reaches its first window, as before. Seal format 21 to 22 (the Series keeps that start).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per steady close | 6.8 / 6.0 MB | 67.2 / 61.4 MB |
+
+The three changes of this day together, against the previous section's after (the `ones` row):
+
+| | 10^4 before / after | 10^5 before / after, two pairs |
+|---|---|---|
+| steady close, thread CPU median | 60 / 56 ms | 462 / 334 ms, 549 / 425 ms |
+| steady close, wall p50 / max | 62 / 70, 57 / 77 ms | 570 / 1,694, 364 / 511 ms |
+| allocated per steady close | 8.2 / 6.0 MB | 98.1 / 61.4 MB |
+| first close with telemetry, thread CPU | 469 / 468 ms | 6,697 / 6,341 ms |
+
+- Thread CPU falls 23 to 28 % at 10^5. Linear to 10^6 from 334 to 425 ms: 4.6 to 5.9 s per steady close. The machine ran at load 250 to 460 on 10 cores (other sessions' test runs), so the figures are pessimistic; a quiet run decides it.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
