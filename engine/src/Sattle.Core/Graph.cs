@@ -20,7 +20,7 @@ sealed class HandleTable(ITextTable texts)
     public int Count { get; private set; }
 
     static int Slot(int code) { var h = (uint)code * 0x9E3779B1u; return (int)(h ^ h >> 16); }
-    int Handle(int code)
+    int Find(int code)
     {
         for (var i = Slot(code) & mask; ; i = (i + 1) & mask)
         {
@@ -31,12 +31,15 @@ sealed class HandleTable(ITextTable texts)
     }
     void Place(int h) { var i = Slot(codes[h]) & mask; while (index[i] != 0) i = (i + 1) & mask; index[i] = h + 1; }
 
+    /// <summary>The handle of an id's code, or -1.</summary>
+    public int Handle(int code) => Find(code);
+    public int Code(int h) => codes[h];
     /// <summary>The handle of an id, or -1 when the graph never had it.</summary>
-    public int Find(string id) => texts.TryFind(id, out var code) ? Handle(code) : -1;
+    public int Find(string id) => texts.TryFind(id, out var code) ? Find(code) : -1;
     public int GetOrAdd(string id)
     {
         var code = texts.Intern(id);
-        var h = Handle(code);
+        var h = Find(code);
         if (h >= 0) return h;
         h = Count++;
         if (h == codes.Length) Array.Resize(ref codes, h * 2);
@@ -137,45 +140,57 @@ sealed class IdPool : ITextTable
     }
 }
 
-sealed class StrTable
+/// <summary>
+/// Writes a props block in a graph's encoding, from codes of the graph's text table: the count, then per property its key and its value, the
+/// properties in the order `Props` keeps them (ordinal by key text). A text, an entity id and a key are codes; an integer or instant a zigzag
+/// varint; a decimal whose mantissa fits 64 bits its scale and sign and a varint, else its 16 bytes. What `Graph.Holds` compares with.
+/// </summary>
+public sealed class PropBlockWriter
 {
-    readonly Dictionary<string, int> map = new(StringComparer.Ordinal);
-    List<string> list = [];
-    public int Intern(string s) { if (!map.TryGetValue(s, out var i)) { i = list.Count; list.Add(s); map[s] = i; } return i; }
-    public string Get(int i) => list[i];
-    public bool TryFind(string s, out int i) => map.TryGetValue(s, out i);
-    public StrTable Clone() { var c = new StrTable(); foreach (var s in list) c.Intern(s); return c; }
+    readonly List<byte> o = new(64);
+    public ReadOnlySpan<byte> Block => System.Runtime.InteropServices.CollectionsMarshal.AsSpan(o);
+    public void Clear() => o.Clear();
+    public void Count(int n) => Varint((ulong)n);
+    public void Key(int code) => Varint((ulong)code);
+    public void Null() => o.Add(0);
+    public void Text(int code) { o.Add(1); Varint((ulong)code); }
+    public void Integer(long v) { o.Add(2); Varint(Zig(v)); }
+    internal void BigInteger(BigInteger v) { o.Add(3); var b = Encoding.UTF8.GetBytes(v.ToString(System.Globalization.CultureInfo.InvariantCulture)); Varint((ulong)b.Length); o.AddRange(b); }
+    public void Decimal(decimal d)
+    {
+        var bits = decimal.GetBits(d);
+        if (bits[2] == 0) { o.Add(10); o.Add((byte)((bits[3] >> 16) & 0x7f | (bits[3] < 0 ? 0x80 : 0))); Varint((ulong)(uint)bits[1] << 32 | (uint)bits[0]); }
+        else { o.Add(4); foreach (var x in bits) o.AddRange(BitConverter.GetBytes(x)); }
+    }
+    public void Boolean(bool b) => o.Add(b ? (byte)6 : (byte)5);
+    public void Instant(long ns) { o.Add(7); Varint(Zig(ns)); }
+    public void Entity(int code) { o.Add(8); Varint((ulong)code); }
+    /// <summary>A list of `n` items; the items follow.</summary>
+    public void List(int n) { o.Add(9); Varint((ulong)n); }
+    void Varint(ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
+    static ulong Zig(long v) => (ulong)((v << 1) ^ (v >> 63));
 }
 
-/// <summary>Compact binary form of property maps (sorted by key), so an element costs bytes instead of an object graph. A text or an entity id is its code in the graph's text table; a decimal whose mantissa fits 64 bits is its scale, sign and a varint.</summary>
+/// <summary>Compact binary form of property maps (sorted by key), so an element costs bytes instead of an object graph: written by `PropBlockWriter`, read here.</summary>
 static class PropCodec
 {
-    static void Varint(List<byte> o, ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
     static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
-    static ulong Zig(long v) => (ulong)((v << 1) ^ (v >> 63));
     static long Unzig(ulong v) => (long)(v >> 1) ^ -(long)(v & 1);
-    static void Str(List<byte> o, string s) { var b = Encoding.UTF8.GetBytes(s); Varint(o, (ulong)b.Length); o.AddRange(b); }
     static string ReadStr(byte[] b, ref int p) { var n = (int)ReadVarint(b, ref p); var s = Encoding.UTF8.GetString(b, p, n); p += n; return s; }
 
-    static void Val(List<byte> o, Value v, ITextTable texts)
+    static void Val(PropBlockWriter w, Value v, ITextTable texts)
     {
         switch (v)
         {
-            case NullValue: o.Add(0); break;
-            case TextValue t: o.Add(1); Varint(o, (ulong)texts.Intern(t.S)); break;
-            case IntegerValue i when i.N >= long.MinValue && i.N <= long.MaxValue: o.Add(2); Varint(o, Zig((long)i.N)); break;
-            case IntegerValue i: o.Add(3); Str(o, i.N.ToString(System.Globalization.CultureInfo.InvariantCulture)); break;
-            case DecimalValue d:
-                {
-                    var bits = decimal.GetBits(d.Q);
-                    if (bits[2] == 0) { o.Add(10); o.Add((byte)((bits[3] >> 16) & 0x7f | (bits[3] < 0 ? 0x80 : 0))); Varint(o, (ulong)(uint)bits[1] << 32 | (uint)bits[0]); }
-                    else { o.Add(4); foreach (var x in bits) o.AddRange(BitConverter.GetBytes(x)); }
-                    break;
-                }
-            case BooleanValue b: o.Add(b.B ? (byte)6 : (byte)5); break;
-            case InstantValue n: o.Add(7); Varint(o, Zig(n.Ns)); break;
-            case EntityValue e: o.Add(8); Varint(o, (ulong)texts.Intern(e.Id)); break;
-            case ListValue l: o.Add(9); Varint(o, (ulong)l.Items.Length); foreach (var x in l.Items) Val(o, x, texts); break;
+            case NullValue: w.Null(); break;
+            case TextValue t: w.Text(texts.Intern(t.S)); break;
+            case IntegerValue i when i.N >= long.MinValue && i.N <= long.MaxValue: w.Integer((long)i.N); break;
+            case IntegerValue i: w.BigInteger(i.N); break;
+            case DecimalValue d: w.Decimal(d.Q); break;
+            case BooleanValue b: w.Boolean(b.B); break;
+            case InstantValue n: w.Instant(n.Ns); break;
+            case EntityValue e: w.Entity(texts.Intern(e.Id)); break;
+            case ListValue l: w.List(l.Items.Length); foreach (var x in l.Items) Val(w, x, texts); break;
         }
     }
 
@@ -197,20 +212,19 @@ static class PropCodec
         }
     }
 
-    public static byte[] Encode(Props props, StrTable keys, ITextTable texts)
+    /// <summary>Writes the block of `props` into `w` (cleared first).</summary>
+    public static void Encode(PropBlockWriter w, Props props, ITextTable texts)
     {
-        var o = new List<byte>(32);
-        Varint(o, (ulong)props.Count);
-        foreach (var (k, v) in props.Items) { Varint(o, (ulong)keys.Intern(k)); Val(o, v, texts); }
-        return [.. o];
+        w.Clear(); w.Count(props.Count);
+        foreach (var (k, v) in props.Items) { w.Key(texts.Intern(k)); Val(w, v, texts); }
     }
 
-    public static Props Decode(byte[] b, int p, StrTable keys, ITextTable texts)
+    public static Props Decode(byte[] b, int p, ITextTable texts)
     {
         var n = (int)ReadVarint(b, ref p);
         if (n == 0) return Props.Empty;
         var kv = new KeyValuePair<string, Value>[n];
-        for (var i = 0; i < n; i++) { var k = keys.Get((int)ReadVarint(b, ref p)); kv[i] = KeyValuePair.Create(k, ReadVal(b, ref p, texts)); }
+        for (var i = 0; i < n; i++) { var k = texts.Get((int)ReadVarint(b, ref p)); kv[i] = KeyValuePair.Create(k, ReadVal(b, ref p, texts)); }
         return Props.FromSorted(kv);
     }
 }
@@ -229,7 +243,7 @@ public sealed class Graph
 
     readonly ITextTable texts;
     HandleTable ents, rels;   // element ids are codes of `texts`
-    StrTable types = new(), propIds = new();
+    readonly PropBlockWriter enc = new();   // the block being stored; types and property keys are codes of `texts` too
     // entity columns, indexed by entity handle (dangling endpoints have handles too, with kind 0)
     byte[] eKind = new byte[64]; int[] eType = new int[64], eProps = new int[64], eOut = new int[64], eIn = new int[64];
     // relationship columns, indexed by relationship handle
@@ -256,15 +270,16 @@ public sealed class Graph
     int StoreProps(Props p, int old)
     {
         if (p.Count == 0) return 0;
-        var enc = PropCodec.Encode(p, propIds, texts);
-        if (old > 0 && enc.Length <= Block(old) - 4) { dead -= Block(old); enc.CopyTo(pool, old); return old; }
-        if (poolLen + 4 + enc.Length > pool.Length) Array.Resize(ref pool, Math.Max(pool.Length * 2, poolLen + 4 + enc.Length));
-        BitConverter.TryWriteBytes(pool.AsSpan(poolLen), enc.Length);
-        enc.CopyTo(pool, poolLen + 4);
-        var at = poolLen + 4; poolLen += 4 + enc.Length;
+        PropCodec.Encode(enc, p, texts);
+        var block = enc.Block;
+        if (old > 0 && block.Length <= Block(old) - 4) { dead -= Block(old); block.CopyTo(pool.AsSpan(old)); return old; }
+        if (poolLen + 4 + block.Length > pool.Length) Array.Resize(ref pool, Math.Max(pool.Length * 2, poolLen + 4 + block.Length));
+        BitConverter.TryWriteBytes(pool.AsSpan(poolLen), block.Length);
+        block.CopyTo(pool.AsSpan(poolLen + 4));
+        var at = poolLen + 4; poolLen += 4 + block.Length;
         return at;
     }
-    Props LoadProps(int at) => at == 0 ? Props.Empty : PropCodec.Decode(pool, at, propIds, texts);
+    Props LoadProps(int at) => at == 0 ? Props.Empty : PropCodec.Decode(pool, at, texts);
 
     /// <summary>Copies the blocks of the live elements together; a removed element forgets its block.</summary>
     void CompactProps()
@@ -282,8 +297,26 @@ public sealed class Graph
         pool = next; poolLen = len; dead = 0;
     }
 
-    Entity MakeEntity(int ix) => new(ents.Get(ix), types.Get(eType[ix]), LoadProps(eProps[ix]));
-    Rel MakeRel(int ix) => new(rels.Get(ix), ents.Get(rSrc[ix]), ents.Get(rTgt[ix]), types.Get(rType[ix]), LoadProps(rProps[ix]));
+    Entity MakeEntity(int ix) => new(ents.Get(ix), texts.Get(eType[ix]), LoadProps(eProps[ix]));
+    Rel MakeRel(int ix) => new(rels.Get(ix), ents.Get(rSrc[ix]), ents.Get(rTgt[ix]), texts.Get(rType[ix]), LoadProps(rProps[ix]));
+
+    /// <summary>
+    /// Whether the graph has exactly this element, given in codes of its text table: an entity (`source` and `target` -1) or a relationship of
+    /// that type and endpoints, with these props (a block from `PropBlockWriter`). True means equal. False means it differs or the codes cannot
+    /// tell (a decimal of another scale, say): the caller then compares the elements themselves. Makes no string and no element.
+    /// </summary>
+    public bool Holds(int id, int type, int source, int target, ReadOnlySpan<byte> props)
+    {
+        if (source < 0)
+        {
+            var e = ents.Handle(id);
+            return e >= 0 && eKind[e] == 1 && eType[e] == type && SameProps(eProps[e], props);
+        }
+        var r = rels.Handle(id);
+        return r >= 0 && rKind[r] == 1 && rType[r] == type && ents.Code(rSrc[r]) == source && ents.Code(rTgt[r]) == target && SameProps(rProps[r], props);
+    }
+    // a block is self-delimiting, so a stored block (perhaps in a larger reused one) equals `props` when its first bytes do
+    bool SameProps(int at, ReadOnlySpan<byte> props) => at == 0 ? props.SequenceEqual((ReadOnlySpan<byte>)[0]) : props.Length <= Block(at) - 4 && props.SequenceEqual(pool.AsSpan(at, props.Length));
 
     // ---- reads ----
     public Entity? Entity(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? MakeEntity(ix) : null; }
@@ -299,7 +332,7 @@ public sealed class Graph
         var r = Lookup(s, t, ty);
         return r < 0 ? null : MakeRel(r);
     }
-    bool TryType(string type, out int ty) => types.TryFind(type, out ty);
+    bool TryType(string type, out int ty) => texts.TryFind(type, out ty);
 
     public IEnumerable<string> OutRels(string entityId)
     {
@@ -318,8 +351,8 @@ public sealed class Graph
     {
         var ix = ents.Find(entityId);
         if (ix < 0) yield break;
-        if (outgoing) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) yield return (types.Get(rType[r - 1]), ents.Get(rTgt[r - 1]));
-        else for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return (types.Get(rType[r - 1]), ents.Get(rSrc[r - 1]));
+        if (outgoing) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) yield return (texts.Get(rType[r - 1]), ents.Get(rTgt[r - 1]));
+        else for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return (texts.Get(rType[r - 1]), ents.Get(rSrc[r - 1]));
     }
     /// <summary>Out-going relationships as materialized elements, without the id round trip.</summary>
     public IEnumerable<Rel> OutEdges(string entityId)
@@ -386,7 +419,7 @@ public sealed class Graph
     {
         var g = new Graph(texts)
         {
-            ents = ents.Clone(), rels = rels.Clone(), types = types.Clone(), propIds = propIds.Clone(),
+            ents = ents.Clone(), rels = rels.Clone(),
             eKind = (byte[])eKind.Clone(), eType = (int[])eType.Clone(), eProps = (int[])eProps.Clone(), eOut = (int[])eOut.Clone(), eIn = (int[])eIn.Clone(),
             rKind = (byte[])rKind.Clone(), rType = (int[])rType.Clone(), rProps = (int[])rProps.Clone(), rSrc = (int[])rSrc.Clone(), rTgt = (int[])rTgt.Clone(), rOutNext = (int[])rOutNext.Clone(), rInNext = (int[])rInNext.Clone(),
             pool = (byte[])pool.Clone(), poolLen = poolLen, dead = dead, uq = (int[])uq.Clone(), uqMask = uqMask, uqLive = uqLive, uqUsed = uqUsed, entityCount = entityCount, relCount = relCount, ontology = ontology,
@@ -439,14 +472,14 @@ public sealed class Graph
                     var ix = ents.GetOrAdd(en.Id); GrowEnt(ix);
                     if (eKind[ix] == 0) entityCount++;
                     else if (eProps[ix] > 0) dead += Block(eProps[ix]);           // a put over a live entity: its block is free to reuse
-                    eKind[ix] = 1; eType[ix] = types.Intern(en.Type); eProps[ix] = StoreProps(en.Props, eProps[ix]);
+                    eKind[ix] = 1; eType[ix] = texts.Intern(en.Type); eProps[ix] = StoreProps(en.Props, eProps[ix]);
                     break;
                 }
             case Rel r:
                 {
                     var ix = rels.GetOrAdd(r.Id); GrowRel(ix);
                     var s = ents.GetOrAdd(r.Source); var t = ents.GetOrAdd(r.Target); GrowEnt(Math.Max(s, t));
-                    rKind[ix] = 1; rSrc[ix] = s; rTgt[ix] = t; rType[ix] = types.Intern(r.Type); rProps[ix] = StoreProps(r.Props, rProps[ix]);
+                    rKind[ix] = 1; rSrc[ix] = s; rTgt[ix] = t; rType[ix] = texts.Intern(r.Type); rProps[ix] = StoreProps(r.Props, rProps[ix]);
                     rOutNext[ix] = eOut[s]; eOut[s] = ix + 1;
                     rInNext[ix] = eIn[t]; eIn[t] = ix + 1;
                     UqInsert(ix); relCount++;

@@ -167,4 +167,45 @@ public class HotGraphTests
         Assert.Equal(count, texts.Count);
         Assert.Equal(new Rel("r", "a", "b", "R", Props.Empty), g.FindRel("a", "b", "R"));
     }
+
+    /// <summary>`Holds` compares an element given in interner codes with the graph's, without making a string or an element.</summary>
+    [Theory]
+    [InlineData("the same entity", true)]
+    [InlineData("another type", false)]
+    [InlineData("another value", false)]
+    [InlineData("a removed entity", false)]
+    [InlineData("a decimal of another scale (equal as a value, so the caller compares elements)", false)]
+    [InlineData("the same relationship", true)]
+    [InlineData("another endpoint", false)]
+    [InlineData("an entity without props", true)]
+    public void Holds_compares_an_element_given_in_codes(string change, bool want)
+    {
+        var it = new Interner();
+        var g = new Graph(it);
+        var a = new Entity("a", "T", Props.Of(("n", Value.Integer(3)), ("s", Value.Text("x")), ("d", Value.Decimal(1.5m)), ("l", Value.List([Value.Entity("b")]))));
+        var b = new Entity("b", "T", Props.Empty);
+        var r = new Rel("r", "a", "b", "R", Props.Of(("w", Value.Boolean(true))));
+        Assert.Null(g.Apply([Edit.Create(a), Edit.Create(b), Edit.Create(r)]));
+        if (change == "a removed entity") Assert.Null(g.Apply([Edit.Remove(r), Edit.Remove(a)]));
+        var w = new PropBlockWriter();
+        int C(string s) => it.Intern(s);
+        void BlockOfA(decimal d, long n)      // keys in the order of their texts: d, l, n, s
+        {
+            w.Clear(); w.Count(4);
+            w.Key(C("d")); w.Decimal(d); w.Key(C("l")); w.List(1); w.Entity(C("b")); w.Key(C("n")); w.Integer(n); w.Key(C("s")); w.Text(C("x"));
+        }
+        void BlockOfR() { w.Clear(); w.Count(1); w.Key(C("w")); w.Boolean(true); }
+        bool got;
+        switch (change)
+        {
+            case "the same relationship": BlockOfR(); got = g.Holds(C("r"), C("R"), C("a"), C("b"), w.Block); break;
+            case "another endpoint": BlockOfR(); got = g.Holds(C("r"), C("R"), C("b"), C("b"), w.Block); break;
+            case "an entity without props": w.Clear(); w.Count(0); got = g.Holds(C("b"), C("T"), -1, -1, w.Block); break;
+            default:
+                BlockOfA(change.StartsWith("a decimal") ? 1.50m : 1.5m, change == "another value" ? 4 : 3);
+                got = g.Holds(C("a"), C(change == "another type" ? "U" : "T"), -1, -1, w.Block);
+                break;
+        }
+        Assert.Equal(want, got);
+    }
 }
