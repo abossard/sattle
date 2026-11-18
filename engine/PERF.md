@@ -1273,6 +1273,19 @@ Theory. The component fixes the type it asks about, so the cache moves into the 
 - The per-step timers of `bench phases` cost about 11 % of the instructions at 10^5 (449 G with them, 400 G without), and the runs at 10^6 measured with them on.
 - Before is the verification clone of main 5deb56f with the join below a traverse, the Ch. 6 paragraph and the arrangement links. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Load average 80 to 140; thread CPU is comparable within a pair, wall time is not.
 
+### Efficiency stage 2, digests: a graph's digest and the state digest are hashed in pieces (#115, 2026-11-18)
+The run at 10^6 replayed in full and then failed at its last line: the digest of a graph wrote enc(G) (Def. 3.5) into one string, and the master graph's passed 2^31 characters, the most one string can hold. The state digest wrote every graph's digest and every telemetry window into one string as well.
+
+Theory. SHA-256 reads its input in order and needs none of it twice, so the text can be hashed as it is written. Both digests write the same characters in the same order into a buffer. Once the buffer passes 64 Ki characters it is encoded to UTF-8 through one stateful encoder, which carries a surrogate pair split across a cut, and appended to an incremental hash. The bytes hashed are the bytes of the whole text, so every digest is unchanged. `Encode` stays for the tests that compare encodings and writes through the same code.
+
+| | 10^5 before / after |
+|---|---|
+| allocated by the state digest | 4,286 / 1,160 MB |
+| time of the state digest (thread, under load) | 4.9 / 3.8 s |
+
+- What is left is the order. A graph's elements are made and sorted by key string, and a graph's telemetry windows are sorted by element and property text, each held whole while its graph is hashed. That's 1,160 MB allocated at 10^5, so about 10 times that at 10^6. It runs once, at the end of a replay.
+- Before is main f87f1ba. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

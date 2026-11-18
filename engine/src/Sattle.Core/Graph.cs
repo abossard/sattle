@@ -604,18 +604,24 @@ public sealed class Graph
     }
 
     /// <summary>Def. 3.5: enc(G) = JCS of the pairs sorted by key string.</summary>
-    public string Encode()
+    public string Encode() { var sb = new StringBuilder(); Write(sb, () => { }); return sb.ToString(); }
+
+    /// <summary>The SHA-256 of enc(G), hashed in pieces: no text of the whole graph is held, which at 10^6 master nodes would pass 2^31 chars.</summary>
+    public string Digest() { var d = new Digests.Streamed(); Write(d.Text, d.Cut); return "sha256:" + d.Hex(); }
+
+    /// <summary>Writes enc(G) to `sb`, calling `cut` after each pair.</summary>
+    void Write(StringBuilder sb, Action cut)
     {
         var sorted = Elements().OrderBy(e => e.Key.ToString(), StringComparer.Ordinal).ToList();
-        var sb = new StringBuilder("[");
+        sb.Append('[');
         for (var i = 0; i < sorted.Count; i++)
         {
             if (i > 0) sb.Append(',');
             sb.Append('['); Jcs.Str(sb, sorted[i].Key.ToString()); sb.Append(','); Jcs.Element(sb, sorted[i]); sb.Append(']');
+            cut();
         }
-        return sb.Append(']').ToString();
+        sb.Append(']');
     }
-    public string Digest() => Digests.Of(Encode());
 
     /// <summary>Def. 3.4 graph equality.</summary>
     public bool SameAs(Graph o) => Count == o.Count && Equals(ontology, o.ontology) && Entities.All(e => e.Equals(o.Entity(e.Id))) && Rels.All(r => r.Equals(o.Rel(r.Id)));

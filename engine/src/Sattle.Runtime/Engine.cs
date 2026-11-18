@@ -634,7 +634,7 @@ public sealed class Engine : IDisposable, IEngineInput
     /// <summary>A digest of the observable output: every graph's digest, then every telemetry window in canonical order. Same ordered inputs give the same digest (T7).</summary>
     public string StateDigest()
     {
-        var sb = new StringBuilder();
+        var d = new Digests.Streamed(); var sb = d.Text;
         foreach (var g in graphs.OrderBy(x => x.Name, StringComparer.Ordinal))
         {
             sb.Append(g.Name).Append('=').Append(g.State.Digest()).Append('\n');
@@ -643,10 +643,10 @@ public sealed class Engine : IDisposable, IEngineInput
                 {
                     sb.Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
                     if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
-                    sb.Append('\n');
+                    sb.Append('\n'); d.Cut();
                 }
         }
-        return Digests.Of(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()))));
+        return Digests.Of(d.Hex());
     }
 
     public void Advance(long lambdaNs) => Advance(lambdaNs, 0);

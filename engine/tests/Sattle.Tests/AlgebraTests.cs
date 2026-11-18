@@ -197,6 +197,18 @@ public class AlgebraTests
         Assert.Equal(b0.SameAs(moved), b0.Digest() == moved.Digest());
     });
 
+    /// <summary>The digest is hashed in pieces of about 64 Ki chars; it equals the digest of the whole encoding, also where a piece ends next to a text outside the BMP.</summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(4000)]
+    public void Def_3_5_digest_in_pieces_equals_the_digest_of_the_encoding(int entities)
+    {
+        var g = new Graph();
+        Assert.Null(g.Apply([.. Enumerable.Range(0, entities).Select(i => Edit.Create(new Entity($"e{i}", "T", Props.Of(("name", Value.Text($"ä{i}😀"))))))]));
+        Assert.Equal(Digests.Of(g.Encode()), g.Digest());
+    }
+
     [Fact]
     public void Ontology_slot_is_an_ordinary_edit()
     {
