@@ -886,6 +886,23 @@ Theory. A traverse stores its input rows as a join does: a column of codes (a te
 - What remains at 10^5: the reach table, 55 B per row for 12 B of data (the weight, the index on the whole key, the arrangements by start and by element), and the operator's output batch, kept at the size of its largest step (the census's 8-byte arrays less the tables' weights: about 22 MB).
 - Before is main 7ab0046 with the ends, ones, joins, Match, telemetry flush state and Traverse allocation patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load (load average 80 to 150) and not comparable; bytes are.
 
+### Efficiency stage 2, segments: a column grows in 4,096 entries, not 65,536 (#115, 2026-11-18)
+At 10^5 the operators' tables and the sinks' tables hold about 10^5 rows each, and every column of a table grew in segments of 65,536 entries: a table of 135,051 rows (the row set of the health tree's rolled-up state) held room for 196,608 in every column, its arrangements and its weights. (Footprints from a temporary diagnostic of the group operators, not in the patch.)
+
+Theory. The segment is the allocation unit of every column (operator state, graph tables, sink tables, the interner). A smaller segment leaves less room unused: at most 4,095 entries per column instead of 65,535. A read is the same shift and mask. A large column has 16 times as many segment arrays (a column of 10^6 entries 245), and each array of 32 KB or less is allocated in the young generation rather than the large object heap. Same values in the same places. Seal format 16 to 17.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 234 / 226 MB | 1,350 / 1,280 MB |
+| allocated per input record | 10.32 / 9.88 KB | 9.94 / 9.60 KB |
+| groups per master node | 1,837 / 1,739 B | 1,564 / 1,375 B |
+| windowed groups per master node | 1,220 / 1,220 B | 930 / 760 B |
+| joins per master node | 1,967 / 1,811 B | 1,410 / 1,296 B |
+| sinks (contributions, lineage, values, ones, ends) per master node | | 1,686 / 1,515 B |
+
+- GC pause at 10^5 0.69 / 0.77 s.
+- Before is the traverse rows patch. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

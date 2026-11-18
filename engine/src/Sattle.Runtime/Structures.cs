@@ -3,10 +3,10 @@ using System.Text;
 
 namespace Sattle.Runtime;
 
-/// <summary>A fixed-width column in segments of 65,536 entries, with one presence bit per entry. The first segment grows by doubling up to the full size, so a small column stays small; every later segment is full size and comes from a shared pool, and goes back to it when the column is released. The only allocation unit of operator state, graph tables and dictionaries.</summary>
+/// <summary>A fixed-width column in segments of 4,096 entries, with one presence bit per entry. The first segment grows by doubling up to the full size, so a small column stays small; every later segment is full size and comes from a shared pool, and goes back to it when the column is released. The only allocation unit of operator state, graph tables and dictionaries.</summary>
 public sealed class Segments<T> where T : unmanaged
 {
-    public const int Shift = 16, Size = 1 << Shift, Mask = Size - 1;
+    public const int Shift = 12, Size = 1 << Shift, Mask = Size - 1;
     static readonly ConcurrentBag<T[]> Pool = [];
     const int PoolCap = 64;
 
