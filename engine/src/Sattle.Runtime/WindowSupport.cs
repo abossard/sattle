@@ -110,14 +110,26 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return moved;
     }
 
-    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came.</summary>
+    /// <summary>The working state of a flush on this thread (flushes do not overlap): the step's windows by key, in the order their first row came, and the samples. Sized by the largest step and kept, so a flush allocates nothing for it.</summary>
+    sealed class FlushState
+    {
+        public readonly Dictionary<WindowKey, int> WindowOf = [];
+        public readonly List<(WindowKey Key, long Period, int First, int Last)> Windows = [];
+        public readonly List<(long Own, TVal Value, long Weight)> ByRow = [];
+        public readonly List<(TVal Value, long Weight)> Net = [];
+        public readonly List<Sample> Samples = [];
+    }
+    [ThreadStatic] static FlushState? flushOfThread;
+
+    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came. The list is the thread's and holds the samples until the next flush on the thread.</summary>
     public List<Sample> Flush(ITelemetryStore store, GraphKey g, long inputId)
     {
-        var res = new List<Sample>();
+        var fs = flushOfThread ??= new();
+        var res = fs.Samples; res.Clear();
         if (tele.Count == 0) return res;
         // the windows of the step, and per window its rows in order as a chain: first row, last row, and per row the next one
-        var windowOf = new Dictionary<WindowKey, int>();
-        var windows = new List<(WindowKey Key, long Period, int First, int Last)>();
+        var windowOf = fs.WindowOf; windowOf.Clear();
+        var windows = fs.Windows; windows.Clear();
         var next = System.Buffers.ArrayPool<int>.Shared.Rent(tele.Count);
         try
         {
@@ -134,7 +146,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
                 if (windowOf.TryGetValue(key, out var w)) { next[windows[w].Last] = i; windows[w] = windows[w] with { Last = i }; }
                 else { windowOf[key] = windows.Count; windows.Add((key, period, i, i)); }
             }
-            List<(long Own, TVal Value, long Weight)> byRow = []; List<(TVal Value, long Weight)> scratch = [];
+            var byRow = fs.ByRow; var scratch = fs.Net;
             foreach (var (key, period, first, _) in windows)
             {
                 byRow.Clear();

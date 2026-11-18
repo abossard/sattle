@@ -825,6 +825,21 @@ Theory. A walk from a bound entity takes the relationships at it whose type is a
 - `OutEdges` and `InEdges` take the type test (Match is their only caller).
 - Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added (the working state is per thread, not sealed); the seal format is unchanged.
 
+### Efficiency stage 2, allocation per record: the flush of the telemetry, its working state (#115, 2026-11-18)
+At 10^4 a flush of the telemetry (44,666 of them) made a dictionary of the step's windows, a list of them and a list of samples each time: 40.5 MB for the windows and 59.8 MB for the growth of the sample list, of 113 MB. A step writes about one row per window (199,232 rows, 199,082 windows).
+
+Theory. The windows of a step and its samples are needed only while the step is flushed and until its caller has appended the samples to the store, which it does before the next flush on the thread. Flushes do not overlap, so one working state per thread serves every flush: the windows by key, their rows as a chain, the samples. It is cleared, not made, at each flush, and keeps the size of the largest step. Same windows in the same order, same samples.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 12.9 / 11.7 KB | 12.4 / 11.4 KB |
+| flush of the telemetry | 113 / 18 MB | 1,038 / 173 MB |
+| live bytes | 242 / 245 MB | 1,449 / 1,473 MB |
+
+- Cost moved: the working state stays between flushes, 23 MB at 10^5 (235 B per master node: the samples 13.6 MB, the windows 9.2 MB), sized by the largest steps (the advances). Letting it go after a flush of more than 16,384 windows gave back the allocation: 1,024 MB at 10^5.
+- What remains: the settle of a window written by more than one row (its support kept as a dictionary) and the conflict subjects of shared or moved windows.
+- Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. The working state is per thread and not sealed; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

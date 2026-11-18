@@ -455,7 +455,7 @@ public sealed class OutputBuilder
 
     /// <summary>The edits that bring the graph to what the elements touched since the last flush resolve to.</summary>
     public List<Edit> Flush(Graph g) => elements.Flush(g);
-    /// <summary>The samples that bring the store's windows to what the rows of the step give.</summary>
+    /// <summary>The samples that bring the store's windows to what the rows of the step give; the list holds them until the next flush on this thread.</summary>
     public List<Sample> FlushTelemetry(ITelemetryStore store, GraphKey g, long inputId) => windows.Flush(store, g, inputId);
 
     /// <summary>Two identities merged: the rows and the lineage of the loser move to the survivor; `g` is the graph as the last flush left it. Gives the elements whose telemetry must follow, old and new: the entity itself, whether or not this graph emitted it, and every relationship that got a new id.</summary>
