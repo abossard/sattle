@@ -1047,6 +1047,23 @@ Theory. A text value is a function of its code. While the interner caches a code
 - Not changed: 41 MB of strings at 10^4 are misses of the interner's string cache (flush 10.7 MB, Match 6.2, Emit 9.9, Traverse 5.6). A cache of 65,536 halves them for 5 MB more live at 10^4. That is a trade of live bytes for allocation; the cause is the round trip from code to string and back (Resolve makes elements of strings, `Graph.Put` interns them again).
 - Before is the previous section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Bytes only, measured under load. Nothing is sealed; the seal format is unchanged.
 
+### The second run at 10^6, after efficiency stage 2 (#115, 2026-11-18)
+Release build of fd42618, the same input as the first run (8,159,533 records, 1,000,006 master nodes), `sattle bench phases --capture DIR`, then again with `--census`. Machine as before; load average 58 to 94 during both runs, and other sessions' builds overlapped the first minutes of the first run, so times are pessimistic; bytes are not affected. Limits of Ch. 13, 13.1.
+
+| | first run (f9e3121) | second run, timed | second run, census | limit |
+|---|---|---|---|---|
+| live after a compacting collection | 19,955 MB, 19.95 KB per master node | | 9,035 MB, 9.04 KB per master node | 8 GB |
+| peak resident set | 15.3 / 16.1 GB | 9.7 GB | 11.1 GB (12.8 GB with the census walk) | 12 GB |
+| wall | 677 / 590 s | 563 s | 533 s | |
+| process CPU per record | 91 / 87 µs | 67 µs | 65 µs | 37 µs |
+| allocated per record (engine, adapters and parsing) | 58.6 KB (about 11 KB the bench's own) | 8.3 KB | 8.3 KB | proportional to changes |
+| GC pause | 5 / 4 % | 1 % | 1 % | 5 % |
+| 12 window advances | 219 / 170 s | 190 s | 177 s | 5 s each (p99), #119 |
+
+- Live memory is 13 % over the limit; peak, GC pause and allocation are within; CPU per record is about 1.8 times the limit. A Graph names memo (a CPU regression of 12 to 15 % from 9f822ab) and the choice of GC mode (server GC took about twice the CPU of workstation GC on a smaller run) are the next steps for CPU.
+- Retained bytes per master node by structure (census, 15.8 M objects, coverage 100 %, walk 11 s): telemetry store 1,031; joins 937; interner 781; traverse 600; groups 548; sink contributions 480; statics 390 (a 218 MB sample array); windowed groups 364; sink values 325; thresholds 311 (4.7 M tree nodes); graph byte pool 302.
+- Raw outputs: `tmp/orchestrator/n1m-b-phases.txt` and `n1m-b-census.txt` (not in git).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
