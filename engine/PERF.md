@@ -870,6 +870,21 @@ Theory. A walk compares what a start reached before and after this step's patch.
 
 - What remains at 10^4: the walk (the neighbours' ids as strings, 7.6 MB), the tables of stored rows and depths, the rows emitted.
 - Before is main 9f822ab with the sink, element flush and Match patches (this builds on `Graph.EntityProp`). Times are measured under load; the alternated runs are the comparison. Digests unchanged at 10^4 and 10^5. No state is added; the seal format is unchanged.
+### Efficiency stage 2, traverse: a stored row holds codes in 4 bytes, a large step's working state does not stay (#115, 2026-11-18)
+At 10^5 the two traverses of the health tree (one over Contains, one over Rolls, the same tree) each kept 106,437 input rows of two element columns in 8 bytes per column and an absent word (7.3 MB), 424,820 reach rows (23.0 MB), and working dictionaries at the size of their largest step: a walk from the root of the tree reaches 75,431 elements, so the entities before and after, the visited ids and the frontier stayed at that size between steps (measured with a temporary diagnostic, not in the patch).
+
+Theory. A traverse stores its input rows as a join does: a column of codes (a text, an element, a decimal as its number) takes 4 bytes and is -1 when absent, a number takes 8 bytes and its absence is a bit in a word of 31 bits. The working state is needed only within a call; a structure that grew past 4,096 entries is let go at the end of the call, as the join's index of a large step is. Same rows, same reach, same output. Seal format 15 to 16.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 236 / 234 MB | 1,370 / 1,350 MB |
+| traverse per master node | 1,453 / 1,228 B | 998 / 804 B |
+| allocated per input record | 10.31 / 10.32 KB | 9.93 / 9.94 KB |
+| traverse, ms and MB allocated | 349 and 57 / 301 and 56 | 5,562 and 499 / 3,829 and 509 |
+
+- Cost moved: a step that walks from the root again allocates its working state again, 10 MB more at 10^5 (0.1 %).
+- What remains at 10^5: the reach table, 55 B per row for 12 B of data (the weight, the index on the whole key, the arrangements by start and by element), and the operator's output batch, kept at the size of its largest step (the census's 8-byte arrays less the tables' weights: about 22 MB).
+- Before is main 7ab0046 with the ends, ones, joins, Match, telemetry flush state and Traverse allocation patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Times are measured under load (load average 80 to 150) and not comparable; bytes are.
 
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.

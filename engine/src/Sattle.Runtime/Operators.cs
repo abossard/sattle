@@ -1338,7 +1338,10 @@ sealed class TraverseOp : PhysOp
     readonly TTraverse t; readonly Interner it; readonly OntologyView view;
     readonly int inN, startCol, reachedCol;
     readonly (string PropId, int OutCol)[] reads;
+    /// <summary>The input's rows as a Z-set, arranged by start. A stored row is every column, then a bit per absent number in words of 31 bits. A column of codes (a text, an element, a decimal as its number in `decimals`) takes 4 bytes and is -1 when absent; a number (an integer, an instant, a boolean) takes 8 bytes and its absence is a bit.</summary>
     readonly Table rows; readonly Arrangement rowsOf;
+    /// <summary>Per column: its absent bit, or -1 for a column of codes.</summary>
+    readonly int[] bit; readonly int words;
     readonly DecimalCodes decimals = new();
     /// <summary>The walk of each start: per (start, visited id) the depth the id was first reached at, for every id within `Max`, an entity or not. What a start reaches is its visited entities at depth `Min` or more; their properties are read from the graph when a row is emitted, and nothing of an entity is kept.</summary>
     readonly Table depths = new([4, 4, 4], keyColumns: 2); readonly Arrangement startsOf, visitsOf;
@@ -1364,10 +1367,17 @@ sealed class TraverseOp : PhysOp
         this.t = t; this.it = it; this.view = view;
         inN = inL.Count; startCol = inL.Index(t.Start); reachedCol = OutLayout.Index(t.Target);
         reads = [.. t.Reads.Select(r => (r.PropId, OutLayout.Index(r.Col)))];
-        rows = new Table([.. Enumerable.Repeat(8, inN + Words)], keyColumns: inN + Words); rowsOf = rows.Arrange(startCol);
+        var widths = new List<int>(); bit = new int[inN]; var bits = 0;
+        for (var c = 0; c < inN; c++)
+        {
+            var code = inL.IsDec[c] || inL.Interned?[c] == true;
+            widths.Add(code ? 4 : 8); bit[c] = code ? -1 : bits++;
+        }
+        words = (bits + 30) / 31;
+        for (var w = 0; w < words; w++) widths.Add(4);
+        rows = new Table([.. widths], keyColumns: widths.Count); rowsOf = rows.Arrange(startCol);
         startsOf = depths.Arrange(0); visitsOf = depths.Arrange(1);
     }
-    int Words => (inN + 63) >> 6;
 
     /// <summary>The stored form of a batch row: every column, then the absent bits.</summary>
     void Encode(Batch b, int row, Span<long> key)
@@ -1376,10 +1386,12 @@ sealed class TraverseOp : PhysOp
         for (var c = 0; c < inN; c++)
         {
             var col = b.Cols[c];
-            if (!col.Present(row)) { key[c] = 0; key[inN + (c >> 6)] |= 1L << (c & 63); }
+            if (!col.Present(row)) { if (bit[c] < 0) key[c] = -1; else { key[c] = 0; key[inN + bit[c] / 31] |= 1L << (bit[c] % 31); } }
             else key[c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
         }
     }
+
+    bool Absent(int r, int c) => bit[c] < 0 ? rows.Get(r, c) < 0 : (rows.Get(r, inN + bit[c] / 31) >> (bit[c] % 31) & 1) != 0;
 
     /// <summary>Whether two entities give a row the same values: absent and null alike, a decimal with its scale (2.5 and 2.50 are emitted as they are written).</summary>
     bool SameReads(Entity a, Entity b)
@@ -1448,7 +1460,6 @@ sealed class TraverseOp : PhysOp
     void Emit(BatchBuilder bb, Batch? b, int r, int n, Entity? item, long weight)
     {
         var row = bb.Add(weight); var o = bb.Batch;
-        var bits = 0L;
         for (var c = 0; c < inN; c++)
         {
             var dst = o.Cols[c];
@@ -1459,8 +1470,7 @@ sealed class TraverseOp : PhysOp
                 if (dst.IsDec) dst.D[row] = src.D[r]; else dst.L[row] = src.L[r];
                 continue;
             }
-            if ((c & 63) == 0) bits = rows.Get(r, inN + (c >> 6));
-            if ((bits >> (c & 63) & 1) != 0) { bb.Absent(row, c); continue; }
+            if (Absent(r, c)) { bb.Absent(row, c); continue; }
             var v = rows.Get(r, c);
             if (dst.IsDec) dst.D[row] = decimals.Value(v); else dst.L[row] = v;
         }
@@ -1484,7 +1494,7 @@ sealed class TraverseOp : PhysOp
         var b = In(inputs, "in");
         if (b is not null && b.Rows > 0)
         {
-            Span<long> key = stackalloc long[inN + Words];
+            Span<long> key = stackalloc long[inN + words];
             for (var k = 0; k < b.Rows; k++)
             {
                 var src = b.RowAt(k);
@@ -1560,7 +1570,24 @@ sealed class TraverseOp : PhysOp
         }
         walked.Clear(); added.Clear(); from.Clear(); queue.Clear(); touched.Clear();
         todo.Clear(); seen.Clear(); frontier.Clear(); next.Clear(); was.Clear(); now.Clear(); before.Clear();
+        Trim();
         return bb.Build();
+    }
+
+    /// <summary>A large step's working state does not stay: a structure that grew past 4,096 entries (a walk from the root of a tree reaches all of it) is let go.</summary>
+    void Trim()
+    {
+        const int Keep = 4096;
+        if (seen.EnsureCapacity(0) > Keep) seen.TrimExcess();
+        if (was.EnsureCapacity(0) > Keep) was.TrimExcess();
+        if (now.EnsureCapacity(0) > Keep) now.TrimExcess();
+        if (before.EnsureCapacity(0) > Keep) before.TrimExcess();
+        if (touched.EnsureCapacity(0) > Keep) touched.TrimExcess();
+        if (walked.EnsureCapacity(0) > Keep) walked.TrimExcess();
+        if (frontier.Capacity > Keep) frontier.TrimExcess();
+        if (next.Capacity > Keep) next.TrimExcess();
+        if (todo.Capacity > Keep) todo.TrimExcess();
+        if (added.Capacity > Keep) added.TrimExcess();
     }
 
     /// <summary>The ends of a relationship the walk follows; null for any other element.</summary>
