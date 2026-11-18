@@ -29,13 +29,13 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     {
         var moved = new List<(int From, int To)>();
         var lid = it.Get(loser); var sid = it.Get(survivor);
-        if (kinds[loser] == Entity && (ByElement.First([loser]) >= 0 || dirty.Has(loser)))
+        if (known.Has(loser) && !rels.Has(loser) && (ByElement.First([loser]) >= 0 || dirty.Has(loser)))
         {
             foreach (var (code, w) in RowsOf(loser))
             {
                 var fragment = values.Bytes(code).ToArray();                                    // an entity's fragment names no endpoint, so it is the same fragment under the survivor
                 AddFragment(loser, fragment, -w, -1, -1);
-                if (!kinds.Has(survivor)) kinds[survivor] = Entity;
+                known.Add(survivor);
                 AddFragment(survivor, fragment, w, -1, -1);
                 Touch(survivor);
             }
@@ -46,7 +46,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         foreach (var elem in ByEnd.Rows([loser]).Select(r => (int)ends.Get(r, 1)).Order().ToList())
         {
             var at = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
-            if (kinds[elem] != Relationship || at.Count == 0) continue;
+            if (!rels.Has(elem) || at.Count == 0) continue;
             foreach (var (code, w, f) in at)
             {
                 AddFragment(elem, values.Bytes(code).ToArray(), -w, Code(f.Source), Code(f.Target));
@@ -70,9 +70,8 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     Arrangement? byElement;
     /// <summary>The contributions of one element: every row of it is wanted when the element is resolved.</summary>
     Arrangement ByElement => byElement ??= contributions.Arrange(0);
-    /// <summary>Per element handle: entity or relationship, from its first fragment.</summary>
-    readonly Segments<byte> kinds = new();
-    const byte Entity = 1, Relationship = 2;
+    /// <summary>The element handles the sink has seen, and of these the relationships: entity or relationship, from its first fragment. One bit per handle each.</summary>
+    readonly Bits known = new(), rels = new();
     /// <summary>(endpoint, relationship) while a fragment of the relationship names the endpoint, so a merge visits those and not every element.</summary>
     readonly Table ends = new([4, 4], keyColumns: 2);
     Arrangement? byEnd;
@@ -80,10 +79,10 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     Arrangement ByEnd => byEnd ??= ends.Arrange(0);
     /// <summary>The elements touched since the last flush, in the order they were first touched, and the same as a bitmap.</summary>
     readonly List<int> touched = [];
-    readonly Segments<byte> dirty = new();
+    readonly Bits dirty = new();
     readonly List<byte> buffer = [];
 
-    void Touch(int elem) { if (!dirty.Has(elem)) { dirty[elem] = 1; touched.Add(elem); } }
+    void Touch(int elem) { if (dirty.Add(elem)) touched.Add(elem); }
 
     static void Varint(List<byte> o, ulong v) { while (v >= 0x80) { o.Add((byte)(v | 0x80)); v >>= 7; } o.Add((byte)v); }
     static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
@@ -266,7 +265,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
 
     void Add(int elem, bool isRel, ReadOnlySpan<byte> fragment, long weight, int source, int target)
     {
-        if (!kinds.Has(elem)) kinds[elem] = isRel ? Relationship : Entity;
+        if (known.Add(elem) && isRel) rels.Add(elem);
         AddFragment(elem, fragment, weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
         Touch(elem);
     }
@@ -299,7 +298,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             }
         }
         var props = Props.Of(values);
-        return kinds[elem] == Relationship ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
+        return rels.Has(elem) ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
     }
 
     /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
@@ -314,7 +313,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         var affected = new HashSet<(string, string, string)>();
         foreach (var elem in touched)
         {
-            var isRel = kinds[elem] == Relationship;
+            var isRel = rels.Has(elem);
             var after = Resolve(elem);
             var id = it.Get(elem);
             want[isRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;
@@ -331,7 +330,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             foreach (var claimant in holder is null ? [id] : new[] { id, holder }) { set.Add(claimant); contestedBy[claimant] = tuple; }
             affected.Add(tuple);
         }
-        foreach (var e in touched) dirty.Clear(e);
+        foreach (var e in touched) dirty.Remove(e);
         touched.Clear();
         foreach (var tuple in affected)
         {
@@ -340,7 +339,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             var winner = set.Order(StringComparer.Ordinal).FirstOrDefault();
             conflicts.Note($"uniqueness {tuple.Item1} {tuple.Item2} {tuple.Item3}", set.Count > 1 ? new Conflict("uniqueness", winner!, null, null, [.. set.Order(StringComparer.Ordinal)]) : null);
             foreach (var claimant in set)
-                want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && kinds.Has(h) ? Resolve(h) : null;
+                want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && known.Has(h) ? Resolve(h) : null;
             if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }
         }
         var edits = new List<Edit>();

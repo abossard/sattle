@@ -728,6 +728,19 @@ Theory. Per graph, two id tables (entities, relationships) gave each id a dense 
 ### Efficiency stage 2, a graph compares an element in codes (#115, 2026-11-18)
 `Graph.Holds(id, type, source, target, props)` says whether the graph has exactly this element, all given as interner codes and the props as a block from `PropBlockWriter` (the one writer of the pool's encoding). True means equal; false means different or not decidable in codes (a decimal of another scale), and the caller compares elements as before. It makes no string and no element, so the element flush can skip the elements a flush does not change (at 10^4, 130,482 of 262,881 touched elements). For this, an element's type and its property keys are interner codes too, as its texts already were; the two string tables per graph go. Cost: a key is a 2 to 3 byte code instead of a 1 byte number of the graph's own, so the pool grows from 240 to 276 B per master node at 10^4 (live 246 to 247 MB). Digest and the interner's live texts unchanged at 10^4. The flush itself is changed in its own patch.
 
+### Efficiency stage 2, sink kinds and touched elements: a bit per code (#115, 2026-11-18)
+Theory. Per graph, the element layer of the sink kept a byte per interner code for an element's kind (entity or relationship, from its first fragment) and another for whether it was touched since the last flush, in segments of 65,536 codes. Both are indexed by code, and the codes of one graph's elements are spread over the engine's whole code range, so every graph allocated about a byte and an eighth per code of the engine: 153 B per master node each at 10^5, for 1.21 M live codes. A change needs, per element, whether the sink has seen it, whether it is a relationship and whether it is in the list of touched elements: three yes-or-no answers. Now they are three sets of one bit per code (`Bits`, in segments of 65,536 bits): the elements seen, the relationships among them, and the touched ones (the list of touched elements keeps their order). Nothing else changes. Seal format 10 to 11.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 247 / 244 MB | 1,488 / 1,463 MB |
+| per master node | 24.7 / 24.4 KB | 14.9 / 14.6 KB |
+| kinds and touched per master node | 354 / about 60 B | 306 / about 51 B |
+| allocated per input record | 56.9 / 56.8 KB | 56.3 / 56.3 KB |
+
+- After: the seen and the touched sets take 20 B per master node each at 10^4 and 17 B at 10^5; the relationships take at most as much (below the census's 40 largest structures).
+- Before is main at 4c58129 with the id table and `Graph.Holds` patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`); the interner's live texts unchanged (127,466 and 1,212,925).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

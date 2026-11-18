@@ -59,6 +59,45 @@ public sealed class Segments<T> where T : unmanaged
     public long Footprint => (long)Capacity * System.Runtime.CompilerServices.Unsafe.SizeOf<T>() + Capacity / 8;
 }
 
+/// <summary>A set of codes, one bit per code, in segments of 65,536 bits. The first segment grows by doubling up to the full size, so a small set stays small.</summary>
+public sealed class Bits
+{
+    const int Shift = 16, Mask = (1 << Shift) - 1;
+    ulong[][] words = [new ulong[1]];
+
+    int Capacity => words.Length == 1 ? words[0].Length << 6 : words.Length << Shift;
+
+    public bool Has(int i) => i < Capacity && (words[i >> Shift][(i & Mask) >> 6] & (1UL << (i & 63))) != 0;
+
+    /// <summary>Adds code `i`; true when it was not in the set.</summary>
+    public bool Add(int i)
+    {
+        Ensure(i);
+        ref var w = ref words[i >> Shift][(i & Mask) >> 6];
+        var bit = 1UL << (i & 63);
+        if ((w & bit) != 0) return false;
+        w |= bit;
+        return true;
+    }
+
+    public void Remove(int i) { if (i < Capacity) words[i >> Shift][(i & Mask) >> 6] &= ~(1UL << (i & 63)); }
+
+    void Ensure(int i)
+    {
+        if (i < Capacity) return;
+        if (words.Length == 1 && i <= Mask)
+        {
+            var n = words[0].Length; while (n << 6 <= i) n *= 2;
+            Array.Resize(ref words[0], n);
+            return;
+        }
+        Array.Resize(ref words[0], (Mask + 1) >> 6);
+        var old = words.Length;
+        Array.Resize(ref words, (i >> Shift) + 1);
+        for (var s = old; s < words.Length; s++) words[s] = new ulong[(Mask + 1) >> 6];
+    }
+}
+
 /// <summary>Stored values of variable length, each kept once and counted. A value is the bytes the caller gives, so the caller writes equal values with equal bytes (a number without its scale, a text as its number). `Hold` finds or stores a value and counts one more use; `Release` counts one less, and at zero the value is gone: its code is free for another value and its bytes are cleared. When more bytes are free than in use, the values in use are copied together. A code is valid while the value is held.</summary>
 public sealed class Values
 {

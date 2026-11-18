@@ -27,6 +27,21 @@ public class StructureTests
         Assert.Equal(64, s.Capacity);
     }
 
+    [Theory]
+    [InlineData(1, 100)] [InlineData(2, 70_000)] [InlineData(3, 200_000)]
+    public void Bits_hold_what_was_added_and_nothing_that_was_removed(int seed, int range)
+    {
+        var rnd = new Random(seed);
+        var s = new Bits(); var model = new HashSet<int>();
+        for (var step = 0; step < 20_000; step++)
+        {
+            var i = rnd.Next(range);
+            if (rnd.Next(4) == 0) { s.Remove(i); model.Remove(i); }
+            else Assert.Equal(model.Add(i), s.Add(i));
+        }
+        for (var i = 0; i < range + 70_000; i++) Assert.Equal(model.Contains(i), s.Has(i));
+    }
+
     /// <summary>Values are kept once and counted: a value has one code while it is held, a released value is gone and its code may name another, and when nothing is held nothing is kept. Against a model that counts uses per value, under generated holds and releases, with values longer than a page among them.</summary>
     [Theory]
     [InlineData(1, 50)] [InlineData(2, 2_000)] [InlineData(3, 20_000)]
