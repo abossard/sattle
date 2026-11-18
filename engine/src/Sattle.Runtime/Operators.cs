@@ -1111,11 +1111,11 @@ sealed class DistinctOp : PhysOp
 
 // ---- join ------------------------------------------------------------------------------------------------
 
-/// <summary>Equi-join of two data inputs. Each side keeps its rows as a Z-set (`Table`): a row is its join key, every column as its 8-byte code (a decimal as its number in the operator's `DecimalCodes`) and a bit per absent column, all of it the key of the row, with the multiplicity as its weight; an `Arrangement` by the join key gives the rows a probe matches. A left batch is joined with the old right state, then added to the left state; a right batch is joined with the new left state, so a pair of new rows is produced once. Rows with an absent key component never join and are not kept.</summary>
+/// <summary>Equi-join of two data inputs. Each side keeps its input's rows as a Z-set (`Table`): a row is its join key, every column as its code (a decimal as its number in the graph's `DecimalCodes`) and a bit per absent column, all of it the key of the row, with the multiplicity as its weight; an `Arrangement` by the join key gives the rows a probe matches. The joins of a graph that read one input with keys that are its columns keep its rows once (`JoinInputs`). A step joins a left batch with the right rows before the step, a right batch with the left rows before the step, and the two batches with each other; then the last reader of each input in plan order adds the input's batch. Rows with an absent key component never join and are not kept.</summary>
 sealed class JoinOp : PhysOp
 {
-    /// <summary>The rows of one side as a Z-set (`Table`), arranged by the join key. A stored row is the join key's parts that are not a column of the row, then every column, then a bit per absent number in words of 31 bits; a part of the key that is a column is read from that column. A column of codes (a text, an element, a decimal as its number in `DecimalCodes`) takes 4 bytes and is -1 when absent; a number (an integer, an instant, a boolean) takes 8 bytes and its absence is a bit.</summary>
-    sealed class Side
+    /// <summary>The rows of one side as a Z-set (`Table`), arranged by the join key. A stored row is the join key's parts that are not a column of the row, then every column, then a bit per absent number in words of 31 bits; a part of the key that is a column is read from that column. A column of codes (a text, an element, a decimal as its number in `DecimalCodes`) takes 4 bytes and is -1 when absent; a number (an integer, an instant, a boolean) takes 8 bytes and its absence is a bit. A side whose key parts are all columns stores just the input's rows, and the table is the input's, shared with the other joins of the graph that read it.</summary>
+    internal sealed class Side
     {
         /// <summary>The join key's expressions, which of them compare as decimals, and the number of columns of a row.</summary>
         public readonly VExpr[] Keys; public readonly bool[] KeyDec; public readonly int N;
@@ -1126,9 +1126,13 @@ sealed class JoinOp : PhysOp
         /// <summary>Where the row's columns and the absent bits start.</summary>
         public readonly int ColsAt, BitsAt;
         public readonly Table Rows; public readonly Arrangement ByKey;
-        public Side(Layout layout, VExpr[] keys, bool[] keyDec, int[] keyField, bool[] keyCode)
+        /// <summary>This side adds its input's batch to `Rows`: it is the last reader of the table in plan order.</summary>
+        public bool Adds;
+        /// <summary>The key of the batch in hand, evaluated once per call.</summary>
+        public readonly Column[] KeyCols;
+        public Side(Layout layout, VExpr[] keys, bool[] keyDec, int[] keyField, bool[] keyCode, Src input, JoinInputs inputs)
         {
-            Keys = keys; KeyDec = keyDec; N = layout.Count;
+            Keys = keys; KeyDec = keyDec; N = layout.Count; KeyCols = new Column[keys.Length];
             var widths = new List<int>();
             KeyAt = new int[keys.Length]; KeyIsCol = new bool[keys.Length];
             for (var i = 0; i < keys.Length; i++) if (keyField[i] < 0) { KeyAt[i] = widths.Count; widths.Add(keyDec[i] || keyCode[i] ? 4 : 8); }
@@ -1142,7 +1146,7 @@ sealed class JoinOp : PhysOp
             BitsAt = widths.Count;
             for (var w = 0; w < Words(bits); w++) widths.Add(4);
             for (var i = 0; i < keys.Length; i++) if (keyField[i] >= 0) { KeyAt[i] = ColsAt + keyField[i]; KeyIsCol[i] = true; }
-            Rows = new Table([.. widths], keyColumns: widths.Count);
+            Rows = inputs.Rows(this, ColsAt == 0 ? input : null, [.. widths]);
             ByKey = Rows.Arrange(KeyAt);
         }
 
@@ -1150,31 +1154,39 @@ sealed class JoinOp : PhysOp
     }
     static int Words(int n) => (n + 30) / 31;
     readonly Side left, right;
-    readonly DecimalCodes decimals = new();
-    /// <summary>The join key of the batch in hand, evaluated once per half.</summary>
-    readonly Column[] keyCols;
+    readonly DecimalCodes decimals;
+    // working state, empty between calls: the right batch's rows by the hash of their key, to join the two batches
+    readonly Dictionary<ulong, int> crossHead = [];
+    readonly List<int> crossNext = [];
+    readonly List<long> crossKeys = [];
 
-    public JoinOp(TJoin t, Layout lL, Layout rL, OpContext cx) : base(t)
+    public JoinOp(TJoin t, Layout lL, Layout rL, OpContext cx, JoinInputs inputs) : base(t)
     {
         VExpr[] C(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => ExprCompiler.Compile(e, l, cx.It, cx.Faults))];
         static int[] Fields(IEnumerable<TExpr> es, Layout l) => [.. es.Select(e => e is TField f ? l.Index(f.Name) : -1)];
         static bool[] Codes(IEnumerable<TExpr> es) => [.. es.Select(e => e.Type.Ty.Tag is Tag.Text or Tag.Ent or Tag.Rel)];
         var ls = t.Keys.Select(k => k.Left).ToList(); var rs = t.Keys.Select(k => k.Right).ToList();
-        left = new Side(lL, C(ls, lL), [.. ls.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(ls, lL), Codes(ls));
-        right = new Side(rL, C(rs, rL), [.. rs.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(rs, rL), Codes(rs));
-        keyCols = new Column[t.Keys.Count];
+        decimals = inputs.Decimals;
+        left = new Side(lL, C(ls, lL), [.. ls.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(ls, lL), Codes(ls), t.Inputs["left"], inputs);
+        right = new Side(rL, C(rs, rL), [.. rs.Select(e => e.Type.Ty.Tag == Tag.Decimal)], Fields(rs, rL), Codes(rs), t.Inputs["right"], inputs);
     }
 
-    /// <summary>The stored form of a batch row (`row`) and its join key (`key`). False when a part of the join key is absent: such a row never joins.</summary>
-    bool Encode(Side s, Batch b, int row, Span<long> stored, Span<long> key)
+    /// <summary>The join key of a batch row (`key`). False when a part of it is absent: such a row never joins. `s.KeyCols` holds the key evaluated over the batch.</summary>
+    bool Key(Side s, int row, Span<long> key)
     {
         for (var i = 0; i < s.Keys.Length; i++)
         {
-            var c = keyCols[i];
+            var c = s.KeyCols[i];
             if (!c.Present(row)) return false;
             key[i] = s.KeyDec[i] || c.IsDec ? decimals.Code(c.IsDec ? c.D[row] : c.L[row]) : c.L[row];
-            if (!s.KeyIsCol[i]) stored[s.KeyAt[i]] = key[i];
         }
+        return true;
+    }
+
+    /// <summary>The stored form of a batch row whose key is `key`.</summary>
+    void Encode(Side s, Batch b, int row, ReadOnlySpan<long> key, Span<long> stored)
+    {
+        for (var i = 0; i < s.Keys.Length; i++) if (!s.KeyIsCol[i]) stored[s.KeyAt[i]] = key[i];
         stored[s.BitsAt..].Clear();
         for (var c = 0; c < s.N; c++)
         {
@@ -1182,7 +1194,18 @@ sealed class JoinOp : PhysOp
             if (!col.Present(row)) { var bit = s.Bit[c]; if (bit < 0) stored[s.ColsAt + c] = -1; else { stored[s.ColsAt + c] = 0; stored[s.BitsAt + bit / 31] |= 1L << (bit % 31); } }
             else stored[s.ColsAt + c] = col.IsDec ? decimals.Code(col.D[row]) : col.L[row];
         }
-        return true;
+    }
+
+    /// <summary>The columns of a batch row into output row `o`, from column `at` on.</summary>
+    static void Copy(BatchBuilder bb, int o, Side s, Batch b, int row, int at)
+    {
+        var cols = bb.Batch.Cols;
+        for (var c = 0; c < s.N; c++)
+        {
+            var src = b.Cols[c]; var dst = cols[at + c];
+            if (!src.Present(row)) { bb.Absent(o, at + c); continue; }
+            if (dst.IsDec) dst.D[o] = src.D[row]; else dst.L[o] = src.L[row];
+        }
     }
 
     /// <summary>One output row: the batch row of `self` and the stored row `r` of `other`, left columns first.</summary>
@@ -1190,12 +1213,7 @@ sealed class JoinOp : PhysOp
     {
         var o = bb.Add(weight); var cols = bb.Batch.Cols;
         var (mine, theirs) = selfIsLeft ? (0, self.N) : (other.N, 0);
-        for (var c = 0; c < self.N; c++)
-        {
-            var src = b.Cols[c]; var dst = cols[mine + c];
-            if (!src.Present(row)) { bb.Absent(o, mine + c); continue; }
-            if (dst.IsDec) dst.D[o] = src.D[row]; else dst.L[o] = src.L[row];
-        }
+        Copy(bb, o, self, b, row, mine);
         var t = other.Rows;
         for (var c = 0; c < other.N; c++)
         {
@@ -1206,29 +1224,108 @@ sealed class JoinOp : PhysOp
         }
     }
 
-    void Half(Batch? b, Side self, Side other, bool selfIsLeft, BatchBuilder bb)
+    /// <summary>A batch of `self` against the stored rows of `other`, as they were before this step.</summary>
+    void Probe(Batch? b, Side self, Side other, bool selfIsLeft, BatchBuilder bb)
     {
         if (b is null || b.Rows == 0) return;
-        var m = self.Keys.Length;
-        for (var i = 0; i < m; i++) keyCols[i] = self.Keys[i].Eval(b);
-        Span<long> stored = stackalloc long[self.Rows.Columns];
-        Span<long> key = stackalloc long[m];
+        for (var i = 0; i < self.Keys.Length; i++) self.KeyCols[i] = self.Keys[i].Eval(b);
+        Span<long> key = stackalloc long[self.Keys.Length];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
-            if (!Encode(self, b, row, stored, key)) continue;
+            if (!Key(self, row, key)) continue;
             var w = b.Weight(row);
             for (var r = other.ByKey.First(key); r >= 0; r = other.ByKey.Next(r)) Emit(bb, self, b, row, other, r, selfIsLeft, w * other.Rows.Weight(r));
-            self.Rows.Add(stored, w);
+        }
+    }
+
+    /// <summary>The left batch against the right batch: the pairs of rows new in this step. The keys of both are in their sides' `KeyCols`.</summary>
+    void Cross(Batch lb, Batch rb, BatchBuilder bb)
+    {
+        var m = left.Keys.Length;
+        Span<long> key = stackalloc long[m];
+        crossHead.Clear(); crossNext.Clear(); crossKeys.Clear();
+        for (var k = 0; k < rb.Rows; k++)
+        {
+            var row = rb.RowAt(k);
+            var ok = Key(right, row, key);
+            crossNext.Add(-1);
+            for (var i = 0; i < m; i++) crossKeys.Add(key[i]);
+            if (!ok) continue;
+            var h = Table.HashOf(key);
+            if (crossHead.TryGetValue(h, out var first)) crossNext[k] = first;
+            crossHead[h] = k;
+        }
+        var keys = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(crossKeys);
+        for (var k = 0; k < lb.Rows; k++)
+        {
+            var row = lb.RowAt(k);
+            if (!Key(left, row, key) || !crossHead.TryGetValue(Table.HashOf(key), out var j)) continue;
+            for (; j >= 0; j = crossNext[j])
+            {
+                if (!keys.Slice(j * m, m).SequenceEqual(key)) continue;
+                var rrow = rb.RowAt(j);
+                var o = bb.Add(lb.Weight(row) * rb.Weight(rrow));
+                Copy(bb, o, left, lb, row, 0); Copy(bb, o, right, rb, rrow, left.N);
+            }
+        }
+        if (crossNext.Count > 4096) { crossHead.Clear(); crossHead.TrimExcess(); crossNext.Clear(); crossNext.TrimExcess(); crossKeys.Clear(); crossKeys.TrimExcess(); }      // a large step's index does not stay
+    }
+
+    /// <summary>Adds a batch to the rows of its side.</summary>
+    void Store(Batch? b, Side s)
+    {
+        if (b is null || b.Rows == 0) return;
+        for (var i = 0; i < s.Keys.Length; i++) s.KeyCols[i] = s.Keys[i].Eval(b);
+        Span<long> stored = stackalloc long[s.Rows.Columns];
+        Span<long> key = stackalloc long[s.Keys.Length];
+        for (var k = 0; k < b.Rows; k++)
+        {
+            var row = b.RowAt(k);
+            if (!Key(s, row, key)) continue;
+            Encode(s, b, row, key, stored);
+            s.Rows.Add(stored, b.Weight(row));
         }
     }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var bb = EmptyOutput();
-        Half(In(inputs, "left"), left, right, true, bb);
-        Half(In(inputs, "right"), right, left, false, bb);
+        var lb = In(inputs, "left"); var rb = In(inputs, "right");
+        Probe(lb, left, right, true, bb);
+        Probe(rb, right, left, false, bb);
+        if (lb is { Rows: > 0 } && rb is { Rows: > 0 })
+        {
+            for (var i = 0; i < left.Keys.Length; i++) { left.KeyCols[i] = left.Keys[i].Eval(lb); right.KeyCols[i] = right.Keys[i].Eval(rb); }
+            Cross(lb, rb, bb);
+        }
+        if (left.Adds) Store(lb, left);
+        if (right.Adds) Store(rb, right);
         return bb.Build();
+    }
+}
+
+/// <summary>What the joins of one graph store, built with its plan: one `DecimalCodes` for all of them, and per input read with keys that are its columns one table of its rows, shared by the joins that read it. The last side to take a table in plan order adds each step's batch to it, after every reader has joined against it.</summary>
+sealed class JoinInputs
+{
+    public readonly DecimalCodes Decimals = new();
+    readonly Dictionary<Src, (Table Rows, JoinOp.Side Last)> shared = [];
+
+    /// <summary>The table for `side`: the input's shared one when `input` is given and the layout agrees, else one of its own. The side becomes the one that adds.</summary>
+    public Table Rows(JoinOp.Side side, Src? input, int[] widths)
+    {
+        side.Adds = true;
+        if (input is null) return new Table(widths, keyColumns: widths.Length);
+        if (shared.TryGetValue(input, out var s))
+        {
+            if (s.Rows.Columns != widths.Length) throw new InvalidOperationException($"input {input.Name} is stored with two layouts");
+            s.Last.Adds = false;
+            shared[input] = (s.Rows, side);
+            return s.Rows;
+        }
+        var rows = new Table(widths, keyColumns: widths.Length);
+        shared[input] = (rows, side);
+        return rows;
     }
 }
 

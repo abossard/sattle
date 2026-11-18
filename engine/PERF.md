@@ -797,6 +797,19 @@ Theory. At 10^4, 68 % of the elements a sink knows have one row, a create, and t
 - Later, the entry check could go through `Graph.Holds`: the fragment written as a block (`Copy`, as the flush's shortcut does) compared in place, instead of the graph's element written back as a fragment and compared. A flush that takes the shortcut has already made that comparison, so its element could enter at once, without waiting for the next flush. That needs the round trip block → canonical → block to be the identity, shown by a test over every kind of value. The read back on change stays: it is the fragment itself that is missing then.
 - Before is the endpoints patch. Digests and the interner's live texts unchanged, as for the endpoints.
 
+### Efficiency stage 2, joins: an input read by several joins is stored once (#115, 2026-11-18)
+Theory. A join keeps the rows of both its inputs, arranged by its key. At 10^5 the 84 joins kept 140.8 MB of rows, and 41.7 MB of it was an input that another join of the same graph kept too (one input of the workload structure was kept five times). A join whose key parts are columns of its input stores just the input's rows, so the joins of a graph that read one input now share one table of its rows, with one arrangement per distinct key, and one `DecimalCodes` per graph. A step joins each batch with the other side's rows as they were before the step, and the two batches with each other; then the last reader of each input in plan order adds the batch. The result does not depend on where in the plan the readers are. Before, a join added its left batch before joining its right batch, which a second reader of a shared side cannot do. Seal format 14 to 15.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 236 / 233 MB | 1,384 / 1,346 MB |
+| joins per master node | 2,307 / 1,967 B | 1,795 / 1,410 B |
+| allocated per input record | 12.85 / 12.78 KB | 12.51 / 12.42 KB |
+| joins, ms and MB allocated at 10^5 | | 1,302 and 326 / 1,113 and 252 |
+
+- A self-join in the projection language reads its input on one side and a renamed copy on the other, so one table is never both sides of one join. The step handles that case all the same.
+- Before is the one-create elements patch. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925). Load average 80 to 120 during the runs.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

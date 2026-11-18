@@ -525,6 +525,17 @@ public static class Worlds
                 | where n <= rn
                 | project k = strcat(k, "+", rk), g, n = n + rn;
             """) with { Witnesses = ["+k"] },
+        Rows("self join", "Join", """
+            let p = a | project k, g, n;
+            let x = p | join kind=inner (p) on g
+                | project k = strcat(k, "+", k1), g, n = n + n1;
+            """) with { Witnesses = ["+k"] },
+        Rows("two joins on one input", "Join", """
+            let p = a | project k, g, n;
+            let q = b | project rk = k, rg = g, rn = n;
+            let x = union (p | join kind=inner (q) on $left.g == $right.rg | project k = strcat(k, "+", rk), g, n),
+                (q | join kind=inner (p) on $left.rg == $right.g | where rn > 1 | project k = strcat(rk, "-", k), g = rg, n = rn);
+            """) with { Witnesses = ["+k", "-k"] },
         Rows("join on a decimal key", "Join", """
             let x = a | project k, g, n, d = coalesce(d, 0.0)
                 | join kind=inner (b | project rk = k, rd = coalesce(d, 0.0)) on $left.d == $right.rd

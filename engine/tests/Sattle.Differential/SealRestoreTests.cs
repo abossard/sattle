@@ -38,6 +38,28 @@ public class SealRestoreTests
         public void Dispose() { }
     }
 
+    /// <summary>#115: the joins of a graph that read one input store its rows once. A seal restore keeps that table as one object that every one of them reads, and gives the same digest.</summary>
+    [Theory]
+    [InlineData("two joins on one input")]
+    public void A_restore_keeps_an_input_that_several_joins_read_as_one_table(string world)
+    {
+        var w = Worlds.All.Single(x => x.Name == world);
+        var space = w.Catalog.Spaces.Keys.Single();
+        var options = new EngineOptions { TelemetryRetentionNs = w.RetentionNs, StoreFactory = _ => new AcceptingStore() };
+        using var original = new Engine(w.Catalog, space, options);
+        var log = w.Log(0, 30);
+        for (var i = 0; i < log.Length; i++) Feed(original, log[i], i + 1);
+        using var restored = new Engine(w.Catalog, space, options);
+        var root = restored.StateRootOf(); StateSnapshot.Load(Bytes(original), root); restored.AdoptState(root);
+        static object Field(object o, string name) => o.GetType().GetField(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(o)!;
+        static object[] Tables(Engine e) => [.. e.Graphs.SelectMany(g => g.Plan.Ops).Where(o => o.GetType().Name == "JoinOp").SelectMany(o => new[] { "left", "right" }.Select(side => Field(Field(o, side), "Rows")))];
+        static int Distinct(object[] tables) => tables.Distinct(ReferenceEqualityComparer.Instance).Count();
+        var (before, after) = (Tables(original), Tables(restored));
+        Assert.True(Distinct(before) < before.Length, "no input is read by two joins");
+        Assert.Equal(Distinct(before), Distinct(after));
+        Assert.Equal(original.StateDigest(), restored.StateDigest());
+    }
+
     [Theory, MemberData(nameof(WorldNames))]
     public void A_seal_restore_equals_a_full_replay_in_every_field(string world)
     {

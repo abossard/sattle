@@ -373,6 +373,7 @@ public sealed class Table
     public Arrangement Arrange(params int[] cols)
     {
         if (cols.Length == 0 || cols.Any(c => c < 0 || c >= keys)) throw new ArgumentException($"an arrangement is by key columns (the first {keys}); got {string.Join(", ", cols)}");
+        foreach (var x in arrangements) if (x.Cols.SequenceEqual(cols)) return x;          // one arrangement per key: the same index serves every reader
         var a = new Arrangement(this, cols);
         arrangements.Add(a);
         foreach (var r in Rows()) a.Link(r);
@@ -387,6 +388,8 @@ public sealed class Arrangement
 {
     readonly Table t;
     readonly int[] cols;
+    /// <summary>The columns it arranges by.</summary>
+    internal ReadOnlySpan<int> Cols => cols;
     readonly Segments<int> next = new(), prev = new();   // row + 1, 0 is none
     int[] index = new int[64]; int mask = 63;
     public int Values { get; private set; }
