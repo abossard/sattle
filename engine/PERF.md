@@ -710,6 +710,21 @@ Theory. An id is the hash of a canonical text; the text is a function of the key
 - What remains in the operators at 10^5, KB per record: `MatchOp` 2.9 and `TraverseOp` 0.9 (elements read from the graph as objects: an id string and decoded properties per read), `EmitEntityOp` 1.1 and `EmitRelOp` 0.6 (mostly the element and lineage layers), `SeriesOp` 0.5, `MapOp` 0.3 (expression scratch).
 - Before is the telemetry flush patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
 
+### Efficiency stage 2, hot graph id tables: an element's id is a code (#115, 2026-11-18)
+Theory. Per graph, two id tables (entities, relationships) gave each id a dense handle, by which the columns and adjacency lists are kept. A table held every id the graph had as UTF-8 bytes (28 B for an id), its offset, length and hash (12 B) and an index at a load of at most 1/2 (8 B): about 72 B per id with slack, 426 and 447 B per master node at 10^4. A put needs the handle of an id and of a relationship's endpoints, a read by id the same lookup, a read of an element its id back. None needs the bytes in the graph: every element id of an engine's graph is an old code of the engine's interner, which never frees it, and the pool already keeps its texts there. Now a table keeps per handle the id's code in the graph's text table (4 B) and an index from code to handle at a load of at most 1/2 (8 B). A lookup by id finds the text's code without adding it (`TryFind`, the one method the text table gains), then probes an integer. Handles are still kept for the life of the graph; the churn of ids is small (at 10^4, 640 of 11,281 relationship ids of treeStructure are not live).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 252 / 246 MB | 1,546 / 1,486 MB |
+| per master node | 25.2 / 24.6 KB | 15.5 / 14.9 KB |
+| entity ids per master node | 426 / 114 B | 418 / 106 B |
+| relationship ids per master node | 447 / 105 B | 388 / 99 B |
+| allocated per input record | 58.2 / 57.0 KB | 57.5 / 56.5 KB |
+
+- Cost moved: a read by id asks the interner first (a hash of the characters and a compare with its bytes), and the id of a handle is the interner's string (from its cache, else made once), where the id table decoded UTF-8 on every read: allocation per record falls by 1.2 KB at 10^4 and 1.1 KB at 10^5. The thread's CPU time at 10^5 rises by about 2 % (main 60.9 and 62.0 s, after 62.9 and 63.5 s, two runs each, alternated, load 49 to 133), most of it in the advance (window closes, derived commits), where reads by id now go through the engine-wide interner instead of a table per graph.
+- The interner's live texts do not change (127,466 at 10^4, 1,212,925 at 10^5).
+- Before is main at 4c58129 (with the interner, telemetry and pool patches). Times are measured under load and not comparable; bytes are. Digests unchanged. The seal format is unchanged: a seal writes a graph as its elements.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

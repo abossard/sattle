@@ -8,10 +8,48 @@ namespace Sattle.Core;
 public interface ITextTable
 {
     int Intern(string s);
+    /// <summary>The code of a text the table has; adds nothing.</summary>
+    bool TryFind(string s, out int code);
     string Get(int code);
 }
 
-/// <summary>Append-only table of element ids stored as UTF-8 in one byte pool, with an open-addressing hash index. An id keeps its dense index for the life of the table (research 02 section 5.2, interning).</summary>
+/// <summary>The elements of one kind of a graph by dense handle: per handle the code of its id in the graph's text table, and an open-addressing index from code to handle at a load of at most 1/2. A handle is kept for the life of the graph.</summary>
+sealed class HandleTable(ITextTable texts)
+{
+    int[] codes = new int[64], index = new int[128]; int mask = 127;
+    public int Count { get; private set; }
+
+    static int Slot(int code) { var h = (uint)code * 0x9E3779B1u; return (int)(h ^ h >> 16); }
+    int Handle(int code)
+    {
+        for (var i = Slot(code) & mask; ; i = (i + 1) & mask)
+        {
+            var t = index[i];
+            if (t == 0) return -1;
+            if (codes[t - 1] == code) return t - 1;
+        }
+    }
+    void Place(int h) { var i = Slot(codes[h]) & mask; while (index[i] != 0) i = (i + 1) & mask; index[i] = h + 1; }
+
+    /// <summary>The handle of an id, or -1 when the graph never had it.</summary>
+    public int Find(string id) => texts.TryFind(id, out var code) ? Handle(code) : -1;
+    public int GetOrAdd(string id)
+    {
+        var code = texts.Intern(id);
+        var h = Handle(code);
+        if (h >= 0) return h;
+        h = Count++;
+        if (h == codes.Length) Array.Resize(ref codes, h * 2);
+        codes[h] = code;
+        if (Count * 2 > index.Length) { index = new int[index.Length * 2]; mask = index.Length - 1; for (var k = 0; k < Count; k++) Place(k); }
+        else Place(h);
+        return h;
+    }
+    public string Get(int h) => texts.Get(codes[h]);
+    public HandleTable Clone() => new(texts) { codes = (int[])codes.Clone(), index = (int[])index.Clone(), mask = mask, Count = Count };
+}
+
+/// <summary>Append-only table of texts stored as UTF-8 in one byte pool, with an open-addressing hash index: the text table of a graph that is not an engine's. A text keeps its code for the life of the table (research 02 section 5.2, interning).</summary>
 sealed class IdPool : ITextTable
 {
     byte[] data = new byte[1024]; int pos;
@@ -89,6 +127,7 @@ sealed class IdPool : ITextTable
 
     public string Get(int ix) => Encoding.UTF8.GetString(data, off[ix], len[ix]);
     public int Intern(string s) => GetOrAdd(s);
+    public bool TryFind(string s, out int code) { code = Find(s); return code >= 0; }
 
     public IdPool Clone()
     {
@@ -182,10 +221,14 @@ public sealed class Graph
     /// <summary>A graph whose texts are in a table of its own.</summary>
     public Graph() : this(null) { }
     /// <summary>A graph whose property texts are codes of `texts` (the engine's interner); a table of its own when null.</summary>
-    public Graph(ITextTable? texts) => this.texts = texts ?? new IdPool();
+    public Graph(ITextTable? texts)
+    {
+        this.texts = texts ?? new IdPool();
+        ents = new(this.texts); rels = new(this.texts);
+    }
 
     readonly ITextTable texts;
-    IdPool ents = new(), rels = new();
+    HandleTable ents, rels;   // element ids are codes of `texts`
     StrTable types = new(), propIds = new();
     // entity columns, indexed by entity handle (dangling endpoints have handles too, with kind 0)
     byte[] eKind = new byte[64]; int[] eType = new int[64], eProps = new int[64], eOut = new int[64], eIn = new int[64];

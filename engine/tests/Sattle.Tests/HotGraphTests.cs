@@ -144,4 +144,27 @@ public class HotGraphTests
         Assert.Null(g.Apply([.. all.Skip(1000).Take(10).Select(Edit.Create)]));
         Assert.Equal(all[1005], g.Entity("e1005"));
     }
+
+    /// <summary>A read by an id the graph never had adds no text to the engine's interner.</summary>
+    [Theory]
+    [InlineData("Entity")]
+    [InlineData("Rel")]
+    [InlineData("HasEntity")]
+    [InlineData("OutRels")]
+    [InlineData("FindRel")]
+    public void A_read_by_an_unknown_id_adds_nothing_to_the_text_table(string read)
+    {
+        var texts = new Interner();
+        var g = new Graph(texts);
+        Assert.Null(g.Apply([Edit.Create(new Entity("a", "T", Props.Empty)), Edit.Create(new Entity("b", "T", Props.Empty)), Edit.Create(new Rel("r", "a", "b", "R", Props.Empty))]));
+        var count = texts.Count;
+        object? result = read switch
+        {
+            "Entity" => g.Entity("never"), "Rel" => g.Rel("never"), "HasEntity" => g.HasEntity("never") ? true : null,
+            "OutRels" => g.OutRels("never").FirstOrDefault(), _ => g.FindRel("a", "never", "R"),
+        };
+        Assert.Null(result);
+        Assert.Equal(count, texts.Count);
+        Assert.Equal(new Rel("r", "a", "b", "R", Props.Empty), g.FindRel("a", "b", "R"));
+    }
 }
