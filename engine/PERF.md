@@ -1079,6 +1079,21 @@ Release build of fd42618, the same input as the first run (8,159,533 records, 1,
 - Linear in the series: about 6.2 s per steady close at 10^6 from these figures, over the 5 s limit.
 - Load average 75 to 90 on 10 cores during these runs; wall is noisy, thread CPU less so. Digests `sha256:2654c25f...bfbc3` (10^4), `sha256:0ab80689...41140` (10^5).
 
+### Window close: a closed window's row for an element its graph keeps touches nothing (#119, 2026-11-18)
+Theory. A windowed group never retracts a closed window: its state goes when the window passes the allowed lateness, with no row. So the support of an element its emit creates is the number of windows that wrote it, and every close adds one row per series to an element that exists since the key's first window. For an element of `ones` that row cost a write-back of the fragment from the graph, a resolve, the comparison with the graph, a settle of its endpoints, and at the next flush a second read of the graph to collapse it again, at every close, while the graph did not change (the patches of the steady closes take 5 ms in all at 10^5). An element resolves from its positive fragments only (Def. 6.4). A row whose fragment is the one the graph holds for an element of `ones`, with a weight that leaves the element's weight positive, changes none of them: its weight goes to `ones`, and the element is not touched. The check reads the graph the last flush wrote, as the entry to `ones` does. Any other row is kept and touches as before. Same edits, same elements. Seal format 20 to 21 (the layer keeps that graph and a buffer).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| steady close, thread CPU median | 70 / 55 ms | 622 / 445 ms |
+| steady close, wall p50 / max | 73 / 95, 56 / 91 ms | 668 / 900, 506 / 591 ms |
+| first close with telemetry, wall (thread CPU) | 564 (462) / 473 (433) ms | 7,841 (6,390) / 7,105 (6,161) ms |
+| this thread, whole replay | | 43.0 / 39.5 s |
+| allocated per input record | 7.87 / 7.84 KB | 7.72 / 7.69 KB |
+
+- At 10^5 before, the flush of the elements took 193 ms of each steady close and the emits 235 ms.
+- Linear to 10^6: about 4.5 s per steady close, under the 5 s limit with little room.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Load 75 to 90.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
