@@ -75,6 +75,8 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         "UuidLower" => Guid.TryParse(v, out var g) ? g.ToString("D") : null,
         _ => v,
     };
+    /// <summary>The canonicalizer leaves every text as it is.</summary>
+    public static bool KeepsText(string canon) => canon is not ("LowerInvariant" or "Trim" or "IpCanonical" or "UuidLower");
 
     public int Resolve(IdDomain d, ReadOnlySpan<long> canon)
     {
@@ -241,7 +243,7 @@ static class KeyText
 sealed class VId : VExpr
 {
     readonly IdDomain dom; readonly VExpr[] comps; readonly IdentityCatalog cat; readonly Interner it; readonly RuntimeFaults faults;
-    readonly CodeCache[] caches;
+    readonly CodeCache[] caches; readonly bool[] keepsText;
     readonly long[] buf; readonly Column[] cols;
     /// <summary>When set, `Eval` also fills `Owns` with the own id of each row's key (`IdentityCatalog.OwnOf`).</summary>
     public bool TrackOwn { get; set; }
@@ -249,7 +251,7 @@ sealed class VId : VExpr
     public VId(IdDomain dom, VExpr[] comps, IdentityCatalog cat, Interner it, RuntimeFaults faults)
     {
         this.dom = dom; this.comps = comps; this.cat = cat; this.it = it; this.faults = faults;
-        caches = [.. comps.Select(_ => new CodeCache())];
+        caches = [.. comps.Select(_ => new CodeCache())]; keepsText = [.. dom.Canonicalizers.Select(IdentityCatalog.KeepsText)];
         buf = new long[comps.Length]; cols = new Column[comps.Length];
     }
     public override Column Eval(Batch b)
@@ -265,6 +267,7 @@ sealed class VId : VExpr
             {
                 if (cols[k].P is not null && !cols[k].P![i]) { ok = false; break; }
                 var code = (int)cols[k].L[i];
+                if (keepsText[k] && !it.IsYoung(code)) { buf[k] = code; continue; }          // an old code is the one code of its text, so the text's exact canonical form is the code itself
                 if (!caches[k].TryGet(code, out var cc))
                 {
                     var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code));
@@ -296,6 +299,7 @@ sealed class VId : VExpr
         {
             if (cols[k].P is not null && !cols[k].P![row]) return false;
             var code = (int)cols[k].L[row];
+            if (keepsText[k] && !it.IsYoung(code)) { into[k] = code; continue; }
             if (!caches[k].TryGet(code, out var cc)) { var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code)); cc = s is null ? -1 : it.Intern(s); if (!it.IsYoung(code)) caches[k].Set(code, cc); }
             if (cc < 0) return false;
             into[k] = cc;

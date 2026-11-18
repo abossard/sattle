@@ -1136,6 +1136,18 @@ Theory. Step B of a Series joins the windows its read graph changed in this step
 - Thread CPU is not separable from the load (250 to 460 on 10 cores during these runs); the three changes of this day together are in the last section.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: an identity component that keeps its text is its own canonical code (#119, 2026-11-18)
+Theory. An emit evaluates the identity of every row: per component the canonical code, then the catalog's handle and own id. The canonical code of a component was cached per operator in 4,096 slots, so at 10^4 and above nearly every series missed it each close and read its text, canonicalized it and interned it again (about 1 µs a miss under load). The interner gives a text one code while the code is old (kept), so under a canonicalizer that leaves every text as it is (`Exact`, and the default), the canonical code of an old code is that code. It is taken as it is, with no read of the text, no intern and no cache. A young code (a text new in this batch, which the interner may free) goes the old way, which also makes it old.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per steady close | 7.0 / 6.8 MB | 84.4 / 67.2 MB |
+| component codes taken as they are, nine steady closes | | 3,042,805 |
+| misses left (`LowerInvariant`), nine steady closes | 11,422 | 196,901 |
+
+- At 10^4 before, every miss was a code whose canonical code is itself (61,010 of 435,541 reads), 81 % of them under `Exact`.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
