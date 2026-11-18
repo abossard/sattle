@@ -920,6 +920,21 @@ Theory. The working arrays live for one step. One that grows past its first size
 - Cost: a cut column is given a new array of 64 rows (24 MB at 10^5 in the step dispatch).
 - Before is main fa0be02 with the ones, joins, Match, telemetry flush state, mint, traverse and traverse rows patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 30 to 60) and not comparable; bytes are.
 
+### Efficiency stage 2, binding records: the store receives a binding as codes and makes its texts only if it persists it (#115, 2026-11-18)
+Every key the identity catalog binds made its record as text when it was minted: the key's SHA-256 as 64 hex characters, the id as a string before it was interned, the components as JSON, and a record object. At 10^5 that is 371,730 records (330,480 minted keys, 27,525 aliased, 13,725 merges). The default store keeps only the head and dropped them unread; the engine also copied the pending list per master commit.
+
+Theory. A binding is a fact the catalog already holds as codes: a domain, the key's canonical component codes, and the identity's code (for a merge, the loser's and the survivor's). The engine hands the store those codes; the record's texts (domain, key hash, entity, components) are made when a store reads them, with the catalog's own key hash, the function that mints the id. The SQLite, Cosmos and in-memory stores read them as before and write the same rows; the head-only store never reads them. The id is made in a stack buffer and interned from its characters. The store receives the catalog's pending list for the duration of the commit; after it, the list is emptied, and a list grown past 4,096 by a large step is let go. Same records, same output; no seal change.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 9.52 / 9.35 KB | 9.41 / 9.27 KB |
+| allocated in the emits, link and store commit | 118 / 103 MB | 1,277 / 1,167 MB |
+| live bytes | 200 / 200 MB | 1,131 / 1,131 MB |
+
+- About 380 B less per binding at 10^4 and 300 B at 10^5, after the pending list's regrowth.
+- The pending list holds bindings as values (64 B each instead of an 8-byte reference), so it is let go after a step that grew it past 4,096. Measured at 10^5: keeping it costs 3.6 MB live (36 B per master node) and saves 48 MB of allocation (7,518 MB instead of 7,566 MB); letting it go past 65,536 never happens on these captures.
+- Before is the working-arrays section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

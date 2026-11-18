@@ -14,7 +14,25 @@ public readonly record struct GraphKey(string Tenant, string Graph)
 }
 
 public sealed record HeadInfo(long Head, long Watermark);
-public sealed record IdentityBinding(string Domain, string KeyHash, string Entity, string ComponentsJson);
+/// <summary>A key bound to an identity, or a merge of two identities (`Domain` "~forward", `KeyHash` the loser's id, `Entity` the survivor's), as the engine hands it to a store: the identity catalog's codes. A store that persists it reads its texts, made when read (`KeyHash` the SHA-256 of the key as hex, `ComponentsJson` the canonical components); a store that does not never makes them.</summary>
+public readonly struct IdentityBinding
+{
+    readonly IdentityCatalog? catalog;
+    readonly IdentityCatalog.Key key;
+    /// <summary>The identity's code; for a merge, the survivor's. `loser` is -1 unless a merge.</summary>
+    readonly int entity, loser;
+    readonly string[]? texts;
+    /// <summary>A binding as texts, as a store reads it back.</summary>
+    public IdentityBinding(string domain, string keyHash, string entity, string componentsJson) { texts = [domain, keyHash, entity, componentsJson]; loser = -1; }
+    IdentityBinding(IdentityCatalog catalog, IdentityCatalog.Key key, int entity, int loser) { this.catalog = catalog; this.key = key; this.entity = entity; this.loser = loser; }
+    internal static IdentityBinding Bound(IdentityCatalog catalog, IdentityCatalog.Key key, int entity) => new(catalog, key, entity, -1);
+    internal static IdentityBinding Forward(IdentityCatalog catalog, int loser, int survivor) => new(catalog, default, survivor, loser);
+    public string Domain => texts?[0] ?? (loser >= 0 ? "~forward" : catalog!.DomainId(key));
+    public string KeyHash => texts?[1] ?? (loser >= 0 ? catalog!.Text(loser) : catalog!.HashHex(key));
+    public string Entity => texts?[2] ?? catalog!.Text(entity);
+    public string ComponentsJson => texts?[3] ?? (loser >= 0 ? "[]" : catalog!.ComponentsJson(key));
+}
+/// <summary>`Bindings` is valid during the commit call: a store that keeps them copies them.</summary>
 public sealed record CommitBatch(GraphKey Graph, long ExpectedHead, IReadOnlyList<Patch> Patches, IReadOnlyList<Frontier> Frontiers, IReadOnlyList<IdentityBinding> Bindings);
 
 public abstract record CommitResult
@@ -203,7 +221,7 @@ public sealed class InMemoryGraphStore : IDurableStore
                 }
                 g.Commits.Add(new CommittedPatch(new Patch(p.Graph, p.From, p.To, p.Edits.Where(e => e.Effective), p.Cause), b.Frontiers[i]));
             }
-            g.Bindings.AddRange(b.Bindings);
+            foreach (var x in b.Bindings) g.Bindings.Add(new IdentityBinding(x.Domain, x.KeyHash, x.Entity, x.ComponentsJson));
             return new CommitResult.Committed(g.Commits.Count);
         }
     }

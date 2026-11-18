@@ -21,10 +21,13 @@ public enum BindOutcome { Bound, AlreadyBound, Merged, Conflict }
 /// <summary>Identity resolution (research 03 section 5): key to identity bindings, append-only. A key resolves to its binding or is minted by hash. Same ordered inputs give the same ids.</summary>
 public sealed class IdentityCatalog(string tenant, Interner it)
 {
-    readonly record struct Key(int Dom, long A, long B, long C, long D);
+    /// <summary>A key: its domain's index and up to four canonical component codes.</summary>
+    internal readonly record struct Key(int Dom, long A, long B, long C, long D);
     readonly Dictionary<Key, int> bound = [];
     readonly List<IdDomain> domains = [];
     public List<IdentityBinding> Pending { get; } = [];
+    /// <summary>The store took the pending bindings: the list is emptied, and a list grown past 4,096 by a large step is let go.</summary>
+    public void Committed() { Pending.Clear(); if (Pending.Capacity > 4096) Pending.Capacity = 0; }
     public long Minted { get; private set; }
     public long Aliased { get; private set; }
     public long Conflicts { get; private set; }
@@ -77,11 +80,10 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     {
         var k = K(d, canon);
         if (bound.TryGetValue(k, out var h)) return Rep(h);
-        var (hash, id, comps) = Mint(d, canon);
-        h = it.Intern(id);
+        h = Mint(d, canon);
         bound[k] = h;
         Minted++;
-        Pending.Add(new IdentityBinding(d.Id, hash, id, comps));
+        Pending.Add(IdentityBinding.Bound(this, k, h));
         return h;
     }
 
@@ -92,12 +94,7 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     public int OwnOf(IdDomain d, ReadOnlySpan<long> canon)
     {
         var k = K(d, canon);
-        if (!own.TryGetValue(k, out var h))
-        {
-            Span<byte> hash = stackalloc byte[32]; Span<char> id = stackalloc char[KeyText.IdLength];
-            KeyHash(d, canon, hash); KeyText.Id('e', hash, id);
-            own[k] = h = it.Intern(id);         // a known id is found from its characters: no string is made
-        }
+        if (!own.TryGetValue(k, out var h)) own[k] = h = Mint(d, canon);
         return h;
     }
 
@@ -113,25 +110,26 @@ public sealed class IdentityCatalog(string tenant, Interner it)
             if (left is not null && left.IdentifiesType != d.IdentifiesType && left.IdentifiesType is not null && d.IdentifiesType is not null) { Conflicts++; return BindOutcome.Conflict; }
             var (survivor, loser) = string.CompareOrdinal(it.Get(entity), it.Get(rh)) <= 0 ? (entity, rh) : (rh, entity);
             forward[loser] = survivor; Merges++;
-            Pending.Add(new IdentityBinding("~forward", it.Get(loser), it.Get(survivor), "[]"));
+            Pending.Add(IdentityBinding.Forward(this, loser, survivor));
             OnMerge?.Invoke(loser, survivor);
             return BindOutcome.Merged;
         }
         // The identity of an entity is the smallest id minted for any key that denotes it, whether or not that key was ever resolved before: the key's own id counts as a candidate even when nothing used it yet. Then the final ids do not depend on the order in which keys are bound (a flow naming the pod first, or the pod row first).
-        var (hash, ownId, comps) = Mint(d, canon);
-        if (string.CompareOrdinal(ownId, it.Get(entity)) < 0)
+        Span<char> ownId = stackalloc char[KeyText.IdLength];
+        Id(d, canon, ownId);
+        if (((ReadOnlySpan<char>)ownId).SequenceCompareTo(it.Get(entity)) < 0)
         {
             var own = it.Intern(ownId);
             bound[k] = own; Aliased++;
-            Pending.Add(new IdentityBinding(d.Id, hash, ownId, comps));
+            Pending.Add(IdentityBinding.Bound(this, k, own));
             forward[entity] = own; Merges++;
-            Pending.Add(new IdentityBinding("~forward", it.Get(entity), ownId, "[]"));
+            Pending.Add(IdentityBinding.Forward(this, entity, own));
             OnMerge?.Invoke(entity, own);
             return BindOutcome.Merged;
         }
         bound[k] = entity;
         Aliased++;
-        Pending.Add(new IdentityBinding(d.Id, hash, it.Get(entity), comps));
+        Pending.Add(IdentityBinding.Bound(this, k, entity));
         return BindOutcome.Bound;
     }
 
@@ -145,15 +143,41 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         KeyText.Sha256(sb, hash);
     }
 
-    /// <summary>The id minted for a key, the hash of the key as hex and the components as JSON: what a binding records.</summary>
-    (string Hash, string Id, string Comps) Mint(IdDomain d, ReadOnlySpan<long> canon)
+    /// <summary>The id minted for a key, into `into` (`KeyText.IdLength` characters).</summary>
+    void Id(IdDomain d, ReadOnlySpan<long> canon, Span<char> into)
     {
         Span<byte> hash = stackalloc byte[32];
         KeyHash(d, canon, hash);
-        var comps = KeyText.Open();         // the key's buffer: the hash is taken
+        KeyText.Id('e', hash, into);
+    }
+    /// <summary>The id minted for a key, interned from its characters: no string is made.</summary>
+    int Mint(IdDomain d, ReadOnlySpan<long> canon)
+    {
+        Span<char> id = stackalloc char[KeyText.IdLength];
+        Id(d, canon, id);
+        return it.Intern(id);
+    }
+
+    // ---- the texts of a binding, made only when a store reads them (`IdentityBinding`) ----
+
+    static ReadOnlySpan<long> Canon(in Key k, Span<long> into) { into[0] = k.A; into[1] = k.B; into[2] = k.C; into[3] = k.D; return into; }
+    internal string DomainId(in Key k) => domains[k.Dom].Id;
+    internal string Text(int h) => it.Get(h);
+    /// <summary>The key's SHA-256 as hex.</summary>
+    internal string HashHex(in Key k)
+    {
+        var d = domains[k.Dom]; Span<long> c = stackalloc long[4]; Span<byte> hash = stackalloc byte[32];
+        KeyHash(d, Canon(k, c)[..d.CompNames.Length], hash);
+        return Convert.ToHexStringLower(hash);
+    }
+    /// <summary>The key's canonical components as a JSON array.</summary>
+    internal string ComponentsJson(in Key k)
+    {
+        var d = domains[k.Dom]; Span<long> c = stackalloc long[4]; var canon = Canon(k, c)[..d.CompNames.Length];
+        var comps = KeyText.Open();
         for (var i = 0; i < canon.Length; i++) { if (i > 0) comps.Append(','); Jcs.Str(comps, it.Get((int)canon[i])); }
         comps.Append(']');
-        return (Convert.ToHexStringLower(hash), KeyText.Id('e', hash), comps.ToString());
+        return comps.ToString();
     }
 
     /// <summary>Relationship id: hash of tenant, projection, key rule, source and target ids. The type is excluded so a retype keeps the id (ADR-086).</summary>
@@ -201,15 +225,8 @@ static class KeyText
         SHA256.HashData(bytes.AsSpan(0, n), hash);
     }
 
-    /// <summary>`kind:` and the first 26 base32 characters of the hash (130 bits).</summary>
-    public static string Id(char kind, ReadOnlySpan<byte> hash)
-    {
-        Span<char> s = stackalloc char[IdLength];
-        Id(kind, hash, s);
-        return new string(s);
-    }
     public const int IdLength = 28;
-    /// <summary>The same into `into` (`IdLength` characters).</summary>
+    /// <summary>`kind:` and the first 26 base32 characters of the hash (130 bits), into `into` (`IdLength` characters).</summary>
     public static void Id(char kind, ReadOnlySpan<byte> hash, Span<char> into) { into[0] = kind; into[1] = ':'; Digests.Base32(hash, into[2..IdLength]); }
 
     static ReadOnlySpan<char> Chars(StringBuilder sb)

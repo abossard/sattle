@@ -545,9 +545,8 @@ public sealed class Engine : IDisposable, IEngineInput
             foreach (var (_, from) in g.PortSources) if (byName.TryGetValue(from, out var up)) gin[from] = up.Head;
             var pos = ImmutableSortedDictionary<string, long>.Empty.Add(cause, seq);
             var fr = new Frontier(pos, gin.ToImmutable(), catalog.Log.Head);
-            var bindings = g.IsMaster ? [.. Identities.Pending] : new List<IdentityBinding>();
-            if (g.IsMaster) Identities.Pending.Clear();
-            var res = store.Commit(new CommitBatch(g.Key, g.Head, [patch], [fr], bindings));
+            var res = store.Commit(new CommitBatch(g.Key, g.Head, [patch], [fr], g.IsMaster ? Identities.Pending : []));
+            if (g.IsMaster) Identities.Committed();
             if (res is not CommitResult.Committed c) throw new InvalidOperationException($"graph {g.Name}: store did not commit: {res}");
             g.Head = c.Head;
             Charge("(store commit)", ref a, ref t);
