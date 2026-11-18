@@ -741,6 +741,19 @@ Theory. Per graph, the element layer of the sink kept a byte per interner code f
 - After: the seen and the touched sets take 20 B per master node each at 10^4 and 17 B at 10^5; the relationships take at most as much (below the census's 40 largest structures).
 - Before is main at 4c58129 with the id table and `Graph.Holds` patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`); the interner's live texts unchanged (127,466 and 1,212,925).
 
+### Efficiency stage 2, lineage: a handle is a 4-byte code (#115, 2026-11-18)
+Theory. Lineage keeps the rows that hold an element up: per emit (element, group key, a handle per element column), per `Group` (group key, member handles), each a Z-set arranged by element or by key. Every column took 8 bytes, with a word of absent bits per row. An answer needs, per element, its rows and the handles in them. A handle is an interner code, never negative, so it takes 4 bytes and marks its own absence as -1, and the absent bits go, as in the joins. The element is a handle too. A group key part keeps 8 bytes: it may be an integer. The weight, the index on the whole row and the arrangement stay. Seal format 11 to 12.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 244 / 241 MB | 1,463 / 1,442 MB |
+| per master node | 24.4 / 24.1 KB | 14.6 / 14.4 KB |
+| lineage of emits per master node | 614 / 412 B | 461 / 302 B |
+| lineage of groups per master node | 250 / 191 B | 203 / 155 B |
+| allocated per input record | 56.8 / 56.8 KB | 56.3 / 56.2 KB |
+
+- Before is the kinds patch. Digests and the interner's live texts unchanged, as for the kinds.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

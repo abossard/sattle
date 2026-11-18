@@ -8,7 +8,7 @@ sealed record LineageOrigin(string Sink, string? Rule, bool Update, (string Role
 /// <summary>Where an element comes from: the sink and rule that emitted it and the input elements it is made of. With `FromRows` the sources are every input element of the rows that hold it up, and `Contributions` is the weight of those rows; without, they are the elements of the last row that emitted it, and `Total` is how many element columns such a row has.</summary>
 sealed record ElementLineage(string? Sink, string? Rule, IReadOnlyList<LineageSource> Sources, bool FromRows, long Contributions, long Total);
 
-/// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. It keeps only the rows that hold something up, as Z-sets of handles (#40): per emit a table of (element, group key, the handle of each element column, a bit per absent column) arranged by element, per `Group` a table of (group key, member handles, absent bits) arranged by key. A row at weight zero is gone, so nothing outlives what it supports. The sink and rule of an element are read from the element layer when asked. Nothing outside reads its state.</summary>
+/// <summary>Where the elements of a projection come from. The emits tell it per row (`Support`), a `Group` tells it the rows of each of its groups (`Member`), a merge moves what is known about one element to another (`Move`), and `Of` answers for one element. It keeps only the rows that hold something up, as Z-sets of handles (#40): per emit a table of (element, group key, the handle of each element column) arranged by element, per `Group` a table of (group key, member handles) arranged by key. A handle is an interner code in 4 bytes, -1 when its column is absent; a group key part takes 8. A row at weight zero is gone, so nothing outlives what it supports. The sink and rule of an element are read from the element layer when asked. Nothing outside reads its state.</summary>
 sealed class LineageLayer(ElementLayer elements)
 {
     /// <summary>The support rows of one emit: its origin, its table and the table's arrangement by element (column 0).</summary>
@@ -16,7 +16,7 @@ sealed class LineageLayer(ElementLayer elements)
     {
         public readonly LineageOrigin Origin = origin;
         public readonly int KeyWidth = origin.Group?.KeyCols.Length ?? 0;
-        public readonly Table Rows = new([.. Enumerable.Repeat(8, Width(1 + (origin.Group?.KeyCols.Length ?? 0), origin.Cols.Length))], Width(1 + (origin.Group?.KeyCols.Length ?? 0), origin.Cols.Length));
+        public readonly Table Rows = new(Widths(1, origin.Group?.KeyCols.Length ?? 0, origin.Cols.Length), 1 + (origin.Group?.KeyCols.Length ?? 0) + origin.Cols.Length);
         public Arrangement? byElem;
         public Arrangement ByElem => byElem ??= Rows.Arrange(0);
     }
@@ -30,11 +30,12 @@ sealed class LineageLayer(ElementLayer elements)
         public MemberRows((string Role, int Col, bool IsRel, string Port)[] cols, int keyWidth)
         {
             Cols = cols; KeyWidth = keyWidth;
-            Rows = new([.. Enumerable.Repeat(8, Width(keyWidth, cols.Length))], Width(keyWidth, cols.Length));
+            Rows = new(Widths(0, keyWidth, cols.Length), keyWidth + cols.Length);
             ByKey = Rows.Arrange([.. Enumerable.Range(0, keyWidth)]);
         }
     }
-    static int Width(int lead, int cols) => lead + cols + ((cols + 63) >> 6);
+    /// <summary>Column widths: `elements` element handles first (the element a sink row holds up), then the group key parts, then a handle per element column.</summary>
+    static int[] Widths(int elements, int keyParts, int cols) => [.. Enumerable.Repeat(4, elements), .. Enumerable.Repeat(8, keyParts), .. Enumerable.Repeat(4, cols)];
 
     /// <summary>By sink number (the emit's place in the projection).</summary>
     readonly List<SinkRows?> sinks = [];
@@ -52,7 +53,7 @@ sealed class LineageLayer(ElementLayer elements)
         if (cols.Length > 0 && !groups.ContainsKey(group)) groups[group] = new MemberRows(cols, keyWidth);
     }
 
-    /// <summary>Writes the handles of a row's element columns from `at` on, then their absent bits; false when every one is absent.</summary>
+    /// <summary>Writes the handles of a row's element columns from `at` on, -1 for an absent one; false when every one is absent.</summary>
     static bool Handles((string Role, int Col, bool IsRel, string Port)[] cols, Batch b, int row, Span<long> key, int at)
     {
         var any = false;
@@ -60,7 +61,7 @@ sealed class LineageLayer(ElementLayer elements)
         {
             var c = b.Cols[cols[i].Col];
             if (c.Present(row)) { key[at + i] = (int)c.L[row]; any = true; }
-            else key[at + cols.Length + (i >> 6)] |= 1L << (i & 63);
+            else key[at + i] = -1;
         }
         return any;
     }
@@ -109,7 +110,7 @@ sealed class LineageLayer(ElementLayer elements)
     static IEnumerable<LineageSource> Sources((string Role, int Col, bool IsRel, string Port)[] cols, Table t, int r, int at)
     {
         for (var i = 0; i < cols.Length; i++)
-            if ((t.Get(r, at + cols.Length + (i >> 6)) >> (i & 63) & 1) == 0) yield return new LineageSource(cols[i].Role, (int)t.Get(r, at + i), cols[i].IsRel, cols[i].Port);
+            if (t.Get(r, at + i) is var h and >= 0) yield return new LineageSource(cols[i].Role, (int)h, cols[i].IsRel, cols[i].Port);
     }
 
     /// <summary>Where `elem` comes from, or null when nothing is known about it: the sink and rule that create it (the smallest sink with a create, as the element layer resolves it), and the input elements of the rows that hold it up. An element emitted from a group's output names the members of its group keys; one whose sink binds no element column names none.</summary>
