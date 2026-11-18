@@ -1257,6 +1257,22 @@ The three changes of this section and the two before it together, against the ad
 - Thread CPU at 10^5: median of the medians 366 to 353 ms (4 %), the least close 330 to 407 against 331 to 338 ms. That is within the noise of this load; the sub-timers put the removed work at about 6 % of the thread CPU of the twelve closes. Linear to 10^6 from 353 ms: about 4.9 s. A quiet run decides it.
 - The figures of this section (one pair, before without the shared delta) are at load 525 to 690. Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: a new window is learned and written with one store lookup (#119, 2026-11-18)
+Theory. Each series gets one new window per close, written by one row. The flush of the telemetry settled it by reading the store (the series, then the window, under the store's lock), found nothing, made a sample and kept it in a list as long as the step's windows; after the graph's commit the engine appended the list, and the append looked up the series and the window again. Split by sub-timers at 10^5 (nine steady closes, wall at load 137, 1.59 M windows): flush 928 ms, of which the index of the step's windows 151 and settling 677, the store read in it 379; then append and read 382 ms. The telemetry path was 27 % of the steady close, the largest part of it.
+
+Now a window that one row of weight one writes, with no support kept, goes to the store in one call that inserts it when the store does not hold it and says so (`AppendNew`); only when the store holds it does the flush read the value and settle as before. The flush writes the samples of each window as it settles, so the plane's change log holds the same changes in the same order; they are now written before the graph's commit instead of after it, and nothing reads the plane in between. The list of samples is gone. A log that fills one window at a time is made at the size of the last read, so a steady close does not grow it by doubling.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| steady close, thread CPU median | 47 / 33 ms | 368, 389 / 371, 344 ms |
+| steady close, thread CPU least | 42 / 29 ms | 335, 370 / 347, 330 ms |
+| allocated per steady close | 9.0 / 7.2 MB | 91.7 / 73.4 MB |
+| telemetry flush and append, MB allocated in twelve closes | 72 / 56 | 728 / 563 |
+
+- Allocation per steady close at 10^5 drops by 18.3 MB (20 %): the samples list (about 105 bytes per window) and the log's growth. Exact, the same in every run.
+- Thread CPU is within the noise of load 230 to 330 on 10 cores (one pair at 10^4, two at 10^5, interleaved). Instructions retired of the whole process vary by 4 % between runs of one binary at 10^4, too much to see this. The removed work is one series lookup and one search of its windows per window: at 10^6 about 2 M per close, where those lookups miss the caches.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
 A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
 

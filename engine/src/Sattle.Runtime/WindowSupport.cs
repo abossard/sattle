@@ -2,7 +2,7 @@ using Sattle.Core;
 
 namespace Sattle.Runtime;
 
-/// <summary>Which rows support each telemetry window a projection writes. `Write` takes the rows of a step, `Flush` adds them to what supports each window and gives the samples that set or delete the window in the store, `Move` lets the support follow a merged element. A window that exactly one row writes, the normal case, keeps nothing here: the store holds its value.</summary>
+/// <summary>Which rows support each telemetry window a projection writes. `Write` takes the rows of a step, `Flush` adds them to what supports each window and writes the samples that set or delete the window in the store, `Move` lets the support follow a merged element. A window that exactly one row writes, the normal case, keeps nothing here: the store holds its value.</summary>
 sealed class WindowSupport(Interner it, ConflictSet conflicts)
 {
     readonly List<(WindowKey Key, TVal Value, long Weight, long Period, long Own)> tele = [];
@@ -110,7 +110,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return moved;
     }
 
-    /// <summary>The working state of a flush on this thread (flushes do not overlap): the step's windows by key, in the order their first row came, and the samples. Kept from flush to flush, so a flush allocates nothing for it; a flush past `Large` windows or samples lets it go, so a large step's working state does not stay.</summary>
+    /// <summary>The working state of a flush on this thread (flushes do not overlap): the step's windows by key, in the order their first row came, and the samples of one window. Kept from flush to flush, so a flush allocates nothing for it; a flush past `Large` windows lets it go, so a large step's working state does not stay.</summary>
     sealed class FlushState
     {
         public readonly Dictionary<WindowKey, int> WindowOf = [];
@@ -122,12 +122,12 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     }
     [ThreadStatic] static FlushState? flushOfThread;
 
-    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came. The list is the thread's and holds the samples until the next flush on the thread; after a large flush the thread lets go of it, and it lives while the caller holds it.</summary>
-    public List<Sample> Flush(ITelemetryStore store, GraphKey g, long inputId)
+    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set in the store to the value its supporting rows give, or deleted when none is left. The windows settle and are written in the order their first row came.</summary>
+    public void Flush(ITelemetryStore store, GraphKey g, long inputId)
     {
+        if (tele.Count == 0) return;
         var fs = flushOfThread ??= new();
         var res = fs.Samples; res.Clear();
-        if (tele.Count == 0) return res;
         // the windows of the step, and per window its rows in order as a chain: first row, last row, and per row the next one
         var windowOf = fs.WindowOf; windowOf.Clear();
         var windows = fs.Windows; windows.Clear();
@@ -148,7 +148,6 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
                 if (windowOf.TryGetValue(key, out var w)) { next[windows[w].Last] = i; windows[w] = windows[w] with { Last = i }; }
                 else { windowOf[key] = windows.Count; windows.Add((key, period, i, i)); }
             }
-            if (windows.Count > FlushState.Large) res.EnsureCapacity(windows.Count);
             var byRow = fs.ByRow; var scratch = fs.Net;
             foreach (var (key, period, first, _) in windows)
             {
@@ -163,12 +162,12 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
                     else byRow[at] = byRow[at] with { Weight = byRow[at].Weight + weight };
                 }
                 Settle(store, g, key, byRow, period, inputId, res, moved: false, scratch);
+                if (res.Count > 0) { store.Append(g, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(res)); res.Clear(); }
             }
         }
         finally { System.Buffers.ArrayPool<int>.Shared.Return(next); }
         tele.Clear();
-        if (windows.Count > FlushState.Large || res.Count > FlushState.Large) flushOfThread = null;
-        return res;
+        if (windows.Count > FlushState.Large) flushOfThread = null;
     }
 
     /// <summary>Adds `weight` to `value` in a list of value and weight; a value whose weight becomes 0 leaves the list.</summary>
@@ -183,7 +182,8 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         if (weight != 0) to.Add((value, weight));
     }
 
-    static void Set(List<Sample> res, WindowKey key, long per, long inputId, TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B));
+    static Sample SampleOf(WindowKey key, long per, long inputId, TVal v) => new(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B);
+    static void Set(List<Sample> res, WindowKey key, long per, long inputId, TVal v) => res.Add(SampleOf(key, per, inputId, v));
     static void Delete(List<Sample> res, WindowKey key, long per, long inputId, TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, Deleted: true));
     static string Subject(WindowKey key) => $"window {key.Element} {key.Prop} {key.WindowStart}";
 
@@ -205,6 +205,8 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         var shared = sharedWindows.TryGetValue(key, out var support);
         // one row out and one row in: the revision of a window that one row writes
         if (!shared && net.Count == 2 && net[0].Weight + net[1].Weight == 0 && Math.Max(net[0].Weight, net[1].Weight) == 1) { Set(res, key, per, inputId, net[0].Weight == 1 ? net[0].Value : net[1].Value); return; }
+        // one row in, and the store does not hold the window: the row is its whole support (a window that closes, the steady case), written in the same lookup
+        if (!shared && !moved && net.Count == 1 && net[0].Weight == 1 && store.AppendNew(g, SampleOf(key, per, inputId, net[0].Value))) return;
         var stored = StoredOf(store, g, key);
         // the support after the step: what is kept here, else the stored value as one row; plus the step
         if (support is not null) { foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; } net.Clear(); foreach (var (v, w) in support) net.Add((v, w)); }

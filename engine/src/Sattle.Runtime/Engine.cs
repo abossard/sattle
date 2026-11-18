@@ -589,7 +589,7 @@ public sealed class Engine : IDisposable, IEngineInput
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
         Charge("(flush elements)", ref a, ref t);
-        var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);
+        g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);
         Charge("(flush telemetry)", ref a, ref t);
         Patch? patch = null;
         if (edits.Count > 0)
@@ -609,11 +609,10 @@ public sealed class Engine : IDisposable, IEngineInput
             Charge("(store commit)", ref a, ref t);
         }
         if (keys is not null) OperatorMillis[keys[^1]] = OperatorMillis.GetValueOrDefault(keys[^1]) + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
-        if (samples.Count > 0) Telemetry.Append(g.Key, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(samples));
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
         var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
         g.TelemetryPosition = read;
-        Charge("(telemetry append and read)", ref a, ref t);
+        Charge("(telemetry read)", ref a, ref t);
         var result = new GraphResult(patch, changes, g.Head);
         var conflicts = g.Out.TakeChanged();
         if (patch is not null || changes.Count > 0 || conflicts.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner) { Conflicts = conflicts });

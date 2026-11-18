@@ -537,6 +537,8 @@ public interface ITelemetryStore
 {
     /// <summary>At-least-once: a sample with the value its window has already is no change (a duplicate delivery, or a rewrite with the same value); another value replaces it. Returns the position after the batch.</summary>
     long Append(GraphKey g, ReadOnlySpan<Sample> samples);
+    /// <summary>`Append` of a sample whose window the store does not hold; false, and no change, when it holds the window. A flush learns that a window is new and writes it with one lookup.</summary>
+    bool AppendNew(GraphKey g, in Sample s);
     IReadOnlyList<SeriesRead> ReadWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs);
     /// <summary>The same windows without allocating: each window of each (element, property) series in `[fromNs, toNs)` is handed to the visitor, in series order and window order. Returns the number of windows visited. A view of 10,000 elements over an hour is 2.4 M windows; reading them into lists allocated 148 MB and the collections that followed were the 300 ms outliers of H8.</summary>
     long ScanWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs, WindowVisitor visit);
@@ -658,6 +660,8 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         /// <summary>The changes not yet read; a read takes the list. An append makes room for its whole batch at once, so a log is made at its size, not grown by doubling.</summary>
         public List<WindowChange> Log = [];
         public long Base; // position of Log[0]
+        /// <summary>The changes the last read took: a log that starts to fill one window at a time is made at that size, so a steady close writes its log without growing it.</summary>
+        public int LastRead;
         public long? RetainedFrom;
         /// <summary>Windows that a merge left without a value because their two values could not be combined (Law 7.5). "No value" is absorbing over merges: the window of a third id does not bring a value back. A later write of the window (the rows as they are aggregated now) ends it.</summary>
         public readonly HashSet<WindowKey> NoValue = [];
@@ -704,6 +708,26 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             }
             if (p.Log.Count > logCapacity) { var drop = p.Log.Count - logCapacity / 2; p.Log.RemoveRange(0, drop); p.Base += drop; }
             return p.Base + p.Log.Count;
+        }
+    }
+
+    public bool AppendNew(GraphKey g, in Sample s)
+    {
+        lock (gate)
+        {
+            var p = Get(g);
+            var key = (s.Element, s.Prop);
+            if (!p.Series.TryGetValue(key, out var ser)) p.Series[key] = ser = new Windows(s.WidthNs);
+            var at = ser.Find(s.WindowStart);
+            if (at >= 0) return false;
+            var wk = new WindowKey(s.Element, s.Prop, s.WindowStart);
+            if (s.AuxA is { } aa) p.Aux[wk] = (aa, s.AuxB ?? 0); else p.Aux.Remove(wk);
+            p.NoValue.Remove(wk);
+            ser.Insert(~at, s.WindowStart, s.Value);
+            if (p.Log.Count == 0) p.Log.EnsureCapacity(p.LastRead);
+            p.Log.Add(new WindowChange(wk, null, s.Value));
+            if (p.Log.Count > logCapacity) { var drop = p.Log.Count - logCapacity / 2; p.Log.RemoveRange(0, drop); p.Base += drop; }
+            return true;
         }
     }
 
@@ -757,7 +781,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             if (consumed > 0) p.Log.RemoveRange(0, consumed);
             newPosition = p.Base = afterPosition + p.Log.Count;
             if (p.Log.Count == 0) return [];
-            var read = p.Log; p.Log = [];          // its reader keeps what it reads (the graph delta, the commit event, an export)
+            var read = p.Log; p.Log = []; p.LastRead = read.Count;          // its reader keeps what it reads (the graph delta, the commit event, an export)
             return read;
         }
     }
