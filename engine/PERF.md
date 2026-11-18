@@ -986,6 +986,20 @@ Theory. A flush's dictionaries are needed only while the flush runs; flushes of 
 - What remains in the flush at 10^4: resolving the elements an edit needs (53 MB: the elements, their props and values), the touched relationships' holders (about 23 MB: the id strings, a holder made as a relationship), the before-states read for the edits (17 MB). In the apply, the puts (40 MB: the graph's arrays and props pool growing).
 - Before is the identities section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 40 to 110) and not comparable; bytes are. Nothing is sealed; the seal format is unchanged.
 
+### Efficiency stage 2, groups: the rows of an `arg_max` are reached through their key (#115, 2026-11-18)
+Theory. A group keeps, per key and per `arg_max` or `arg_min`, every distinct input row of the key, since the next winner comes from the key's other rows when the winning row goes. A change needs the key's rows: to add its weight to the identical row, and to find the winner, which walks all of them on every change. The rows were a table with an index on the whole row and an arrangement by key with its own index, two hash indexes (8 to 16 B per row each) to find what a walk of the key's one or two rows finds. Now the key's slot holds its first row and each row the next one, and the table of rows has no key columns and so no index (`Table.Insert`, `Table.AddAt`). A change walks the key's rows, as the winner does. Same rows, same winners. Seal format 18 to 19.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 184 / 181 MB | 987 / 963 MB |
+| row sets | 7.5 / 4.7 MB (745 / 467 B per master node) | 59.6 / 34.7 MB (596 / 346 B per master node) |
+| groups per master node | 927 / 731 B | 738 / 551 B |
+| windowed groups per master node | 856 / 774 B | 532 / 470 B |
+| allocated per input record | 8.74 / 8.68 KB | 8.84 / 8.67 KB |
+
+- What stays per row: its values, the bits of which members have one, the weight, the next row (4 B), and per key its first row (4 B).
+- Before is main 493fbbc with the segments, working arrays, binding records and argmax tables patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

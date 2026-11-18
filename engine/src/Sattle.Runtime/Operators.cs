@@ -224,12 +224,14 @@ sealed class KeyTable
     readonly Table? decimals;
     /// <summary>The entries of one aggregate of one key's row, in each of the two tables.</summary>
     readonly Arrangement? longsOf, decimalsOf;
-    /// <summary>Per group of `last` aggregates that take their values from one row: (slot, order, the value of each member, which members have a value), then the digits of every decimal. One entry per distinct row of the group. A decimal is keyed by its number (two 8-byte halves) and keeps its digits; a code (a text, an element) takes 4 bytes, any other value 8.</summary>
+    /// <summary>Per group of `last` aggregates that take their values from one row: (order, the value of each member, which members have a value), then the digits of every decimal. One entry per distinct row of the group. A decimal is compared by its number (two 8-byte halves) and keeps its digits; a code (a text, an element) takes 4 bytes, any other value 8. The rows of a key are reached only through the key: the key's slot holds the first, each row the next. A change walks them, as finding the winner does.</summary>
     readonly RowSet[] rowSets;
     sealed class RowSet
     {
-        public readonly Table T; public readonly Arrangement Of;
-        /// <summary>Per value, the order first and then each member: whether it is a decimal, the column it is keyed by, and for a decimal the column of its digits.</summary>
+        public readonly Table T;
+        /// <summary>Per slot its first row, per row the next row of its slot; row + 1, 0 is none.</summary>
+        public readonly Segments<int> Head = new(), Next = new();
+        /// <summary>Per value, the order first and then each member: whether it is a decimal, the column it is compared by, and for a decimal the column of its digits.</summary>
         public readonly bool[] Dec; public readonly int[] At, DigitsAt;
         public readonly int HasAt, Members;
         /// <summary>`widths`: per value, the order first, 16 for a decimal, else 4 or 8 bytes.</summary>
@@ -237,16 +239,38 @@ sealed class KeyTable
         {
             var n = widths.Length; Members = n - 1;
             Dec = [.. widths.Select(w => w == 16)]; At = new int[n]; DigitsAt = new int[n];
-            var cols = new List<int> { 4 };
+            var cols = new List<int>();
             for (var v = 0; v < n; v++) { At[v] = cols.Count; if (Dec[v]) { cols.Add(8); cols.Add(8); } else cols.Add(widths[v]); }
             HasAt = cols.Count; cols.Add(Members <= 31 ? 4 : 8);
-            var keys = cols.Count;
             for (var v = 0; v < n; v++) if (Dec[v]) { DigitsAt[v] = cols.Count; cols.Add(8); cols.Add(8); }
-            T = new Table([.. cols], keyColumns: keys);
-            Of = T.Arrange(0);
+            T = new Table([.. cols], keyColumns: 0);
         }
         /// <summary>Value `v` (0 the order, 1 + m member m) of a row.</summary>
         public decimal Get(int row, int v) => Dec[v] ? Unpack(T.Get(row, DigitsAt[v]), T.Get(row, DigitsAt[v] + 1)) : T.Get(row, At[v]);
+        public int First(int slot) => Head[slot] - 1;
+        /// <summary>Adds `w` to the row of a slot whose compared columns are `row`; a new row is first in its slot's chain. The row, -1 when it went, and whether it is new.</summary>
+        public (int Row, bool New) Add(int slot, ReadOnlySpan<long> row, long w)
+        {
+            int prev = -1, r = First(slot);
+            for (; r >= 0; prev = r, r = Next[r] - 1)
+            {
+                var same = true;
+                for (var c = 0; c < row.Length && same; c++) same = T.Get(r, c) == row[c];
+                if (same) break;
+            }
+            if (r < 0)
+            {
+                r = T.Insert(w);
+                for (var c = 0; c < row.Length; c++) T.Set(r, c, row[c]);
+                Next[r] = Head[slot]; Head[slot] = r + 1;
+                return (r, true);
+            }
+            var after = Next[r];
+            if (T.AddAt(r, w) >= 0) return (r, false);
+            if (prev < 0) { if (after == 0) Head.Clear(slot); else Head[slot] = after; } else Next[prev] = after;
+            Next.Clear(r);
+            return (-1, false);
+        }
     }
     /// <summary>Counts the changes of the row sets: what was read from one holds until the next change.</summary>
     public long RowChanges { get; private set; }
@@ -366,7 +390,6 @@ sealed class KeyTable
         var rs = rowSets[set]; var t = rs.T;
         Span<long> key = stackalloc long[rs.HasAt + 1];
         key.Clear();
-        key[0] = slot;
         for (var v = 0; v <= rs.Members; v++)
         {
             if (v > 0 && (has >> (v - 1) & 1) == 0) continue;
@@ -374,10 +397,9 @@ sealed class KeyTable
             if (rs.Dec[v]) (key[rs.At[v]], key[rs.At[v] + 1]) = DecimalKey.Of(x); else key[rs.At[v]] = (long)x;
         }
         key[rs.HasAt] = has;
-        var had = t.Find(key) >= 0;
-        var row = t.Add(key, w);
+        var (row, added) = rs.Add(slot, key, w);
         RowChanges++;
-        if (row < 0 || had) return;
+        if (!added) return;
         for (var v = 0; v <= rs.Members; v++)
         {
             if (!rs.Dec[v]) continue;
@@ -386,8 +408,8 @@ sealed class KeyTable
         }
     }
     /// <summary>The rows of a row set of one key: the first, and the one after `row`; -1 when there is none.</summary>
-    public int FirstRow(int slot, int set) => rowSets[set].Of.First([slot]);
-    public int NextRow(int set, int row) => rowSets[set].Of.Next(row);
+    public int FirstRow(int slot, int set) => rowSets[set].First(slot);
+    public int NextRow(int set, int row) => rowSets[set].Next[row] - 1;
     public decimal RowOrder(int set, int row) => rowSets[set].Get(row, 0);
     public bool RowHas(int set, int row, int member) => (rowSets[set].T.Get(row, rowSets[set].HasAt) >> member & 1) != 0;
     public decimal RowValue(int set, int row, int member) => rowSets[set].Get(row, 1 + member);
@@ -400,7 +422,7 @@ sealed class KeyTable
         for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
         for (var a = 0; a < nIndex; a++)
             if (longsOf?.First([s, a]) >= 0 || decimalsOf?.First([s, a]) >= 0) return false;
-        foreach (var rs in rowSets) if (rs.Of.First([s]) >= 0) return false;
+        foreach (var rs in rowSets) if (rs.First(s) >= 0) return false;
         return true;
     }
 

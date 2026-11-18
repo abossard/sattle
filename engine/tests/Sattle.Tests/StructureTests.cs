@@ -120,6 +120,35 @@ public class StructureTests
         }
     }
 
+    [Theory]
+    [InlineData(1, 4)] [InlineData(2, 8)] [InlineData(3, 8)]
+    public void A_table_without_key_columns_keeps_its_rows_by_number_and_removes_one_at_weight_zero(int seed, int width)
+    {
+        var rnd = new Random(seed);
+        var t = new Table([width, 4], keyColumns: 0);
+        var model = new Dictionary<int, (long W, long V)>();
+        for (var step = 0; step < 50_000; step++)
+        {
+            if (model.Count == 0 || rnd.Next(3) == 0)
+            {
+                var w = rnd.Next(1, 3) * (rnd.Next(2) == 0 ? 1 : -1);
+                var v = width == 8 && seed == 3 ? rnd.NextInt64(long.MinValue, long.MaxValue) : rnd.Next(-1000, 1000);
+                var row = t.Insert(w); t.Set(row, 0, v); t.Set(row, 1, step);
+                Assert.False(model.ContainsKey(row));
+                model[row] = (w, v);
+                continue;
+            }
+            var r = model.Keys.ElementAt(rnd.Next(model.Count));
+            var dw = rnd.Next(-2, 3);
+            var now = model[r].W + dw;
+            Assert.Equal(now == 0 ? -1 : r, t.AddAt(r, dw));
+            if (now == 0) model.Remove(r); else model[r] = (now, model[r].V);
+        }
+        Assert.Equal(model.Count, t.Count);
+        Assert.Equal(model.Keys.Order(), t.Rows().Order());
+        foreach (var (r, (w, v)) in model) { Assert.Equal(w, t.Weight(r)); Assert.Equal(v, t.Get(r, 0)); }
+    }
+
     /// <summary>Code review 2: keys that differ only in their high bits share no chain of the index. Before, 60,000 keys that are multiples of 65,536 took 32.5 s, sequential ones 13 ms.</summary>
     [Fact]
     public void An_index_takes_keys_that_are_multiples_of_65536_as_fast_as_sequential_ones()

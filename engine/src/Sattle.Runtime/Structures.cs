@@ -230,7 +230,7 @@ public sealed class CodeCache
     public void Set(int code, int value) { var i = code & Mask; keys[i] = code; values[i] = value; }
 }
 
-/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row (a column of 8 bytes and the weight take 4 bytes per entry until a value needs 8, and are then copied to 8 once), and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. One shape: a row is always found through the index on its whole key. An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
+/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row (a column of 8 bytes and the weight take 4 bytes per entry until a value needs 8, and are then copied to 8 once), and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. A row is found through the index on its whole key; a table with no key columns has no index, and its caller keeps the row numbers (`Insert`, `AddAt`). An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
 public sealed class Table
 {
     readonly int keys;
@@ -249,6 +249,7 @@ public sealed class Table
     public Table(ReadOnlySpan<int> widths, int keyColumns)
     {
         keys = keyColumns;
+        if (keys == 0) index = [];
         weight = widths.Length;
         wide = new bool[weight + 1]; widens = new bool[weight + 1]; narrowCols = new Segments<int>[weight + 1]; wideCols = new Segments<long>[weight + 1];
         for (var c = 0; c <= weight; c++)
@@ -335,6 +336,22 @@ public sealed class Table
             foreach (var a in arrangements) a.Link(row);
             return row;
         }
+        return AddAt(row, w);
+    }
+
+    /// <summary>For a table with no key columns, which has no index: a new row with weight `w` (not zero), whose columns the caller sets. Its row number is how it is found again.</summary>
+    public int Insert(long w)
+    {
+        if (keys != 0) throw new InvalidOperationException("a table with key columns finds its rows by key (`Add`)");
+        var row = free > 0 ? freeRows[--free] : rows++;
+        Put(row, weight, w);
+        Count++;
+        return row;
+    }
+
+    /// <summary>Adds `w` to the weight of a live row. Returns the row, or -1 when its weight became zero and it was removed.</summary>
+    public int AddAt(int row, long w)
+    {
         var n = Get(row, weight) + w;
         if (n != 0) { Put(row, weight, n); return row; }
         Remove(row);
@@ -344,7 +361,7 @@ public sealed class Table
     void Remove(int row)
     {
         foreach (var a in arrangements) a.Unlink(row);
-        Unplace(row);
+        if (keys > 0) Unplace(row);
         for (var c = 0; c < wide.Length; c++) if (wide[c]) wideCols[c]!.Clear(row); else narrowCols[c]!.Clear(row);
         freeRows[free++] = row;
         if (--Count == 0) { rows = 0; free = 0; freeRows.Release(); }       // an empty table holds no list of free row numbers either
