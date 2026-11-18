@@ -1306,6 +1306,19 @@ Theory. `AppendNew` writes a window the plane does not hold. For a sample withou
 - Load 93 to 45. Each window a flush writes saves one probe of a large table and one hash of two texts: 1.59 million windows in nine steady closes at 10^5.
 - Before is the section before the previous one. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: a threshold finds a key's state without making its text, and keeps its windows in a sorted list (#119, 2026-11-18)
+Theory. A threshold keeps one state per key, by the key's text: its numbers joined by commas. Every row made that text with `string.Join` over the numbers, which allocated an enumerator, one text per number and the joined text. The text is now written into a buffer on the stack and the state found through the dictionary's lookup by characters; the text is made only for a new key, the same text as before. A key's windows were a sorted dictionary: an object per window, and an enumerator stack allocated by every walk over them and by every look at the oldest one. They are now a sorted list, two arrays walked by index. The order of the windows and every step of the state machine are the same.
+
+| | 10^4 | 10^5 |
+|---|---|---|
+| allocated per steady close, before / after | 7.2 / 6.3 MB | 73.4 / 64.9 MB |
+| threshold, in the advances (two pairs) | | 208 / 138, 225 / 179 ms |
+| steady close, thread CPU median (two pairs, interleaved) | 39 / 38, 41 / 37 ms | 254 / 252, 262 / 250 ms |
+| threshold state retained, bytes per master node | | 312 / 265 |
+
+- Load 57 to 23. Live bytes after a forced compacting collection at 10^5: 827 to 822 MB.
+- Before is the section three back. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Seal format 25: a threshold's windows are sealed as a sorted list.
+
 ### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
 A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
 

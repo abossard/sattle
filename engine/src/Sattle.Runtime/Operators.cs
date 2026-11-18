@@ -928,7 +928,7 @@ sealed class RollupOp : AggregatingOp
 sealed class ThresholdOp : PhysOp
 {
     /// <summary>Per key with a window in the look-back: those windows, and one carried state: the state machine after the newest window that left the look-back (`State`, `Run`, `Last` its start), so a state never changes because a window grew old (Def. 7.10, D33).</summary>
-    sealed class KeyState { public readonly SortedDictionary<long, (decimal V, int P)> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
+    sealed class KeyState { public readonly SortedList<long, (decimal V, int P)> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
         /// <summary>The marker records the key has (Def. 7.16): while there is one, the key is in no data.</summary>
         public long Silent; }
     /// <summary>The parameters of one window: the constants of the statement, or what the row of the window gives. Rules are few and windows many, so a window holds an index into `parameters`.</summary>
@@ -975,8 +975,23 @@ sealed class ThresholdOp : PhysOp
     string Run(KeyState st)
     {
         var state = st.State; var run = st.Run; var last = st.Last;
-        foreach (var (start, window) in st.Windows) Step(ref state, ref run, ref last, start, window);
+        var (starts, windows) = (st.Windows.Keys, st.Windows.Values);
+        for (var i = 0; i < starts.Count; i++) Step(ref state, ref run, ref last, starts[i], windows[i]);
         return state;
+    }
+
+    /// <summary>The state of a key, found by its text (the key's numbers joined by commas, as `string.Join` writes them) without making the text; made with its text when absent.</summary>
+    KeyState StateOf(Dictionary<string, KeyState>.AlternateLookup<ReadOnlySpan<char>> byText, Span<char> chars)
+    {
+        var n = 0;
+        for (var i = 0; i < buf.Length; i++)
+        {
+            if (i > 0) chars[n++] = ',';
+            buf[i].TryFormat(chars[n..], out var w); n += w;
+        }
+        if (byText.TryGetValue(chars[..n], out var st)) return st;
+        var id = new string(chars[..n]);
+        return states[id] = new KeyState { Id = id, Key = [.. buf], State = t.Initial };
     }
 
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
@@ -993,6 +1008,7 @@ sealed class ThresholdOp : PhysOp
         Column? ac = aboveBy?.Eval(b), ec = enterBy?.Eval(b), bc = belowBy?.Eval(b), xc = exitBy?.Eval(b);
         static decimal Num(Column c, int row) => c.IsDec ? c.D[row] : c.L[row];
         var touched = new List<KeyState>(); var seen = new HashSet<KeyState>();
+        var byText = states.GetAlternateLookup<ReadOnlySpan<char>>(); Span<char> chars = stackalloc char[21 * buf.Length];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
@@ -1003,8 +1019,7 @@ sealed class ThresholdOp : PhysOp
             if (silent)
             {
                 if (t.NoData is null) continue;       // `nodata ignore`
-                var sid = string.Join(',', buf);
-                if (!states.TryGetValue(sid, out var quiet)) states[sid] = quiet = new KeyState { Id = sid, Key = [.. buf], State = t.Initial };
+                var quiet = StateOf(byText, chars);
                 quiet.Silent += b.Weight(row);
                 if (seen.Add(quiet)) touched.Add(quiet);
                 continue;
@@ -1013,8 +1028,7 @@ sealed class ThresholdOp : PhysOp
             var p = new Params(ac is not null && (ac.P is null || ac.P[row]) ? Num(ac, row) : t.Above, bc is not null && (bc.P is null || bc.P[row]) ? Num(bc, row) : t.Below,
                 ec is not null && (ec.P is null || ec.P[row]) ? (long)Num(ec, row) : t.EnterAfter, xc is not null && (xc.P is null || xc.P[row]) ? (long)Num(xc, row) : t.ExitAfter);
             if (p.Above <= p.Below || p.Enter < 1 || p.Exit < 1) { if (b.Weight(row) > 0) cx.Faults.InvalidParameter++; continue; }
-            var id = string.Join(',', buf);
-            if (!states.TryGetValue(id, out var st)) states[id] = st = new KeyState { Id = id, Key = [.. buf], State = t.Initial };
+            var st = StateOf(byText, chars);
             var ws = b.Cols[inWs].L[row]; var window = (V: vc.IsDec ? vc.D[row] : vc.L[row], P: IndexOf(p));
             if (ws < edge) { if (b.Weight(row) > 0) cx.LateDropped++; }     // behind the look-back: a late row is dropped and counted, and the row that withdraws a window because it grew old withdraws nothing here
             else if (b.Weight(row) > 0) st.Windows[ws] = window;
@@ -1024,7 +1038,7 @@ sealed class ThresholdOp : PhysOp
         var bb = EmptyOutput();
         foreach (var st in touched)
         {
-            while (st.Windows.Count > 0 && st.Windows.First() is var oldest && oldest.Key < edge) { Step(ref st.State, ref st.Run, ref st.Last, oldest.Key, oldest.Value); st.Windows.Remove(oldest.Key); }
+            while (st.Windows.Count > 0 && st.Windows.Keys[0] < edge) { Step(ref st.State, ref st.Run, ref st.Last, st.Windows.Keys[0], st.Windows.Values[0]); st.Windows.RemoveAt(0); }
             var next = st.Windows.Count == 0 ? null : Run(st);
             if (next is null) idle.Add((DropAt(st), st.Id));     // no window in the look-back: the row goes; the carried state stays until no late window can continue the episode
             if (st.Silent > 0) next = t.NoData;                  // no data is an output over the state machine, which goes on as the episode rule says
