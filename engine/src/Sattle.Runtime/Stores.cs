@@ -672,7 +672,15 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     }
     readonly Dictionary<GraphKey, Plane> planes = [];
     readonly object gate = new();
-    Plane Get(GraphKey g) { if (!planes.TryGetValue(g, out var p)) planes[g] = p = new Plane(); return p; }
+    /// <summary>The plane last looked up: the writes of a flush and the reads of a step go to one plane in a row, so most lookups hash no text.</summary>
+    GraphKey lastKey; Plane? last;
+    Plane Get(GraphKey g)
+    {
+        if (last is not null && ReferenceEquals(lastKey.Tenant, g.Tenant) && ReferenceEquals(lastKey.Graph, g.Graph)) return last;
+        if (!planes.TryGetValue(g, out var p)) planes[g] = p = new Plane();
+        (lastKey, last) = (g, p);
+        return p;
+    }
 
     public long Append(GraphKey g, ReadOnlySpan<Sample> samples)
     {
@@ -721,7 +729,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             var at = ser.Find(s.WindowStart);
             if (at >= 0) return false;
             var wk = new WindowKey(s.Element, s.Prop, s.WindowStart);
-            if (s.AuxA is { } aa) p.Aux[wk] = (aa, s.AuxB ?? 0); else p.Aux.Remove(wk);
+            if (s.AuxA is { } aa) p.Aux[wk] = (aa, s.AuxB ?? 0);          // `Aux` holds only windows the plane holds: a new window has nothing there to remove
             p.NoValue.Remove(wk);
             ser.Insert(~at, s.WindowStart, s.Value);
             if (p.Log.Count == 0) p.Log.EnsureCapacity(p.LastRead);

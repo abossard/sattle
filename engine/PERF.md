@@ -1295,6 +1295,17 @@ Theory. The row of a closed window for an element of `ones` found the element's 
 - One index probe less per held row: 926,000 rows in nine steady closes at 10^5. Within the noise at load 31 to 44.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: the store writes a new window without lookups that find nothing new (#119, 2026-11-18)
+Theory. `AppendNew` writes a window the plane does not hold. For a sample without a pair it removed the window from `Aux`, a table with one entry per window of `mean` and `last`. `Aux` holds only windows the plane holds (a delete, a retention and a move remove theirs), so that removal never found anything. It is gone. Every call of the store also found its plane by hashing the tenant and graph texts; the plane last looked up is now kept and taken when both texts are the same objects, which they are for every write of one flush.
+
+| | 10^4 | 10^5 |
+|---|---|---|
+| steady close, thread CPU median, before / after (two pairs, interleaved) | 43 / 42, 41 / 40 ms | 294 / 279, 267 / 261 ms |
+| allocated per steady close | 7.2 / 7.2 MB | 73.4 / 73.4 MB |
+
+- Load 93 to 45. Each window a flush writes saves one probe of a large table and one hash of two texts: 1.59 million windows in nine steady closes at 10^5.
+- Before is the section before the previous one. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
 A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
 
