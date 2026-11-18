@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light"><title>Sattle field guide · The pg-shop replay</title>
+  <link rel="stylesheet" href="learn.css">
+  <script defer src="film/shop-map.js"></script><script defer src="story-data.js"></script><script defer src="change-data.js"></script><script defer src="captions-local.js"></script>
+  <script defer src="replay-data.js"></script><script defer src="walkthrough.js"></script>
+</head>
+<body>
+<a href="#lesson" class="skip">Skip to the lesson</a>
+<header class="mast"><div class="mast-inner"><a class="brand" href="#origins" aria-label="Sattle field guide home"><span class="symbol" aria-hidden="true">∷</span>Sattle</a><span class="mast-rule"></span><span>Field guide</span>
+<button id="watch" class="watch"><span aria-hidden="true">▶</span> Watch the film</button></div></header>
+<div class="shell">
+  <nav class="contents" aria-label="Field guide chapters"><p class="eyebrow">Contents</p><div id="chapters"></div><a class="paper-link" href="../../paper/README.md">Read the white paper ↗</a></nav>
+  <main id="lesson" tabindex="-1">
+    <p id="eyebrow" class="eyebrow"></p><h1 id="title"></h1><p id="intro" class="intro"></p>
+    <div id="animation" class="plate"><div id="map" data-responsive="true" data-asset-base="film/assets/"></div>
+      <div class="player"><button id="listen">▶ Play with narration</button><label for="scene-position" class="sr">Position in chapter</label><input type="range" id="scene-position" min="0" max="1000" value="0" step="1"><output id="elapsed">0:00</output><button id="mute" aria-pressed="false">Mute</button></div>
+    </div><audio id="narrator" preload="metadata" src="film/assets/voice.m4a"></audio><div id="beat-buttons" class="options" aria-label="Jump to a moment"></div><p id="spoken" class="spoken"></p>
+    <p class="context-line"><b>Shop on Azure</b> · Gateway, web and API · PostgreSQL, cache and storage</p>
+    <div id="activity"></div><aside id="reading"></aside>
+    <div class="pager"><button id="back">← Previous</button><span id="count"></span><button id="next">Next chapter →</button></div>
+  </main>
+</div>
+<dialog id="cinema" aria-labelledby="film-title"><header><h2 id="film-title">How the shop gets its health model</h2><button id="close" aria-label="Close film">Close ×</button></header><video controls playsinline preload="none" poster="film/poster.jpg"><source src="sattle.mp4" type="video/mp4"><track kind="captions" srclang="en" label="English" id="film-captions"></video><p><a href="sattle.mp4" download>Save the film</a> · <a href="transcript.md">Read the transcript</a></p></dialog>
+<noscript><p>Enable JavaScript for the interactive chapters, or <a href="sattle.mp4">watch the film</a> and <a href="transcript.md">read the transcript</a>.</p></noscript>
+</body></html>

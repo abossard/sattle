@@ -1,0 +1,5 @@
+__pycache__/
+film/.hyperframes/
+film/.thumbnails/
+film/.waveform-cache/
+film/renders/

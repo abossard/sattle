@@ -1,0 +1,331 @@
+WEBVTT
+
+00:00:00.000 --> 00:00:02.657
+This is a small online shop running on Azure.
+
+00:00:02.787 --> 00:00:04.757
+A gateway uses the API.
+
+00:00:04.887 --> 00:00:07.372
+The web service also calls the API.
+
+00:00:07.502 --> 00:00:11.541
+The API reaches PostgreSQL through a service called
+database.
+
+00:00:11.671 --> 00:00:13.983
+Web also uses a cache and storage.
+
+00:00:14.375 --> 00:00:16.715
+No single source sees that whole picture.
+
+00:00:16.845 --> 00:00:18.956
+Kubernetes describes the services.
+
+00:00:19.086 --> 00:00:20.776
+Network flows show calls.
+
+00:00:20.906 --> 00:00:25.431
+Azure inventory names the resources, and Azure Monitor
+supplies readings.
+
+00:00:25.561 --> 00:00:29.041
+Adapters translate each report into rows with named
+fields.
+
+00:00:29.458 --> 00:00:32.503
+Sattle builds a master graph from those observations.
+
+00:00:32.633 --> 00:00:34.850
+Two queries turn it into a health model.
+
+00:00:34.980 --> 00:00:37.872
+The first finds the workload and its dependencies.
+
+00:00:38.002 --> 00:00:41.334
+The second applies signal rules and works out who is
+affected.
+
+00:00:41.750 --> 00:00:44.802
+The example already ships with working definitions.
+
+00:00:44.932 --> 00:00:48.695
+For your own workload, connect the sources you have
+permission to read.
+
+00:00:48.825 --> 00:00:50.692
+Choose the namespace and cluster.
+
+00:00:50.822 --> 00:00:54.394
+Here the namespace is shop, and the cluster is aks-
+synth.
+
+00:00:54.792 --> 00:00:57.129
+Your team decides what unhealthy means.
+
+00:00:57.259 --> 00:01:03.286
+For pg-shop, the supplied database rule trips after one
+low minute and clears after two good minutes.
+
+00:01:03.416 --> 00:01:07.686
+It applies to servers of this type, so each server can
+use the same rule.
+
+00:01:08.083 --> 00:01:10.638
+The workload query also encodes a judgment.
+
+00:01:10.768 --> 00:01:13.376
+Here a caller depends on the service it calls.
+
+00:01:13.506 --> 00:01:18.112
+If a call is optional in your system, change that rule
+to represent your design.
+
+00:01:18.242 --> 00:01:21.937
+Sattle can then find matching instances as new evidence
+arrives.
+
+00:01:22.333 --> 00:01:23.798
+Start with identity.
+
+00:01:23.928 --> 00:01:28.083
+The inventory record and the meter target share the
+same Azure resource ID.
+
+00:01:28.213 --> 00:01:30.139
+Their evidence meets at one server.
+
+00:01:30.269 --> 00:01:32.487
+The Kubernetes service has a different key.
+
+00:01:32.617 --> 00:01:34.437
+A link says the server backs it.
+
+00:01:34.833 --> 00:01:38.654
+The paper calls the vocabulary of types and links an
+ontology.
+
+00:01:38.784 --> 00:01:41.311
+A projection is a query that builds a new view.
+
+00:01:41.441 --> 00:01:45.449
+Watch several pod calls group into one link between web
+and API.
+
+00:01:45.579 --> 00:01:48.230
+You can follow that link back to its evidence.
+
+00:01:48.625 --> 00:01:50.181
+The structure has versions.
+
+00:01:50.311 --> 00:01:52.332
+The readings form a time series.
+
+00:01:52.462 --> 00:01:55.034
+New readings can leave the structure unchanged.
+
+00:01:55.164 --> 00:01:59.566
+When a declared rule changes state, its result can
+change the health graph.
+
+00:01:59.696 --> 00:02:03.909
+That separation keeps a busy meter from redrawing the
+shop at every sample.
+
+00:02:04.333 --> 00:02:07.941
+At ten eleven, the database meter falls from one to
+zero.
+
+00:02:08.071 --> 00:02:11.380
+The sample reaches the capture at ten twelve and one
+second.
+
+00:02:11.510 --> 00:02:13.786
+The first low minute trips the authored rule.
+
+00:02:14.208 --> 00:02:17.330
+pg-shop now has an unhealthy signal of its own.
+
+00:02:17.460 --> 00:02:19.457
+The database service relies on it.
+
+00:02:19.587 --> 00:02:24.193
+API relies on database, and both the gateway and web
+rely on API.
+
+00:02:24.323 --> 00:02:27.141
+Health changes travel back toward those callers.
+
+00:02:27.271 --> 00:02:30.011
+The cache and storage stay healthy in this incident.
+
+00:02:30.417 --> 00:02:32.507
+The meter rises at ten fourteen.
+
+00:02:32.637 --> 00:02:33.924
+That is one good minute.
+
+00:02:34.054 --> 00:02:37.023
+At ten fifteen the second good minute clears the
+signal.
+
+00:02:37.153 --> 00:02:40.044
+The same dependency paths now carry recovery.
+
+00:02:40.458 --> 00:02:42.648
+Rewind to the earlier cache incident.
+
+00:02:42.778 --> 00:02:46.235
+In the original run, web uses the overloaded cache.
+
+00:02:46.365 --> 00:02:48.039
+Web and the shop are degraded.
+
+00:02:48.169 --> 00:02:50.373
+The API and gateway stay healthy.
+
+00:02:50.792 --> 00:02:54.090
+For a second run, we added one deployment update.
+
+00:02:54.220 --> 00:02:58.410
+The API now has a cache host setting naming the
+existing Azure cache.
+
+00:02:58.540 --> 00:03:05.449
+The shipped structure query matches that host to
+inventory and adds an API to cache dependency with
+configuration evidence.
+
+00:03:05.875 --> 00:03:08.847
+Compare both runs at ten oh six and thirty seconds.
+
+00:03:08.977 --> 00:03:13.205
+With that extra link, the API and its gateway also
+become degraded.
+
+00:03:13.335 --> 00:03:16.227
+The meter and health rules are identical in both runs.
+
+00:03:16.357 --> 00:03:18.598
+The different result comes from the new path.
+
+00:03:19.000 --> 00:03:21.144
+Here is a separate replay experiment.
+
+00:03:21.274 --> 00:03:25.046
+The API configuration names a new cache called offers-
+cache.
+
+00:03:25.176 --> 00:03:28.284
+At first Azure inventory has no matching resource.
+
+00:03:28.414 --> 00:03:31.177
+The structure query cannot complete that link yet.
+
+00:03:31.583 --> 00:03:34.887
+Now add an Azure Resource Graph record for offers-
+cache.
+
+00:03:35.017 --> 00:03:39.774
+Its type and name produce the host that the API
+configuration already mentions.
+
+00:03:39.904 --> 00:03:42.680
+The same query adds the resource and the dependency.
+
+00:03:42.810 --> 00:03:45.788
+No new query was needed for this supported Redis type.
+
+00:03:46.208 --> 00:03:48.473
+The new cache shows up with unknown health.
+
+00:03:48.603 --> 00:03:51.740
+We supplied inventory, but no meter readings for it.
+
+00:03:51.870 --> 00:03:56.034
+A new resource type or a different naming convention
+may need a new matching rule.
+
+00:03:56.164 --> 00:04:01.641
+A new signal needs an adapter or meter mapping and a
+health rule when the existing ones do not cover it.
+
+00:04:02.042 --> 00:04:06.474
+In a live deployment the engine learns about changes
+when its sources report them.
+
+00:04:06.604 --> 00:04:10.966
+It updates the affected results and sends a patch, a
+list of graph edits.
+
+00:04:11.096 --> 00:04:13.519
+A collector falling silent leaves a gap.
+
+00:04:13.649 --> 00:04:16.508
+Silence alone never proves a resource was deleted.
+
+00:04:16.917 --> 00:04:20.528
+The Canvas starts from a snapshot and applies patches
+in order.
+
+00:04:20.658 --> 00:04:25.775
+In the bundled static workload export, revision sixteen
+shows the database outage.
+
+00:04:25.905 --> 00:04:27.979
+Revision eighteen shows recovery.
+
+00:04:28.109 --> 00:04:29.570
+Those are graph versions.
+
+00:04:29.700 --> 00:04:31.163
+The meter uses minutes.
+
+00:04:31.583 --> 00:04:38.004
+The white paper explains why updating just the changed
+parts should agree with rebuilding from scratch under
+its assumptions.
+
+00:04:38.134 --> 00:04:41.605
+Tests run an independent evaluator and compare results.
+
+00:04:41.735 --> 00:04:45.857
+The same recorded inputs and definitions let you repeat
+the investigation.
+
+00:04:46.250 --> 00:04:49.915
+In the Canvas, open the workload tree and select pg-
+shop.
+
+00:04:50.045 --> 00:04:54.131
+The origin marker identifies a component with its own
+failing signal.
+
+00:04:54.261 --> 00:04:59.762
+The Inspector shows its earlier state, its new state,
+and the graphs that support the result.
+
+00:05:00.167 --> 00:05:05.787
+Follow the answer back through the workload health
+query, the structure query, and the source records.
+
+00:05:05.917 --> 00:05:11.954
+To test a different interpretation, edit a draft in the
+projection editor and preview its rows on a running
+engine.
+
+00:05:12.375 --> 00:05:14.210
+The lab collects observations.
+
+00:05:14.340 --> 00:05:16.742
+The engine joins them with your definitions.
+
+00:05:16.872 --> 00:05:18.916
+The Canvas explains the result.
+
+00:05:19.046 --> 00:05:23.872
+In the walkthrough, switch on the new dependency, then
+add the missing Azure inventory.
+
+00:05:24.002 --> 00:05:26.454
+Watch which parts of the same shop change.
