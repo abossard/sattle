@@ -230,14 +230,16 @@ public sealed class CodeCache
     public void Set(int code, int value) { var i = code & Mask; keys[i] = code; values[i] = value; }
 }
 
-/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row, and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. One shape: a row is always found through the index on its whole key. An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
+/// <summary>A Z-set of rows: fixed-width columns (4 or 8 bytes) in segments, one `i64` weight per row (a column of 8 bytes and the weight take 4 bytes per entry until a value needs 8, and are then copied to 8 once), and one open-addressing index on the key columns, which come first. Adding a weight to a key finds or creates its row; a row whose weight reaches zero is removed and its number is reused. Iteration order is not part of the contract. One shape: a row is always found through the index on its whole key. An `Arrangement` is a second way in, by some of the key columns, for the callers that want every row with one value.</summary>
 public sealed class Table
 {
     readonly int keys;
-    readonly bool[] wide;
+    /// <summary>Per column, the weight last: whether it holds 8 bytes per entry now, and whether it may (a column of 4 holds codes, which never need 8).</summary>
+    readonly bool[] wide, widens;
     readonly Segments<int>?[] narrowCols;
     readonly Segments<long>?[] wideCols;
-    readonly Segments<long> weight = new();
+    /// <summary>The column of the weight.</summary>
+    readonly int weight;
     readonly Segments<int> freeRows = new();
     int free, rows;
     int[] index = new int[64]; int mask = 63;
@@ -247,15 +249,16 @@ public sealed class Table
     public Table(ReadOnlySpan<int> widths, int keyColumns)
     {
         keys = keyColumns;
-        wide = new bool[widths.Length]; narrowCols = new Segments<int>[widths.Length]; wideCols = new Segments<long>[widths.Length];
-        for (var c = 0; c < widths.Length; c++)
+        weight = widths.Length;
+        wide = new bool[weight + 1]; widens = new bool[weight + 1]; narrowCols = new Segments<int>[weight + 1]; wideCols = new Segments<long>[weight + 1];
+        for (var c = 0; c <= weight; c++)
         {
-            wide[c] = widths[c] switch { 4 => false, 8 => true, _ => throw new ArgumentException($"column width {widths[c]}: 4 or 8") };
-            if (wide[c]) wideCols[c] = new(); else narrowCols[c] = new();
+            widens[c] = c == weight || widths[c] switch { 4 => false, 8 => true, _ => throw new ArgumentException($"column width {widths[c]}: 4 or 8") };
+            narrowCols[c] = new();
         }
     }
 
-    public int Columns => wide.Length;
+    public int Columns => weight;
     /// <summary>Rows with a nonzero weight.</summary>
     public int Count { get; private set; }
     /// <summary>One past the highest row number in use; a row below it is live when its weight is nonzero.</summary>
@@ -263,7 +266,7 @@ public sealed class Table
 
     public long Get(int row, int col) => wide[col] ? wideCols[col]![row] : narrowCols[col]![row];
     /// <summary>The weight of a row; 0 for a row that is not there (also for the -1 a `Find` or an `Add` gives).</summary>
-    public long Weight(int row) => row >= 0 && row < rows ? weight[row] : 0;
+    public long Weight(int row) => row >= 0 && row < rows ? Get(row, weight) : 0;
     public bool Live(int row) => Weight(row) != 0;
 
     /// <summary>Sets a column that is not part of the key.</summary>
@@ -273,7 +276,20 @@ public sealed class Table
         Put(row, col, v);
     }
 
-    void Put(int row, int col, long v) { if (wide[col]) wideCols[col]![row] = v; else narrowCols[col]![row] = checked((int)v); }
+    void Put(int row, int col, long v)
+    {
+        if (wide[col]) wideCols[col]![row] = v;
+        else if (v == (int)v || !widens[col]) narrowCols[col]![row] = checked((int)v);
+        else { Widen(col); wideCols[col]![row] = v; }
+    }
+
+    /// <summary>Copies a column of 4 bytes per entry to 8, at its first value that needs 8.</summary>
+    void Widen(int col)
+    {
+        var from = narrowCols[col]!; var to = new Segments<long>();
+        for (var r = 0; r < rows; r++) if (from.Has(r)) to[r] = from[r];
+        from.Release(); narrowCols[col] = null; wideCols[col] = to; wide[col] = true;
+    }
 
     /// <summary>One step of the hash of a key: every bit of `x` reaches every bit of the result (keys that differ only in their high bits, like multiples of 65,536, must not share the low bits the index uses).</summary>
     internal static ulong Mix(ulong h, long x)
@@ -313,14 +329,14 @@ public sealed class Table
             if (w == 0) return -1;
             row = free > 0 ? freeRows[--free] : rows++;
             for (var c = 0; c < keys; c++) Put(row, c, key[c]);
-            weight[row] = w;
+            Put(row, weight, w);
             Count++;
             if (Count * 2 > index.Length) Rehash(); else Place(row);
             foreach (var a in arrangements) a.Link(row);
             return row;
         }
-        var n = weight[row] + w;
-        if (n != 0) { weight[row] = n; return row; }
+        var n = Get(row, weight) + w;
+        if (n != 0) { Put(row, weight, n); return row; }
         Remove(row);
         return -1;
     }
@@ -329,7 +345,6 @@ public sealed class Table
     {
         foreach (var a in arrangements) a.Unlink(row);
         Unplace(row);
-        weight[row] = 0;
         for (var c = 0; c < wide.Length; c++) if (wide[c]) wideCols[c]!.Clear(row); else narrowCols[c]!.Clear(row);
         freeRows[free++] = row;
         if (--Count == 0) { rows = 0; free = 0; freeRows.Release(); }       // an empty table holds no list of free row numbers either
@@ -363,11 +378,11 @@ public sealed class Table
     void Rehash()
     {
         index = new int[index.Length * 2]; mask = index.Length - 1;
-        for (var r = 0; r < rows; r++) if (weight[r] != 0) Place(r);
+        for (var r = 0; r < rows; r++) if (Get(r, weight) != 0) Place(r);
     }
 
     /// <summary>The live rows, in no particular order.</summary>
-    public IEnumerable<int> Rows() { for (var r = 0; r < rows; r++) if (weight[r] != 0) yield return r; }
+    public IEnumerable<int> Rows() { for (var r = 0; r < rows; r++) if (Get(r, weight) != 0) yield return r; }
 
     /// <summary>A second way into the rows, by the values of some key columns, kept up to date as rows come and go. Only key columns: a column that `Set` writes can change under an arrangement, which would then keep the row under the value it had.</summary>
     public Arrangement Arrange(params int[] cols)
@@ -380,7 +395,7 @@ public sealed class Table
         return a;
     }
 
-    public long Footprint() => wideCols.Sum(c => c?.Footprint ?? 0) + narrowCols.Sum(c => c?.Footprint ?? 0) + weight.Footprint + freeRows.Footprint + index.Length * 4L + arrangements.Sum(a => a.Footprint());
+    public long Footprint() => wideCols.Sum(c => c?.Footprint ?? 0) + narrowCols.Sum(c => c?.Footprint ?? 0) + freeRows.Footprint + index.Length * 4L + arrangements.Sum(a => a.Footprint());
 }
 
 /// <summary>The rows of a table grouped by the values of some of its columns: an open-addressing index from a value to the first row with it, and the rows with one value chained through a next and a previous row number.</summary>

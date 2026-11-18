@@ -935,6 +935,28 @@ Theory. A binding is a fact the catalog already holds as codes: a domain, the ke
 - The pending list holds bindings as values (64 B each instead of an 8-byte reference), so it is let go after a step that grew it past 4,096. Measured at 10^5: keeping it costs 3.6 MB live (36 B per master node) and saves 48 MB of allocation (7,518 MB instead of 7,566 MB); letting it go past 65,536 never happens on these captures.
 - Before is the working-arrays section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
 
+### Efficiency stage 2, tables: a column of 8 bytes takes 4 per entry until a value needs 8 (#115, 2026-11-18)
+At 10^5 the row sets of `arg_max` in the groups held 938,030 rows in 73.5 MB, 78 B per row, and the key rows of the groups 91.9 MB (footprints from a temporary diagnostic of the group operators, not in the patch). The values in them are mostly small integers: the ranks that order an `arg_max`, the counts and severities it keeps, the counts and sums of the key rows. Every Integer took an 8-byte column, and every row an 8-byte weight, mostly 1.
+
+Theory. A table column that may need 8 bytes, and the weight of a row, take 4 bytes per entry until a value needs 8; then the column is copied to 8 bytes once and stays so. A column of 4 bytes (codes) still refuses a value that needs 8. Nothing a caller reads changes: a read returns the same 64-bit value, the index hashes values, not their storage, and a snapshot writes the column in the form it has. This holds for every table (group key rows and row sets, multisets, joins, traverse, sink tables, lineage). A column of instants or decimal halves takes the copy at its first value. Seal format 17 to 18.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 226 / 217 MB | 1,275 / 1,207 MB |
+| allocated per input record | 9.63 / 9.46 KB | 9.35 / 9.45 KB |
+| groups per master node | 1,739 / 1,470 B | 1,375 / 1,161 B |
+| windowed groups per master node | 1,220 / 982 B | 760 / 617 B |
+| joins per master node | 1,811 / 1,700 B | 1,296 / 1,208 B |
+| traverse per master node | 1,057 / 1,011 B | 767 / 724 B |
+| sinks (contributions, lineage, ones, ends) per master node | 1,500 / 1,292 B | 1,190 / 1,026 B |
+| row sets of the groups | 9.2 / 7.5 MB | 73.5 / 59.6 MB |
+| key rows of the groups | 13.5 / 9.9 MB | 91.9 / 68.4 MB |
+
+- Example: `healthTree/rolledAll`, `arg_max(rank, healthy, degraded, unhealthy, monitored, severity) by key`, 135,051 rows at 10^5: 104 B per row before, 72 B now. `master/sent_3` (windowed, ordered by an instant): 74 B to 69 B.
+- Allocation at 10^5 is 1 % higher, at 10^4 2 % lower; not traced further (a column copied to 8 bytes allocates its 8-byte segments once). GC pause at 10^5 0.92 / 0.91 s; peak resident set 2,187 / 2,053 MB.
+- Before is the segments patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
+- The row sets' remaining cost is their structure, not their values: per row a whole-row index entry (8 to 16 B), the arrangement by key (8 B and its index), the key slot and the bits of which values are present. Not changed here.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

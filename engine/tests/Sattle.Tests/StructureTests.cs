@@ -75,10 +75,10 @@ public class StructureTests
         Assert.True(values.Footprint() < 200_000, $"{values.Footprint():N0} bytes kept when nothing is held");
     }
 
-    /// <summary>Two key columns (one 4 bytes, one 8) and two value columns; small key spaces so rows come and go and their numbers are reused. An arrangement by the first key column, made before the rows and made after them, gives the rows of each value.</summary>
+    /// <summary>Two key columns (one 4 bytes, one 8) and two value columns; small key spaces so rows come and go and their numbers are reused. An arrangement by the first key column, made before the rows and made after them, gives the rows of each value. With `large`, from the middle on the 8-byte columns get values that need 8 bytes, so a column held in 4 bytes per entry is copied to 8 while it has rows.</summary>
     [Theory]
-    [InlineData(1, 4, 8)] [InlineData(2, 8, 4)] [InlineData(3, 8, 8)] [InlineData(4, 4, 4)]
-    public void A_table_keeps_the_weights_of_a_z_set_and_removes_a_row_at_weight_zero(int seed, int keyWidth, int valueWidth)
+    [InlineData(1, 4, 8, false)] [InlineData(2, 8, 4, false)] [InlineData(3, 8, 8, false)] [InlineData(4, 4, 4, false)] [InlineData(5, 4, 8, true)] [InlineData(6, 8, 8, true)]
+    public void A_table_keeps_the_weights_of_a_z_set_and_removes_a_row_at_weight_zero(int seed, int keyWidth, int valueWidth, bool large)
     {
         var rnd = new Random(seed);
         var t = new Table([keyWidth, 8, valueWidth, 8], keyColumns: 2);
@@ -86,7 +86,8 @@ public class StructureTests
         var model = new Dictionary<(long, long), (long W, long V)>();
         for (var step = 0; step < 50_000; step++)
         {
-            var key = (rnd.Next(-40, 40), rnd.NextInt64(-30, 30));
+            var wide = large && step >= 25_000;
+            var key = (rnd.Next(-40, 40), rnd.NextInt64(-30, 30) << (wide && rnd.Next(2) == 0 ? 40 : 0));
             var w = rnd.Next(-2, 3);
             var row = t.Add([key.Item1, key.Item2], w);
             var before = model.GetValueOrDefault(key);
@@ -95,7 +96,7 @@ public class StructureTests
             Assert.True(row >= 0);
             if (before.W == 0) { Assert.Equal(0, t.Get(row, 2)); before.V = 0; }                // a new row, possibly a reused number, starts with empty values
             var v = before.V;
-            if (rnd.Next(3) == 0) { v = rnd.Next(-1000, 1000); t.Set(row, 2, v); }
+            if (rnd.Next(3) == 0) { v = wide && valueWidth == 8 ? rnd.NextInt64(long.MinValue, long.MaxValue) : rnd.Next(-1000, 1000); t.Set(row, 2, v); }
             model[key] = (now, v);
         }
         Assert.Equal(model.Count, t.Count);
