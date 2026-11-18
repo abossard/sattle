@@ -1,4 +1,5 @@
 """Generate local voice, captions, teaching diagrams' timings and the HTML film."""
+import argparse
 import html
 import json
 import math
@@ -9,9 +10,6 @@ import textwrap
 import wave
 from pathlib import Path
 
-import numpy as np
-from kokoro_onnx import Kokoro
-from kokoro_onnx.config import MAX_PHONEME_LENGTH
 
 HERE = Path(__file__).resolve().parent
 FPS, RATE = 24, 24000
@@ -19,6 +17,12 @@ FPS, RATE = 24, 24000
 
 def run(*args):
     subprocess.run(args, check=True)
+
+
+def offline_captions(vtt, version=""):
+    # A file-opened page can load a sibling script even when the browser blocks fetch().
+    # Keep the payload on its own script element so a later edition can load in the same tab.
+    return "document.currentScript.sattleFilm = "+json.dumps({"version":version,"captions":vtt})+";\n"
 
 
 def clock(seconds):
@@ -32,6 +36,7 @@ PRONUNCIATIONS = {
     "pg-shop": "P G shop", "offers-cache": "offers cache",
     "10:06:30": "thirty seconds past ten oh six", "10:11": "ten eleven",
     "10:14": "ten fourteen", "10:15": "ten fifteen",
+    "Dynamics 365": "Dynamics three sixty five",
 }
 
 
@@ -54,6 +59,9 @@ def caption_phrases(passage):
 
 def narrate(narrator, style, passage):
     """Read a whole diagram beat. Use the model's phoneme durations for captions."""
+    import numpy as np
+    from kokoro_onnx.config import MAX_PHONEME_LENGTH
+
     phrases = list(caption_phrases(passage))
     tokens, offsets = [0], []
     for phrase in phrases:
@@ -89,7 +97,9 @@ def narrate(narrator, style, passage):
     return pcm, cues
 
 
-def generate_voice(lesson, temp):
+def generate_voice(lesson, temp, voice, documents):
+    from kokoro_onnx import Kokoro
+
     directory = HERE / ".narrator"
     narrator = Kokoro(str(directory/"kokoro-v1.0.onnx"), str(directory/"voices-v1.0.bin"))
     style = narrator.get_voice_style("af_heart")
@@ -118,45 +128,83 @@ def generate_voice(lesson, temp):
     with wave.open(str(temp/"voice.wav"),"wb") as out:
         out.setparams((1,2,RATE,0,"NONE","not compressed"))
         out.writeframes(audio)
-    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-af","loudnorm=I=-16:TP=-1.5:LRA=9","-ar",str(RATE),"-c:a","aac","-b:a","112k",str(HERE/"assets/voice.m4a"))
+    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-af","loudnorm=I=-16:TP=-1.5:LRA=9","-ar",str(RATE),"-c:a","aac","-b:a","112k",str(voice))
     vtt="\n".join(captions)
-    (HERE.parent/"captions.vtt").write_text(vtt)
+    (documents/"captions.vtt").write_text(vtt)
     # Keep the captions usable in browsers which restrict file:// text tracks.
-    (HERE.parent/"captions-local.js").write_text("const localCaptions = "+json.dumps(vtt)+";\n")
+    (documents/"captions-local.js").write_text(offline_captions(vtt))
     return times
 
 
-def composition(story):
+def composition(story, retail):
+    title = "One order through the whole shop" if retail else "How the shop gets its health model"
+    case = "Order O-104 · Retail architecture" if retail else "pg-shop on Azure"
+    shared = "../film/" if retail else ""
+    voice = "voice.m4a" if retail else "assets/voice.m4a"
+    if retail:
+        drawings = ["case.js", "projection.js", "live-scenes.js", "work-scenes.js", "commerce-scene.js", "projection-scene.js", shared+"figure.js", "chapters.js"]
+    else:
+        drawings = ["master-data.js", "model-scenes.js", "change-scenes.js", "review-scenes.js", "figure.js", "shop-map.js"]
+    scripts = "".join(f'<script src="{src}"></script>' for src in [shared+"vendor/gsap.min.js", "terms.js", *drawings])
+    theme = ""
+    if retail:
+        # Use each drawing's paper and ink in the surrounding chapter header too.
+        theme = """for (const scene of document.querySelectorAll('.shot')) {
+  const chapter = ShopMap.chapters[scene.id];
+  scene.style.setProperty('--page', chapter.tint);
+  if (chapter.captionInk) {
+    scene.style.setProperty('--type', '#f8faf2');
+    scene.style.setProperty('--secondary', chapter.captionInk);
+    scene.style.setProperty('--hairline', '#74909d');
+    scene.style.setProperty('--spot', '#a7e6d9');
+  }
+}"""
     shots=[]
     for i, scene in enumerate(story):
-        for b, beat in enumerate(scene["beats"]):
-            start, end = beat["start"],beat["end"]
-            shots.append(f'''<section class="clip shot" id="{scene['id']}-{b}" data-start="{start:.5f}" data-duration="{end-start:.5f}" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">{html.escape(scene['chapter'])}</span><span>{i+1:02d} / {len(story):02d}</span></header>
-<h1>{html.escape(beat['focus'])}</h1>
-<div class="story-board" data-topic="{scene['id']}" data-beat="{b}"></div>
+        beats=scene["beats"]
+        start, end=beats[0]["start"], beats[-1]["end"]
+        offsets=",".join(str(b["end"]-start) for b in beats)
+        shots.append(f'''<section class="clip shot" id="{scene['id']}" data-start="{start:.5f}" data-duration="{end-start:.5f}" data-track-index="0" data-beat-ends="{offsets}">
+<header><b>Sattle</b><span>{case}</span><span class="chapter">{html.escape(scene['chapter'])}</span><span>{i+1:02d} / {len(story):02d}</span></header>
+<h1>{html.escape(scene['title'])}</h1>
+<div class="story-board" data-topic="{scene['id']}"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>''')
-    demo=next(s for s in story if s["id"]=="inspect")["beats"][0]
-    shots.append(f'<video class="clip recording" id="replay-recording" muted playsinline src="assets/canvas-replay.mp4" data-start="{demo["start"]:.5f}" data-duration="7" data-track-index="2"></video>')
     total=story[-1]["beats"][-1]["end"]
-    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><title>How the shop gets its health model</title>
-<script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
-<body><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="{total:.5f}">
+    return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>
+{scripts}<link rel="stylesheet" href="{shared}style.css"></head>
+<body class="{'retail' if retail else 'replay'}"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="{total:.5f}">
 {chr(10).join(shots)}
-<audio id="voice" class="clip" data-start="0" data-duration="{total:.5f}" data-track-index="3" src="assets/voice.m4a"></audio></main><script>{(HERE/"motion.js").read_text()}</script></body></html>'''
+<audio id="voice" class="clip" data-start="0" data-duration="{total:.5f}" data-track-index="3" src="{voice}"></audio></main><script>{theme}\n{(HERE/"motion.js").read_text()}</script></body></html>'''
 
 
 def main():
-    lesson=json.loads((HERE/"lesson.json").read_text())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--retail", action="store_true", help="build the illustrated Dynamics 365 retail case")
+    parser.add_argument("--compose-only", action="store_true", help="refresh the film markup from the existing recording")
+    args = parser.parse_args()
+    project = HERE.parent/"foundry" if args.retail else HERE
+    documents = project if args.retail else HERE.parent
+    voice = project/"voice.m4a" if args.retail else HERE/"assets/voice.m4a"
+    lesson = json.loads((project/"lesson.json").read_text())
+    if args.compose_only:
+        encoded = (documents/"story-data.js").read_text().removeprefix("const story = ").strip().removesuffix(";")
+        story = json.loads(encoded)
+        recorded = [{**{key:chapter[key] for key in ("id","chapter","title")},
+                     "cues":[[beat["focus"],beat["text"]] for beat in chapter["beats"]]} for chapter in story]
+        if recorded != lesson:
+            parser.error("The lesson has new text. Record the voice before refreshing the markup.")
+        (project/"index.html").write_text(composition(story, args.retail))
+        return
     with tempfile.TemporaryDirectory() as temp:
-        story=generate_voice(lesson,Path(temp))
-    (HERE/"index.html").write_text(composition(story))
-    (HERE.parent/"story-data.js").write_text("const story = "+json.dumps(story,indent=2,ensure_ascii=False)+";\n")
-    paragraphs=["# How the shop gets its health model","Transcript of the narrated Sattle field guide."]
+        story = generate_voice(lesson, Path(temp), voice, documents)
+    (project/"index.html").write_text(composition(story, args.retail))
+    (documents/"story-data.js").write_text("const story = "+json.dumps(story,indent=2,ensure_ascii=False)+";\n")
+    title = "One order through the whole shop" if args.retail else "How the shop gets its health model"
+    paragraphs = ["# "+title, "Transcript of the narrated Sattle field guide."]
     for scene in story:
         paragraphs.append(f"## {clock(scene['beats'][0]['start'])[3:8]} · {scene['chapter']}")
         paragraphs.extend(b["text"] for b in scene["beats"])
-    (HERE.parent/"transcript.md").write_text("\n\n".join(paragraphs)+"\n")
+    (documents/"transcript.md").write_text("\n\n".join(paragraphs)+"\n")
     print(f"{len(story)} chapters, {story[-1]['beats'][-1]['end']:.2f} seconds")
 
 

@@ -1,0 +1,641 @@
+WEBVTT
+
+00:00:00.700 --> 00:00:03.775
+A shopper orders eighty dollars of
+merchandise.
+
+00:00:03.775 --> 00:00:07.700
+The parcel arrives late, and she sends
+back two items.
+
+00:00:07.700 --> 00:00:13.050
+The shop follows Microsoft’s Dynamics 365
+Commerce architecture.
+
+00:00:13.050 --> 00:00:15.875
+Order one oh four and the Foundry service
+that helps
+
+00:00:15.875 --> 00:00:19.000
+with her return are examples we’ve added
+to it.
+
+00:00:20.558 --> 00:00:22.583
+At checkout, the storefront sends the
+order
+
+00:00:22.583 --> 00:00:26.133
+to the Commerce Scale Unit, the engine
+behind the store.
+
+00:00:26.133 --> 00:00:28.058
+Pull back to the whole shop.
+
+00:00:28.058 --> 00:00:33.008
+This version of its master graph has
+forty-six entities and sixty-eight links.
+
+00:00:33.008 --> 00:00:35.058
+Each link says something specific,
+
+00:00:35.058 --> 00:00:38.608
+such as who ships a parcel or which system
+looks up an order.
+
+00:00:40.133 --> 00:00:45.333
+A packing list and a financial report can
+both refer to order one oh four.
+
+00:00:45.333 --> 00:00:49.333
+A person looking after the whole shop
+needs a different view again.
+
+00:00:49.333 --> 00:00:51.883
+Which parts of the business depend on each
+other,
+
+00:00:51.883 --> 00:00:54.583
+and what would explain a broken link
+between them?
+
+00:00:56.508 --> 00:00:59.183
+The warehouse hands parcels to a carrier.
+
+00:00:59.183 --> 00:01:01.758
+The refund worker reads a case record.
+
+00:01:01.758 --> 00:01:04.433
+Both links belong to the same master
+graph,
+
+00:01:04.433 --> 00:01:07.908
+along with the services and records for
+the rest of the shop.
+
+00:01:07.908 --> 00:01:10.733
+Their verbs tell us what each connection
+means.
+
+00:01:12.258 --> 00:01:16.533
+A projection can group the whole shop into
+fourteen business activities.
+
+00:01:16.533 --> 00:01:19.058
+The refund worker belongs to Payout.
+
+00:01:19.058 --> 00:01:23.183
+The case store and the approval record
+belong to Returns Intake.
+
+00:01:23.183 --> 00:01:26.583
+The worker reads the store and requires
+the approval.
+
+00:01:26.583 --> 00:01:28.958
+Both links carry up to the business view.
+
+00:01:28.958 --> 00:01:32.008
+The white paper calls these levels of
+abstraction.
+
+00:01:33.558 --> 00:01:36.958
+In a tree view, Returns Intake appears
+under Payout
+
+00:01:36.958 --> 00:01:38.833
+and under Customer Support.
+
+00:01:38.833 --> 00:01:41.608
+Both entries point to one part of the
+shop.
+
+00:01:41.608 --> 00:01:45.508
+Under Payout the evidence still says which
+record the worker reads
+
+00:01:45.508 --> 00:01:47.083
+and which it requires.
+
+00:01:47.083 --> 00:01:50.058
+Only the approval link declares a
+requirement.
+
+00:01:50.058 --> 00:01:53.658
+A read alone cannot tell us that a failure
+will block payment.
+
+00:01:55.592 --> 00:01:59.092
+Checkout records order one oh four and
+reserves the items
+
+00:01:59.092 --> 00:02:02.092
+so another shopper can’t buy the same
+stock.
+
+00:02:02.092 --> 00:02:08.392
+Dynamics 365 Supply Chain Management
+covers the warehouse and transportation.
+
+00:02:08.392 --> 00:02:10.717
+The packer uses the order lines.
+
+00:02:10.717 --> 00:02:12.842
+The carrier assigns a tracking number that
+
+00:02:12.842 --> 00:02:15.542
+ties delivery updates back to the order.
+
+00:02:17.075 --> 00:02:20.350
+A scan from the carrier changes the
+delivery date.
+
+00:02:20.350 --> 00:02:23.200
+That one event can serve several purposes.
+
+00:02:23.200 --> 00:02:26.350
+Support wants to answer a question about
+the parcel.
+
+00:02:26.350 --> 00:02:30.475
+Marketing may send a message, depending on
+the shopper’s consent.
+
+00:02:30.475 --> 00:02:33.900
+Neither process controls the truck
+carrying her order.
+
+00:02:35.450 --> 00:02:40.250
+At the end of this order, analytics can
+join the sale, delivery and refund.
+
+00:02:40.250 --> 00:02:42.800
+The original sale was eighty dollars.
+
+00:02:42.800 --> 00:02:45.250
+The shopper sends back two items.
+
+00:02:45.250 --> 00:02:48.025
+Finance needs to know the value of those
+items
+
+00:02:48.025 --> 00:02:50.875
+and whether the money has gone back to the
+customer.
+
+00:02:50.875 --> 00:02:53.250
+The warehouse can answer the first part.
+
+00:02:55.200 --> 00:02:59.550
+Return one oh four points back to two
+lines on the original order.
+
+00:02:59.550 --> 00:03:03.150
+The warehouse scans both items at the
+receiving dock.
+
+00:03:03.150 --> 00:03:05.150
+That proves both arrived.
+
+00:03:05.150 --> 00:03:08.525
+The boxes still need inspection before the
+shop knows what
+
+00:03:08.525 --> 00:03:11.750
+to do with the goods or how much credit to
+approve.
+
+00:03:13.258 --> 00:03:16.483
+The eighteen-dollar item can go back on
+the shelf.
+
+00:03:16.483 --> 00:03:20.558
+The twelve-dollar item arrived damaged and
+goes to scrap.
+
+00:03:20.558 --> 00:03:24.583
+Dynamics calls the decision for each item
+its disposition.
+
+00:03:24.583 --> 00:03:27.333
+In this case both decisions include a
+credit,
+
+00:03:27.333 --> 00:03:29.958
+although only one item can be sold again.
+
+00:03:31.467 --> 00:03:34.442
+The stock count gains one sellable item.
+
+00:03:34.442 --> 00:03:37.392
+The warehouse records one item as scrap.
+
+00:03:37.392 --> 00:03:41.042
+Finance now has two approved lines worth
+thirty dollars.
+
+00:03:41.042 --> 00:03:43.367
+The inspection accounts for the goods.
+
+00:03:43.367 --> 00:03:45.892
+A receipt from the payment processor will
+show
+
+00:03:45.892 --> 00:03:47.967
+when the money went back to the shopper.
+
+00:03:49.883 --> 00:03:54.208
+The carrier’s delayed scan, D seven,
+carries a tracking number.
+
+00:03:54.208 --> 00:03:56.908
+That number points back to order one oh
+four.
+
+00:03:56.908 --> 00:04:01.683
+The shop’s customer records system
+attaches the update to one support case.
+
+00:04:01.683 --> 00:04:05.833
+An agent can see what happened to the
+parcel as soon as that case updates.
+
+00:04:07.367 --> 00:04:11.792
+An order event called E eighty-one arrives
+twice after a retry.
+
+00:04:11.792 --> 00:04:13.817
+In Microsoft’s reference design,
+
+00:04:13.817 --> 00:04:17.317
+an Azure Function checks its ID in Cosmos
+DB
+
+00:04:17.317 --> 00:04:20.117
+and puts one message on Service Bus.
+
+00:04:20.117 --> 00:04:23.642
+Logic Apps starts one Customer Insights
+journey.
+
+00:04:23.642 --> 00:04:25.767
+The shopper opted out of promotions,
+
+00:04:25.767 --> 00:04:28.392
+so the journey sends her no marketing
+email.
+
+00:04:29.950 --> 00:04:31.775
+At the first reporting cutoff,
+
+00:04:31.775 --> 00:04:35.600
+finance has an eighty-dollar sale and no
+settled refund.
+
+00:04:35.600 --> 00:04:38.025
+The support case is already visible.
+
+00:04:38.025 --> 00:04:41.250
+Later the payment receipt arrives for
+thirty dollars.
+
+00:04:41.250 --> 00:04:44.750
+Finance now reports fifty dollars in
+merchandise sales,
+
+00:04:44.750 --> 00:04:47.000
+before shipping or tax.
+
+00:04:47.000 --> 00:04:50.425
+Each answer reflects the evidence
+available at that time.
+
+00:04:52.342 --> 00:04:53.967
+The parcel has arrived.
+
+00:04:53.967 --> 00:04:56.517
+The customer writes, “My order came late.
+
+00:04:56.517 --> 00:04:58.192
+I sent two items back.
+
+00:04:58.192 --> 00:05:03.067
+Where’s my refund?” The shop has opened
+return one oh four for her order.
+
+00:05:03.067 --> 00:05:06.767
+Its support agent runs in Microsoft
+Foundry Agent Service
+
+00:05:06.767 --> 00:05:10.742
+with instructions, a deployed model and an
+order lookup tool.
+
+00:05:12.283 --> 00:05:16.383
+The model asks the order lookup tool about
+order one oh four.
+
+00:05:16.383 --> 00:05:21.133
+The request has a function name and an
+argument, the order identifier.
+
+00:05:21.133 --> 00:05:25.733
+The shop’s application runs the function
+against the merchant’s order system.
+
+00:05:25.733 --> 00:05:29.583
+That system can tell whether the warehouse
+has received the return.
+
+00:05:31.092 --> 00:05:32.642
+The order system replies,
+
+00:05:32.642 --> 00:05:37.142
+“Return received.” The agent can say,
+“We’ve received your items.
+
+00:05:37.142 --> 00:05:40.192
+Your refund is still pending.” The
+warehouse can
+
+00:05:40.192 --> 00:05:43.467
+inspect a return before the shop approves
+a credit.
+
+00:05:43.467 --> 00:05:46.217
+The record supports an answer about
+receipt.
+
+00:05:46.217 --> 00:05:49.617
+A payment confirmation would support an
+answer about money.
+
+00:05:51.550 --> 00:05:56.050
+The customer attaches an itemized receipt
+to the same conversation.
+
+00:05:56.050 --> 00:05:58.375
+It lists the two items she sent back,
+
+00:05:58.375 --> 00:06:01.625
+one at eighteen dollars and one at twelve.
+
+00:06:01.625 --> 00:06:05.150
+The shop supplies the receipt to the
+agent’s analysis tool.
+
+00:06:05.150 --> 00:06:07.975
+The return number ties that file to her
+case.
+
+00:06:09.533 --> 00:06:13.183
+Foundry’s Code Interpreter runs Python in
+a sandbox,
+
+00:06:13.183 --> 00:06:15.708
+an isolated place to run code.
+
+00:06:15.708 --> 00:06:19.458
+It can read the attached file and add
+those two amounts.
+
+00:06:19.458 --> 00:06:22.008
+Thirty dollars is the receipt subtotal.
+
+00:06:22.008 --> 00:06:25.808
+A later step decides whether the case
+qualifies for a refund.
+
+00:06:27.342 --> 00:06:31.442
+The application saves the calculation in
+Azure Blob Storage
+
+00:06:31.442 --> 00:06:33.392
+and adds a link to the case.
+
+00:06:33.392 --> 00:06:37.417
+A reviewer can open the result after the
+sandbox session ends.
+
+00:06:37.417 --> 00:06:39.192
+The graph can distinguish where the work
+
+00:06:39.192 --> 00:06:41.617
+happened from where its evidence remains.
+
+00:06:43.550 --> 00:06:45.450
+The conversation ends.
+
+00:06:45.450 --> 00:06:50.125
+A queue holds a message with the case
+number so work can continue later.
+
+00:06:50.125 --> 00:06:53.550
+The live chat can finish even while
+another service is waiting
+
+00:06:53.550 --> 00:06:55.025
+to pick up the return.
+
+00:06:56.575 --> 00:06:58.775
+A review agent picks up the case.
+
+00:06:58.775 --> 00:07:00.900
+It reads the saved calculation
+
+00:07:00.900 --> 00:07:04.225
+and drafts a summary of the customer’s
+explanation.
+
+00:07:04.225 --> 00:07:08.800
+A model helps with this step because the
+wording varies from case to case.
+
+00:07:08.800 --> 00:07:11.950
+Its summary can help a reviewer decide
+what to check.
+
+00:07:13.492 --> 00:07:17.492
+Once the case has approval, the payout
+worker sends the approved amount
+
+00:07:17.492 --> 00:07:20.317
+and refund ID to the payment processor.
+
+00:07:20.317 --> 00:07:22.567
+Later, a scheduled job compares the
+
+00:07:22.567 --> 00:07:25.367
+processor’s receipts with the case
+records.
+
+00:07:25.367 --> 00:07:28.142
+Both jobs follow fixed procedures.
+
+00:07:28.142 --> 00:07:30.717
+Neither needs the model that wrote the
+summary.
+
+00:07:32.658 --> 00:07:34.683
+Suppose the summary is late.
+
+00:07:34.683 --> 00:07:37.383
+A reviewer can still open the original
+receipt,
+
+00:07:37.383 --> 00:07:39.633
+so the summary is optional here.
+
+00:07:39.633 --> 00:07:42.833
+An amber warning marks the delay in case
+review.
+
+00:07:42.833 --> 00:07:45.283
+An approved payout can still go ahead.
+
+00:07:46.850 --> 00:07:50.675
+Now the payout worker’s calls to the
+payment processor time out.
+
+00:07:50.675 --> 00:07:55.550
+Sending money requires a successful call,
+so the payout rule turns red.
+
+00:07:55.550 --> 00:07:59.200
+The live order lookup still succeeds and
+stays green.
+
+00:07:59.200 --> 00:08:03.600
+One customer can get an accurate status
+update while her refund is stuck.
+
+00:08:05.158 --> 00:08:08.658
+Does the timeout prove that the processor
+itself is down?
+
+00:08:08.658 --> 00:08:10.983
+The worker recorded a failed call.
+
+00:08:10.983 --> 00:08:14.933
+It has no direct readings from inside the
+external processor.
+
+00:08:14.933 --> 00:08:17.933
+The health model can mark the payout path
+Unhealthy
+
+00:08:17.933 --> 00:08:20.733
+and leave the processor’s own health
+Unknown.
+
+00:08:22.633 --> 00:08:26.908
+The shop starts saving return attachments
+at a new storage address.
+
+00:08:26.908 --> 00:08:29.833
+Its configuration names the destination.
+
+00:08:29.833 --> 00:08:33.108
+That setting supplies evidence for a new
+dependency,
+
+00:08:33.108 --> 00:08:37.108
+even before the Azure inventory contains a
+matching account.
+
+00:08:37.108 --> 00:08:40.283
+Warehouse and carrier records have their
+own paths.
+
+00:08:41.875 --> 00:08:45.125
+Azure then reports a storage account at
+that address.
+
+00:08:45.125 --> 00:08:48.225
+A query can match the setting to the
+inventory record
+
+00:08:48.225 --> 00:08:50.400
+and connect the app to the account.
+
+00:08:50.400 --> 00:08:54.200
+A separate reading can show whether a file
+write succeeds.
+
+00:08:54.200 --> 00:08:57.825
+Finding a resource and measuring it answer
+different questions.
+
+00:08:59.367 --> 00:09:01.942
+The model needs words for what changed.
+
+00:09:01.942 --> 00:09:05.167
+Its ontology defines kinds of things and
+links,
+
+00:09:05.167 --> 00:09:08.717
+such as a storage account and a service
+that writes to it.
+
+00:09:08.717 --> 00:09:12.892
+People can maintain that vocabulary and
+refine the health rules.
+
+00:09:12.892 --> 00:09:17.067
+A receipt write might be required while a
+summary remains optional.
+
+00:09:19.008 --> 00:09:23.208
+The old view links the returns app to its
+original storage account.
+
+00:09:23.208 --> 00:09:25.708
+The new view points to the replacement.
+
+00:09:25.708 --> 00:09:27.808
+Each version is a revision.
+
+00:09:27.808 --> 00:09:30.258
+A patch lists the changes between them,
+
+00:09:30.258 --> 00:09:34.458
+so a past investigation can use the map
+that applied at the time.
+
+00:09:35.967 --> 00:09:38.817
+The payout warning has a trail of its own.
+
+00:09:38.817 --> 00:09:40.967
+The worker recorded the timeout.
+
+00:09:40.967 --> 00:09:45.042
+The dependency says that a payout needs a
+successful payment call.
+
+00:09:45.042 --> 00:09:47.392
+The rule brings those facts together.
+
+00:09:47.392 --> 00:09:51.867
+Tracing a conclusion back through the rule
+to its evidence is called lineage.
+
+00:09:53.433 --> 00:09:56.033
+Order one oh four is an illustration.
+
+00:09:56.033 --> 00:10:00.333
+In the companion shop there’s a recording
+the Sattle engine can replay.
+
+00:10:00.333 --> 00:10:03.983
+At 10:11, the database meter drops to
+zero.
+
+00:10:03.983 --> 00:10:07.058
+Revision sixteen shows which callers turn
+red.
+
+00:10:07.058 --> 00:10:09.183
+Two good minutes clear the alarm.
+
+00:10:09.183 --> 00:10:13.008
+The recorded inputs and rules let Sattle
+reproduce the result.

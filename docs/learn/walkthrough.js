@@ -1,42 +1,14 @@
 "use strict";
-
-const $ = (selector) => document.querySelector(selector);
-const root = "../../";
 const lessons = {
-  origins: ["The whole shop", "Start at the web service and follow its calls to the database. Pick a source below the map to see what it tells Sattle about pg-shop.", observations, [["Capture format","lab/CAPTURE-FORMAT.md"],["Azure lab","lab/README.md"],["Graph space","engine/definitions/acme.space.sattle"]]],
-  rules: ["What you contribute", "The replay comes with a database alarm. Try changing how many good readings it takes for your shop to turn green again.", author, [["Scope and bindings","engine/definitions/acme.space.sattle"],["Shipped signal rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["Health calculation","engine/definitions/acme.workload.workloadHealth.kql"]]],
-  layers: ["The theory", "Azure sends two reports about pg-shop. Which field tells you they describe the same server?", identity, [["Paper · Identity","paper/ch01-values-and-identity.md"],["Paper · Ontologies","paper/ch02-ontologies-as-type-graphs.md"],["Paper · Projections","paper/ch05-projection-language.md"]]],
-  incident: ["The pg-shop incident", "Drag the clock through the recorded outage. The database starts answering at 10:14. Watch when the alarm clears.", incident, [["Database readings","engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson"],["Paper · Measurements","paper/ch07-telemetry-plane.md"]]],
-  dependency: ["Add a dependency", "Compare the gateway at the same moment in two runs. In the second run, the API also needs the cache.", compareChange, [["Reproduce the experiment","docs/learn/replay_change.py"],["How dependencies are matched","engine/definitions/acme.workload.workloadStructure.kql"]]],
-  azure: ["Change Azure inventory", "The API already has the address for offers-cache. Add the Azure inventory record and see what the map can tell you about the new cache.", compareAzure, [["Reproduce both inventory cases","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
-  replay: ["Change and replay", "Move between versions 15 and 18 of the saved shop map. Which services change when the database goes down?", revisions, [["Exported workload patches","canvas/public/demo/estate/workload.patches.ndjson"],["Paper · Incremental updates","paper/ch06-semantics-and-incrementality.md"],["Revisions","paper/ch03-graphs-and-revisions.md"]]],
-  inspect: ["Check the evidence", "Open the workload tree to find pg-shop. Then use the other two Canvas views to find the query behind its health.", inspectProject, [["Engine","engine/README.md"],["Canvas","canvas/README.md"],["Paper · Evidence and lineage","paper/ch09-evolution-evidence-provenance.md"],["Paper · Evaluation","paper/ch14-evaluation.md"]]]
+  origins: ["The master graph", "One request travels from web to the API and on to pg-shop. The master graph shows what the sources saw across the estate. The workload view picks out what the shop depends on.", observations, [["Full master graph snapshot","canvas/public/demo/estate/master.final.snapshot.json"],["Capture format","lab/CAPTURE-FORMAT.md"],["Azure lab","lab/README.md"],["Graph space","engine/definitions/acme.space.sattle"]]],
+  rules: ["How rules shape health", "The database answers again at 10:14. The alarm clears at 10:15. That minute of waiting comes from a rule the team can change.", author, [["Scope and bindings","engine/definitions/acme.space.sattle"],["Shipped signal rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["Health calculation","engine/definitions/acme.workload.workloadHealth.kql"]]],
+  layers: ["Identity and projection", "Three web pods call two API pods. Those calls support a single service link. A shared resource ID also lets two Azure records describe the same server.", identity, [["Workload ontology","engine/definitions/acme.workload.sattle"],["Paper · Identity","paper/ch01-values-and-identity.md"],["Paper · Ontologies","paper/ch02-ontologies-as-type-graphs.md"],["Paper · Projections","paper/ch05-projection-language.md"]]],
+  incident: ["The pg-shop incident", "Read across a row to follow one service through time. Read down a minute to see which services share the outage.", incident, [["Database readings","engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson"],["Paper · Measurements","paper/ch07-telemetry-plane.md"]]],
+  dependency: ["A new dependency", "Both runs use the same cache readings. In the second, one new dependency gives the cache warning a path to the gateway.", compareChange, [["Reproduce the experiment","docs/learn/replay_change.py"],["How dependencies are matched","engine/definitions/acme.workload.workloadStructure.kql"]]],
+  azure: ["A change on Azure", "The API names a host before Azure lists the cache. Matching the two records resolves its identity. Its health is still an open question.", compareAzure, [["Reproduce both inventory cases","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
+  replay: ["Rewind a revision", "Move between versions 15 and 18 of the saved shop map. Which services change when the database goes down?", revisions, [["Exported workload patches","canvas/public/demo/estate/workload.patches.ndjson"],["Paper · Incremental updates","paper/ch06-semantics-and-incrementality.md"],["Revisions","paper/ch03-graphs-and-revisions.md"]]],
+  inspect: ["Trace an alarm", "Open the workload tree to find pg-shop. Then use the other two Canvas views to find the query behind its health.", inspectProject, [["Engine","engine/README.md"],["Canvas","canvas/README.md"],["Paper · Evidence and lineage","paper/ch09-evolution-evidence-provenance.md"],["Paper · Evaluation","paper/ch14-evaluation.md"]]]
 };
-const chapters=story.map(scene=>{
-  const [nav,intro,activity,sources]=lessons[scene.id];
-  return {...scene,nav,intro,activity,sources};
-});
-
-function plate(name, context, content) {
-  return '<div class="plate"><div class="plate-inner"><div class="plate-top"><span>'+name+'</span><span class="chip">'+context+'</span></div>'+content+'</div></div>';
-}
-function choices(labels, onChange, container, initial=0) {
-  const buttons = labels.map((label,index) => {
-    const button = document.createElement("button");
-    button.type = "button"; button.className = "pick"; button.textContent = label;
-    button.addEventListener("click", () => select(index));
-    container.append(button); return button;
-  });
-  function select(index) {
-    buttons.forEach((button,i) => button.setAttribute("aria-pressed", String(i===index)));
-    onChange(index);
-  }
-  select(initial);
-}
-function radioArea() { return '<div class="options" id="choices"></div>'; }
-function setActivity(html) { $("#activity").innerHTML = html; }
-function link(label, file) { return '<a href="'+root+file+'">'+label+'</a>'; }
-
 function incident() {
   const samples = replay.readings.filter(s => s.minute >= "10:08" && s.minute <= "10:17");
   const rule = replay.rule;
@@ -81,7 +53,7 @@ function observations() {
 }
 
 function identity() {
-  setActivity(plate("Compare two records","Azure",'<dl><dt>Inventory</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Choose the field you would trust.</p><details><summary>How does the paper describe this?</summary><p>An identity rule tells Sattle which key to use. Here it’s the Azure resource ID. An ontology names the kinds of things on the map and the links they can have. Sattle stores those definitions as data.</p></details>');
+  setActivity(plate("Compare two records","Azure",'<dl><dt>Inventory</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Which field identifies the same server in both records?</p><details><summary>Who defines the terms on the map?</summary><p>The workload ontology names the kinds of things the map can hold and which links connect them. The team can maintain this vocabulary as its workload changes. An identity rule says which key identifies each thing. For an Azure server, that key is its full resource ID.</p></details>');
   const buttons = $("#choices");
   ["The display name","The shared resource ID","The same arrival minute"].forEach((label,i)=>{
     const b=document.createElement("button"); b.className="pick";b.textContent=label;b.setAttribute("aria-pressed","false");
@@ -112,7 +84,7 @@ function canvas() {
     ["Graph space","graph-space","Which graphs feed this answer?","Graph space lays out the projections. Find workloadStructure and workload, then follow their inputs back to master and the authored rules.","space"],
     ["Projection editor","editor-kql","Which rule produced this result?","On a running engine, open the workloadHealth projection. Check a draft and preview its rows to see which step changes the result before committing.","editor"]
   ];
-  setActivity(radioArea()+'<div id="canvas-shot"></div><details><summary>Run the real Canvas locally</summary><p>From the repository root, follow the build steps in the '+link("getting started guide","README.md")+'. Then run <code>scripts/demo-replay.sh</code>. Its printed URL opens the local Canvas. Choose Synthetic estate (engine output, static files) to see the exact revisions used here. Select Engine for live replay and projection editing.</p></details>');
+  setActivity(radioArea()+'<div id="canvas-shot"></div><p><a href="film/assets/canvas-replay.mp4">Watch the recorded Canvas replay</a></p><details><summary>Run the real Canvas locally</summary><p>From the repository root, follow the build steps in the '+link("getting started guide","README.md")+'. Then run <code>scripts/demo-replay.sh</code>. Its printed URL opens the local Canvas. Choose Synthetic estate (engine output, static files) to see the exact revisions used here. Select Engine for live replay and projection editing.</p></details>');
   choices(views.map(v=>v[0]),i=>{
     const [name,img,title,desc,view]=views[i];
     $("#canvas-shot").innerHTML='<img class="demo-img" src="film/assets/'+img+'.webp" alt="'+name+' in the actual Sattle Canvas"><h2>'+title+'</h2><p>'+desc+'</p><a href="http://localhost:5173/#source='+(i===2?'engine':'demo')+'&amp;view='+view+'">Open '+name+' in your running Canvas ↗</a>';
@@ -120,7 +92,7 @@ function canvas() {
 }
 
 function author() {
-  setActivity('<h2>When should the alarm clear?</h2><p>The recorded meter rises to one at 10:14 after three low minutes. Choose how many good minutes your rule requires to clear the alarm.</p>'+radioArea()+'<p class="note" id="rule-result" role="status"></p><details><summary>What do I supply for my own workload?</summary><p>Give Sattle read access to the sources you use. Choose the cluster and namespace for your shop. Start with the supplied queries and rules. Set the readings that count as trouble, how long trouble must last, and which services it affects. If you need a reading Sattle doesn’t collect yet, add a source mapping.</p></details>');
+  setActivity('<h2>When does the alarm clear?</h2><p>The meter rises to one at 10:14. Switch between two recovery rules to see when the alarm clears.</p>'+radioArea()+'<p class="note" id="rule-result" role="status"></p><details><summary>What can a team change?</summary><p>The replay includes the shop’s scope, source mappings and signal rules. A team can select another cluster and namespace, refine a threshold or choose which calls affect health. A source mapping can bring in another kind of reading.</p></details>');
   choices(["1 good minute · what-if","2 good minutes · shipped rule"],i=>{
     $("#rule-result").textContent=i===0?"With this hypothetical rule, pg-shop recovers at the 10:14 sample. The meter values are identical.":"The shipped rule keeps pg-shop unhealthy at 10:14 and clears it at the 10:15 sample.";
   },$("#choices"),1);
@@ -141,13 +113,13 @@ function comparison(title, labels, runs, names, explain, beats) {
   },$("#choices"));
 }
 function compareChange(){
-  comparison("Give the API a cache dependency",["Original recording","Add CACHE_HOST"],["original","changed"],["shopcache","web","api","apim-shop","pg-shop","shop"],[
+  comparison("The API gains a cache dependency",["Original recording","With CACHE_HOST"],["original","changed"],["shopcache","web","api","apim-shop","pg-shop","shop"],[
     "The web service uses the cache. The API and its gateway stay healthy.",
     "The API now points to shopcache.redis.cache.windows.net. Sattle draws the new link. The overloaded cache now affects the API and its gateway."
   ],[0,2]);
 }
 function compareAzure(){
-  comparison("Introduce a new Azure cache",["API names a host","Azure reports offers-cache"],["waiting","discovered"],["offers-cache","api","apim-shop","shopcache","pg-shop","shop"],[
+  comparison("A new cache appears on Azure",["API names a host","Azure reports offers-cache"],["waiting","discovered"],["offers-cache","api","apim-shop","shopcache","pg-shop","shop"],[
     "The host name in the API deployment has no matching inventory record yet. The workload graph has no offers-cache component.",
     "Azure lists a Redis cache at that address, so Sattle adds the cache and its link to the API. Its health reads Unknown until a meter tells us how it’s doing."
   ],[0,2]);
@@ -158,178 +130,3 @@ function inspectProject(){
   more.innerHTML='<details><summary>How do the repository and paper fit together?</summary><p>'+link('The lab','lab/README.md')+' captures reports. '+link('The engine','engine/README.md')+' builds the maps and tracks what changed. '+link('The Canvas','canvas/README.md')+' lets you step through past maps, inspect the evidence and edit rules. '+link('The white paper','paper/README.md')+' describes the theory and the assumptions behind it. Its real-world evaluation covers a small Azure lab. '+link('Chapter 15','paper/ch15-related-work-and-limitations.md')+' discusses scale and open questions.</p></details>';
   $("#activity").append(more);
 }
-const chapterNav=$("#chapters");
-chapters.forEach((c,i)=>{
-  const a=document.createElement("a");a.href="#"+c.id;a.innerHTML='<span>'+String(i+1).padStart(2,'0')+'</span>'+c.nav;chapterNav.append(a);
-});
-function show(focus=false) {
-  const i=Math.max(0,chapters.findIndex(c=>c.id===location.hash.slice(1))), c=chapters[i];
-  [...chapterNav.children].forEach((a,k)=>{if(k===i)a.setAttribute("aria-current","step");else a.removeAttribute("aria-current");});
-  if(matchMedia("(max-width:640px)").matches){
-    const selected=chapterNav.children[i];
-    chapterNav.scrollLeft+=selected.getBoundingClientRect().left-chapterNav.getBoundingClientRect().left-5;
-  }
-  $("#eyebrow").textContent="The pg-shop replay / "+String(i+1).padStart(2,"0");
-  $("#title").textContent=c.title;$("#intro").textContent=c.intro;player.load(c);c.activity();
-  $("#reading").innerHTML='<div class="label">Explore the source</div>'+c.sources.map(([name,file])=>link(name,file)).join("");
-  $("#back").disabled=i===0;$("#back").onclick=()=>location.hash=chapters[i-1].id;
-  $("#next").textContent=i===chapters.length-1?"Replay from start ↺":"Next chapter →";
-  $("#next").onclick=()=>location.hash=chapters[(i+1)%chapters.length].id;
-  $("#count").textContent=(i+1)+" / "+chapters.length;
-  document.title=c.nav+" · Sattle field guide";
-  if(focus){$("#lesson").focus({preventScroll:true});window.scrollTo(0,0);}
-}
-window.addEventListener("hashchange",()=>show(true));
-$(".skip").onclick=e=>{e.preventDefault();$("#lesson").focus();};
-// Some basic static servers omit byte ranges. A local Blob makes their media seekable.
-const mediaReady=new WeakMap();
-function prepareMedia(media, source){
-  if(mediaReady.has(media))return mediaReady.get(media);
-  const prepare=async()=>{
-    if(location.protocol==="file:")return;
-    const url=source || media.currentSrc || media.src;
-    const headers=await fetch(url,{method:"HEAD"});
-    if(headers.headers.get("accept-ranges")?.includes("bytes")){
-      if(source)media.src=source;
-      return;
-    }
-    const response=await fetch(url);
-    if(!response.ok)throw Error("Media unavailable: "+response.status);
-    const blob=await response.blob();
-    const loaded=new Promise((resolve,reject)=>{
-      media.addEventListener("loadedmetadata",resolve,{once:true});
-      media.addEventListener("error",reject,{once:true});
-    });
-    media.preload="metadata";media.src=URL.createObjectURL(blob);media.load();await loaded;
-  };
-  const ready=prepare().catch(()=>{
-    mediaReady.delete(media);
-    if(source)media.src=source;
-  });
-  mediaReady.set(media,ready);return ready;
-}
-const cinema=$("#cinema"), video=cinema.querySelector("video");
-const filmSource=video.querySelector("source"), filmCaptions=$("#film-captions");
-filmCaptions.src=location.protocol==="file:"?URL.createObjectURL(new Blob([localCaptions],{type:"text/vtt"})):"captions.vtt";
-
-async function prepareFilm(){
-  if(location.protocol==="file:")return;
-  // An open guide can outlive a render. Check the small digest before reusing
-  // a movie from the browser cache or the blob kept for servers without ranges.
-  let version;
-  try{
-    const response=await fetch("film-version.txt",{cache:"no-store"});
-    if(response.ok)version=(await response.text()).trim();
-  }catch{/* Some static hosts serve only the media files. */}
-  if(!/^[a-f0-9]{64}$/.test(version || ""))version=String(Date.now());
-
-  const url=new URL(filmSource.src);
-  url.searchParams.set("v",version);
-  const changed=filmSource.src!==url.href, oldBlob=video.getAttribute("src");
-  if(changed)mediaReady.delete(video);
-  // Choose a native stream or a blob before changing the <source>. Starting
-  // both requests for the same movie can block playback on a no-range server.
-  await prepareMedia(video,url.href);
-  if(changed){
-    filmSource.src=url.href;
-    cinema.querySelector("a[download]").href=url.href;
-    filmCaptions.src="captions.vtt?v="+version;
-    video.poster="film/poster.jpg?v="+version;
-    if(oldBlob?.startsWith("blob:")&&oldBlob!==video.src)URL.revokeObjectURL(oldBlob);
-  }
-}
-const watch=$("#watch");
-watch.onclick=async()=>{
-  player.pause();watch.disabled=true;
-  try{await prepareFilm();cinema.showModal();}
-  finally{watch.disabled=false;}
-};
-$("#close").onclick=()=>{video.pause();cinema.close();};
-cinema.addEventListener("cancel",()=>video.pause());
-cinema.addEventListener("close",()=>video.pause());
-
-const player=(()=>{
-  const audio=$("#narrator"), range=$("#scene-position"), listen=$("#listen");
-  let scene, activeBeat=-1, map, position=0, frame=0, ghost=0, pendingPlay=0;
-  function pause() {
-    pendingPlay++;
-    audio.pause();cancelAnimationFrame(frame);cancelAnimationFrame(ghost);
-    listen.textContent="▶ Play with narration";
-    if(audio.muted)listen.textContent="▶ Play animation";
-  }
-  function showTime(time) {
-    position=Math.max(scene.beats[0].start,Math.min(time,scene.beats.at(-1).end));
-    let i=scene.beats.findIndex(b=>position<b.end-.001);if(i<0)i=scene.beats.length-1;
-    const beat=scene.beats[i];
-    if(i!==activeBeat){
-      activeBeat=i;map=ShopMap.mount($("#map"),scene.id,i);
-      const [term, meaning]=ShopTerms[scene.id][i];
-      $("#concept-term").textContent=term;
-      $("#concept-meaning").textContent=meaning;
-      [...$("#beat-buttons").children].forEach((b,k)=>b.setAttribute("aria-pressed",String(k===i)));
-      $("#spoken").textContent=beat.text;
-    }
-    map.seek(Math.max(0,Math.min(1,(position-beat.start)/(beat.end-beat.start))));
-    const seconds=position-scene.beats[0].start;
-    range.value=String(Math.round(1000*seconds/(scene.beats.at(-1).end-scene.beats[0].start)));
-    const clock=Math.floor(seconds/60)+":"+String(Math.floor(seconds)%60).padStart(2,"0");
-    $("#elapsed").value=clock;range.setAttribute("aria-valuetext",clock+" · "+beat.focus);
-  }
-  matchMedia("(max-width:640px)").addEventListener("change",()=>{
-    if(!scene || activeBeat<0)return;
-    map=ShopMap.mount($("#map"),scene.id,activeBeat);
-    showTime(position);
-  });
-  function tick() {
-    showTime(audio.currentTime);
-    if(position>=scene.beats.at(-1).end-.06){pause();return;}
-    if(!audio.paused)frame=requestAnimationFrame(tick);
-  }
-  function jump(i,fraction=0) {
-    cancelAnimationFrame(ghost);
-    const beat=scene.beats[i];showTime(beat.start+(beat.end-beat.start)*fraction);
-    audio.currentTime=position;
-  }
-  listen.onclick=async()=>{
-    if(!audio.paused){pause();return;}
-    cancelAnimationFrame(ghost);
-    const token=++pendingPlay;
-    if(position>=scene.beats.at(-1).end-.08)showTime(scene.beats[0].start);
-    try{
-      await prepareMedia(audio);
-      if(token!==pendingPlay)return;
-      audio.currentTime=position;
-      await audio.play();
-      if(token!==pendingPlay)return;
-      listen.textContent="Ⅱ Pause";frame=requestAnimationFrame(tick);
-    }catch{if(token===pendingPlay)listen.textContent="Retry playback";}
-  };
-  audio.addEventListener("ended",()=>{showTime(scene.beats.at(-1).end);pause();});
-  range.oninput=()=>{
-    cancelAnimationFrame(ghost);
-    const start=scene.beats[0].start;
-    showTime(start+(scene.beats.at(-1).end-start)*Number(range.value)/1000);audio.currentTime=position;
-  };
-  $("#mute").onclick=()=>{
-    audio.muted=!audio.muted;
-    $("#mute").setAttribute("aria-pressed",String(audio.muted));$("#mute").textContent=audio.muted?"Unmute":"Mute";
-    if(audio.paused)listen.textContent=audio.muted?"▶ Play animation":"▶ Play with narration";
-  };
-  function load(nextScene){
-    pause();scene=nextScene;activeBeat=-1;$("#beat-buttons").replaceChildren();
-    for(const [i,beat] of scene.beats.entries()){
-      const button=document.createElement("button");button.className="pick";button.textContent=beat.focus;
-      button.onclick=()=>jump(i);$("#beat-buttons").append(button);
-    }
-    showTime(scene.beats[0].start);
-    // Brief silent preview. The narration always starts at the chapter opening.
-    if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
-      const start=performance.now();
-      const preview=now=>{const p=Math.min(1,(now-start)/2900);map.seek(p*.6);if(p<1)ghost=requestAnimationFrame(preview);};
-      ghost=requestAnimationFrame(preview);
-    }
-  }
-  return {load,jump,pause};
-})();
-prepareMedia($("#narrator"));
-show();

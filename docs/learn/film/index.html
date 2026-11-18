@@ -1,147 +1,72 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>How the shop gets its health model</title>
-<script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
-<body><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="339.04167">
-<section class="clip shot" id="origins-0" data-start="0.00000" data-duration="13.50000" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
-<h1>Dependency</h1>
-<div class="story-board" data-topic="origins" data-beat="0"></div>
+<script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="master-data.js"></script><script src="model-scenes.js"></script><script src="change-scenes.js"></script><script src="review-scenes.js"></script><script src="figure.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
+<body class="replay"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="414.12500">
+<section class="clip shot" id="origins" data-start="0.00000" data-duration="55.12500" data-track-index="0" data-beat-ends="17.083333333333332,35.041666666666664,55.125">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
+<h1>Where does the health model come from?</h1>
+<div class="story-board" data-topic="origins"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="origins-1" data-start="13.50000" data-duration="15.25000" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
-<h1>Observation</h1>
-<div class="story-board" data-topic="origins" data-beat="1"></div>
+<section class="clip shot" id="rules" data-start="55.12500" data-duration="52.16667" data-track-index="0" data-beat-ends="16.20833333333333,34.83333333333333,52.16666666666667">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The shop’s health rules</span><span>02 / 08</span></header>
+<h1>What makes a reading count as an outage?</h1>
+<div class="story-board" data-topic="rules"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="origins-2" data-start="28.75000" data-duration="13.12500" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
-<h1>Health model</h1>
-<div class="story-board" data-topic="origins" data-beat="2"></div>
+<section class="clip shot" id="layers" data-start="107.29167" data-duration="50.75000" data-track-index="0" data-beat-ends="14.833333333333329,31.91666666666667,50.749999999999986">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">From records to a map</span><span>03 / 08</span></header>
+<h1>How do many records become one map?</h1>
+<div class="story-board" data-topic="layers"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="rules-0" data-start="41.87500" data-duration="13.12500" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Your team’s decisions</span><span>02 / 08</span></header>
-<h1>Scope</h1>
-<div class="story-board" data-topic="rules" data-beat="0"></div>
+<section class="clip shot" id="incident" data-start="158.04167" data-duration="53.12500" data-track-index="0" data-beat-ends="15.916666666666686,34.291666666666686,53.125">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The pg-shop outage</span><span>04 / 08</span></header>
+<h1>How can one bad reading affect the whole shop?</h1>
+<div class="story-board" data-topic="incident"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="rules-1" data-start="55.00000" data-duration="13.20833" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Your team’s decisions</span><span>02 / 08</span></header>
-<h1>Signal rule</h1>
-<div class="story-board" data-topic="rules" data-beat="1"></div>
+<section class="clip shot" id="dependency" data-start="211.16667" data-duration="44.79167" data-track-index="0" data-beat-ends="12.208333333333343,27.083333333333343,44.791666666666686">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A new dependency</span><span>05 / 08</span></header>
+<h1>What changes when the API gains a dependency?</h1>
+<div class="story-board" data-topic="dependency"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="rules-2" data-start="68.20833" data-duration="13.95833" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Your team’s decisions</span><span>02 / 08</span></header>
-<h1>Required calls</h1>
-<div class="story-board" data-topic="rules" data-beat="2"></div>
+<section class="clip shot" id="azure" data-start="255.95833" data-duration="53.25000" data-track-index="0" data-beat-ends="17.916666666666657,34.49999999999997,53.24999999999997">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A change on Azure</span><span>06 / 08</span></header>
+<h1>What can Sattle infer when Azure changes?</h1>
+<div class="story-board" data-topic="azure"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="layers-0" data-start="82.16667" data-duration="14.20833" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">From records to a map</span><span>03 / 08</span></header>
-<h1>Identity</h1>
-<div class="story-board" data-topic="layers" data-beat="0"></div>
+<section class="clip shot" id="replay" data-start="309.20833" data-duration="51.45833" data-track-index="0" data-beat-ends="17.041666666666686,32.875,51.45833333333337">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A map through time</span><span>07 / 08</span></header>
+<h1>Can Sattle rebuild the shop as it looked during the outage?</h1>
+<div class="story-board" data-topic="replay"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="layers-1" data-start="96.37500" data-duration="12.75000" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">From records to a map</span><span>03 / 08</span></header>
-<h1>Projection</h1>
-<div class="story-board" data-topic="layers" data-beat="1"></div>
+<section class="clip shot" id="inspect" data-start="360.66667" data-duration="53.45833" data-track-index="0" data-beat-ends="18.0,36.04166666666663,53.458333333333314">
+<header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The evidence for an answer</span><span>08 / 08</span></header>
+<h1>What explains a red web service?</h1>
+<div class="story-board" data-topic="inspect"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="layers-2" data-start="109.12500" data-duration="14.00000" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">From records to a map</span><span>03 / 08</span></header>
-<h1>Ontology</h1>
-<div class="story-board" data-topic="layers" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="incident-0" data-start="123.12500" data-duration="14.29167" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The pg-shop outage</span><span>04 / 08</span></header>
-<h1>Sample time</h1>
-<div class="story-board" data-topic="incident" data-beat="0"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="incident-1" data-start="137.41667" data-duration="14.83333" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The pg-shop outage</span><span>04 / 08</span></header>
-<h1>Impact</h1>
-<div class="story-board" data-topic="incident" data-beat="1"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="incident-2" data-start="152.25000" data-duration="13.79167" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">The pg-shop outage</span><span>04 / 08</span></header>
-<h1>Recovery</h1>
-<div class="story-board" data-topic="incident" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="dependency-0" data-start="166.04167" data-duration="13.79167" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A new dependency</span><span>05 / 08</span></header>
-<h1>Degraded</h1>
-<div class="story-board" data-topic="dependency" data-beat="0"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="dependency-1" data-start="179.83333" data-duration="13.91667" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A new dependency</span><span>05 / 08</span></header>
-<h1>A setting as evidence</h1>
-<div class="story-board" data-topic="dependency" data-beat="1"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="dependency-2" data-start="193.75000" data-duration="16.25000" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A new dependency</span><span>05 / 08</span></header>
-<h1>Two runs</h1>
-<div class="story-board" data-topic="dependency" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="azure-0" data-start="210.00000" data-duration="14.12500" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A change on Azure</span><span>06 / 08</span></header>
-<h1>An unmatched address</h1>
-<div class="story-board" data-topic="azure" data-beat="0"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="azure-1" data-start="224.12500" data-duration="12.58333" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A change on Azure</span><span>06 / 08</span></header>
-<h1>Inventory match</h1>
-<div class="story-board" data-topic="azure" data-beat="1"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="azure-2" data-start="236.70833" data-duration="14.29167" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A change on Azure</span><span>06 / 08</span></header>
-<h1>Unknown</h1>
-<div class="story-board" data-topic="azure" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="replay-0" data-start="251.00000" data-duration="13.70833" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A map you can rewind</span><span>07 / 08</span></header>
-<h1>Patch</h1>
-<div class="story-board" data-topic="replay" data-beat="0"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="replay-1" data-start="264.70833" data-duration="15.83333" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A map you can rewind</span><span>07 / 08</span></header>
-<h1>Revision</h1>
-<div class="story-board" data-topic="replay" data-beat="1"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="replay-2" data-start="280.54167" data-duration="14.87500" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">A map you can rewind</span><span>07 / 08</span></header>
-<h1>Replay</h1>
-<div class="story-board" data-topic="replay" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="inspect-0" data-start="295.41667" data-duration="16.37500" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Check the answer</span><span>08 / 08</span></header>
-<h1>Origin</h1>
-<div class="story-board" data-topic="inspect" data-beat="0"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="inspect-1" data-start="311.79167" data-duration="14.95833" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Check the answer</span><span>08 / 08</span></header>
-<h1>Trace the evidence</h1>
-<div class="story-board" data-topic="inspect" data-beat="1"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="inspect-2" data-start="326.75000" data-duration="12.29167" data-track-index="0">
-<header><b>Sattle</b><span>Field guide</span><span class="chapter">Check the answer</span><span>08 / 08</span></header>
-<h1>Query draft</h1>
-<div class="story-board" data-topic="inspect" data-beat="2"></div>
-<div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<video class="clip recording" id="replay-recording" muted playsinline src="assets/canvas-replay.mp4" data-start="295.41667" data-duration="7" data-track-index="2"></video>
-<audio id="voice" class="clip" data-start="0" data-duration="339.04167" data-track-index="3" src="assets/voice.m4a"></audio></main><script>const timeline = gsap.timeline({paused:true});
-// Enlarge the evidence when the lesson asks the viewer to read a chart,
-// compare records, or follow a query. Tracing a dependency uses the wide map.
-const evidenceShots = new Set([
-  "rules-1", "layers-0", "layers-1", "layers-2", "incident-0", "incident-2",
-  "dependency-2", "azure-1", "replay-1", "replay-2", "inspect-1", "inspect-2"
-]);
-for (const host of document.querySelectorAll(".story-board")) {
-  const scene = host.closest("section");
-  const topic = host.dataset.topic, beat = Number(host.dataset.beat);
-  const [term, definition, title] = ShopTerms[topic][beat];
-  scene.querySelector("h1").textContent = title;
-  scene.querySelector(".term").textContent = term;
-  scene.querySelector(".definition").textContent = definition;
-  if(evidenceShots.has(scene.id))host.dataset.layout="evidence";
-  const view = ShopMap.mount(host, topic, beat);
-  const clock = {progress:0};
-  timeline.to(clock, {progress:1, duration:Number(scene.dataset.duration), ease:"none",
-    onUpdate:()=>view.seek(clock.progress)}, Number(scene.dataset.start));
+<audio id="voice" class="clip" data-start="0" data-duration="414.12500" data-track-index="3" src="assets/voice.m4a"></audio></main><script>
+const timeline = gsap.timeline({paused:true});
+for (const scene of document.querySelectorAll(".shot")) {
+  const host = scene.querySelector(".story-board");
+  const topic = host.dataset.topic;
+  const ends = scene.dataset.beatEnds.split(",").map(Number);
+  const termLabel = scene.querySelector(".term"), meaning = scene.querySelector(".definition");
+  let active = -1, figure;
+  function draw(time) {
+    const index = ends.findIndex(end => time < end);
+    const beat = index < 0 ? ends.length - 1 : index;
+    if (beat !== active) {
+      active = beat;
+      figure = ShopMap.mount(host, topic, beat);
+      const [term, definition] = ShopTerms[topic][beat];
+      termLabel.textContent = term;
+      meaning.textContent = definition;
+    }
+    const start = beat ? ends[beat-1] : 0;
+    figure.seek((time-start)/(ends[beat]-start));
+  }
+  draw(0);
+  const clock = {elapsed:0};
+  timeline.to(clock, {elapsed:ends.at(-1), duration:ends.at(-1), ease:"none",
+    onUpdate:()=>draw(clock.elapsed)}, Number(scene.dataset.start));
 }
 window.__timelines = window.__timelines || {};
-window.__timelines["shop"] = timeline;
+window.__timelines.shop = timeline;
 </script></body></html>

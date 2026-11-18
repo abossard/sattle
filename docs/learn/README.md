@@ -1,18 +1,40 @@
-# How the shop gets its health model
+# One order through the whole shop
 
-[Open the interactive guide](index.html) · [Watch the narrated film](sattle.mp4) · [Read the transcript](transcript.md)
+[Explore the retail walkthrough](index.html) · [Watch the film](foundry/shop.mp4) · [Read the transcript](foundry/transcript.md)
 
-Open the HTML file in a browser and select **Play with narration**. Choose a term to jump to its scene, or drag the time control to see a change again. Each term stays on screen with its definition while the diagram plays.
+A shopper spends $80. Her package arrives late. She returns two items and asks where her refund is. The warehouse has received both items, the support agent can see her case, and finance is still waiting for a payment receipt. Each system can give a different, accurate answer about the same order.
 
-Read arrows from a caller to the service it needs. During an outage the dots travel back toward the callers. Green with a check means Healthy, amber with a triangle means Degraded, red with a cross means Unhealthy, and violet with a question mark means Unknown.
+The store follows Microsoft’s **Dynamics 365 Commerce** architecture. Its marketing integration follows Microsoft’s published path through Azure Functions, Service Bus, Logic Apps and Customer Insights – Journeys. The order, the incidents and the Foundry-assisted support workflow are local teaching examples. [Architecture and source mapping](foundry/sources.md)
 
-Both lessons work offline. To view them through a local server, run this from the repository root, then open the [field guide](http://127.0.0.1:8397/docs/learn/).
+[![Chapter illustrations from the retail film](foundry/chapters.jpg)](index.html)
+
+## From the master graph to the shop people know
+
+The first illustrated master graph contains **46 entities and 68 typed relationships**. A projection transforms that graph into another graph. For this view it groups technical components into activities such as fulfilling an order, supporting a customer or paying a refund. Here 46 entities become 14 business capabilities. Of the 68 original links, 32 connect records inside one capability. The other 36 become 35 typed links between capabilities. The drawing bundles them into 30 directed pairs. The explorer keeps the original links behind each result. The same capability can support several activities. Opening a branch in the dependency tree shows the connections and records behind it. [Explore the projection](index.html#dependencies) · [White paper, levels of abstraction](../../paper/ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes)
+
+The ontology defines what a link means. For instance, the worker **requests a payment** and the data lake **receives a payment record**. Those links have different consequences during an outage. People can maintain this vocabulary and refine the rules that determine when a failed call affects the shop. [Health and ontology](../../paper/ch02-ontologies-as-type-graphs.md#24-worked-example-health-is-an-ontology)
+
+[![The business graph and the records behind Payout → Returns intake](foundry/projection.jpg)](index.html#dependencies)
+
+## A few things to try
+
+- In [the warehouse](index.html#logistics), change the disposition of the damaged item. Sellable stock changes while the amount eligible for credit stays at $30.
+- In [CRM, marketing and analytics](index.html#engagement), deliver the same order event twice. Marketing gets one event and honors the opt-out. Then record the payment receipt and watch merchandise sales after settled refunds change from $80 to $50.
+- In [the health model](index.html#failure), change which signals the shop observes. A failing payout can coexist with a healthy order lookup and an unknown state inside the external processor.
+
+Each chapter has a narrated figure. The term buttons and the time control let you hold or replay a change. Both guides and both videos work from disk. A local server also works:
 
 ```sh
 python3 -m http.server 8397 --bind 127.0.0.1
 ```
 
-## Explore the two changes
+Open the [retail guide](http://127.0.0.1:8397/docs/learn/) or the [recorded replay](http://127.0.0.1:8397/docs/learn/pg-shop.html).
+
+## The recorded pg-shop companion
+
+[Explore the replay](pg-shop.html) · [Watch the pg-shop film](sattle.mp4) · [Read its transcript](transcript.md)
+
+The Sattle engine ran the bundled pg-shop estate. At master revision 44 its graph has **73 entities and 69 relationships**. Its structure query groups pod calls into service dependencies. The health query combines the resulting graph, meter readings and authored rules. [Master snapshot](../../canvas/public/demo/estate/master.final.snapshot.json) · [Eight replay figures](chapters.jpg)
 
 The database timeline comes from the [synthetic shop’s Azure meter readings](../../engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson). The first zero belongs to the **10:11 UTC** sample. Its capture arrives at **10:12:01**. The static workload export records the database becoming unhealthy in **revision 16** and recovering in **revision 18**. Sample time, capture time and graph revision answer different questions.
 
@@ -25,26 +47,28 @@ The dependency chapters use local replay experiments with the same KQL and rules
 
 See the [structure query](../../engine/definitions/acme.workload.workloadStructure.kql), [health query](../../engine/definitions/acme.workload.workloadHealth.kql), [authored thresholds](../../engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson), and [white paper](../../paper/README.md). To open the real Canvas alongside the guide, follow the [repository’s getting-started steps](../../README.md) and run `scripts/demo-replay.sh`. Choose the static synthetic estate for the exact revision numbers in the guide. Live replay can group events into different revisions.
 
-## Reproduce the lesson
+## Reproduce the guides and films
 
-From the repository root, these commands extract the original evidence and rerun the two controlled comparisons with Sattle’s .NET 11 engine.
+The retail graph and projection are in [case.js](foundry/case.js) and [projection.js](foundry/projection.js). The recorded companion uses the .NET 11 engine and its estate fixture. These commands rebuild the companion evidence:
 
 ```sh
 dotnet build engine/src/Sattle.Cli -c Release
 python3 -B docs/learn/build_evidence.py
+python3 -B docs/learn/film/extract_master.py
 python3 -B docs/learn/replay_change.py
 ```
 
-Edit the narration in [lesson.json](film/lesson.json) and the on-screen definitions in [terms.js](film/terms.js). The film and walkthrough share the voice recording, captions and [diagrams](film/shop-map.js). Each passage gets one take. The builder uses the timing of the spoken sounds to place the captions.
-
-To record a new take, install Python 3.12 and FFmpeg. The setup script downloads the Kokoro model and its voices once into `film/.narrator/`. After that, you can record offline. This lesson uses the American English voice Heart. Playback needs only a browser. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
+The narration scripts are [the retail case](foundry/lesson.json) and [the recorded replay](film/lesson.json). Both use the local Kokoro Heart voice. Python 3.12, FFmpeg and the repository’s pinned HyperFrames package build the media. Voice setup downloads the model into the ignored `film/.narrator/` directory. Each build writes a matching voice track, captions, chapter timings and transcript. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 
 ```sh
 sh docs/learn/film/setup-voice.sh
-docs/learn/film/.narrator/venv/bin/python -B docs/learn/film/build.py
 npm --prefix docs/learn/film ci
+npm --prefix docs/learn/film run voice:retail
+npm --prefix docs/learn/film run check:retail
+npm --prefix docs/learn/film run render:retail
+npm --prefix docs/learn/film run voice
 npm --prefix docs/learn/film run check
 npm --prefix docs/learn/film run render
 ```
 
-The film uses the captured local Canvas and repository screenshots. The included GSAP animation runtime is version 3.14.2. Its original license notice is preserved in [the library](film/vendor/gsap.min.js).
+The rendered films include local narration, English captions and chapter markers. The included animation runtime retains its [license notice](film/vendor/gsap.min.js).

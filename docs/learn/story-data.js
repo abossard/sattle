@@ -6,196 +6,196 @@ const story = [
     "beats": [
       {
         "focus": "Dependency",
-        "text": "A dependency is something a service needs to do its job. Follow the arrows from the shop’s web service to the API, then through the database service to the server called pg-shop.",
+        "text": "A customer checks out. The shop’s web service calls its API, which reaches a database server called pg-shop through the database service. The arrows show what checkout depends on. It takes several sources to piece together that short path.",
         "start": 0.0,
-        "end": 13.5
+        "end": 17.083333333333332
       },
       {
-        "focus": "Observation",
-        "text": "An observation is one report from one source. Kubernetes names the shop’s services. Network records show calls between them. Azure lists the database server, and its meter tells us whether the server answered.",
-        "start": 13.5,
-        "end": 28.75
+        "focus": "Master graph",
+        "text": "Now the map pulls back. At the end of this replay, Sattle’s master graph holds seventy-three entities and sixty-nine links. An entity can be a pod, a service or an Azure resource. The links record facts such as which pods called each other and where a pod ran.",
+        "start": 17.083333333333332,
+        "end": 35.041666666666664
       },
       {
-        "focus": "Health model",
-        "text": "A health model is a map of what’s healthy and who depends on it. Sattle joins the observations in a master graph. One query draws the shop. A second applies your health rules.",
-        "start": 28.75,
-        "end": 41.875
+        "focus": "Projection",
+        "text": "The checkout path is one view of that larger graph. Sattle calls the query that builds a view a projection. One projection maps the shop’s dependencies. Another combines that map with meter readings and rules to show how an outage can reach checkout. That second view is the health model.",
+        "start": 35.041666666666664,
+        "end": 55.125
       }
     ]
   },
   {
     "id": "rules",
-    "chapter": "Your team’s decisions",
-    "title": "What does your team supply?",
+    "chapter": "The shop’s health rules",
+    "title": "What makes a reading count as an outage?",
     "beats": [
       {
         "focus": "Scope",
-        "text": "Scope tells Sattle where to look. The replay comes with working rules. For your own shop, connect the sources you can read, then choose the cluster and the namespace that holds your services.",
-        "start": 41.875,
-        "end": 55.0
+        "text": "The box encloses services in the shop namespace, a named group in Kubernetes. Its database runs outside that box on Azure. The scope says which services belong to the shop. Their dependencies can still lead outside it.",
+        "start": 55.125,
+        "end": 71.33333333333333
       },
       {
         "focus": "Signal rule",
-        "text": "A signal rule turns readings into an alarm. Your team sets the threshold and the wait. For servers like pg-shop, one bad minute raises the alarm. Two good minutes clear it.",
-        "start": 55.0,
-        "end": 68.20833333333333
+        "text": "For pg-shop, one bad minute opens the alarm. The first good minute keeps it open. The second closes it. That memory has a name, hysteresis. People can choose and refine rules like this to express what counts as failure and recovery for a particular service.",
+        "start": 71.33333333333333,
+        "end": 89.95833333333333
       },
       {
-        "focus": "Required calls",
-        "text": "Your team also chooses which failures should affect a caller. The API needs its database. If your own API can serve a request without its cache, you can leave that call out of its health rule.",
-        "start": 68.20833333333333,
-        "end": 82.16666666666667
+        "focus": "Required call",
+        "text": "The API needs the database to finish checkout. A cache could be optional if the API can serve the request without it. A network record shows that a call happened. The health rules decide whether trouble at the far end should count against the caller.",
+        "start": 89.95833333333333,
+        "end": 107.29166666666667
       }
     ]
   },
   {
     "id": "layers",
     "chapter": "From records to a map",
-    "title": "How can two reports describe one server?",
+    "title": "How do many records become one map?",
     "beats": [
       {
         "focus": "Identity",
-        "text": "Identity tells Sattle when two records describe the same thing. Compare the Azure resource ID in the inventory with the ID on the meter reading. They match. Both records belong to pg-shop.",
-        "start": 82.16666666666667,
-        "end": 96.375
+        "text": "One report lists pg-shop in Azure. Another carries its meter reading. Both contain the same resource ID. That shared identity lets the model attach a new reading to the server it already knows.",
+        "start": 107.29166666666667,
+        "end": 122.125
       },
       {
         "focus": "Projection",
-        "text": "A projection is a query that builds a new view. Here, several copies of the web service call the API. The projection groups those calls into one arrow between the services.",
-        "start": 96.375,
-        "end": 109.125
+        "text": "Three web pods call two API pods. A pod is a running copy of a program. At the service level, those calls become one arrow from web to API. This projection groups the callers and their targets by the service they belong to.",
+        "start": 122.125,
+        "end": 139.20833333333334
       },
       {
         "focus": "Ontology",
-        "text": "An ontology is the map’s vocabulary. It names kinds of things, like a service or a server, and the links they can have. Here the database service uses a server called pg-shop.",
-        "start": 109.125,
-        "end": 123.125
+        "text": "The database service points to pg-shop. They’re two different things, and the link says the server backs the service. An ontology defines that vocabulary. People can maintain it as the system grows, giving each new kind of thing and relationship a precise meaning.",
+        "start": 139.20833333333334,
+        "end": 158.04166666666666
       }
     ]
   },
   {
     "id": "incident",
     "chapter": "The pg-shop outage",
-    "title": "What happens when the meter drops to zero?",
+    "title": "How can one bad reading affect the whole shop?",
     "beats": [
       {
         "focus": "Sample time",
-        "text": "A time series keeps readings in the order of their sample times. At 10:11, pg-shop reports zero. The recorder gets that sample a minute and a second later. The chart puts it at 10:11.",
-        "start": 123.125,
-        "end": 137.41666666666666
+        "text": "At 10:11, the meter reports that pg-shop stopped answering. The recorder gets that reading a minute and a second later. The chart places the zero at 10:11, the sample time. That keeps the outage in the minute it happened.",
+        "start": 158.04166666666666,
+        "end": 173.95833333333334
       },
       {
         "focus": "Impact",
-        "text": "Impact travels back toward the callers. Start at pg-shop and follow the dots to the left. The alarm reaches the database service, the API, then the gateway and web service. The cache stays healthy.",
-        "start": 137.41666666666666,
-        "end": 152.25
+        "text": "Down that column, the database service turns red, then the API that needs it. Web and the gateway both need the API. The cache stays green. A failure can reach a caller several steps away. The health model follows the dependencies to find those callers.",
+        "start": 173.95833333333334,
+        "end": 192.33333333333334
       },
       {
         "focus": "Recovery",
-        "text": "At 10:14 the meter rises to one. That’s the first good minute. Pause there and the map is still red. At 10:15 the next good minute clears the alarm, and the callers turn green.",
-        "start": 152.25,
-        "end": 166.04166666666666
+        "text": "At 10:14 the database answers again. Its meter rises while its alarm stays red. At 10:15, the second good minute clears the alarm for the database and its callers. A reading describes one moment. A health state can depend on several readings in a row.",
+        "start": 192.33333333333334,
+        "end": 211.16666666666666
       }
     ]
   },
   {
     "id": "dependency",
     "chapter": "A new dependency",
-    "title": "Who feels the strain when the cache gets busy?",
+    "title": "What changes when the API gains a dependency?",
     "beats": [
       {
         "focus": "Degraded",
-        "text": "Degraded means the model sees trouble that falls short of an outage. Earlier in the replay, the cache comes under heavy load. The web service uses it and turns amber. The gateway stays green.",
-        "start": 166.04166666666666,
-        "end": 179.83333333333334
+        "text": "Earlier that morning, the cache was under heavy load. Web already depended on it. Both show amber, the warning state called Degraded. The gateway and API were healthy.",
+        "start": 211.16666666666666,
+        "end": 223.375
       },
       {
-        "focus": "A setting as evidence",
-        "text": "Evidence is a record that supports something on the map. Give the API the existing cache address. Sattle matches that setting to Azure inventory and adds an arrow from the API to the cache.",
-        "start": 179.83333333333334,
-        "end": 193.75
+        "focus": "Evidence",
+        "text": "In a second run, the API’s settings name the existing cache. Sattle matches the address to its Azure resource and adds a dependency. That one setting is evidence for an arrow the original run didn’t have.",
+        "start": 223.375,
+        "end": 238.25
       },
       {
-        "focus": "Two runs",
-        "text": "Compare the gateways at 10:06:30. In the original run, the gateway is healthy. In the changed run, it depends on the busy cache through the API. The same readings now give the gateway an amber light.",
-        "start": 193.75,
-        "end": 210.0
+        "focus": "Controlled comparison",
+        "text": "Both runs stop at the same time. The cache meter reads eighty-five percent in each. Only the second gateway turns amber, because its API now depends on the cache. Holding the readings and rules fixed makes the effect of that one new link visible.",
+        "start": 238.25,
+        "end": 255.95833333333334
       }
     ]
   },
   {
     "id": "azure",
     "chapter": "A change on Azure",
-    "title": "When does a new cache appear?",
+    "title": "What can Sattle infer when Azure changes?",
     "beats": [
       {
-        "focus": "An unmatched address",
-        "text": "Suppose the API now names a different cache, offers-cache. The setting gives Sattle an address to look for. Until Azure reports a resource at that address, the shop map has no target for the new arrow.",
-        "start": 210.0,
-        "end": 224.125
+        "focus": "Unmatched address",
+        "text": "In another replay, the API names a new host, offers-cache. Its address is on the left. The Azure inventory on the right has no match yet. The setting tells us where the API intends to connect. The resource at that address is still an open question.",
+        "start": 255.95833333333334,
+        "end": 273.875
       },
       {
         "focus": "Inventory match",
-        "text": "Now Azure Resource Graph lists the new cache. Its address matches the API setting. Since the shop already uses this kind of cache, the existing query adds the new link.",
-        "start": 224.125,
-        "end": 236.70833333333334
+        "text": "Now Azure reports a Redis cache whose name and type match that address. It appears in the overlap. A query can join the two records and connect the API to the new resource. The same rule can recognize another cache when it appears.",
+        "start": 273.875,
+        "end": 290.4583333333333
       },
       {
         "focus": "Unknown",
-        "text": "Unknown means the model has too little evidence to judge health. Azure tells us offers-cache exists. We still need its readings. A new kind of resource may also need a new matching rule or meter.",
-        "start": 236.70833333333334,
-        "end": 251.0
+        "text": "The new cache appears on the map with a question mark. Azure supplied evidence that it exists. To judge its health, Sattle also needs readings that a health rule can use. Until then, the state is Unknown. A different resource type may call for a different rule or meter.",
+        "start": 290.4583333333333,
+        "end": 309.2083333333333
       }
     ]
   },
   {
     "id": "replay",
-    "chapter": "A map you can rewind",
-    "title": "How do changes reach the Canvas?",
+    "chapter": "A map through time",
+    "title": "Can Sattle rebuild the shop as it looked during the outage?",
     "beats": [
       {
         "focus": "Patch",
-        "text": "A patch is a list of changes. When a source reports an update, the engine sends the affected parts to the Canvas, Sattle’s viewer. A gap in reporting leaves the last known resource on the map.",
-        "start": 251.0,
-        "end": 264.7083333333333
+        "text": "The Canvas starts with a saved graph. As pg-shop’s state changes, the engine sends a patch listing the edits. Here seven edits carry the map from revision fifteen to sixteen. A gap in reporting leaves the last known resource in place.",
+        "start": 309.2083333333333,
+        "end": 326.25
       },
       {
         "focus": "Revision",
-        "text": "A revision marks a point in the history of the map. The Canvas can return to it by taking a saved map and applying the next few patches. In this replay, revision 16 shows the outage. Revision 18 shows recovery.",
-        "start": 264.7083333333333,
-        "end": 280.5416666666667
+        "text": "Revision sixteen shows the outage. By eighteen the database has recovered. A revision counts changes to the graph, so the distance between those numbers says nothing about how many minutes passed. The meter keeps time in minutes.",
+        "start": 326.25,
+        "end": 342.0833333333333
       },
       {
         "focus": "Replay",
-        "text": "To test a replay, Sattle feeds the same records and rules to two programs. One updates the graph as records arrive. The other rebuilds it from scratch. The white paper explains when their answers should agree.",
-        "start": 280.5416666666667,
-        "end": 295.4166666666667
+        "text": "One path applies the edits as each record arrives. The other builds the answer again from the same recorded inputs, clock events and rules. Both end at the same graph. That agreement makes a past result reproducible and gives Sattle a way to test its updates.",
+        "start": 342.0833333333333,
+        "end": 360.6666666666667
       }
     ]
   },
   {
     "id": "inspect",
-    "chapter": "Check the answer",
-    "title": "Where did the alarm start?",
+    "chapter": "The evidence for an answer",
+    "title": "What explains a red web service?",
     "beats": [
       {
         "focus": "Origin",
-        "text": "An origin has a failing signal of its own. In the Canvas workload tree, select pg-shop at revision 16. Its origin marker singles out the database. The web service is red because it depends on that database.",
-        "start": 295.4166666666667,
-        "end": 311.7916666666667
+        "text": "At revision sixteen, web is red. Its dependency path leads through the API and the database service to pg-shop. There, a meter reading tripped the server’s own alarm. The Canvas marks that server as an origin. Web shows the effect.",
+        "start": 360.6666666666667,
+        "end": 378.6666666666667
       },
       {
-        "focus": "Trace the evidence",
-        "text": "Select the database link in the Inspector. Follow it through the health and structure queries to the recorded names and IDs. Those records let a teammate check why Sattle connected the service to this particular server.",
-        "start": 311.7916666666667,
-        "end": 326.75
+        "focus": "Lineage",
+        "text": "Why does the database service point to that particular server? The health view takes the link from the structure query. That query matched the service’s host name to the Azure resource. The white paper calls this trail lineage. Each step leads back to the records behind the result.",
+        "start": 378.6666666666667,
+        "end": 396.7083333333333
       },
       {
         "focus": "Query draft",
-        "text": "To try a different rule, open the projection editor on a running engine. Edit a draft, then preview its rows. You can see what your query would return before you save it.",
-        "start": 326.75,
-        "end": 339.0416666666667
+        "text": "The Canvas can also preview a different rule. A draft runs against the recorded case and shows which rows it returns before the rule changes. The records still describe the same outage. A different answer shows which conclusion depends on the rule.",
+        "start": 396.7083333333333,
+        "end": 414.125
       }
     ]
   }

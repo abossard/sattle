@@ -1,5 +1,9 @@
 # How the shop gets its health model
 
-Follow one shop on Azure. Keep its gateway, services, database, cache and storage visible as the lesson moves between layers. Start with the two queries that compute the model. Show the team’s choices, the paper’s theory, the database outage, and two local replay experiments. Use motion to show evidence matching, changing dependencies, and the direction of impact. Use English narration throughout.
+Each chapter starts with something that happened in the recorded shop. A full-size figure explains how it happened, then names the principle that carries over to another system. The opening pulls back from one checkout path to the entire recorded master graph. The vocabulary and rules can be maintained by people. The figures show what Sattle can derive from those definitions and from evidence.
 
-The pg-shop incident uses the shipped synthetic estate. The existing-cache and new-cache cases use controlled changes in separate copies of that recording. The interactive guide and video share a diagram renderer and a timed voice track.
+The three passages explore different parts of each figure. Keep the current term, its definition, the shop context and the relevant paper chapters visible. The film and interactive guide use the same drawings and local Heart narration.
+
+The shop is the bundled pg-shop replay. The cache chapters compare controlled edits to copies of that recording. Keep the settings, readings and rules that each experiment holds fixed visible when comparing outcomes.
+
+The primary lesson now follows order O-104 through a larger, source-mapped retail architecture. Its full-graph chapter lifts every entity and relationship to the level of business activities. The published retail integration and local teaching choices are documented in [the retail source notes](../foundry/sources.md). The larger shop has its own local audio, captions and figures. The pg-shop film remains the reproducible engine example.

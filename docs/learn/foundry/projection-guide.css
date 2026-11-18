@@ -1,0 +1,21 @@
+.projection-browser { --tree-ink:#205347; --tree-border:#b4c8b7; }
+.projection-browser .projection-start { display:flex; align-items:center; flex-wrap:wrap; gap:.5rem 1rem; margin:1rem 0 .5rem; font-weight:650; }
+.projection-start select { padding:.4rem .6rem; margin:0; }
+.projection-hint { font-size:.9rem; color:#415b4f; }
+.projection-tree { margin-top:1rem; }
+.projection-tree details { min-width:0; padding:.35rem 0 .35rem .8rem; margin:.38rem 0; border:0; border-left:2px solid var(--tree-border); }
+.projection-tree summary { padding:.12rem .15rem; overflow-wrap:anywhere; line-height:1.4; }
+.projection-tree > .projection-group { padding:.5rem .7rem; border:1px solid var(--tree-border); border-radius:.4rem; background:#fffef4; }
+.projection-group > summary { color:var(--tree-ink); font-weight:720; }
+.projection-tree .projection-inside { border-left-style:dashed; font-size:.92rem; }
+.projection-tree .projection-link { border-color:#81a599; }
+.projection-link > summary { color:#264b56; }
+.projection-tree .projection-direction { margin:.35rem 0 0; color:#3d5d54; font-size:.87rem; }
+.projection-tree .projection-evidence { display:grid; gap:.3rem; margin:.35rem 0 .5rem; }
+.projection-evidence small { display:block; color:#425950; font-size:.82rem; overflow-wrap:anywhere; }
+.projection-members code { overflow-wrap:anywhere; font-size:.83em; }
+.projection-crossref { color:#204d41; background:#f9fbf2; border:1px solid var(--tree-border); border-radius:.3rem; padding:.32rem .6rem; margin:.3rem 0; }
+@media(max-width:640px) {
+  .projection-tree details { padding-left:.4rem; }
+  .projection-tree .projection-evidence, .projection-tree .projection-members { padding-left:1.05rem; }
+}

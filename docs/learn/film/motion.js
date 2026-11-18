@@ -1,22 +1,27 @@
 const timeline = gsap.timeline({paused:true});
-// Enlarge the evidence when the lesson asks the viewer to read a chart,
-// compare records, or follow a query. Tracing a dependency uses the wide map.
-const evidenceShots = new Set([
-  "rules-1", "layers-0", "layers-1", "layers-2", "incident-0", "incident-2",
-  "dependency-2", "azure-1", "replay-1", "replay-2", "inspect-1", "inspect-2"
-]);
-for (const host of document.querySelectorAll(".story-board")) {
-  const scene = host.closest("section");
-  const topic = host.dataset.topic, beat = Number(host.dataset.beat);
-  const [term, definition, title] = ShopTerms[topic][beat];
-  scene.querySelector("h1").textContent = title;
-  scene.querySelector(".term").textContent = term;
-  scene.querySelector(".definition").textContent = definition;
-  if(evidenceShots.has(scene.id))host.dataset.layout="evidence";
-  const view = ShopMap.mount(host, topic, beat);
-  const clock = {progress:0};
-  timeline.to(clock, {progress:1, duration:Number(scene.dataset.duration), ease:"none",
-    onUpdate:()=>view.seek(clock.progress)}, Number(scene.dataset.start));
+for (const scene of document.querySelectorAll(".shot")) {
+  const host = scene.querySelector(".story-board");
+  const topic = host.dataset.topic;
+  const ends = scene.dataset.beatEnds.split(",").map(Number);
+  const termLabel = scene.querySelector(".term"), meaning = scene.querySelector(".definition");
+  let active = -1, figure;
+  function draw(time) {
+    const index = ends.findIndex(end => time < end);
+    const beat = index < 0 ? ends.length - 1 : index;
+    if (beat !== active) {
+      active = beat;
+      figure = ShopMap.mount(host, topic, beat);
+      const [term, definition] = ShopTerms[topic][beat];
+      termLabel.textContent = term;
+      meaning.textContent = definition;
+    }
+    const start = beat ? ends[beat-1] : 0;
+    figure.seek((time-start)/(ends[beat]-start));
+  }
+  draw(0);
+  const clock = {elapsed:0};
+  timeline.to(clock, {elapsed:ends.at(-1), duration:ends.at(-1), ease:"none",
+    onUpdate:()=>draw(clock.elapsed)}, Number(scene.dataset.start));
 }
 window.__timelines = window.__timelines || {};
-window.__timelines["shop"] = timeline;
+window.__timelines.shop = timeline;

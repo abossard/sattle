@@ -4,64 +4,64 @@ Transcript of the narrated Sattle field guide.
 
 ## 00:00 · The shop on Azure
 
-A dependency is something a service needs to do its job. Follow the arrows from the shop’s web service to the API, then through the database service to the server called pg-shop.
+A customer checks out. The shop’s web service calls its API, which reaches a database server called pg-shop through the database service. The arrows show what checkout depends on. It takes several sources to piece together that short path.
 
-An observation is one report from one source. Kubernetes names the shop’s services. Network records show calls between them. Azure lists the database server, and its meter tells us whether the server answered.
+Now the map pulls back. At the end of this replay, Sattle’s master graph holds seventy-three entities and sixty-nine links. An entity can be a pod, a service or an Azure resource. The links record facts such as which pods called each other and where a pod ran.
 
-A health model is a map of what’s healthy and who depends on it. Sattle joins the observations in a master graph. One query draws the shop. A second applies your health rules.
+The checkout path is one view of that larger graph. Sattle calls the query that builds a view a projection. One projection maps the shop’s dependencies. Another combines that map with meter readings and rules to show how an outage can reach checkout. That second view is the health model.
 
-## 00:41 · Your team’s decisions
+## 00:55 · The shop’s health rules
 
-Scope tells Sattle where to look. The replay comes with working rules. For your own shop, connect the sources you can read, then choose the cluster and the namespace that holds your services.
+The box encloses services in the shop namespace, a named group in Kubernetes. Its database runs outside that box on Azure. The scope says which services belong to the shop. Their dependencies can still lead outside it.
 
-A signal rule turns readings into an alarm. Your team sets the threshold and the wait. For servers like pg-shop, one bad minute raises the alarm. Two good minutes clear it.
+For pg-shop, one bad minute opens the alarm. The first good minute keeps it open. The second closes it. That memory has a name, hysteresis. People can choose and refine rules like this to express what counts as failure and recovery for a particular service.
 
-Your team also chooses which failures should affect a caller. The API needs its database. If your own API can serve a request without its cache, you can leave that call out of its health rule.
+The API needs the database to finish checkout. A cache could be optional if the API can serve the request without it. A network record shows that a call happened. The health rules decide whether trouble at the far end should count against the caller.
 
-## 01:22 · From records to a map
+## 01:47 · From records to a map
 
-Identity tells Sattle when two records describe the same thing. Compare the Azure resource ID in the inventory with the ID on the meter reading. They match. Both records belong to pg-shop.
+One report lists pg-shop in Azure. Another carries its meter reading. Both contain the same resource ID. That shared identity lets the model attach a new reading to the server it already knows.
 
-A projection is a query that builds a new view. Here, several copies of the web service call the API. The projection groups those calls into one arrow between the services.
+Three web pods call two API pods. A pod is a running copy of a program. At the service level, those calls become one arrow from web to API. This projection groups the callers and their targets by the service they belong to.
 
-An ontology is the map’s vocabulary. It names kinds of things, like a service or a server, and the links they can have. Here the database service uses a server called pg-shop.
+The database service points to pg-shop. They’re two different things, and the link says the server backs the service. An ontology defines that vocabulary. People can maintain it as the system grows, giving each new kind of thing and relationship a precise meaning.
 
-## 02:03 · The pg-shop outage
+## 02:38 · The pg-shop outage
 
-A time series keeps readings in the order of their sample times. At 10:11, pg-shop reports zero. The recorder gets that sample a minute and a second later. The chart puts it at 10:11.
+At 10:11, the meter reports that pg-shop stopped answering. The recorder gets that reading a minute and a second later. The chart places the zero at 10:11, the sample time. That keeps the outage in the minute it happened.
 
-Impact travels back toward the callers. Start at pg-shop and follow the dots to the left. The alarm reaches the database service, the API, then the gateway and web service. The cache stays healthy.
+Down that column, the database service turns red, then the API that needs it. Web and the gateway both need the API. The cache stays green. A failure can reach a caller several steps away. The health model follows the dependencies to find those callers.
 
-At 10:14 the meter rises to one. That’s the first good minute. Pause there and the map is still red. At 10:15 the next good minute clears the alarm, and the callers turn green.
+At 10:14 the database answers again. Its meter rises while its alarm stays red. At 10:15, the second good minute clears the alarm for the database and its callers. A reading describes one moment. A health state can depend on several readings in a row.
 
-## 02:46 · A new dependency
+## 03:31 · A new dependency
 
-Degraded means the model sees trouble that falls short of an outage. Earlier in the replay, the cache comes under heavy load. The web service uses it and turns amber. The gateway stays green.
+Earlier that morning, the cache was under heavy load. Web already depended on it. Both show amber, the warning state called Degraded. The gateway and API were healthy.
 
-Evidence is a record that supports something on the map. Give the API the existing cache address. Sattle matches that setting to Azure inventory and adds an arrow from the API to the cache.
+In a second run, the API’s settings name the existing cache. Sattle matches the address to its Azure resource and adds a dependency. That one setting is evidence for an arrow the original run didn’t have.
 
-Compare the gateways at 10:06:30. In the original run, the gateway is healthy. In the changed run, it depends on the busy cache through the API. The same readings now give the gateway an amber light.
+Both runs stop at the same time. The cache meter reads eighty-five percent in each. Only the second gateway turns amber, because its API now depends on the cache. Holding the readings and rules fixed makes the effect of that one new link visible.
 
-## 03:30 · A change on Azure
+## 04:15 · A change on Azure
 
-Suppose the API now names a different cache, offers-cache. The setting gives Sattle an address to look for. Until Azure reports a resource at that address, the shop map has no target for the new arrow.
+In another replay, the API names a new host, offers-cache. Its address is on the left. The Azure inventory on the right has no match yet. The setting tells us where the API intends to connect. The resource at that address is still an open question.
 
-Now Azure Resource Graph lists the new cache. Its address matches the API setting. Since the shop already uses this kind of cache, the existing query adds the new link.
+Now Azure reports a Redis cache whose name and type match that address. It appears in the overlap. A query can join the two records and connect the API to the new resource. The same rule can recognize another cache when it appears.
 
-Unknown means the model has too little evidence to judge health. Azure tells us offers-cache exists. We still need its readings. A new kind of resource may also need a new matching rule or meter.
+The new cache appears on the map with a question mark. Azure supplied evidence that it exists. To judge its health, Sattle also needs readings that a health rule can use. Until then, the state is Unknown. A different resource type may call for a different rule or meter.
 
-## 04:11 · A map you can rewind
+## 05:09 · A map through time
 
-A patch is a list of changes. When a source reports an update, the engine sends the affected parts to the Canvas, Sattle’s viewer. A gap in reporting leaves the last known resource on the map.
+The Canvas starts with a saved graph. As pg-shop’s state changes, the engine sends a patch listing the edits. Here seven edits carry the map from revision fifteen to sixteen. A gap in reporting leaves the last known resource in place.
 
-A revision marks a point in the history of the map. The Canvas can return to it by taking a saved map and applying the next few patches. In this replay, revision 16 shows the outage. Revision 18 shows recovery.
+Revision sixteen shows the outage. By eighteen the database has recovered. A revision counts changes to the graph, so the distance between those numbers says nothing about how many minutes passed. The meter keeps time in minutes.
 
-To test a replay, Sattle feeds the same records and rules to two programs. One updates the graph as records arrive. The other rebuilds it from scratch. The white paper explains when their answers should agree.
+One path applies the edits as each record arrives. The other builds the answer again from the same recorded inputs, clock events and rules. Both end at the same graph. That agreement makes a past result reproducible and gives Sattle a way to test its updates.
 
-## 04:55 · Check the answer
+## 06:00 · The evidence for an answer
 
-An origin has a failing signal of its own. In the Canvas workload tree, select pg-shop at revision 16. Its origin marker singles out the database. The web service is red because it depends on that database.
+At revision sixteen, web is red. Its dependency path leads through the API and the database service to pg-shop. There, a meter reading tripped the server’s own alarm. The Canvas marks that server as an origin. Web shows the effect.
 
-Select the database link in the Inspector. Follow it through the health and structure queries to the recorded names and IDs. Those records let a teammate check why Sattle connected the service to this particular server.
+Why does the database service point to that particular server? The health view takes the link from the structure query. That query matched the service’s host name to the Azure resource. The white paper calls this trail lineage. Each step leads back to the records behind the result.
 
-To try a different rule, open the projection editor on a running engine. Edit a draft, then preview its rows. You can see what your query would return before you save it.
+The Canvas can also preview a different rule. A draft runs against the recorded case and shows which rows it returns before the rule changes. The records still describe the same outage. A different answer shows which conclusion depends on the rule.
