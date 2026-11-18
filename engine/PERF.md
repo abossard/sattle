@@ -1225,6 +1225,17 @@ Theory. An emit that writes telemetry evaluates the identity of every row twice 
 - One pair at load 460 to 530: thread CPU at that load moves by more than the change. The last section of the day has the pairs that decide it.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: a Series visits only the changes of the properties it reads (#119, 2026-11-18)
+Theory. Each Series scanned every window change of the graph it reads in a step and kept those of its reads: 7,939,330 changes scanned for 2,566,110 kept in the nine steady closes at 10^5. The graph delta of a step now indexes its changes by property once, on the first read (two integer arrays, 8 bytes per change), and a Series visits only the changes of its reads, merged in the order of the step: the same windows in the same order. The engine made one delta per graph that reads a stepped graph, so the index would have been built once per reader; it now makes one per stepped graph, shared by all its readers.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| steady close, thread CPU median | 74 / 32 ms | 453 / 373 ms |
+| allocated per steady close | 8.9 / 9.0 MB | 90.2 / 91.6 MB |
+
+- One pair at load 460 to 600. The allocation is the index: 94.4 MB per close with one delta per reader, 91.6 MB with the delta shared.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

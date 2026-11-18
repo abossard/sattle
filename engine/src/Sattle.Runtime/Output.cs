@@ -49,6 +49,9 @@ sealed class SeriesOp : PhysOp
     [ThreadStatic] static bool[]? oldSet;
     static Dictionary<(int Elem, long Start), int> changed => changedOfThread ??= [];
 
+    /// <summary>Per read, the places of its changes in the step's telemetry, and how far `ChangesOf` has taken them.</summary>
+    readonly ArraySegment<int>[] reads; readonly int[] at;
+
     /// <summary>Collects the changes of this step into `changed`; false when there are none.</summary>
     bool ChangesOf(Epoch ep)
     {
@@ -56,10 +59,14 @@ sealed class SeriesOp : PhysOp
         var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
         if (gd is null || gd.Telemetry.Count == 0) return false;
         var n = propHandles.Length;
-        foreach (var ch in gd.Telemetry)
+        for (var q = 0; q < n; q++) { reads[q] = Array.IndexOf(propHandles, propHandles[q]) == q ? gd.ChangesOf(propHandles[q]) : ArraySegment<int>.Empty; at[q] = 0; }
+        while (true)            // the changes of the reads in the order of the step: a merge of the reads' places
         {
-            var p = Array.IndexOf(propHandles, ch.Key.Prop);
-            if (p < 0) continue;
+            var p = -1; var next = int.MaxValue;
+            for (var q = 0; q < n; q++) if (at[q] < reads[q].Count && reads[q][at[q]] < next) { next = reads[q][at[q]]; p = q; }
+            if (p < 0) break;
+            at[p]++;
+            var ch = gd.Telemetry[next];
             if (!changed.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var slot))
             {
                 changed[(ch.Key.Element, ch.Key.WindowStart)] = slot = changed.Count;
@@ -155,6 +162,7 @@ sealed class SeriesOp : PhysOp
         this.t = t; this.inLayout = inLayout;
         elemCol = inLayout.Index(t.TargetVar);
         propHandles = [.. t.Reads.Select(r => it.Intern(r.PropId))];
+        reads = new ArraySegment<int>[propHandles.Length]; at = new int[propHandles.Length];
         readIsDec = [.. t.Reads.Select(r => r.ValueKind == "Decimal")];
         outWs = OutLayout.Index("windowStart"); outWe = OutLayout.Index("windowEnd");
         outReadCol = [.. t.Reads.Select(r => OutLayout.Index(r.OutName))];

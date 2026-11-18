@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Sattle.Core;
 using Sattle.Language;
 
@@ -25,6 +26,28 @@ public sealed class GraphDelta(Patch? patch, Graph state, IReadOnlyList<WindowCh
     public Patch? Patch { get; } = patch;
     public Graph State { get; } = state;
     public IReadOnlyList<WindowChange> Telemetry { get; } = telemetry;
+
+    /// <summary>The places in `Telemetry` of the changes of one property, in their order. The index is built once per delta, on the first call, so each reader of the graph visits only the changes of the properties it reads.</summary>
+    public ArraySegment<int> ChangesOf(int prop) => (byProp ??= ByProp(Telemetry)).TryGetValue(prop, out var s) ? s : ArraySegment<int>.Empty;
+    volatile Dictionary<int, ArraySegment<int>>? byProp;          // readers on two threads may both build it: the same index, one kept
+
+    static Dictionary<int, ArraySegment<int>> ByProp(IReadOnlyList<WindowChange> changes)
+    {
+        var slot = new Dictionary<int, int>(); var ends = new List<int>(); var slots = new int[changes.Count];
+        for (var i = 0; i < changes.Count; i++)
+        {
+            ref var s = ref CollectionsMarshal.GetValueRefOrAddDefault(slot, changes[i].Key.Prop, out var found);
+            if (!found) { s = ends.Count; ends.Add(0); }
+            ends[slots[i] = s]++;
+        }
+        var starts = new int[ends.Count];
+        for (int k = 0, at = 0; k < starts.Length; k++) { starts[k] = at; at += ends[k]; ends[k] = starts[k]; }
+        var places = new int[changes.Count];
+        for (var i = 0; i < slots.Length; i++) places[ends[slots[i]]++] = i;
+        var res = new Dictionary<int, ArraySegment<int>>(slot.Count);
+        foreach (var (prop, k) in slot) res[prop] = new ArraySegment<int>(places, starts[k], ends[k] - starts[k]);
+        return res;
+    }
 }
 
 public sealed class OpContext(Interner it, RuntimeFaults faults, IdentityCatalog ids, string tenant, string projectionId, GraphKey graph, OutputBuilder output)

@@ -515,6 +515,7 @@ public sealed class Engine : IDisposable, IEngineInput
     void RunEpoch(Epoch master, long seq, string cause, string? rowsFor)
     {
         var results = new Dictionary<string, GraphResult>();
+        var deltas = new Dictionary<string, GraphDelta>();          // one per graph that stepped, shared by every graph that reads it: so is its index of changes
         foreach (var g in graphs)
         {
             Epoch ep;
@@ -533,7 +534,8 @@ public sealed class Engine : IDisposable, IEngineInput
                 foreach (var (port, from) in g.PortSources)
                     if (results.TryGetValue(from, out var r))
                     {
-                        ep.Graphs[port] = new GraphDelta(r.Patch, byName[from].State, r.Telemetry);
+                        if (!deltas.TryGetValue(from, out var d)) deltas[from] = d = new GraphDelta(r.Patch, byName[from].State, r.Telemetry);
+                        ep.Graphs[port] = d;
                         any |= r.Patch is not null || r.Telemetry.Count > 0;
                     }
                 if (!any) continue;
