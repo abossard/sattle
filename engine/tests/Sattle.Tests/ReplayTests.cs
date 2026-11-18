@@ -68,6 +68,33 @@ public class ReplayTests
         }
     }
 
+    /// <summary>The command line is the same function: `sattle replay` of the estate with a copy of the definitions folder prints the pinned state digest, and prints another one after the title in the projection file of the deployment report changed. So a replay reads the definition files of the folder it is given, the projection files of whatever language among them, and a test on a replay cannot pass without them.</summary>
+    [Fact]
+    public void Sattle_replay_prints_the_pinned_digest_of_the_estate_and_another_one_after_a_projection_file_changed()
+    {
+        var dir = Scenarios.Tracked("estate");
+        var defs = Directory.CreateTempSubdirectory("sattle-defs").FullName;
+        try
+        {
+            foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(defs, Path.GetFileName(f)));
+            string Digest()
+            {
+                var output = new StringWriter();
+                var code = Sattle.Cli.Program.Run(["replay", dir, "--defs", defs], output);
+                Assert.True(code == 0, output.ToString());
+                return output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
+            }
+            var pinned = Digest();
+            Scenarios.AssertPinned(dir, pinned);
+            var report = Directory.EnumerateFiles(defs, "acme.report.deploymentReport.*").Single();
+            var text = File.ReadAllText(report);
+            Assert.Contains("\"Deployment health\"", text);
+            File.WriteAllText(report, text.Replace("\"Deployment health\"", "\"Deployment health, changed\""));
+            Assert.NotEqual(pinned, Digest());
+        }
+        finally { Directory.Delete(defs, true); }
+    }
+
     /// <summary>T6 and T7 on a tracked scenario, with the settings of `sattle replay`: chunk sizes 1 and 50 give the state digest, the graph digests and the integrated output of chunk size 100000, the integrated output of every graph is its final state (the sum of the signed deltas of its patches), and the state digest is the pinned one.</summary>
     [Theory]
     [InlineData("estate")] [InlineData("estate-wide")] [InlineData("deploy-health")]

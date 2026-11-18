@@ -1,56 +1,26 @@
-using Sattle.Cli;
 using Sattle.Core;
 using Sattle.Language;
-using Sattle.Runtime;
 
 namespace Sattle.Kql.Tests;
 
-/// <summary>Research 10, stage 1: a projection written in KQL gives the pinned state on the synthetic estate, and the engine runs the operators the front end wrote.
-/// Each state digest is pinned where the KQL text gave the state of the projections' former text.</summary>
+/// <summary>A projection written in KQL (research 10, stage 1): what the profile refuses and what it says to write, how a file is named and found, and where the operators and the errors of a text are placed. The state the shipped projections give on the estate is pinned once, for every language, in the scenario pin file of `Sattle.Tests`.</summary>
 public class KqlProjectionTests
 {
     static readonly string Root = FindRoot();
     static string Definitions => Path.Combine(Root, "engine", "definitions");
-    static string Estate => Path.Combine(Root, "engine", "tests", "Sattle.Tests", "fixtures", "estate");
 
-    [Fact]
-    public void The_kernel_is_the_one_the_contract_was_agreed_on() =>
-        Assert.Equal("sha256:dd5bb1df45cb491b5af743e3d92d5b0b688c78f594bcc43454ec83db01cd0ce6", Kernel.ComputeDigest());
-
+    /// <summary>Every operator the front end writes for a projection is placed in the `.kql` file of that projection.</summary>
     [Theory]
-    [InlineData("acme.svc.serviceDeps.kql", "serviceTree", "sha256:88c3217f415ec347fb21b80ab8fe6773b5f6e5482da048ba1b8d19e068eff3d3")]
-    [InlineData("acme.deployhealth.deploymentHealth.kql", "deploymentHealth", "sha256:11b2c14cea86e2639b79b1d7b7b551e06316fe9e7d60cbd74259fa2d8964bfd7")]
-    [InlineData("acme.report.deploymentReport.kql", "deploymentReport", "sha256:a056444e9890092e38cce3c7a6d5f0f4ed2f54d2ae6bc08b465b2f6515b6b496")]
-    [InlineData("acme.biz.capabilityView.kql", "capabilities", "sha256:0f4b27b751f3b40c12aaf6c1ef7898d7484c3f4a7fda60c7106d032077f59082")]
-    [InlineData("acme.workload.workloadStructure.kql", "workloadStructure", "sha256:643d3daa51f2959585d1d193f35e265c5797f9b9205a139e60f1be614a4749ea")]
-    [InlineData("acme.workload.workloadHealth.kql", "workload", "sha256:73033bbc9ed5ef8b614bebf5c0d34b9cdd0ba7d22160d26152ade3109cd766ff")]
-    [InlineData("acme.treereport.healthReport.kql", "healthReport", "sha256:5bc31697f3bdde49fb1fe91a24e0aacf908e8eaff9d472860612d7f3456e4573")]
-    [InlineData("acme.tree.treeStructure.kql", "treeStructure", "sha256:f0fe8edc6448fa1acfa7374070576d12ebc66008098125f8b6f82e252df57f64")]
-    [InlineData("acme.tree.treeSignals.kql", "treeSignals", "sha256:ed034b16e9bd00ff3e6004030f841ea514c5b16db0fb0e4776528dfb3af2a21f")]
-    [InlineData("acme.treehealth.treeRollup.kql", "treeRollup", "sha256:bf8d153035d1ca92289337a0f4620c58eb6c83a02ab962fb97a061470d0be989")]
-    [InlineData("acme.treehealth.healthTree.kql", "healthTree", "sha256:5787d12669595d2c99b02a95eaba52b17080148ae7ee683d38f1b5c1d988f918")]
-    [InlineData("acme.ops.ingest.kql", "master", "sha256:48817b8a0ae878a6db555365dec625edf2c7a616fe3538918eef9514b66be482")]
-    public void A_projection_in_KQL_gives_the_pinned_state_on_the_estate(string kql, string graph, string pinned)
+    [InlineData("acme.svc.serviceDeps.kql")] [InlineData("acme.deployhealth.deploymentHealth.kql")] [InlineData("acme.report.deploymentReport.kql")] [InlineData("acme.biz.capabilityView.kql")]
+    [InlineData("acme.workload.workloadStructure.kql")] [InlineData("acme.workload.workloadHealth.kql")] [InlineData("acme.treereport.healthReport.kql")] [InlineData("acme.tree.treeStructure.kql")]
+    [InlineData("acme.tree.treeSignals.kql")] [InlineData("acme.treehealth.treeRollup.kql")] [InlineData("acme.treehealth.healthTree.kql")] [InlineData("acme.ops.ingest.kql")]
+    public void Every_operator_of_a_projection_in_KQL_is_placed_in_its_file(string kql)
     {
         var path = Path.Combine(Definitions, kql);
         var pid = Ids.Child(Ids.Module(kql[..kql[..^4].LastIndexOf('.')]), "projection", kql[..^4][(kql[..^4].LastIndexOf('.') + 1)..]);
         var ops = new DefView(Defs.Value.Catalog.Graph).Children(pid, "op").ToList();
         Assert.NotEmpty(ops);
         Assert.All(ops, op => Assert.Equal(path, Defs.Value.Catalog.FileOf.GetValueOrDefault(op)));
-        var (digest, state) = Observe(Run(Defs.Value.Catalog, [graph]), graph);
-        Assert.NotEqual(0, state.Count);
-        Assert.Equal(pinned, digest);
-    }
-
-    /// <summary>`sattle replay` replays the estate with the projections of the `.kql` files and ends in the estate's state digest.</summary>
-    [Fact]
-    public void Replaying_the_projections_in_KQL_ends_in_the_state_digest_of_the_estate()
-    {
-        var output = new StringWriter();
-        var code = Program.Run(["replay", Estate, "--cluster", "synth", "--defs", Definitions], output);
-        Assert.True(code == 0, output.ToString());
-        var digest = output.ToString().Split('\n').Select(l => l.Trim()).Last(l => l.StartsWith("state digest ", StringComparison.Ordinal))["state digest ".Length..];
-        Assert.Equal("sha256:32bcad1fe77cdfb8d85119b9238d9e1cebb3aa063c2554eab6ce922c52ffa422", digest);
     }
 
     /// <summary>What the profile refuses, and that the message says what to write instead.</summary>
@@ -245,24 +215,6 @@ public class KqlProjectionTests
         var res = cat.Load(files, updatePins: true);
         Assert.True(!res.Diagnostics.Any(x => x.IsError), string.Join("\n", res.Diagnostics.Where(x => x.IsError)));
         return cat;
-    }
-
-    /// <summary>The graphs (and the graphs they read) after replaying the estate as `sattle replay` does.</summary>
-    static Engine Run(Catalog cat, string[] graphs)
-    {
-        var space = cat.Spaces.Keys.Single();
-        var o = Program.Options.Parse(["replay", Estate, "--cluster", "synth"]);
-        var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = Program.LateHorizonFor(o), Only = graphs.ToHashSet() });
-        new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Program.ReplayOptionsOf(o, "synth")).Run(Estate);
-        return engine;
-    }
-
-    /// <summary>One graph's digest over its state and telemetry windows (with the pair of a `mean` or `last` window), as the state digest reads them.</summary>
-    static (string Digest, Graph State) Observe(Engine engine, string graph)
-    {
-        var g = engine.Graph(graph); var mem = (InMemoryTelemetryStore)engine.Telemetry;
-        var windows = mem.Dump(g.Key).Select(w => $"{engine.Interner.Get(w.Element)} {engine.Interner.Get(w.Prop)} {w.Ws} {w.Value} {mem.AuxOf(g.Key, new WindowKey(w.Element, w.Prop, w.Ws))}");
-        return (Digests.Of(g.State.Digest() + "|" + string.Join("\n", windows.Order(StringComparer.Ordinal))), g.State);
     }
 
     static string FindRoot()

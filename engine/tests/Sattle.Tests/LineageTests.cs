@@ -112,6 +112,19 @@ public class LineageTests
         Assert.True(pods.Count > 0 && without == 0, $"{without} of {pods.Count} pods have no lineage");
     }
 
+    /// <summary>Code review 2: every block of a report that counts or lists elements names them. Before, the count blocks of the two reports named no source. The two blocks without a source are the heading and the table header, which the text of the projection gives as values.</summary>
+    [Theory]
+    [InlineData("deploymentReport")] [InlineData("healthReport")]
+    public void Every_block_of_a_report_that_counts_or_lists_elements_names_them(string graph)
+    {
+        var h = OnEstate.Value;
+        var blocks = h.Entities(graph);
+        Assert.Contains(blocks, b => b.Prop("kind") == "stat");
+        Assert.Contains(blocks, b => b.Prop("kind") == "row");
+        var without = blocks.Where(b => h.Lineage(graph, b["id"].Id())["sources"]!.AsArray().Count == 0).Select(b => b.Prop("kind")).Order(StringComparer.Ordinal).ToList();
+        Assert.Equal(["header", "heading"], without);
+    }
+
     [Fact]
     public void An_unknown_element_is_a_404_for_both_directions()
     {
