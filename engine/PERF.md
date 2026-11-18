@@ -1000,6 +1000,21 @@ Theory. A group keeps, per key and per `arg_max` or `arg_min`, every distinct in
 - What stays per row: its values, the bits of which members have one, the weight, the next row (4 B), and per key its first row (4 B).
 - Before is main 493fbbc with the segments, working arrays, binding records and argmax tables patches. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
 
+### Efficiency stage 2, groups: a key's row keeps no flag and no count that the rest of it gives (#115, 2026-11-18)
+Theory. A group's key row held a flag of whether the key has a row in the output, and a `count()` its own accumulator. Both are functions of the key's count: a group has a row in the output iff its count was positive at the end of the last step, a windowed group iff its window is closed and its count positive, a roll-up iff its count is positive and no marker record of no data takes its place; and `count()` is the count. A step reads the flag before it changes the count, so the count still gives it. Now neither is stored. Same output. Seal format 19 to 20.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 181 / 179 MB | 963 / 952 MB |
+| key rows | 9.9 / 8.3 MB (990 / 826 B per master node) | 68.4 / 57.5 MB (684 / 574 B per master node) |
+| groups per master node | 731 / 682 B | 551 / 511 B |
+| windowed groups per master node | 774 / 666 B | 470 / 406 B |
+| roll-ups per master node | 131 / 120 B | 82 / 75 B |
+| allocated per input record | 8.68 / 8.61 KB | 8.67 / 8.65 KB |
+
+- Accumulators of `last` are reserved but never written, and a column never written takes no memory: nothing to gain there.
+- Before is the row sets patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

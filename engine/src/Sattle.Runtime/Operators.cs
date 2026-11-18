@@ -214,7 +214,7 @@ sealed class KeyTable
 {
     readonly int k, nL, nD, nIndex;
     readonly Table rows;
-    readonly int cnt, accL, accD, emitted;
+    readonly int cnt, accL, accD;
     readonly long[] key;
     readonly Segments<byte> touched = new();
     public readonly List<int> TouchedList = [];
@@ -281,8 +281,8 @@ sealed class KeyTable
     {
         rowSets = [.. rowSetWidths.Select(w => new RowSet(w))];
         k = keyWidths.Length; this.nL = nL; this.nD = nD; this.nIndex = nIndex;
-        cnt = k; accL = cnt + 1; accD = accL + nL; emitted = accD + 2 * nD;
-        rows = new Table([.. keyWidths, .. Enumerable.Repeat(8, emitted - k), 4], keyColumns: k);
+        cnt = k; accL = cnt + 1; accD = accL + nL;
+        rows = new Table([.. keyWidths, .. Enumerable.Repeat(8, accD + 2 * nD - k)], keyColumns: k);
         key = new long[k];
         if (longs) { this.longs = new Table([4, 4, 8], keyColumns: 3); longsOf = this.longs.Arrange(0, 1); }
         if (decimals) { this.decimals = new Table([4, 4, 8, 8, 8, 8], keyColumns: 4); decimalsOf = this.decimals.Arrange(0, 1); }
@@ -303,8 +303,6 @@ sealed class KeyTable
     public void AddL(int slot, int i, long v) => rows.Set(slot, accL + i, rows.Get(slot, accL + i) + v);
     public decimal D(int slot, int i) => Unpack(rows.Get(slot, accD + 2 * i), rows.Get(slot, accD + 2 * i + 1));
     public void AddD(int slot, int i, decimal v) => SetD(slot, i, D(slot, i) + v);
-    public bool Emitted(int slot) => rows.Get(slot, emitted) != 0;
-    public void SetEmitted(int slot, bool on) => rows.Set(slot, emitted, on ? 1 : 0);
 
     /// <summary>The digits of a decimal in two 64-bit halves, and back.</summary>
     static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(d, bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
@@ -414,10 +412,10 @@ sealed class KeyTable
     public bool RowHas(int set, int row, int member) => (rowSets[set].T.Get(row, rowSets[set].HasAt) >> member & 1) != 0;
     public decimal RowValue(int set, int row, int member) => rowSets[set].Get(row, 1 + member);
 
-    /// <summary>Whether a slot holds nothing: no rows, nothing emitted, every accumulator and multiset empty.</summary>
+    /// <summary>Whether a slot holds nothing: no rows (so nothing emitted), every accumulator and multiset empty.</summary>
     bool Dead(int s)
     {
-        if (Cnt(s) != 0 || Emitted(s)) return false;
+        if (Cnt(s) != 0) return false;
         for (var i = 0; i < nL; i++) if (L(s, i) != 0) return false;
         for (var i = 0; i < nD; i++) if (D(s, i) != 0) return false;
         for (var a = 0; a < nIndex; a++)
@@ -513,7 +511,7 @@ abstract class AggregatingOp : PhysOp
             var dec = a.Out.Ty.Tag == Tag.Decimal;
             switch (a.Fn)
             {
-                case "count": list.Add(new AggSpec(AggKind.Count, l++, null, false)); break;
+                case "count": list.Add(new AggSpec(AggKind.Count, -1, null, false)); break;       // the key's count of rows
                 case "countDistinct": list.Add(new AggSpec(AggKind.Distinct, l, v, false, false, l++)); hasLongs = true; break;       // its values are filed under the accumulator that holds their number
                 case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, d++, v, true)); break;
                 case "sum": list.Add(new AggSpec(AggKind.SumL, l++, v, false)); break;
@@ -559,7 +557,6 @@ abstract class AggregatingOp : PhysOp
             var s = aggs[a];
             switch (s.Kind)
             {
-                case AggKind.Count: t.AddL(slot, s.Index, w); break;
                 case AggKind.SumL: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddL(slot, s.Index, w * c.L[row]); break; }
                 case AggKind.SumD: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row])); break; }
                 case AggKind.ExtL:
@@ -615,7 +612,8 @@ abstract class AggregatingOp : PhysOp
 
     protected long AggL(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
-        AggKind.Count or AggKind.SumL => t.L(slot, aggs[a].Index),
+        AggKind.Count => t.Cnt(slot),
+        AggKind.SumL => t.L(slot, aggs[a].Index),
         AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Distinct => t.L(slot, aggs[a].Index2),
         AggKind.Last when !aggs[a].OutDec => LastOf(t, slot, aggs[a]) is { } l ? (long)l.Val : 0,
@@ -692,16 +690,11 @@ sealed class GroupOp : AggregatingOp
             for (var i = 0; i < keyCols.Length; i++) { if (keyCols[i].P is not null && !keyCols[i].P![row]) { ok = false; break; } keyBuf[i] = KeyCode(keyCols[i], row); }
             if (!ok) continue;
             var slot = table.FindOrAdd(keyBuf.AsSpan(0, keyCols.Length));
-            if (table.Touch(slot) && table.Emitted(slot)) WriteRow(bb, table, slot, -1, null, null, -1, -1);
+            if (table.Touch(slot) && table.Cnt(slot) > 0) WriteRow(bb, table, slot, -1, null, null, -1, -1);       // a key emitted what it had at the end of the last step: a row iff its count was positive
             Accumulate(table, slot, b, valueCols, row, b.Weight(row));
             if (members.Length > 0) cx.Out.Lineage.Member(Name, keyBuf.AsSpan(0, keyCols.Length), b, row, b.Weight(row));
         }
-        foreach (var slot in table.TouchedList)
-        {
-            var on = table.Cnt(slot) > 0;
-            if (on) WriteRow(bb, table, slot, 1, null, null, -1, -1);
-            table.SetEmitted(slot, on);
-        }
+        foreach (var slot in table.TouchedList) if (table.Cnt(slot) > 0) WriteRow(bb, table, slot, 1, null, null, -1, -1);
         foreach (var slot in table.TouchedList) table.ReleaseIfDead(slot);       // groups whose rows all went give their rows back
         table.ClearTouched();
         return bb.Build();
@@ -763,8 +756,8 @@ sealed class WindowedGroupOp : AggregatingOp
                 var slot = cur.Table.FindOrAdd(keyBuf.AsSpan(0, nKeys));
                 if (cur.Closed)
                 {
-                    // a revision of a closed window: what the key emitted is retracted before the row changes it
-                    if (cur.Table.Touch(slot) && cur.Table.Emitted(slot)) WriteRow(bb, cur.Table, slot, -1, ws, ws + width, outWs, OutLayout.Has("windowEnd") ? OutLayout.Index("windowEnd") : -1);
+                    // a revision of a closed window: what the key emitted is retracted before the row changes it; a key of a closed window has emitted a row iff its count is positive
+                    if (cur.Table.Touch(slot) && cur.Table.Cnt(slot) > 0) WriteRow(bb, cur.Table, slot, -1, ws, ws + width, outWs, OutLayout.Has("windowEnd") ? OutLayout.Index("windowEnd") : -1);
                     if (!Revising(cur)) revised.Add((cur, ws));
                 }
                 Accumulate(cur.Table, slot, b, valueCols, row, b.Weight(row));
@@ -774,12 +767,7 @@ sealed class WindowedGroupOp : AggregatingOp
         foreach (var (win, ws) in revised)
         {
             var t = win.Table;
-            foreach (var slot in t.TouchedList)
-            {
-                var on = t.Cnt(slot) > 0;
-                if (on) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
-                t.SetEmitted(slot, on);
-            }
+            foreach (var slot in t.TouchedList) if (t.Cnt(slot) > 0) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
             t.ClearTouched();
         }
         revised.Clear();
@@ -793,7 +781,7 @@ sealed class WindowedGroupOp : AggregatingOp
                 win.Closed = true;
                 var t = win.Table;
                 foreach (var slot in t.Slots())
-                    if (t.Cnt(slot) > 0) { WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1); t.SetEmitted(slot, true); }
+                    if (t.Cnt(slot) > 0) WriteRow(bb, t, slot, 1, ws, ws + width, outWs, -1);
             }
             foreach (var ws in windows.Where(w => cx.PastRevision(w.Value.End, width, frontier)).Select(w => w.Key).ToList())
             {
@@ -891,20 +879,21 @@ sealed class RollupOp : AggregatingOp
         foreach (var slot in table.TouchedList)
         {
             var ws = table.KeyAt(slot)[n];
-            var on = table.Cnt(slot) > 0 && !Suppressed(slot, n);
-            if (on) WriteRow(bb, table, slot, 1, ws, ws + period, outWs, outWe);
-            table.SetEmitted(slot, on);
+            if (Emitted(slot, n)) WriteRow(bb, table, slot, 1, ws, ws + period, outWs, outWe);
         }
         foreach (var slot in table.TouchedList) table.ReleaseIfDead(slot);       // windows that left the look-back give their rows back
         table.ClearTouched();
         return bb.Build();
     }
 
+    /// <summary>Whether a slot has a row in the output: it has rows and no marker record takes its place. Read before a step changes either, it is what the slot emitted.</summary>
+    bool Emitted(int slot, int n) => table.Cnt(slot) > 0 && !Suppressed(slot, n);
+
     /// <summary>The first time a step touches a slot, the aggregate it emitted is retracted, before the step changes it.</summary>
     void Retract(BatchBuilder bb, int slot, int n, out int touched)
     {
         touched = slot;
-        if (!table.Touch(slot) || !table.Emitted(slot)) return;
+        if (!table.Touch(slot) || !Emitted(slot, n)) return;
         var ws = table.KeyAt(slot)[n];
         WriteRow(bb, table, slot, -1, ws, ws + period, outWs, outWe);
     }
