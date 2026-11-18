@@ -1284,6 +1284,17 @@ Theory. An identity component under `LowerInvariant` is canonicalized per row th
 - Both sections of this day against the previous one's before, two pairs at load 88 to 138: steady close thread CPU median 324 / 309 and 324 / 287 ms, least close 303 / 288 and 303 / 264 ms, allocated 91.7 / 73.4 MB. At 10^4: 47 / 47 ms, 9.0 / 7.2 MB.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: a row held as one finds its `ones` row once (#119, 2026-11-18)
+Theory. The row of a closed window for an element of `ones` found the element's row, compared the row with the graph's element, and then added its weight with `Add`, which hashed the key and probed the index a second time. The weight now goes to the row already found. The same holds where an element of `ones` gets its fragment back.
+
+| | 10^4 | 10^5 |
+|---|---|---|
+| steady close, thread CPU median, before / after (two pairs, interleaved) | 41 / 40, 40 / 39 ms | 272 / 261, 283 / 281 ms |
+| allocated per steady close | 7.2 / 7.2 MB | 73.4 / 73.4 MB |
+
+- One index probe less per held row: 926,000 rows in nine steady closes at 10^5. Within the noise at load 31 to 44.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
 A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
 

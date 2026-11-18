@@ -299,7 +299,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         var row = ones.Find([elem]);
         if (row < 0) return;
         var sink = (int)ones.Get(row, 1); var w = ones.Weight(row);
-        ones.Add([elem], -w);
+        ones.AddAt(row, -w);
         if (!FromGraph(g, elem, sink, out var source, out var target)) throw new InvalidOperationException($"the graph lost element {it.Get(elem)}, which its sink keeps only there");
         AddFragment(elem, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer), w, source, target);
     }
@@ -379,7 +379,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         if (row < 0 || ones.Weight(row) + weight <= 0) return false;
         (buffer, spare) = (spare, buffer);
         if (!FromGraph(flushed, elem, (int)ones.Get(row, 1), out _, out _) || !fragment.SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer))) return false;
-        ones.Add([elem], weight);
+        ones.AddAt(row, weight);
         return true;
     }
 
