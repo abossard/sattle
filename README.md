@@ -333,10 +333,21 @@ What holds today:
 - The proof inventory has no statement left as a sketch or open. Some proofs rest on named premises about the engine, and most were checked by reading only.
 - The language covers relational algebra with aggregation, graph patterns, bounded recursion, windows with thresholds, and edge lifting.
 - A master graph of about 50,000 nodes was built from a real 17 minute capture of one cluster, and a health model with roll-up was derived from it.
+- **Memory at one million master nodes.** The engine replays 8.2 million records for one million pods, Services and Azure resources within the memory limits of a 16 GB, 8-core machine (measured 2026-11-18):
+
+| At one million master nodes | Measured | Limit | |
+| --- | --- | --- | --- |
+| Memory held, after a full garbage collection | 7.7 KB per node | 8 KB | met |
+| Peak memory, heap capped at 12 GiB | 11.7 GiB | 12 GiB | met |
+| Garbage collection pauses | 1 % of run time | 5 % | met |
+| CPU time per input record, parsing included | 44 µs | 37 µs | not yet |
+| Health after a window closes, typical | 3.75 s | 5 s for 99 % | not yet: one close took 62 s |
+
+  Memory went from 20 KB per node in the first run to 7.7 KB, by storing codes instead of text, keeping data only where something reads it, and running a join before a tree walk instead of after it. Graph fingerprints are now a sum of one hash per element, so no graph is ever sorted or written out whole ([research note 15](paper/research/15-graph-comparison.md)). Details per change: [PERF.md](engine/PERF.md).
 
 What does not hold yet:
 
-- **Efficiency.** The engine holds tens of kilobytes per master node. The target is about 1.6 KB at one million nodes on one machine. The plan is in [research note 04](paper/research/04-compute-and-memory-efficiency.md).
+- **Speed.** CPU time per record is 44 µs against 37 µs ([#123](https://github.com/abossard/sattle/issues/123), parked). Window closes: the derived graphs are being changed to update side by side, in waves by what they read ([#119](https://github.com/abossard/sattle/issues/119)).
 - **Expressiveness gaps.** Unbounded reachability, comparison of a window with an earlier one, and "no data for N windows" cannot be expressed. See [research note 05](paper/research/05-expressiveness-and-flexibility.md).
 - **Always live.** The engine follows the lab cluster live through Event Hubs since 2026-11-16 ([#70](https://github.com/abossard/sattle/issues/70): a scaled deployment turned Unhealthy in 34 s and back in 4 s, two hard kills resumed from the store). The source cluster runs again ([`source-cluster.sh`](lab/source-cluster.sh)).
 - **Persistence.** A local journal with snapshots works. A store-agnostic design that scales is a concept, not built.
