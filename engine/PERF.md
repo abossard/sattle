@@ -754,6 +754,22 @@ Theory. Lineage keeps the rows that hold an element up: per emit (element, group
 
 - Before is the kinds patch. Digests and the interner's live texts unchanged, as for the kinds.
 
+### Efficiency stage 2, allocation per record: the flush of the elements (#115, 2026-11-18)
+At 10^4 a flush resolved 262,881 touched elements and gave 132,399 edits: about half the touched elements resolve to what the graph already holds. For each, the flush made the id string, decoded every fragment into strings and values, built lists, a dictionary, the props and an element, and compared it with an element the graph materialized.
+
+Theory. The sink's fragments and the graph's prop blocks are canonical forms in codes of the one interner: a text and an entity id are the same code, a key is its name's code, props are in the order of the key texts. When the positive create fragments of an element agree on type and endpoints and no key gets two values, its resolved state is a function of those codes. So whether it changed is decided in codes: the merged props are written as a block and the graph is asked whether it holds that element (`Graph.Holds`). Equal bytes are equal values; unequal bytes may still be equal values (a decimal stored at another scale), and then the full resolution decides. An element the graph holds gives no edit and is skipped, so the other edits keep their order. The same merge in codes builds the element of an edit: one string per id, type, endpoint and key, the values read once. Fragments that disagree, a key with two values or a big integer take the old resolution, which notes the conflict. What the old path did besides the edit is kept: an element or property conflict is cleared only while one exists (the conflict set counts them), and a relationship takes the shortcut only while no tuple is contested in the flush (an element missing from the flush's states counts as not moved, as an unchanged one did). A graph made without the engine's interner has a text table of its own and does not take the shortcut (`Graph.Uses`); the engine's graphs keep the interner through a seal and restore (a snapshot loads into the graphs of the fresh engine).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 19.2 / 12.9 KB | 19.1 / 12.5 KB |
+| flush of the elements | 7.5 / 1.2 KB | 7.9 / 1.3 KB |
+| flush of the elements, MB | 612 / 100 | 6,482 / 1,052 |
+| live bytes | 245 / 245 MB | 1,470 / 1,470 MB |
+
+- At 10^4, 124,714 of the 130,482 touched elements with no edit take the shortcut; the other 5,768 go through the full resolution and give no edit (not split further: an element that resolves to nothing and that the graph lacks is one such case). No element or property conflict and no contested tuple occur in the bench.
+- `PropBlockWriter.Decimal` writes a decimal without an array.
+- Before is main 416b561 with the operators, id tables, sink bitmaps and `Graph.Holds` patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

@@ -398,12 +398,16 @@ sealed class ConflictSet
     readonly Dictionary<string, Conflict> now = new(StringComparer.Ordinal);
     readonly HashSet<string> changed = new(StringComparer.Ordinal);
     public IReadOnlyCollection<Conflict> All => [.. now.OrderBy(c => c.Key, StringComparer.Ordinal).Select(c => c.Value)];
+    /// <summary>Whether a conflict about an element or one of its properties holds: without one, `EndOf` has nothing to clear.</summary>
+    public bool AnyAboutElements => aboutElements > 0;
+    int aboutElements;
 
     /// <summary>Sets or clears the conflict about one subject (an element, one of its properties, a tuple, a window).</summary>
     public void Note(string subject, Conflict? conflict)
     {
         var had = now.TryGetValue(subject, out var old);
         if (conflict is null ? !had : had && old!.Text == conflict.Text) return;
+        if (had != conflict is not null && (subject.StartsWith("element ", StringComparison.Ordinal) || subject.StartsWith("property ", StringComparison.Ordinal))) aboutElements += had ? -1 : 1;
         if (conflict is null) now.Remove(subject); else now[subject] = conflict;
         changed.Add(subject);
     }

@@ -272,10 +272,28 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
 
     Element? Resolve(int elem)
     {
-        var all = RowsOf(elem).Select(x => (F: Decode(x.Code), x.Weight)).ToList();
-        var creates = all.Where(c => !c.F.Update && c.Weight > 0).Select(c => c.F).OrderBy(c => c.Sink).ToList();
         var id = it.Get(elem);
         conflicts.EndOf(id);
+        var isRel = rels.Has(elem);
+        switch (Merge(elem, isRel))
+        {
+            case Merged.NoCreate: return null;
+            case Merged.Clean:
+            {
+                var items = new KeyValuePair<string, Value>[merged.Count];
+                for (var i = 0; i < items.Length; i++) { var (key, b, start, _) = merged[i]; var p = start; items[i] = KeyValuePair.Create(it.Get(key), ReadValue(b, ref p)); }
+                var props = Props.Of(items);
+                return isRel ? new Rel(id, it.Get(mSource), it.Get(mTarget), it.Get(mType), props) : new Entity(id, it.Get(mType), props);
+            }
+            default: return Disputed(elem, id);
+        }
+    }
+
+    /// <summary>The state of an element whose fragments disagree (or that the merge in codes does not take): absent with a conflict noted, or present without the properties that have two values.</summary>
+    Element? Disputed(int elem, string id)
+    {
+        var all = RowsOf(elem).Select(x => (F: Decode(x.Code), x.Weight)).ToList();
+        var creates = all.Where(c => !c.F.Update && c.Weight > 0).Select(c => c.F).OrderBy(c => c.Sink).ToList();
         if (creates.Count == 0) return null;
         var first = creates[0];
         if (creates.Any(c => c.Type != first.Type || c.Source != first.Source || c.Target != first.Target))        // creates that disagree on type or endpoints: the element is absent
@@ -301,6 +319,101 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         return rels.Has(elem) ? new Rel(id, first.Source!, first.Target!, first.Type, props) : new Entity(id, first.Type, props);
     }
 
+    readonly PropBlockWriter block = new();
+    /// <summary>The properties of the positive fragments of the element being compared, by key in the order of the key texts: the fragment's bytes and where the value starts and ends.</summary>
+    readonly List<(int Key, byte[] B, int Start, int End)> merged = [];
+
+    int mType, mSource, mTarget;
+    enum Merged { Clean, NoCreate, Disputed }
+
+    /// <summary>
+    /// Whether `g` holds exactly what `Resolve(elem)` gives, decided in codes: the graph's element has the merged type, endpoints and prop block.
+    /// False when it differs or the codes cannot tell (a decimal stored at another scale, say): `Resolve` then decides. Makes no string and no element.
+    /// </summary>
+    bool Unchanged(Graph g, int elem, bool isRel)
+    {
+        if (Merge(elem, isRel) != Merged.Clean) return false;
+        block.Clear(); block.Count(merged.Count);
+        foreach (var (key, b, start, _) in merged) { block.Key(key); var p = start; Copy(b, ref p); }
+        return g.Holds(elem, mType, mSource, mTarget, block.Block);
+    }
+
+    /// <summary>
+    /// The positive fragments of an element merged in codes: clean when its create fragments agree on type and endpoints (in `mType`, `mSource`,
+    /// `mTarget`, -1 for an entity's) and no key has two values (the props in `merged`); no create when none has positive weight; disputed when they
+    /// disagree, a key has two values or a value is a big integer (whose canonical form is not the graph's).
+    /// </summary>
+    Merged Merge(int elem, bool isRel)
+    {
+        int type = -1, source = -1, target = -1, fragments = 0; var create = false;
+        merged.Clear();
+        for (var r = ByElement.First([elem]); r >= 0; r = ByElement.Next(r))
+        {
+            if (contributions.Weight(r) <= 0) continue;
+            var (b, p) = values.Slice((int)contributions.Get(r, 1));
+            ReadVarint(b, ref p); var update = b[p++] == 1; var ty = (int)ReadVarint(b, ref p);
+            var s = (int)ReadVarint(b, ref p) - 1; var t = (int)ReadVarint(b, ref p) - 1;
+            if (!update)
+            {
+                if (!create) { create = true; type = ty; source = s; target = t; }
+                else if (ty != type || s != source || t != target) return Merged.Disputed;
+            }
+            var n = (int)ReadVarint(b, ref p);
+            var first = fragments++ == 0;
+            for (var i = 0; i < n; i++)
+            {
+                var key = (int)ReadVarint(b, ref p); var start = p;
+                if (!Skip(b, ref p)) return Merged.Disputed;
+                if (first) { merged.Add((key, b, start, p)); continue; }
+                var at = merged.Count - 1;
+                while (at >= 0 && merged[at].Key != key) at--;
+                if (at >= 0)
+                {
+                    var o = merged[at];
+                    if (!b.AsSpan(start, p - start).SequenceEqual(o.B.AsSpan(o.Start, o.End - o.Start))) return Merged.Disputed;
+                    continue;
+                }
+                var text = it.Get(key); var j = merged.Count;
+                while (j > 0 && string.CompareOrdinal(it.Get(merged[j - 1].Key), text) > 0) j--;
+                merged.Insert(j, (key, b, start, p));
+            }
+        }
+        if (!create) return Merged.NoCreate;
+        if (source >= 0 != isRel || target >= 0 != isRel) return Merged.Disputed;
+        (mType, mSource, mTarget) = (type, source, target);
+        return Merged.Clean;
+    }
+
+    /// <summary>Moves past one canonical value; false for a big integer, whose canonical form is not the graph's.</summary>
+    static bool Skip(byte[] b, ref int p)
+    {
+        switch (b[p++])
+        {
+            case 0 or 5 or 6: return true;
+            case 1 or 2 or 7 or 8: ReadVarint(b, ref p); return true;
+            case 4: p += 16; return true;
+            case 9: { var n = (int)ReadVarint(b, ref p); for (var i = 0; i < n; i++) if (!Skip(b, ref p)) return false; return true; }
+            default: return false;
+        }
+    }
+
+    /// <summary>Writes one canonical value into `block` as the graph stores the value `ReadValue` gives (a decimal at the scale its canonical number has).</summary>
+    void Copy(byte[] b, ref int p)
+    {
+        switch (b[p++])
+        {
+            case 0: block.Null(); break;
+            case 1: block.Text((int)ReadVarint(b, ref p)); break;
+            case 2: block.Integer(Unzig(ReadVarint(b, ref p))); break;
+            case 4: { var lo = ReadNumber(b, ref p); var hi = ReadNumber(b, ref p); block.Decimal(new decimal((int)(lo >> 32), (int)lo, (int)(hi >> 32), (int)hi < 0, (byte)((int)hi >> 16))); break; }
+            case 5: block.Boolean(false); break;
+            case 6: block.Boolean(true); break;
+            case 7: block.Instant(Unzig(ReadVarint(b, ref p))); break;
+            case 8: block.Entity((int)ReadVarint(b, ref p)); break;
+            default: { var n = (int)ReadVarint(b, ref p); block.List(n); for (var i = 0; i < n; i++) Copy(b, ref p); break; }
+        }
+    }
+
     /// <summary>The (source, target, type) tuples that more than one relationship with positive support claims, with their claimants. Of these the smallest id is present (Def. 6.4, D34); the others are held back and come back when it goes. A tuple with one claimant, the normal case, is not here.</summary>
     readonly Dictionary<(string Source, string Target, string Type), HashSet<string>> contested = [];
     readonly Dictionary<string, (string Source, string Target, string Type)> contestedBy = new(StringComparer.Ordinal);
@@ -311,9 +424,12 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         var want = new Dictionary<ElementKey, Element?>();
         var claims = new Dictionary<(string, string, string), string>();          // tuples claimed in this flush, by the first claimant seen
         var affected = new HashSet<(string, string, string)>();
+        var inCodes = g.Uses(it);
         foreach (var elem in touched)
         {
             var isRel = rels.Has(elem);
+            // the graph holds what the element resolves to, and the element has no conflict to clear and no contested tuple: no edit, nothing to note
+            if (inCodes && !conflicts.AnyAboutElements && (!isRel || contested.Count == 0) && Unchanged(g, elem, isRel)) continue;
             var after = Resolve(elem);
             var id = it.Get(elem);
             want[isRel ? ElementKey.Rel(id) : ElementKey.Entity(id)] = after;

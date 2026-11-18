@@ -158,9 +158,9 @@ public sealed class PropBlockWriter
     internal void BigInteger(BigInteger v) { o.Add(3); var b = Encoding.UTF8.GetBytes(v.ToString(System.Globalization.CultureInfo.InvariantCulture)); Varint((ulong)b.Length); o.AddRange(b); }
     public void Decimal(decimal d)
     {
-        var bits = decimal.GetBits(d);
+        Span<int> bits = stackalloc int[4]; decimal.GetBits(d, bits);
         if (bits[2] == 0) { o.Add(10); o.Add((byte)((bits[3] >> 16) & 0x7f | (bits[3] < 0 ? 0x80 : 0))); Varint((ulong)(uint)bits[1] << 32 | (uint)bits[0]); }
-        else { o.Add(4); foreach (var x in bits) o.AddRange(BitConverter.GetBytes(x)); }
+        else { o.Add(4); Span<byte> x = stackalloc byte[4]; foreach (var v in bits) { BitConverter.TryWriteBytes(x, v); foreach (var c in x) o.Add(c); } }
     }
     public void Boolean(bool b) => o.Add(b ? (byte)6 : (byte)5);
     public void Instant(long ns) { o.Add(7); Varint(Zig(ns)); }
@@ -316,6 +316,8 @@ public sealed class Graph
         return r >= 0 && rKind[r] == 1 && rType[r] == type && ents.Code(rSrc[r]) == source && ents.Code(rTgt[r]) == target && SameProps(rProps[r], props);
     }
     // a block is self-delimiting, so a stored block (perhaps in a larger reused one) equals `props` when its first bytes do
+    /// <summary>Whether this graph's texts are codes of `t`: only then can a caller ask `Holds` in codes of `t` (a graph made without the engine's interner has a table of its own; the engine's graphs keep the interner through a seal and restore).</summary>
+    public bool Uses(ITextTable t) => ReferenceEquals(texts, t);
     bool SameProps(int at, ReadOnlySpan<byte> props) => at == 0 ? props.SequenceEqual((ReadOnlySpan<byte>)[0]) : props.Length <= Block(at) - 4 && props.SequenceEqual(pool.AsSpan(at, props.Length));
 
     // ---- reads ----
