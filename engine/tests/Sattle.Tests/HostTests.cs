@@ -150,6 +150,29 @@ public class HostTests
         Assert.Equal((rev0 + 1).ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());
     }
 
+    /// <summary>A definition commit builds a new engine and replays into it; the host must let go of the engine it replaced, or every edit keeps one engine's state alive.</summary>
+    [Fact, Trait("Category", "Slow")]
+    public void Engines_a_definition_commit_replaced_are_collected()
+    {
+        using var h = NewHost();
+        Drive(h, 3);
+        var file = h.ProjectionFile("acme.svc.serviceDeps");
+        var texts = new[] { Text(file), Text(file).Replace("above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3", "above = 0.05, enterAfter = 3, below = 0.0, exitAfter = 30") };
+        var replaced = new List<WeakReference>(); var rev0 = h.CatalogRevision;
+        for (var i = 1; i <= 3; i++) replaced.Add(CommitAndForget(h, file, texts[i % 2]));
+        Assert.Equal(rev0 + 3, h.CatalogRevision);
+        GC.Collect(); GC.WaitForPendingFinalizers(); GC.Collect();
+        Assert.Equal(0, replaced.Count(w => w.IsAlive));
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    static WeakReference CommitAndForget(SpaceHost h, string file, string text)
+    {
+        var before = new WeakReference(h.Engine);
+        h.Commit(file, text, h.CatalogRevision);
+        return before;
+    }
+
     [Fact]
     public void A_no_op_definition_edit_creates_no_revision()
     {
