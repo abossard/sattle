@@ -181,6 +181,18 @@ public class StructureTests
         Assert.Equal(new[] { (1L, 0L), (1L, 1L) }, seen.Order());
     }
 
+    /// <summary>#115: an arrangement whose values are one row each keeps its index and no links, also after rows come and go. Before, every linked row wrote a next and a previous row number of 0, 8 bytes per row.</summary>
+    [Fact]
+    public void An_arrangement_of_one_row_per_value_keeps_no_links()
+    {
+        var t = new Table([4, 4], keyColumns: 2); var byFirst = t.Arrange(0);
+        for (var i = 0; i < 20_000; i++) t.Add([i, i], 1);
+        for (var i = 0; i < 20_000; i += 2) { t.Add([i, i], -1); t.Add([i, i + 1], 1); }
+        Assert.Equal(20_000, byFirst.Values);
+        for (var i = 0; i < 20_000; i++) Assert.Equal(i % 2 == 0 ? i + 1L : i, t.Get(byFirst.First([i]), 1));
+        Assert.True(byFirst.Footprint() <= 65_536 * 4 + 1_000, $"{byFirst.Footprint():N0} bytes");
+    }
+
     /// <summary>Code review 2: a value longer than a page is a page of its own and leaves the page being filled as it is. Before, each such value left a fresh page of 65,536 bytes behind it.</summary>
     [Fact]
     public void A_value_longer_than_a_page_costs_its_own_bytes_and_no_page_beside_them()

@@ -1198,6 +1198,22 @@ Theory. `PlanCompiler.JoinsBelowTraverses`: for start rows S, a traverse T, a ma
 - The reach of the rolled-up severity (`counts`) joins on the reached element's key, not on a start column, and is unchanged.
 - Before is main 5e86f36. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load (load average 300 to 400) and not comparable; bytes are.
 
+### Efficiency stage 2, joins: a row alone with its value in an arrangement keeps no links (#115, 2026-11-18)
+At 10^5 the joins held 757 B per master node, 73 MB: columns 25.0, the index on the whole row 15.7, the links of the arrangements 14.7, the arrangements' indexes 11.1, weights 6.6. An arrangement chains the rows of one value through a next and a previous row number, 8 B per row, and 7.6 MB of those links were in arrangements where every value has one row (the join on a key that names one element, as most joins of the health tree and the workload structure do), so every link was 0.
+
+Theory. A link that was never written reads 0 (none): a new segment is zero, and an unlink clears its row's links. So linking a row that is alone with its value writes nothing; only a row that joins a value with rows writes its next and the previous of the row it goes before. An arrangement whose values are one row each keeps its index and no links. Same rows, same order of a value's rows. Traverse and the sinks use the same arrangement. The seal format is unchanged (a seal writes the rows, not the arrangements).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 168 / 167 MB | 835 / 826 MB |
+| joins per master node | 1,154 / 1,059 B | 757 / 682 B |
+| traverse per master node | 431 / 420 B | 263 / 254 B |
+| allocated per input record | 7.63 / 7.60 KB | 7.28 / 7.27 KB |
+
+- At 10^5 the links of the joins go from 14.7 to 7.2 MB; what is left is in arrangements with several rows per value (the reach of the health tree's `counts`, 424,820 rows over 106,437 values).
+- At 10^5 live is now 8.26 KB per master node. Projected to 10^6 with the ratios of the second 10^6 run (same code at both scales), about 7.8 KB per structure, or 8.0 KB with that run's overall ratio of 0.97.
+- Before is main 4afb044 with the interner and the join below a traverse. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Times are measured under load (load average 250 to 380) and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

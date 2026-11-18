@@ -415,7 +415,7 @@ public sealed class Table
     public long Footprint() => wideCols.Sum(c => c?.Footprint ?? 0) + narrowCols.Sum(c => c?.Footprint ?? 0) + freeRows.Footprint + index.Length * 4L + arrangements.Sum(a => a.Footprint());
 }
 
-/// <summary>The rows of a table grouped by the values of some of its columns: an open-addressing index from a value to the first row with it, and the rows with one value chained through a next and a previous row number.</summary>
+/// <summary>The rows of a table grouped by the values of some of its columns: an open-addressing index from a value to the first row with it, and the rows with one value chained through a next and a previous row number. A row alone with its value has no links written: an entry never written, or cleared at an unlink, reads 0 (none), so an arrangement whose values are one row each keeps no links.</summary>
 public sealed class Arrangement
 {
     readonly Table t;
@@ -458,12 +458,12 @@ public sealed class Arrangement
         {
             if (index[s] == 0)
             {
-                index[s] = row + 1; next[row] = 0; prev[row] = 0; Values++;
+                index[s] = row + 1; Values++;
                 if (Values * 2 > index.Length) Rehash();
                 return;
             }
             var head = index[s] - 1;
-            if (SameValue(head, row)) { next[row] = head + 1; prev[row] = 0; prev[head] = row + 1; index[s] = row + 1; return; }
+            if (SameValue(head, row)) { next[row] = head + 1; prev[head] = row + 1; index[s] = row + 1; return; }
         }
     }
 
