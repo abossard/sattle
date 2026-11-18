@@ -51,6 +51,7 @@ public sealed class Segments<T> where T : unmanaged
     /// <summary>Gives the full segments back to the pool and empties the column.</summary>
     public void Release()
     {
+        if (data.Length == 1 && data[0].Length == 64) { Array.Clear(data[0]); present[0][0] = 0; return; }       // already as small as it gets: emptied in place
         for (var s = 1; s < data.Length; s++) if (Pool.Count < PoolCap) { Array.Clear(data[s]); Pool.Add(data[s]); }
         data = [new T[64]]; present = [new ulong[1]];
     }
@@ -181,9 +182,10 @@ public sealed class Values
 
     void Reset()
     {
-        pages = [new byte[Page]]; filling = 0; used = 0; codes = 0; free = 0; liveBytes = 0; deadBytes = 0;
+        if (pages.Count > 1) pages = [new byte[Page]];         // one page is kept: a released value's bytes are cleared, so it is clear
+        filling = 0; used = 0; codes = 0; free = 0; liveBytes = 0; deadBytes = 0;
         start.Release(); length.Release(); uses.Release(); freeCodes.Release();
-        index = new int[64]; mask = 63;
+        if (mask == 63) Array.Clear(index); else { index = new int[64]; mask = 63; }
     }
 
     /// <summary>Copies the values in use together into new pages; their codes stay.</summary>

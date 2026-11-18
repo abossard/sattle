@@ -29,6 +29,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     {
         var moved = new List<(int From, int To)>();
         var lid = it.Get(loser); var sid = it.Get(survivor);
+        Materialize(g, loser);
         if (known.Has(loser) && !rels.Has(loser) && (ByElement.First([loser]) >= 0 || dirty.Has(loser)))
         {
             foreach (var (code, w) in RowsOf(loser))
@@ -47,6 +48,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         foreach (var id in g.OutRels(lid).Concat(g.InRels(lid))) if (it.TryFind(id, out var c)) at.Add(c);
         foreach (var elem in at.Distinct().Order().ToList())
         {
+            Materialize(g, elem);
             var named = RowsOf(elem).Select(x => (Code: x.Code, Weight: x.Weight, F: Decode(x.Code))).Where(x => x.F.Source == lid || x.F.Target == lid).ToList();
             if (!rels.Has(elem) || named.Count == 0) continue;
             foreach (var (code, w, f) in named)
@@ -79,6 +81,10 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     Arrangement? byEnd;
     /// <summary>The relationships at one endpoint: every one of them is wanted when the endpoint merges.</summary>
     Arrangement ByEnd => byEnd ??= ends.Arrange(0);
+    /// <summary>The elements whose one row is a create the graph holds byte for byte: per element its sink and the row's weight, and no row in `contributions` and no fragment in `values` (the graph has the fragment). A row that arrives for such an element is kept as usual beside it; before anything reads the element's rows, the fragment is written back from the graph (`Materialize`). An element enters at the flush after the one that wrote it to the graph (`Collapse`).</summary>
+    readonly Table ones = new([4, 4], keyColumns: 1);
+    /// <summary>The elements the last flush resolved: each may enter `ones` at the next flush, when the graph holds what it resolved to.</summary>
+    readonly List<int> resolved = [];
     /// <summary>The elements touched since the last flush, in the order they were first touched, and the same as a bitmap.</summary>
     readonly List<int> touched = [];
     readonly Bits dirty = new();
@@ -90,7 +96,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     static ulong ReadVarint(byte[] b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
 
     /// <summary>What the sink holds now: rows of contributions, stored fragments and their bytes. Nothing for elements that came and went.</summary>
-    public (int Contributions, int Fragments, long FragmentBytes) Held => (contributions.Count, values.Count, values.HeldBytes);
+    public (int Contributions, int Fragments, long FragmentBytes) Held => (contributions.Count + ones.Count, values.Count, values.HeldBytes);
 
     static ulong Zig(long v) => (ulong)((v << 1) ^ (v >> 63));
     static long Unzig(ulong v) => (long)(v >> 1) ^ -(long)(v & 1);
@@ -240,10 +246,69 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         return ((int)ReadVarint(b, ref p) - 1, (int)ReadVarint(b, ref p) - 1, update);
     }
 
+    /// <summary>Writes into `buffer` the create fragment of sink `sink` that is what `g` holds for `elem`, in the canonical form; false when the graph does not have the element or a value has no canonical form there.</summary>
+    bool FromGraph(Graph g, int elem, int sink, out int source, out int target)
+    {
+        if (!g.TryRead(elem, rels.Has(elem), out var type, out source, out target, out var props)) return false;
+        var p = 0; var n = (int)ReadVarint(props, ref p);
+        Header(sink, false, type, source, target, n);
+        for (var i = 0; i < n; i++) { Varint(buffer, ReadVarint(props, ref p)); if (!Canonical(props, ref p)) return false; }
+        return true;
+    }
+
+    static ulong ReadVarint(ReadOnlySpan<byte> b, ref int p) { ulong v = 0; var s = 0; while (true) { var x = b[p++]; v |= (ulong)(x & 0x7f) << s; if (x < 0x80) return v; s += 7; } }
+
+    /// <summary>One value of a graph's props block, written into `buffer` in the canonical form; false for a big integer.</summary>
+    bool Canonical(ReadOnlySpan<byte> b, ref int p)
+    {
+        var tag = b[p++];
+        switch (tag)
+        {
+            case 0 or 5 or 6: buffer.Add(tag); return true;
+            case 1 or 2 or 7 or 8: buffer.Add(tag); Varint(buffer, ReadVarint(b, ref p)); return true;
+            case 4: { Span<int> bits = stackalloc int[4]; for (var i = 0; i < 4; i++) { bits[i] = BitConverter.ToInt32(b[p..]); p += 4; } Decimal(new decimal(bits)); return true; }
+            case 10: { var f = b[p++]; var m = ReadVarint(b, ref p); Decimal(new decimal((int)(uint)m, (int)(uint)(m >> 32), 0, (f & 0x80) != 0, (byte)(f & 0x7f))); return true; }
+            case 9: { buffer.Add(9); var n = ReadVarint(b, ref p); Varint(buffer, n); for (var i = 0UL; i < n; i++) if (!Canonical(b, ref p)) return false; return true; }
+            default: return false;
+        }
+    }
+    void Decimal(decimal d) { buffer.Add(4); var (lo, hi) = DecimalKey.Of(d); Number(lo); Number(hi); }
+
+    /// <summary>The elements the last flush resolved whose one row is a positive create the graph now holds byte for byte keep only their sink and weight (`ones`).</summary>
+    void Collapse(Graph g)
+    {
+        foreach (var elem in resolved)
+        {
+            var row = ByElement.First([elem]);
+            if (row < 0 || ByElement.Next(row) >= 0 || ones.Find([elem]) >= 0) continue;
+            var w = contributions.Weight(row); var code = (int)contributions.Get(row, 1);
+            var (b, p) = values.Slice(code);
+            var sink = (int)ReadVarint(b, ref p);
+            if (w <= 0 || b[p] != 0) continue;
+            if (contested.Count > 0 && rels.Has(elem) && contestedBy.ContainsKey(it.Get(elem))) continue;
+            if (!FromGraph(g, elem, sink, out _, out _) || !values.Bytes(code).SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer))) continue;
+            contributions.Add([elem, code], -w);
+            values.Release(code);
+            ones.Set(ones.Add([elem], w), 1, sink);
+        }
+    }
+
+    /// <summary>An element of `ones` gets its fragment back as a row, written from what `g` holds for it (the graph has not changed it since it entered).</summary>
+    void Materialize(Graph g, int elem)
+    {
+        var row = ones.Find([elem]);
+        if (row < 0) return;
+        var sink = (int)ones.Get(row, 1); var w = ones.Weight(row);
+        ones.Add([elem], -w);
+        if (!FromGraph(g, elem, sink, out var source, out var target)) throw new InvalidOperationException($"the graph lost element {it.Get(elem)}, which its sink keeps only there");
+        AddFragment(elem, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer), w, source, target);
+    }
+
     /// <summary>The sink that creates an element: the smallest sink with a create fragment of positive weight, as `Resolve` picks it; -1 when none does.</summary>
     public int CreateSink(int elem)
     {
-        var best = -1;
+        var one = ones.Find([elem]);
+        var best = one >= 0 ? (int)ones.Get(one, 1) : -1;
         for (var r = ByElement.First([elem]); r >= 0; r = ByElement.Next(r))
         {
             if (contributions.Weight(r) <= 0) continue;
@@ -455,8 +520,16 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         var claims = new Dictionary<(string, string, string), string>();          // tuples claimed in this flush, by the first claimant seen
         var affected = new HashSet<(string, string, string)>();
         var inCodes = g.Uses(it);
+        if (inCodes) Collapse(g);
+        resolved.Clear();
         foreach (var elem in touched)
         {
+            if (ones.Find([elem]) >= 0)
+            {
+                if (ByElement.First([elem]) < 0) continue;                  // its rows cancelled: it is what the graph holds
+                Materialize(g, elem);
+            }
+            resolved.Add(elem);
             var isRel = rels.Has(elem);
             // the graph holds what the element resolves to, and the element has no conflict to clear and no contested tuple: no edit, nothing to note
             if (inCodes && !conflicts.AnyAboutElements && (!isRel || contested.Count == 0) && Unchanged(g, elem, isRel)) { if (isRel) Settle(elem, true); continue; }
@@ -484,6 +557,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             if (set.Count > 1) Rejections++;
             var winner = set.Order(StringComparer.Ordinal).FirstOrDefault();
             conflicts.Note($"uniqueness {tuple.Item1} {tuple.Item2} {tuple.Item3}", set.Count > 1 ? new Conflict("uniqueness", winner!, null, null, [.. set.Order(StringComparer.Ordinal)]) : null);
+            foreach (var claimant in set) if (it.TryFind(claimant, out var c)) { Materialize(g, c); resolved.Add(c); }        // the graph may drop it: its fragment comes back from the graph first
             foreach (var claimant in set)
                 want[ElementKey.Rel(claimant)] = claimant == winner && it.TryFind(claimant, out var h) && known.Has(h) ? Resolve(h) : null;
             if (set.Count <= 1) { contested.Remove(tuple); foreach (var claimant in set) contestedBy.Remove(claimant); }

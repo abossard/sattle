@@ -203,6 +203,39 @@ public class StructureTests
         Assert.Contains((it.Intern(id), it.Intern("r:e:a>e:c")), sink.Remap(it.Intern("e:b"), it.Intern("e:a"), g));
     }
 
+    /// <summary>#115: an element whose one row is a create its graph holds keeps only its sink and weight, from the flush after the one that wrote it. Whatever arrives next for it, a retraction, the same row again, an update, another create, a retraction at another decimal scale, a merge or another relationship that claims its (source, target, type) for a while, the graph and what the sink holds come out as when every row arrives in one flush.</summary>
+    [Theory]
+    [InlineData("retract")] [InlineData("reemit")] [InlineData("update")] [InlineData("otherCreate")] [InlineData("retractAtOtherScale")] [InlineData("merge")] [InlineData("claimedByAnother")]
+    public void An_element_kept_as_its_graph_holds_it_resolves_as_if_its_rows_were_kept(string next)
+    {
+        (Graph Graph, (int, int, long) Held) Run(bool flushBetween)
+        {
+            var it = new Interner(); var sink = new OutputBuilder(it); var g = new Graph(it);
+            sink.RegisterRelSink(0, (s, t) => $"r:{s}>{t}");
+            Props P(string key, string d) => Props.Of((key, Value.Decimal(decimal.Parse(d, System.Globalization.CultureInfo.InvariantCulture))), ("n", Value.Text("v")));
+            void E(int sinkNo, bool update, Props props, long w) => sink.Contribute(it.Intern("e:b"), false, sinkNo, update, "T", null, null, props, w);
+            void R(long w) => sink.Contribute(it.Intern("r:e:b>e:c"), true, 0, false, "L", "e:b", "e:c", P("d", "1"), w);
+            void C(long w) => sink.Contribute(it.Intern("r:0"), true, 0, false, "L", "e:b", "e:c", P("d", "2"), w);
+            E(0, false, P("d", "2.50"), 1); R(1);
+            if (flushBetween) { g.Apply(sink.Flush(g)); g.Apply(sink.Flush(g)); Assert.Equal((2, 0, 0L), sink.Held); }
+            switch (next)
+            {
+                case "retract": E(0, false, P("d", "2.50"), -1); R(-1); break;
+                case "reemit": E(0, false, P("d", "2.50"), -1); E(0, false, P("d", "2.50"), 1); R(-1); R(1); break;
+                case "update": E(1, true, P("u", "7"), 1); break;
+                case "otherCreate": E(1, false, P("d", "3"), 1); break;
+                case "retractAtOtherScale": E(0, false, P("d", "2.5"), -1); break;
+                case "merge": sink.Remap(it.Intern("e:b"), it.Intern("e:a"), g); break;
+                case "claimedByAnother": C(1); g.Apply(sink.Flush(g)); C(-1); break;          // a smaller id holds the tuple, then lets it go
+            }
+            g.Apply(sink.Flush(g)); g.Apply(sink.Flush(g));
+            return (g, sink.Held);
+        }
+        var kept = Run(true); var all = Run(false);
+        Assert.True(kept.Graph.SameAs(all.Graph), $"{kept.Graph.Encode()}\n{all.Graph.Encode()}");
+        Assert.Equal(all.Held, kept.Held);
+    }
+
     /// <summary>Code review 2, defect 20: what a sink keeps about an element is compared as a value, so a number retracted at another scale (2.5 and 2.50) cancels what it was added with. Before, the two were two entries, one at +1 and one at -1, and the element stayed.</summary>
     [Theory]
     [InlineData("2.5", "2.50")] [InlineData("0", "0.000")] [InlineData("-1.10", "-1.1")] [InlineData("100", "100.0000000000")] [InlineData("0.0000000000000000000000000001", "0.0000000000000000000000000001")]

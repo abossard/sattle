@@ -783,6 +783,20 @@ Theory. A merge of two identities moves every relationship whose fragments name 
 - Cost: the flush reads each relationship's fragments once more, and a new relationship's endpoint rows are written and removed in one step. At 10^5 the flush of the elements took 3.8 s before and 4.4 s after (one run each, load about 30), allocating 1,052 and 1,090 MB; the engine ingest thread CPU was 32.2 and 31.6 s.
 - Before is main 416b561 with the operators, id tables, `Graph.Holds`, sink bitmaps, lineage and element flush patches. Digests and the interner's live texts unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`; 127,466 and 1,212,925).
 
+### Efficiency stage 2, sink: an element with one create is kept by its graph (#115, 2026-11-18)
+Theory. At 10^4, 68 % of the elements a sink knows have one row, a create, and the graph holds exactly what it says: Resolve of one fragment is that fragment, and only the sink's flush writes its graph. The sink kept that row (49 B), its fragment (61 B plus about 18 B of bytes) and its weight. Now it keeps the sink and the weight in a table of such elements (`ones`); the graph has the fragment. An element enters at the flush after the one that wrote it, when the graph's element written back as a fragment is byte for byte the stored one (a big integer never is). A row that arrives for it is kept as usual beside it; a retraction and the same row again cancel there and leave the element as it is. Before anything reads its rows (a flush that resolves it, a contested (source, target, type) that may drop it, a merge) its fragment is written back from the graph into the rows. Emptying a store of values or a column that is already at its smallest size now clears it in place: a sink whose elements all left the rows emptied its values at every re-emission and allocated a new 64 KB page each time. Seal format 13 to 14.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 239 / 236 MB | 1,419 / 1,384 MB |
+| contributions, values and `ones` per master node | 1,625 / 1,387 B | 1,483 / 1,109 B |
+| allocated per input record | 12.85 / 12.84 KB | 12.43 / 12.51 KB |
+
+- The rows and values do not shrink in proportion: their columns keep the capacity the largest step reached, before its elements entered `ones`. `ones` takes 253 B per master node at 10^5.
+- Cost: an element enters with one more read of the graph, and leaves with another one when it changes. At 10^5 the flush of the elements took 4.7 s before and 7.6 to 7.8 s after (load 30 to 46).
+- Later, the entry check could go through `Graph.Holds`: the fragment written as a block (`Copy`, as the flush's shortcut does) compared in place, instead of the graph's element written back as a fragment and compared. A flush that takes the shortcut has already made that comparison, so its element could enter at once, without waiting for the next flush. That needs the round trip block → canonical → block to be the identity, shown by a test over every kind of value. The read back on change stays: it is the fragment itself that is missing then.
+- Before is the endpoints patch. Digests and the interner's live texts unchanged, as for the endpoints.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

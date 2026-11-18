@@ -315,6 +315,27 @@ public sealed class Graph
         var r = rels.Handle(id);
         return r >= 0 && rKind[r] == 1 && rType[r] == type && ents.Code(rSrc[r]) == source && ents.Code(rTgt[r]) == target && SameProps(rProps[r], props);
     }
+    /// <summary>The element `id` (a code of its text table) in the codes `Holds` takes: type, endpoints (-1 and -1 for an entity) and its props block, self-delimiting and perhaps followed by unused bytes. False when the graph does not have it. Makes no string and no element.</summary>
+    public bool TryRead(int id, bool isRel, out int type, out int source, out int target, out ReadOnlySpan<byte> props)
+    {
+        (type, source, target) = (-1, -1, -1); props = default;
+        int at;
+        if (!isRel)
+        {
+            var e = ents.Handle(id);
+            if (e < 0 || eKind[e] != 1) return false;
+            (type, at) = (eType[e], eProps[e]);
+        }
+        else
+        {
+            var r = rels.Handle(id);
+            if (r < 0 || rKind[r] != 1) return false;
+            (type, source, target, at) = (rType[r], ents.Code(rSrc[r]), ents.Code(rTgt[r]), rProps[r]);
+        }
+        props = at == 0 ? NoProps : pool.AsSpan(at, Block(at) - 4);
+        return true;
+    }
+    static readonly byte[] NoProps = [0];
     // a block is self-delimiting, so a stored block (perhaps in a larger reused one) equals `props` when its first bytes do
     /// <summary>Whether this graph's texts are codes of `t`: only then can a caller ask `Holds` in codes of `t` (a graph made without the engine's interner has a table of its own; the engine's graphs keep the interner through a seal and restore).</summary>
     public bool Uses(ITextTable t) => ReferenceEquals(texts, t);
