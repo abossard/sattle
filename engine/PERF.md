@@ -1257,6 +1257,22 @@ The three changes of this section and the two before it together, against the ad
 - Thread CPU at 10^5: median of the medians 366 to 353 ms (4 %), the least close 330 to 407 against 331 to 338 ms. That is within the noise of this load; the sub-timers put the removed work at about 6 % of the thread CPU of the twelve closes. Linear to 10^6 from 353 ms: about 4.9 s. A quiet run decides it.
 - The figures of this section (one pair, before without the shared delta) are at load 525 to 690. Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
+A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
+
+Theory. The component fixes the type it asks about, so the cache moves into the component: one table per component, keyed by the type alone, which hashes once with the ordinal string hash. Same questions, same answers, so the same matches in the same order. No state is sealed; the tables are filled on first use as before.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| thread CPU of the replay | 4.80 / 4.42 s | 39.2 / 37.2 s |
+| instructions retired (process) | 121.8 / 124.0 G | 453.5 / 445.5 G |
+| match, ms of the kind table | 712 / 453 | 8,238 / 6,093 |
+
+- Means of four runs at 10^4 and two at 10^5, `bench phases` as shipped, workstation collector. At 10^4 the instruction count moves within the run to run spread (119 to 126 G), where loading the catalog and compiling dominate.
+- In the profile the match goes from 22 % to 16 % of the replaying thread, and the randomized string hash from 7.9 % to 1.3 %.
+- The per-step timers of `bench phases` cost about 11 % of the instructions at 10^5 (449 G with them, 400 G without), and the runs at 10^6 measured with them on.
+- Before is the verification clone of main 5deb56f with the join below a traverse, the Ch. 6 paragraph and the arrangement links. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`). Load average 80 to 140; thread CPU is comparable within a pair, wall time is not.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

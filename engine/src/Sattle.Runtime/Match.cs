@@ -72,7 +72,8 @@ sealed class MatchOp : PhysOp
     readonly int nodeCount; readonly int compCount;
     readonly int[][] order;               // per seed component, the order of the other components
     readonly string[] nodeVars; readonly TNode[] nodes; readonly TEdge[] edges;
-    readonly Dictionary<(string, string), bool> subtype = [];
+    /// <summary>Per component: whether a type is its type or a subtype of it, as asked so far. Keyed by the type alone, so a lookup hashes one string.</summary>
+    readonly Dictionary<string, bool>[] fitsType;
     readonly int[] varCol;                // out column per component (entity or rel handle), -1 if the component has no output column
     readonly (int Comp, string PropId, int OutCol, Ty Ty)[] reads;
 
@@ -108,7 +109,8 @@ sealed class MatchOp : PhysOp
             rs.Add((comp, r.PropId, OutLayout.Index(r.Col), t.Out.Find(r.Col)!.T.Ty));
         }
         reads = [.. rs];
-        edgeFits = [.. edges.Select(e => (Func<string, bool>)(type => Sub(type, e.TypeId)))];
+        fitsType = [.. Enumerable.Range(0, compCount).Select(_ => new Dictionary<string, bool>(StringComparer.Ordinal))];
+        edgeFits = [.. edges.Select((_, i) => (Func<string, bool>)(type => Sub(type, nodeCount + i)))];
     }
 
     int NodeIndex(string v) => Array.IndexOf(nodeVars, v);
@@ -132,9 +134,11 @@ sealed class MatchOp : PhysOp
         return [.. res];
     }
 
-    bool Sub(string type, string of)
+    /// <summary>Whether `type` is the type of component `comp` or a subtype of it.</summary>
+    bool Sub(string type, int comp)
     {
-        if (!subtype.TryGetValue((type, of), out var r)) subtype[(type, of)] = r = view.IsSubtype(type, of);
+        var known = fitsType[comp];
+        if (!known.TryGetValue(type, out var r)) known[type] = r = view.IsSubtype(type, comp < nodeCount ? nodes[comp].TypeId : edges[comp - nodeCount].TypeId);
         return r;
     }
 
@@ -174,8 +178,8 @@ sealed class MatchOp : PhysOp
     }
 
     bool Fits(int comp, Element e) => comp < nodeCount
-        ? e is Entity en && Sub(en.Type, nodes[comp].TypeId)
-        : e is Rel r && Sub(r.Type, edges[comp - nodeCount].TypeId);
+        ? e is Entity en && Sub(en.Type, comp)
+        : e is Rel r && Sub(r.Type, comp);
 
     void Extend(int step, int seed, long sign, Element?[] bound, IGraphView nv, IGraphView ov, BatchBuilder bb)
     {
@@ -198,7 +202,7 @@ sealed class MatchOp : PhysOp
             else
             {
                 var type = view.EntityType(id, out var made);
-                e = made ?? (type is not null && Sub(type, nodes[comp].TypeId) ? new Entity(id, type, Props.Empty) : null);
+                e = made ?? (type is not null && Sub(type, comp) ? new Entity(id, type, Props.Empty) : null);
                 fromGraph[comp] = made is null;
             }
             if (e is not null && Fits(comp, e)) { bound[comp] = e; Extend(step + 1, seed, sign, bound, nv, ov, bb); bound[comp] = null; }
