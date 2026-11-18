@@ -276,8 +276,9 @@ sealed class VId : VExpr
                 if (keepsText[k] && !it.IsYoung(code)) { buf[k] = code; continue; }          // an old code is the one code of its text, so the text's exact canonical form is the code itself
                 if (!caches[k].TryGet(code, out var cc))
                 {
-                    var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], it.Get(code));
-                    cc = s is null ? -1 : it.Intern(s);
+                    var text = it.Get(code);
+                    var s = IdentityCatalog.Canonicalize(dom.Canonicalizers[k], text);
+                    cc = s is null ? -1 : ReferenceEquals(s, text) && !it.IsYoung(code) ? code : it.Intern(s);       // a text the canonicalizer leaves as it is: an old code is the one code of its text
                     if (!it.IsYoung(code)) caches[k].Set(code, cc);          // a young code may be freed and given to another text
                 }
                 if (cc < 0) { faults.Overflow++; ok = false; break; }

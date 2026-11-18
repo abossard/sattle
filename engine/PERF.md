@@ -1273,6 +1273,17 @@ Now a window that one row of weight one writes, with no support kept, goes to th
 - Thread CPU is within the noise of load 230 to 330 on 10 cores (one pair at 10^4, two at 10^5, interleaved). Instructions retired of the whole process vary by 4 % between runs of one binary at 10^4, too much to see this. The removed work is one series lookup and one search of its windows per window: at 10^6 about 2 M per close, where those lookups miss the caches.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: a text that is already canonical keeps its code (#119, 2026-11-18)
+Theory. An identity component under `LowerInvariant` is canonicalized per row through a cache of 4,096 slots per component. The keys of the series are many more than that, so at 10^5 about 19,000 per steady close miss it, and every miss was a text that is already lower case (175,010 misses in nine closes, all of them the same text after canonicalizing). A miss read the text, lowered it, and interned the result: a hash of the whole text and a comparison, to find the code it started from. When the canonicalizer hands back the text itself (it does when nothing changes and the text is ASCII), an old code is the one code of its text, so it is its own canonical code; a young code, or a text that changed, is interned as before.
+
+| | 10^5, sub-timer before / after (nine steady closes, wall) |
+|---|---|
+| the misses of the `LowerInvariant` cache | 103 / 36 ms |
+
+- About 2 % of a steady close at 10^5. At 10^6 the cache misses nearly every key, so the share stays the same per key.
+- Both sections of this day against the previous one's before, two pairs at load 88 to 138: steady close thread CPU median 324 / 309 and 324 / 287 ms, least close 303 / 288 and 303 / 264 ms, allocated 91.7 / 73.4 MB. At 10^4: 47 / 47 ms, 9.0 / 7.2 MB.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ### Efficiency stage 2, time: a match asks whether a type fits a component with one hash of the type (#115, 2026-11-18)
 A sampling profile of the 10^5 replay (workstation collector, the per-step timers of `bench phases` off) puts 22 % of the replaying thread in the match: for every changed element and every component of its pattern, the match asks whether the element's type is the component's type or a subtype of it. The answer was cached under the pair (type, component type), and a pair of strings hashes with the runtime's randomized string hash: 7.9 % of the thread was that hash, four fifths of it under the match.
 
