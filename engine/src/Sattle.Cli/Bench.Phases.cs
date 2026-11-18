@@ -133,7 +133,6 @@ static partial class Bench
             Console.WriteLine($"{gname} | operators {engine.OperatorMillis.Where(x => x.Key.StartsWith(gname + "/", StringComparison.Ordinal) && !x.Key.EndsWith("(commit)", StringComparison.Ordinal)).Sum(x => x.Value):F0} | commit {engine.OperatorMillis.GetValueOrDefault(gname + "/(commit)"):F0}");
         GraphTable(engine, Console.Out);
         Console.WriteLine($"state digest {engine.StateDigest()}");
-        Console.WriteLine($"set digest {engine.SetStateDigest()}");
         if (o.Flags.Contains("census"))
         {
             // the unit of the budgets: master nodes are the pods, Services and Azure resources of the master

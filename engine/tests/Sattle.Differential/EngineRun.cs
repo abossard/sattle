@@ -38,13 +38,10 @@ public static class EngineRun
     public static SpaceFacts Final(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, EngineOptions? options = null) => States(catalog, log, chunking, options).Last().Facts;
 
     /// <summary>The facts after each batch, with the number of inputs consumed so far.</summary>
-    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, EngineOptions? options = null) => After(catalog, log, chunking, FactsOf, options);
-
-    /// <summary>`read` of the engine before the first batch and after each batch, with the number of inputs consumed so far.</summary>
-    public static IEnumerable<(int Consumed, T Value)> After<T>(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, Func<Engine, T> read, EngineOptions? options = null)
+    public static IEnumerable<(int Consumed, SpaceFacts Facts)> States(Catalog catalog, IReadOnlyList<Input> log, Chunking chunking, EngineOptions? options = null)
     {
         using var engine = new Engine(catalog, catalog.Spaces.Keys.Single(), options);
-        yield return (0, read(engine));
+        yield return (0, FactsOf(engine));
         long seq = 0;
         foreach (var batch in Batches(log, chunking))
         {
@@ -52,7 +49,7 @@ public static class EngineRun
             else if (batch[0].Input is ProgressInput p) engine.Progress(p.Source, p.Until, ++seq);
             else if (batch[0].Input is LossInput l) engine.RecordLoss(l.Time, 1);
             else Ingest(engine, [.. (chunking.Reverse ? batch.Reverse() : batch).Select(x => (RowInput)x.Input)], ++seq);
-            yield return (batch[^1].Index + 1, read(engine));
+            yield return (batch[^1].Index + 1, FactsOf(engine));
         }
     }
 

@@ -630,29 +630,11 @@ public sealed class Engine : IDisposable, IEngineInput
         a = GC.GetAllocatedBytesForCurrentThread(); t = System.Diagnostics.Stopwatch.GetTimestamp();
     }
 
-    /// <summary>A digest of the observable output: every graph's digest, then every telemetry window in canonical order. Same ordered inputs give the same digest (T7).</summary>
-    public string StateDigest()
-    {
-        var d = new Digests.Streamed(); var sb = d.Text;
-        foreach (var g in graphs.OrderBy(x => x.Name, StringComparer.Ordinal))
-        {
-            sb.Append(g.Name).Append('=').Append(g.State.Digest()).Append('\n');
-            if (Telemetry is InMemoryTelemetryStore mem)
-                foreach (var (e, p, ws, v) in mem.Dump(g.Key).OrderBy(x => Interner.Get(x.Element), StringComparer.Ordinal).ThenBy(x => Interner.Get(x.Prop), StringComparer.Ordinal).ThenBy(x => x.Ws))
-                {
-                    sb.Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
-                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
-                    sb.Append('\n'); d.Cut();
-                }
-        }
-        return Digests.Of(d.Hex());
-    }
-
     /// <summary>
-    /// The state digest as a set digest: per graph, its written pairs and its telemetry windows (as the lines of `StateDigest`, after "w|") in one
-    /// AdHash, tagged with the graph's name; the engine's is the AdHash of the graphs' digests. No sort (side by side until the switch, #115).
+    /// A digest of the observable output (T7): per graph, a set digest (AdHash) of its written pairs and its telemetry windows, tagged with the
+    /// graph's name; the engine's is the AdHash of the graphs' digests. No order of graphs, elements or windows matters.
     /// </summary>
-    public string SetStateDigest()
+    public string StateDigest()
     {
         var all = new Digests.Set(); var sb = new StringBuilder();
         foreach (var g in graphs)
@@ -662,7 +644,7 @@ public sealed class Engine : IDisposable, IEngineInput
                 foreach (var (e, p, ws, v) in mem.Dump(g.Key))
                 {
                     sb.Clear().Append("w|").Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
-                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));
+                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
                     set.Add(sb);
                 }
             all.Add(Encoding.UTF8.GetBytes(set.Digest(g.Name)));

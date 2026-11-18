@@ -216,10 +216,6 @@ public static class Digests
     public static string Of(string canonicalJson) => "sha256:" + Sha256Hex(canonicalJson);
 
     /// <summary>
-    /// The SHA-256 of a text written into `Text` in pieces, without holding the whole text: `Cut` hashes what was written once it passes 64 Ki chars,
-    /// through one UTF-8 encoder and one buffer, so `Hex` equals `Sha256Hex` of the text joined wherever the cuts fall.
-    /// </summary>
-    /// <summary>
     /// AdHash (Bellare and Micciancio 1997): the digest of a set of items is the sum, mod 2^256, of their SHA-256 values, read as little-endian
     /// numbers in four lanes of 64 bits. The order of the items does not matter, and it needs one item at a time.
     /// </summary>
@@ -263,27 +259,6 @@ public static class Digests
             BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 17), l2); BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 25), l3);
             return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(b));
         }
-    }
-
-    public sealed class Streamed
-    {
-        readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        readonly Encoder utf8 = Encoding.UTF8.GetEncoder();
-        readonly byte[] bytes = new byte[1 << 16];
-        public StringBuilder Text { get; } = new();
-        public void Cut() { if (Text.Length >= 1 << 16) Hash(last: false); }
-        void Hash(bool last)
-        {
-            foreach (var chunk in Text.GetChunks())
-                for (var chars = chunk.Span; !chars.IsEmpty;)
-                {
-                    utf8.Convert(chars, bytes, flush: false, out var used, out var written, out _);
-                    hash.AppendData(bytes, 0, written); chars = chars[used..];
-                }
-            if (last) { utf8.Convert([], bytes, flush: true, out _, out var written, out _); hash.AppendData(bytes, 0, written); }
-            Text.Clear();
-        }
-        public string Hex() { Hash(last: true); var h = Convert.ToHexStringLower(hash.GetHashAndReset()); hash.Dispose(); return h; }
     }
 
     const string B32 = "abcdefghijklmnopqrstuvwxyz234567";

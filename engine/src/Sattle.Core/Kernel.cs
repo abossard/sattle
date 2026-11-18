@@ -344,5 +344,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:dd5bb1df45cb491b5af743e3d92d5b0b688c78f594bcc43454ec83db01cd0ce6";
+    public const string CompiledDigest = "sha256:98fa72a0c4773874bb05ae88c45a1848fee08d24b2b3201863ce4bf6505b5155";
 }

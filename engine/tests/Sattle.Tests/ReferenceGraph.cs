@@ -136,7 +136,13 @@ public sealed class ReferenceGraph
         }
         return sb.Append(']').ToString();
     }
-    public string Digest() => Digests.Of(Encode());
+    /// <summary>Def. 3.5: dig(G), the set digest of the written pairs.</summary>
+    public string Digest()
+    {
+        var set = new Digests.Set(); var sb = new StringBuilder();
+        foreach (var e in Elements()) { sb.Clear().Append('['); Jcs.Str(sb, e.Key.ToString()); sb.Append(','); Jcs.Element(sb, e); sb.Append(']'); set.Add(sb); }
+        return set.Digest("");
+    }
 
     /// <summary>Def. 3.4 graph equality.</summary>
     public bool SameAs(ReferenceGraph o) =>

@@ -76,8 +76,8 @@ public class ValueTests
     }
 
     [Fact]
-    public void Digest_of_the_empty_graph_is_sha256_of_the_empty_array() =>
-        Assert.Equal("sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945", new Graph().Digest());
+    public void Digest_of_the_empty_graph_is_sha256_of_a_zero_byte_and_the_zero_sum() =>
+        Assert.Equal("sha256:7f9c9e31ac8256ca2f258583df262dbc7d6f68f2a03043d5c99a4ae5a7396ce9", new Graph().Digest());
 
     [Fact]
     public void Theorem_1_1_equality_iff_equal_encoding()

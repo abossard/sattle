@@ -603,25 +603,17 @@ public sealed class Graph
         return edits;
     }
 
-    /// <summary>Def. 3.5: enc(G) = JCS of the pairs sorted by key string.</summary>
-    public string Encode() { var sb = new StringBuilder(); Write(sb, () => { }); return sb.ToString(); }
-
-    /// <summary>The SHA-256 of enc(G), hashed in pieces: no text of the whole graph is held, which at 10^6 master nodes would pass 2^31 chars.</summary>
-    public string Digest() { var d = new Digests.Streamed(); Write(d.Text, d.Cut); return "sha256:" + d.Hex(); }
-
-    /// <summary>Writes enc(G) to `sb`, calling `cut` after each pair.</summary>
-    void Write(StringBuilder sb, Action cut)
+    /// <summary>Def. 3.5: enc(G) = JCS of the pairs sorted by key string. The written form, for export and reading.</summary>
+    public string Encode()
     {
-        var sorted = Elements().OrderBy(e => e.Key.ToString(), StringComparer.Ordinal).ToList();
-        sb.Append('[');
-        for (var i = 0; i < sorted.Count; i++)
-        {
-            if (i > 0) sb.Append(',');
-            WritePair(sb, sorted[i]);
-            cut();
-        }
-        sb.Append(']');
+        var sb = new StringBuilder().Append('[');
+        var first = true;
+        foreach (var e in Elements().OrderBy(e => e.Key.ToString(), StringComparer.Ordinal)) { if (!first) sb.Append(','); first = false; WritePair(sb, e); }
+        return sb.Append(']').ToString();
     }
+
+    /// <summary>Def. 3.5: dig(G), the set digest (AdHash) of the written pairs. Equal exactly when the graphs are (Def. 3.4), whatever the storage order.</summary>
+    public string Digest() => PairSet().Digest("");
 
     /// <summary>One written pair of enc(G): the key text and the canonical JSON of the state.</summary>
     static void WritePair(StringBuilder sb, Element e) { sb.Append('['); Jcs.Str(sb, e.Key.ToString()); sb.Append(','); Jcs.Element(sb, e); sb.Append(']'); }
@@ -633,9 +625,6 @@ public sealed class Graph
         foreach (var e in Elements()) { sb.Clear(); WritePair(sb, e); set.Add(sb); }
         return set;
     }
-
-    /// <summary>The set digest of the graph: equal exactly when the written pairs are, as `Digest` (side by side until the switch, #115).</summary>
-    public string SetDigest() => PairSet().Digest("");
 
     /// <summary>Def. 3.4 graph equality.</summary>
     public bool SameAs(Graph o) => Count == o.Count && Equals(ontology, o.ontology) && Entities.All(e => e.Equals(o.Entity(e.Id))) && Rels.All(r => r.Equals(o.Rel(r.Id)));

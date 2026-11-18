@@ -251,27 +251,6 @@ public class DifferentialTests
         Assert.True(states > 0, "no state from the valid rows");
     }
 
-    /// <summary>The set digests agree with the digests of the written form on equal versus not equal, per graph and for the state, after every batch of generated logs cut three ways (side by side until the switch, #115).</summary>
-    [Theory, MemberData(nameof(WorldNames))]
-    public void The_set_digests_agree_with_the_digests_of_the_written_form(string world)
-    {
-        var w = Worlds.All.Single(x => x.Name == world);
-        var pairs = new List<(string, string)>();
-        foreach (var seed in Enumerable.Range(0, 4))
-            foreach (var cut in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Random(seed) })
-                foreach (var (_, d) in EngineRun.After(w.Catalog, w.Log(seed, 14), cut, e => (State: (e.StateDigest(), e.SetStateDigest()), Graphs: e.Graphs.Select(g => (g.State.Digest(), g.State.SetDigest())).ToList())))
-                {
-                    pairs.Add(d.State); pairs.AddRange(d.Graphs);
-                }
-        var byOld = new Dictionary<string, string>(); var byNew = new Dictionary<string, string>();
-        foreach (var (o, n) in pairs)
-        {
-            Assert.Equal(byOld.TryAdd(o, n) ? n : byOld[o], n);
-            Assert.Equal(byNew.TryAdd(n, o) ? o : byNew[n], o);
-        }
-        Assert.True(byOld.Count > 1 && byOld.Count < pairs.Count, $"{byOld.Count} distinct of {pairs.Count}");
-    }
-
     static void Agrees(string world, int seeds, int length, bool reordered)
     {
         var report = Differential.Check(Worlds.All.Single(w => w.Name == world), seeds, length, reordered);

@@ -1341,6 +1341,34 @@ Agreement on equal versus not equal, old against new:
 - The set digest costs one SHA-256 per item, 1.5 µs per item at 10^5 (3.16 million items: 1.18 million elements and 1.99 million windows), against 1.0 µs for the streamed written form with its sort. It holds no sorted list of elements. What remains whole is the store's list of a graph's windows, 32 B per window.
 - Measured on main f87f1ba with the streamed digests; on main 8ae372a both digests of every saved state are the same. Digests of the written form unchanged.
 
+### Efficiency stage 2, digests: the set digest is the digest (#115, 2026-11-18)
+Research note 15, step 3. The digest of a graph and the state digest are now the set digests of the step before: AdHash of the written pairs, and for the state, per graph, of its pairs and telemetry windows under the graph's name. The written form `Encode` stays as the export and reading form and is no longer hashed. The streamed digest of the written form, the side-by-side set digest and the agreement tests are gone: they compared the old digest with the new one, and the old one no longer exists. `replay` and `bench phases` print one `state digest` again.
+
+Theory. Two graphs are equal when they hold the same set of written pairs (Def. 3.4), so a digest that adds up one hash per pair decides equality without an order. The digest no longer sorts the elements and holds one pair at a time; what remains whole is the store's list of a graph's telemetry windows. A graph's digest could be kept per change; that is deferred while time per record is over the limit.
+
+Every recorded digest changes once (old is the digest of the written form, new the set digest):
+
+| recorded | old | new |
+|---|---|---|
+| estate (replay, and pinned `estate`) | `sha256:32bcad1f...a422` | `sha256:bd5d5efd...bb3f` |
+| lab fixtures | `sha256:4a1560a5...ffd0` | `sha256:62343165...2acf` |
+| capture 20261110T105738Z | `sha256:de8fe8a8...4520` | `sha256:ab85f141...4774` |
+| capture 20261110T140542Z | `sha256:bd7dd356...cb13` | `sha256:3bff3e78...1b66` |
+| 10^4 | `sha256:2654c25f...bfbc3` | `sha256:6445eac7...4c42` |
+| 10^5 | `sha256:0ab80689...41140` | `sha256:dc2b3192...2598` |
+| pinned `deploy-health` | `sha256:a9fa8922...3536` | `sha256:e79fc08a...27ff` |
+| pinned `deploy-health minReady=1` | `sha256:51412d33...0658` | `sha256:ed9cf316...62f8` |
+| pinned `estate-wide` | `sha256:debc3276...a8cc` | `sha256:f6c39f00...a06f` |
+| kernel (`Kernel.CompiledDigest`) | `sha256:dd5bb1df...0ce6` | `sha256:98fa72a0...5155` |
+| the empty graph | `sha256:4f53cda1...b945` (SHA-256 of `[]`) | `sha256:7f9c9e31...6ce9` (SHA-256 of 33 zero bytes) |
+
+- The estate, the lab fixtures, both captures and 10^4 give, with this build (`replay`), exactly the set digests recorded in the step before. The 10^5 value is the set digest of the step before (`bench phases`), the same code; it was not run again on this build.
+- Pins re-recorded with `SATTLE_PIN=1`; the kernel constant with `Kernel.ComputeDigest()`. The kernel digest changes because the kernel's digest is its graph's digest.
+- Seal format 24 stays: a seal's data is unchanged. A seal of an earlier build names the old kernel digest and is refused as written by another build, so the journal is replayed.
+- Tests: `Def_3_5_digest_does_not_depend_on_storage_order` (1, 2 and 4,000 entities stored in two orders, with text outside the BMP: equal written forms, equal digests, and for more than one entity a different storage order); `Digest_of_the_empty_graph_is_sha256_of_a_zero_byte_and_the_zero_sum`. The reference graph of the hot-graph tests computes its digest as the set digest too, so the hot graph is still compared with it after every patch.
+- Cost at 10^5: the state digest costs what the set digest cost in the step before (4.82 s thread CPU, 888 MB allocated, against 3.12 s and 1,160 MB for the streamed written form). It is computed once at the end of a run and at a seal, not per record.
+- Before is main 393f8e1 with the set digest and two #119 patches.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
