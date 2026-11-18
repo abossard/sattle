@@ -690,6 +690,26 @@ Theory. Premise B1: a window is written by exactly one row, and then the store's
 - What remains in the flush of the telemetry, 1.3 KB per record at 10^5: the step's dictionary of windows, the samples list and the working lists, made per flush.
 - Before is the step patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged. One new method on the telemetry port.
 
+### Efficiency stage 2, allocation per record: the operators (#115, 2026-11-18)
+Where the operators allocated at 10^4, measured part by part inside them: `MatchOp` 372 MB (an array of (state, sign) per edit and seed 122, the candidate edges 81, entity reads 73, the old view's dictionaries per call 50); `EmitEntityOp` 207 MB, of which minting identities 167 (about 4 KB per new key); `EmitRelOp` 157 MB, of which relationship ids 108 (1.8 KB per new pair); `SeriesOp` 122 MB, of which grouping the step's window changes into a new dictionary of lists per call 60.
+
+Theory. An id is the hash of a canonical text; the text is a function of the key and is needed only while it is hashed. It is built in a buffer of the thread that is reused, encoded and hashed without a copy, and the id is the one string made; the hex of the hash and the components are made only for a binding record, not for an own id. Same text, same hash: ids are unchanged. Match seeds an edit's before and after state with two calls, not an array; the old view indexes the patch's relationships by their ends at the first walk that needs them; a walk reads the edges at an entity directly instead of decoding each id and looking it up again, and does not copy them (the graph does not change during a call). A Series needs, per window the step changed, each read's value before the step, which is its first change: a map from window to a slot and two flat arrays. Calls do not overlap, so one such working state per thread serves every Series, sized by the largest step. Map's output is a view of its input's rows with its own columns, one per operator, refilled each call and valid until it runs again (the rule of `EmptyOutput`, #39).
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 26.7 / 21.0 KB | 26.2 / 20.6 KB |
+| operators | 14.2 / 8.5 KB | 13.6 / 8.0 KB |
+| `MatchOp` | 372 / 239 MB | 3,678 / 2,346 MB |
+| `EmitEntityOp` | 207 / 83 MB | 2,125 / 878 MB |
+| `EmitRelOp` | 157 / 51 MB | 1,578 / 518 MB |
+| `SeriesOp` | 122 / 43 MB | 1,162 / 413 MB |
+| `LinkOp` | 38 / 23 MB | 361 / 211 MB |
+| live bytes | 252 / 253 MB | 1,547 / 1,553 MB |
+
+- Cost moved: the Series working state stays between calls, 6.6 MB at 10^5 (66 B per master node). Letting it go after a large step made the next large step grow it again: 830 MB more allocation at 10^5.
+- What remains in the operators at 10^5, KB per record: `MatchOp` 2.9 and `TraverseOp` 0.9 (elements read from the graph as objects: an id string and decoded properties per read), `EmitEntityOp` 1.1 and `EmitRelOp` 0.6 (mostly the element and lineage layers), `SeriesOp` 0.5, `MapOp` 0.3 (expression scratch).
+- Before is the telemetry flush patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

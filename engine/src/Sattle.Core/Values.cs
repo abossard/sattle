@@ -124,7 +124,7 @@ public static class Norm
 /// <summary>RFC 8785 serialization of the trees of Ch. 1 and Ch. 3. No JSON numbers occur, so the number rule of JCS is never exercised (Rule 1.2).</summary>
 public static class Jcs
 {
-    public static void Str(StringBuilder sb, string s)
+    public static void Str(StringBuilder sb, ReadOnlySpan<char> s)
     {
         sb.Append('"');
         foreach (var c in s)
@@ -217,14 +217,19 @@ public static class Digests
     const string B32 = "abcdefghijklmnopqrstuvwxyz234567";
     public static string Base32(ReadOnlySpan<byte> b)
     {
-        var sb = new StringBuilder();
-        int buf = 0, bits = 0;
+        var s = new char[(b.Length * 8 + 4) / 5];
+        Base32(b, s);
+        return new string(s);
+    }
+    /// <summary>The first `into.Length` characters of the base32 text of `b`.</summary>
+    public static void Base32(ReadOnlySpan<byte> b, Span<char> into)
+    {
+        int buf = 0, bits = 0, n = 0;
         foreach (var x in b)
         {
             buf = (buf << 8) | x; bits += 8;
-            while (bits >= 5) { sb.Append(B32[(buf >> (bits - 5)) & 31]); bits -= 5; }
+            while (bits >= 5) { if (n == into.Length) return; into[n++] = B32[(buf >> (bits - 5)) & 31]; bits -= 5; }
         }
-        if (bits > 0) sb.Append(B32[(buf << (5 - bits)) & 31]);
-        return sb.ToString();
+        if (bits > 0 && n < into.Length) into[n] = B32[(buf << (5 - bits)) & 31];
     }
 }

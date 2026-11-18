@@ -145,11 +145,15 @@ sealed class MapOp : PhysOp
     public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
     {
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
-        var cols = new Column[OutLayout.Count + carry.Length];
+        view ??= b.WithColumns(OutLayout, new Column[OutLayout.Count + carry.Length]);
+        var cols = view.Cols;
         for (var c = 0; c < OutLayout.Count; c++) cols[c] = passthrough[c] >= 0 ? b.Cols[passthrough[c]] : compute[c]!.Eval(b);
         for (var c = 0; c < carry.Length; c++) cols[OutLayout.Count + c] = b.Cols[carry[c]];
-        return b.WithColumns(OutLayout, cols);
+        view.N = b.N; view.W = b.W; view.Sel = b.Sel; view.SelN = b.SelN;
+        return view;
     }
+    /// <summary>The output: a view of the input's rows with this operator's columns, refilled by every call. Like `EmptyOutput`, it is valid until the operator runs again.</summary>
+    Batch? view;
 }
 
 sealed class WindowOp : PhysOp

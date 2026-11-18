@@ -92,7 +92,7 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     public int OwnOf(IdDomain d, ReadOnlySpan<long> canon)
     {
         var k = K(d, canon);
-        if (!own.TryGetValue(k, out var h)) own[k] = h = it.Intern(Mint(d, canon).Id);
+        if (!own.TryGetValue(k, out var h)) own[k] = h = it.Intern(MintId(d, canon));
         return h;
     }
 
@@ -130,28 +130,87 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         return BindOutcome.Bound;
     }
 
+    /// <summary>The hash of a key: SHA-256 of its canonical text `[tenant, domain, component trees...]`.</summary>
+    void KeyHash(IdDomain d, ReadOnlySpan<long> canon, Span<byte> hash)
+    {
+        var sb = KeyText.Open();
+        Jcs.Str(sb, tenant); sb.Append(','); Jcs.Str(sb, d.Id);
+        for (var i = 0; i < canon.Length; i++) { sb.Append(','); KeyText.Tree(sb, it.Get((int)canon[i])); }
+        sb.Append(']');
+        KeyText.Sha256(sb, hash);
+    }
+
+    /// <summary>The id minted for a key, the hash of the key as hex and the components as JSON: what a binding records.</summary>
     (string Hash, string Id, string Comps) Mint(IdDomain d, ReadOnlySpan<long> canon)
     {
-        var sb = new StringBuilder("[");
-        Jcs.Str(sb, tenant); sb.Append(','); Jcs.Str(sb, d.Id);
+        Span<byte> hash = stackalloc byte[32];
+        KeyHash(d, canon, hash);
         var comps = new StringBuilder("[");
-        for (var i = 0; i < canon.Length; i++)
-        {
-            var enc = Jcs.Encode(Value.Text(it.Get((int)canon[i])));
-            sb.Append(','); Jcs.Str(sb, enc);
-            if (i > 0) comps.Append(','); Jcs.Str(comps, it.Get((int)canon[i]));
-        }
-        sb.Append(']'); comps.Append(']');
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
-        return (Convert.ToHexStringLower(bytes), "e:" + Digests.Base32(bytes)[..26], comps.ToString());
+        for (var i = 0; i < canon.Length; i++) { if (i > 0) comps.Append(','); Jcs.Str(comps, it.Get((int)canon[i])); }
+        comps.Append(']');
+        return (Convert.ToHexStringLower(hash), KeyText.Id('e', hash), comps.ToString());
+    }
+
+    /// <summary>The id minted for a key, alone.</summary>
+    string MintId(IdDomain d, ReadOnlySpan<long> canon)
+    {
+        Span<byte> hash = stackalloc byte[32];
+        KeyHash(d, canon, hash);
+        return KeyText.Id('e', hash);
     }
 
     /// <summary>Relationship id: hash of tenant, projection, key rule, source and target ids. The type is excluded so a retype keeps the id (ADR-086).</summary>
     public static string RelationshipId(string tenant, string projection, string key, string source, string target)
     {
-        var sb = new StringBuilder("[");
+        var sb = KeyText.Open();
         Jcs.Str(sb, tenant); sb.Append(','); Jcs.Str(sb, projection); sb.Append(','); Jcs.Str(sb, key); sb.Append(','); Jcs.Str(sb, source); sb.Append(','); Jcs.Str(sb, target); sb.Append(']');
-        return "r:" + Digests.Base32(SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString())))[..26];
+        Span<byte> hash = stackalloc byte[32];
+        KeyText.Sha256(sb, hash);
+        return KeyText.Id('r', hash);
+    }
+}
+
+/// <summary>The canonical text of a key, built and hashed in buffers of the thread that are reused: minting an id allocates the id and nothing per character.</summary>
+static class KeyText
+{
+    [ThreadStatic] static StringBuilder? key, tree;
+    [ThreadStatic] static char[]? chars;
+    [ThreadStatic] static byte[]? bytes;
+
+    /// <summary>The key's text, emptied, after its opening bracket.</summary>
+    public static StringBuilder Open() => (key ??= new StringBuilder(256)).Clear().Append('[');
+
+    /// <summary>Appends the canonical tree of a text component (Rule 1.2) as a JSON string.</summary>
+    public static void Tree(StringBuilder sb, string component)
+    {
+        var t = (tree ??= new StringBuilder(128)).Clear();
+        Jcs.Tree(t, Value.Text(component));
+        Jcs.Str(sb, Chars(t));
+    }
+
+    public static void Sha256(StringBuilder sb, Span<byte> hash)
+    {
+        var c = Chars(sb);
+        var max = Encoding.UTF8.GetMaxByteCount(c.Length);
+        if (bytes is null || bytes.Length < max) bytes = new byte[Math.Max(512, max)];
+        var n = Encoding.UTF8.GetBytes(c, bytes);
+        SHA256.HashData(bytes.AsSpan(0, n), hash);
+    }
+
+    /// <summary>`kind:` and the first 26 base32 characters of the hash (130 bits).</summary>
+    public static string Id(char kind, ReadOnlySpan<byte> hash)
+    {
+        Span<char> s = stackalloc char[28];
+        s[0] = kind; s[1] = ':';
+        Digests.Base32(hash, s[2..]);
+        return new string(s);
+    }
+
+    static ReadOnlySpan<char> Chars(StringBuilder sb)
+    {
+        if (chars is null || chars.Length < sb.Length) chars = new char[Math.Max(256, sb.Length * 2)];
+        sb.CopyTo(0, chars, sb.Length);
+        return chars.AsSpan(0, sb.Length);
     }
 }
 

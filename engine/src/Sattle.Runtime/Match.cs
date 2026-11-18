@@ -15,38 +15,41 @@ sealed class NewView(Graph g) : IGraphView
 {
     public Entity? Entity(string id) => g.Entity(id);
     public Rel? Rel(string id) => g.Rel(id);
-    public IEnumerable<Rel> OutRels(string e) => g.OutRels(e).Select(g.Rel).Where(r => r is not null).Select(r => r!);
-    public IEnumerable<Rel> InRels(string e) => g.InRels(e).Select(g.Rel).Where(r => r is not null).Select(r => r!);
+    public IEnumerable<Rel> OutRels(string e) => g.OutEdges(e);
+    public IEnumerable<Rel> InRels(string e) => g.InEdges(e);
 }
 
-/// <summary>The graph before a patch: the current graph with the patch's edits undone, without copying the graph.</summary>
-sealed class OldView : IGraphView
+/// <summary>The graph before a patch: the current graph with the patch's edits undone, without copying the graph. The relationships the patch changed are indexed by their ends before it at the first walk that needs them.</summary>
+sealed class OldView(Graph g, Patch p) : IGraphView
 {
-    readonly Graph g; readonly Patch p;
-    readonly Dictionary<string, List<Rel>> outBefore = new(StringComparer.Ordinal), inBefore = new(StringComparer.Ordinal);
-    public OldView(Graph g, Patch p)
-    {
-        this.g = g; this.p = p;
-        foreach (var e in p.Edits)
-            if (e.Before is Rel r)
-            {
-                if (!outBefore.TryGetValue(r.Source, out var o)) outBefore[r.Source] = o = [];
-                o.Add(r);
-                if (!inBefore.TryGetValue(r.Target, out var i)) inBefore[r.Target] = i = [];
-                i.Add(r);
-            }
-    }
+    Dictionary<string, List<Rel>>? outBefore, inBefore;
     public Entity? Entity(string id) => p.TryGet(ElementKey.Entity(id), out var e) ? e.Before as Entity : g.Entity(id);
     public Rel? Rel(string id) => p.TryGet(ElementKey.Rel(id), out var e) ? e.Before as Rel : g.Rel(id);
     public IEnumerable<Rel> OutRels(string e)
     {
-        foreach (var id in g.OutRels(e)) if (!p.TryGet(ElementKey.Rel(id), out _)) yield return g.Rel(id)!;
-        if (outBefore.TryGetValue(e, out var l)) foreach (var r in l) yield return r;
+        foreach (var r in g.OutEdges(e)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
+        if (Before(outgoing: true).TryGetValue(e, out var l)) foreach (var r in l) yield return r;
     }
     public IEnumerable<Rel> InRels(string e)
     {
-        foreach (var id in g.InRels(e)) if (!p.TryGet(ElementKey.Rel(id), out _)) yield return g.Rel(id)!;
-        if (inBefore.TryGetValue(e, out var l)) foreach (var r in l) yield return r;
+        foreach (var r in g.InEdges(e)) if (!p.TryGet(ElementKey.Rel(r.Id), out _)) yield return r;
+        if (Before(outgoing: false).TryGetValue(e, out var l)) foreach (var r in l) yield return r;
+    }
+    Dictionary<string, List<Rel>> Before(bool outgoing)
+    {
+        if (outBefore is null)
+        {
+            outBefore = new(StringComparer.Ordinal); inBefore = new(StringComparer.Ordinal);
+            foreach (var e in p.Edits)
+                if (e.Before is Rel r)
+                {
+                    if (!outBefore.TryGetValue(r.Source, out var o)) outBefore[r.Source] = o = [];
+                    o.Add(r);
+                    if (!inBefore.TryGetValue(r.Target, out var i)) inBefore[r.Target] = i = [];
+                    i.Add(r);
+                }
+        }
+        return outgoing ? outBefore : inBefore!;
     }
 }
 
@@ -129,16 +132,19 @@ sealed class MatchOp : PhysOp
             foreach (var edit in patch.Edits)
             {
                 if (isNode ? edit.Key.Kind != 'e' : edit.Key.Kind != 'r') continue;
-                foreach (var (state, sign) in new[] { (edit.Before, -1L), (edit.After, 1L) })
-                {
-                    if (state is null || !Fits(seed, state)) continue;
-                    Array.Clear(bound);
-                    bound[seed] = state;
-                    Extend(0, seed, sign, bound, newView, oldView, bb);
-                }
+                Seed(seed, edit.Before, -1, bound, newView, oldView, bb);
+                Seed(seed, edit.After, 1, bound, newView, oldView, bb);
             }
         }
         return bb.Build();
+    }
+
+    void Seed(int seed, Element? state, long sign, Element?[] bound, IGraphView nv, IGraphView ov, BatchBuilder bb)
+    {
+        if (state is null || !Fits(seed, state)) return;
+        Array.Clear(bound);
+        bound[seed] = state;
+        Extend(0, seed, sign, bound, nv, ov, bb);
     }
 
     bool Fits(int comp, Element e) => comp < nodeCount
@@ -170,7 +176,7 @@ sealed class MatchOp : PhysOp
         if (bound[fromNode] is Entity f) candidates = view.OutRels(f.Id);
         else if (bound[toNode] is Entity to) candidates = view.InRels(to.Id);
         else return;
-        foreach (var r in candidates.ToList())
+        foreach (var r in candidates)
         {
             if (!Fits(comp, r)) continue;
             if (bound[fromNode] is Entity bf && r.Source != bf.Id) continue;

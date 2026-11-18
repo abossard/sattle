@@ -41,26 +41,40 @@ sealed class SeriesOp : PhysOp
         return res;
     }
 
-    /// <summary>The changes of this step by window, for the reads of this Series.</summary>
-    Dictionary<(int, long), List<WindowChange>>? ChangesOf(Epoch ep)
+    /// <summary>Working state of a call, emptied by `ChangesOf`: the windows this step changed for the reads of the Series, in the order of their first change, each with its place in `olds`; there, per read, the value the window had before the step and whether the step changed it. Calls do not overlap, so every Series of a thread shares one, sized by the largest step.</summary>
+    [ThreadStatic] static Dictionary<(int Elem, long Start), int>? changedOfThread;
+    [ThreadStatic] static decimal?[]? olds;
+    [ThreadStatic] static bool[]? oldSet;
+    static Dictionary<(int Elem, long Start), int> changed => changedOfThread ??= [];
+
+    /// <summary>Collects the changes of this step into `changed`; false when there are none.</summary>
+    bool ChangesOf(Epoch ep)
     {
+        changed.Clear();
         var gd = ep.Graphs.GetValueOrDefault(t.GraphPort);
-        if (gd is null || gd.Telemetry.Count == 0) return null;
-        var byWindow = new Dictionary<(int, long), List<WindowChange>>();
+        if (gd is null || gd.Telemetry.Count == 0) return false;
+        var n = propHandles.Length;
         foreach (var ch in gd.Telemetry)
         {
-            if (Array.IndexOf(propHandles, ch.Key.Prop) < 0) continue;
-            if (!byWindow.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var l)) byWindow[(ch.Key.Element, ch.Key.WindowStart)] = l = [];
-            l.Add(ch);
+            var p = Array.IndexOf(propHandles, ch.Key.Prop);
+            if (p < 0) continue;
+            if (!changed.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var slot))
+            {
+                changed[(ch.Key.Element, ch.Key.WindowStart)] = slot = changed.Count;
+                if (olds is null || olds.Length < (slot + 1) * n) { Array.Resize(ref olds, Math.Max(64, (slot + 1) * n * 2)); Array.Resize(ref oldSet, olds.Length); }
+                Array.Clear(oldSet!, slot * n, n);
+            }
+            if (!oldSet![slot * n + p]) { olds![slot * n + p] = ch.Old; oldSet[slot * n + p] = true; }     // the first change of a read holds its value before the step
         }
-        return byWindow;
+        return changed.Count > 0;
     }
 
-    /// <summary>The values of a window before this step: the store now, with the first old value of each read this step changed put back.</summary>
-    decimal?[] Before(decimal?[]? now, List<WindowChange> changes)
+    /// <summary>The values of a window before this step: the store now, with the value before the step of each read this step changed put back.</summary>
+    decimal?[] Before(decimal?[]? now, int slot)
     {
-        var res = now is null ? new decimal?[propHandles.Length] : (decimal?[])now.Clone();
-        for (var i = changes.Count - 1; i >= 0; i--) res[Array.IndexOf(propHandles, changes[i].Key.Prop)] = changes[i].Old;
+        var n = propHandles.Length;
+        var res = now is null ? new decimal?[n] : (decimal?[])now.Clone();
+        for (var p = 0; p < n; p++) if (oldSet![slot * n + p]) res[p] = olds![slot * n + p];
         return res;
     }
 
@@ -215,9 +229,9 @@ sealed class SeriesOp : PhysOp
         var touched = new HashSet<int>();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
         var reachBack = Lag.Length == 0 ? 0 : Lag.Max();      // a window ends this much after its grid window (a hop window, #111)
-        var byWindow = ChangesOf(ep);
+        ChangesOf(ep);
         // the record of a window before this step's window changes (the store holds it after them)
-        decimal?[]? RecordBefore(int elem, long a) => byWindow is not null && byWindow.TryGetValue((elem, a), out var chs) ? Record(Before(StoredAt(elem, a), chs), elem, a, hi, frontier) : Record(elem, a, hi, frontier);
+        decimal?[]? RecordBefore(int elem, long a) => changed.TryGetValue((elem, a), out var slot) ? Record(Before(StoredAt(elem, a), slot), elem, a, hi, frontier) : Record(elem, a, hi, frontier);
         if (ep.Loss is { } mark && (frontier == long.MinValue || mark + period + reachBack > edge) && !lost.Contains(mark))
         {
             // a loss mark on a window: the fills of the windows that contain it go (with a hop, every window that reaches the mark)
@@ -241,22 +255,21 @@ sealed class SeriesOp : PhysOp
             }
         }
         // changed windows against the rows before the step
-        if (byWindow is not null)
-            foreach (var ((elem, wstart), changes) in byWindow)
+        foreach (var ((elem, wstart), slot) in changed)
+        {
+            if (frontier != long.MinValue && wstart < frontier - within) continue;
+            if (!arrangement.TryGetValue(elem, out var list)) continue;     // no row: nothing to join
+            var now = StoredAt(elem, wstart);
+            var before = Record(Before(now, slot), elem, wstart, hi, frontier);
+            var after = Record(now, elem, wstart, hi, frontier);
+            touched.Add(elem);
+            if (Same(before, after)) continue;
+            foreach (var r in list)
             {
-                if (frontier != long.MinValue && wstart < frontier - within) continue;
-                if (!arrangement.TryGetValue(elem, out var list)) continue;     // no row: nothing to join
-                var now = StoredAt(elem, wstart);
-                var before = Record(Before(now, changes), elem, wstart, hi, frontier);
-                var after = Record(now, elem, wstart, hi, frontier);
-                touched.Add(elem);
-                if (Same(before, after)) continue;
-                foreach (var r in list)
-                {
-                    if (before is not null) WriteRow(bb, r, wstart, before, -r.Weight);
-                    if (after is not null) WriteRow(bb, r, wstart, after, r.Weight);
-                }
+                if (before is not null) WriteRow(bb, r, wstart, before, -r.Weight);
+                if (after is not null) WriteRow(bb, r, wstart, after, r.Weight);
             }
+        }
         // changed rows against the windows after the step
         var rows = In(inputs, "in");
         if (rows is not null)
@@ -327,13 +340,13 @@ sealed class SeriesOp : PhysOp
         var bb = EmptyOutput();
         var edge = frontier == long.MinValue ? long.MinValue : frontier - within;
         // step B: changed telemetry windows against the rows before this step
-        if (ChangesOf(ep) is { } byWindow)
-            foreach (var ((elem, wstart), changes) in byWindow)
+        if (ChangesOf(ep))
+            foreach (var ((elem, wstart), slot) in changed)
             {
                 if (wstart < edge) continue;      // outside the look-back: not joined (Def. 6.7)
                 if (!arrangement.TryGetValue(elem, out var list)) continue;     // no row: nothing to join
                 var after = StoredAt(elem, wstart) ?? new decimal?[propHandles.Length];
-                var before = Before(after, changes);
+                var before = Before(after, slot);
                 foreach (var r in list)
                 {
                     if (Complete(before)) WriteRow(bb, r, wstart, before, -r.Weight);
