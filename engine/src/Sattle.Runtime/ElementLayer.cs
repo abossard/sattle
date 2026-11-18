@@ -88,7 +88,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     /// <summary>The elements touched since the last flush, in the order they were first touched, and the same as a bitmap.</summary>
     readonly List<int> touched = [];
     readonly Bits dirty = new();
-    readonly List<byte> buffer = [];
+    List<byte> buffer = [];
 
     void Touch(int elem) { if (dirty.Add(elem)) touched.Add(elem); }
 
@@ -361,23 +361,23 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
     void Add(int elem, bool isRel, ReadOnlySpan<byte> fragment, long weight, int source, int target)
     {
         if (known.Add(elem) && isRel) rels.Add(elem);
-        if (HeldAsOne(elem, ref fragment, weight)) return;
+        if (HeldAsOne(elem, fragment, weight)) return;
         AddFragment(elem, fragment, weight, source, target);             // a retraction may arrive before the insertion it cancels: the weights add up in any order
         Touch(elem);
     }
 
     /// <summary>The graph the last flush brought to what its elements resolve to, while it holds texts as this layer's numbers: what an element of `ones` is.</summary>
     Graph? flushed;
-    readonly List<byte> incoming = [];
+    /// <summary>The other buffer: `HeldAsOne` swaps it with `buffer`, so the row's bytes stay where they are while the graph's element is written.</summary>
+    List<byte> spare = [];
 
-    /// <summary>A row of an element in `ones` with the fragment the graph holds for it, and a weight that leaves the row positive: the element's positive fragments stay what they were, so it resolves as before and needs no flush. The weight goes to `ones`. The steady case: a closed window of a windowed group adds one row to an element its first window created. Else `fragment` is the row's fragment, wherever it now lies.</summary>
-    bool HeldAsOne(int elem, ref ReadOnlySpan<byte> fragment, long weight)
+    /// <summary>A row of an element in `ones` with the fragment the graph holds for it, and a weight that leaves the row positive: the element's positive fragments stay what they were, so it resolves as before and needs no flush. The weight goes to `ones`. The steady case: a closed window of a windowed group adds one row to an element its first window created. `fragment` stays valid.</summary>
+    bool HeldAsOne(int elem, ReadOnlySpan<byte> fragment, long weight)
     {
         if (flushed is null || ones.Count == 0) return false;
         var row = ones.Find([elem]);
         if (row < 0 || ones.Weight(row) + weight <= 0) return false;
-        incoming.Clear(); incoming.AddRange(fragment);
-        fragment = System.Runtime.InteropServices.CollectionsMarshal.AsSpan(incoming);
+        (buffer, spare) = (spare, buffer);
         if (!FromGraph(flushed, elem, (int)ones.Get(row, 1), out _, out _) || !fragment.SequenceEqual(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(buffer))) return false;
         ones.Add([elem], weight);
         return true;

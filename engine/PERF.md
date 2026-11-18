@@ -1236,6 +1236,27 @@ Theory. Each Series scanned every window change of the graph it reads in a step 
 - One pair at load 460 to 600. The allocation is the index: 94.4 MB per close with one delta per reader, 91.6 MB with the delta shared.
 - Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
 
+### Window close: the `ones` check compares a row with the graph's element without copying it (#119, 2026-11-18)
+Theory. The check of the `ones` row (a row of an element in `ones` with the fragment the graph holds goes to `ones`, no touch) costs, split by sub-timers at 10^5 (twelve closes, wall under load 541, 1,042,419 checks): the graph's read of the element 768 ms (handle index, element arrays, props block), the lookup in `ones` 429 ms, writing the graph's element in the canonical form about 90 ms, copying the row 126 ms, comparing 48 ms. The lookups are two thirds; the re-encoding suspected before is about 5 %. The copy goes: the row's bytes stay in their buffer while the graph's element is written into a second one (the two swap), so the check copies nothing. The lookups stay, since the row must be compared with what the graph holds; one fewer would need the graph's handle kept in `ones` (4 bytes per element), not done.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| steady close, thread CPU median | 32 / 43 ms | 373 / 372 ms |
+| allocated per steady close | 9.1 / 9.2 MB | 94.4 / 94.4 MB |
+
+The three changes of this section and the two before it together, against the advance section's after, at load 375 to 700 on 10 cores:
+
+| | 10^4 before / after | 10^5 before / after, four pairs and one more before |
+|---|---|---|
+| steady close, thread CPU median | 42 / 47 ms | 441, 351, 366, 350, 374 / 350, 356, 350, 358 ms |
+| steady close, thread CPU least | 33 / 44 ms | 407, 346, 336, 330, 364 / 335, 331, 338, 335 ms |
+| steady close, wall p50 / max | 151 / 229, 58 / 63 ms | 726 / 1,020, 440 / 687, 510 / 691 against 540 / 582, 396 / 433, 470 / 584 ms |
+| allocated per steady close | 8.9 / 9.0 MB | 90.2 / 91.6 MB |
+| first close with telemetry, thread CPU | 681 / 455 ms | 6,336 to 7,565 / 6,084 to 6,600 ms |
+
+- Thread CPU at 10^5: median of the medians 366 to 353 ms (4 %), the least close 330 to 407 against 331 to 338 ms. That is within the noise of this load; the sub-timers put the removed work at about 6 % of the thread CPU of the twelve closes. Linear to 10^6 from 353 ms: about 4.9 s. A quiet run decides it.
+- The figures of this section (one pair, before without the shared delta) are at load 525 to 690. Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
