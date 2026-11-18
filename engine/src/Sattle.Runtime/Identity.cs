@@ -92,7 +92,12 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     public int OwnOf(IdDomain d, ReadOnlySpan<long> canon)
     {
         var k = K(d, canon);
-        if (!own.TryGetValue(k, out var h)) own[k] = h = it.Intern(MintId(d, canon));
+        if (!own.TryGetValue(k, out var h))
+        {
+            Span<byte> hash = stackalloc byte[32]; Span<char> id = stackalloc char[KeyText.IdLength];
+            KeyHash(d, canon, hash); KeyText.Id('e', hash, id);
+            own[k] = h = it.Intern(id);         // a known id is found from its characters: no string is made
+        }
         return h;
     }
 
@@ -145,28 +150,27 @@ public sealed class IdentityCatalog(string tenant, Interner it)
     {
         Span<byte> hash = stackalloc byte[32];
         KeyHash(d, canon, hash);
-        var comps = new StringBuilder("[");
+        var comps = KeyText.Open();         // the key's buffer: the hash is taken
         for (var i = 0; i < canon.Length; i++) { if (i > 0) comps.Append(','); Jcs.Str(comps, it.Get((int)canon[i])); }
         comps.Append(']');
         return (Convert.ToHexStringLower(hash), KeyText.Id('e', hash), comps.ToString());
     }
 
-    /// <summary>The id minted for a key, alone.</summary>
-    string MintId(IdDomain d, ReadOnlySpan<long> canon)
-    {
-        Span<byte> hash = stackalloc byte[32];
-        KeyHash(d, canon, hash);
-        return KeyText.Id('e', hash);
-    }
-
     /// <summary>Relationship id: hash of tenant, projection, key rule, source and target ids. The type is excluded so a retype keeps the id (ADR-086).</summary>
     public static string RelationshipId(string tenant, string projection, string key, string source, string target)
+    {
+        Span<char> id = stackalloc char[KeyText.IdLength];
+        RelationshipId(tenant, projection, key, source, target, id);
+        return new string(id);
+    }
+    /// <summary>The same into `into` (`KeyText.IdLength` characters), so a caller that interns it makes no string.</summary>
+    public static void RelationshipId(string tenant, string projection, string key, string source, string target, Span<char> into)
     {
         var sb = KeyText.Open();
         Jcs.Str(sb, tenant); sb.Append(','); Jcs.Str(sb, projection); sb.Append(','); Jcs.Str(sb, key); sb.Append(','); Jcs.Str(sb, source); sb.Append(','); Jcs.Str(sb, target); sb.Append(']');
         Span<byte> hash = stackalloc byte[32];
         KeyText.Sha256(sb, hash);
-        return KeyText.Id('r', hash);
+        KeyText.Id('r', hash, into);
     }
 }
 
@@ -200,11 +204,13 @@ static class KeyText
     /// <summary>`kind:` and the first 26 base32 characters of the hash (130 bits).</summary>
     public static string Id(char kind, ReadOnlySpan<byte> hash)
     {
-        Span<char> s = stackalloc char[28];
-        s[0] = kind; s[1] = ':';
-        Digests.Base32(hash, s[2..]);
+        Span<char> s = stackalloc char[IdLength];
+        Id(kind, hash, s);
         return new string(s);
     }
+    public const int IdLength = 28;
+    /// <summary>The same into `into` (`IdLength` characters).</summary>
+    public static void Id(char kind, ReadOnlySpan<byte> hash, Span<char> into) { into[0] = kind; into[1] = ':'; Digests.Base32(hash, into[2..IdLength]); }
 
     static ReadOnlySpan<char> Chars(StringBuilder sb)
     {

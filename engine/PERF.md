@@ -840,6 +840,22 @@ Theory. The windows of a step and its samples are needed only while the step is 
 - What remains: the settle of a window written by more than one row (its support kept as a dictionary) and the conflict subjects of shared or moved windows.
 - Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. The working state is per thread and not sealed; the seal format is unchanged.
 
+### Efficiency stage 2, allocation per record: minting ids (#115, 2026-11-18)
+At 10^4 the emits' identities allocated 43.8 MB, of which 36.4 MB for minting 33,092 new keys (1.1 KB each); a relationship id was made as a string before it was interned.
+
+Theory. A binding record needs the hash as hex, the id and the components as JSON; the components are built in the thread's key buffer (the hash of the key is taken by then), so only the final text is made. An own id and a relationship id are needed as interner codes only: their characters are written into the stack and interned from there (`Interner.Intern` of a span finds a known text without a string). Same texts, same hashes: ids unchanged.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 12.9 / 12.6 KB | 12.4 / 12.2 KB |
+| `EmitEntityOp` | 79 / 65 MB | 848 / 706 MB |
+| `EmitRelOp` | 47 / 42 MB | 493 / 441 MB |
+| live bytes | 242 / 242 MB | 1,449 / 1,449 MB |
+
+- What remains per minted key, about 700 B: the binding record (hash as hex 152 B, the id, the components as JSON, the record) and the growth of the key index. The default store (`HeadOnlyGraphStore`) does not keep binding records, so a record made only when a store keeps it would save about 400 B more per key; that changes the store interface and is not part of this change.
+- In `EmitEntityOp` at 10^4 after this: identity 29.7 MB, contributions to the element layer 21 MB, lineage 6.2 MB, set expressions 5.4 MB.
+- Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

@@ -560,13 +560,17 @@ sealed class EmitRelOp : SinkOp
         var b = In(inputs, "in"); if (b is null || b.Rows == 0) return null;
         var sc = src.Eval(b); var tc = tgt.Eval(b); for (var i = 0; i < sets.Length; i++) cols[i] = sets[i].Value.Eval(b);
         var (so, to) = ((src as VId)?.Owns, (tgt as VId)?.Owns);
+        Span<char> id = stackalloc char[KeyText.IdLength];
         for (var k = 0; k < b.Rows; k++)
         {
             var row = b.RowAt(k);
             if ((sc.P is not null && !sc.P[row]) || (tc.P is not null && !tc.P[row])) { cx.SkippedEmits++; continue; }
             var s = (int)sc.L[row]; var d = (int)tc.L[row]; var w = b.Weight(row);
             if (!relIds.TryGetValue((s, d), out var rel))
-                relIds[(s, d)] = rel = it.Intern(IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, it.Get(s), it.Get(d)));
+            {
+                IdentityCatalog.RelationshipId(cx.Tenant, cx.ProjectionId, t.Key, it.Get(s), it.Get(d), id);
+                relIds[(s, d)] = rel = it.Intern(id);         // a known id is found from its characters: no string is made
+            }
             for (var i = 0; i < sets.Length; i++)
             {
                 var set = sets[i].Set; var col = cols[i];
