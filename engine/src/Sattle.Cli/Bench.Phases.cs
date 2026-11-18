@@ -14,7 +14,17 @@ static partial class Bench
         public Interner Interner => e.Interner;
         public Layout RowLayout(string source) => e.RowLayout(source);
         public bool WantsProgress => e.WantsProgress;
-        public void Progress(string source, long untilNs, long seq) => e.Progress(source, untilNs, seq);
+        /// <summary>A window close: the progress the sources made since the last advance, then the advance (`Replay.RecordProgress`, `Engine.Advance`). Both end in committed graphs, so each close is timed from its first progress record to the end of its advance.</summary>
+        public readonly List<Close> Closes = [];
+        /// <summary>The operator kinds and parts of a step within the advances alone.</summary>
+        public readonly Dictionary<string, (double Ms, long Bytes, long Calls)> AdvanceKinds = [];
+        long closeTicks, closeAlloc, closeCpu; bool closing;
+        public void Progress(string source, long untilNs, long seq)
+        {
+            var a = GC.GetAllocatedBytesForCurrentThread(); var t = Stopwatch.GetTimestamp(); var c = ThreadCpuNs();
+            e.Progress(source, untilNs, seq);
+            closeTicks += Stopwatch.GetTimestamp() - t; closeAlloc += GC.GetAllocatedBytesForCurrentThread() - a; closeCpu += ThreadCpuNs() - c; closing = true;
+        }
         public void Ingest(string source, Batch rows, long seq)
         {
             var a = GC.GetAllocatedBytesForCurrentThread(); var t = Stopwatch.GetTimestamp(); var c = ThreadCpuNs();
@@ -23,11 +33,49 @@ static partial class Bench
         }
         public void Advance(long lambdaNs, long seq)
         {
+            var graphMs = e.Graphs.ToDictionary(g => g.Name, g => GraphMillis(e, g.Name)); long changes = 0;
+            var kinds = new Dictionary<string, (double Ms, long Bytes, long Calls)>(e.KindStats);
+            void Count(CommitEvent ce) => changes += ce.Telemetry.Count;
+            e.Committed += Count;
+            var pause = GC.GetTotalPauseDuration();
             var a = GC.GetAllocatedBytesForCurrentThread(); var t = Stopwatch.GetTimestamp(); var c = ThreadCpuNs();
             e.Advance(lambdaNs, seq);
-            AdvanceTicks += Stopwatch.GetTimestamp() - t; AdvanceAlloc += GC.GetAllocatedBytesForCurrentThread() - a; AdvanceCpu += ThreadCpuNs() - c; Advances++;
+            long dt = Stopwatch.GetTimestamp() - t, da = GC.GetAllocatedBytesForCurrentThread() - a, dc = ThreadCpuNs() - c;
+            e.Committed -= Count;
+            AdvanceTicks += dt; AdvanceAlloc += da; AdvanceCpu += dc; Advances++;
+            var series = e.Telemetry is InMemoryTelemetryStore mem ? e.Graphs.Sum(g => (long)mem.SeriesCount(g.Key)) : 0;
+            var top = e.Graphs.Select(g => (g.Name, Ms: GraphMillis(e, g.Name) - graphMs[g.Name])).OrderByDescending(x => x.Ms).Take(4).ToList();
+            Closes.Add(new(lambdaNs, Ms(closeTicks + dt), (closeCpu + dc) / 1e6, (closeAlloc + da) / 1e6, (GC.GetTotalPauseDuration() - pause).TotalMilliseconds, changes, series, closing, top));
+            closeTicks = closeAlloc = closeCpu = 0; closing = false;
+            foreach (var (k, v) in e.KindStats)
+            {
+                var b = kinds.GetValueOrDefault(k); var s = AdvanceKinds.GetValueOrDefault(k);
+                AdvanceKinds[k] = (s.Ms + v.Ms - b.Ms, s.Bytes + v.Bytes - b.Bytes, s.Calls + v.Calls - b.Calls);
+            }
         }
         public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => e.RecordLoss(timeNs, count, reason);
+        static double GraphMillis(Engine e, string graph) => e.OperatorMillis.Where(x => x.Key.StartsWith(graph + "/", StringComparison.Ordinal)).Sum(x => x.Value);
+    }
+    /// <summary>One window close: the frontier it moved to, wall, CPU and allocation from its first progress record to its committed graphs, the collection pauses in its advance, the telemetry window changes the graphs committed, the series held after it, and the graphs that took the longest (operators and commit, while allocations are tracked).</summary>
+    sealed record Close(long Lambda, double Ms, double CpuMs, double AllocMb, double PauseMs, long WindowChanges, long Series, bool Progress, List<(string Name, double Ms)> Top);
+
+    static void PrintCloses(List<Close> closes, TextWriter w)
+    {
+        w.WriteLine("window close (progress records and advance, to committed graphs) | frontier | wall ms | thread CPU ms | allocated MB | GC pause ms | telemetry window changes | series held | longest graphs, ms");
+        for (var i = 0; i < closes.Count; i++)
+        {
+            var c = closes[i];
+            w.WriteLine($"close {i} | {DateTimeOffset.FromUnixTimeMilliseconds(c.Lambda / 1_000_000):HH:mm:ss} | {c.Ms:F0} | {c.CpuMs:F0} | {c.AllocMb:F0} | {c.PauseMs:F0} | {c.WindowChanges:N0} | {c.Series:N0} | {string.Join(", ", c.Top.Select(x => $"{x.Name} {x.Ms:F0}"))}");
+        }
+        void Stats(string label, IEnumerable<Close> set)
+        {
+            var ms = set.Select(x => x.Ms).Order().ToArray();
+            if (ms.Length == 0) return;
+            double P(double q) => ms[Math.Min(ms.Length - 1, (int)Math.Ceiling(q * ms.Length) - 1)];      // nearest rank
+            w.WriteLine($"window close {label}: {ms.Length} closes, p50 {P(0.5):F0} ms, p99 {P(0.99):F0} ms, max {ms[^1]:F0} ms; series held at the last {set.Last().Series:N0}");
+        }
+        Stats("all", closes);
+        Stats("after the first (the first window carries the load of the estate)", closes.Skip(1));
     }
 
     /// <summary>`sattle bench phases [--capture DIR] [--overlay FILE] [--export] [--census]`: where the time and the allocations of a capture replay go, by phase (wall and this thread's CPU), the peak resident set, and with `--census` the bytes retained per structure and per master node (pods, Services and Azure resources).</summary>
@@ -75,16 +123,20 @@ static partial class Bench
         proc.Refresh();
         Console.WriteLine($"cpu: this thread {(ThreadCpuNs() - threadStart) / 1e9:F1} s, the process {(proc.TotalProcessorTime - cpuStart).TotalSeconds:F1} s (the rest is the collector and the runtime's other threads); peak resident set {PeakResidentBytes() / 1e6:F0} MB");
         Console.WriteLine($"total wall {total.TotalSeconds:F2} s, allocated {allocTotal / 1e6:F0} MB ({allocTotal / (double)Math.Max(1, records):F0} bytes per record, {allocTotal / (double)Math.Max(1, input.IngestRows):F0} per row), GC pause {pause.TotalSeconds:F2} s ({100 * pause.TotalSeconds / total.TotalSeconds:F0} %), unexplained {total.TotalSeconds - (Ms(readTicks) + Ms(procTicks)) / 1000:F2} s");
+        PrintCloses(input.Closes, Console.Out);
+        Console.WriteLine("in the advances alone: operator kind or part of a step | calls | ms | MB allocated");
+        foreach (var (k, v) in input.AdvanceKinds.OrderByDescending(x => x.Value.Ms).Take(24)) Console.WriteLine($"{k} | {v.Calls:N0} | {v.Ms:F0} | {v.Bytes / 1e6:F0}");
         Console.WriteLine("operator kind or part of a step | calls | ms | MB allocated");
         foreach (var (k, v) in engine.KindStats.OrderByDescending(x => x.Value.Bytes).Take(24)) Console.WriteLine($"{k} | {v.Calls:N0} | {v.Ms:F0} | {v.Bytes / 1e6:F0}");
         Console.WriteLine("per graph (operators and commit), ms:");
         foreach (var gname in engine.Graphs.Select(g => g.Name))
             Console.WriteLine($"{gname} | operators {engine.OperatorMillis.Where(x => x.Key.StartsWith(gname + "/", StringComparison.Ordinal) && !x.Key.EndsWith("(commit)", StringComparison.Ordinal)).Sum(x => x.Value):F0} | commit {engine.OperatorMillis.GetValueOrDefault(gname + "/(commit)"):F0}");
+        GraphTable(engine, Console.Out);
+        Console.WriteLine($"state digest {engine.StateDigest()}");
         if (o.Flags.Contains("census"))
         {
             // the unit of the budgets: master nodes are the pods, Services and Azure resources of the master
             var structure = engine.Master.State.Entities.LongCount(x => Ids.Name(x.Type) is "Pod" or "Service" or "AzureResource");
-            GraphTable(engine, Console.Out);
             Census.Run($"after the replay, per master node = per pod, Service or Azure resource ({structure:N0})", Census.EngineRoots(engine), structure, engine.Master.State.RelCount, Console.Out);
         }
         engine.Dispose();

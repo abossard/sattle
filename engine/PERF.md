@@ -1064,6 +1064,21 @@ Release build of fd42618, the same input as the first run (8,159,533 records, 1,
 - Retained bytes per master node by structure (census, 15.8 M objects, coverage 100 %, walk 11 s): telemetry store 1,031; joins 937; interner 781; traverse 600; groups 548; sink contributions 480; statics 390 (a 218 MB sample array); windowed groups 364; sink values 325; thresholds 311 (4.7 M tree nodes); graph byte pool 302.
 - Raw outputs: `tmp/orchestrator/n1m-b-phases.txt` and `n1m-b-census.txt` (not in git).
 
+### Window close: the time from a window's close to committed health state (#119, 2026-11-18)
+`sattle bench phases --capture DIR` now times each window close: from the first progress record the replay sends before an advance to the end of the advance, when every graph has committed (the replay sends progress only there). Per close it prints the frontier, wall, thread CPU, allocation, collection pauses, the telemetry window changes the graphs committed, the series held after it and the four graphs that took longest; then p50, p99 and max over all closes and over the closes after the first. It also prints the graph table and the state digest on every run, not only with `--census`. The generated estates (`bench gen-estate`) run 12 closes: two before any telemetry, the first close with telemetry, nine steady.
+
+| | 10^4 | 10^5 |
+|---|---|---|
+| series held at the end | 20,023 | 199,964 |
+| window changes per steady close | 19,878 to 19,914 | 198,623 to 198,960 |
+| steady close, wall p50 / max | 73 / 95 ms | 668 / 900 ms |
+| steady close, thread CPU median | 70 ms | 622 ms |
+| first close with telemetry, wall (thread CPU) | 564 (462) ms | 7,841 (6,390) ms |
+
+- The first close with telemetry is a load: the derived graphs create their structure from the first windows (at 10^5 workloadStructure 1.7 s, master 1.5 s, healthTree 1.3 s, treeSignals 0.9 s) and it allocates 1.2 GB. A live space has it once; a restart from a seal does not repeat it. The steady closes are what the limit of 13.1 reads.
+- Linear in the series: about 6.2 s per steady close at 10^6 from these figures, over the 5 s limit.
+- Load average 75 to 90 on 10 cores during these runs; wall is noisy, thread CPU less so. Digests `sha256:2654c25f...bfbc3` (10^4), `sha256:0ab80689...41140` (10^5).
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

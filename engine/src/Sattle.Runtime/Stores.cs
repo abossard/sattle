@@ -697,6 +697,8 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         lock (gate) return Get(g).Series.TryGetValue((key.Element, key.Prop), out var ser) && ser.Find(key.WindowStart) is var i and >= 0 ? ser.Values[i] : null;
     }
     public (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key) { lock (gate) return Get(g).Aux.TryGetValue(key, out var a) ? a : null; }
+    /// <summary>The (element, property) series the plane holds.</summary>
+    public int SeriesCount(GraphKey g) { lock (gate) return Get(g).Series.Count; }
 
     /// <summary>Two windows of one property under two ids of a class, as value and optional pair: their combination as if every row had been written under one id (Law 7.5 item 3). `sum`, `min`, `max` in their monoid; `mean` with sum and count by adding both and dividing; `last` with its order by the greater order, a tie by the greater value; otherwise equal values are that value and different ones none.</summary>
     public static (decimal Value, (decimal A, decimal B)? Aux)? Combine(string? rule, decimal v1, (decimal A, decimal B)? a1, decimal v2, (decimal A, decimal B)? a2) => rule switch
