@@ -527,7 +527,7 @@ public sealed class SqliteGraphStore : IDurableStore
 /// <summary>`AuxA`, `AuxB`: the pair a window of a `mean` or `last` property carries next to its value (Law 7.5 item 3 (i)): for `mean` the sum and the count it is the quotient of, for `last` the order value of the row it took (B unused). Null for every other window.</summary>
 public readonly record struct Sample(int Element, int Prop, long WindowStart, long WidthNs, decimal Value, long InputId, bool Deleted = false, decimal? AuxA = null, decimal? AuxB = null);
 public readonly record struct WindowKey(int Element, int Prop, long WindowStart);
-public sealed record WindowChange(WindowKey Key, decimal? Old, decimal? New);
+public readonly record struct WindowChange(WindowKey Key, decimal? Old, decimal? New);
 public readonly record struct SeriesPoint(long WindowStart, decimal Value);
 public delegate void WindowVisitor(int element, int prop, long windowStart, decimal value);
 public sealed record SeriesRead(int Element, int Prop, IReadOnlyList<SeriesPoint> Points, string Completeness);
@@ -585,6 +585,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     sealed class Plane
     {
         public readonly Dictionary<(int, int), Windows> Series = [];
+        /// <summary>The changes not yet read; a read takes the list. An append makes room for its whole batch at once, so a log is made at its size, not grown by doubling.</summary>
         public List<WindowChange> Log = [];
         public long Base; // position of Log[0]
         public long? RetainedFrom;
@@ -604,6 +605,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         lock (gate)
         {
             var p = Get(g);
+            p.Log.EnsureCapacity(p.Log.Count + samples.Length);
             foreach (var s in samples)
             {
                 var key = (s.Element, s.Prop);
@@ -683,8 +685,9 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
             // A position says what its reader has consumed, and what it reads now it has consumed too: the plane's one reader is its graph, right after its step. So the log holds the changes not yet read, not the history of the plane.
             var consumed = (int)(afterPosition - p.Base);
             if (consumed > 0) p.Log.RemoveRange(0, consumed);
-            var read = p.Log;
-            p.Log = []; p.Base = afterPosition + read.Count; newPosition = p.Base;
+            newPosition = p.Base = afterPosition + p.Log.Count;
+            if (p.Log.Count == 0) return [];
+            var read = p.Log; p.Log = [];          // its reader keeps what it reads (the graph delta, the commit event, an export)
             return read;
         }
     }

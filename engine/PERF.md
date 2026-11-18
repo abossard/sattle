@@ -1015,6 +1015,21 @@ Theory. A group's key row held a flag of whether the key has a row in the output
 - Accumulators of `last` are reserved but never written, and a column never written takes no memory: nothing to gain there.
 - Before is the row sets patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`).
 
+### Efficiency stage 2, allocation per record: the window changes of a step and its commit report (#115, 2026-11-18)
+At 10^4 reading what a step changed in the telemetry allocated 41 MB in 44,666 steps, and the commit report 12 MB, 270 B per step, nearly all of them steps without a changed conflict. A window change was an object of 80 B behind a reference in a list that grew by doubling, each step started a new log, and each step ordered its empty set of changed conflicts into a new list.
+
+Theory. A window change is a value (a key and two optional numbers), so it is a struct of 64 B held in the log itself. An append makes room for its whole batch at once, so a step's log is made at its size, not grown by doubling. The plane's one reader keeps what it reads (the graph delta, the commit event, an export), so a read takes the log; a step with no change reads the shared empty list and leaves the log in place. A step with no changed conflict reports the shared empty list. Same changes in the same order.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 8.27 / 8.02 KB | 8.24 / 8.00 KB |
+| telemetry append and read | 41 / 32 MB | 401 / 313 MB |
+| commit event | 12 / 2 MB | 120 / 18 MB |
+| live bytes | 179 / 179 MB | 937 / 937 MB |
+
+- Tried and dropped: one log per plane, kept and cleared, each read copied out as an array of its count. It saved 16 MB, not 20, and the log kept the size of the largest step (1.8 MB live at 10^4). Letting such a log go past 4,096 entries made the advance steps regrow it, 13 MB more than before.
+- Before is the groups key rows section's after (seal 20). Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Bytes only: the runs were measured under load (load average 37 to 56), so no times are given. Nothing is sealed; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

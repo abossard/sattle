@@ -421,8 +421,9 @@ sealed class ConflictSet
     }
 
     /// <summary>The conflicts that appeared, changed or ended since the last call: what a commit reports (an ended conflict comes with no values).</summary>
-    public List<Conflict> TakeChanged()
+    public IReadOnlyList<Conflict> TakeChanged()
     {
+        if (changed.Count == 0) return [];
         var res = changed.Order(StringComparer.Ordinal).Select(s => now.TryGetValue(s, out var c) ? c : new Conflict("resolved", s, null, null, [])).ToList();
         changed.Clear();
         return res;
@@ -475,7 +476,7 @@ public sealed class OutputBuilder
 
     public IReadOnlyCollection<Conflict> Conflicts => conflicts.All;
     /// <summary>The conflicts that appeared, changed or ended since the last call: what a commit reports.</summary>
-    public List<Conflict> TakeChanged() => conflicts.TakeChanged();
+    public IReadOnlyList<Conflict> TakeChanged() => conflicts.TakeChanged();
     public OutputCounts Counts => new(elements.Rejections, elements.PropertyConflicts, elements.ElementConflicts, windows.WindowConflicts, windows.MergeConflicts, windows.WindowsOfTwoIds);
     /// <summary>What the sink holds now: rows of contributions, stored fragments and their bytes. Nothing for elements that came and went.</summary>
     public (int Contributions, int Fragments, long FragmentBytes) Held => elements.Held;
