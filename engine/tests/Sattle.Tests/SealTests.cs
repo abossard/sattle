@@ -33,13 +33,13 @@ public class SealTests
         h.Advance(t + 5 * Min, 9_000_001);
     }
 
-    /// <summary>Rewrite 1, step 6: projections written in KQL are definition files of the space like the module texts. A host that is given them and a source that reads them keeps them through a definition commit of another module and through a restart, from the journal alone and from a seal: the catalog after it is the catalog before it. A host that is given them without a source refuses to start, by the name of the file.</summary>
+    /// <summary>The projection files of a registered language are definition files of the space like the module texts. A host that is given them and a source that reads them keeps them through a commit of one of them and through a restart, from the journal alone and from a seal: the catalog after it is the catalog before it. A host that is given them without a source refuses to start, by the name of the file. The one test here that edits the text of a projection file: the commit of such a file is its claim.</summary>
     [Theory]
     [InlineData(0)] [InlineData(25)]
-    public void Projections_in_KQL_stay_with_the_space_through_a_definition_commit_and_a_restart(long sealEvery)
+    public void Projection_files_stay_with_the_space_through_a_commit_of_one_and_a_restart(long sealEvery)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions);
-        Assert.Contains(files, f => f.Path.EndsWith(".kql", StringComparison.Ordinal));
+        Assert.Contains(files, f => !f.Path.EndsWith(".sattle", StringComparison.Ordinal));
         var options = Options(sealEvery);
         using var d = new RestartTests.Durable("memory");
         string catalog, state;
@@ -118,7 +118,7 @@ public class SealTests
             if (!live) Feed(h);
             else
             {
-                var events = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
+                var events = LiveResumeTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
                 var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
                 Assert.Throws<LiveResumeTests.Crash>(() => Sattle.Cli.LiveInput.Run(h, new LiveResumeTests.FakeSource(events, crashAt: events.Count / 2), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
             }
@@ -218,12 +218,10 @@ public class SealTests
     {
         using var d = new RestartTests.Durable(kind);
         string digest, space; long rev;
-        const string Kql = "acme.deployhealth.deploymentHealth.kql";
-        var edited = Files.First(f => f.Path.EndsWith(Kql, StringComparison.Ordinal)).Text.Replace("minReady:long = 0", "minReady:long = 1");
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(25)))
         {
             Feed(h);
-            h.Commit(Kql, edited, h.CatalogRevision);
+            h.Commit(RestartTests.SpaceModule, RestartTests.BoundTo(h, 1), h.CatalogRevision);
             MoreInput(h);
             h.Seal();
             digest = h.StateDigest(); space = Space(h); rev = h.CatalogRevision;
@@ -233,10 +231,10 @@ public class SealTests
         Assert.Equal(digest, r.StateDigest());
         Assert.Equal(rev, r.CatalogRevision);
         Assert.Equal(space, Space(r));
-        Assert.Contains("minReady:long = 1", r.Definition(Kql));
+        Assert.Contains("minReady: 1", r.Definition(RestartTests.SpaceModule));
         // whether the seal was used or the journal replayed, a further definition commit works (it needs the retained inputs, which are read back from the journal)
-        r.Commit(Kql, edited.Replace("minReady:long = 1", "minReady:long = 2"), r.CatalogRevision);
-        Assert.Contains("minReady:long = 2", r.Definition(Kql));
+        r.Commit(RestartTests.SpaceModule, RestartTests.BoundTo(r, 2), r.CatalogRevision);
+        Assert.Contains("minReady: 2", r.Definition(RestartTests.SpaceModule));
     }
 
     [Fact]

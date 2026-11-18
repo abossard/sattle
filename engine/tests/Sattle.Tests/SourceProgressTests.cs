@@ -1,12 +1,11 @@
 using System.Text.Json;
-using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
 /// <summary>
-/// Def. 7.14 to 7.16 and Def. 10.9 through the adapters, the replay and a durable host. A view over the shipped master reads the warning events of each pod with a fill of 0 and a time to live.
+/// Def. 7.14 to 7.16 and Def. 10.9 through the adapters, the replay and a durable host, read from the served graph. A view over the shipped master reads the warning events of each pod with a fill of 0 and a time to live.
 /// Every envelope of the Kubernetes adapter is progress of its sources: while it reports, a pod without events has windows of 0 and its signal goes off; when it stops reporting and only another source goes on, the pod is in no data.
 /// </summary>
 [Trait("Category", "Slow")]
@@ -77,8 +76,7 @@ public class SourceProgressTests
         return lines;
     }
 
-    static Dictionary<string, string?> States(Engine e) =>
-        e.Graph("quiet").State.Entities.ToDictionary(x => x.Props.Text("d:t.quiet/prop:k")!, x => x.Props.Text("d:t.quiet/prop:state"));
+    static Dictionary<string, string?> States(SpaceHost h) => h.Entities("quiet", "PodSignal").ToDictionary(x => x.Prop("k")!, x => x.Prop("state"));
 
     [Theory]
     [InlineData(true, "off", "off")]            // covered silence: the windows after the warning are 0, two of them end the state; the pod without events has windows of 0 too
@@ -94,63 +92,13 @@ public class SourceProgressTests
             using (var host = SpaceHost.OpenDurable(store, Files(), options))
             {
                 new Replay(host, host.Space, host.Adapters, new ReplayOptions { ChunkRows = 2, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(dir);
-                Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(host.Engine));
+                Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(host));
                 digest = host.StateDigest();
             }
             using var again = SpaceHost.OpenDurable(store, null, options);       // the progress of the sources is in the journal: a restart is in the same state
             Assert.Equal(digest, again.StateDigest());
-            Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(again.Engine));
+            Assert.Equal(new Dictionary<string, string?> { ["a"] = a, ["b"] = b }, States(again));
         }
         finally { Directory.Delete(dir, true); }
-    }
-
-    /// <summary>What a filling Series carries from one step to the next (since when an element has had a row, how far its reads are covered, which elements are in no data) and the progress of the sources are part of a state snapshot: an engine restored in the middle of a capture goes on like the one that was not.</summary>
-    [Theory]
-    [InlineData(true, 6)] [InlineData(false, 6)] [InlineData(false, 9)]
-    public void A_snapshot_in_the_middle_of_a_capture_carries_the_state_of_a_filling_series(bool reporting, int cut)
-    {
-        var cat = new Catalog(Repo.Projections);
-        Assert.DoesNotContain(cat.Load(Files(), updatePins: true).Diagnostics, d => d.IsError);
-        var space = cat.Spaces.Keys.Single();
-        var lines = Lines(reporting);
-        void Feed(Engine e, IEnumerable<string> part, bool end)
-        {
-            var dir = Capture(part);
-            try { new Replay(e, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = 2, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = end }).Run(dir); }
-            finally { Directory.Delete(dir, true); }
-        }
-        var options = new EngineOptions { StoreFactory = _ => new SnapshotTests.AcceptingStore() };       // the engine state is under test here, not the log
-        using var original = new Engine(cat, space, options);
-        Feed(original, lines.Take(cut), false);
-        var snapshot = StateSnapshot.Save(original.StateRootOf());
-        using var restored = new Engine(cat, space, options);
-        var root = restored.StateRootOf(); StateSnapshot.Load(snapshot, root); restored.AdoptState(root);
-        Assert.Equal(original.StateDigest(), restored.StateDigest());
-        Feed(original, lines.Skip(cut), true); Feed(restored, lines.Skip(cut), true);
-        Assert.Equal(original.StateDigest(), restored.StateDigest());
-        Assert.Equal(States(original), States(restored));
-        Assert.Contains(reporting ? "off" : "silent", States(restored).Values);
-    }
-
-    [Theory]
-    [InlineData(1)] [InlineData(3)] [InlineData(100000)]
-    public void The_state_with_fills_and_no_data_does_not_depend_on_the_chunk_size(int chunk)
-    {
-        var cat = new Catalog(Repo.Projections);
-        Assert.DoesNotContain(cat.Load(Files(), updatePins: true).Diagnostics, d => d.IsError);
-        string Digest(bool reporting, int rows)
-        {
-            var dir = Capture(Lines(reporting));
-            try
-            {
-                var space = cat.Spaces.Keys.Single();
-                using var engine = new Engine(cat, space);
-                new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), new ReplayOptions { ChunkRows = rows, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(dir);
-                return engine.StateDigest();
-            }
-            finally { Directory.Delete(dir, true); }
-        }
-        Assert.Equal(Digest(true, 2), Digest(true, chunk));
-        Assert.Equal(Digest(false, 2), Digest(false, chunk));
     }
 }

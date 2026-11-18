@@ -1,11 +1,10 @@
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Cli;
 using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>A live run killed and restarted from its store resumes its source after the last position the space saw: nothing is processed twice (the position is journaled with the envelope, before it is processed), nothing is lost, an envelope delivered again is dropped by its key, and the state is the state of a run that was never interrupted. Tested with a fake source that has the contract of Event Hubs (positions, at least once delivery); against real Event Hubs only the source adapter differs and it is not exercised here.</summary>
+/// <summary>Proposition 10.7 and 10.8, the live input. A live run killed and restarted from its store resumes its source after the last position the space saw: nothing is processed twice (the position is journaled with the envelope, before it is processed), nothing is lost, an envelope delivered again is dropped by its key, and the state is the state of a run that was never interrupted. A kill at each step between receiving an envelope and having processed it leaves a state and a recording the next start makes whole. A replay of the recording ends in the digest of the live run. Tested with a fake source that has the contract of Event Hubs (positions, at least once delivery); against real Event Hubs only the source adapter differs and it is not exercised here.</summary>
 [Trait("Category", "Slow")]
 public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
 {
@@ -29,15 +28,30 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         }
     }
 
-    static IReadOnlyList<string> Events() => LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
+    /// <summary>The envelope lines of a capture, in capture-time order, then moved around: every line may arrive up to `distance` places away from its time position (a hub delivers per partition, sources are not synchronized).</summary>
+    internal static List<string> Arrival(string dir, int seed, int distance)
+    {
+        var lines = new List<(long Ns, string Text)>();
+        foreach (var f in Directory.EnumerateFiles(dir, "*.ndjson", SearchOption.AllDirectories).Where(f => !Path.GetRelativePath(dir, f).StartsWith("eventhub", StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+            foreach (var text in File.ReadLines(f))
+                if (CaptureReader.Parse(text, f, 0) is { } e) lines.Add((e.CapturedNs, text));
+        var ordered = lines.OrderBy(l => l.Ns).Select(l => l.Text).ToList();
+        var rnd = new Random(seed);
+        for (var i = 0; i < ordered.Count; i++) { var j = Math.Min(ordered.Count - 1, i + rnd.Next(distance + 1)); (ordered[i], ordered[j]) = (ordered[j], ordered[i]); }
+        return ordered;
+    }
+
+    static IReadOnlyList<string> Events() => Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
+    /// <summary>The definitions with the space of the estate folder.</summary>
+    static List<SourceFile> Files => EstateTests.Files(demo: false);
     static ReplayOptions Ro => new() { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
-    static HostOptions Options(long sealEvery) => new() { Projections = new KqlSource(), Cluster = "synth", SealEvery = sealEvery };
+    static HostOptions Options(long sealEvery) => new() { Projections = Repo.Projections, Cluster = "synth", SealEvery = sealEvery };
 
     /// <summary>The digest and input rows of the run that was never interrupted, computed once for the class (every case uses the same events).</summary>
     static readonly Lazy<(string Digest, long Rows)> Uninterrupted = new(() =>
     {
         using var d = new RestartTests.Durable("memory");
-        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
+        using var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0));
         LiveInput.Run(h, new FakeSource(Events()), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
         return (h.StateDigest(), h.InputRows);
     });
@@ -61,7 +75,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var (digest, rows) = Uninterrupted.Value;
         var killedAt = new Random(seed).Next(1, events.Count - 1);
         using var d = new RestartTests.Durable(kind);
-        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(sealEvery)))
             Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
         d.Close();
         using var r = RestartTests.Reopen(d.Open(), Options(sealEvery));
@@ -86,7 +100,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var (digest, rows) = Uninterrupted.Value;
         using var d = new RestartTests.Durable(kind);
         var killedAt = events.Count / 2;
-        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(sealEvery)))
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(sealEvery)))
             Assert.Throws<Crash>(() => LiveInput.Run(h, new FakeSource(events, crashAt: killedAt), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)));
         d.Close();
         using var r = RestartTests.Reopen(d.Open(), Options(sealEvery));
@@ -105,17 +119,13 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var events = Events();
         var (digest, rows) = Uninterrupted.Value;
         var bodies = encoded ? events.Select(e => System.Text.Json.JsonSerializer.Serialize(e)).ToList() : events;
-        var recording = new Recording(Path.Combine(Path.GetTempPath(), "sattle-body-" + Guid.NewGuid().ToString("N") + ".ndjson"));
-        try
-        {
-            using var d = new RestartTests.Durable("memory");
-            using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
-            var counts = LiveInput.Run(h, new FakeSource(bodies), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
-            Assert.Equal(new LiveCounts(events.Count, 0, 0), counts);
-            Assert.Equal((digest, rows), (h.StateDigest(), h.InputRows));
-            Assert.Equal(events, recording.Lines);
-        }
-        finally { File.Delete(recording.Path); }
+        var recording = new Recording();
+        using var d = new RestartTests.Durable("memory");
+        using var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0));
+        var counts = LiveInput.Run(h, new FakeSource(bodies), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
+        Assert.Equal(new LiveCounts(events.Count, 0, 0), counts);
+        Assert.Equal((digest, rows), (h.StateDigest(), h.InputRows));
+        Assert.Equal(events, recording.Lines);
     }
 
     [Theory]
@@ -156,7 +166,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var (digest, rows) = Uninterrupted.Value;
         var log = new List<string>(); var waits = new List<int>();
         using var d = new RestartTests.Durable("memory");
-        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0));
+        using var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0));
         var counts = LiveInput.Run(h, new FlakySource(events, crashes, log), Ro, CancellationToken.None,
             retry: (e, n) => { Assert.IsType<InvalidOperationException>(e); waits.Add(n); return TimeSpan.Zero; },
             ready: () => log.Add("ready"), flushEvery: TimeSpan.FromHours(1));
@@ -196,7 +206,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var events = Events();
         var (digest, rows) = Uninterrupted.Value;
         using var d = new RestartTests.Durable("memory");
-        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0)))
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0)))
         {
             using var stop = new CancellationTokenSource(); var source = new Batched(events, size, stop); var got = 0;
             var counts = LiveInput.Run(h, source, Ro, stop.Token, flushEvery: TimeSpan.FromHours(1), received: _ => { if (got++ == stopAt) stop.Cancel(); });
@@ -219,7 +229,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         var events = Events().ToList();
         events.Insert(40, "this is not json");
         using var d = new RestartTests.Durable("memory");
-        using (var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), Options(0)))
+        using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(0)))
         {
             var counts = LiveInput.Run(h, new FakeSource(events), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
             Assert.Equal(1, counts.Rejected);
@@ -242,21 +252,32 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         }
     }
 
-    sealed class Recording(string path) : ILiveRecording
+    /// <summary>A recording that keeps its lines, and writes them to `path` when it has one.</summary>
+    sealed class Recording(string? path = null) : ILiveRecording
     {
-        public string Path => path;
         public readonly List<string> Lines = [];
         public long Count => Lines.Count;
-        public void Append(string text) { Lines.Add(text); File.AppendAllLines(path, [text]); }
+        public void Append(string text) { Lines.Add(text); if (path is not null) File.AppendAllLines(path, [text]); }
     }
 
-    /// <summary>T-LIVE (Proposition 10.7, premises LV1 to LV3): the real reader loop with a stand-in source: envelopes of the estate in a shuffled arrival order, exact duplicates and records that are no envelopes among them, and flushes at random points. The recording holds each consumed envelope once, in arrival order (LV1); replaying it with the live horizon ends in the live digest (LV2, LV3); with another horizon the replay is either equal or reported as different.</summary>
+    /// <summary>T-LIVE (Proposition 10.7, premises LV1 to LV3): the real reader loop with a stand-in source: envelopes of a capture in a shuffled arrival order, exact duplicates and records that are no envelopes among them, and flushes at random points. The recording holds each consumed envelope once, in arrival order (LV1); replaying it with the live horizon ends in the live digest (LV2, LV3); with another horizon the replay is either equal or reported as different.</summary>
     [Theory]
     [InlineData(1, 0)] [InlineData(2, 8)] [InlineData(3, 30)]
-    public void The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording(int seed, int distance)
+    public void The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording(int seed, int distance) =>
+        The_reader_loop_is_reproduced_by_a_replay_of_its_recording(EstateTests.EstateDir, Files, "synth", seed, distance);
+
+    /// <summary>T-LIVE on the scrubbed excerpt of a real capture, with the definitions `sattle replay` reads for it.</summary>
+    [FixturesTheory]
+    [InlineData(1, 0)] [InlineData(2, 8)] [InlineData(3, 30)]
+    public void The_reader_loop_of_Live_cs_is_reproduced_by_a_replay_of_its_recording_on_the_lab_fixtures(int seed, int distance) =>
+        The_reader_loop_is_reproduced_by_a_replay_of_its_recording(Repo.Fixtures, Repo.DefinitionFilesFor(Repo.Fixtures), Repo.ClusterOf(Repo.Fixtures), seed, distance);
+
+    void The_reader_loop_is_reproduced_by_a_replay_of_its_recording(string capture, List<SourceFile> files, string cluster, int seed, int distance)
     {
+        static string Payload(string line) { using var d = System.Text.Json.JsonDocument.Parse(line); return d.RootElement.GetProperty("payload").GetRawText(); }
         var rnd = new Random(seed);
-        var envelopes = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed, distance);
+        var envelopes = Arrival(capture, seed, distance);
+        var known = envelopes.ToHashSet(StringComparer.Ordinal);
         var arrival = new List<string>();
         foreach (var e in envelopes)
         {
@@ -270,23 +291,24 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         try
         {
             var recording = new Recording(Path.Combine(dir, "live", "stream.ndjson"));
-            var files = EstateTests.Files(demo: true);
-            using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0));
-            var counts = LiveInput.Run(h, new Scripted(arrival, idle), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
+            var ro = Ro with { Cluster = cluster };
+            using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0) with { Cluster = cluster });
+            var counts = LiveInput.Run(h, new Scripted(arrival, idle), ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
             var live = h.StateDigest();
             // LV1: every envelope once, in the order it arrived; duplicates dropped, records that are no envelopes rejected
             var seen = new HashSet<string>(StringComparer.Ordinal);
-            var expected = arrival.Where(a => envelopes.Contains(a) && seen.Add(a)).ToList();
+            var expected = arrival.Where(a => known.Contains(a) && seen.Add(a)).ToList();
             Assert.Equal(expected, recording.Lines);
             Assert.Equal(expected.Count, counts.Consumed);
+            Assert.Equal(expected.Select(Payload), CaptureReader.Read(dir).Select(e => e.Payload.GetRawText()));      // and the recording is read in that order, not in capture-time order
             Assert.True(counts.Duplicates > 0 && counts.Rejected > 0, $"duplicates {counts.Duplicates}, rejected {counts.Rejected}");
             // LV2, LV3: the replay of the recording with the live horizon ends in the live digest
             string Replayed(int horizon)
             {
-                var cat = new Catalog(new KqlSource()); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
+                var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
                 var space = cat.Spaces.Keys.Single();
                 using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = horizon });
-                new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Ro with { FlushAtEnd = false }).Run(dir);
+                new Replay(engine, cat.Spaces[space], AdapterRegistry.Create(cluster), ro).Run(dir);
                 return engine.StateDigest();
             }
             Assert.Equal(live, Replayed(3));
@@ -301,7 +323,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
     [InlineData(1, 0)] [InlineData(4, 8)]
     public void The_file_recording_does_not_count_a_torn_last_line_and_its_replay_reproduces_the_live_run(int seed, int distance)
     {
-        var envelopes = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed, distance);
+        var envelopes = Arrival(EstateTests.EstateDir, seed, distance);
         var arrival = new List<string>(envelopes);
         arrival.Insert(arrival.Count / 3, arrival[0]);                                                  // delivered again
         var dir = Path.Combine(Path.GetTempPath(), "sattle-tlive-file-" + Guid.NewGuid().ToString("N"));
@@ -309,7 +331,7 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         try
         {
-            var files = EstateTests.Files(demo: true);
+            var files = Files;
             using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), files, Options(0));
             var first = arrival.Take(arrival.Count / 2).ToList();
             using (var recording = new FileRecording(path)) LiveInput.Run(h, new Scripted(first, []), Ro, CancellationToken.None, recording, flushEvery: TimeSpan.FromHours(1));
@@ -326,12 +348,63 @@ public class LiveResumeTests(Xunit.Abstractions.ITestOutputHelper output)
             }
             var seen = new HashSet<string>(StringComparer.Ordinal);
             Assert.Equal(arrival.Where(a => seen.Add(a)).ToList(), File.ReadAllLines(path));
-            var cat = new Catalog(new KqlSource()); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
+            var cat = new Catalog(Repo.Projections); Assert.DoesNotContain(cat.Load(files, updatePins: true).Diagnostics, d => d.IsError);
             var space = cat.Spaces.Keys.Single();
             using var engine = new Engine(cat, space, new EngineOptions { Tenant = "lab", LateHorizonWindows = 3 });
             new Replay(engine, cat.Spaces[space], AdapterRegistry.Create("synth"), Ro with { FlushAtEnd = false }).Run(dir);
             Assert.Equal(h.StateDigest(), engine.StateDigest());
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    sealed class Killed : Exception;
+
+    /// <summary>The first 80 envelopes of the estate: enough for a kill at the second, the 26th and the 61st envelope, and short enough for three runs per case.</summary>
+    static readonly Lazy<IReadOnlyList<string>> First = new(() => Arrival(EstateTests.EstateDir, seed: 2, distance: 4).Take(80).ToList());
+    static readonly Lazy<string> WholeOfFirst = new(() =>
+    {
+        using var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Files, Options(0));
+        LiveInput.Run(h, new FakeSource(First.Value), Ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1));
+        return h.StateDigest();
+    });
+
+    public static IEnumerable<object[]> Points() =>
+        from step in new[] { "received", "journaled", "recorded", "processed" }
+        from k in new[] { 2, 25, 60 }
+        select new object[] { step, k };
+
+    /// <summary>A live run is killed at each step between receiving an envelope and having recorded and processed it, at several envelopes, and started again. The order is receive, journal, record, process. After the next start the space is in the state of a run that was never killed, and the recording holds exactly the envelopes of the space, each once, in order.</summary>
+    [Theory, MemberData(nameof(Points))]
+    public void A_kill_at_any_step_of_any_envelope_leaves_a_state_and_a_recording_that_the_next_start_makes_whole(string step, int k)
+    {
+        var events = First.Value; Assert.True(events.Count > k + 3);
+        var store = new InMemoryGraphStore(); var recording = new Recording();
+        using (var h = SpaceHost.OpenDurable(store, Files, Options(0)))
+        {
+            int journaled = 0, got = 0;
+            h.LiveStep = s => { if (s == "journaled") journaled++; if (s == step && journaled - 1 == k) throw new Killed(); };
+            Assert.Throws<Killed>(() => LiveInput.Run(h, new FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1), received: _ => { if (++got - 1 == k && step == "received") throw new Killed(); }));
+        }
+        using var r = RestartTests.Reopen(store, Options(0));
+        LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
+        Assert.Equal(WholeOfFirst.Value, r.StateDigest());
+        Assert.Equal(events, recording.Lines);                                                     // every envelope once, in order
+        Assert.Equal(events.Count, r.LiveEnvelopeTexts().Count);
+        // a second kill-free restart changes nothing
+        using var again = RestartTests.Reopen(store, Options(0));
+        LiveInput.Run(again, new FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
+        Assert.Equal(WholeOfFirst.Value, again.StateDigest());
+        Assert.Equal(events, recording.Lines);
+    }
+
+    [Fact]
+    public void A_recording_that_lost_its_last_envelopes_to_a_kill_is_completed_from_the_journal_before_the_source_is_read()
+    {
+        var events = First.Value.Take(30).ToList(); var store = new InMemoryGraphStore(); var recording = new Recording();
+        using (var h = SpaceHost.OpenDurable(store, Files, Options(0))) LiveInput.Run(h, new FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
+        recording.Lines.RemoveRange(25, 5);                                                         // the file lost its last five lines
+        using var r = RestartTests.Reopen(store, Options(0));
+        LiveInput.Run(r, new FakeSource(events), Ro, CancellationToken.None, recording, TimeSpan.FromHours(1));
+        Assert.Equal(events, recording.Lines);
     }
 }

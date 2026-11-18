@@ -47,6 +47,18 @@ public class RestartTests
         return h;
     }
 
+    /// <summary>The module that binds the graphs of the space.</summary>
+    internal const string SpaceModule = "acme.space";
+
+    /// <summary>The space module of a host with the deployment health graph bound to `minReady`: a definition commit that changes a value of the definitions, written in no projection language (Proposition 5.8, a parameter is a constant of the binding).</summary>
+    internal static string BoundTo(SpaceHost h, int minReady)
+    {
+        var text = h.Definition(SpaceModule);
+        var bound = System.Text.RegularExpressions.Regex.Replace(text, @"dh\.deploymentHealth\(master: master(, minReady: \d+)?\)", $"dh.deploymentHealth(master: master, minReady: {minReady})");
+        Assert.NotEqual(text, bound);
+        return bound;
+    }
+
     static void Feed(SpaceHost h) => new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 1, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth" }).Run(Fixture);
 
     static string Space(SpaceHost h) => h.SpaceInfo().ToJsonString();
@@ -110,14 +122,13 @@ public class RestartTests
     {
         using var d = new Durable(kind);
         string digest; long rev, seq;
-        const string Kql = "acme.deployhealth.deploymentHealth.kql";
-        var edited = File.ReadAllText(Path.Combine(Repo.Definitions, Kql)).Replace("minReady:long = 0", "minReady:long = 1");
-        Assert.NotEqual(File.ReadAllText(Path.Combine(Repo.Definitions, Kql)), edited);
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h);
-            h.Commit(Kql, edited, h.CatalogRevision);
+            var before = h.StateDigest();
+            h.Commit(SpaceModule, BoundTo(h, 1), h.CatalogRevision);
             digest = h.StateDigest(); rev = h.CatalogRevision; seq = h.Seq;
+            Assert.NotEqual(before, digest);                          // the commit changed the state: a restart that lost it would show
             h.CreateDraft(null);                                      // a draft consumes a sequence number and is not stored
             seq = h.Seq;
         }
@@ -127,7 +138,7 @@ public class RestartTests
             Assert.Equal(digest, r.StateDigest());
             Assert.Equal(rev, r.CatalogRevision);
             Assert.Equal(seq, r.Seq);
-            Assert.Contains("minReady:long = 1", r.Definition(Kql));
+            Assert.Contains("minReady: 1", r.Definition(SpaceModule));
             r.Advance(100 * 365 * 24 * 60 * Min, 1_000_000);          // the restored space accepts more input and journals it
             digest = r.StateDigest(); seq = r.Seq;
         }
@@ -226,8 +237,7 @@ public class RestartTests
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h);
-            var text = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.deployhealth.deploymentHealth.kql"));
-            h.Commit("acme.deployhealth.deploymentHealth.kql", text.Replace("minReady:long = 0", "minReady:long = 1"), h.CatalogRevision);
+            h.Commit(SpaceModule, BoundTo(h, 1), h.CatalogRevision);
             h.StartLive(new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false });
             var envelope = File.ReadLines(Directory.EnumerateFiles(Fixture, "*.ndjson", SearchOption.AllDirectories).Order(StringComparer.Ordinal).First()).First();
             h.LiveEnvelope("hub", envelope, "{\"n\":0}");

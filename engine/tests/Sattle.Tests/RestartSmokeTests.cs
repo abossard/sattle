@@ -53,7 +53,7 @@ public class RestartSmokeTests
     [Fact]
     public void A_live_run_killed_and_restarted_from_its_store_ends_where_an_uninterrupted_one_does()
     {
-        var events = LiveReproducibilityTests.Arrival(Fixture, seed: 2, distance: 4);
+        var events = LiveResumeTests.Arrival(Fixture, seed: 2, distance: 4);
         var ro = new ReplayOptions { ChunkRows = 40, AdvanceEveryNs = Min, LatenessNs = Min, Cluster = "synth", FlushAtEnd = false };
         string whole;
         using (var h = SpaceHost.OpenDurable(new InMemoryGraphStore(), Files, Options)) { LiveInput.Run(h, new LiveResumeTests.FakeSource(events), ro, CancellationToken.None, flushEvery: TimeSpan.FromHours(1)); whole = h.StateDigest(); }

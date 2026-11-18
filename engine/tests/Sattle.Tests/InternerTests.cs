@@ -1,5 +1,4 @@
 using Sattle.Cli;
-using Sattle.Kql;
 using Sattle.Language;
 using Sattle.Runtime;
 
@@ -111,8 +110,8 @@ public class InternerTests
     public void A_preview_of_a_live_space_leaves_nothing_holding_the_interner(string? maxRows)
     {
         using var d = new RestartTests.Durable("memory");
-        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), new HostOptions { Projections = new KqlSource(), Cluster = "synth" });
-        var events = LiveReproducibilityTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
+        using var h = SpaceHost.OpenDurable(d.Open(), EstateTests.Files(demo: true), new HostOptions { Projections = Repo.Projections, Cluster = "synth" });
+        var events = LiveResumeTests.Arrival(EstateTests.EstateDir, seed: 4, distance: 12);
         LiveInput.Run(h, new LiveResumeTests.FakeSource(events[..^3]), new ReplayOptions { ChunkRows = 1000, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000, Cluster = "synth", FlushAtEnd = false }, CancellationToken.None);
         for (var i = events.Count - 3; i < events.Count; i++) h.LiveEnvelope("eventhub:fake", LiveInput.EnvelopeText(events[i]), $"{{\"n\":{i}}}");
         Assert.True(h.Interner.Holding);                 // the last envelopes' rows are pending: no flush yet
