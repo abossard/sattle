@@ -16,7 +16,7 @@ This chapter uses the log of versions (Ch. 3), the size of patches (Ch. 4), the 
 
 | Per | Memory | Work per change | Stored bytes |
 |---|---|---|---|
-| master node, whole engine with the tree graphs and readings | budget 2.2 KB; measured 19.95 KB live after a compacting collection (about 9 times); peak resident set 16.1 GB | per input record end to end: budget 2 µs; measured 72 µs (590 s for 8.16 million records, about 36 times); allocation 58.6 KB per record against 1 KB | not stated; the run used the memory store |
+| master node, whole engine with the tree graphs and readings | budget 2.2 KB; measured 19.95 KB live after a compacting collection (about 9 times); peak resident set 16.1 GB | per input record end to end: budget 2 µs; measured 72 µs (590 s for 8.16 million records, about 36 times); allocation 58.6 KB per record against 1 KB, of which about 11 KB was the benchmark's own measurement (keys made per operator call); without it the engine allocated 46.1 KB per record at 10⁵ master nodes, and not measured at 10⁶ | not stated; the run used the memory store |
 | master edge | inside the budget per node | inside the budget per record | not stated |
 | measurement | not measured separately at 10⁶ | inside the budget per record | not stated |
 

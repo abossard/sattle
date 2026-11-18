@@ -30,7 +30,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     /// <summary>Windows written under more than one own id: the measure of how often Law 7.5 item 3 combines.</summary>
     public long WindowsOfTwoIds => byOwn.Count(w => w.Value.Count > 1);
 
-    static TVal? StoredOf(ITelemetryStore store, GraphKey g, WindowKey key) => store.ReadWindow(g, [key.Element], [key.Prop], key.WindowStart, key.WindowStart + 1)[0].Points is { Count: 1 } p ? new TVal(p[0].Value, store.AuxOf(g, key)) : null;
+    static TVal? StoredOf(ITelemetryStore store, GraphKey g, WindowKey key) => store.ValueOf(g, key) is { } v ? new TVal(v, store.AuxOf(g, key)) : null;
 
     /// <summary>The support of each window of (element, property) by value, all written under `own`: what `sharedWindows` holds, else the stored value as one row.</summary>
     IEnumerable<(WindowKey Key, Dictionary<TVal, long> Support)> SupportsOf(ITelemetryStore store, GraphKey g, int elem, int prop)
@@ -57,8 +57,8 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
     {
         var moved = MoveSupport(store, g, from, to);
         store.MoveElement(g, from, to, combine);
-        var res = new List<Sample>();
-        foreach (var key in moved) Settle(store, g, key, [], periodOf.GetValueOrDefault(key.Prop), inputId, res, moved: true);
+        var res = new List<Sample>(); List<(long Own, TVal Value, long Weight)> none = []; List<(TVal Value, long Weight)> scratch = [];
+        foreach (var key in moved) Settle(store, g, key, none, periodOf.GetValueOrDefault(key.Prop), inputId, res, moved: true, scratch);
         return res;
     }
 
@@ -110,56 +110,98 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         return moved;
     }
 
-    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left.</summary>
+    /// <summary>The telemetry writes of the step: per window the weights of the step are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when none is left. The windows settle in the order their first row came.</summary>
     public List<Sample> Flush(ITelemetryStore store, GraphKey g, long inputId)
     {
         var res = new List<Sample>();
-        var step = new Dictionary<WindowKey, (Dictionary<(long Own, TVal Value), long> Net, long Period)>();
-        var order = new List<WindowKey>();
-        foreach (var (key, value, weight, period, own) in tele)
+        if (tele.Count == 0) return res;
+        // the windows of the step, and per window its rows in order as a chain: first row, last row, and per row the next one
+        var windowOf = new Dictionary<WindowKey, int>();
+        var windows = new List<(WindowKey Key, long Period, int First, int Last)>();
+        var next = System.Buffers.ArrayPool<int>.Shared.Rent(tele.Count);
+        try
         {
-            var ep = (key.Element, key.Prop);
-            if (!multiOwn.Contains(ep))
+            for (var i = 0; i < tele.Count; i++)
             {
-                if (!soleOwn.TryGetValue(ep, out var sole)) soleOwn[ep] = own;
-                else if (sole != own) BecomeMulti(store, g, ep, sole);
+                var (key, _, _, period, own) = tele[i];
+                var ep = (key.Element, key.Prop);
+                if (!multiOwn.Contains(ep))
+                {
+                    if (!soleOwn.TryGetValue(ep, out var sole)) soleOwn[ep] = own;
+                    else if (sole != own) BecomeMulti(store, g, ep, sole);
+                }
+                next[i] = -1;
+                if (windowOf.TryGetValue(key, out var w)) { next[windows[w].Last] = i; windows[w] = windows[w] with { Last = i }; }
+                else { windowOf[key] = windows.Count; windows.Add((key, period, i, i)); }
             }
-            if (!step.TryGetValue(key, out var cur)) { step[key] = cur = ([], period); order.Add(key); }
-            var n = cur.Net.GetValueOrDefault((own, value)) + weight;
-            if (n == 0) cur.Net.Remove((own, value)); else cur.Net[(own, value)] = n;
+            List<(long Own, TVal Value, long Weight)> byRow = []; List<(TVal Value, long Weight)> scratch = [];
+            foreach (var (key, period, first, _) in windows)
+            {
+                byRow.Clear();
+                for (var i = first; i >= 0; i = next[i])
+                {
+                    var (_, value, weight, _, own) = tele[i];
+                    var at = -1;
+                    for (var k = 0; k < byRow.Count && at < 0; k++) if (byRow[k].Own == own && byRow[k].Value == value) at = k;
+                    if (at < 0) byRow.Add((own, value, weight));
+                    else if (byRow[at].Weight + weight == 0) byRow.RemoveAt(at);
+                    else byRow[at] = byRow[at] with { Weight = byRow[at].Weight + weight };
+                }
+                Settle(store, g, key, byRow, period, inputId, res, moved: false, scratch);
+            }
         }
-        foreach (var key in order) Settle(store, g, key, step[key].Net, step[key].Period, inputId, res, moved: false);
+        finally { System.Buffers.ArrayPool<int>.Shared.Return(next); }
         tele.Clear();
         return res;
     }
 
-    /// <summary>One window after rows came or went (`byRow`: own id and value to weight), or after a merge moved its support (`moved`, no rows): the rows are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when they give none.</summary>
-    void Settle(ITelemetryStore store, GraphKey g, WindowKey key, Dictionary<(long Own, TVal Value), long> byRow, long per, long inputId, List<Sample> res, bool moved)
+    /// <summary>Adds `weight` to `value` in a list of value and weight; a value whose weight becomes 0 leaves the list.</summary>
+    static void AddWeight(List<(TVal Value, long Weight)> to, TVal value, long weight)
     {
+        for (var i = 0; i < to.Count; i++)
+            if (to[i].Value == value)
+            {
+                if (to[i].Weight + weight == 0) to.RemoveAt(i); else to[i] = (value, to[i].Weight + weight);
+                return;
+            }
+        if (weight != 0) to.Add((value, weight));
+    }
+
+    static void Set(List<Sample> res, WindowKey key, long per, long inputId, TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B));
+    static void Delete(List<Sample> res, WindowKey key, long per, long inputId, TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, Deleted: true));
+    static string Subject(WindowKey key) => $"window {key.Element} {key.Prop} {key.WindowStart}";
+
+    /// <summary>One window after rows came or went (`byRow`: own id, value and weight, no weight 0), or after a merge moved its support (`moved`, no rows): the rows are added to what supports the window, and the window is set to the value its supporting rows give, or deleted when they give none. `scratch` is a working list.
+    /// A window has a conflict only while its support is kept here: a conflict needs two values, and a support of two values is kept. So a window without kept support has no conflict to clear, and its subject is not written.</summary>
+    void Settle(ITelemetryStore store, GraphKey g, WindowKey key, List<(long Own, TVal Value, long Weight)> byRow, long per, long inputId, List<Sample> res, bool moved, List<(TVal Value, long Weight)> scratch)
+    {
+        if (byRow.Count == 0 && !moved) return;
+        if (multiOwn.Contains((key.Element, key.Prop)))
         {
-            if (byRow.Count == 0 && !moved) return;
-            TVal? Stored() => StoredOf(store, g, key);
-            void Set(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, AuxA: v.Aux?.A, AuxB: v.Aux?.B));
-            void Delete(TVal v) => res.Add(new Sample(key.Element, key.Prop, key.WindowStart, per, v.V, inputId, Deleted: true));
-            if (multiOwn.Contains((key.Element, key.Prop))) { FlushOfTwoIds(key, byRow, Stored(), Set, Delete); return; }
-            var net = new Dictionary<TVal, long>();
-            foreach (var ((_, v), w) in byRow) net[v] = net.GetValueOrDefault(v) + w;
-            foreach (var v in net.Where(x => x.Value == 0).Select(x => x.Key).ToList()) net.Remove(v);
-            if (net.Count == 0 && !moved) return;
-            var shared = sharedWindows.TryGetValue(key, out var support);
-            // one row out and one row in: the revision of a window that one row writes
-            if (!shared && net.Count == 2 && net.Values.Sum() == 0 && net.Values.Max() == 1) { Set(net.First(x => x.Value == 1).Key); return; }
-            var stored = Stored();
-            support ??= stored is { } one ? new() { [one] = 1 } : [];
-            foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; }
-            var values = support.Where(x => x.Value > 0).Select(x => x.Key).ToList();
-            if (values.Count > 1) WindowConflicts++;
-            conflicts.Note($"window {key.Element} {key.Prop} {key.WindowStart}", values.Count > 1 ? new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. values.OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]) : null);
-            if (values.Count != 1) { if (stored is { } gone) Delete(gone); }
-            else if (values[0] != stored) Set(values[0]);
-            // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)
-            if (support.Count == 0 || support.Count == 1 && support.Values.First() == 1) sharedWindows.Remove(key); else sharedWindows[key] = support;
+            var rows = new Dictionary<(long Own, TVal Value), long>();
+            foreach (var (o, v, w) in byRow) rows[(o, v)] = w;
+            FlushOfTwoIds(key, rows, StoredOf(store, g, key), v => Set(res, key, per, inputId, v), v => Delete(res, key, per, inputId, v));
+            return;
         }
+        var net = scratch; net.Clear();
+        foreach (var (_, v, w) in byRow) AddWeight(net, v, w);
+        if (net.Count == 0 && !moved) return;
+        var shared = sharedWindows.TryGetValue(key, out var support);
+        // one row out and one row in: the revision of a window that one row writes
+        if (!shared && net.Count == 2 && net[0].Weight + net[1].Weight == 0 && Math.Max(net[0].Weight, net[1].Weight) == 1) { Set(res, key, per, inputId, net[0].Weight == 1 ? net[0].Value : net[1].Value); return; }
+        var stored = StoredOf(store, g, key);
+        // the support after the step: what is kept here, else the stored value as one row; plus the step
+        if (support is not null) { foreach (var (v, w) in net) { var n = support.GetValueOrDefault(v) + w; if (n == 0) support.Remove(v); else support[v] = n; } net.Clear(); foreach (var (v, w) in support) net.Add((v, w)); }
+        else if (stored is { } one) AddWeight(net, one, 1);
+        TVal? value = null; var values = 0;
+        foreach (var (v, w) in net) if (w > 0) { values++; value = v; }
+        if (values > 1) WindowConflicts++;
+        if (shared || moved || values > 1) conflicts.Note(Subject(key), values > 1 ? new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. net.Where(x => x.Weight > 0).Select(x => x.Value).OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]) : null);
+        if (values != 1) { if (stored is { } gone) Delete(res, key, per, inputId, gone); }
+        else if (value != stored) Set(res, key, per, inputId, value!.Value);
+        // only a window that is not written by exactly one row keeps its support here (a negative support is kept: its insertion may still come)
+        if (net.Count == 0 || net.Count == 1 && net[0].Weight == 1) sharedWindows.Remove(key);
+        else if (!shared) sharedWindows[key] = net.ToDictionary(x => x.Value, x => x.Weight);
     }
 
     /// <summary>A window that rows under more than one own id write: under each own id premise B1 (one value, or none and a conflict); across them the property's rule, `sum`, `min` and `max` in their monoid, any other rule only equal values. A window without a value under one id has none (Law 7.5 item 3).</summary>
@@ -175,7 +217,7 @@ sealed class WindowSupport(Interner it, ConflictSet conflicts)
         if (owns.Count == 0) byOwn.Remove(key);
         var perOwn = owns.OrderBy(x => x.Key).Select(x => x.Value.Where(v => v.Value > 0).Select(v => v.Key).ToList()).Where(vs => vs.Count > 0).ToList();
         TVal? value = null; Conflict? conflict = null;
-        var subject = $"window {key.Element} {key.Prop} {key.WindowStart}";
+        var subject = Subject(key);
         if (perOwn.FirstOrDefault(vs => vs.Count > 1) is { } broken) { WindowConflicts++; conflict = new Conflict("window", it.Get(key.Element), it.Get(key.Prop), key.WindowStart, [.. broken.OrderBy(x => x.V).Select(x => Norm.Decimal(x.V))]); }
         else if (perOwn.Count > 0)
         {

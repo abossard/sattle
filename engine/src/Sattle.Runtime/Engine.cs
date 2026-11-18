@@ -550,7 +550,7 @@ public sealed class Engine : IDisposable, IEngineInput
             Charge("(store commit)", ref a, ref t);
         }
         if (keys is not null) OperatorMillis[keys[^1]] = OperatorMillis.GetValueOrDefault(keys[^1]) + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
-        if (samples.Count > 0) Telemetry.Append(g.Key, [.. samples]);
+        if (samples.Count > 0) Telemetry.Append(g.Key, System.Runtime.InteropServices.CollectionsMarshal.AsSpan(samples));
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
         var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
         g.TelemetryPosition = read;

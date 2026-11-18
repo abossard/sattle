@@ -528,6 +528,8 @@ public interface ITelemetryStore
     void MarkPartial(GraphKey g, long windowStart, string reason, long count);
     /// <summary>An element changed its id (two identities merged): its windows move to the new id. Where the new id already has the window, the two values combine as if every row had been written under the survivor from the start (Law 7.5): by the property's combine rule for `sum`, `min` and `max` (`combineOf` gives the rule of a property); under any other rule equal values are one value and different values are a conflict, so the window has no value. Each moved window is a window change (removed under the old id, set or removed under the new one) so derived graphs follow.</summary>
     void MoveElement(GraphKey g, int from, int to, Func<int, string?>? combineOf = null);
+    /// <summary>The value of one window, if the store has it.</summary>
+    decimal? ValueOf(GraphKey g, WindowKey key);
     /// <summary>The pair a window carries next to its value (`Sample.AuxA`, `AuxB`), if any.</summary>
     (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key);
     /// <summary>Retention (Def. 7.13): a closed window [a, b) is kept while b is after the logical frontier minus the declared age. A window that is dropped here is not a retraction: no change is recorded, and what was derived from it stays.</summary>
@@ -669,6 +671,10 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         }
     }
 
+    public decimal? ValueOf(GraphKey g, WindowKey key)
+    {
+        lock (gate) return Get(g).Series.TryGetValue((key.Element, key.Prop), out var ser) && ser.Find(key.WindowStart) is var i and >= 0 ? ser.Values[i] : null;
+    }
     public (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key) { lock (gate) return Get(g).Aux.TryGetValue(key, out var a) ? a : null; }
 
     /// <summary>Two windows of one property under two ids of a class, as value and optional pair: their combination as if every row had been written under one id (Law 7.5 item 3). `sum`, `min`, `max` in their monoid; `mean` with sum and count by adding both and dividing; `last` with its order by the greater order, a tie by the greater value; otherwise equal values are that value and different ones none.</summary>

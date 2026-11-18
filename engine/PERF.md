@@ -574,6 +574,7 @@ Release build of f9e3121, which includes hogs 1 to 5, in a clone. Input from `sa
 
 - From 10^5 to 10^6, live bytes per master node fell from 26.0 KB to 19.95 KB, and the replay grows about linearly with the input: 55 s at 10^5 (hogs 1 to 3) against 590 to 677 s at 10^6. Before the hogs, 10^6 was estimated at about 13 h and 32 GB.
 - The gap to the budget is about 9 times for memory and 59 times for allocation per record.
+- The allocation per record includes about 11 KB of the bench's own measurement: two string keys per operator call, made while `TrackAllocations` is on (found 2026-11-18, see "allocation per record: the step"). The engine's own figure was measured at 10^4 and 10^5 only: 47.0 and 46.1 KB per record.
 - Retained bytes per master node by structure (census, 42.7 M objects, coverage 100 %, walk 30 s): `JoinOp` 2,585; `GroupOp` 2,311; interner 1,863 (12.1 M strings); telemetry store 1,657; hot graph byte pool 1,485; `SeriesOp` 1,307; `WindowedGroupOp` 1,099; `TraverseOp` 987; sink contributions 772; sink values 629; identities 452; lineage sinks 422; entity and relationship tables 410 and 386; sink ends 386; `MatchOp` 329; `ThresholdOp` 325 (2.9 M tree nodes); telemetry windows of the sinks 302; `EmitRelOp` 279; `MapOp` 244.
 - Work by operator, run 1 (ms, MB allocated): flush, apply and store commit 131,907 ms; `TraverseOp` 92,663, 9,204; `MatchOp` 88,271, 40,257; `EmitRelOp` 44,067, 14,147; `EmitEntityOp` 40,843, 18,901; `SeriesOp` 19,881, 12,072; `GroupOp` 18,315, 3,274; `JoinOp` 16,668, 3,714; `LinkOp` 3,577, 3,525. By graph, `healthTree` costs most (operators 134 s, commit 21 s), then `master` (49 s, 65 s) and `workloadStructure` (53 s).
 - Raw outputs: `tmp/orchestrator/n1m-phases.txt` and `n1m-census.txt` (not in git).
@@ -675,6 +676,19 @@ Theory. A step of a graph runs its operators in plan order. Each operator needs 
 
 - What remains at 10^5, KB per record: operators 13.6 (`MatchOp` 4.5, `EmitEntityOp` 2.6, `EmitRelOp` 1.9, `SeriesOp` 1.4, `TraverseOp` 0.9), flush of the elements 8.2, flush of the telemetry 6.6, patch and apply 1.1, telemetry append and read 0.7, reading and adapters 0.9.
 - Before is the stack of joins, groups, interner, telemetry and pool. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`). The seal format is unchanged: the working state of a step is not state of the engine between steps.
+
+### Efficiency stage 2, allocation per record: the flush of the telemetry (#115, 2026-11-18)
+Theory. Premise B1: a window is written by exactly one row, and then the store's value is its whole support, so nothing is kept for it in the sink. A step's rows for one window are few: one, or one out and one in for a revision. A window needs its rows of the step netted by own id and value, and its stored value; a short list held for the whole flush serves both. The rows of a window are chained in arrival order (first, last, and the next of each row, in one pooled array), so the windows settle in the order their first row came, as before. The stored value is one lookup: the telemetry port gets `ValueOf(g, window)`, the twin of `AuxOf`, where a `ReadWindow` of one window made two arrays, a list and a record. A dictionary is made only for a support the sink keeps, one that is not one row of weight one. The text of a conflict subject (`window e p ws`) was made for every window; a window has a conflict only while its support is kept (a conflict needs two values, and a support of two values is kept, and the settle that drops the support clears the conflict), so the subject is made only for a kept support, a conflict, or a window a merge moved. Windows written under two own ids keep their path. The samples reach `Append` as a span of the list, not as a copy.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 32.6 / 26.7 KB | 31.8 / 26.2 KB |
+| flush of the telemetry | 575 / 113 MB | 5,402 / 1,038 MB |
+| telemetry append and read | 61 / 41 MB | 608 / 401 MB |
+| live bytes | 252 / 252 MB | 1,546 / 1,547 MB |
+
+- What remains in the flush of the telemetry, 1.3 KB per record at 10^5: the step's dictionary of windows, the samples list and the working lists, made per flush.
+- Before is the step patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added, the seal format is unchanged. One new method on the telemetry port.
 
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
