@@ -126,7 +126,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
         switch (b[p++])
         {
             case 0: return Value.Null;
-            case 1: return Value.Text(it.Get((int)ReadVarint(b, ref p)));
+            case 1: return it.Text((int)ReadVarint(b, ref p));
             case 2: return Value.Integer(Unzig(ReadVarint(b, ref p)));
             case 3: { var n = (int)ReadVarint(b, ref p); var big = new System.Numerics.BigInteger(b.AsSpan(p, n)); p += n; return Value.Integer(big); }
             case 4: { var lo = ReadNumber(b, ref p); var hi = ReadNumber(b, ref p); return Value.Decimal(new decimal([(int)(lo >> 32), (int)lo, (int)(hi >> 32), (int)hi])); }
@@ -377,7 +377,7 @@ sealed class ElementLayer(Interner it, ConflictSet conflicts)
             {
                 var items = new KeyValuePair<string, Value>[merged.Count];
                 for (var i = 0; i < items.Length; i++) { var (key, b, start, _) = merged[i]; var p = start; items[i] = KeyValuePair.Create(it.Get(key), ReadValue(b, ref p)); }
-                var props = Props.Of(items);
+                var props = Props.FromSorted(items);             // `merged` is in the order of the key texts
                 return isRel ? new Rel(id, it.Get(mSource), it.Get(mTarget), it.Get(mType), props) : new Entity(id, it.Get(mType), props);
             }
             default: return Disputed(elem, id);

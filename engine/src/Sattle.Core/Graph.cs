@@ -11,6 +11,8 @@ public interface ITextTable
     /// <summary>The code of a text the table has; adds nothing.</summary>
     bool TryFind(string s, out int code);
     string Get(int code);
+    /// <summary>The text of a code as a value.</summary>
+    Value Text(int code) => Value.Text(Get(code));
 }
 
 /// <summary>The elements of one kind of a graph by dense handle: per handle the code of its id in the graph's text table, and an open-addressing index from code to handle at a load of at most 1/2. A handle is kept for the life of the graph.</summary>
@@ -199,7 +201,7 @@ static class PropCodec
         switch (b[p++])
         {
             case 0: return Value.Null;
-            case 1: return Value.Text(texts.Get((int)ReadVarint(b, ref p)));
+            case 1: return texts.Text((int)ReadVarint(b, ref p));
             case 2: return Value.Integer(Unzig(ReadVarint(b, ref p)));
             case 3: return Value.Integer(BigInteger.Parse(ReadStr(b, ref p), System.Globalization.CultureInfo.InvariantCulture));
             case 4: { var bits = new int[4]; for (var i = 0; i < 4; i++) { bits[i] = BitConverter.ToInt32(b, p); p += 4; } return Value.Decimal(new decimal(bits)); }

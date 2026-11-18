@@ -1030,6 +1030,23 @@ Theory. A window change is a value (a key and two optional numbers), so it is a 
 - Tried and dropped: one log per plane, kept and cleared, each read copied out as an array of its count. It saved 16 MB, not 20, and the log kept the size of the largest step (1.8 MB live at 10^4). Letting such a log go past 4,096 entries made the advance steps regrow it, 13 MB more than before.
 - Before is the groups key rows section's after (seal 20). Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Bytes only: the runs were measured under load (load average 37 to 56), so no times are given. Nothing is sealed; the seal format is unchanged.
 
+### Efficiency stage 2, allocation per record: the texts and properties of a resolved element (#115, 2026-11-18)
+At 10^4 the flush resolved elements for 53 MB. Two copies in it carried nothing: each text read from a fragment or a graph block became a new `TextValue` around a string the interner had already made (18 MB of them at 10^4, each scanned again for lone surrogates), and the properties, merged in key order, were copied once more by `Props.Of` to be sorted (26 MB of property arrays in all).
+
+Theory. A text value is a function of its code. While the interner caches a code's string it keeps that string's value in the same slot and gives it out again (`Interner.Text`; a graph's own text table makes a new one, by the interface's default). A slot that takes another code, or a freed code, lets go of the value, so the values held are at most the cache's 16,384. Resolve hands the merged properties, which are in the order of their key texts, to `Props.FromSorted`, now public, which checks the order and takes the array without a copy. Same elements and values.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 8.02 / 7.72 KB | 8.00 / 7.70 KB |
+| flush of the elements | 90 / 74 MB | 928 / 770 MB |
+| `TextValue` (sampled by type) | 20 / 5 MB | 231 / 52 MB |
+| property arrays (sampled by type) | 30 / 19 MB | 289 / 198 MB |
+| live interner | 9.1 / 9.3 MB | 73.9 / 74.0 MB |
+| live bytes | 179 / 179 MB | 937 / 938 MB |
+
+- Not changed: 41 MB of strings at 10^4 are misses of the interner's string cache (flush 10.7 MB, Match 6.2, Emit 9.9, Traverse 5.6). A cache of 65,536 halves them for 5 MB more live at 10^4. That is a trade of live bytes for allocation; the cause is the round trip from code to string and back (Resolve makes elements of strings, `Graph.Put` interns them again).
+- Before is the previous section's after. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Bytes only, measured under load. Nothing is sealed; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

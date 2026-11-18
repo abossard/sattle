@@ -20,7 +20,13 @@ public sealed class Props : IEquatable<Props>
     }
     public static Props Of(params (string, Value)[] kv) => Of(kv.Select(x => KeyValuePair.Create(x.Item1, x.Item2)));
 
-    internal static Props FromSorted(KeyValuePair<string, Value>[] sorted) => sorted.Length == 0 ? Empty : new Props(sorted);
+    /// <summary>The properties of an array already in the order of `Of`, without a copy: the array becomes the map's and must not change.</summary>
+    public static Props FromSorted(KeyValuePair<string, Value>[] sorted)
+    {
+        for (var i = 1; i < sorted.Length; i++)
+            if (string.CompareOrdinal(sorted[i - 1].Key, sorted[i].Key) >= 0) throw new ArgumentException($"properties not in order at {sorted[i].Key}");
+        return sorted.Length == 0 ? Empty : new Props(sorted);
+    }
     public IReadOnlyList<KeyValuePair<string, Value>> Items => items;
     public int Count => items.Length;
     public bool TryGet(string key, out Value v)

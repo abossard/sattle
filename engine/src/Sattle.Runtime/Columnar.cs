@@ -7,7 +7,7 @@ namespace Sattle.Runtime;
 /// <summary>String to dense int table. Text values, entity ids and relationship ids share one table per engine, so a handle names the same element in every graph.
 /// A code is young when it is minted for an adapter row (`InternYoung`) or by an expression of a stateless step (`InternComputed` while `MintYoung` is on); every other code is old. A young code becomes old when it is interned old, or when a batch that holds it is escaped: the engine escapes every input of a stateful operator, so every code that reaches state is old. `Collect`, at the end of a step, frees the codes still young (the texts of rows a step dropped); a freed code is reused, the smallest first. An old code is never freed. While a holder (a row writer with rows, a batch not yet ingested) is registered, nothing is freed.
 /// Which number a text gets therefore depends on where the input was cut into steps. No result may depend on code numbers, only on the texts: codes are compared for equality, and an order by code is an order of convenience that no output shows.
-/// Storage: no string object per text. A text is its bytes in pages of 64 KB, one byte per character when every character is below 256, else two; per code its place, its length with the young mark, and its hash; one open-addressing index of codes. `Get` makes the string; a small cache keeps the strings asked for last.</summary>
+/// Storage: no string object per text. A text is its bytes in pages of 64 KB, one byte per character when every character is below 256, else two; per code its place, its length with the young mark, and its hash; one open-addressing index of codes. `Get` makes the string; a small cache keeps the strings asked for last, and `Text` the value of each cached string.</summary>
 public sealed class Interner : ITextTable
 {
     const int Page = 1 << 16, CacheSize = 16384;
@@ -22,6 +22,7 @@ public sealed class Interner : ITextTable
     readonly PriorityQueue<int, int> free = new();
     readonly HashSet<object> holders = new(ReferenceEqualityComparer.Instance);
     readonly string?[] cache = new string?[CacheSize]; readonly int[] cached = new int[CacheSize];
+    readonly TextValue?[] values = new TextValue?[CacheSize];
     public Interner() => Array.Fill(cached, -1);
     /// <summary>The number of slots: live codes and freed ones.</summary>
     public int Count => codes;
@@ -151,7 +152,7 @@ public sealed class Interner : ITextTable
             Table.Shift(index, mask, k, c => hashes[c - 1] & mask);
             var n = Bytes(i).Length; liveBytes -= n; deadBytes += n;
             start.Clear(i); meta.Clear(i); hashes.Clear(i);
-            if (cached[i & (CacheSize - 1)] == i) { cached[i & (CacheSize - 1)] = -1; cache[i & (CacheSize - 1)] = null; }
+            if (cached[i & (CacheSize - 1)] == i) { cached[i & (CacheSize - 1)] = -1; cache[i & (CacheSize - 1)] = null; values[i & (CacheSize - 1)] = null; }
             free.Enqueue(i, i);
         }
         minted.Clear();
@@ -180,12 +181,18 @@ public sealed class Interner : ITextTable
         start.Release(); meta.Release(); hashes.Release();
         index = new int[64]; mask = 63; codes = 0;
         minted.Clear(); free.Clear(); holders.Clear();
-        Array.Fill(cached, -1); Array.Clear(cache);
+        Array.Fill(cached, -1); Array.Clear(cache); Array.Clear(values);
         foreach (var x in all)
         {
             var i = codes++;
             if (x is null) free.Enqueue(i, i); else Store(i, x, false);
         }
+    }
+    /// <summary>The text of a code as a value, made once while its string is in the cache (a slot that takes another code lets go of its value).</summary>
+    public Value Text(int i)
+    {
+        var s = Get(i);
+        return values[i & (CacheSize - 1)] ??= (TextValue)Value.Text(s);
     }
     public string Get(int i)
     {
@@ -194,7 +201,7 @@ public sealed class Interner : ITextTable
         if ((uint)i >= (uint)codes || !start.Has(i)) throw new InvalidOperationException($"text {i} was freed");
         var b = Bytes(i);
         var s = (meta[i] & 2) != 0 ? new string(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, char>(b)) : System.Text.Encoding.Latin1.GetString(b);
-        cached[slot] = i; cache[slot] = s;
+        cached[slot] = i; cache[slot] = s; values[slot] = null;
         return s;
     }
 }
@@ -365,7 +372,7 @@ public static class Codec
 
     public static Value ToValue(long code, Ty ty, Interner it) => ty.Tag switch
     {
-        Tag.Text => Value.Text(it.Get((int)code)),
+        Tag.Text => it.Text((int)code),
         Tag.Integer => Value.Integer(code),
         Tag.Boolean => Value.Boolean(code != 0),
         Tag.Instant => Value.Instant(code),
