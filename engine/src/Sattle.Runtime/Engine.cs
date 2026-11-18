@@ -222,6 +222,16 @@ public sealed class GraphRuntime
     public Dictionary<string, string> PortSources { get; } = []; // port -> source or upstream graph name
     public long Skipped { get; set; }
     public TypedProjection Typed => Plan.Typed;
+    /// <summary>The working state of a step, reused by every step of the graph: the outputs by operator, and per operator (in plan order) its inputs by port. Holds batches only while a step runs.</summary>
+    internal Dictionary<string, Batch?> StepOutputs { get; } = [];
+    internal Dictionary<string, Batch?>[] StepInputs => stepInputs ??= [.. Plan.Ops.Select(_ => new Dictionary<string, Batch?>())];
+    Dictionary<string, Batch?>[]? stepInputs;
+    /// <summary>Per operator (in plan order) its ports and what feeds each: the plan's inputs as an array, which a step walks without an enumerator object.</summary>
+    internal (string Port, Src Src)[][] StepPorts => stepPorts ??= [.. Plan.Ops.Select(o => o.Typed.Inputs.Select(kv => (kv.Key, kv.Value)).ToArray())];
+    (string Port, Src Src)[][]? stepPorts;
+    /// <summary>"graph/operator" per operator in plan order, then "graph/(commit)": the keys of the measurements while TrackAllocations is on.</summary>
+    internal string[] MeasureKeys => measureKeys ??= [.. Plan.Ops.Select(o => Name + "/" + o.Name), Name + "/(commit)"];
+    string[]? measureKeys;
 }
 
 /// <summary>The activated graph space: master ingestion, derived graphs in dependency order, ordered deterministic evaluation with explicit logical time, per-graph atomic commit through the port.</summary>
@@ -480,43 +490,54 @@ public sealed class Engine : IDisposable, IEngineInput
 
     GraphResult Execute(GraphRuntime g, Epoch ep, long seq, string cause)
     {
-        var outputs = new Dictionary<string, Batch?>();
+        var outputs = g.StepOutputs; var ops = g.Plan.Ops; var keys = TrackAllocations ? g.MeasureKeys : null;
+        long a = TrackAllocations ? GC.GetAllocatedBytesForCurrentThread() : 0, t = System.Diagnostics.Stopwatch.GetTimestamp();
         try
         {
-            foreach (var op in g.Plan.Ops)
+            for (var i = 0; i < ops.Count; i++)
             {
-                var inputs = new Dictionary<string, Batch?>();
-                foreach (var (port, src) in op.Typed.Inputs)
+                var op = ops[i]; var inputs = g.StepInputs[i];
+                foreach (var (port, src) in g.StepPorts[i])
                     inputs[port] = src.IsPort ? ep.Rows.GetValueOrDefault(src.Name) : outputs.GetValueOrDefault(src.Name);
                 // the one place a code reaches state: the input of a stateful step. A stateless step mints the texts it computes young.
                 var stateless = op is FilterOp or MapOp;
                 if (!stateless) foreach (var b in inputs.Values) if (b is not null) Interner.Escape(b);
                 Interner.MintYoung = stateless;
-                if (TrackAllocations)
+                Charge("(step dispatch)", ref a, ref t);
+                var output = op.Run(g.Cx, ep, inputs);
+                if (keys is not null)
                 {
-                    var a0 = GC.GetAllocatedBytesForCurrentThread(); var t0 = System.Diagnostics.Stopwatch.GetTimestamp();
-                    var output = op.Run(g.Cx, ep, inputs);
-                    var bytes = GC.GetAllocatedBytesForCurrentThread() - a0; var ms = System.Diagnostics.Stopwatch.GetElapsedTime(t0).TotalMilliseconds;     // read before the output is stored and the keys below are made, which would count as the operator's
-                    outputs[op.Name] = output;
-                    Trace(g, op, outputs[op.Name]);
-                    OperatorAllocations[g.Name + "/" + op.Name] = OperatorAllocations.GetValueOrDefault(g.Name + "/" + op.Name) + bytes;
-                    OperatorMillis[g.Name + "/" + op.Name] = OperatorMillis.GetValueOrDefault(g.Name + "/" + op.Name) + ms;
+                    var bytes = GC.GetAllocatedBytesForCurrentThread() - a; var ms = System.Diagnostics.Stopwatch.GetElapsedTime(t).TotalMilliseconds;     // read before the output is stored, which would count as the operator's
+                    OperatorAllocations[keys[i]] = OperatorAllocations.GetValueOrDefault(keys[i]) + bytes;
+                    OperatorMillis[keys[i]] = OperatorMillis.GetValueOrDefault(keys[i]) + ms;
                     var kd = op.GetType().Name; var ks = KindStats.GetValueOrDefault(kd);
                     KindStats[kd] = (ks.Ms + ms, ks.Bytes + bytes, ks.Calls + 1);
+                    a = GC.GetAllocatedBytesForCurrentThread(); t = System.Diagnostics.Stopwatch.GetTimestamp();
                 }
-                else { outputs[op.Name] = op.Run(g.Cx, ep, inputs); Trace(g, op, outputs[op.Name]); }
+                outputs[op.Name] = output;
+                Trace(g, op, output);
             }
         }
-        finally { Interner.MintYoung = false; }       // a step that throws leaves no young minting behind
+        finally
+        {
+            Interner.MintYoung = false;       // a step that throws leaves no young minting behind
+            // the step's batches belong to their operators: the reused views let go of them
+            outputs.Clear();
+            for (var i = 0; i < ops.Count; i++) foreach (var (port, _) in g.StepPorts[i]) g.StepInputs[i][port] = null;
+        }
+        Charge("(step dispatch)", ref a, ref t);
         var tCommit = System.Diagnostics.Stopwatch.GetTimestamp();
         var edits = g.Out.Flush(g.State);
+        Charge("(flush elements)", ref a, ref t);
         var samples = g.Out.FlushTelemetry(Telemetry, g.Key, ep.Id);
+        Charge("(flush telemetry)", ref a, ref t);
         Patch? patch = null;
         if (edits.Count > 0)
         {
             patch = new Patch(g.Name, g.Head, g.Head + 1, edits, new Cause([cause + "#" + seq], catalog.Log.Head.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             var err = g.State.Apply(patch.Edits);
             if (err is not null) throw new InvalidOperationException($"graph {g.Name}: engine produced an inapplicable patch: {err}");
+            Charge("(patch and apply)", ref a, ref t);
             var gin = ImmutableSortedDictionary.CreateBuilder<string, long>(StringComparer.Ordinal);
             foreach (var (_, from) in g.PortSources) if (byName.TryGetValue(from, out var up)) gin[from] = up.Head;
             var pos = ImmutableSortedDictionary<string, long>.Empty.Add(cause, seq);
@@ -526,17 +547,29 @@ public sealed class Engine : IDisposable, IEngineInput
             var res = store.Commit(new CommitBatch(g.Key, g.Head, [patch], [fr], bindings));
             if (res is not CommitResult.Committed c) throw new InvalidOperationException($"graph {g.Name}: store did not commit: {res}");
             g.Head = c.Head;
+            Charge("(store commit)", ref a, ref t);
         }
-        if (TrackAllocations) OperatorMillis[g.Name + "/(commit)"] = OperatorMillis.GetValueOrDefault(g.Name + "/(commit)") + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
-        if (TrackAllocations) { var ks = KindStats.GetValueOrDefault("(flush, apply, store commit)"); KindStats["(flush, apply, store commit)"] = (ks.Ms + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds, 0, ks.Calls + 1); }
+        if (keys is not null) OperatorMillis[keys[^1]] = OperatorMillis.GetValueOrDefault(keys[^1]) + System.Diagnostics.Stopwatch.GetElapsedTime(tCommit).TotalMilliseconds;
         if (samples.Count > 0) Telemetry.Append(g.Key, [.. samples]);
         // every step reads what its graph's windows changed by: its own samples, and the windows a merge of two identities moved in this step, which no sample announces
         var changes = Telemetry.ClosedWindows(g.Key, g.TelemetryPosition, out var read);
         g.TelemetryPosition = read;
+        Charge("(telemetry append and read)", ref a, ref t);
         var result = new GraphResult(patch, changes, g.Head);
         var conflicts = g.Out.TakeChanged();
         if (patch is not null || changes.Count > 0 || conflicts.Count > 0) Committed?.Invoke(new CommitEvent(g.Name, patch, changes, ep.Lambda, seq, Interner) { Conflicts = conflicts });
+        Charge("(commit event)", ref a, ref t);
         return result;
+    }
+
+    /// <summary>While TrackAllocations is on: adds the time and the allocation since the mark (`a`, `t`) to `kind`, and moves the mark to now.</summary>
+    void Charge(string kind, ref long a, ref long t)
+    {
+        if (!TrackAllocations) return;
+        var a1 = GC.GetAllocatedBytesForCurrentThread(); var t1 = System.Diagnostics.Stopwatch.GetTimestamp();
+        var ks = KindStats.GetValueOrDefault(kind);
+        KindStats[kind] = (ks.Ms + System.Diagnostics.Stopwatch.GetElapsedTime(t, t1).TotalMilliseconds, ks.Bytes + a1 - a, ks.Calls + 1);
+        a = GC.GetAllocatedBytesForCurrentThread(); t = System.Diagnostics.Stopwatch.GetTimestamp();
     }
 
     /// <summary>A digest of the observable output: every graph's digest, then every telemetry window in canonical order. Same ordered inputs give the same digest (T7).</summary>

@@ -75,8 +75,8 @@ static partial class Bench
         proc.Refresh();
         Console.WriteLine($"cpu: this thread {(ThreadCpuNs() - threadStart) / 1e9:F1} s, the process {(proc.TotalProcessorTime - cpuStart).TotalSeconds:F1} s (the rest is the collector and the runtime's other threads); peak resident set {PeakResidentBytes() / 1e6:F0} MB");
         Console.WriteLine($"total wall {total.TotalSeconds:F2} s, allocated {allocTotal / 1e6:F0} MB ({allocTotal / (double)Math.Max(1, records):F0} bytes per record, {allocTotal / (double)Math.Max(1, input.IngestRows):F0} per row), GC pause {pause.TotalSeconds:F2} s ({100 * pause.TotalSeconds / total.TotalSeconds:F0} %), unexplained {total.TotalSeconds - (Ms(readTicks) + Ms(procTicks)) / 1000:F2} s");
-        Console.WriteLine("operator kind | calls | ms | MB allocated");
-        foreach (var (k, v) in engine.KindStats.OrderByDescending(x => x.Value.Ms).Take(16)) Console.WriteLine($"{k} | {v.Calls:N0} | {v.Ms:F0} | {v.Bytes / 1e6:F0}");
+        Console.WriteLine("operator kind or part of a step | calls | ms | MB allocated");
+        foreach (var (k, v) in engine.KindStats.OrderByDescending(x => x.Value.Bytes).Take(24)) Console.WriteLine($"{k} | {v.Calls:N0} | {v.Ms:F0} | {v.Bytes / 1e6:F0}");
         Console.WriteLine("per graph (operators and commit), ms:");
         foreach (var gname in engine.Graphs.Select(g => g.Name))
             Console.WriteLine($"{gname} | operators {engine.OperatorMillis.Where(x => x.Key.StartsWith(gname + "/", StringComparison.Ordinal) && !x.Key.EndsWith("(commit)", StringComparison.Ordinal)).Sum(x => x.Value):F0} | commit {engine.OperatorMillis.GetValueOrDefault(gname + "/(commit)"):F0}");

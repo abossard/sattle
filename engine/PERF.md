@@ -660,6 +660,22 @@ Theory. Per graph, the properties of every element are a block in one byte array
 - One new concept: `ITextTable` (intern a text, get a text), implemented by the interner and by the graph's existing id table.
 - Before is the interner patch. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5 and on the lab fixtures. The seal format is unchanged: a seal writes a graph as its elements.
 
+### Efficiency stage 2, allocation per record: the step (#115, 2026-11-18)
+Where the 57.5 KB per record at 10^5 went, measured part by part the way operators are (`GC.GetAllocatedBytesForCurrentThread` around each, KB per record, 10^4 in brackets): a dictionary of inputs per operator call 11.3 (11.4); the bench's own keys, two string concatenations per operator call 11.4 (11.5); a dictionary of outputs per graph step 2.9 (3.0); operators 13.6 (14.2); flush of the elements 8.2 (7.8); flush of the telemetry 6.6 (6.9); patch, apply, store commit, telemetry append and read, commit event 2.0 (2.1); epochs and the interner's collect 0.5 (0.4); reading the capture and the adapters 0.9 (1.0).
+
+Theory. A step of a graph runs its operators in plan order. Each operator needs the batch on each of its ports, and the step needs each operator's output until its last reader ran. Both are fixed by the plan, so they need no new object per call: one view of inputs per operator and one table of outputs per graph, made once from the plan and refilled by every step. The views hold batches only while the step runs and let go of them at its end, so no batch lives longer than before (an operator's output batch belongs to it until it runs again, #39). The ports are walked as an array: an enumerator through `IReadOnlyDictionary` is an object. The keys of the measurement are a function of the plan too and are made once per graph; until now every figure of allocation per record in this file held 11.4 KB of the harness, which a run without `TrackAllocations` never paid. The parts after the operators have a row each in `bench phases` (flush elements, flush telemetry, patch and apply, store commit, telemetry append and read, commit event, step dispatch); the row `(flush, apply, store commit)`, which measured time only, goes.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 58.5 / 32.6 KB | 57.5 / 31.8 KB |
+| engine ingest per record | 40.4 / 14.5 KB | 39.5 / 13.7 KB |
+| engine advance per record | 17.2 / 17.1 KB | 17.1 / 17.1 KB |
+| step dispatch | 14.4 / 0.0 KB | 14.2 / 0.0 KB |
+| live bytes | 252 / 252 MB | 1,546 / 1,546 MB |
+
+- What remains at 10^5, KB per record: operators 13.6 (`MatchOp` 4.5, `EmitEntityOp` 2.6, `EmitRelOp` 1.9, `SeriesOp` 1.4, `TraverseOp` 0.9), flush of the elements 8.2, flush of the telemetry 6.6, patch and apply 1.1, telemetry append and read 0.7, reading and adapters 0.9.
+- Before is the stack of joins, groups, interner, telemetry and pool. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 (`sha256:2654c25f...bfbc3`) and 10^5 (`sha256:0ab80689...1140`). The seal format is unchanged: the working state of a step is not state of the engine between steps.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
