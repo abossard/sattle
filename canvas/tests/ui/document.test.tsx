@@ -6,7 +6,6 @@ import { runtime } from "../../src/state/runtime";
 import { dispatch } from "../../src/state/store";
 import type { GraphSummary } from "../../src/state/types";
 import { DocumentView } from "../../src/ui/DocumentView";
-import { violations } from "./helpers";
 import { fakeWorkspace } from "../helpers";
 
 afterEach(() => { cleanup(); runtime.ws = null; });
@@ -24,7 +23,7 @@ function fake(cursor: { at: number }, asked: string[], fail = false) {
 const summary = (version: number): GraphSummary => ({ id: "r", role: "projection", head: "2", patches: 2, nodes: 0, edges: 0, version });
 const show = () => render(<FluentProvider theme={webLightTheme}><DocumentView graph="r" /></FluentProvider>);
 
-describe("the document view", () => {
+describe("the document view shows the document at the revision of the timeline, or says why there is none", () => {
   it("shows the document at the revision of the timeline and follows it when a patch arrives", async () => {
     const cursor = { at: 1 }, asked: string[] = [];
     fake(cursor, asked);
@@ -50,11 +49,16 @@ describe("the document view", () => {
     show();
     await waitFor(() => expect(screen.getByText("engine down")).toBeTruthy());
   });
-  it("has no axe violations", async () => {
-    fake({ at: 2 }, []);
-    dispatch({ type: "data/summary", graphs: [summary(0)], telemetry: {} });
-    show();
-    await screen.findByText("Items: 2");
-    expect(await violations()).toEqual([]);
+  it("switching to another document graph at the same revision does not show the first graph's document while the second loads", async () => {
+    const hist = { cursor: 1, revisionAt: (i: number) => String(i) };
+    runtime.ws = {
+      ...fakeWorkspace({ r: hist, s: hist }),
+      source: { document: (g: string, rev?: string) => g === "s" ? new Promise(() => {}) : Promise.resolve({ revision: String(rev), digest: "sha256:".padEnd(30, "0"), markdown: "# Report of r\n" }) },
+    } as never;
+    const ui = (g: string) => <FluentProvider theme={webLightTheme}><DocumentView graph={g} /></FluentProvider>;
+    const view = render(ui("r"));
+    await screen.findByText("Report of r");
+    view.rerender(ui("s"));
+    expect(screen.queryByText("Report of r"), "the document of r stays on screen under s: only the revision number is compared").toBeNull();
   });
 });

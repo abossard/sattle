@@ -31,7 +31,7 @@ Every view is a function of an engine output at a revision: incremental graphs w
 - Examples must answer a user's question: no toy chains, no unconnected nodes, no internal ids as labels.
 
 ## Evidence on Hand
-- The synthetic estate demo (thirteen graphs, workload model with scenarios A to E) and the reference projections built in each notation (`tests/editors/kql-references.test.tsx`).
+- The synthetic estate demo (thirteen graphs, workload model with scenarios A to E) and the reference projections built in each notation (`tests/engine/kql-references.test.tsx`).
 - Two real captures exist outside the repository; their names and ids must not appear in tracked files.
 - No user studies, testimonials or benchmarks against other tools exist; none may be invented.
 

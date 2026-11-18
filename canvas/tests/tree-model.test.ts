@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { attentionPaths, buildTree, expandBelow, explainNode, hasTreeRows, isWrong, searchMatches, typeAhead, visibleRows, wrongNodes, type TreeView } from "../src/app/tree-model";
+import { attentionPaths, buildTree, expandBelow, explainNode, hasTreeRows, isWrong, searchMatches, severityCompare, typeAhead, visibleRows, wrongNodes, type TreeView } from "../src/app/tree-model";
 import { curated, curatedSpec, treeGraph, treeHints, treeSpec } from "./fixtures/tree-graph";
 
 const model = () => buildTree(treeGraph(), treeSpec, treeHints);
 const view = (over: Partial<TreeView> = {}): TreeView => ({ expanded: new Set(), onlyWrong: false, query: "", sort: "severity", ...over });
 const ids = (v: TreeView) => visibleRows(model(), v).rows.map((r) => `${r.level}:${r.node.id}`);
 
-describe("the tree of a hierarchical graph", () => {
+describe("the tree of a hierarchical graph holds the tree types under one root, with states ordered by severity", () => {
   it("has the nodes of the tree types only, one root, children from the hierarchy relationship", () => {
     const m = model();
     expect([m.roots, [...m.nodes.keys()].sort(), m.nodes.get("ra")!.children, m.nodes.get("api")!.parent]).toEqual([["estate"], ["api", "cache", "db", "ra", "rb", "rc", "estate", "web"].sort(), ["api", "db"], "ra"]);
@@ -34,6 +34,18 @@ describe("the tree of a hierarchical graph", () => {
     const m = buildTree(treeGraph(), noSeverity, treeHints);
     expect([m.nodes.get("api")!.severity, m.nodes.get("web")!.severity, m.nodes.get("db")!.severity, m.nodes.get("rc")!.severity]).toEqual([5, 4, 2, 3]);
   });
+  // the engine's severity is -1 unknown, 0 healthy, 1 degraded, 2 unhealthy; an element without the property falls back to a role scale 1..5
+  it("an Unknown node never sorts above an Unhealthy one, and is never the driver of a roll-up", () => {
+    const g = treeGraph();
+    // rc is Unknown and has no severity of its own: it is read from its role
+    const rc = g.entity("rc")!;
+    const { severity: _s, ...props } = rc.props;
+    g.putEntity({ ...rc, props });
+    const m = buildTree(g, treeSpec, treeHints);
+    const order = ["ra", "rb", "rc"].map((id) => m.nodes.get(id)!).sort(severityCompare).map((n) => n.id);
+    expect(order[0], "Region A is Unhealthy and must come first").toBe("ra");
+    expect(order.indexOf("rc")).toBeGreaterThan(order.indexOf("rb"));
+  });
   it("a cycle in the hierarchy is cut and never followed", () => {
     const g = treeGraph();
     g.putRel({ id: "cx", source: "api", target: "estate", type: "Contains", props: {} });
@@ -43,11 +55,11 @@ describe("the tree of a hierarchical graph", () => {
   });
 });
 
-describe("what the tree shows", () => {
+describe("the tree shows the roots, opens the paths to what is wrong and filters by state and search", () => {
   it.each([
     ["collapsed: only the roots", view(), ["1:estate"]],
     ["expanded, worst first", view({ expanded: new Set(["estate"]) }), ["1:estate", "2:ra", "2:rb", "2:rc"]],
-    ["sorted by name", view({ expanded: new Set(["estate"]), sort: "label" }), ["1:estate", "2:ra", "2:rb", "2:rc"]],
+    ["sorted by name: the children of a node stand by their names, not worst first", view({ expanded: new Set(["estate", "rb"]), sort: "label" }), ["1:estate", "2:ra", "2:rb", "3:cache", "3:web", "2:rc"]],
     ["two levels", view({ expanded: new Set(["estate", "rb"]) }), ["1:estate", "2:ra", "2:rb", "3:web", "3:cache", "2:rc"]],
     ["rows of a node whose children are all filtered out are not expandable rows", view({ expanded: new Set(["estate", "ra"]), onlyWrong: true }), ["1:estate", "2:ra", "3:api", "2:rb"]],
   ])("%s", (_, v, want) => expect(ids(v)).toEqual(want));
@@ -87,7 +99,7 @@ describe("what the tree shows", () => {
   });
 });
 
-describe("why a node has its state", () => {
+describe("a node explains why it has its state", () => {
   const why = (id: string) => explainNode(treeGraph(), model(), id)!;
   it.each([
     ["a region rolls up from the worst of its children", "ra", ["api"]],
@@ -104,7 +116,7 @@ describe("why a node has its state", () => {
   it("a node that is not in the tree has no explanation", () => expect(explainNode(treeGraph(), model(), "e1")).toBeNull());
 });
 
-describe("a tree whose ontology names the kind and the counts of descendants", () => {
+describe("a tree whose ontology names the kind shows the kind and counts descendants", () => {
   const spec = { ...treeSpec, state: { Component: { own: "own", rolledUp: "state", severity: "severity", kind: "kind", counts: { Healthy: "healthy", Degraded: "degraded", Unhealthy: "unhealthy" } } } };
   const g = () => {
     const x = treeGraph();
@@ -124,7 +136,7 @@ describe("a tree whose ontology names the kind and the counts of descendants", (
   });
 });
 
-describe("what authored curation does to the tree", () => {
+describe("authored curation hides, marks and orders nodes of the tree", () => {
   const m = () => buildTree(curated(treeGraph()), curatedSpec, treeHints);
   it("says which rows are curated by which record, critical, hidden, and how they roll up", () => {
     const x = m();
@@ -143,7 +155,7 @@ describe("what authored curation does to the tree", () => {
   });
 });
 
-describe("the label of a row", () => {
+describe("a row is labelled by a property ending in name, or by the id when nothing names it", () => {
   it.each([
     ["the usual name", { name: "api" }, "api"],
     ["a property that ends in name", { nodeName: "rg-synth" }, "rg-synth"],
@@ -156,7 +168,7 @@ describe("the label of a row", () => {
   });
 });
 
-describe("whether a graph has anything to show as a tree", () => {
+describe("a graph has tree rows when it holds entities of the tree types, or any entity when no types are listed", () => {
   it.each([
     ["a graph with entities of the tree types", treeSpec, true],
     ["a graph that shares the ontology but holds only other types", { ...treeSpec, types: ["Signal"] }, false],
@@ -164,7 +176,7 @@ describe("whether a graph has anything to show as a tree", () => {
   ])("%s", (_, spec, want) => expect(hasTreeRows(treeGraph(), spec)).toBe(want));
 });
 
-describe("a tree by cause", () => {
+describe("a tree by cause puts an element under every element whose state takes it in, once per parent", () => {
   // the hierarchy and the dependencies: web needs api and db, so both are under their region and under web
   const links = (extra: [string, string][] = []) => {
     const g = treeGraph();
@@ -185,5 +197,19 @@ describe("a tree by cause", () => {
     expect([...m.nodes.values()].filter((n) => n.origin).map((n) => n.id).sort()).toEqual(origins);
     expect([...attentionPaths(m)].sort()).toEqual(extra.length ? ["api", "estate", "ra", "rb", "web"] : ["estate", "ra", "rb", "web"]);
     expect(new Set(visibleRows(m, view({ expanded: expandBelow(m, "estate") })).rows.map((r) => r.node.id))).toEqual(all(m));
+  });
+  it("with everything open has a row per element under each parent, not one per simple path (8 services that all depend on each other)", () => {
+    const services = Array.from({ length: 8 }, (_, i) => `s${i}`);
+    const node = (id: string, children: string[], parents: string[]) => ({ id, type: "Service", label: id, parent: parents[0] ?? null, parents, children, own: null, rolled: null, severity: 0, supporting: 0, cross: 0, curatedBy: null, critical: false, hidden: false, policy: null, counts: [], origin: false, through: [] });
+    const nodes = new Map([["shop", node("shop", services, [])], ...services.map((s) => [s, node(s, services.filter((x) => x !== s), ["shop", ...services.filter((x) => x !== s)])] as const)]);
+    const m = { nodes, roots: ["shop"], spec: treeSpec } as never;
+    const { rows } = visibleRows(m, { expanded: new Set(nodes.keys()), onlyWrong: false, query: "", sort: "label" });
+    // 8 under the shop, the first service shows its 7, the next one down its 6 and so on to s7, whose children are all on its path there; s7
+    // opens at its next row (under s5) with the one child left: 1 + 8 + 7 + ... + 1 + 1 rows for 64 edges (109,601 rows before)
+    expect(rows.length, `${rows.length} rows for ${nodes.size} elements`).toBe(1 + 8 + 7 + 6 + 5 + 4 + 3 + 2 + 1 + 1);
+    // the same rows each time, and every element shows its children once
+    expect(visibleRows(m, { expanded: new Set(nodes.keys()), onlyWrong: false, query: "", sort: "label" }).rows.map((r) => r.key)).toEqual(rows.map((r) => r.key));
+    expect(rows.filter((r) => r.expanded).map((r) => r.node.id).sort()).toEqual([...nodes.keys()].sort());
+    for (const r of rows.filter((x) => x.shownAbove)) expect(rows.find((x) => x.key === r.shownAbove)?.node.id).toBe(r.node.id);
   });
 });

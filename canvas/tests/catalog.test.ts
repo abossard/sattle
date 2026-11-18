@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import { Graph } from "../src/core/graph";
 import { snapshotFromWire } from "../src/core/wire";
 import { Catalog, moduleOntologyGraph, DIRECTION, DIRECTION_CLASSES, durationText, moduleOfId } from "../src/core/catalog";
+import { ontologyGraph } from "../src/core/ontology-graph";
 import { checkDescriptor } from "../src/core/validate";
 import type { GraphExtentWire } from "../src/core/wire-types";
+import { coalesce, contains, ent as catalogEnt, text } from "../src/editor/patches";
+import { ont } from "./fixtures/engine-fake";
+import { ver } from "./helpers";
 
 const raw = import.meta.glob("/public/demo/engine/catalog.snapshot.json", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 const file = JSON.parse(Object.values(raw)[0]) as { descriptor: unknown; extent: GraphExtentWire };
@@ -13,7 +17,7 @@ const catalog = () => {
   return new Catalog(Graph.fromSnapshot(snapshotFromWire(d.value, file.extent)));
 };
 
-describe("catalog graph of the engine definitions", () => {
+describe("the catalog graph of the engine definitions lists modules, projections and ontologies and draws them as graphs", () => {
   const c = catalog();
   it("lists modules with versions and imports", () => {
     const m = c.modules();
@@ -84,4 +88,34 @@ describe("catalog graph of the engine definitions", () => {
   });
   it.each([["60000000000", "1m"], ["86400000000000", "1d"], ["3600000000000", "1h"], ["1500000000", "1.5s"], ["x", "x"]])("durationText(%s) = %s", (ns, t) => expect(durationText(ns)).toBe(t));
   it.each([["d:acme.svc/projection:serviceDeps/op:x", "acme.svc"], ["d:acme.ops@1.0.0", "acme.ops"], ["d:a|b|c", "a"]])("moduleOfId(%s) = %s", (id, m) => expect(moduleOfId(id)).toBe(m));
+});
+
+describe("an ontology is drawn as a graph of its types and how they relate", () => {
+  const o = { ...ont("o"), relationshipTypes: [{ id: { value: "NoType" }, sourceTypes: [], targetTypes: [], properties: [] }, { id: { value: "Calls" }, sourceTypes: [{ value: "Pod" }], targetTypes: [{ value: "Pod" }], properties: [] }] } as never;
+  it.each<[string, boolean, string[], string[]]>([
+    ["the types and how they relate, without the placeholder NoType", false, ["Pod"], ["Calls"]],
+    ["with the properties as nodes of their own when asked", true, ["Pod", "Property"], ["Calls", "has"]],
+  ])("%s", (_, withProperties, types, relationships) => {
+    const g = ontologyGraph(o, withProperties);
+    expect([...new Set([...g.entities()].map((e) => e.type === "EntityType" ? String((e.props.name as { value: string }).value) : e.type))].sort()).toEqual(types.sort());
+    expect([...new Set([...g.relationships()].map((r) => r.type))].sort()).toEqual(relationships.sort());
+  });
+});
+
+describe("a relationship type with an empty source or target list is drawn from and to the node 'any type', as the engine reads an empty list as every type", () => {
+  it("in the ontology picture of a graph", () => {
+    const o = { ...ont("o"), relationshipTypes: [...ont("o").relationshipTypes, { id: { value: "Mentions" }, sourceTypes: [], targetTypes: [{ value: "Pod" }], properties: [] }, { id: { value: "Links" }, sourceTypes: [], targetTypes: [], properties: [] }] } as never;
+    const g = ontologyGraph(o, false);
+    const ends = (id: string) => String((g.entity(id)?.props.name as { value: string } | undefined)?.value);
+    expect([...g.relationships()].map((r) => `${r.type}: ${ends(r.source)} -> ${ends(r.target)}`).sort(), "a type without a source or target list draws nothing").toEqual(["Links: any type -> any type", "Mentions: any type -> Pod"]);
+  });
+  it("in the ontology of a module in the editor, as the ontology picture draws it", () => {
+    const m = "d:m", pod = "d:m/entity:Pod", links = "d:m/rel:Links", mentions = "d:m/rel:Mentions";
+    const edits = coalesce([catalogEnt(m, "Module", { name: text("m") }), catalogEnt(pod, "EntityType", { name: text("Pod") }), catalogEnt(links, "RelationshipType", { name: text("Links") }), catalogEnt(mentions, "RelationshipType", { name: text("Mentions") }),
+      contains(m, pod, "entity"), contains(m, links, "rel"), contains(m, mentions, "rel"), { kind: "relationship", id: `${mentions}|targetType|${pod}`, before: null, after: { id: `${mentions}|targetType|${pod}`, source: mentions, target: pod, type: "targetType", props: {} } } as never]);
+    const g = Graph.fromSnapshot({ version: ver("1", "catalog"), entities: edits.filter((e) => e.kind === "entity").map((e) => e.after as never), relationships: edits.filter((e) => e.kind === "relationship").map((e) => e.after as never) });
+    const o = moduleOntologyGraph(new Catalog(g), m);
+    const name = (id: string) => String((o.entity(id)?.props.name as { value: string } | undefined)?.value);
+    expect([...o.relationships()].map((r) => `${r.type}: ${name(r.source)} -> ${name(r.target)}`).sort(), "a type without a source or target list draws nothing").toEqual(["Links: any type -> any type", "Mentions: any type -> Pod"]);
+  });
 });

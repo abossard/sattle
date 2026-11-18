@@ -3,10 +3,12 @@ import { EngineSource } from "../src/source/engine";
 import { parseDiagnostics, parseSpace, parseWsMessage, batchFromWire, parseMeters, revisionTimes } from "../src/source/engine-protocol";
 import type { StreamEvent } from "../src/source/types";
 import type { Rejection } from "../src/core/validate";
+import { parsePalette, parseReferences } from "../src/editor/palette";
+import { parseColumns, parseOperatorRows, parseSchemas } from "../src/editor/service";
 
 import { BASE, FakeSocket, baseRoutes, collect, descriptor, makeFetch, ndjson, ont, settle, space, tel, wirePatch } from "./fixtures/engine-fake";
 
-describe("protocol parsing", () => {
+describe("the engine's documents and stream messages are read into the viewer's types, and what an older engine leaves out reads as absent", () => {
   it("rejects other protocol versions", () => expect(() => parseSpace({ ...space(), protocol: "2" })).toThrow(/protocol 2/));
   it("space graphs carry role, direction and editability", () => {
     const d = parseSpace(space());
@@ -41,7 +43,67 @@ describe("protocol parsing", () => {
   });
 });
 
-describe("EngineSource", () => {
+// The editor's additions to the protocol: references per operator in the palette, the columns after each operator from a check, the rows
+// after each operator in a preview. An older engine's answers read as before.
+const ofType = { name: "ofType", targets: ["EntityType"], required: true, multiplicity: "1", scope: "outputOntology", meaning: "the type of the node" };
+const column = { name: "s", kind: "Entity", type: "d:sattle.infra/type:Service", unit: null, item: null, required: true, role: "data", temporality: null, period: null };
+describe("the palette lists the references of each operator and node type, and an older palette has none", () => {
+  it.each<[string, unknown, number]>([
+    ["an entry as the engine sends it", [ofType], 1],
+    ["none", [], 0],
+    ["not a list", "x", 0],
+    ["an entry without a name or targets is left out", [{ targets: ["X"] }, { name: "n" }], 0],
+  ])("%s", (_, raw, n) => expect(parseReferences(raw).length).toBe(n));
+  it.each<[string, string]>([["1", "1"], ["+", "+"], ["?", "?"], ["many", "?"]])("multiplicity %s reads as %s", (m, want) => expect(parseReferences([{ ...ofType, multiplicity: m }])[0].multiplicity).toBe(want));
+  it("the top level keyed by node type is read, an older palette has none, and operators keep theirs", () => {
+    const p = parsePalette({ operators: [{ kind: "Match", references: [ofType] }], references: { PatternNode: [ofType], Rule: [] } });
+    expect([p.references?.PatternNode[0].name, p.references?.Rule.length, p.operators[0].references?.[0].scope]).toEqual(["ofType", 0, "outputOntology"]);
+    expect(parsePalette({ operators: [] }).references).toBeUndefined();
+  });
+});
+
+describe("a check answer carries the columns after each operator, and an older engine sends none", () => {
+  it("a check answer carries them by projection id, in the order of the operators", () => {
+    const s = parseSchemas({ "d:m/projection:p": [{ op: "d:m/projection:p/op:services", name: "services", kind: "Match", window: null, columns: [column] }, { op: "x", name: "w", kind: "Window", window: "1m", columns: [] }] })!;
+    expect(s["d:m/projection:p"].map((o) => [o.name, o.window, o.columns.length])).toEqual([["services", null, 1], ["w", "1m", 0]]);
+  });
+  it("an older engine sends none", () => expect(parseSchemas(undefined)).toBeUndefined());
+  it("a column keeps what it says and nulls what it does not", () => expect(parseColumns([{ name: "v", kind: "Decimal", unit: "ms", role: "telemetry", temporality: "gauge", period: "1m" }])[0]).toEqual({ name: "v", kind: "Decimal", type: null, unit: "ms", item: null, required: false, role: "telemetry", temporality: "gauge", period: "1m" }));
+});
+
+describe("a preview carries the rows after each operator as text, and an absent cell stays absent", () => {
+  it("are read with their sample, counts as text and the cells as text", () => {
+    const [o] = parseOperatorRows([{ op: "o", name: "services", kind: "Match", columns: [column], rows: 12, weight: "12", sample: [{ weight: "1", cells: { s: "e:1", "s.name": "web" } }], truncated: false }]);
+    expect([o.rows, o.weight, o.sample[0].cells["s.name"], o.truncated, o.columns[0].type]).toEqual(["12", "12", "web", false, "d:sattle.infra/type:Service"]);
+  });
+  it("no list is no rows", () => expect(parseOperatorRows(undefined)).toEqual([]));
+  it("an absent cell stays absent instead of becoming the text \"null\"", () => {
+    const [o] = parseOperatorRows([{ op: "o", columns: ["a", "b"], rows: "1", sample: [{ weight: "1", cells: { a: null, b: "null" } }] }]);
+    expect(o.sample[0].cells, "an absent value reads like the text null").toEqual({ b: "null" });
+  });
+  it("columns named by their names alone, as the live engine sends them in a preview, keep their names", () => {
+    const [o] = parseOperatorRows([{ op: "d:acme.svc/projection:serviceDeps/op:dependsOn__edges", columns: ["source", "target", "edge"], rows: "3", sample: [] }]);
+    expect(o.columns.map((c) => [c.name, c.kind, c.required])).toEqual([["source", "", true], ["target", "", true], ["edge", "", true]]);
+  });
+});
+
+/** A source opened against the fake engine with one patch of history and a socket; `extra` adds or replaces routes. */
+const open = async (extra: Record<string, () => { status?: number; body: unknown }> = {}) => {
+  FakeSocket.instances = [];
+  const log: string[] = [];
+  const routes = baseRoutes({
+    "GET /graphs/master/patches?after=0&to=3": () => ({ body: ndjson([wirePatch(0, 1)]) }),
+    "GET /graphs/master/telemetry?format=batches": () => ({ body: "" }),
+    ...extra,
+  });
+  const src = new EngineSource(BASE, { fetch: makeFetch(routes, log), WebSocket: FakeSocket as never, backoff: [1] });
+  await src.open();
+  const sink = collect(src, "master");
+  await settle();
+  return { src, ws: FakeSocket.instances[0], events: sink.events, log };
+};
+
+describe("the engine source opens a space, delivers its history and stream in order, recovers from gaps and drops, and reads lineage and references", () => {
   it("opens the space: catalog and data graphs, genesis snapshots, visible rejection for the kernel's valueKind any", async () => {
     const src = new EngineSource(BASE, { fetch: makeFetch(baseRoutes()) });
     const rejected: Rejection[] = [];
@@ -174,6 +236,33 @@ describe("EngineSource", () => {
     await settle();
     expect(events.some((e) => e.type === "resync")).toBe(true);
     expect(events.filter((e) => e.type === "telemetry-reset").length).toBe(0);
+    src.dispose();
+  });
+
+  it("a revised telemetry window, older than the newest, reaches the sinks with its new values", async () => {
+    const { src, ws, events } = await open();
+    ws.push({ type: "telemetry", graph: "master", batch: tel("2026-11-10T10:42:00Z", 2) });
+    ws.push({ type: "telemetry", graph: "master", batch: tel("2026-11-10T10:41:00Z", 9) }); // window 10:41 revised after 10:42 was seen
+    await settle();
+    const values = events.flatMap((e) => (e.type === "telemetry" ? [e.batch.values[0]] : []));
+    expect(values, "the user keeps the old value of 10:41 until a reload").toEqual([2, 9]);
+    src.dispose();
+  });
+
+  it("a gap fill that fails says the connection is not live", async () => {
+    const { src, ws } = await open({ "GET /graphs/master/patches?after=1": () => ({ status: 500, body: { error: { code: "Internal" } } }) });
+    ws.push({ type: "patch", graph: "master", patch: wirePatch(2, 3) });  // revision 2 was skipped: the fill asks for it and fails
+    await settle(40);
+    expect(src.connection.status.state, "nothing is delivered any more, the status still says live").not.toBe("live");
+    src.dispose();
+  });
+
+  it("an activation makes the source read the ontology and the value roles again", async () => {
+    const { src, ws, log } = await open({ "GET /graphs/master/patches?after=1": () => ({ body: "" }) });
+    const before = log.filter((l) => l.includes("/graphs/master/ontology")).length;
+    ws.push({ type: "activation", catalogRevision: "11", graphs: [{ id: "master" }] });
+    await settle(40);
+    expect(log.filter((l) => l.includes("/graphs/master/ontology")).length, "a definition edit can change the ontology and its roles").toBeGreaterThan(before);
     src.dispose();
   });
 

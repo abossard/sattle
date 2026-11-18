@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { Graph } from "../src/core/graph";
 import type { Edit, Patch, Snapshot } from "../src/core/model";
 import { MAX_UNDO, EditorSession } from "../src/editor/session";
-import { ent, text } from "../src/editor/patches";
+import { coalesce, ent, text } from "../src/editor/patches";
 import { EngineError, type Applied, type EditorService } from "../src/editor/service";
 import { parsePalette } from "../src/editor/palette";
 
 import { add, fakeEngine, names, restoresTo } from "./fixtures/editor-fake";
 
-describe("editor session", () => {
+describe("the session applies edits to the draft and its browser copy, and undo and redo are new revisions", () => {
   it.each<[string, (s: EditorSession) => Promise<unknown>, boolean]>([
     ["an edit whose answer carries a new text", (s) => s.apply(add(1), "add 1"), true],
     ["an edit refused before the engine", (s) => s.apply([], "nothing"), false],
@@ -49,6 +49,16 @@ describe("editor session", () => {
     expect(s.undoStack.length).toBe(0);
   });
 
+  it("a restore of a release equal to the draft is followed by an edit that works", async () => {
+    const eng = fakeEngine();
+    const s = await EditorSession.open(eng.svc);
+    // the engine answers a restore that changes nothing with a new revision and an empty patch
+    restoresTo(eng, { from: { tenant: "t", graph: "catalog", revision: "0" }, to: { tenant: "t", graph: "catalog", revision: "1" }, projection: "catalog", profile: "extensionalFinite", edits: [], cause: { inputs: [], configurationVersion: "0" } });
+    await s.restore("sha256:r");
+    const next = await s.apply(add(1), "edit after the restore");
+    expect(next, "the draft is at revision 1 on the engine; the browser copy still says its graph is at 0").toMatchObject({ ok: true });
+  });
+
   it("keeps 99 steps", async () => {
     const eng = fakeEngine();
     const s = await EditorSession.open(eng.svc);
@@ -86,7 +96,7 @@ describe("editor session", () => {
   });
 });
 
-describe("text applied over a draft that already holds graph edits", () => {
+describe("text applied or stored over a draft keeps the draft's other edits and follows its revision", () => {
   const V = { tenant: "t", graph: "catalog", revision: "0" };
   const pin = (digest: string) => ent("d:sp/import:a", "Import", { digest: text(digest) });
   type EntityEdit = Extract<Edit, { kind: "entity" }>;
@@ -123,8 +133,15 @@ describe("text applied over a draft that already holds graph edits", () => {
   });
 });
 
-// Code review 2, change 2: every engine call on a draft goes through the session's queue.
-describe("the session's queue", () => {
+describe("every engine call on a draft waits for the call started before it", () => {
+  it("two undos started together undo two steps", async () => {
+    const eng = fakeEngine();
+    const s = await EditorSession.open(eng.svc);
+    await s.apply(add(1), "one"); await s.apply(add(2), "two");
+    await Promise.all([s.undo(), s.undo()]);
+    expect(names(eng.g), "both read the same top of the stack: the second is a guard failure").toEqual([]);
+    expect(names(s.graph)).toEqual([]);
+  });
   it.each(["preview", "commit", "discard", "restore"] as const)("%s waits for an edit in flight", async (call) => {
     const eng = fakeEngine();
     const s = await EditorSession.open(eng.svc);
@@ -144,4 +161,23 @@ describe("the session's queue", () => {
     await Promise.all([edit, other]);
     expect(order, "the call reached the engine before the edit it was started after").toEqual(["apply", call]);
   });
+});
+
+describe("the session keeps the columns after each operator from the last check beside its diagnostics", () => {
+  it("an opened session holds the columns its check answered", async () => {
+    const eng = fakeEngine();
+    const schemas = { "d:m/projection:p": [{ op: "o", name: "services", kind: "Match", window: null, columns: [] }] };
+    (eng.svc as unknown as { check: () => Promise<unknown> }).check = async () => ({ revision: "0", ok: true, diagnostics: [], modules: {}, schemas });
+    const s = await EditorSession.open(eng.svc);
+    expect(s.schemas).toEqual(schemas);
+  });
+});
+
+describe("edits that leave an element as it was are no edits, whatever the order of its properties", () => {
+  const a = ent("x", "T", { slot: text("s"), ordinal: text("1") });
+  const b = ent("x", "T", { ordinal: text("1"), slot: text("s") });
+  it.each<[string, Edit[], number]>([
+    ["the same properties in another key order", [{ kind: "entity", id: "x", before: a.after, after: b.after } as Edit], 0],
+    ["a property that really changed", [{ kind: "entity", id: "x", before: a.after, after: ent("x", "T", { slot: text("s"), ordinal: text("2") }).after } as Edit], 1],
+  ])("%s", (_, edits, kept) => expect(coalesce(edits).length).toBe(kept));
 });

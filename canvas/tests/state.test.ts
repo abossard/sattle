@@ -10,11 +10,15 @@ import { EditorSession } from "../src/editor/session";
 import type { Preview } from "../src/editor/service";
 import { fakeEngine } from "./fixtures/editor-fake";
 import { Graph } from "../src/core/graph";
+import type { SpaceInfo } from "../src/source/types";
+import { SOURCES } from "../src/state/sources";
+import { settle } from "./fixtures/engine-fake";
+import { TreeSource } from "./fixtures/tree-source";
 
 const base = (over: Partial<State> = {}): State => ({ ...initialState(), ...over });
 const sel = { graph: "master", kind: "entity" as const, id: "e1" };
 
-describe("reducer", () => {
+describe("the reducer turns an action into a new state and never changes the old one", () => {
   it.each<[string, Action, (s: State) => unknown, unknown]>([
     ["theme", { type: "ui/theme", theme: "contrast" }, (s) => s.theme, "contrast"],
     ["view", { type: "ui/view", view: "editor" }, (s) => s.view, "editor"],
@@ -34,6 +38,13 @@ describe("reducer", () => {
     const s0 = base({ filters: { master: emptyFilter() } });
     if (action.type === "feed/patch") expect(reduce(s0, action)).toBe(s0);
     else expect(pick(reduce(s0, action))).toEqual(expected);
+  });
+
+  it("counts every rejection, not only the last 200", () => {
+    let s = initialState();
+    for (let i = 0; i < 250; i++) s = reduce(s, { type: "feed/rejected", rejection: { source: "x", where: `w${i}`, errors: ["e"] }, at: i });
+    expect(s.rejectedTotal, "the header says Rejected: 200 after 250").toBe(250);
+    expect(s.rejections.length, "the list itself stays bounded").toBeLessThanOrEqual(200);
   });
 
   it("is pure: the input state is never changed", () => {
@@ -90,8 +101,7 @@ describe("effects: server pushes are applied to the runtime in the order they ar
   });
 });
 
-// Code review 2, change 2: the editor flow as one state machine.
-describe("editor phase", () => {
+describe("the editor flow is one state machine: closed, opening, ready with at most one piece of work, failed", () => {
   const ready = (work: "undo" | "preview" | null = null): EditorPhase => ({ t: "ready", work });
   it.each<[string, EditorPhase, EditorEvent, EditorPhase]>([
     ["a closed editor opens", { t: "closed" }, { t: "open" }, { t: "opening" }],
@@ -114,7 +124,7 @@ describe("editor phase", () => {
 const later = <T,>() => { let settle!: (v: T) => void; const p = new Promise<T>((r) => { settle = r; }); return { p, settle }; };
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-describe("editor flow: an answer of an ended session is dropped", () => {
+describe("an engine answer that arrives after its draft ended changes nothing the author sees", () => {
   it("a list of releases that answers after a commit is not shown in the next draft", async () => {
     const eng = fakeEngine();
     const releases = later<unknown[]>(), commit = later<{ catalogRevision: string; modules: string[] }>();
@@ -174,4 +184,41 @@ describe("editor flow: an answer of an ended session is dropped", () => {
     expect([useStore.getState().editor.preview, runtime.preview], "the old draft's preview is shown over the new one").toEqual([null, null]);
     expect(useStore.getState().editor.phase.t).not.toBe("ready");
   });
+});
+
+/** A tree source whose open() waits for a gate: a load that is still going when the user opens another source. */
+class SlowTree extends TreeSource {
+  constructor(private readonly gate: Promise<void>) { super(); }
+  override async open(): Promise<SpaceInfo> { await this.gate; return super.open(); }
+}
+
+describe("a source replaced by another, or read again after a resync, leaves the new workspace and the author's draft alone", () => {
+  it("an abandoned load does not deliver its patches into the workspace that replaced it", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    SOURCES.push({ id: "slow-tree", label: "slow", make: () => new SlowTree(gate) }, { id: "fast-tree", label: "fast", make: () => new TreeSource() });
+    dispatch({ type: "source/opening", id: "slow-tree" });
+    await settle(20);
+    dispatch({ type: "source/opening", id: "fast-tree" });
+    await settle(200);
+    const fast = runtime.ws!;
+    // keep the fast source's own history from moving: it also ends with one patch, so compare with what it delivered itself
+    const own = fast.history("tree")!.patches.length;
+    release();                                             // the abandoned load wakes up, subscribes and its patch arrives
+    await settle(300);
+    expect(runtime.ws, "the workspace is still the fast one").toBe(fast);
+    expect(fast.history("tree")!.patches.length, "the old source delivered a second copy of its patch into the new workspace").toBe(own);
+    expect(useStore.getState().rejections.length, "and the second copy is reported as a rejection").toBe(0);
+  }, 30000);
+
+  it("a resync does not drop the author's editor session without a word", async () => {
+    SOURCES.push({ id: "resync-tree", label: "resync", make: () => new TreeSource() });
+    dispatch({ type: "source/opening", id: "resync-tree" });
+    await settle(200);
+    const session = { draft: "draft-7" } as never;
+    runtime.session = session;
+    dispatch({ type: "feed/resync", reason: "event gap" });
+    await settle(300);
+    expect(runtime.session, "the draft is orphaned on the engine, and the author is not told").toBe(session);
+  }, 30000);
 });

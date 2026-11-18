@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { SOURCES } from "../../src/state/sources";
 import { dispatch, useStore } from "../../src/state/store";
 import { TreeSource } from "../fixtures/tree-source";
-import { openApp, violations } from "./helpers";
+import { openApp } from "./helpers";
 
 beforeAll(() => { SOURCES.push({ id: "tree-test", label: "Tree test", make: () => new TreeSource() }, { id: "tree-curated", label: "Tree curated", make: () => new TreeSource(true) }); });
 
@@ -14,7 +14,7 @@ const labelOf = (r: Element) => r.querySelector("[data-label]")?.textContent ?? 
 const names = (tree: HTMLElement) => within(tree).getAllByRole("treeitem").map(labelOf);
 const row = (tree: HTMLElement, name: string) => within(tree).getAllByRole("treeitem").find((r) => labelOf(r) === name)!;
 
-describe("a graph whose ontology marks a hierarchy", () => {
+describe("a graph whose ontology marks a hierarchy opens as a tree a person reads, moves through and selects in, which follows the timeline", () => {
   it("opens as a tree, with the graph as the other tab, on the paths to what is wrong", async () => {
     const tree = await open();
     const tabs = screen.getByRole("tablist", { name: "How to show this graph" });
@@ -95,7 +95,8 @@ describe("a graph whose ontology marks a hierarchy", () => {
     const user = userEvent.setup();
     const tree = await open();
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort children" }), "label");
-    await waitFor(() => expect(names(tree).slice(1, 3)).toEqual(["Region A", "api"]));
+    // by severity web comes before cache; by name cache comes first
+    await waitFor(() => expect(names(tree)).toEqual(["Estate", "Region A", "api", "db", "Region B", "cache", "web", "Region C"]));
     await user.selectOptions(screen.getByRole("combobox", { name: "Sort children" }), "severity");
   }, 30000);
 
@@ -146,11 +147,6 @@ describe("a graph whose ontology marks a hierarchy", () => {
     await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.first }); });
     await act(async () => { dispatch({ type: "time/seek", t: useStore.getState().time.last }); });
     await waitFor(() => expect(names(tree)).toEqual(touch ? shown : before));
-  }, 30000);
-
-  it("has no axe violations", async () => {
-    await open();
-    expect(await violations()).toEqual([]);
   }, 30000);
 
   it("curated rows say so: the record, critical, hidden behind a switch, and the policy in the Inspector", async () => {

@@ -235,7 +235,7 @@ Screenshots of the running engine on the synthetic estate ([generator](engine/te
 
 ![The projection editor on workloadHealth: the KQL text and its steps](docs/screenshots/editor-kql.png)
 
-- KQL text with three notations (Steps, Outline, Wires) that edit the same text, in a draft the engine checks and commits: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`kql-edit.ts`](canvas/src/editor/kql-edit.ts), tests in [`kql-references.test.tsx`](canvas/tests/editors/kql-references.test.tsx), protocol in [PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions).
+- KQL text with three notations (Steps, Outline, Wires) that edit the same text, in a draft the engine checks and commits: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`kql-edit.ts`](canvas/src/editor/kql-edit.ts), tests in [`kql-references.test.tsx`](canvas/tests/engine/kql-references.test.tsx), protocol in [PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions).
 
 ### 8. Ontology modules are graphs
 

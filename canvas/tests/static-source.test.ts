@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { StaticSource } from "../src/source/static";
 import { SimulatedStream } from "../src/source/simulated";
 import { Graph } from "../src/core/graph";
@@ -147,6 +147,20 @@ describe("SimulatedStream", () => {
     sim.reset();
     expect(sim.delivered).toBe(0);
     expect(sim.state).toBe("idle");
+  });
+  it("a disposed stream delivers nothing more, so a workspace that is replaced leaves no timer behind", async () => {
+    const sim = new SimulatedStream(new StaticSource("t", url, fetcher()));
+    await sim.open();
+    let got = 0;
+    sim.subscribe("master", (e) => { if (e.type === "patch") got++; });
+    sim.setSpeed(100);
+    sim.play();
+    await vi.waitFor(() => expect(got).toBeGreaterThan(0));
+    sim.dispose();
+    const atDispose = got;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(got).toBe(atDispose);
+    expect(got).toBeLessThan(sim.total);
   });
   it("lineage, reverse lineage and documents pass through to the source it plays", async () => {
     const sim = new SimulatedStream(new StaticSource("t", url, fetcher()));

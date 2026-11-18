@@ -10,7 +10,7 @@ const base = () => Graph.fromSnapshot({
 });
 const names = (g: Graph) => [[...g.entities()].map((e) => e.id).sort(), [...g.relationships()].map((r) => r.id).sort()];
 
-describe("Graph.apply", () => {
+describe("a patch changes the graph atomically, an edge to a missing end is drawn to a stub, and the inverse patch takes it back", () => {
   it.each([
     ["adds an entity", patch("1", "2", [addN(ent("c"))]), [["a", "b", "c"], ["r1"]]],
     ["removes an entity and leaves the edge unresolved", patch("1", "2", [delN(ent("b"))]), [["a"], ["r1"]]],
@@ -72,6 +72,32 @@ describe("Graph.apply", () => {
     expect(g.entity("ghost")).toBeUndefined();
   });
 
+  it("an edge parked past the stub cap stays resolvable when a stub for the same endpoint is made later and the endpoint then arrives", () => {
+    const g = new Graph();
+    g.version = ver("1");
+    const total = Graph.MAX_STUBS + 1;
+    g.putEntity(ent("src"));
+    for (let i = 0; i < total; i++) g.putRel(rel(`r${i}`, "src", `m${i}`, "Calls"));
+    const last = `m${total - 1}`, parked = g.edgeSlot.get(`r${total - 1}`)!;
+    g.dropRel("r0");                                              // a stub is freed: there is room again
+    g.putRel(rel("late", "src", last, "Calls"));                  // a new edge to the same endpoint gets a stub
+    expect(g.stubSlot.has(last)).toBe(true);
+    g.putEntity(ent(last));                                       // the entity arrives and takes the stub's slot
+    expect(g.edgeDst[parked], "the edge parked past the cap was forgotten").toBe(g.nodeSlot.get(last));
+  });
+  it("an edge that could not be drawn to a stub past the cap is resolved when its endpoint arrives", () => {
+    const g = new Graph();
+    g.version = ver("1");
+    const total = Graph.MAX_STUBS + 1;
+    g.putEntity(ent("src"));
+    for (let i = 0; i < total; i++) g.putRel(rel(`r${i}`, "src", `m${i}`, "Calls"));
+    expect(g.stubCount).toBe(Graph.MAX_STUBS);
+    const last = `m${total - 1}`;
+    expect(g.edgeDst[g.edgeSlot.get(`r${total - 1}`)!], "past the cap the edge is unresolved").toBe(-1);
+    g.putEntity(ent(last));
+    expect(g.edgeDst[g.edgeSlot.get(`r${total - 1}`)!], "the endpoint arrived: the edge must be drawn").toBe(g.nodeSlot.get(last));
+  });
+
   it("round-trips through invertPatch", () => {
     const g = base();
     const before = JSON.stringify(g.toSnapshot());
@@ -91,7 +117,7 @@ describe("Graph.apply", () => {
   });
 });
 
-describe("composeChanges / diffGraphs", () => {
+describe("the changes of several patches compose to added, removed or changed per element, as the diff of the two graphs says", () => {
   const a = ent("a"), a2 = ent("a", "Service", { health: "x" });
   it.each([
     ["added", [patch("1", "2", [addN(a)])], { a: "added" }],

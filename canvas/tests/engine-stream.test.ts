@@ -16,7 +16,7 @@ function run(events: Event[], from: StreamState = fresh()) {
 const kinds = (fx: Effect[]) => fx.map((f) => f.k === "emit" ? `emit ${f.event.type}` : f.k === "status" ? `status ${f.state ?? "same"}` : f.k);
 const live = (extra: Event[] = []) => run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [] }, { t: "socketOpened" }, ...extra]);
 
-describe("the history of a graph", () => {
+describe("a graph's history is read as patches, then telemetry, then the stream says it is caught up", () => {
   it("reads the patches after the revision it holds, then the telemetry, then says it is caught up and asks for the socket", () => {
     const r = run([{ t: "subscribed", graph: "g" }, { t: "patches", graph: "g", gen: 0, why: "history", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "history", batches: [win(100)] }]);
     expect(kinds(r.effects)).toEqual(["readPatches", "emit patch", "readTelemetry", "emit telemetry", "emit caught-up", "status connecting", "openSocket"]);
@@ -37,7 +37,7 @@ describe("the history of a graph", () => {
   });
 });
 
-describe("the generation of a graph", () => {
+describe("a read overtaken by a gap, an activation or dispose delivers nothing; the new generation's read does", () => {
   // a read of the old generation is overtaken by whatever replaced the graph's state: its result yields no effects and changes nothing
   it.each<[string, Event]>([
     ["a gap in the event stream", { t: "wsGap", firstSeq: "900" }],
@@ -67,7 +67,7 @@ describe("the generation of a graph", () => {
   });
 });
 
-describe("patches of the stream", () => {
+describe("a stream patch is delivered once, in revision order, with its commit time or the logical time", () => {
   it("one that continues the log is delivered with the logical time", () => {
     const r = live([{ t: "wsTime", logicalTime: 1800 }, { t: "wsPatch", graph: "g", patch: patch("1", "2", []) }]);
     expect(r.effects.at(-1)).toMatchObject({ k: "emit", event: { type: "patch", time: 1800 } });
@@ -103,7 +103,7 @@ describe("patches of the stream", () => {
   });
 });
 
-describe("telemetry of the stream and the sequence number of the history read", () => {
+describe("a stream telemetry event is delivered unless the history read at its sequence number already held it", () => {
   // the read was asked at seq 10 (the highest the client knew): it reflects at least every event up to 10
   const asked = () => live();
   it.each<[string, string | undefined, number, boolean]>([
@@ -127,7 +127,7 @@ describe("telemetry of the stream and the sequence number of the history read", 
   });
 });
 
-describe("a catch-up that fails", () => {
+describe("a catch-up that fails says the connection is not live and retries with a growing backoff", () => {
   it("says the connection is not live, retries, and says live again when a catch-up works", () => {
     const failed = live([{ t: "wsPatch", graph: "g", patch: patch("2", "3", []) }, { t: "readFailed", graph: "g", gen: 0, why: "gap-in-stream", error: "HTTP 500" }]);
     expect(kinds(failed.effects).slice(-3)).toEqual(["reject", "status reconnecting", "retry"]);
@@ -143,7 +143,7 @@ describe("a catch-up that fails", () => {
   });
 });
 
-describe("the socket", () => {
+describe("the socket reconnects and reads what it missed; end, gaps and errors each have their effect", () => {
   it("opened again after a drop reads what was missed for every graph that is followed", () => {
     const r = run([{ t: "socketClosed" }, { t: "reconnectDue" }, { t: "socketOpened" }], live().state);
     expect(r.effects.filter((f) => f.k === "readPatches").map((f) => (f as { graph: string }).graph)).toEqual(["g"]);
@@ -163,8 +163,8 @@ describe("the socket", () => {
   it("a gap forgets the sequence number: the next subscription asks for snapshots", () => expect(run([{ t: "wsGap", firstSeq: "9" }], live().state).state.seq).toBeUndefined());
 });
 
-// Code review 2 (paper/research/12-code-review-2.md, design: the canvas engine stream): the end of the stream is a state of the machine.
-describe("the end of the stream", () => {
+// The end of the stream is a state of the machine, so late reads and socket events cannot overwrite it.
+describe("after the end of the stream late reads deliver but nothing retries or reconnects, while before it a drop reconnects with backoff", () => {
   const behindThenEnded = () => live([{ t: "readFailed", graph: "g", gen: 0, why: "retry", error: "x" }, { t: "wsEnd" }]);
   it("a catch-up that answers after the end still delivers what it read, and says nothing about the connection", () => {
     const r = run([{ t: "retry", graph: "g", gen: 0 }, { t: "patches", graph: "g", gen: 0, why: "retry", patches: [patch("1", "2", [])] }, { t: "windows", graph: "g", gen: 0, why: "retry", batches: [] }], behindThenEnded().state);
@@ -190,14 +190,14 @@ describe("the end of the stream", () => {
   });
 });
 
-describe("a second end of the stream (batch 2 review)", () => {
+describe("a second end of the stream changes nothing", () => {
   it("changes nothing and says nothing again", () => {
     const ended = run([{ t: "wsEnd" }], live().state).state;
     expect(kinds(run([{ t: "wsEnd" }], ended).effects)).toEqual([]);
   });
 });
 
-describe("a socket that cannot be made (batch 2 review)", () => {
+describe("a socket that cannot be made keeps its error in the status", () => {
   it("keeps the error in the status while it waits to try again", () => {
     const r = run([{ t: "socketClosed", why: "The URL is invalid" }], live().state);
     expect(r.effects[0]).toMatchObject({ k: "status", state: "reconnecting", detail: "The URL is invalid; reconnecting (attempt 1)" });

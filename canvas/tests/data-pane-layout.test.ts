@@ -67,8 +67,8 @@ describe("the graphs of the default source", () => {
   });
 });
 
-// Code review 2, change 6: the layout is "auto" or a kind the person chose, and one pure model decides what the pane draws by.
-describe("the layout the person chose, and automatic", () => {
+// The layout is "auto" or a kind the person chose, and one pure model decides what the pane draws by.
+describe("a layout the person chose holds until they choose automatic", () => {
   it("a chosen layout holds; automatic gives the graph its own again", () => {
     const pane = paneOf(info(spec(true)), world(true));
     pane.start();
@@ -90,7 +90,7 @@ describe("automatic layout follows the graph", () => {
   });
 });
 
-describe("paneModel", () => {
+describe("one pure model of the view decides the layout, whether the whole graph is drawn again, and what a tile thins", () => {
   const facts = (over: Partial<PaneFacts> = {}): PaneFacts => ({ presentKinds: new Set(), tileThins: false, collapsed: false, treeState: false, autoLayout: "layered", ...over });
   it.each<[string, Partial<PaneView>, Partial<PaneFacts>, (m: PaneModel) => unknown, unknown]>([
     ["automatic takes the graph's layout", {}, {}, (m) => m.layout, "layered"],

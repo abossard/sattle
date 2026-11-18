@@ -1,5 +1,5 @@
-// The engine the engine-gated tests (kql-engine, kql-references) talk to: serve the estate fixture on a free port, hand its address to the test
-// workers as ENGINE, stop it afterwards. The Release build is brought up to date first (a no-op when it is). `ENGINE=http://host:port` uses an engine that already runs instead.
+// The engine the tests of this folder talk to (the vitest project "engine"): serve the estate fixture on a free port, hand its address to the test
+// workers as ENGINE, stop it afterwards. No other test needs it, so a run of the project "pure" starts none. The Release build is brought up to date first (a no-op when it is). `ENGINE=http://host:port` uses an engine that already runs instead.
 // @ts-expect-error the project has no typings for node; the tests run in it
 import { execFileSync, spawn } from "node:child_process";
 // @ts-expect-error as above
@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 type Proc = { stdout: { on(e: "data", f: (b: { toString(): string }) => void): void }; stderr: { on(e: "data", f: (b: { toString(): string }) => void): void }; once(e: "exit", f: (code: number | null) => void): void; kill(): void };
 const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
-const engineDir = fileURLToPath(new URL("../../engine/", import.meta.url));
+const engineDir = fileURLToPath(new URL("../../../engine/", import.meta.url));
 const cli = `${engineDir}src/Sattle.Cli`, dll = `${cli}/bin/Release/net11.0/sattle.dll`, fixture = `${engineDir}tests/Sattle.Tests/fixtures/estate`;
 
 /** Serves the fixture; resolves with the address once the replay has finished, so a draft sees the whole space. */

@@ -18,12 +18,12 @@ const ontology = {
 const group = (id: string, props: Record<string, string>): Entity => ent(id, "Group", props);
 const namer = (all: Entity[] = [], labels: Record<string, string> = {}) => makeNamer(ontology as never, () => all, labels);
 
-describe("internal ids are never labels", () => {
+describe("an internal id is recognised, alone and inside a text", () => {
   it.each([[HASH, true], ["n:abcdefghijklmnopqrstuvwxyz", true], ["aks-synth", false], ["d:m/projection:p", false], ["e:short", false]])("%s is an internal id: %s", (s, yes) => expect(isInternalId(s)).toBe(yes));
   it("the pattern finds an id inside a text", () => expect(INTERNAL_ID.test(`label ${HASH} more`)).toBe(true));
 });
 
-describe("the name of an element", () => {
+describe("an element is named by what a person reads, never by an internal id", () => {
   it.each<[string, Entity, string]>([
     ["the name property", group(HASH, { name: "web", "acme.svc.cluster": "synth" }), "web"],
     ["a qualified name property", group(HASH, { "acme.svc.name": "api" }), "api"],
@@ -46,7 +46,7 @@ describe("the name of an element", () => {
   });
 });
 
-describe("the property the ontology names as the label of a type (engine 3.17)", () => {
+describe("the property the ontology names as the label of a type names its elements first, unless it holds nothing readable (engine 3.17)", () => {
   it.each<[string, Entity, Record<string, string>, string]>([
     ["is used before any guess", group(HASH, { name: "web", note: "the note", "acme.svc.cluster": "synth" }), { Group: "note" }, "the note"],
     ["is used when the element has no name", group(HASH, { note: "from the label" }), { Group: "note" }, "from the label"],
