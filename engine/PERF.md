@@ -1125,6 +1125,17 @@ Theory. A series keeps a window start as an int number of window widths from the
 - A series of hop windows (starts on the hop, not on the width) keeps plain starts.
 - Before is the statics patch on main c57264e. Digests unchanged (estate, lab fixtures, 10^4 and 10^5 as in the statics section). Times are measured under load and not comparable; bytes are.
 
+### Window close: a Series reads a changed window from the step's changes (#119, 2026-11-18)
+Theory. Step B of a Series joins the windows its read graph changed in this step against its rows: per changed window it needs the values of its reads before the step and after it. The change of a read carries both (`Old`, `New`), and the last change of a read in the step holds what the store holds now. So when the step changed every read of the window, the steady case (a closed window brings each read once), the values after the step are the step's own changes, and the store read per changed window (a lookup under the store's lock, the element array, the visit, the point array) is not needed. A window with a read the step did not change still reads the store. The values before and after are kept in two buffers per thread that the next call overwrites, not in new arrays. Same rows, same order.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per steady close | 8.2 / 7.0 MB | 98.1 / 84.4 MB |
+| SeriesOp, allocated in the nine steady closes | 18 / 5 MB | |
+
+- Thread CPU is not separable from the load (250 to 460 on 10 cores during these runs); the three changes of this day together are in the last section.
+- Before is the previous section. Digests unchanged (`sha256:2654c25f...bfbc3`, `sha256:0ab80689...41140`). Nothing sealed changes.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

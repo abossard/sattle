@@ -41,9 +41,9 @@ sealed class SeriesOp : PhysOp
         return res;
     }
 
-    /// <summary>Working state of a call, emptied by `ChangesOf`: the windows this step changed for the reads of the Series, in the order of their first change, each with its place in `olds`; there, per read, the value the window had before the step and whether the step changed it. Calls do not overlap, so every Series of a thread shares one, sized by the largest step.</summary>
+    /// <summary>Working state of a call, emptied by `ChangesOf`: the windows this step changed for the reads of the Series, in the order of their first change, each with its place in `olds`; there, per read, the value the window had before the step, whether the step changed it, and in `news` its value after the step. Calls do not overlap, so every Series of a thread shares one, sized by the largest step.</summary>
     [ThreadStatic] static Dictionary<(int Elem, long Start), int>? changedOfThread;
-    [ThreadStatic] static decimal?[]? olds;
+    [ThreadStatic] static decimal?[]? olds, news, nowOfThread, beforeOfThread;
     [ThreadStatic] static bool[]? oldSet;
     static Dictionary<(int Elem, long Start), int> changed => changedOfThread ??= [];
 
@@ -61,19 +61,38 @@ sealed class SeriesOp : PhysOp
             if (!changed.TryGetValue((ch.Key.Element, ch.Key.WindowStart), out var slot))
             {
                 changed[(ch.Key.Element, ch.Key.WindowStart)] = slot = changed.Count;
-                if (olds is null || olds.Length < (slot + 1) * n) { Array.Resize(ref olds, Math.Max(64, (slot + 1) * n * 2)); Array.Resize(ref oldSet, olds.Length); }
+                if (olds is null || olds.Length < (slot + 1) * n) { Array.Resize(ref olds, Math.Max(64, (slot + 1) * n * 2)); Array.Resize(ref oldSet, olds.Length); Array.Resize(ref news, olds.Length); }
                 Array.Clear(oldSet!, slot * n, n);
             }
             if (!oldSet![slot * n + p]) { olds![slot * n + p] = ch.Old; oldSet[slot * n + p] = true; }     // the first change of a read holds its value before the step
+            news![slot * n + p] = ch.New;                                                                   // the last one its value after it, what the store holds now
         }
         return changed.Count > 0;
     }
 
-    /// <summary>The values of a window before this step: the store now, with the value before the step of each read this step changed put back.</summary>
+    /// <summary>The values of the reads at a window this step changed, after the step: the step's own changes when it changed every read (the steady case, a closed window), else the store. Valid until the next call.</summary>
+    decimal?[] Now(int elem, long start, int slot)
+    {
+        var n = propHandles.Length;
+        var res = Buffer(ref nowOfThread, n);
+        for (var p = 0; p < n; p++)
+            if (!oldSet![slot * n + p])
+            {
+                if (StoredAt(elem, start) is { } stored) Array.Copy(stored, res, n); else Array.Clear(res);
+                return res;
+            }
+        Array.Copy(news!, slot * n, res, 0, n);
+        return res;
+    }
+
+    static decimal?[] Buffer(ref decimal?[]? b, int n) { if (b is null || b.Length != n) b = new decimal?[n]; return b; }
+
+    /// <summary>The values of a window before this step: the store now, with the value before the step of each read this step changed put back. Valid until the next call.</summary>
     decimal?[] Before(decimal?[]? now, int slot)
     {
         var n = propHandles.Length;
-        var res = now is null ? new decimal?[n] : (decimal?[])now.Clone();
+        var res = Buffer(ref beforeOfThread, n);
+        if (now is null) Array.Clear(res); else Array.Copy(now, res, n);
         for (var p = 0; p < n; p++) if (oldSet![slot * n + p]) res[p] = olds![slot * n + p];
         return res;
     }
@@ -259,7 +278,7 @@ sealed class SeriesOp : PhysOp
         {
             if (frontier != long.MinValue && wstart < frontier - within) continue;
             if (!arrangement.TryGetValue(elem, out var list)) continue;     // no row: nothing to join
-            var now = StoredAt(elem, wstart);
+            var now = Now(elem, wstart, slot);
             var before = Record(Before(now, slot), elem, wstart, hi, frontier);
             var after = Record(now, elem, wstart, hi, frontier);
             touched.Add(elem);
@@ -345,7 +364,7 @@ sealed class SeriesOp : PhysOp
             {
                 if (wstart < edge) continue;      // outside the look-back: not joined (Def. 6.7)
                 if (!arrangement.TryGetValue(elem, out var list)) continue;     // no row: nothing to join
-                var after = StoredAt(elem, wstart) ?? new decimal?[propHandles.Length];
+                var after = Now(elem, wstart, slot);
                 var before = Before(after, slot);
                 foreach (var r in list)
                 {
