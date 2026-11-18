@@ -957,6 +957,20 @@ Theory. A table column that may need 8 bytes, and the weight of a row, take 4 by
 - Before is the segments patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
 - The row sets' remaining cost is their structure, not their values: per row a whole-row index entry (8 to 16 B), the arrangement by key (8 B and its index), the key slot and the bits of which values are present. Not changed here.
 
+### Efficiency stage 2, identities: a key holds its component codes in 4 bytes (#115, 2026-11-18)
+The identity catalog keeps two maps from a key to an id: the bindings (358,005 keys at 10^5) and the own ids (one per key the telemetry sinks read). A key was its domain's index and four components in 8 bytes each, 40 bytes; an entry of the map 56 bytes.
+
+Theory. A canonical component is a text code of the interner, which is 4 bytes, as the id it maps to is. So a key holds its components in 4 bytes: 20 bytes, 32 bytes per entry. Same keys, same hash and equality over the same codes, same ids; the catalog is not sealed, so no seal change.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| live bytes | 193 / 192 MB | 1,061 / 1,041 MB |
+| identities per master node | 355 / 219 B | 501 / 302 B |
+| allocated per input record | 8.90 / 8.87 KB | 8.93 / 8.86 KB |
+
+- The census now has a root for the pool of working arrays (thread statics of a generic class, which the statics root missed): 5.3 MB at 10^4 and 32.0 MB at 10^5 (320 B per master node). Coverage at 10^5 is 99 %.
+- Before is the binding records section's after, on main 493fbbc with the segments patch. Digests unchanged (10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...1140`). Times are measured under load and not comparable; bytes are.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

@@ -21,8 +21,8 @@ public enum BindOutcome { Bound, AlreadyBound, Merged, Conflict }
 /// <summary>Identity resolution (research 03 section 5): key to identity bindings, append-only. A key resolves to its binding or is minted by hash. Same ordered inputs give the same ids.</summary>
 public sealed class IdentityCatalog(string tenant, Interner it)
 {
-    /// <summary>A key: its domain's index and up to four canonical component codes.</summary>
-    internal readonly record struct Key(int Dom, long A, long B, long C, long D);
+    /// <summary>A key: its domain's index and up to four canonical component codes. A component is a text code of the interner, so it is held in 4 bytes.</summary>
+    internal readonly record struct Key(int Dom, int A, int B, int C, int D);
     readonly Dictionary<Key, int> bound = [];
     readonly List<IdDomain> domains = [];
     public List<IdentityBinding> Pending { get; } = [];
@@ -48,7 +48,7 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         foreach (var (k, h) in bound)
         {
             var d = domains[k.Dom]; var comps = new string[d.CompNames.Length];
-            for (var i = 0; i < comps.Length; i++) comps[i] = it.Get((int)(i switch { 0 => k.A, 1 => k.B, 2 => k.C, _ => k.D }));
+            for (var i = 0; i < comps.Length; i++) comps[i] = it.Get(i switch { 0 => k.A, 1 => k.B, 2 => k.C, _ => k.D });
             yield return (d, it.Get(Rep(h)), comps);
         }
     }
@@ -63,7 +63,7 @@ public sealed class IdentityCatalog(string tenant, Interner it)
         return d;
     }
 
-    static Key K(IdDomain d, ReadOnlySpan<long> c) => new(d.Index, c.Length > 0 ? c[0] : 0, c.Length > 1 ? c[1] : 0, c.Length > 2 ? c[2] : 0, c.Length > 3 ? c[3] : 0);
+    static Key K(IdDomain d, ReadOnlySpan<long> c) => new(d.Index, c.Length > 0 ? (int)c[0] : 0, c.Length > 1 ? (int)c[1] : 0, c.Length > 2 ? (int)c[2] : 0, c.Length > 3 ? (int)c[3] : 0);
 
     /// <summary>Canonical text of a component under its canonicalizer; null when the value cannot be canonicalized (malformed IP or UUID).</summary>
     public static string? Canonicalize(string canon, string v) => canon switch

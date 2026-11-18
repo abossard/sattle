@@ -141,6 +141,10 @@ static class Census
         foreach (var g in e.Graphs) foreach (var (m, layer) in Expand("graph.sink", g.Out)) foreach (var (n, v) in Expand(m, layer!)) roots.Add((n, g.Name, v));     // the sink is three modules: one row per structure of each
         foreach (var g in e.Graphs) foreach (var op in g.Plan.Ops) roots.Add(("op:" + op.GetType().Name, g.Name, op));
         foreach (var (l, r) in extra) roots.Add((l, "-", r));
+        // the free arrays of the working arrays' pool: thread statics of a generic class, so the statics below miss them; read on this thread, the one that ran the engine
+        var pool = typeof(WorkingArrays).GetNestedType("Pool`1", BindingFlags.NonPublic)!;
+        foreach (var t in new[] { typeof(long), typeof(decimal), typeof(bool) })
+            roots.Add(("working arrays pool", "-", pool.MakeGenericType(t).GetField("free", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)));
         roots.Add(("engine.rest", "-", e));
         foreach (var asm in new[] { typeof(Engine).Assembly, typeof(Sattle.Core.Kernel).Assembly, typeof(Sattle.Language.Catalog).Assembly })
             foreach (var t in asm.GetTypes().Where(t => !t.IsGenericTypeDefinition))
