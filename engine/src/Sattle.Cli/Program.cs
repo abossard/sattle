@@ -338,6 +338,7 @@ public static class Program
         output.WriteLine($"merges: {e.Identities.Merges:N0} in {e.EpochsWithMerge:N0} epoch(s) of {e.Epochs:N0}, at most {e.MostMergesInOneEpoch:N0} in one; telemetry windows written under two ids of one class {e.Graphs.Sum(g => g.Out.Counts.WindowsOfTwoIds):N0}, of them without a value by a merge conflict {e.Graphs.Sum(g => g.Out.Counts.MergeConflicts):N0}");
         output.WriteLine($"conflicts: {e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts):N0} property, {e.Graphs.Sum(g => g.Out.Counts.ElementConflicts):N0} element, {e.Graphs.Sum(g => g.Out.Counts.WindowConflicts) + (e.Telemetry is InMemoryTelemetryStore merged ? e.Graphs.Sum(g => merged.MergeConflicts(g.Key)) : 0):N0} telemetry window, {e.Graphs.Sum(g => g.Out.Counts.Rejections):N0} uniqueness" + string.Concat(e.Graphs.Where(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.WindowConflicts + g.Out.Counts.Rejections > 0).Select(g => $"; {g.Name} {g.Out.Counts.PropertyConflicts}/{g.Out.Counts.WindowConflicts}/{g.Out.Counts.Rejections}")));
         output.WriteLine("state digest " + e.StateDigest());
+        output.WriteLine("set digest " + e.SetStateDigest());
     }
 
     /// <summary>The late horizon of a run: `--late-horizon` when given, 3 for a live source (it must bound its state), none for a recorded capture, whether it is replayed or served: serving a capture is a replay.</summary>

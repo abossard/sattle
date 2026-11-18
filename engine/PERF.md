@@ -1286,6 +1286,34 @@ Theory. SHA-256 reads its input in order and needs none of it twice, so the text
 - What is left is the order. A graph's elements are made and sorted by key string, and a graph's telemetry windows are sorted by element and property text, each held whole while its graph is hashed. That's 1,160 MB allocated at 10^5, so about 10 times that at 10^6. It runs once, at the end of a replay.
 - Before is main f87f1ba. Digests unchanged (estate `sha256:32bcad1f...a422`, lab fixtures `sha256:4a1560a5...ffd0`, 10^4 `sha256:2654c25f...bfbc3`, 10^5 `sha256:0ab80689...41140`).
 
+### Efficiency stage 2, digests: a set digest beside the digest of the written form (#115, 2026-11-18)
+Research note 15: two graphs are equal when they hold the same set of written pairs (key text, canonical JSON of the state), so a digest that needs no order can replace the sort. This step adds that digest beside today's one and checks that the two agree; the printed digest does not change yet.
+
+Theory. AdHash (Bellare and Micciancio 1997): the digest of a set of items is the sum, mod 2^256, of their SHA-256 values, in four lanes of 64 bits. A graph's set digest sums its written pairs in storage order, one element at a time, and hashes the sum once with SHA-256. The state's set digest sums, per graph, its pairs and its telemetry windows (the lines of the state digest after `w|`), tags each graph's sum with the graph's name, and sums the graphs' digests. Removing an item subtracts what adding it added, so a graph's digest can later be kept per change. That step is deferred while time per record is over the limit. Against chance, two different sets collide with negligible probability. The known weakness of AdHash at 256 bits needs inputs chosen by an attacker, and our use has none.
+
+Agreement on equal versus not equal, old against new:
+- random graphs, their clones, the states of chains, and patches applied in two orders (`Def_3_5_set_digest_agrees_with_the_digest_of_the_written_form`);
+- every differential world, after every batch of four logs cut three ways, per graph and for the state (`The_set_digests_agree_with_the_digests_of_the_written_form`);
+- the saved states (table): six distinct states, six distinct digests both ways, and the 10^4 estate reached by `replay` and by `bench phases` is equal both ways.
+
+| state | digest of the written form | set digest |
+|---|---|---|
+| estate | `sha256:32bcad1f...a422` | `sha256:bd5d5efd...bb3f` |
+| lab fixtures | `sha256:4a1560a5...ffd0` | `sha256:62343165...2acf` |
+| capture 20261110T105738Z | `sha256:de8fe8a8...4520` | `sha256:ab85f141...4774` |
+| capture 20261110T140542Z | `sha256:bd7dd356...cb13` | `sha256:3bff3e78...1b66` |
+| 10^4 | `sha256:2654c25f...bfbc3` | `sha256:6445eac7...4c42` |
+| 10^5 | `sha256:0ab80689...41140` | `sha256:dc2b3192...2598` |
+
+| state digest at 10^5 (thread, under load) | written form, streamed | set digest |
+|---|---|---|
+| thread CPU | 3.12 s | 4.82 s |
+| allocated | 1,160 MB | 888 MB |
+| held at once | each graph's elements, sorted | one element; each graph's windows as one list from the store |
+
+- The set digest costs one SHA-256 per item, 1.5 µs per item at 10^5 (3.16 million items: 1.18 million elements and 1.99 million windows), against 1.0 µs for the streamed written form with its sort. It holds no sorted list of elements. What remains whole is the store's list of a graph's windows, 32 B per window.
+- Measured on main f87f1ba with the streamed digests; on main 8ae372a both digests of every saved state are the same. Digests of the written form unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

@@ -617,11 +617,25 @@ public sealed class Graph
         for (var i = 0; i < sorted.Count; i++)
         {
             if (i > 0) sb.Append(',');
-            sb.Append('['); Jcs.Str(sb, sorted[i].Key.ToString()); sb.Append(','); Jcs.Element(sb, sorted[i]); sb.Append(']');
+            WritePair(sb, sorted[i]);
             cut();
         }
         sb.Append(']');
     }
+
+    /// <summary>One written pair of enc(G): the key text and the canonical JSON of the state.</summary>
+    static void WritePair(StringBuilder sb, Element e) { sb.Append('['); Jcs.Str(sb, e.Key.ToString()); sb.Append(','); Jcs.Element(sb, e); sb.Append(']'); }
+
+    /// <summary>The written pairs of the graph as a set (AdHash), taken in storage order: no sort, one element at a time.</summary>
+    public Digests.Set PairSet()
+    {
+        var set = new Digests.Set(); var sb = new StringBuilder();
+        foreach (var e in Elements()) { sb.Clear(); WritePair(sb, e); set.Add(sb); }
+        return set;
+    }
+
+    /// <summary>The set digest of the graph: equal exactly when the written pairs are, as `Digest` (side by side until the switch, #115).</summary>
+    public string SetDigest() => PairSet().Digest("");
 
     /// <summary>Def. 3.4 graph equality.</summary>
     public bool SameAs(Graph o) => Count == o.Count && Equals(ontology, o.ontology) && Entities.All(e => e.Equals(o.Entity(e.Id))) && Rels.All(r => r.Equals(o.Rel(r.Id)));

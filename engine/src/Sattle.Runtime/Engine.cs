@@ -649,6 +649,28 @@ public sealed class Engine : IDisposable, IEngineInput
         return Digests.Of(d.Hex());
     }
 
+    /// <summary>
+    /// The state digest as a set digest: per graph, its written pairs and its telemetry windows (as the lines of `StateDigest`, after "w|") in one
+    /// AdHash, tagged with the graph's name; the engine's is the AdHash of the graphs' digests. No sort (side by side until the switch, #115).
+    /// </summary>
+    public string SetStateDigest()
+    {
+        var all = new Digests.Set(); var sb = new StringBuilder();
+        foreach (var g in graphs)
+        {
+            var set = g.State.PairSet();
+            if (Telemetry is InMemoryTelemetryStore mem)
+                foreach (var (e, p, ws, v) in mem.Dump(g.Key))
+                {
+                    sb.Clear().Append("w|").Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
+                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));
+                    set.Add(sb);
+                }
+            all.Add(Encoding.UTF8.GetBytes(set.Digest(g.Name)));
+        }
+        return all.Digest("");
+    }
+
     public void Advance(long lambdaNs) => Advance(lambdaNs, 0);
 
     // ---- state snapshot (seals) ----

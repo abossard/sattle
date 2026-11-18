@@ -209,6 +209,36 @@ public class AlgebraTests
         Assert.Equal(Digests.Of(g.Encode()), g.Digest());
     }
 
+    /// <summary>The set digest agrees with the digest of the written form on equal versus not equal (side by side until the switch, #115): over random graphs and their clones, the states of chains, and patches applied in two orders.</summary>
+    [Theory, MemberData(nameof(SeedGroups))]
+    public void Def_3_5_set_digest_agrees_with_the_digest_of_the_written_form(int group)
+    {
+        var seen = new List<Graph>();
+        ForCases(group, g =>
+        {
+            var a = g.RandomGraph(); seen.Add(a); seen.Add(a.Clone());
+            var (b, chain) = g.Chain(3); seen.Add(b);
+            foreach (var p in chain) if (p.ApplyTo(seen[^1]) is { } next) seen.Add(next);
+            if (chain.Count == 0) return;
+            var (x, y) = (b.Clone(), b.Clone());
+            x.Apply([.. chain[0].Edits]); y.Apply([.. chain[0].Edits.Reverse()]);
+            seen.Add(x); seen.Add(y);
+        });
+        Agree([.. seen.Select(s => (s.Digest(), s.SetDigest()))]);
+    }
+
+    /// <summary>Two digests agree on equal versus not equal over the pairs, and the pairs hold both an equal and an unequal case.</summary>
+    internal static void Agree(IReadOnlyList<(string Old, string New)> pairs)
+    {
+        var byOld = new Dictionary<string, string>(); var byNew = new Dictionary<string, string>();
+        foreach (var (o, n) in pairs)
+        {
+            Assert.Equal(byOld.TryAdd(o, n) ? n : byOld[o], n);
+            Assert.Equal(byNew.TryAdd(n, o) ? o : byNew[n], o);
+        }
+        Assert.True(byOld.Count > 1 && byOld.Count < pairs.Count, $"{byOld.Count} distinct of {pairs.Count}");
+    }
+
     [Fact]
     public void Ontology_slot_is_an_ordinary_edit()
     {

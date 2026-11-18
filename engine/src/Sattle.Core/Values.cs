@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Numerics;
@@ -218,6 +219,52 @@ public static class Digests
     /// The SHA-256 of a text written into `Text` in pieces, without holding the whole text: `Cut` hashes what was written once it passes 64 Ki chars,
     /// through one UTF-8 encoder and one buffer, so `Hex` equals `Sha256Hex` of the text joined wherever the cuts fall.
     /// </summary>
+    /// <summary>
+    /// AdHash (Bellare and Micciancio 1997): the digest of a set of items is the sum, mod 2^256, of their SHA-256 values, read as little-endian
+    /// numbers in four lanes of 64 bits. The order of the items does not matter, and it needs one item at a time.
+    /// </summary>
+    public sealed class Set
+    {
+        ulong l0, l1, l2, l3;
+        readonly byte[] sha = new byte[32];
+        byte[] utf8 = new byte[1024];
+        readonly Encoder encoder = Encoding.UTF8.GetEncoder();
+        public void Add(ReadOnlySpan<byte> item)
+        {
+            SHA256.HashData(item, sha);
+            var c = 0UL;
+            l0 = AddWithCarry(l0, BinaryPrimitives.ReadUInt64LittleEndian(sha.AsSpan(0)), ref c);
+            l1 = AddWithCarry(l1, BinaryPrimitives.ReadUInt64LittleEndian(sha.AsSpan(8)), ref c);
+            l2 = AddWithCarry(l2, BinaryPrimitives.ReadUInt64LittleEndian(sha.AsSpan(16)), ref c);
+            l3 = AddWithCarry(l3, BinaryPrimitives.ReadUInt64LittleEndian(sha.AsSpan(24)), ref c);
+        }
+        /// <summary>Adds the UTF-8 bytes of `text`.</summary>
+        public void Add(StringBuilder text)
+        {
+            var n = Encoding.UTF8.GetMaxByteCount(text.Length);
+            if (utf8.Length < n) utf8 = new byte[Math.Max(n, 2 * utf8.Length)];
+            var w = 0;
+            foreach (var chunk in text.GetChunks()) w += encoder.GetBytes(chunk.Span, utf8.AsSpan(w), flush: false);       // a surrogate pair may span two chunks
+            w += encoder.GetBytes([], utf8.AsSpan(w), flush: true);
+            Add(utf8.AsSpan(0, w));
+        }
+        static ulong AddWithCarry(ulong a, ulong b, ref ulong carry)
+        {
+            var s = a + b; var c1 = s < a ? 1UL : 0UL;
+            var t = s + carry; var c2 = t < s ? 1UL : 0UL;
+            carry = c1 | c2; return t;
+        }
+        /// <summary>SHA-256 of the UTF-8 bytes of `tag`, a zero byte and the sum in 32 little-endian bytes.</summary>
+        public string Digest(string tag)
+        {
+            var t = Encoding.UTF8.GetBytes(tag); var b = new byte[t.Length + 33];
+            t.CopyTo(b, 0);
+            BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 1), l0); BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 9), l1);
+            BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 17), l2); BinaryPrimitives.WriteUInt64LittleEndian(b.AsSpan(t.Length + 25), l3);
+            return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(b));
+        }
+    }
+
     public sealed class Streamed
     {
         readonly IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
