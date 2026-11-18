@@ -1349,7 +1349,8 @@ sealed class TraverseOp : PhysOp
     // working state, empty between calls: the entities as they were before this step's patch (by id, the ones the patch edits), the walk, the reach before and after a walk
     readonly Dictionary<string, Entity?> before = new(StringComparer.Ordinal);
     readonly Dictionary<string, int> seen = new(StringComparer.Ordinal); List<string> frontier = [], next = [];
-    readonly Dictionary<int, Entity> was = [], now = [];
+    /// <summary>The reach before and after a walk, by id code: an entity the patch edited as it was or is, null for an entity of the graph the patch did not edit (the same before and after; its properties are read from the graph when a row is emitted).</summary>
+    readonly Dictionary<int, Entity?> was = [], now = [];
     readonly List<long> todo = [];
     readonly HashSet<long> walked = [];
     readonly List<(string From, string To)> added = [];
@@ -1414,19 +1415,37 @@ sealed class TraverseOp : PhysOp
     /// <summary>An entity as it was before this step's patch.</summary>
     Entity? Before(string id) => before.TryGetValue(id, out var e) ? e : graph!.Entity(id);
 
+    /// <summary>Whether an entity was there before this step's patch, and the entity when the patch edited it (null for one it did not edit).</summary>
+    bool WasThere(string id, out Entity? made)
+    {
+        if (before.TryGetValue(id, out made)) return made is not null;
+        return graph!.HasEntity(id);
+    }
+
+    /// <summary>Whether an entity is there after this step's patch, and the entity when the patch edited it (null for one it did not edit).</summary>
+    bool IsThere(string id, out Entity? made)
+    {
+        made = null;
+        if (before.ContainsKey(id)) return (made = graph!.Entity(id)) is not null;
+        return graph!.HasEntity(id);
+    }
+
+    /// <summary>Whether an id reached before and after gives a row the same values: an entity the patch did not edit always does.</summary>
+    bool Same(int n, Entity? a, Entity? b) => a is null && b is null || SameReads(a ?? graph!.Entity(it.Get(n))!, b ?? graph!.Entity(it.Get(n))!);
+
     /// <summary>What a start reached when it was last walked, as the entities were then.</summary>
-    void Reached(long start, Dictionary<int, Entity> into)
+    void Reached(long start, Dictionary<int, Entity?> into)
     {
         into.Clear();
         for (var r = startsOf.First([start]); r >= 0; r = startsOf.Next(r))
-            if (depths.Get(r, Depth) >= t.Min && Before(it.Get((int)depths.Get(r, 1))) is { } e) into[(int)depths.Get(r, 1)] = e;
+            if (depths.Get(r, Depth) >= t.Min && WasThere(it.Get((int)depths.Get(r, 1)), out var e)) into[(int)depths.Get(r, 1)] = e;
     }
 
     /// <summary>Forgets a start's walk.</summary>
     void Unvisit(long start) { for (int r; (r = startsOf.First([start])) >= 0;) depths.Add([start, depths.Get(r, 1)], -1); }
 
-    /// <summary>One output row: the input columns of a batch row (`b` not null) or of stored row `r`, then the reached entity and the properties read.</summary>
-    void Emit(BatchBuilder bb, Batch? b, int r, Entity item, long weight)
+    /// <summary>One output row: the input columns of a batch row (`b` not null) or of stored row `r`, then the reached entity `n` and the properties read, from `item` or, when it is null, from the graph.</summary>
+    void Emit(BatchBuilder bb, Batch? b, int r, int n, Entity? item, long weight)
     {
         var row = bb.Add(weight); var o = bb.Batch;
         var bits = 0L;
@@ -1445,11 +1464,12 @@ sealed class TraverseOp : PhysOp
             var v = rows.Get(r, c);
             if (dst.IsDec) dst.D[row] = decimals.Value(v); else dst.L[row] = v;
         }
-        o.Cols[reachedCol].L[row] = it.Intern(item.Id);
+        o.Cols[reachedCol].L[row] = n;
         foreach (var (propId, outCol) in reads)
         {
             var col = o.Cols[outCol];
-            if (item.Props.TryGet(propId, out var v) && v is not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
+            var v = item is null ? graph!.EntityProp(it.Get(n), propId) : item.Props.TryGet(propId, out var x) ? x : null;
+            if (v is not null and not NullValue) { if (col.IsDec) col.D[row] = ((DecimalValue)v).Q; else col.L[row] = Codec.ToCode(v, it); }
             else col.SetAbsent(row, o.N);
         }
     }
@@ -1471,7 +1491,7 @@ sealed class TraverseOp : PhysOp
                 if (!b.Cols[startCol].Present(src)) continue;
                 var start = b.Cols[startCol].L[src]; var w = b.Weight(src);
                 var walked = startsOf.First([start]) >= 0;
-                if (walked) { Reached(start, was); foreach (var item in was.Values) Emit(bb, b, src, item, w); }
+                if (walked) { Reached(start, was); foreach (var (n, item) in was) Emit(bb, b, src, n, item, w); }
                 var first = rowsOf.First([start]) < 0;
                 Encode(b, src, key);
                 rows.Add(key, w);
@@ -1505,12 +1525,12 @@ sealed class TraverseOp : PhysOp
                 Reached(start, was);
                 Walk(it.Get((int)start), graph);
                 now.Clear();
-                foreach (var (id, depth) in seen) if (depth >= t.Min && graph.Entity(id) is { } e) now[it.Intern(id)] = e;
+                foreach (var (id, depth) in seen) if (depth >= t.Min && IsThere(id, out var e)) now[it.Intern(id)] = e;
                 for (var r = rowsOf.First([start]); r >= 0; r = rowsOf.Next(r))
                 {
                     var w = rows.Weight(r);
-                    foreach (var (n, e) in was) if (!now.TryGetValue(n, out var x) || !SameReads(e, x)) Emit(bb, null, r, e, -w);
-                    foreach (var (n, e) in now) if (!was.TryGetValue(n, out var x) || !SameReads(x, e)) Emit(bb, null, r, e, w);
+                    foreach (var (n, e) in was) if (!now.TryGetValue(n, out var x) || !Same(n, e, x)) Emit(bb, null, r, n, e, -w);
+                    foreach (var (n, e) in now) if (!was.TryGetValue(n, out var x) || !Same(n, x, e)) Emit(bb, null, r, n, e, w);
                 }
                 Unvisit(start);
                 foreach (var (id, depth) in seen) depths.Set(depths.Add([start, it.Intern(id)], 1), Depth, depth);
@@ -1533,8 +1553,8 @@ sealed class TraverseOp : PhysOp
                 for (var r = rowsOf.First([start]); r >= 0; r = rowsOf.Next(r))
                 {
                     var w = rows.Weight(r);
-                    if (wasItem is not null) Emit(bb, null, r, wasItem, -w);
-                    if (nowItem is not null) Emit(bb, null, r, nowItem, w);
+                    if (wasItem is not null) Emit(bb, null, r, n, wasItem, -w);
+                    if (nowItem is not null) Emit(bb, null, r, n, nowItem, w);
                 }
             }
         }

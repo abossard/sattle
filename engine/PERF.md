@@ -856,6 +856,21 @@ Theory. A binding record needs the hash as hex, the id and the components as JSO
 - In `EmitEntityOp` at 10^4 after this: identity 29.7 MB, contributions to the element layer 21 MB, lineage 6.2 MB, set expressions 5.4 MB.
 - Before is main 9f822ab with the sink and element flush patches. Times are measured under load and not comparable; bytes are. Digests unchanged at 10^4 and 10^5. No state is added; the seal format is unchanged.
 
+### Efficiency stage 2, allocation per record: Traverse (#115, 2026-11-18)
+At 10^4 a walk made every entity it reached with all its properties (74,101 entities, 21 MB), and every reach before the patch was made the same way (6.2 MB), to compare the two and to emit rows.
+
+Theory. A walk compares what a start reached before and after this step's patch. An entity the patch did not edit is the same before and after, so it gives a row the same values and needs no comparison and no object: it is held by its id code, and a row emitted for it reads its properties from the graph (`Graph.EntityProp`). Only the entities the patch edited are made, before and after, as before. Same reach, same rows.
+
+| | 10^4 before / after | 10^5 before / after |
+|---|---|---|
+| allocated per input record | 11.7 / 11.6 KB | 11.2 / 11.0 KB |
+| `TraverseOp` | 69 / 57 MB | 617 / 499 MB |
+| `TraverseOp` time, ms (two runs each, alternated) | 643, 575 / 419, 385 | |
+| live bytes | 242 / 242 MB | 1,449 / 1,449 MB |
+
+- What remains at 10^4: the walk (the neighbours' ids as strings, 7.6 MB), the tables of stored rows and depths, the rows emitted.
+- Before is main 9f822ab with the sink, element flush and Match patches (this builds on `Graph.EntityProp`). Times are measured under load; the alternated runs are the comparison. Digests unchanged at 10^4 and 10^5. No state is added; the seal format is unchanged.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 
