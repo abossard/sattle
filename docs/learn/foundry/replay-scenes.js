@@ -57,6 +57,7 @@ const ShopReplayScenes = (() => {
     arrow(g,right,y2-4,right,y1+bh+4,c.states.Unhealthy);
     write(g,left-9,(y1+bh+y2)/2+5,"needs",m?15:17,c.accent,620,"end");
     write(g,right+9,(y1+bh+y2)/2+5,"affects health",m?15:17,c.states.Unhealthy,620);
+    const needs=pulse(g,[left,y1+bh+4],[left,y2-4],c.accent);
     const hit=pulse(g,[right,y2-4],[right,y1+bh+4],c.states.Unhealthy);
     const downstream=layer();
     const x=m?pad:610, y=m?295:86;
@@ -73,9 +74,13 @@ const ShopReplayScenes = (() => {
       write(record,m?W-pad:W-pad-20,h+6,states[key],m?16:19,c.states[states[key]],650,"end");
       return record;
     });
+    write(g,pad,H-12,m?"Revision 16   ·   One update for all four":"Revision 16 records the database, API and web as Unhealthy in the same update.",m?16:19,c.muted);
+    const blue=s.spokenAt("The blue one",.35), red=s.spokenAt("The red one",.56);
+    const rollup=s.spokenAt("That’s health roll-up",.73);
     return p=>{
-      hit(stage(p,.13,.46));
-      items.forEach((node,i)=>opacity(node,.48+.52*stage(p,.1+i*.1,.27+i*.1)));
+      needs(stage(p,blue,red));hit(stage(p,red,rollup));
+      // Highlight the explanation. The health labels all come from the same revision.
+      items.forEach(node=>opacity(node,.78+.22*stage(p,rollup,rollup+.07)));
     };
   }
 
@@ -109,9 +114,10 @@ const ShopReplayScenes = (() => {
     write(g,x0+16,y0+135,"Measured "+failed.minute+":00 UTC",m?16:19,c.muted);
     write(g,x0+16,y0+160,"Received "+failed.received+" UTC",m?16:19,c.muted);
     if(!m) write(g,pad,H-15,"0 = unavailable     1 = available",18,c.muted);
+    const failedAt=s.spokenAt("The chart shows",.28), receivedAt=s.spokenAt("Azure Monitor delivers",.47);
     return p=>{
-      elapsed.setAttribute("stroke-dashoffset",1-(.2+.8*stage(p,.07,.83)));
-      ring.setAttribute("r",(m?12:14)+5*Math.sin(Math.PI*stage(p,.28,.70)));
+      elapsed.setAttribute("stroke-dashoffset",1-stage(p,failedAt,receivedAt));
+      ring.setAttribute("r",(m?12:14)+5*Math.sin(Math.PI*stage(p,failedAt,receivedAt)));
     };
   }
 
@@ -119,7 +125,7 @@ const ShopReplayScenes = (() => {
     const {g,W,H,m,pad,header,write,shape,arrow,box,pulse,stage,colors:c}=s;
     header("Which paths carry the alarm?","Workload structure · selected Affects links");
     // These are edges in workloadStructure.final.snapshot.json. Direction
-    // matches the graph, while the animated markers travel back to callers.
+    // matches the graph, and the animated markers follow the query from web to PostgreSQL.
     const positions=m?{
       "apim-shop":[115,105],web:[353,105],api:[123,211],shopcache:[353,211],
       database:[123,320],"pg-shop":[123,426]
@@ -132,13 +138,13 @@ const ShopReplayScenes = (() => {
     const w=m?164:193,h=m?58:73, routes=[
       ["database","pg-shop"],["api","database"],["apim-shop","api"],["web","api"],["web","shopcache"]
     ];
-    const packets=routes.map(([a,b],i)=>{
+    const packets=routes.map(([a,b])=>{
       const [ax,ay]=positions[a],[bx,by]=positions[b],dx=bx-ax,dy=by-ay;
       const crop=Math.min(w/(2*Math.abs(dx)||1),h/(2*Math.abs(dy)||1));
       const start=[ax+dx*crop,ay+dy*crop],end=[bx-dx*crop,by-dy*crop];
       const color=b==="shopcache"?c.states.Healthy:c.states.Unhealthy;
       arrow(g,...start,...end,color,2.7);
-      return b==="shopcache"?()=>{}:pulse(g,end,start,color);
+      return {from:a,to:b,move:pulse(g,start,end,color)};
     });
     for(const [key,[x,y]] of Object.entries(positions)) {
       const color=c.states[states[key]];
@@ -149,8 +155,9 @@ const ShopReplayScenes = (() => {
     if(m) {
       write(g,245,315,"Each arrow points",17,c.muted);
       write(g,245,339,"to a dependency.",17,c.muted);
-      write(g,245,390,"The alarm travels",17,c.states.Unhealthy,650);
-      write(g,245,414,"back to its users.",17,c.states.Unhealthy,650);
+      write(g,245,384,"Up to 16 links.",17,c.ink,650);
+      write(g,245,408,"Keep the worst",17,c.ink,650);
+      write(g,245,431,"state reached.",17,c.ink,650);
     } else {
       write(g,661,232,"Affects",24,c.ink,730);
       write(g,661,263,"Follow these edges to find the contributors.",19,c.muted);
@@ -158,7 +165,18 @@ const ShopReplayScenes = (() => {
     }
     shape(g,`M${pad} ${H-33}H${W-pad}`,c.line,1);
     write(g,pad,H-10,m?"Same revision  ·  cache stays healthy":"Revision 16  ·  These components are evaluated together. The cache stays healthy.",m?16:18,c.muted);
-    return p=>packets.forEach((move,i)=>move(stage(p,[.08,.27,.48,.48,0][i],[.29,.48,.73,.73,.2][i])));
+    const web=s.spokenAt("Web has a path",.19), cache=s.spokenAt("The cache has no such path",.35);
+    const query=s.spokenAt("The health query follows",.65);
+    const path=["web","api","database","pg-shop"];
+    const route=path.slice(1).map((to,i)=>packets.find(e=>e.from===path[i] && e.to===to));
+    const drawPath=(p,start,end)=>{
+      const step=(end-start)/route.length;
+      route.forEach((edge,i)=>edge.move(stage(p,start+i*step,start+(i+1)*step)));
+    };
+    return p=>{
+      if(p<query)drawPath(p,web,cache);
+      else drawPath(p,query,Math.min(1,query+.21));
+    };
   }
 
   function recovery(s) {
@@ -192,8 +210,9 @@ const ShopReplayScenes = (() => {
     const secondX=m?pad:W*.51,secondY=m?foot+71:foot;
     write(g,secondX,secondY,"10:15   ·   Two in a row",m?22:25,c.ink,700);
     write(g,secondX,secondY+(m?26:29),"Revision 18 clears the database and its callers.",m?17:19,c.states.Healthy,630);
+    const first=s.spokenAt("At ten fourteen",.30), second=s.spokenAt("Ten fifteen makes two",.53);
     return p=>{
-      const col=Math.min(samples.length-1,Math.floor(p*samples.length)),x=tableX+cell*col;
+      const col=p<first?0:p<second?1:2, x=tableX+cell*col;
       cursor.setAttribute("d",`M${x+8} ${y(3)+24}h${cell-16}`);
       columns.forEach((node,i)=>node.setAttribute("opacity",i>col?.7:1));
     };
@@ -222,7 +241,8 @@ const ShopReplayScenes = (() => {
     write(g,ax+16,ay+94,"Destination named by the flow",m?16:18,c.muted);
     write(g,ax+16,ay+119,flow.host,m?16:17,c.ink,620);
     write(g,ax+16,ay+(m?150:180),"Redis already exists in the graph.",m?16:18,c.muted);
-    return p=>move(stage(p,.21,.67));
+    const call=s.spokenAt("Hubble recorded",.25), observed=s.spokenAt("The new line means",.53);
+    return p=>move(stage(p,call,observed));
   }
 
   function resolve(s,data) {
@@ -251,20 +271,30 @@ const ShopReplayScenes = (() => {
     const packet=pulse(g,[left+ww+3,low+hh/2],[right-3,low+hh/2],c.added);
     arrow(g,left+ww+1,low+hh/2,right-3,low+hh/2,c.added,3);
     if(!m)write(g,(left+ww+right)/2,low+hh/2-12,dependency.type,21,c.added,700,"middle");
-    const fy=m?319:343;
+    const fy=m?306:319;
     shape(g,`M${pad} ${fy}H${W-pad}`,c.line,1);
-    if(m) {
-      write(g,pad,fy+30,"API  →  "+dependency.type+"  →  "+dependency.targetLabel,21,c.added,720);
-      write(g,pad,fy+63,"A second match reaches the same cache.",17,c.muted);
-      write(g,pad,fy+94,flow.host,18,c.identity,680);
-      write(g,pad,fy+120,"Azure identifies shopcache by this hostname.",16,c.ink);
-    }else{
-      write(g,pad,fy+28,"Second match",19,c.identity,740);
-      write(g,180,fy+28,flow.host+" leads to the same Redis resource.",19,c.ink,600);
+    const name=write(g,pad,fy+26,flow.host,m?18:21,c.identity,680);
+    const match=write(g,pad,fy+49,"DNS name on the flow and Redis resource",m?15.5:17,c.muted);
+    if(m)write(g,pad,fy+83,"API  →  "+dependency.type+"  →  "+dependency.targetLabel,20,c.added,720);
+    const warning=s.layer();
+    const wx=m?pad:605, wy=m?fy+124:fy+26;
+    write(warning,wx,wy,"With the new dependency",m?17:19,c.muted,650);
+    const after=data.after;
+    for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
+      const state=after[key],x=wx+i*(m?147:163);
+      write(warning,x,wy+25,label,m?16:17,c.ink,650);
+      write(warning,x,wy+47,symbols[state]+" "+state,m?16:17,c.states[state],680);
     }
+    const caller=s.spokenAt("Kubernetes ties",.18), endpoint=s.spokenAt("At the other end",.32);
+    const dns=s.spokenAt("The DNS name",.49), derived=s.spokenAt("That gives",.61);
+    const health=s.spokenAt("The health model can",.82);
+    const stops=[caller,(caller+endpoint)/2,endpoint,(endpoint+dns)/2,dns];
     return p=>{
-      matches.forEach((move,i)=>move(stage(p,.07+(i%2)*.17,.26+(i%2)*.17)));
-      packet(stage(p,.45,.79));
+      matches.forEach((move,i)=>move(stage(p,stops[i],stops[i+1])));
+      const seen=.72+.28*stage(p,dns,derived);
+      name.setAttribute("opacity",seen);match.setAttribute("opacity",seen);
+      packet(stage(p,derived,health));
+      warning.setAttribute("opacity",p>=health?1:0);
     };
   }
 
@@ -308,8 +338,9 @@ const ShopReplayScenes = (() => {
       const progress=shape(sheet,`M${x+5} ${y+cardH-3}H${x+cardW-5}`,color,3,{pathLength:1,"stroke-dasharray":"1 1"});
       return {sheet,progress};
     });
+    const marks=[s.spokenAt("In the master graph",.35),s.spokenAt("In the structure graph",.55),s.spokenAt("In the health graph",.74)];
     return p=>sheets.forEach(({sheet,progress},i)=>{
-      const value=stage(p,.02+i*.24,.24+i*.24);
+      const value=stage(p,marks[i],marks[i]+.075);
       sheet.setAttribute("opacity",.72+.28*value);
       progress.setAttribute("stroke-dashoffset",1-value);
     });
@@ -317,53 +348,51 @@ const ShopReplayScenes = (() => {
 
   function inspect(s,data) {
     const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
-    const {before,after,lineage,proofs}=data;
+    const {before,after,proofs}=data;
     const cutoff=data.cutoff;
-    header("Why the gateway changes state","Same readings in both runs · "+cutoff+" UTC");
-    const edgeX=m?W:573, rowTop=m?122:129,rowH=m?33:53;
-    write(g,pad,m?92:90,"Component",m?16:19,c.muted,660);
-    const colA=m?232:329,colB=m?408:481;
-    write(g,colA,m?92:90,"Original",m?16:19,c.muted,660,"middle");
-    write(g,colB,m?92:90,"With the flow",m?16:19,c.muted,660,"middle");
-    const entries=[["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]];
-    const hi=entries.map(([key,label],i)=>{
-      const row=layer(),y=rowTop+i*rowH;
-      write(row,pad,y,label,m?19:23,c.ink,690);
-      write(row,colA,y,symbols[before[key]]+"  "+before[key],m?17:21,c.states[before[key]],670,"middle");
-      write(row,colB,y,symbols[after[key]]+"  "+after[key],m?17:21,c.states[after[key]],670,"middle");
+    header("Where did this dependency come from?","Same readings in both runs · "+cutoff+" UTC");
+    const lx=m?pad:590;
+    const colA=m?249:312,colB=m?400:471, colY=m?354:147, rowH=m?28:46;
+    const table=s.layer();
+    write(table,pad,colY,"Component",m?15:18,c.muted,650);
+    write(table,colA,colY,"Original",m?16:18,c.muted,650,"middle");
+    write(table,colB,colY,"With the flow",m?16:18,c.muted,650,"middle");
+    for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
+      const y=colY+(i+1)*rowH;
+      write(table,pad,y,label,m?17:22,c.ink,680);
+      for(const [x,state] of [[colA,before[key]],[colB,after[key]]])
+        write(table,x,y,symbols[state]+"  "+state,m?16:19,c.states[state],670,"middle");
+    }
+    write(table,pad,colY+rowH*4+4,"Same Redis serverLoad readings in both runs",m?16:20,c.states.Degraded,650);
+    // Follow the recorded workload edge to its source in workloadStructure.
+    const lineageX=pad, lineY=m?85:89;
+    write(g,lineageX,lineY,"Workload → Workload structure → Master",m?17:22,c.accent,680);
+    write(g,m?pad:lx,m?107:74,"Provenance",m?15:18,c.muted,680);
+    if(!m)shape(g,`M555 68V${H-25}`,c.line,1);
+    const at=m?117:93;
+    const proofGroups=proofs.map(proof=>{
+      const address=proof.how==="privateEndpoint",x=m?pad:lx, y=at+(address?0:(m?86:113));
+      const row=layer(), width=W-x-pad, height=m?75:91;
+      box(row,x,y,width,height,{rx:4,fill:c.panel,stroke:c.line});
+      write(row,x+13,y+(m?22:27),address?"Private endpoint match":"DNS name match",m?17:21,c.identity,680);
+      if(address) {
+        const label=role=>proof.sources.find(source=>source.role===role).label;
+        write(row,x+13,y+(m?44:52),label("pod")+"  →  "+label("destination"),m?16:20,c.ink,650);
+        write(row,x+13,y+(m?64:77),"Private endpoint   "+label("endpoint"),m?15:17,c.muted);
+      } else {
+        write(row,x+13,y+(m?44:52),data.flow.host,m?16:19,c.ink,650);
+        write(row,x+13,y+(m?64:77),"Azure Redis   "+data.dependency.targetLabel,m?15:17,c.muted);
+      }
+      s.el(row,"title",{},proof.detail);
       return row;
     });
-    const lx=m?pad:620, ly=m?245:92, w=W-lx-pad;
-    if(m) shape(g,`M${pad} ${ly-29}H${W-pad}`,c.line,1);
-    else shape(g,`M${edgeX} 72V${H-22}`,c.line,1);
-    write(g,lx,ly,"Trace the dependency back",m?21:25,c.ink,730);
-    const tracks=[
-      [lineage.workload,"Workload", "DependsOn"],
-      [lineage.structure,"Workload structure","DependsOn"],
-      [null,"Master","API service + Redis"]
-    ];
-    const trackGap=m?44:53,base=ly+(m?36:48);
-    const trace=[];
-    tracks.forEach(([step,graph,label],i)=>{
-      const y=base+i*trackGap;
-      box(g,lx,y-20,w,m?31:35,{rx:3,fill:c.panel});
-      write(g,lx+22,y+2,graph,m?16:19,c.ink,650);
-      s.dot(g,lx+10,y-4,3.2,{fill:c.accent});
-      if(i) {
-        const from=[lx+10,y-4-trackGap],to=[lx+10,y-4];
-        shape(g,`M${from[0]} ${from[1]}V${to[1]}`,c.accent,1);
-        trace.push(s.pulse(g,from,to,c.accent,4));
-      }
-      write(g,lx+w-9,y+2,label,m?16:19,i===2?c.master:c.accent,650,"end");
-      s.el(g.lastElementChild,"title",{},step?step.id:lineage.structure.sources.map(source=>source.id).join(", "));
-    });
-    const proofList=proofs.map(p=>p.how==="privateEndpoint"?"private endpoint":p.how==="dnsName"?"DNS name":p.how).join(" + ");
-    const foot=m?base+trackGap*3+9:base+trackGap*3+11;
-    write(g,lx,foot,"Dependency evidence",m?17:19,c.muted,600);
-    write(g,lx,foot+(m?28:30),proofList,m?19:22,c.identity,680);
+    write(g,m?pad:lx,m?304:340,"Hubble flow   "+data.flow.record,m?15:18,c.master,600);
+    if(m)shape(g,`M${pad} 326H${W-pad}`,c.line,1);
+    const marks=[s.spokenAt("One links",.30),s.spokenAt("The other identifies",.45)];
+    const compare=s.spokenAt("Now compare",.71);
     return p=>{
-      hi.forEach((node,i)=>node.setAttribute("opacity",.65+.35*stage(p,.03+i*.12,.24+i*.12)));
-      trace.forEach((move,i)=>move(stage(p,.38+i*.19,.6+i*.19)));
+      proofGroups.forEach((row,i)=>row.setAttribute("opacity",.73+.27*stage(p,marks[i],marks[i]+.06)));
+      table.setAttribute("opacity",.73+.27*stage(p,compare,compare+.06));
     };
   }
 

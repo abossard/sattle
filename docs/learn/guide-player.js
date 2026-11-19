@@ -215,8 +215,10 @@ const player=(()=>{
       $("#beat-buttons").append(button);
     }
     showTime(scene.beats[0].start);
-    // Brief silent preview. The narration always starts at the chapter opening.
-    if(!matchMedia("(prefers-reduced-motion: reduce)").matches)preview(.6);
+    // A silent preview can introduce the question without showing a later answer.
+    const opening=scene.beats[0];
+    const previewEnd=opening.spokenCues ? (opening.answerStarts[0]-opening.start)/(opening.end-opening.start) : .6;
+    if(!matchMedia("(prefers-reduced-motion: reduce)").matches)preview(previewEnd);
   }
   return {load,jump,pause,onPosition(listener){positionListener=typeof listener==="function" ? listener : null;}};
 })();

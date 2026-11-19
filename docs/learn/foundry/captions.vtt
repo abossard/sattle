@@ -4,359 +4,405 @@ WEBVTT
 Listener: Why is the refund for order one
 oh four stuck?
 
-00:00:03.440 --> 00:00:05.865
-Guide: The refund job called the payment
-API.
+00:00:03.415 --> 00:00:04.965
+Guide: The payment call timed out.
 
-00:00:05.865 --> 00:00:08.040
-It waited for a reply and timed out.
+00:00:04.965 --> 00:00:07.365
+That trace tells us what the refund job
+saw.
 
-00:00:08.040 --> 00:00:08.990
-See those dots?
+00:00:07.365 --> 00:00:10.790
+Each dot here is a node, one source record
+in this picture.
 
-00:00:08.990 --> 00:00:10.790
-Each is a record from one system.
+00:00:10.790 --> 00:00:15.015
+In Kubernetes, the owner link tells us
+which deployment owns a ReplicaSet.
 
-00:00:10.790 --> 00:00:12.515
-Kubernetes lists workloads.
+00:00:15.015 --> 00:00:17.665
+A network flow names the two ends of a
+connection.
 
-00:00:12.515 --> 00:00:14.665
-A network flow names two endpoints.
+00:00:17.665 --> 00:00:19.040
+We call a link a typed edge
 
-00:00:14.665 --> 00:00:16.190
-A trace records a call.
+00:00:19.040 --> 00:00:21.640
+because its type tells us what the
+connection means.
 
-00:00:16.190 --> 00:00:18.715
-The refund job’s call is our starting
-point.
-
-00:00:19.912 --> 00:00:22.262
+00:00:22.870 --> 00:00:25.220
 Listener: What ties this reading to that
 storage account?
 
-00:00:22.807 --> 00:00:25.257
+00:00:25.740 --> 00:00:27.990
 Guide: They share a full Azure resource
 ID.
 
-00:00:25.257 --> 00:00:27.632
-Azure Resource Graph lists the storage
+00:00:27.990 --> 00:00:30.340
+Azure Resource Graph names the storage
 account,
 
-00:00:27.632 --> 00:00:30.282
-and Azure Monitor puts that ID on its
+00:00:30.340 --> 00:00:33.090
+and Azure Monitor puts that same ID on its
 reading.
 
-00:00:30.282 --> 00:00:31.982
+00:00:33.090 --> 00:00:34.515
+That’s an identity match.
+
+00:00:34.515 --> 00:00:36.665
+Sattle’s ontology supplies the naming rule
+
+00:00:36.665 --> 00:00:38.940
+that ties both records to one account.
+
+00:00:38.940 --> 00:00:40.490
 Now follow the DNS name.
 
-00:00:31.982 --> 00:00:33.657
-It resolves to an address.
+00:00:40.490 --> 00:00:44.115
+It resolves to an address, and the private
+endpoint names the account.
 
-00:00:33.657 --> 00:00:36.807
-The private endpoint at that address names
-the storage account.
+00:00:44.115 --> 00:00:46.115
+These links connect different things.
 
-00:00:36.807 --> 00:00:39.207
-That gives us a path from the name to
-storage.
-
-00:00:40.412 --> 00:00:42.687
+00:00:47.328 --> 00:00:49.603
 Listener: What happens to that path when
 we group the dots?
 
-00:00:43.232 --> 00:00:46.832
-Guide: Watch the DNS name, the private
-endpoint and the storage account.
+00:00:50.148 --> 00:00:51.548
+Guide: It stays connected.
 
-00:00:46.832 --> 00:00:49.382
-They move into different groups and stay
-connected.
+00:00:51.548 --> 00:00:53.373
+Follow the DNS name to the address,
 
-00:00:49.382 --> 00:00:52.132
-This projection groups records by
-technology.
+00:00:53.373 --> 00:00:55.873
+the private endpoint and the storage
+account.
 
-00:00:52.132 --> 00:00:54.432
-Kubernetes workloads cluster together.
+00:00:55.873 --> 00:00:57.848
+The dots move into technical groups,
 
-00:00:54.432 --> 00:00:57.157
-Azure resources, network connections, DNS,
+00:00:57.848 --> 00:01:00.073
+but the links still cross those
+boundaries.
 
-00:00:57.157 --> 00:01:00.307
-application telemetry and shop software
-each get a group.
+00:01:00.073 --> 00:01:03.148
+A projection is a rule for building one
+graph from another.
 
-00:01:01.537 --> 00:01:03.412
+00:01:03.148 --> 00:01:06.748
+This one groups records by technology so
+you can see how DNS,
+
+00:01:06.748 --> 00:01:09.223
+networking and Azure resources fit
+together.
+
+00:01:10.453 --> 00:01:12.328
 Listener: Where does that leave the refund
 job?
 
-00:01:03.957 --> 00:01:05.432
+00:01:12.873 --> 00:01:14.298
 Guide: It belongs to Payout.
 
-00:01:05.432 --> 00:01:09.932
-The job reads the case store in Returns
-Intake and calls the payment API.
+00:01:14.298 --> 00:01:17.673
+A capability groups software by the job it
+does for the shop.
 
-00:01:09.932 --> 00:01:12.457
-Now we’re grouping software by the job it
-does.
+00:01:17.673 --> 00:01:20.248
+The job reads a case from Returns Intake.
 
-00:01:12.457 --> 00:01:15.432
-Those links show what Payout needs from
-the other groups.
+00:01:20.248 --> 00:01:25.423
+Its call to the payment API becomes the
+blue arrow from Payout to Payment API.
 
-00:01:15.432 --> 00:01:17.332
-Shared infrastructure has a group too,
+00:01:25.423 --> 00:01:27.248
+That arrow between two groups stands for a
 
-00:01:17.332 --> 00:01:19.607
-so we can still trace the path to storage.
+00:01:27.248 --> 00:01:29.673
+call you can trace back to the refund job.
 
-00:01:20.828 --> 00:01:23.378
+00:01:30.870 --> 00:01:33.420
 Listener: Which view would help me
 investigate the timeout?
 
-00:01:23.898 --> 00:01:25.273
+00:01:33.940 --> 00:01:35.315
 Guide: Start with the dashboard.
 
-00:01:25.273 --> 00:01:27.748
-Successful payment calls drop to zero.
+00:01:35.315 --> 00:01:37.040
+It counts successful replies.
 
-00:01:28.228 --> 00:01:31.478
-Open the health tree and you can see why
-that blocks Payout.
+00:01:37.040 --> 00:01:39.940
+Two out of two payment calls succeeded in
+the first minute.
 
-00:01:31.958 --> 00:01:33.408
-Want to find the pods?
+00:01:39.940 --> 00:01:42.265
+By the last minute, neither got a reply.
 
-00:01:33.408 --> 00:01:37.408
-The Kubernetes view starts at the refund
-deployment and follows it to them.
+00:01:42.745 --> 00:01:45.145
+The health tree shows what that means for
+Payout.
 
-00:01:37.863 --> 00:01:40.688
+00:01:45.145 --> 00:01:47.545
+Its rule needs a successful payment call.
+
+00:01:47.545 --> 00:01:50.420
+Payout is blocked, and the order lookup
+still works.
+
+00:01:50.900 --> 00:01:53.525
+The Kubernetes view answers a different
+question.
+
+00:01:53.525 --> 00:01:55.450
+Which pods run the refund job?
+
+00:01:55.450 --> 00:01:58.000
+Follow the owner links down from the
+deployment.
+
+00:01:58.455 --> 00:02:00.455
 The Azure resource view lists the storage
-account.
 
-00:01:41.193 --> 00:01:45.368
-In the DNS and IP view, its name resolves
-to a private address.
+00:02:00.455 --> 00:02:02.505
+account in the shop’s resource group.
 
-00:01:45.368 --> 00:01:47.943
-All five views draw on the same shop
-records.
+00:02:02.985 --> 00:02:07.310
+The DNS and IP view shows how its name
+reaches a private address.
 
-00:01:49.603 --> 00:01:53.253
+00:02:07.310 --> 00:02:09.985
+Each view selects what it needs from the
+same records.
+
+00:02:09.985 --> 00:02:13.135
+That’s why you can follow one problem
+across all five.
+
+00:02:14.770 --> 00:02:18.420
 Listener: If the database stops answering,
 why does web turn red too?
 
-00:01:53.823 --> 00:01:57.498
+00:02:18.990 --> 00:02:22.465
 Guide: Web needs the API, and the API
 needs the database.
 
-00:01:57.498 --> 00:02:00.048
-Watch the recorded pg-shop outage.
+00:02:22.465 --> 00:02:23.765
+Look at the two arrows.
 
-00:02:00.048 --> 00:02:02.248
-First the database signal turns red.
+00:02:23.765 --> 00:02:26.940
+The blue one points from the database
+service to the server it needs.
 
-00:02:02.248 --> 00:02:04.723
-Then you see that failure on the API and
-web.
+00:02:26.940 --> 00:02:28.415
+The red one points back.
 
-00:02:04.723 --> 00:02:06.023
-That’s a health roll-up.
+00:02:28.415 --> 00:02:30.165
+A failure can affect the caller.
 
-00:02:06.023 --> 00:02:09.298
-A caller’s state reflects what happened to
-a service it depends on.
+00:02:30.165 --> 00:02:32.915
+That’s health roll-up, and it explains why
+the database,
 
-00:02:10.495 --> 00:02:12.845
+00:02:32.915 --> 00:02:36.140
+API and web all read Unhealthy in this
+revision.
+
+00:02:37.370 --> 00:02:39.720
 Listener: What makes the database red in
 the first place?
 
-00:02:13.415 --> 00:02:16.465
-Guide: At ten eleven, its availability
-meter reads zero.
+00:02:40.290 --> 00:02:42.340
+Guide: One bad minute opens the alarm.
 
-00:02:16.465 --> 00:02:19.115
-Azure Monitor reports the sample a minute
-later.
+00:02:42.340 --> 00:02:45.440
+The chart shows the meter dropping to zero
+at ten eleven.
 
-00:02:19.115 --> 00:02:21.365
-That’s enough for the shop’s database
-rule.
+00:02:45.440 --> 00:02:48.015
+Azure Monitor delivers that reading a
+minute later.
 
-00:02:21.365 --> 00:02:23.390
-One bad minute opens the alarm.
+00:02:48.015 --> 00:02:49.465
+Zero is a measurement.
 
-00:02:23.390 --> 00:02:25.415
-The reading tells us what the meter saw.
+00:02:49.465 --> 00:02:51.865
+The database rule gives it meaning for
+health.
 
-00:02:25.415 --> 00:02:28.190
-The rule decides when that reading means
-Unhealthy.
+00:02:51.865 --> 00:02:55.465
+On this rule, one failed sample makes the
+database Unhealthy.
 
-00:02:29.437 --> 00:02:32.237
+00:02:56.687 --> 00:02:59.487
 Listener: Why does the alarm reach web and
 leave the cache green?
 
-00:02:32.782 --> 00:02:35.432
-Guide: Start at web and follow the arrows
-marked Affects.
+00:03:00.057 --> 00:03:03.157
+Guide: Web has a path to the failing
+database through the API.
 
-00:02:35.432 --> 00:02:37.932
-There’s a path through the API to the
-database.
+00:03:03.157 --> 00:03:04.957
+The cache has no such path.
 
-00:02:37.932 --> 00:02:40.082
+00:03:04.957 --> 00:03:07.882
+Follow the arrows to see what each service
+depends on.
+
+00:03:07.882 --> 00:03:10.082
 The structure query builds those links.
 
-00:02:40.082 --> 00:02:42.257
-The health query follows up to sixteen of
-them
+00:03:10.082 --> 00:03:12.757
+The health query follows up to sixteen
+Affects links
 
-00:02:42.257 --> 00:02:44.582
-and keeps the worst severity it finds.
+00:03:12.757 --> 00:03:14.857
+and takes the worst state it can reach.
 
-00:02:44.582 --> 00:02:48.007
-Start at the cache, though, and no path
-leads to the failing server.
+00:03:14.857 --> 00:03:16.832
+That’s why the cache stays green.
 
-00:02:48.007 --> 00:02:49.532
-The cache stays green.
-
-00:02:50.745 --> 00:02:52.095
+00:03:18.037 --> 00:03:19.387
 Listener: The meter is back at one.
 
-00:02:52.095 --> 00:02:54.020
+00:03:19.387 --> 00:03:21.312
 Why is the database still red?
 
-00:02:54.540 --> 00:02:55.640
-Guide: That’s one good minute.
+00:03:21.832 --> 00:03:24.757
+Guide: The rule remembers how many good
+minutes came in a row.
 
-00:02:55.640 --> 00:02:57.465
-The rule needs two in a row.
+00:03:24.757 --> 00:03:28.182
+At ten fourteen the count is one, and the
+alarm stays open.
 
-00:02:57.465 --> 00:02:59.240
-Ten fourteen is the first.
+00:03:28.182 --> 00:03:29.582
+Ten fifteen makes two.
 
-00:02:59.240 --> 00:03:02.390
-At ten fifteen, the alarm clears and the
-callers recover.
+00:03:29.582 --> 00:03:31.957
+The alarm clears and the callers recover.
 
-00:03:02.390 --> 00:03:04.640
-You can see the failure in graph revision
-sixteen
+00:03:31.957 --> 00:03:34.357
+The times across the top come from the
+meter.
 
-00:03:04.640 --> 00:03:06.265
-and the recovery in eighteen.
+00:03:34.357 --> 00:03:38.232
+Revision eighteen names the version of the
+graph that records the recovery.
 
-00:03:06.265 --> 00:03:08.265
-The revision numbers count changes.
-
-00:03:08.265 --> 00:03:10.015
-The meter gives us the times.
-
-00:03:11.670 --> 00:03:15.020
+00:03:39.878 --> 00:03:43.228
 Listener: Suppose an API pod starts
 sending traffic to Redis.
 
-00:03:15.020 --> 00:03:16.645
+00:03:43.228 --> 00:03:44.853
 What does Sattle see first?
 
-00:03:17.215 --> 00:03:18.740
-Guide: One new Hubble flow.
+00:03:45.398 --> 00:03:49.048
+Guide: Hubble recorded one flow from the
+API pod to this address.
 
-00:03:18.740 --> 00:03:20.915
-In this copy of the pg-shop recording,
+00:03:49.048 --> 00:03:52.598
+In our copy of the replay, the pod and the
+address already exist.
 
-00:03:20.915 --> 00:03:24.315
-an API pod sends traffic to an existing
-Redis cache.
+00:03:52.598 --> 00:03:55.023
+The new line means the pod sent traffic
+there.
 
-00:03:24.315 --> 00:03:27.215
-The pod and the destination are already on
-the map.
+00:03:55.023 --> 00:03:56.698
+That’s what the network observed.
 
-00:03:27.215 --> 00:03:31.015
-The new line on the master graph connects
-the pod to that destination.
+00:03:56.698 --> 00:03:59.673
+To call Redis a dependency of the whole
+API service,
 
-00:03:32.270 --> 00:03:35.845
+00:03:59.673 --> 00:04:01.948
+the model needs to know who’s at each end.
+
+00:04:03.187 --> 00:04:06.762
 Listener: How does that address become a
 Redis dependency in the health model?
 
-00:03:36.365 --> 00:03:39.340
-Guide: Kubernetes tells us which service
-the pod belongs to.
+00:04:07.282 --> 00:04:10.407
+Guide: Kubernetes ties the pod to the API
+service.
 
-00:03:39.340 --> 00:03:40.640
-It’s the API.
-
-00:03:40.640 --> 00:03:43.890
+00:04:10.407 --> 00:04:14.057
 At the other end, the address matches a
-private endpoint for Redis,
+private endpoint for Redis.
 
-00:03:43.890 --> 00:03:46.515
-and the host name identifies the same
-cache.
+00:04:14.057 --> 00:04:16.382
+The DNS name points to the same cache.
 
-00:03:46.515 --> 00:03:49.765
-The existing structure query links the API
-to Redis.
+00:04:16.382 --> 00:04:19.932
+That gives the structure query both ends
+of a service dependency.
 
-00:03:49.765 --> 00:03:53.540
-Now when the cache is Degraded, so are the
-API and its gateway.
+00:04:19.932 --> 00:04:23.082
+It derives the API to Redis link from
+those records.
 
-00:03:54.770 --> 00:03:56.145
+00:04:23.082 --> 00:04:26.382
+The health model can now follow it using
+its existing rule.
+
+00:04:27.603 --> 00:04:28.978
 Listener: Redis was already there.
 
-00:03:56.145 --> 00:03:57.720
+00:04:28.978 --> 00:04:30.553
 Where can I find the new link?
 
-00:03:58.240 --> 00:04:00.490
-Guide: Compare the two revisions in the
-Canvas.
+00:04:31.098 --> 00:04:32.448
+Guide: Look for the plus sign.
 
-00:04:00.490 --> 00:04:03.915
-The patch lists the link it added, from
-the API to Redis.
+00:04:32.448 --> 00:04:35.573
+A patch lists the edits from one graph
+revision to the next.
 
-00:04:03.915 --> 00:04:05.690
-That’s the change you see highlighted.
+00:04:35.573 --> 00:04:38.923
+In the master graph, the added line means
+the pod sent traffic.
 
-00:04:05.690 --> 00:04:08.440
-The existing health rule follows that
-dependency.
+00:04:38.923 --> 00:04:42.498
+In the structure graph, it means the API
+depends on Redis.
 
-00:04:08.440 --> 00:04:11.240
-A warning on the cache can now reach the
-API.
+00:04:42.498 --> 00:04:45.798
+In the health graph, revision fourteen
+adds that dependency.
 
-00:04:12.478 --> 00:04:16.078
+00:04:45.798 --> 00:04:47.573
+The cache was there all along.
+
+00:04:48.812 --> 00:04:52.412
 Listener: How could I check that the API
 really started using that cache?
 
-00:04:16.623 --> 00:04:18.373
-Guide: Open the evidence for the link.
+00:04:52.957 --> 00:04:55.157
+Guide: Follow the dependency back through
+the graphs.
 
-00:04:18.373 --> 00:04:20.498
+00:04:55.157 --> 00:04:57.282
 The structure query kept two matches.
 
-00:04:20.498 --> 00:04:24.098
-One names the pod, the destination address
-and the private endpoint.
+00:04:57.282 --> 00:05:00.207
+One links the pod’s destination to a
+private endpoint.
 
-00:04:24.098 --> 00:04:25.848
-The other names the Redis host.
+00:05:00.207 --> 00:05:02.882
+The other identifies Redis by its DNS
+name.
 
-00:04:25.848 --> 00:04:28.398
-Both lead back to the flow and Azure
-records.
+00:05:02.882 --> 00:05:06.482
+That trail from a conclusion back to its
+inputs is called provenance.
 
-00:04:28.398 --> 00:04:30.673
-The traffic explains the new dependency.
+00:05:06.482 --> 00:05:08.032
+Now compare the two runs.
 
-00:04:30.673 --> 00:04:33.298
-The cache’s own load readings explain the
-warning.
+00:05:08.032 --> 00:05:10.232
+Redis has the same load warning in both.
+
+00:05:10.232 --> 00:05:14.282
+The added dependency explains why the API
+and gateway turn amber.

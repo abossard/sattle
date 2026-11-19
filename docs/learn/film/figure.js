@@ -1,5 +1,5 @@
 // Each chapter owns a figure. The film and guide share its drawing and seek function.
-function createChapterFigures(chapters, drawings, caseLabel) {
+function createChapterFigures(chapters, drawings, caseLabel, recording=[]) {
   const ns = "http://www.w3.org/2000/svg";
   const colors = {
     ink:"var(--ink)", muted:"var(--muted)", paper:"var(--page)", blue:"var(--blue)", teal:"var(--master)",
@@ -80,8 +80,14 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     }
     if (!view.beats[beat]) {
       const g=el(view.plot,"g",{"data-figure-step":beat});
+      const recorded=recording.find(scene=>scene.id===topic)?.beats[beat];
+      const normalize=text=>text.toLowerCase().replaceAll("’","'");
+      function spokenAt(prefix,fallback) {
+        const cue=recorded?.spokenCues?.find(([,text])=>normalize(text).startsWith(normalize(prefix)));
+        return cue ? (cue[0]-recorded.start)/(recorded.end-recorded.start) : fallback;
+      }
       const seek=drawings[topic]({
-        svg:view.svg,g,el,txt,line,box,dot,stage,colors,W:view.W,H:view.H,mobile,beat,inGuide:host.dataset.responsive==="true",
+        svg:view.svg,g,el,txt,line,box,dot,stage,spokenAt,colors,W:view.W,H:view.H,mobile,beat,inGuide:host.dataset.responsive==="true",
         assetBase:host.dataset.assetBase||"assets/"
       });
       view.beats[beat]={g,seek};

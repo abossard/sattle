@@ -55,6 +55,8 @@ python3 -B docs/learn/replay_change.py
 
 Open the [retail narration script](foundry/lesson.json) or the [pg-shop narration script](film/lesson.json) and find the chapter by its title. Each entry in `cues` belongs to one moment in the animation. Edit `question` for the listener’s line and `answer` for the guide’s reply. The retail guide’s **Five views** answer has one paragraph per view. Keep them in screen order so each diagram appears as the guide names it.
 
+The guide answers with something visible, then explains the graph idea behind it. For instance, the “controlled by” edge tells you which deployment owns the ReplicaSet. A highlight can start on a particular phrase in the recording. If you reword that phrase, update its `spokenAt` cue in the [master graph drawing](foundry/journey-scene.js) or the [pg-shop drawings](foundry/replay-scenes.js).
+
 The three-chapter recording blends Michael with Fenrir for the listener and Heart with Sarah for the guide. The pg-shop companion uses Michael and Heart. The voice blends, speaking pace and pauses live in the [narration generator](film/build.py).
 
 On a fresh checkout, install the narrator and film tools once. Run these commands from the repository root with Python 3.12, FFmpeg, Node.js and npm installed. The first command downloads the Kokoro model and voices into `docs/learn/film/.narrator/`. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)

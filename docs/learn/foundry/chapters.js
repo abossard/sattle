@@ -13,4 +13,4 @@ const retailChapters = {
     example:"A new call connects two services.",principle:"Patches and provenance",meaning:"A patch records the edit. Its evidence explains the link.",
     section:"9.4",reading:"ch09-evolution-evidence-provenance.md#94-provenance-record-and-the-history-of-an-element"}
 };
-const ShopMap = createChapterFigures(retailChapters, {estate:ShopJourneyScene, ...ShopReplayScenes}, "Sattle");
+const ShopMap = createChapterFigures(retailChapters, {estate:ShopJourneyScene, ...ShopReplayScenes}, "Sattle", story);

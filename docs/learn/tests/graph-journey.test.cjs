@@ -66,6 +66,31 @@ test('recorded questions, answers and view changes follow the editable scripts',
   }
 });
 
+test('figure cues follow the guide’s recorded caption starts', () => {
+  const read = file => readFileSync(join(__dirname, '../foundry', file), 'utf8');
+  const recorded = vm.runInNewContext(read('story-data.js') + '\nstory;');
+  const captions = new Map();
+  for (const block of read('captions.vtt').trim().split(/\n\n+/).slice(1)) {
+    const [range, ...lines] = block.split('\n');
+    const [hours, minutes, seconds] = range.split(' --> ')[0].split(':').map(Number);
+    const ms = Math.round((hours * 3600 + minutes * 60 + seconds) * 1000);
+    captions.set(ms, lines.join(' ').replace(/^Guide: /, ''));
+  }
+  for (const chapter of recorded) {
+    for (const beat of chapter.beats) {
+      let previous = beat.answerStarts[0] - .001;
+      const words = [];
+      for (const [at, text] of beat.spokenCues) {
+        assert.ok(at > previous && at < beat.end);
+        assert.equal(captions.get(Math.round(at * 1000)), text);
+        words.push(text);
+        previous = at;
+      }
+      assert.equal(words.join(' '), [].concat(beat.answer).join(' '));
+    }
+  }
+});
+
 test('source records keep their identities and the evidence for each typed link', () => {
   const {record, peer, dns, address, endpoint} = journey.example;
   const account = nodes.get(record);

@@ -131,6 +131,7 @@ def generate_voice(lesson, temp, voice, documents, retail):
             start = len(audio) / (2*RATE)
             answers = cue["answer"] if isinstance(cue["answer"], list) else [cue["answer"]]
             answer_starts = []
+            spoken_cues = []
             passages = [(listener, cue["question"], "Listener", listener_speed, turn_gap)]
             for index, paragraph in enumerate(answers):
                 speaker = "Guide" if index == 0 else ""
@@ -143,6 +144,8 @@ def generate_voice(lesson, temp, voice, documents, retail):
                 pcm, phrases = narrate(narrator, style, text, speed)
                 audio.extend(pcm)
                 for i, (first, last, phrase) in enumerate(phrases):
+                    if retail and turn:
+                        spoken_cues.append([round(speech_start + first/RATE, 3), phrase])
                     if speaker and i == 0:
                         phrase = f"{speaker}: {phrase}"
                     captions.append(f"{clock(speech_start + first/RATE)} --> {clock(speech_start + last/RATE)}\n"
@@ -152,7 +155,10 @@ def generate_voice(lesson, temp, voice, documents, retail):
             pause = 1.2 if len(beats) + 1 == len(scene["cues"]) else .8
             end = math.ceil(max(len(audio)/(2*RATE) + pause, start + 8) * FPS) / FPS
             audio.extend(bytes(round(end*RATE)*2-len(audio)))
-            beats.append(dict(**cue, start=start, end=end, answerStarts=answer_starts))
+            beat = dict(**cue, start=start, end=end, answerStarts=answer_starts)
+            if retail:
+                beat["spokenCues"] = spoken_cues
+            beats.append(beat)
         times.append(dict(id=scene["id"],chapter=scene["chapter"],title=scene["title"],beats=beats))
     with wave.open(str(temp/"voice.wav"),"wb") as out:
         out.setparams((1,2,RATE,0,"NONE","not compressed"))
@@ -170,7 +176,7 @@ def composition(story, retail):
     shared = "../film/" if retail else ""
     voice = "voice.m4a" if retail else "assets/voice.m4a"
     if retail:
-        drawings = ["case.js", "projection.js", "view-starts.js", "graph-journey.js", "journey-scene.js", "replay-cases.js", "replay-scenes.js", shared+"figure.js", "chapters.js"]
+        drawings = ["case.js", "projection.js", "view-starts.js", "graph-journey.js", "journey-scene.js", "replay-cases.js", "replay-scenes.js", shared+"figure.js", "story-data.js", "chapters.js"]
     else:
         drawings = ["master-data.js", "model-scenes.js", "change-scenes.js", "review-scenes.js", "figure.js", "shop-map.js"]
     scripts = "".join(f'<script src="{src}"></script>' for src in [shared+"vendor/gsap.min.js", "terms.js", *drawings])

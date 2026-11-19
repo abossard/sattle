@@ -1,6 +1,6 @@
 // All five diagrams use the same records. Seeking a beat sets its geometry directly,
 // so scrubbing in the guide and rendering frames out of order give the same picture.
-function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat}) {
+function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, W, H, beat}) {
   const graph = ShopGraphJourney;
   const background="var(--page)", ink="var(--ink)", muted="var(--muted)";
   const edge="var(--wire)", hairline="var(--line)", blue="var(--blue)";
@@ -124,27 +124,24 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat
     const detail=text(note,px,ruleY+(mobile?47:61),"",mobile?16:17,muted);
     const indexFor=id=>nodes.findIndex(n=>n.id===id);
     const shownWidth=W-px-margin;
-    const matchPair=[arg,monitor], dnsPair=[dns,address,endpoint,arg];
-    const rawExamples=[
-      ["k8s-refund-job-rs","k8s-refund-job-deploy"],
-      ["flow-tool-handler-orders-a"],
-      ["span-2"]
+    const examples=matched ? [
+      {start:0, ids:[arg,monitor], words:[
+        "Shared identifiers","shopreceipts","Azure Resource Graph · …/shopreceipts","Azure Monitor · …/shopreceipts","Identity match · same full ARM resource ID.","Two descriptions identify one account."]},
+      {start:spokenAt("Now follow the DNS name",.55), ids:[dns,address,endpoint,arg], words:[
+        "DNS and private endpoint","receipts.shop.internal","A record   →   10.42.2.8","Private endpoint   →   shopreceipts","The DNS answer supplies the address.","The endpoint names the storage resource."]}
+    ] : [
+      {start:0, ids:["span-2"], detail:"10:12 UTC · Payment API timed out."},
+      {start:spokenAt("In Kubernetes",.53), ids:["k8s-refund-job-rs","k8s-refund-job-deploy"], detail:"Its owner reference names Deployment refund."},
+      {start:spokenAt("A network flow",.70), ids:["flow-tool-handler-orders-a"], detail:"A flow reports two network endpoints."},
+      {start:spokenAt("We call a link",.84), ids:["k8s-refund-job-rs","k8s-refund-job-deploy"], detail:"Typed edge · controlled by Deployment refund."}
     ];
-    const examples=matched?[matchPair,dnsPair]:rawExamples;
     let previous=-1,previousIdentities=-1,previousJoins=-1;
     function changeNote(which) {
-      const ids=examples[which], selected=byId.get(ids[0]);
-      const words=matched?(which===0?
-        ["Shared identifiers","shopreceipts","Azure Resource Graph · …/shopreceipts","Azure Monitor · …/shopreceipts","Same full ARM resource ID.","Two descriptions identify one account."]:
-        ["A different relationship","receipts.shop.internal","A record   →   10.42.2.8","Private endpoint   →   shopreceipts","The DNS answer supplies the address.","The endpoint names the storage resource."]):
-        [selected.source,selected.label,selected.kind,[
-          "Its owner reference names Deployment refund.",
-          "A flow reports two network endpoints.",
-          "10:12 UTC · Payment API timed out."
-        ][which],
-         nLoose+" records have no supplied link.","A dot represents one source record."];
+      const {ids,words,detail:recordDetail}=examples[which], selected=byId.get(ids[0]);
+      const noteLines=words || [selected.source,selected.label,selected.kind,recordDetail,
+                                nLoose+" records have no supplied link.","A dot represents one source record."];
       for(const [i,node] of [label,record,first,second,evidence,detail].entries()) {
-        node.textContent=words[i];node.removeAttribute("textLength");fit(node,shownWidth);
+        node.textContent=noteLines[i];node.removeAttribute("textLength");fit(node,shownWidth);
       }
       const color=matched?(which===0?identity:master):pointInk;
       evidence.setAttribute("fill",color);
@@ -159,7 +156,7 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat
       ids.forEach(id=>circles[indexFor(id)].setAttribute("fill",color));
     }
     return progress=>{
-      const which=matched?Number(progress>=.64):progress<.42?0:progress<.66?1:2;
+      const which=examples.findLastIndex(example=>progress>=example.start);
       if(which!==previous){changeNote(which);previous=which;}
       if(matched) {
         const count=Math.round(stage(progress,0,.39)*graph.identityEdges.length);
@@ -167,7 +164,8 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat
         const links=Math.round(stage(progress,.20,.76)*graph.joinedEdges.length);
         if(links!==previousJoins){setD(joinLayer,graphPath(graph.joinedEdges.slice(0,links),raw));previousJoins=links;}
       }
-      const pulse=stage(progress,which===0?.03:.67,which===0?.32:.90);
+      const start=examples[which].start, end=examples[which+1]?.start ?? 1;
+      const pulse=stage(progress,start,Math.min(start+.2,end));
       rings.forEach(ring=>ring.setAttribute("r",(mobile?7:9)+3*Math.sin(Math.PI*pulse)));
     };
   }
@@ -183,55 +181,76 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat
       model.groups.length+" groups   ·   "+model.edges.length+" group connections");
     const before=isTechnical?null:drawCells(technical,false);
     const {panels,labels}=drawCells(layout,!isTechnical);
-    const wires=group(g), atoms=group(g),selected=group(g),bundles=group(g);
+    const wires=group(g), atoms=group(g),bundles=group(g),selected=group(g);
     const thin=wire(wires,{stroke:edge,"stroke-width":mobile?.8:1,"stroke-opacity":.48});
     const circles=nodes.map(n=>{
       const c=dot(atoms,0,0,isTechnical?(mobile?2.6:3.4):(mobile?2.1:3),{fill:layout.colors.get(n.id),stroke:background,"stroke-width":.7});
       title(c,n.label+" · "+n.source);return c;
     });
     g.append(labels);
-    const route=isTechnical?[dns,address,endpoint,arg]:[];
-    const routePath=wire(selected,{stroke:master,"stroke-width":2.4});
-    const highlights=route.map(()=>dot(selected,0,0,mobile?5:6,{fill:master,stroke:background,"stroke-width":1.2}));
+    const routeColor=isTechnical?master:blue;
+    const routes=isTechnical ? [
+      {start:0,ids:[dns,address,endpoint,arg],label:"DNS → 10.42.2.8 → private endpoint → storage account"}
+    ] : [
+      {start:0,ids:["refund-job"],label:"Refund job · Payout"},
+      {start:spokenAt("The job reads a case",.28),ids:["refund-job","case-store"],label:"Payout → Returns intake · The refund job reads the case store."},
+      {start:spokenAt("Its call to the payment API",.49),ids:["refund-job","processor"],label:"Payout → Payment API · The refund job calls the payment API."}
+    ];
+    const routePath=wire(selected,{stroke:routeColor,"stroke-width":3});
+    const arrow=wire(selected,{d:"M-7 -4 L0 0 L-7 4",stroke:routeColor,"stroke-width":2.3});
+    const highlights=Array.from({length:isTechnical?4:2},()=>dot(selected,0,0,mobile?5:6,{fill:background,stroke:routeColor,"stroke-width":2.6}));
     if(!isTechnical) {
       model.edges.forEach(e=>{
         const width=.75+Math.min(3,Math.sqrt(e.count)*.49);
         const link=wire(bundles,{d:segment(layout.centers.get(e.from),layout.centers.get(e.to)),stroke:edge,"stroke-opacity":.65,"stroke-width":width});
         title(link,e.count+" source relationship"+(e.count===1?"":"s"));
       });
-      const payout=model.edges.find(e=>e.from==="payout"&&e.to==="payment");
-      if(payout) {
-        const a=layout.centers.get(payout.from),b=layout.centers.get(payout.to);
-        wire(bundles,{d:segment(a,b),stroke:blue,"stroke-width":3});
-        const mid=shift(a,b,.6),angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
-        wire(bundles,{d:"M-7 -4 L0 0 L-7 4",stroke:blue,"stroke-width":2.3,transform:"translate("+mid.x+" "+mid.y+") rotate("+angle+")"});
-      }
       layout.cells.forEach(({bucket,center,color})=>{
         const node=dot(bundles,center.x,center.y,(mobile?4.1:5.2)+Math.sqrt(bucket.members.length),{fill:color,stroke:background,"stroke-width":2});
         title(node,bucket.label+" · "+bucket.members.length+" source records");
       });
     }
-    const caption=text(g,margin,H-12,isTechnical?"DNS → 10.42.2.8 → private endpoint → storage account":"Payout → Payment API   ·   The refund job calls the payment API.",
-                       mobile?15.5:18,isTechnical?master:blue,600);
-    fit(caption,W-2*margin);
-    let previous=-1;
+    const caption=text(g,margin,H-12,"",mobile?15.5:18,routeColor,600);
+    const moveStart=isTechnical?spokenAt("It stays connected",.12):spokenAt("It belongs to Payout",.12);
+    const moveEnd=moveStart+.5*(1-moveStart);
+    let previousMove=-1,previousFold=-1,previousRoute=-1;
     return progress=>{
-      const move=ease(stage(progress,.035,.57));
-      if(move!==previous) {
+      const regroup=stage(progress,moveStart,moveEnd),move=ease(regroup);
+      const fold=isTechnical?0:ease(stage(progress,moveEnd,moveEnd+.4*(1-moveEnd)));
+      const index=routes.findLastIndex(route=>progress>=route.start),route=routes[index];
+      if(move!==previousMove) {
         const points=new Map(nodes.map((n,i)=>{
           const pos=shift(from.get(n.id),to.get(n.id),move);
           setXY(circles[i],pos);return [n.id,pos];
         }));
         setD(thin,graphPath(allEdges,points));
-        setD(routePath,route.slice(1).map((id,i)=>segment(points.get(route[i]),points.get(id))).join(" "));
-        route.forEach((id,i)=>setXY(highlights[i],points.get(id)));
-        previous=move;
       }
-      opacity(panels,stage(progress,.11,.55));opacity(labels,stage(progress,.22,.59));
-      if(before){const alpha=1-stage(progress,0,.20);opacity(before.panels,alpha);opacity(before.labels,alpha);}
-      const fold=isTechnical?0:stage(progress,.55,.84);
+      if(index!==previousRoute) {
+        caption.textContent=route.label;caption.removeAttribute("textLength");fit(caption,W-2*margin);
+      }
+      if(index!==previousRoute || move!==previousMove || fold!==previousFold) {
+        // Follow the same source records as they move. In the capability graph
+        // the selected relation finishes on the groups that own its endpoints.
+        const points=route.ids.map(id=>{
+          const p=shift(from.get(id),to.get(id),move);
+          return fold?shift(p,layout.centers.get(byId.get(id).capability),fold):p;
+        });
+        setD(routePath,points.slice(1).map((p,i)=>segment(points[i],p)).join(" "));
+        highlights.forEach((ring,i)=>{
+          if(points[i])setXY(ring,points[i]);
+          opacity(ring,points[i]?1:0);
+        });
+        const directed=!isTechnical && points.length===2;
+        opacity(arrow,directed?1:0);
+        if(directed){
+          const [a,b]=points,mid=shift(a,b,.6),angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+          arrow.setAttribute("transform","translate("+mid.x+" "+mid.y+") rotate("+angle+")");
+        }
+      }
+      previousMove=move;previousFold=fold;previousRoute=index;
+      opacity(panels,stage(regroup,0,.8));opacity(labels,stage(regroup,.15,.80));
+      if(before){const alpha=1-stage(regroup,0,.28);opacity(before.panels,alpha);opacity(before.labels,alpha);}
       opacity(atoms,1-.74*fold);opacity(wires,1-.84*fold);opacity(bundles,fold);
-      opacity(selected,isTechnical?stage(progress,.54,.7):0);
     };
   }
 
