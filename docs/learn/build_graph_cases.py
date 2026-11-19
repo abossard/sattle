@@ -33,8 +33,46 @@ def components(index):
     return {p["name"]: p for p in selected if p.get("kind") in COMPONENT_KINDS}
 
 
+def health_tree(structure, master, meter):
+    # Follow only Affects, in its recorded direction. Keep both the deployment
+    # and service named "web", and keep a shared contributor as one identity.
+    entities = {id_: fields(el) for id_, el in structure.items() if "source" not in el}
+    affects = {}
+    for el in structure.values():
+        if short_type(el) == "Affects":
+            affects.setdefault(el["source"]["value"], set()).add(el["target"]["value"])
+    root, = [id_ for id_, p in entities.items() if (p.get("kind"), p.get("name")) == ("service", "web")]
+    key = {id_: p["kind"] + ":" + p["name"] for id_, p in entities.items() if "kind" in p}
+    nodes, pending = {}, [root]
+    for id_ in pending:
+        if id_ in nodes:
+            continue
+        children = sorted(affects.get(id_, ()), key=lambda id_: (entities[id_]["kind"] != "service", key[id_]))
+        p = entities[id_]
+        nodes[id_] = {"key": key[id_], "name": p["name"], "kind": p["kind"],
+                      "children": [key[child] for child in children]}
+        pending.extend(children)
+    assert len({node["key"] for node in nodes.values()}) == len(nodes)
+
+    service, = [fields(el) for el in master.values() if short_type(el) == "Service"
+                and fields(el).get("name") == "database" and fields(el).get("namespace") == "shop"]
+    resource_id, = [el["target"]["value"] for el in master.values() if short_type(el) == "MeterOf"
+                    and fields(master[el["source"]["value"]]).get("meter") == meter
+                    and fields(master[el["target"]["value"]]).get("name") == "pg-shop"]
+    resource = fields(master[resource_id])
+    assert service["externalName"] == resource["name"] + ".postgres.database.azure.com"
+    assert any(short_type(el) == "BackedBy" and nodes.get(el["source"]["value"], {}).get("key") == "service:database"
+               and nodes.get(el["target"]["value"], {}).get("key") == "resource:pg-shop" for el in structure.values())
+    return {"root": key[root], "nodes": list(nodes.values()),
+            "source": {"externalName": service["externalName"], "resourceName": resource["name"],
+                       "resourceType": resource["type"], "meter": meter}}
+
+
 def rollup():
     recorded = evidence()
+    structure = graph_index(EXPORT, "workloadStructure")
+    tree = health_tree(structure, graph_index(EXPORT, "master"), recorded["rule"]["meter"])
+    keys = {node["key"] for node in tree["nodes"]}
     current, frames = {}, []
     for patch in records(EXPORT / "workload.patches.ndjson"):
         for edit in patch["edits"]:
@@ -46,18 +84,21 @@ def rollup():
         revision = int(patch["to"]["revision"]["value"])
         if 15 <= revision <= 18:
             selected = components(current)
+            typed = {p["kind"] + ":" + p["name"]: p for el in current.values()
+                     if "source" not in el and (p := fields(el)).get("kind") and "name" in p}
+            tree_states = {key: typed[key]["state"] for key in sorted(keys)}
+            tree_own = {key: int(typed[key]["own"]) for key in tree_states if "own" in typed[key]}
             signal = next(fields(el) for el in current.values() if fields(el).get("rule") == "database-down")
             frames.append({"revision": revision, "states": {n: p["state"] for n, p in selected.items()},
                            "own": {n: int(p["own"]) for n, p in selected.items() if "own" in p},
-                           "signal": signal["signalState"]})
+                           "signal": signal["signalState"], "treeStates": tree_states, "treeOwn": tree_own})
     paths = [["shop", "web", "api", "database", "pg-shop"], ["apim-shop", "api", "database", "pg-shop"]]
-    structure = graph_index(EXPORT, "workloadStructure")
     links = {(fields(structure[r["source"]["value"]]).get("name"), fields(structure[r["target"]["value"]]).get("name"))
              for r in structure.values() if short_type(r) == "Affects"}
     for path in paths:
         assert all(pair in links for pair in zip(path, path[1:])), path
     assert [frame["signal"] for frame in frames] == ["off", "on", "on", "off"]
-    return {"rule": recorded["rule"], "readings": recorded["readings"], "frames": frames, "paths": paths}
+    return {"rule": recorded["rule"], "readings": recorded["readings"], "frames": frames, "paths": paths, "tree": tree}
 
 
 def add_flow(capture):

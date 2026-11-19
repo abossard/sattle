@@ -167,7 +167,8 @@ const player=(()=>{
   function jump(i,fraction=0) {
     cancelAnimationFrame(ghost);
     const beat=scene.beats[i];showTime(beat.start+(beat.end-beat.start)*fraction);
-    audio.currentTime=position;
+    // While paused, the figure owns the playhead. Seek the recording once on Play.
+    if(!audio.paused)audio.currentTime=position;
   }
   function preview(end) {
     if(matchMedia("(prefers-reduced-motion: reduce)").matches){map.seek(end);return;}
@@ -197,7 +198,8 @@ const player=(()=>{
   range.oninput=()=>{
     cancelAnimationFrame(ghost);
     const start=scene.beats[0].start;
-    showTime(start+(scene.beats.at(-1).end-start)*Number(range.value)/1000);audio.currentTime=position;
+    showTime(start+(scene.beats.at(-1).end-start)*Number(range.value)/1000);
+    if(!audio.paused)audio.currentTime=position;
   };
   $("#mute").onclick=()=>{
     audio.muted=!audio.muted;

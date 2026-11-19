@@ -151,6 +151,22 @@ details p { margin:9px 0 0; }
 .case-inspect ul { margin:8px 0 12px; padding-left:22px; }
 .case-inspect .options { margin:8px 0 16px; }
 .case-inspect > p:last-child { margin-bottom:0; }
+.health-explorer fieldset { min-width:0; padding:0; margin:0; border:0; }
+.health-explorer legend { font-size:14px; color:var(--muted); }
+.health-tree-inspector { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:clamp(16px,4vw,44px); align-items:start; }
+.health-tree-list,.health-tree-list ul { list-style:none; }
+.health-explorer .health-tree-list { margin:0; padding:0; }
+.health-tree-list ul { margin:0 0 0 12px; padding-inline-start:21px; border-inline-start:1px solid var(--wire); }
+.health-tree-list li { position:relative; padding-block:3px; }
+.health-tree-list ul > li::before { content:""; position:absolute; top:22px; inset-inline-start:-21px; width:21px; border-block-start:1px solid var(--wire); }
+.health-tree-list button { padding:6px 9px; display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px; text-align:start; font:600 14px/1.4 var(--sans); max-width:100%; }
+.health-tree-list button[aria-pressed="true"] { border-color:var(--rule); background:var(--chapter-surface); }
+.health-tree-list [data-state] { color:var(--state); background:color-mix(in srgb,var(--state) 14%,var(--page)); border-radius:3px; padding:2px 6px; }
+.health-tree-evidence { padding:14px 16px; background:var(--chapter-surface); border-inline-start:3px solid var(--rule); }
+.health-tree-evidence h3,.health-tree-evidence p { margin:0; }
+.health-tree-evidence p { margin-top:6px; }
+.health-query dd { margin:2px 0 12px; overflow-wrap:anywhere; }
+.health-query dt { font-weight:650; }
 .journey-inspector + .journey-inspector { margin-top:16px; }
 .journey-inspector fieldset { padding:0; border:0; margin:12px 0; min-width:0; }
 .journey-inspector legend { color:var(--muted); font-size:14px; }
@@ -289,6 +305,9 @@ dialog p { margin:10px 0 0; font-size:14px; }
   .player button { padding:6px 8px; font-size:13px; }
   .chapter-reading { padding-inline:3px; }
   .journey-inspector { padding:14px; }
+  .health-tree-inspector { grid-template-columns:minmax(0,1fr); }
+  .health-tree-list ul { margin-inline-start:7px; padding-inline-start:12px; }
+  .health-tree-list ul > li::before { inset-inline-start:-12px; width:12px; }
   .journey-inspector table { table-layout:fixed; font-size:13px; }
   .journey-inspector td,.journey-inspector th { padding:7px 4px; }
   .verb-neighborhood { grid-template-columns:minmax(0,1fr); gap:20px; }

@@ -82,9 +82,10 @@ def publish(raw, retail):
         at = overview["start"]+.90*(overview["end"]-overview["start"])
         ffmpeg("-ss", str(at), "-i", temp/movie.name, "-frames:v", "1", "-q:v", "3", temp/poster.name)
 
-        last_beat = {"logistics","sandbox","jobs","engagement"} if retail else {"incident","dependency","azure"}
+        preview_beats = ({"rollup":0,"logistics":2,"sandbox":2,"jobs":2,"engagement":2}
+                         if retail else {"incident":2,"dependency":2,"azure":2})
         for i, scene in enumerate(story):
-            beat = scene["beats"][2 if scene["id"] in last_beat else 1]
+            beat = scene["beats"][preview_beats.get(scene["id"],1)]
             at = beat["start"]+.86*(beat["end"]-beat["start"])
             ffmpeg("-ss", str(at), "-i", temp/movie.name, "-vf", "crop=1240:552:20:45,scale=600:-2:flags=lanczos",
                    "-frames:v", "1", temp/f"plate-{i:02d}.png")
@@ -97,8 +98,8 @@ def publish(raw, retail):
         # own guide and publishes its new playback digest last.
         uploads = {movie:temp/movie.name, poster:temp/poster.name, documents/"chapters.jpg":temp/"chapters.jpg"}
         if retail:
-            evidence = next(scene for scene in story if scene["id"] == "rollup")["beats"][2]
-            at = evidence["start"]+.90*(evidence["end"]-evidence["start"])
+            tree = next(scene for scene in story if scene["id"] == "rollup")["beats"][0]
+            at = tree["start"]+.90*(tree["end"]-tree["start"])
             frame = temp/"projection.jpg"
             ffmpeg("-ss", str(at), "-i", temp/movie.name, "-frames:v", "1", "-q:v", "2", frame)
             uploads[documents/frame.name] = frame

@@ -8,10 +8,10 @@ const ShopTerms = {
     ["Five views", "Each view selects evidence for a question. The health rule uses call outcomes, while the DNS view uses names and addresses."]
   ],
   rollup:[
-    ["Health roll-up","A dependency’s health can affect the service that relies on it."],
-    ["Signal rule","One bad minute opens the database alarm. Two good minutes in a row clear it."],
-    ["Affects paths","Reachability asks where a path leads. This query keeps the worst state it can reach along up to 16 Affects links."],
-    ["Recovery","A positive sample arrives before the alarm clears. The rule waits for a second one."]
+    ["Health Tree","Start at a service. Its branches show the components whose health can affect it."],
+    ["From the master graph","The structure query matches records to build the branches. The health query combines those branches with measurements and signal rules."],
+    ["Signal rule","The database rule opens an alarm after one failed minute. Two good minutes in a row clear it."],
+    ["Health roll-up","Starting at each component, the query follows up to 16 Affects links and keeps the worst severity it finds, including the component’s own."]
   ],
   discovery:[
     ["New call","A network flow records a new call. Sattle can use that evidence to update the health model as it processes the change."],

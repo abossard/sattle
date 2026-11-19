@@ -179,351 +179,363 @@ same records.
 That’s why you can follow one problem
 across all five.
 
-00:02:14.770 --> 00:02:18.420
-Listener: If the database stops answering,
-why does web turn red too?
+00:02:14.770 --> 00:02:16.595
+Listener: Web is red, but the cache is
+green.
 
-00:02:18.990 --> 00:02:22.465
-Guide: Web needs the API, and the API
-needs the database.
+00:02:16.595 --> 00:02:17.495
+What happened?
 
-00:02:22.465 --> 00:02:23.765
-Look at the two arrows.
+00:02:18.015 --> 00:02:20.290
+Guide: The database server failed a health
+check.
 
-00:02:23.765 --> 00:02:26.940
-The blue one points from the database
-service to the server it needs.
+00:02:20.290 --> 00:02:22.515
+Follow the branch from web through the API
 
-00:02:26.940 --> 00:02:28.415
-The red one points back.
+00:02:22.515 --> 00:02:24.940
+and the database service to pg-shop.
 
-00:02:28.415 --> 00:02:30.165
-A failure can affect the caller.
+00:02:24.940 --> 00:02:27.740
+Its failure reaches each parent on the way
+back up.
 
-00:02:30.165 --> 00:02:32.915
-That’s health roll-up, and it explains why
-the database,
+00:02:27.740 --> 00:02:29.740
+The cache and storage stay green.
 
-00:02:32.915 --> 00:02:36.140
-API and web all read Unhealthy in this
-revision.
+00:02:29.740 --> 00:02:31.915
+A Health Tree starts at one component.
 
-00:02:37.370 --> 00:02:39.720
-Listener: What makes the database red in
-the first place?
+00:02:31.915 --> 00:02:34.640
+Its branches show what can affect that
+component’s health.
 
-00:02:40.290 --> 00:02:42.340
-Guide: One bad minute opens the alarm.
+00:02:35.870 --> 00:02:37.845
+Listener: Where did that branch of the
+tree come from?
 
-00:02:42.340 --> 00:02:45.440
-The chart shows the meter dropping to zero
-at ten eleven.
+00:02:38.365 --> 00:02:40.415
+Guide: From two records in the master
+graph.
 
-00:02:45.440 --> 00:02:48.015
-Azure Monitor delivers that reading a
-minute later.
+00:02:40.415 --> 00:02:43.365
+Kubernetes gives the database service an
+external name.
 
-00:02:48.015 --> 00:02:49.465
-Zero is a measurement.
+00:02:43.365 --> 00:02:47.240
+The structure query builds a host name
+from the Azure server’s name and type.
 
-00:02:49.465 --> 00:02:51.865
-The database rule gives it meaning for
-health.
+00:02:47.240 --> 00:02:50.890
+The names match, so the query records
+which server backs the service.
 
-00:02:51.865 --> 00:02:55.465
-On this rule, one failed sample makes the
-database Unhealthy.
+00:02:50.890 --> 00:02:54.615
+The health query combines that structure
+with readings and signal rules.
 
-00:02:56.687 --> 00:02:59.487
-Listener: Why does the alarm reach web and
-leave the cache green?
+00:02:54.615 --> 00:02:57.990
+When new evidence changes a match, Sattle
+updates the model.
 
-00:03:00.057 --> 00:03:03.157
-Guide: Web has a path to the failing
-database through the API.
+00:02:59.203 --> 00:03:01.603
+Listener: How does one reading turn the
+database red?
 
-00:03:03.157 --> 00:03:04.957
-The cache has no such path.
+00:03:02.123 --> 00:03:05.273
+Guide: The database rule says one failed
+minute opens the alarm.
 
-00:03:04.957 --> 00:03:07.882
-Follow the arrows to see what each service
-depends on.
+00:03:05.273 --> 00:03:07.648
+At ten eleven, the reading drops to zero.
 
-00:03:07.882 --> 00:03:10.082
-The structure query builds those links.
+00:03:07.648 --> 00:03:10.423
+That gives the server its own severity,
+Unhealthy.
 
-00:03:10.082 --> 00:03:12.757
-The health query follows up to sixteen
-Affects links
+00:03:10.423 --> 00:03:12.723
+The rule also sets the recovery time.
 
-00:03:12.757 --> 00:03:14.857
-and takes the worst state it can reach.
+00:03:12.723 --> 00:03:16.048
+At ten fourteen, the first good minute
+leaves the alarm open.
 
-00:03:14.857 --> 00:03:16.832
-That’s why the cache stays green.
+00:03:16.048 --> 00:03:18.673
+At ten fifteen, the second good minute
+clears it.
 
-00:03:18.037 --> 00:03:19.387
-Listener: The meter is back at one.
+00:03:18.673 --> 00:03:22.723
+Requiring two good samples keeps one brief
+recovery from clearing the alarm.
 
-00:03:19.387 --> 00:03:21.312
-Why is the database still red?
+00:03:23.953 --> 00:03:26.653
+Listener: How does Sattle choose the color
+at the top of the tree?
 
-00:03:21.832 --> 00:03:24.757
-Guide: The rule remembers how many good
-minutes came in a row.
+00:03:27.198 --> 00:03:29.498
+Guide: It takes the worst severity web can
+reach.
 
-00:03:24.757 --> 00:03:28.182
-At ten fourteen the count is one, and the
-alarm stays open.
+00:03:29.498 --> 00:03:30.773
+Start at web itself.
 
-00:03:28.182 --> 00:03:29.582
-Ten fifteen makes two.
+00:03:30.773 --> 00:03:33.873
+Zero steps means a component’s own signals
+count too.
 
-00:03:29.582 --> 00:03:31.957
-The alarm clears and the callers recover.
+00:03:33.873 --> 00:03:36.873
+Then follow the links called Affects, up
+to sixteen steps.
 
-00:03:31.957 --> 00:03:34.357
-The times across the top come from the
-meter.
+00:03:36.873 --> 00:03:40.498
+Three links down, pg-shop has severity
+three, Unhealthy.
 
-00:03:34.357 --> 00:03:38.232
-Revision eighteen names the version of the
-graph that records the recovery.
+00:03:40.498 --> 00:03:42.773
+That outranks the healthy cache and
+storage.
 
-00:03:39.828 --> 00:03:42.928
+00:03:42.773 --> 00:03:44.873
+The failed reading belongs to the server.
+
+00:03:44.873 --> 00:03:47.473
+Web turns red because it depends on that
+server.
+
+00:03:49.078 --> 00:03:52.178
 Listener: Can the health model pick up a
 new dependency on its own?
 
-00:03:43.498 --> 00:03:43.948
+00:03:52.748 --> 00:03:53.198
 Guide: Yes.
 
-00:03:43.948 --> 00:03:47.423
+00:03:53.198 --> 00:03:56.673
 Hubble recorded one flow from the API pod
 to this address.
 
-00:03:47.423 --> 00:03:49.948
+00:03:56.673 --> 00:03:59.198
 The new line means the pod sent traffic
 there.
 
-00:03:49.948 --> 00:03:52.023
+00:03:59.198 --> 00:04:01.273
 When Sattle processes that observation,
 
-00:03:52.023 --> 00:03:56.298
+00:04:01.273 --> 00:04:05.548
 the existing rules connect the pod to the
 API and the address to Redis.
 
-00:03:56.298 --> 00:03:59.923
+00:04:05.548 --> 00:04:09.173
 The health model picks up the new
 dependency without anyone editing it.
 
-00:04:01.145 --> 00:04:04.720
+00:04:10.395 --> 00:04:13.970
 Listener: How does that address become a
 Redis dependency in the health model?
 
-00:04:05.240 --> 00:04:08.365
+00:04:14.490 --> 00:04:17.615
 Guide: Kubernetes ties the pod to the API
 service.
 
-00:04:08.365 --> 00:04:12.015
+00:04:17.615 --> 00:04:21.265
 At the other end, the address matches a
 private endpoint for Redis.
 
-00:04:12.015 --> 00:04:14.340
+00:04:21.265 --> 00:04:23.590
 The DNS name points to the same cache.
 
-00:04:14.340 --> 00:04:17.890
+00:04:23.590 --> 00:04:27.140
 That gives the structure query both ends
 of a service dependency.
 
-00:04:17.890 --> 00:04:21.040
+00:04:27.140 --> 00:04:30.290
 It derives the API to Redis link from
 those records.
 
-00:04:21.040 --> 00:04:24.340
+00:04:30.290 --> 00:04:33.590
 The health model can now follow it using
 its existing rule.
 
-00:04:25.562 --> 00:04:26.937
+00:04:34.812 --> 00:04:36.187
 Listener: Redis was already there.
 
-00:04:26.937 --> 00:04:28.512
+00:04:36.187 --> 00:04:37.762
 Where can I find the new link?
 
-00:04:29.057 --> 00:04:30.407
+00:04:38.307 --> 00:04:39.657
 Guide: Look for the plus sign.
 
-00:04:30.407 --> 00:04:33.532
+00:04:39.657 --> 00:04:42.782
 A patch lists the edits from one graph
 revision to the next.
 
-00:04:33.532 --> 00:04:36.882
+00:04:42.782 --> 00:04:46.132
 In the master graph, the added line means
 the pod sent traffic.
 
-00:04:36.882 --> 00:04:40.457
+00:04:46.132 --> 00:04:49.707
 In the structure graph, it means the API
 depends on Redis.
 
-00:04:40.457 --> 00:04:43.757
+00:04:49.707 --> 00:04:53.007
 In the health graph, revision fourteen
 adds that dependency.
 
-00:04:43.757 --> 00:04:45.532
+00:04:53.007 --> 00:04:54.782
 The cache was there all along.
 
-00:04:46.770 --> 00:04:50.370
+00:04:56.020 --> 00:04:59.620
 Listener: How could I check that the API
 really started using that cache?
 
-00:04:50.915 --> 00:04:53.115
+00:05:00.165 --> 00:05:02.365
 Guide: Follow the dependency back through
 the graphs.
 
-00:04:53.115 --> 00:04:55.240
+00:05:02.365 --> 00:05:04.490
 The structure query kept two matches.
 
-00:04:55.240 --> 00:04:58.165
+00:05:04.490 --> 00:05:07.415
 One links the pod’s destination to a
 private endpoint.
 
-00:04:58.165 --> 00:05:00.840
+00:05:07.415 --> 00:05:10.090
 The other identifies Redis by its DNS
 name.
 
-00:05:00.840 --> 00:05:04.440
+00:05:10.090 --> 00:05:13.690
 That trail from a conclusion back to its
 inputs is called provenance.
 
-00:05:04.440 --> 00:05:05.990
+00:05:13.690 --> 00:05:15.240
 Now compare the two runs.
 
-00:05:05.990 --> 00:05:08.190
+00:05:15.240 --> 00:05:17.440
 Redis has the same load warning in both.
 
-00:05:08.190 --> 00:05:12.240
+00:05:17.440 --> 00:05:21.490
 The added dependency explains why the API
 and gateway turn amber.
 
-00:05:13.870 --> 00:05:16.195
+00:05:23.120 --> 00:05:25.445
 Listener: Can we see the query that builds
 a health graph?
 
-00:05:16.765 --> 00:05:17.165
+00:05:26.015 --> 00:05:26.415
 Guide: Yes.
 
-00:05:17.165 --> 00:05:21.265
+00:05:26.415 --> 00:05:30.515
 This is a GKQL program from Sattle’s
 deployment health experiment.
 
-00:05:21.265 --> 00:05:23.490
+00:05:30.515 --> 00:05:32.740
 The dots in the master graph are pods.
 
-00:05:23.490 --> 00:05:25.840
+00:05:32.740 --> 00:05:35.090
 Web has two, and the database has one.
 
-00:05:25.840 --> 00:05:27.940
+00:05:35.090 --> 00:05:37.190
 The query itself is a graph, too.
 
-00:05:27.940 --> 00:05:29.865
+00:05:37.190 --> 00:05:39.115
 Its boxes are operations.
 
-00:05:29.865 --> 00:05:32.990
+00:05:39.115 --> 00:05:42.240
 A wire tells us which operation uses
 another’s result.
 
-00:05:32.990 --> 00:05:36.365
+00:05:42.240 --> 00:05:45.615
 The target graph shows each workload and
 the traffic between them.
 
-00:05:37.578 --> 00:05:40.428
+00:05:46.828 --> 00:05:49.678
 Listener: What does the little arrow
 inside graph-match look for?
 
-00:05:40.973 --> 00:05:43.473
+00:05:50.223 --> 00:05:52.723
 Guide: A ready pod and the deployment that
 controls it.
 
-00:05:43.473 --> 00:05:46.273
+00:05:52.723 --> 00:05:55.523
 The letters p and d hold their places in
 the pattern.
 
-00:05:46.273 --> 00:05:48.273
+00:05:55.523 --> 00:05:57.523
 Watch the first web pod light up.
 
-00:05:48.273 --> 00:05:51.598
+00:05:57.523 --> 00:06:00.848
 In this match, p stands for that pod, and
 d stands for web.
 
-00:05:51.598 --> 00:05:53.448
+00:06:00.848 --> 00:06:02.698
 That pairing is called a binding.
 
-00:05:53.448 --> 00:05:55.148
+00:06:02.698 --> 00:06:04.398
 The other web pod fits too.
 
-00:05:55.148 --> 00:05:56.548
+00:06:04.398 --> 00:06:05.798
 So does the database pod.
 
-00:05:56.548 --> 00:05:57.648
+00:06:05.798 --> 00:06:06.898
 Three matches.
 
-00:05:58.870 --> 00:06:01.270
+00:06:08.120 --> 00:06:10.520
 Listener: How do those matches give web a
 health state?
 
-00:06:01.790 --> 00:06:03.640
+00:06:11.040 --> 00:06:12.890
 Guide: Start each deployment at zero.
 
-00:06:03.640 --> 00:06:05.415
+00:06:12.890 --> 00:06:14.665
 Add one for every ready pod.
 
-00:06:05.415 --> 00:06:08.990
+00:06:14.665 --> 00:06:18.240
 The summarize step groups those numbers by
 deployment and adds them up.
 
-00:06:08.990 --> 00:06:10.065
+00:06:18.240 --> 00:06:19.315
 Web gets two.
 
-00:06:10.065 --> 00:06:11.565
+00:06:19.315 --> 00:06:20.815
 The database gets one.
 
-00:06:11.565 --> 00:06:15.340
+00:06:20.815 --> 00:06:24.590
 The threshold here is zero, so any count
 above zero means Healthy.
 
-00:06:15.340 --> 00:06:17.140
+00:06:24.590 --> 00:06:26.390
 Web appears once in the target graph,
 
-00:06:17.140 --> 00:06:19.540
+00:06:26.390 --> 00:06:28.790
 with its deployment ID and a count of two.
 
-00:06:20.770 --> 00:06:24.645
+00:06:30.020 --> 00:06:33.895
 Listener: What happens to the connection
 if the database pod stops being ready?
 
-00:06:25.190 --> 00:06:26.915
+00:06:34.440 --> 00:06:36.165
 Guide: Follow the two pod calls.
 
-00:06:26.915 --> 00:06:28.915
+00:06:36.165 --> 00:06:38.165
 Both reach the same database pod,
 
-00:06:28.915 --> 00:06:32.315
+00:06:38.165 --> 00:06:41.565
 so their matches build one Talks edge from
 web to the database.
 
-00:06:32.315 --> 00:06:35.190
+00:06:41.565 --> 00:06:44.440
 At ten oh three, the database pod stops
 being ready.
 
-00:06:35.190 --> 00:06:36.890
+00:06:44.440 --> 00:06:46.140
 Its count falls to zero.
 
-00:06:36.890 --> 00:06:39.015
+00:06:46.140 --> 00:06:48.265
 The edge takes the worse state of its two
 ends,
 
-00:06:39.015 --> 00:06:40.965
+00:06:48.265 --> 00:06:50.215
 so it turns red with the database.
 
-00:06:40.965 --> 00:06:43.765
+00:06:50.215 --> 00:06:53.015
 Web still has two ready pods and stays
 green.

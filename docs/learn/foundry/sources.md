@@ -24,6 +24,12 @@ The shop’s application catalog contains 46 digital entities and 68 typed links
 
 The workload’s structure query identifies the service behind a pod and matches an observed destination with Azure resources. Its health query reads the structure and signal rules. To calculate the state a service reports, it follows links of type Affects and takes the worst severity within 16 steps. The vocabulary and rules can be maintained as the system changes. [Structure query](../../../engine/definitions/acme.workload.workloadStructure.kql) · [Health query](../../../engine/definitions/acme.workload.workloadHealth.kql) · [Health models in the white paper](../../../paper/ch07-telemetry-plane.md#74-worked-example-the-workload-model)
 
+## The Health Tree
+
+The web service has four direct contributors in the recorded structure graph. They are the web deployment, the API service, Redis and storage. Follow the API service to find its deployment and the database service. The database service points to PostgreSQL. A service and deployment can share a name and still be separate nodes. [Recorded structure](../../../canvas/public/demo/estate/workloadStructure.final.snapshot.json) · [Which edges carry health](../../../engine/definitions/acme.workload.workloadStructure.kql)
+
+At workload revision 16, PostgreSQL contributes severity 3. Web reports Unhealthy because its branch reaches PostgreSQL. Redis and storage remain Healthy. The query includes each component’s own severity and follows up to 16 links of type `Affects`. It takes the maximum severity for each starting component. [Signal rules](../../../engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson) · [Health query](../../../engine/definitions/acme.workload.workloadHealth.kql) · [White paper §7.4](../../../paper/ch07-telemetry-plane.md#74-worked-example-the-workload-model)
+
 ## The GKQL program
 
 The fourth chapter uses Sattle’s deployment-health experiment. Its GKQL document contains 16 operations and 16 wires. One branch counts ready pods by deployment. Another follows pod calls to their deployments and writes a `Talks` edge between the corresponding workloads. The test runs the program against the same inputs as its KQL counterpart and compares their final state digests. [Program](../../../engine/experiments/X12-picture-c/acme.deployhealth.deploymentHealth.gkql.json) · [Comparison test](../../../engine/experiments/X12-picture-c/PictureCTests.cs)

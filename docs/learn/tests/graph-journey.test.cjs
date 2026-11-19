@@ -215,3 +215,36 @@ test('the GKQL drawing and replay follow the authored query and captured inputs'
     assert.equal(frame.talks, Object.values(frame.states).includes('Unhealthy') ? 'Unhealthy' : 'Healthy');
   }
 });
+
+test('the Health Tree preserves the recorded Affects branches and the source of the alarm', () => {
+  const lesson = file => readFileSync(join(__dirname, '../foundry', file), 'utf8');
+  const repo = file => readFileSync(join(__dirname, '../../..', file), 'utf8');
+  const {tree, frames} = JSON.parse(vm.runInNewContext(lesson('replay-cases.js') + '\nJSON.stringify(ShopReplayCases.rollup)'));
+  const {extent} = JSON.parse(repo('canvas/public/demo/estate/workloadStructure.final.snapshot.json'));
+  const keys = new Map(extent.entities.map(entity => {
+    const properties = Object.fromEntries(entity.properties.map(p => [p.property.value.split('.').at(-1), p.value.value]));
+    return [entity.id.value, properties.kind + ':' + properties.name];
+  }));
+  const affects = extent.relationships.filter(edge => edge.type.value.split('.').at(-1) === 'Affects');
+  const branch = new Set([tree.root]);
+  assert.equal(tree.root, 'service:web');
+  for (const key of branch) {
+    const expected = affects.filter(edge => keys.get(edge.source.value) === key).map(edge => keys.get(edge.target.value));
+    const node = tree.nodes.find(n => n.key === key);
+    assert.deepEqual([...node.children].sort(), [...new Set(expected)].sort(), key);
+    node.children.forEach(id => branch.add(id));
+  }
+  assert.equal(tree.nodes.length, 8);
+  assert.deepEqual(branch, new Set(tree.nodes.map(n => n.key)));
+  for (const frame of frames) {
+    const alarm = frame.signal === 'on';
+    const affected = new Set(['service:web','service:api','service:database','resource:pg-shop']);
+    assert.equal(frame.treeOwn['resource:pg-shop'], alarm ? 3 : 0);
+    assert.equal(Object.hasOwn(frame.treeOwn,'service:web'), false);
+    for (const key of branch) assert.equal(frame.treeStates[key], alarm && affected.has(key) ? 'Unhealthy' : 'Healthy');
+  }
+  const query = repo('engine/definitions/acme.workload.workloadHealth.kql');
+  const clauses = [...lesson('guide.js').matchAll(/<dd><code>(.*?)<\/code>/g)].map(match => match[1].replaceAll('&gt;', '>'));
+  assert.equal(clauses.length, 3);
+  for (const clause of clauses) assert.ok(query.includes(clause), clause);
+});

@@ -39,28 +39,28 @@
   },
   {
     "id": "rollup",
-    "chapter": "How health rolls up",
-    "title": "Why does web turn red when the database fails?",
+    "chapter": "Health Tree",
+    "title": "Where does the Health Tree come from?",
     "cues": [
       {
-        "focus": "Health roll-up",
-        "question": "If the database stops answering, why does web turn red too?",
-        "answer": "Web needs the API, and the API needs the database. Look at the two arrows. The blue one points from the database service to the server it needs. The red one points back. A failure can affect the caller. That’s health roll-up, and it explains why the database, API and web all read Unhealthy in this revision."
+        "focus": "Health Tree",
+        "question": "Web is red, but the cache is green. What happened?",
+        "answer": "The database server failed a health check. Follow the branch from web through the API and the database service to pg-shop. Its failure reaches each parent on the way back up. The cache and storage stay green. A Health Tree starts at one component. Its branches show what can affect that component’s health."
+      },
+      {
+        "focus": "From the master graph",
+        "question": "Where did that branch of the tree come from?",
+        "answer": "From two records in the master graph. Kubernetes gives the database service an external name. The structure query builds a host name from the Azure server’s name and type. The names match, so the query records which server backs the service. The health query combines that structure with readings and signal rules. When new evidence changes a match, Sattle updates the model."
       },
       {
         "focus": "Signal rule",
-        "question": "What makes the database red in the first place?",
-        "answer": "One bad minute opens the alarm. The chart shows the meter dropping to zero at ten eleven. Azure Monitor delivers that reading a minute later. Zero is a measurement. The database rule gives it meaning for health. On this rule, one failed sample makes the database Unhealthy."
+        "question": "How does one reading turn the database red?",
+        "answer": "The database rule says one failed minute opens the alarm. At ten eleven, the reading drops to zero. That gives the server its own severity, Unhealthy. The rule also sets the recovery time. At ten fourteen, the first good minute leaves the alarm open. At ten fifteen, the second good minute clears it. Requiring two good samples keeps one brief recovery from clearing the alarm."
       },
       {
-        "focus": "Affects paths",
-        "question": "Why does the alarm reach web and leave the cache green?",
-        "answer": "Web has a path to the failing database through the API. The cache has no such path. Follow the arrows to see what each service depends on. The structure query builds those links. The health query follows up to sixteen Affects links and takes the worst state it can reach. That’s why the cache stays green."
-      },
-      {
-        "focus": "Recovery",
-        "question": "The meter is back at one. Why is the database still red?",
-        "answer": "The rule remembers how many good minutes came in a row. At ten fourteen the count is one, and the alarm stays open. Ten fifteen makes two. The alarm clears and the callers recover. The times across the top come from the meter. Revision eighteen names the version of the graph that records the recovery."
+        "focus": "Health roll-up",
+        "question": "How does Sattle choose the color at the top of the tree?",
+        "answer": "It takes the worst severity web can reach. Start at web itself. Zero steps means a component’s own signals count too. Then follow the links called Affects, up to sixteen steps. Three links down, pg-shop has severity three, Unhealthy. That outranks the healthy cache and storage. The failed reading belongs to the server. Web turns red because it depends on that server."
       }
     ]
   },

@@ -52,41 +52,41 @@ The Azure resource view lists the storage account in the shop’s resource group
 
 The DNS and IP view shows how its name reaches a private address. Each view selects what it needs from the same records. That’s why you can follow one problem across all five.
 
-## 02:14 · How health rolls up
+## 02:14 · Health Tree
 
 **Listener**
 
-If the database stops answering, why does web turn red too?
+Web is red, but the cache is green. What happened?
 
 **Guide**
 
-Web needs the API, and the API needs the database. Look at the two arrows. The blue one points from the database service to the server it needs. The red one points back. A failure can affect the caller. That’s health roll-up, and it explains why the database, API and web all read Unhealthy in this revision.
+The database server failed a health check. Follow the branch from web through the API and the database service to pg-shop. Its failure reaches each parent on the way back up. The cache and storage stay green. A Health Tree starts at one component. Its branches show what can affect that component’s health.
 
 **Listener**
 
-What makes the database red in the first place?
+Where did that branch of the tree come from?
 
 **Guide**
 
-One bad minute opens the alarm. The chart shows the meter dropping to zero at ten eleven. Azure Monitor delivers that reading a minute later. Zero is a measurement. The database rule gives it meaning for health. On this rule, one failed sample makes the database Unhealthy.
+From two records in the master graph. Kubernetes gives the database service an external name. The structure query builds a host name from the Azure server’s name and type. The names match, so the query records which server backs the service. The health query combines that structure with readings and signal rules. When new evidence changes a match, Sattle updates the model.
 
 **Listener**
 
-Why does the alarm reach web and leave the cache green?
+How does one reading turn the database red?
 
 **Guide**
 
-Web has a path to the failing database through the API. The cache has no such path. Follow the arrows to see what each service depends on. The structure query builds those links. The health query follows up to sixteen Affects links and takes the worst state it can reach. That’s why the cache stays green.
+The database rule says one failed minute opens the alarm. At ten eleven, the reading drops to zero. That gives the server its own severity, Unhealthy. The rule also sets the recovery time. At ten fourteen, the first good minute leaves the alarm open. At ten fifteen, the second good minute clears it. Requiring two good samples keeps one brief recovery from clearing the alarm.
 
 **Listener**
 
-The meter is back at one. Why is the database still red?
+How does Sattle choose the color at the top of the tree?
 
 **Guide**
 
-The rule remembers how many good minutes came in a row. At ten fourteen the count is one, and the alarm stays open. Ten fifteen makes two. The alarm clears and the callers recover. The times across the top come from the meter. Revision eighteen names the version of the graph that records the recovery.
+It takes the worst severity web can reach. Start at web itself. Zero steps means a component’s own signals count too. Then follow the links called Affects, up to sixteen steps. Three links down, pg-shop has severity three, Unhealthy. That outranks the healthy cache and storage. The failed reading belongs to the server. Web turns red because it depends on that server.
 
-## 03:39 · When the system changes
+## 03:48 · When the system changes
 
 **Listener**
 
@@ -120,7 +120,7 @@ How could I check that the API really started using that cache?
 
 Follow the dependency back through the graphs. The structure query kept two matches. One links the pod’s destination to a private endpoint. The other identifies Redis by its DNS name. That trail from a conclusion back to its inputs is called provenance. Now compare the two runs. Redis has the same load warning in both. The added dependency explains why the API and gateway turn amber.
 
-## 05:13 · Reading a GKQL program
+## 05:22 · Reading a GKQL program
 
 **Listener**
 

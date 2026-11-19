@@ -258,158 +258,166 @@ const story = [
   },
   {
     "id": "rollup",
-    "chapter": "How health rolls up",
-    "title": "Why does web turn red when the database fails?",
+    "chapter": "Health Tree",
+    "title": "Where does the Health Tree come from?",
     "beats": [
       {
-        "focus": "Health roll-up",
-        "question": "If the database stops answering, why does web turn red too?",
-        "answer": "Web needs the API, and the API needs the database. Look at the two arrows. The blue one points from the database service to the server it needs. The red one points back. A failure can affect the caller. That’s health roll-up, and it explains why the database, API and web all read Unhealthy in this revision.",
+        "focus": "Health Tree",
+        "question": "Web is red, but the cache is green. What happened?",
+        "answer": "The database server failed a health check. Follow the branch from web through the API and the database service to pg-shop. Its failure reaches each parent on the way back up. The cache and storage stay green. A Health Tree starts at one component. Its branches show what can affect that component’s health.",
         "start": 134.375,
-        "end": 157.0,
+        "end": 155.5,
         "answerStarts": [
-          138.565
+          137.64
         ],
         "spokenCues": [
           [
-            138.99,
-            "Web needs the API, and the API needs the database."
+            138.015,
+            "The database server failed a health check."
           ],
           [
-            142.465,
-            "Look at the two arrows."
+            140.29,
+            "Follow the branch from web through the API"
           ],
           [
-            143.765,
-            "The blue one points from the database service to the server it needs."
+            142.515,
+            "and the database service to pg-shop."
           ],
           [
-            146.94,
-            "The red one points back."
+            144.94,
+            "Its failure reaches each parent on the way back up."
           ],
           [
-            148.415,
-            "A failure can affect the caller."
+            147.74,
+            "The cache and storage stay green."
           ],
           [
-            150.165,
-            "That’s health roll-up, and it explains why the database,"
+            149.74,
+            "A Health Tree starts at one component."
           ],
           [
-            152.915,
-            "API and web all read Unhealthy in this revision."
+            151.915,
+            "Its branches show what can affect that component’s health."
+          ]
+        ]
+      },
+      {
+        "focus": "From the master graph",
+        "question": "Where did that branch of the tree come from?",
+        "answer": "From two records in the master graph. Kubernetes gives the database service an external name. The structure query builds a host name from the Azure server’s name and type. The names match, so the query records which server backs the service. The health query combines that structure with readings and signal rules. When new evidence changes a match, Sattle updates the model.",
+        "start": 155.5,
+        "end": 178.83333333333334,
+        "answerStarts": [
+          157.99
+        ],
+        "spokenCues": [
+          [
+            158.365,
+            "From two records in the master graph."
+          ],
+          [
+            160.415,
+            "Kubernetes gives the database service an external name."
+          ],
+          [
+            163.365,
+            "The structure query builds a host name from the Azure server’s name and type."
+          ],
+          [
+            167.24,
+            "The names match, so the query records which server backs the service."
+          ],
+          [
+            170.89,
+            "The health query combines that structure with readings and signal rules."
+          ],
+          [
+            174.615,
+            "When new evidence changes a match, Sattle updates the model."
           ]
         ]
       },
       {
         "focus": "Signal rule",
-        "question": "What makes the database red in the first place?",
-        "answer": "One bad minute opens the alarm. The chart shows the meter dropping to zero at ten eleven. Azure Monitor delivers that reading a minute later. Zero is a measurement. The database rule gives it meaning for health. On this rule, one failed sample makes the database Unhealthy.",
-        "start": 157.0,
-        "end": 176.29166666666666,
+        "question": "How does one reading turn the database red?",
+        "answer": "The database rule says one failed minute opens the alarm. At ten eleven, the reading drops to zero. That gives the server its own severity, Unhealthy. The rule also sets the recovery time. At ten fourteen, the first good minute leaves the alarm open. At ten fifteen, the second good minute clears it. Requiring two good samples keeps one brief recovery from clearing the alarm.",
+        "start": 178.83333333333334,
+        "end": 203.58333333333334,
         "answerStarts": [
-          159.865
+          181.74833333333333
         ],
         "spokenCues": [
           [
-            160.29,
-            "One bad minute opens the alarm."
+            182.123,
+            "The database rule says one failed minute opens the alarm."
           ],
           [
-            162.34,
-            "The chart shows the meter dropping to zero at ten eleven."
+            185.273,
+            "At ten eleven, the reading drops to zero."
           ],
           [
-            165.44,
-            "Azure Monitor delivers that reading a minute later."
+            187.648,
+            "That gives the server its own severity, Unhealthy."
           ],
           [
-            168.015,
-            "Zero is a measurement."
+            190.423,
+            "The rule also sets the recovery time."
           ],
           [
-            169.465,
-            "The database rule gives it meaning for health."
+            192.723,
+            "At ten fourteen, the first good minute leaves the alarm open."
           ],
           [
-            171.865,
-            "On this rule, one failed sample makes the database Unhealthy."
+            196.048,
+            "At ten fifteen, the second good minute clears it."
+          ],
+          [
+            198.673,
+            "Requiring two good samples keeps one brief recovery from clearing the alarm."
           ]
         ]
       },
       {
-        "focus": "Affects paths",
-        "question": "Why does the alarm reach web and leave the cache green?",
-        "answer": "Web has a path to the failing database through the API. The cache has no such path. Follow the arrows to see what each service depends on. The structure query builds those links. The health query follows up to sixteen Affects links and takes the worst state it can reach. That’s why the cache stays green.",
-        "start": 176.29166666666666,
-        "end": 197.66666666666666,
+        "focus": "Health roll-up",
+        "question": "How does Sattle choose the color at the top of the tree?",
+        "answer": "It takes the worst severity web can reach. Start at web itself. Zero steps means a component’s own signals count too. Then follow the links called Affects, up to sixteen steps. Three links down, pg-shop has severity three, Unhealthy. That outranks the healthy cache and storage. The failed reading belongs to the server. Web turns red because it depends on that server.",
+        "start": 203.58333333333334,
+        "end": 228.70833333333334,
         "answerStarts": [
-          179.63166666666666
+          206.79833333333335
         ],
         "spokenCues": [
           [
-            180.057,
-            "Web has a path to the failing database through the API."
+            207.198,
+            "It takes the worst severity web can reach."
           ],
           [
-            183.157,
-            "The cache has no such path."
+            209.498,
+            "Start at web itself."
           ],
           [
-            184.957,
-            "Follow the arrows to see what each service depends on."
+            210.773,
+            "Zero steps means a component’s own signals count too."
           ],
           [
-            187.882,
-            "The structure query builds those links."
+            213.873,
+            "Then follow the links called Affects, up to sixteen steps."
           ],
           [
-            190.082,
-            "The health query follows up to sixteen Affects links"
+            216.873,
+            "Three links down, pg-shop has severity three, Unhealthy."
           ],
           [
-            192.757,
-            "and takes the worst state it can reach."
+            220.498,
+            "That outranks the healthy cache and storage."
           ],
           [
-            194.857,
-            "That’s why the cache stays green."
-          ]
-        ]
-      },
-      {
-        "focus": "Recovery",
-        "question": "The meter is back at one. Why is the database still red?",
-        "answer": "The rule remembers how many good minutes came in a row. At ten fourteen the count is one, and the alarm stays open. Ten fifteen makes two. The alarm clears and the callers recover. The times across the top come from the meter. Revision eighteen names the version of the graph that records the recovery.",
-        "start": 197.66666666666666,
-        "end": 219.45833333333334,
-        "answerStarts": [
-          201.45666666666668
-        ],
-        "spokenCues": [
-          [
-            201.832,
-            "The rule remembers how many good minutes came in a row."
+            222.773,
+            "The failed reading belongs to the server."
           ],
           [
-            204.757,
-            "At ten fourteen the count is one, and the alarm stays open."
-          ],
-          [
-            208.182,
-            "Ten fifteen makes two."
-          ],
-          [
-            209.582,
-            "The alarm clears and the callers recover."
-          ],
-          [
-            211.957,
-            "The times across the top come from the meter."
-          ],
-          [
-            214.357,
-            "Revision eighteen names the version of the graph that records the recovery."
+            224.873,
+            "Web turns red because it depends on that server."
           ]
         ]
       }
@@ -424,34 +432,34 @@ const story = [
         "focus": "New call",
         "question": "Can the health model pick up a new dependency on its own?",
         "answer": "Yes. Hubble recorded one flow from the API pod to this address. The new line means the pod sent traffic there. When Sattle processes that observation, the existing rules connect the pod to the API and the address to Redis. The health model picks up the new dependency without anyone editing it.",
-        "start": 219.45833333333334,
-        "end": 240.75,
+        "start": 228.70833333333334,
+        "end": 250.0,
         "answerStarts": [
-          223.07333333333332
+          232.32333333333332
         ],
         "spokenCues": [
           [
-            223.498,
+            232.748,
             "Yes."
           ],
           [
-            223.948,
+            233.198,
             "Hubble recorded one flow from the API pod to this address."
           ],
           [
-            227.423,
+            236.673,
             "The new line means the pod sent traffic there."
           ],
           [
-            229.948,
+            239.198,
             "When Sattle processes that observation,"
           ],
           [
-            232.023,
+            241.273,
             "the existing rules connect the pod to the API and the address to Redis."
           ],
           [
-            236.298,
+            245.548,
             "The health model picks up the new dependency without anyone editing it."
           ]
         ]
@@ -460,34 +468,34 @@ const story = [
         "focus": "Service dependency",
         "question": "How does that address become a Redis dependency in the health model?",
         "answer": "Kubernetes ties the pod to the API service. At the other end, the address matches a private endpoint for Redis. The DNS name points to the same cache. That gives the structure query both ends of a service dependency. It derives the API to Redis link from those records. The health model can now follow it using its existing rule.",
-        "start": 240.75,
-        "end": 265.1666666666667,
+        "start": 250.0,
+        "end": 274.4166666666667,
         "answerStarts": [
-          244.865
+          254.115
         ],
         "spokenCues": [
           [
-            245.24,
+            254.49,
             "Kubernetes ties the pod to the API service."
           ],
           [
-            248.365,
+            257.615,
             "At the other end, the address matches a private endpoint for Redis."
           ],
           [
-            252.015,
+            261.265,
             "The DNS name points to the same cache."
           ],
           [
-            254.34,
+            263.59,
             "That gives the structure query both ends of a service dependency."
           ],
           [
-            257.89,
+            267.14,
             "It derives the API to Redis link from those records."
           ],
           [
-            261.04,
+            270.29,
             "The health model can now follow it using its existing rule."
           ]
         ]
@@ -496,34 +504,34 @@ const story = [
         "focus": "Revision patch",
         "question": "Redis was already there. Where can I find the new link?",
         "answer": "Look for the plus sign. A patch lists the edits from one graph revision to the next. In the master graph, the added line means the pod sent traffic. In the structure graph, it means the API depends on Redis. In the health graph, revision fourteen adds that dependency. The cache was there all along.",
-        "start": 265.1666666666667,
-        "end": 286.375,
+        "start": 274.4166666666667,
+        "end": 295.625,
         "answerStarts": [
-          268.6566666666667
+          277.9066666666667
         ],
         "spokenCues": [
           [
-            269.057,
+            278.307,
             "Look for the plus sign."
           ],
           [
-            270.407,
+            279.657,
             "A patch lists the edits from one graph revision to the next."
           ],
           [
-            273.532,
+            282.782,
             "In the master graph, the added line means the pod sent traffic."
           ],
           [
-            276.882,
+            286.132,
             "In the structure graph, it means the API depends on Redis."
           ],
           [
-            280.457,
+            289.707,
             "In the health graph, revision fourteen adds that dependency."
           ],
           [
-            283.757,
+            293.007,
             "The cache was there all along."
           ]
         ]
@@ -532,42 +540,42 @@ const story = [
         "focus": "Evidence",
         "question": "How could I check that the API really started using that cache?",
         "answer": "Follow the dependency back through the graphs. The structure query kept two matches. One links the pod’s destination to a private endpoint. The other identifies Redis by its DNS name. That trail from a conclusion back to its inputs is called provenance. Now compare the two runs. Redis has the same load warning in both. The added dependency explains why the API and gateway turn amber.",
-        "start": 286.375,
-        "end": 313.5,
+        "start": 295.625,
+        "end": 322.75,
         "answerStarts": [
-          290.515
+          299.765
         ],
         "spokenCues": [
           [
-            290.915,
+            300.165,
             "Follow the dependency back through the graphs."
           ],
           [
-            293.115,
+            302.365,
             "The structure query kept two matches."
           ],
           [
-            295.24,
+            304.49,
             "One links the pod’s destination to a private endpoint."
           ],
           [
-            298.165,
+            307.415,
             "The other identifies Redis by its DNS name."
           ],
           [
-            300.84,
+            310.09,
             "That trail from a conclusion back to its inputs is called provenance."
           ],
           [
-            304.44,
+            313.69,
             "Now compare the two runs."
           ],
           [
-            305.99,
+            315.24,
             "Redis has the same load warning in both."
           ],
           [
-            308.19,
+            317.44,
             "The added dependency explains why the API and gateway turn amber."
           ]
         ]
@@ -583,42 +591,42 @@ const story = [
         "focus": "Program graph",
         "question": "Can we see the query that builds a health graph?",
         "answer": "Yes. This is a GKQL program from Sattle’s deployment health experiment. The dots in the master graph are pods. Web has two, and the database has one. The query itself is a graph, too. Its boxes are operations. A wire tells us which operation uses another’s result. The target graph shows each workload and the traffic between them.",
-        "start": 313.5,
-        "end": 337.2083333333333,
+        "start": 322.75,
+        "end": 346.4583333333333,
         "answerStarts": [
-          316.34
+          325.59
         ],
         "spokenCues": [
           [
-            316.765,
+            326.015,
             "Yes."
           ],
           [
-            317.165,
+            326.415,
             "This is a GKQL program from Sattle’s deployment health experiment."
           ],
           [
-            321.265,
+            330.515,
             "The dots in the master graph are pods."
           ],
           [
-            323.49,
+            332.74,
             "Web has two, and the database has one."
           ],
           [
-            325.84,
+            335.09,
             "The query itself is a graph, too."
           ],
           [
-            327.94,
+            337.19,
             "Its boxes are operations."
           ],
           [
-            329.865,
+            339.115,
             "A wire tells us which operation uses another’s result."
           ],
           [
-            332.99,
+            342.24,
             "The target graph shows each workload and the traffic between them."
           ]
         ]
@@ -627,42 +635,42 @@ const story = [
         "focus": "Match a pattern",
         "question": "What does the little arrow inside graph-match look for?",
         "answer": "A ready pod and the deployment that controls it. The letters p and d hold their places in the pattern. Watch the first web pod light up. In this match, p stands for that pod, and d stands for web. That pairing is called a binding. The other web pod fits too. So does the database pod. Three matches.",
-        "start": 337.2083333333333,
-        "end": 358.5,
+        "start": 346.4583333333333,
+        "end": 367.75,
         "answerStarts": [
-          340.5733333333333
+          349.8233333333333
         ],
         "spokenCues": [
           [
-            340.973,
+            350.223,
             "A ready pod and the deployment that controls it."
           ],
           [
-            343.473,
+            352.723,
             "The letters p and d hold their places in the pattern."
           ],
           [
-            346.273,
+            355.523,
             "Watch the first web pod light up."
           ],
           [
-            348.273,
+            357.523,
             "In this match, p stands for that pod, and d stands for web."
           ],
           [
-            351.598,
+            360.848,
             "That pairing is called a binding."
           ],
           [
-            353.448,
+            362.698,
             "The other web pod fits too."
           ],
           [
-            355.148,
+            364.398,
             "So does the database pod."
           ],
           [
-            356.548,
+            365.798,
             "Three matches."
           ]
         ]
@@ -671,42 +679,42 @@ const story = [
         "focus": "Count ready pods",
         "question": "How do those matches give web a health state?",
         "answer": "Start each deployment at zero. Add one for every ready pod. The summarize step groups those numbers by deployment and adds them up. Web gets two. The database gets one. The threshold here is zero, so any count above zero means Healthy. Web appears once in the target graph, with its deployment ID and a count of two.",
-        "start": 358.5,
-        "end": 380.375,
+        "start": 367.75,
+        "end": 389.625,
         "answerStarts": [
-          361.415
+          370.665
         ],
         "spokenCues": [
           [
-            361.79,
+            371.04,
             "Start each deployment at zero."
           ],
           [
-            363.64,
+            372.89,
             "Add one for every ready pod."
           ],
           [
-            365.415,
+            374.665,
             "The summarize step groups those numbers by deployment and adds them up."
           ],
           [
-            368.99,
+            378.24,
             "Web gets two."
           ],
           [
-            370.065,
+            379.315,
             "The database gets one."
           ],
           [
-            371.565,
+            380.815,
             "The threshold here is zero, so any count above zero means Healthy."
           ],
           [
-            375.34,
+            384.59,
             "Web appears once in the target graph,"
           ],
           [
-            377.14,
+            386.39,
             "with its deployment ID and a count of two."
           ]
         ]
@@ -715,42 +723,42 @@ const story = [
         "focus": "Two calls, one edge",
         "question": "What happens to the connection if the database pod stops being ready?",
         "answer": "Follow the two pod calls. Both reach the same database pod, so their matches build one Talks edge from web to the database. At ten oh three, the database pod stops being ready. Its count falls to zero. The edge takes the worse state of its two ends, so it turns red with the database. Web still has two ready pods and stays green.",
-        "start": 380.375,
-        "end": 405.0,
+        "start": 389.625,
+        "end": 414.25,
         "answerStarts": [
-          384.79
+          394.04
         ],
         "spokenCues": [
           [
-            385.19,
+            394.44,
             "Follow the two pod calls."
           ],
           [
-            386.915,
+            396.165,
             "Both reach the same database pod,"
           ],
           [
-            388.915,
+            398.165,
             "so their matches build one Talks edge from web to the database."
           ],
           [
-            392.315,
+            401.565,
             "At ten oh three, the database pod stops being ready."
           ],
           [
-            395.19,
+            404.44,
             "Its count falls to zero."
           ],
           [
-            396.89,
+            406.14,
             "The edge takes the worse state of its two ends,"
           ],
           [
-            399.015,
+            408.265,
             "so it turns red with the database."
           ],
           [
-            400.965,
+            410.215,
             "Web still has two ready pods and stays green."
           ]
         ]

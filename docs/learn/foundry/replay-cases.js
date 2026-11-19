@@ -178,7 +178,24 @@ const ShopReplayCases = {
           "shopcache": 0,
           "shopassets": 0
         },
-        "signal": "off"
+        "signal": "off",
+        "treeStates": {
+          "deployment:api": "Healthy",
+          "deployment:web": "Healthy",
+          "resource:pg-shop": "Healthy",
+          "resource:shopassets": "Healthy",
+          "resource:shopcache": "Healthy",
+          "service:api": "Healthy",
+          "service:database": "Healthy",
+          "service:web": "Healthy"
+        },
+        "treeOwn": {
+          "deployment:api": 0,
+          "deployment:web": 0,
+          "resource:pg-shop": 0,
+          "resource:shopassets": 0,
+          "resource:shopcache": 0
+        }
       },
       {
         "revision": 16,
@@ -198,7 +215,24 @@ const ShopReplayCases = {
           "shopcache": 0,
           "shopassets": 0
         },
-        "signal": "on"
+        "signal": "on",
+        "treeStates": {
+          "deployment:api": "Healthy",
+          "deployment:web": "Healthy",
+          "resource:pg-shop": "Unhealthy",
+          "resource:shopassets": "Healthy",
+          "resource:shopcache": "Healthy",
+          "service:api": "Unhealthy",
+          "service:database": "Unhealthy",
+          "service:web": "Unhealthy"
+        },
+        "treeOwn": {
+          "deployment:api": 0,
+          "deployment:web": 0,
+          "resource:pg-shop": 3,
+          "resource:shopassets": 0,
+          "resource:shopcache": 0
+        }
       },
       {
         "revision": 17,
@@ -218,7 +252,24 @@ const ShopReplayCases = {
           "shopcache": 0,
           "shopassets": 0
         },
-        "signal": "on"
+        "signal": "on",
+        "treeStates": {
+          "deployment:api": "Healthy",
+          "deployment:web": "Healthy",
+          "resource:pg-shop": "Unhealthy",
+          "resource:shopassets": "Healthy",
+          "resource:shopcache": "Healthy",
+          "service:api": "Unhealthy",
+          "service:database": "Unhealthy",
+          "service:web": "Unhealthy"
+        },
+        "treeOwn": {
+          "deployment:api": 0,
+          "deployment:web": 0,
+          "resource:pg-shop": 3,
+          "resource:shopassets": 0,
+          "resource:shopcache": 0
+        }
       },
       {
         "revision": 18,
@@ -238,7 +289,24 @@ const ShopReplayCases = {
           "shopcache": 0,
           "shopassets": 0
         },
-        "signal": "off"
+        "signal": "off",
+        "treeStates": {
+          "deployment:api": "Healthy",
+          "deployment:web": "Healthy",
+          "resource:pg-shop": "Healthy",
+          "resource:shopassets": "Healthy",
+          "resource:shopcache": "Healthy",
+          "service:api": "Healthy",
+          "service:database": "Healthy",
+          "service:web": "Healthy"
+        },
+        "treeOwn": {
+          "deployment:api": 0,
+          "deployment:web": 0,
+          "resource:pg-shop": 0,
+          "resource:shopassets": 0,
+          "resource:shopcache": 0
+        }
       }
     ],
     "paths": [
@@ -255,7 +323,76 @@ const ShopReplayCases = {
         "database",
         "pg-shop"
       ]
-    ]
+    ],
+    "tree": {
+      "root": "service:web",
+      "nodes": [
+        {
+          "key": "service:web",
+          "name": "web",
+          "kind": "service",
+          "children": [
+            "service:api",
+            "deployment:web",
+            "resource:shopassets",
+            "resource:shopcache"
+          ]
+        },
+        {
+          "key": "service:api",
+          "name": "api",
+          "kind": "service",
+          "children": [
+            "service:database",
+            "deployment:api"
+          ]
+        },
+        {
+          "key": "deployment:web",
+          "name": "web",
+          "kind": "deployment",
+          "children": []
+        },
+        {
+          "key": "resource:shopassets",
+          "name": "shopassets",
+          "kind": "resource",
+          "children": []
+        },
+        {
+          "key": "resource:shopcache",
+          "name": "shopcache",
+          "kind": "resource",
+          "children": []
+        },
+        {
+          "key": "service:database",
+          "name": "database",
+          "kind": "service",
+          "children": [
+            "resource:pg-shop"
+          ]
+        },
+        {
+          "key": "deployment:api",
+          "name": "api",
+          "kind": "deployment",
+          "children": []
+        },
+        {
+          "key": "resource:pg-shop",
+          "name": "pg-shop",
+          "kind": "resource",
+          "children": []
+        }
+      ],
+      "source": {
+        "externalName": "pg-shop.postgres.database.azure.com",
+        "resourceName": "pg-shop",
+        "resourceType": "microsoft.dbforpostgresql/flexibleservers",
+        "meter": "is_db_alive"
+      }
+    }
   },
   "discovery": {
     "flow": {

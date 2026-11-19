@@ -48,185 +48,239 @@ const ShopReplayScenes = (() => {
     return {...ctx,colors,pad,m,write,layer,shape,arrow,pulse,header,block,stage,opacity};
   }
 
+  const rollup = ShopReplayCases.rollup;
+  const atRevision = n => rollup.frames.find(frame => frame.revision === n);
+  function treeRoute(s,parent,points,color,baseline=true) {
+    const [first,...rest]=points;
+    const d="M"+first.join(" ")+rest.map(p=>"L"+p.join(" ")).join("");
+    if(baseline)s.shape(parent,d,s.colors.line,2.5);
+    const trace=s.shape(parent,d,color,3.5,{pathLength:1,"stroke-dasharray":"1 1"});
+    const reduced=s.inGuide && matchMedia("(prefers-reduced-motion:reduce)").matches;
+    return p=>trace.setAttribute("stroke-dashoffset",1-(reduced ? Number(p>0) : p));
+  }
+
   function introduction(s) {
-    const {g,W,H,m,pad,header,write,shape,arrow,block,pulse,dot,opacity,layer,stage,colors:c}=s;
-    header("Why the database service turns red","pg-shop replay · workload revision 16",c.states.Unhealthy);
-    const cx=m?W/2:283, w=m?275:355;
-    const y1=m?76:65,y2=m?203:232,bh=m?67:80;
-    const states=ShopReplayCases.rollup.frames.find(r=>r.revision===16).states;
-    block(g,cx-w/2,y1,w,bh,"Database service","Depends on pg-shop");
-    block(g,cx-w/2,y2,w,bh,"pg-shop",symbols[states["pg-shop"]]+"  "+states["pg-shop"],c.states.Unhealthy);
-    const left=cx-56,right=cx+52;
-    arrow(g,left,y1+bh+4,left,y2-4,c.accent);
-    arrow(g,right,y2-4,right,y1+bh+4,c.states.Unhealthy);
-    write(g,left-9,(y1+bh+y2)/2+5,"needs",m?15:17,c.accent,620,"end");
-    write(g,right+9,(y1+bh+y2)/2+5,"affects health",m?15:17,c.states.Unhealthy,620);
-    const needs=pulse(g,[left,y1+bh+4],[left,y2-4],c.accent);
-    const hit=pulse(g,[right,y2-4],[right,y1+bh+4],c.states.Unhealthy);
-    const downstream=layer();
-    const x=m?pad:610, y=m?295:86;
-    if(!m) shape(g,`M553 70V${H-25}`,c.line,1);
-    write(downstream,x,y,"Who else relies on it?",m?22:26,c.ink,710);
-    const chain=[["pg-shop","PostgreSQL"],["database","Database service"],["api","API service"],["web","Web service"]];
-    const lineX=x+(m?17:25),step=m?40:60;
-    const items=chain.map(([key,label],i)=>{
-      const h=y+(m?30:42)+i*step;
-      if(i) arrow(downstream,lineX,h-step+11,lineX,h-11,c.states.Unhealthy,2.4);
-      dot(downstream,lineX,h,9,{fill:c.bg,stroke:c.states.Unhealthy,"stroke-width":2.5});
-      const record=layer(downstream);
-      const sx=m?W-pad-112:W-pad-142;
-      s.box(record,sx,h-(m?15:19),m?112:125,m?29:36,{rx:4,fill:c.states[states[key]]});
-      write(record,lineX+23,h+6,label,m?17:21,c.ink,650);
-      write(record,sx+(m?56:62.5),h+6,symbols[states[key]]+" "+states[key],m?16:19,c.bg,700,"middle");
-      return record;
-    });
-    write(g,pad,H-12,m?"Revision 16   ·   One update for all four":"Revision 16 records the database, API and web as Unhealthy in the same update.",m?16:19,c.muted);
-    const blue=s.spokenAt("The blue one",.35), red=s.spokenAt("The red one",.56);
-    const rollup=s.spokenAt("That’s health roll-up",.73);
+    const {g,W,H,m,header,write,box,colors:c,stage}=s;
+    const {root,nodes}=rollup.tree, frame=atRevision(16);
+    header("Web’s Health Tree","pg-shop · workload revision 16",c.policy);
+    const positions=m?{
+      "service:web":[241,100],"service:api":[67,199],"deployment:web":[182,199],
+      "resource:shopcache":[297,199],"resource:shopassets":[412,199],
+      "service:database":[67,306],"deployment:api":[182,306],"resource:pg-shop":[67,418]
+    }:{
+      "service:web":[553,85],"service:api":[230,170],"deployment:web":[503,170],
+      "resource:shopcache":[744,170],"resource:shopassets":[974,170],
+      "service:database":[130,258],"deployment:api":[341,258],"resource:pg-shop":[130,349]
+    };
+    const w=m?106:179,h=m?62:64;
+    const down=new Map(),up=new Map();
+    for(const node of nodes){
+      for(const child of node.children){
+        const [x1,y1]=positions[node.key], [x2,y2]=positions[child], join=(y1+y2)/2;
+        const path=[[x1,y1+h/2],[x1,join],[x2,join],[x2,y2-h/2]];
+        down.set(child,treeRoute(s,g,path,c.accent));
+        up.set(child,treeRoute(s,g,[...path].reverse(),c.states.Unhealthy,false));
+      }
+    }
+    const borders=new Map();
+    for(const {key,name,kind} of nodes){
+      const [x,y]=positions[key], state=frame.treeStates[key], color=c.states[state];
+      const a=x-w/2,b=y-h/2;
+      const border=box(g,a,b,w,h,{rx:5,fill:wash(color,21),stroke:color,"stroke-width":1.6});
+      borders.set(key,border);
+      write(g,x,b+(m?17:19),name,m?17:20,c.ink,720,"middle");
+      const typeLabel={"resource:pg-shop":"PostgreSQL","resource:shopcache":"Redis cache","resource:shopassets":"Storage"}[key] || kind;
+      write(g,x,b+(m?34:38),typeLabel,m?14.5:16,c.muted,600,"middle");
+      box(g,a+1,b+h-21,w-2,20,{fill:color,rx:3});
+      write(g,x,b+h-5,symbols[state]+" "+state,m?14.5:16,c.bg,700,"middle");
+    }
+    const nx=m?246:570,ny=m?274:247,nw=W-nx-(m?14:25);
+    box(g,nx,ny,nw,m?159:111,{rx:4,fill:wash(c.policy,13),stroke:c.policy});
+    write(g,nx+11,ny+26,"Rooted at "+root.split(":")[1],m?20:23,c.ink,700);
+    write(g,nx+11,ny+(m?55:53),"↓  Follow a dependency",m?16:19,c.accent,630);
+    write(g,nx+11,ny+(m?82:79),"↑  Trace its effect",m?16:19,c.states.Unhealthy,630);
+    if(m)write(g,nx+11,ny+121,nodes.length+" components",16,c.muted);
+    write(g,m?14:570,H-(m?15:16),"A parent’s state includes what it depends on.",m?16:18,c.muted);
+    const fail=s.spokenAt("The database server failed",.16), follow=s.spokenAt("Follow the branch",.29),
+      impact=s.spokenAt("Its failure reaches",.56), cache=s.spokenAt("The cache and storage",.70),
+      principle=s.spokenAt("A Health Tree starts",.84);
+    const branch=["service:api","service:database","resource:pg-shop"];
     return p=>{
-      needs(stage(p,blue,red));hit(stage(p,red,rollup));
-      // Highlight the explanation. The health labels all come from the same revision.
-      items.forEach(node=>opacity(node,.78+.22*stage(p,rollup,rollup+.07)));
+      for(const draw of down.values())draw(0);
+      for(const draw of up.values())draw(0);
+      branch.forEach((key,i)=>{
+        const step=(impact-follow)/3;
+        down.get(key)(p<impact?stage(p,follow+i*step,follow+(i+1)*step):0);
+        const back=(cache-impact)/3, n=2-i;
+        up.get(key)(stage(p,impact+n*back,impact+(n+1)*back));
+      });
+      for(const key of ["resource:shopcache","resource:shopassets"])
+        down.get(key)(stage(p,cache,principle));
+      borders.get("resource:pg-shop").setAttribute("stroke-width",1.6+2.5*stage(p,fail,follow));
+      borders.get(root).setAttribute("stroke-width",1.6+2.5*stage(p,principle,principle+.05));
+    };
+  }
+
+  function derive(s) {
+    const {g,W,m,header,write,box,stage,colors:c}=s, src=rollup.tree.source;
+    header("How the tree gets a branch","pg-shop · live projections",c.master);
+    const mx=m?13:20,mw=m?454:455,my=m?75:71, mh=m?74:106, gap=m?8:23;
+    const cards=[
+      ["Kubernetes · Service","database  ·  externalName",src.externalName],
+      ["Azure · PostgreSQL Flexible Server",src.resourceName+"  ·  host built from name and type",src.externalName]
+    ].map(([title,label,value],i)=>{
+      const y=my+i*(mh+gap);
+      const tile=box(g,mx,y,mw,mh,{rx:5,fill:wash(c.master,16),stroke:c.master});
+      write(g,mx+12,y+(m?20:27),title,m?16:21,c.master,690);
+      write(g,mx+12,y+(m?42:61),label,m?16:19,c.ink,580);
+      const host=write(g,mx+12,y+(m?63:88),value,m?16:19,c.identity,670);
+      return {tile,host};
+    });
+    const tx=m?13:625,tw=W-tx-(m?13:20),sy=m?266:71,sw=m?95:127,hy=m?385:238,hh=m?102:136;
+    // Both source descriptions meet at the same name. Its spelling alone is
+    // insufficient: the structure query constrains which Azure resource types can back the service.
+    const matches=[];
+    if(m) {
+      matches.push(treeRoute(s,g,[[mx+mw/2,my+2*mh+gap],[mx+mw/2,sy]],c.identity));
+      write(g,mx+mw/2+12,sy-11,"= same host",15,c.identity,670);
+    } else {
+      const jx=529,jy=sy+sw*.52;
+      cards.forEach((_,i)=>{
+        const y=my+i*(mh+gap)+mh/2;
+        matches.push(treeRoute(s,g,[[mx+mw,y],[jx,y],[jx,jy],[tx,jy]],c.identity));
+      });
+      write(g,548,jy-12,"= host",18,c.identity,670);
+    }
+    const structure=box(g,tx,sy,tw,sw,{rx:5,fill:wash(c.accent,17),stroke:c.accent});
+    write(g,tx+13,sy+(m?24:32),"Workload structure",m?20:25,c.accent,720);
+    const xLeft=tx+16,xRight=tx+tw*.64;
+    write(g,xLeft,sy+(m?55:77),"database",m?20:24,c.ink,700);
+    write(g,xRight,sy+(m?55:77),src.resourceName,m?20:24,c.ink,700);
+    s.arrow(g,tx+tw*.31,sy+(m?49:70),xRight-10,sy+(m?49:70),c.accent,2.5);
+    write(g,xLeft,sy+(m?82:109),"Service",m?15:18,c.muted);
+    write(g,tx+tw*.45,sy+(m?82:109),"BackedBy · Affects",m?14:16,c.accent,650,"middle");
+    write(g,xRight,sy+(m?82:109),"Azure resource",m?15:18,c.muted);
+    const center=tx+tw*.5;
+    const second=treeRoute(s,g,[[center,sy+sw],[center,hy]],c.policy);
+    const health=box(g,tx,hy,tw,hh,{rx:5,fill:wash(c.policy,18),stroke:c.policy});
+    write(g,tx+13,hy+(m?25:31),"Workload health",m?20:25,c.policy,720);
+    write(g,tx+13,hy+(m?52:64),"Structure  +  measurements  +  signal rules",m?17:20,c.ink,620);
+    const bar=box(g,tx+13,hy+(m?66:84),tw-26,m?26:37,{rx:3,fill:c.states.Unhealthy});
+    const label=write(g,center,hy+(m?85:110),"×  pg-shop and database service · Unhealthy",m?16:19,c.bg,700,"middle");
+    const kube=s.spokenAt("Kubernetes gives",.25),
+      azure=s.spokenAt("The structure query builds",.38), same=s.spokenAt("The names match",.53),
+      rule=s.spokenAt("The health query combines",.70), update=s.spokenAt("When new evidence changes",.85);
+    return p=>{
+      cards.forEach(({tile,host},i)=>{
+        const t=stage(p,i?azure:kube,i?same:azure);
+        tile.setAttribute("stroke-width",1+2*t);
+        host.setAttribute("opacity",.65+.35*t);
+      });
+      for(const trace of matches)trace(stage(p,same,rule));
+      structure.setAttribute("stroke-width",1+2*stage(p,same,rule));
+      second(stage(p,rule,update));
+      health.setAttribute("stroke-width",1+2*stage(p,rule,update));
+      for(const mark of [bar,label])mark.setAttribute("opacity",stage(p,rule,update));
     };
   }
 
   function signal(s) {
-    const {g,W,H,m,pad,header,write,shape,box,dot,stage,colors:c}=s;
-    const rule=ShopReplayCases.rollup.rule, window=ShopReplayCases.rollup.readings.filter(r=>r.minute>="10:09" && r.minute<="10:13");
-    const failed=window.find(r=>r.value===0);
-    header("The first failed reading","Azure Monitor · "+failed.meter,c.policy);
-    const left=m?56:89, right=m?W-31:690, top=m?105:106, base=m?230:258;
-    const x=i=>left+i*(right-left)/(window.length-1), y=v=>base-(base-top)*v;
-    const failX=x(window.indexOf(failed));
-    box(g,left,top-15,failX-left,base-top+30,{fill:wash(c.accent,20)});
-    box(g,failX,top-15,right-failX,base-top+30,{fill:wash(c.states.Unhealthy,24)});
-    for(const v of [0,1]) {
-      shape(g,`M${left} ${y(v)}H${right}`,c.line,1.4,{"stroke-dasharray":"4 6"});
-      write(g,left-19,y(v)+7,String(v),m?20:25,c.ink,720,"end");
-    }
-    const d=window.reduce((result,r,i)=>i?result+`H${x(i)}V${y(r.value)}`:`M${x(i)} ${y(r.value)}`,"");
-    shape(g,d,c.line,3);
-    const elapsed=shape(g,d,c.accent,4,{pathLength:1,"stroke-dasharray":"1 1"});
-    window.forEach((r,i)=>{
-      dot(g,x(i),y(r.value),m?6:8,{fill:c.bg,stroke:r.value===0?c.states.Unhealthy:c.accent,"stroke-width":3});
-      write(g,x(i),base+(m?33:45),r.minute,m?15:18,c.muted,600,"middle");
+    const {g,W,H,m,header,write,box,shape,dot,stage,colors:c}=s, rule=rollup.rule;
+    header("One failed minute opens the alarm","pg-shop · Azure Monitor",c.policy);
+    const x0=m?13:20,y0=m?75:71,rw=m?454:315,rh=m?104:267;
+    box(g,x0,y0,rw,rh,{rx:5,fill:wash(c.policy,16),stroke:c.policy});
+    write(g,x0+12,y0+(m?24:35),rule.id,m?20:25,c.policy,720);
+    write(g,x0+12,y0+(m?48:79),rule.meter,m?17:22,c.ink,650);
+    const enter=write(g,x0+12,y0+(m?85:138),"Open · "+rule.enterAfter+" failed minute",m?16:21,c.states.Unhealthy,680);
+    const exit=write(g,x0+(m?218:12),y0+(m?85:188),"Clear · "+rule.exitAfter+" good minutes",m?16:21,c.states.Healthy,680);
+    const pts=rollup.readings.filter(v=>v.minute>="10:10" && v.minute<="10:15");
+    const left=m?33:385,right=m?447:1074, high=m?243:153,low=m?306:225;
+    const xs=pts.map((_,i)=>left+i*(right-left)/(pts.length-1));
+    const y=v=>v===1?high:low;
+    write(g,left,m?212:99,"Availability reading",m?19:24,c.ink,700);
+    [0,1].forEach(v=>{
+      shape(g,`M${left} ${y(v)}H${right}`,c.line,1.4,{"stroke-dasharray":"3 5"});
+      write(g,left-11,y(v)+6,String(v),m?15:18,c.muted,600,"end");
     });
-    const ring=dot(g,failX,y(0),m?13:16,{fill:"none",stroke:c.states.Unhealthy,"stroke-width":3});
-    write(g,failX+8,base-24,"First zero",m?16:21,c.states.Unhealthy,700);
-    const x0=m?pad:742, y0=m?295:70, width=W-pad-x0, height=m?187:263;
-    box(g,x0,y0,width,height,{rx:4,fill:wash(c.policy,17)});
-    box(g,x0,y0,width,43,{rx:4,fill:c.policy});
-    write(g,x0+16,y0+32,rule.id,m?22:27,c.bg,700);
-    write(g,x0+16,y0+63,"Enter after "+rule.enterAfter+" failed sample",m?18:20,c.states.Unhealthy,660);
-    write(g,x0+16,y0+90,"Clear after "+rule.exitAfter+" good samples",m?18:20,c.states.Healthy,660);
-    shape(g,`M${x0+16} ${y0+108}H${x0+width-16}`,c.line,1);
-    write(g,x0+16,y0+135,"Measured "+failed.minute+":00 UTC",m?16:19,c.muted);
-    write(g,x0+16,y0+160,"Received "+failed.received+" UTC",m?16:19,c.muted);
-    if(!m) write(g,pad,H-15,"0 = unavailable     1 = available",18,c.muted);
-    const failedAt=s.spokenAt("The chart shows",.28), receivedAt=s.spokenAt("Azure Monitor delivers",.47);
+    const line=pts.map((v,i)=>i?`H${xs[i]}V${y(v.value)}`:`M${xs[i]} ${y(v.value)}`).join("");
+    shape(g,line,c.line,3);
+    const trail=shape(g,line,c.accent,3,{pathLength:1,"stroke-dasharray":"1 1"});
+    pts.forEach((v,i)=>{
+      dot(g,xs[i],y(v.value),m?5:7,{fill:v.value?c.states.Healthy:c.states.Unhealthy,stroke:c.bg,"stroke-width":1.6});
+      write(g,xs[i],low+(m?27:34),v.minute,m?15:18,c.muted,610,"middle");
+    });
+    const t0=m?14:357, width=m?452:747, y0b=m?356:287, spacing=width/3;
+    const frames=[16,17,18].map(atRevision), indices=[1,4,5];
+    const bars=frames.map((frame,i)=>{
+      const left=t0+i*spacing, state=frame.states["pg-shop"], color=c.states[state], group=s.layer();
+      box(group,left+2,y0b,spacing-5,m?103:95,{rx:4,fill:wash(color,20),stroke:color});
+      write(group,left+10,y0b+(m?25:27),"Revision "+frame.revision,m?16:19,c.ink,650);
+      write(group,left+10,y0b+(m?52:54),["First zero","1 good minute","2 good minutes"][i],m?16:19,c.muted,590);
+      box(group,left+3,y0b+(m?67:62),spacing-7,m?34:31,{rx:2,fill:color});
+      write(group,left+spacing/2,y0b+(m?90:84),symbols[state]+" "+state,m?16:18,c.bg,720,"middle");
+      return group;
+    });
+    const clock=write(g,m?14:21,H-(m?15:19),"",m?16:17,c.muted,600);
+    const cursor=dot(g,0,0,m?11:13,{fill:"none",stroke:c.ink,"stroke-width":2.5});
+    const open=s.spokenAt("The database rule says",.12), fail=s.spokenAt("At ten eleven",.24),
+      own=s.spokenAt("That gives the server",.35), clear=s.spokenAt("The rule also sets",.47),
+      first=s.spokenAt("At ten fourteen",.56), second=s.spokenAt("At ten fifteen",.73);
     return p=>{
-      elapsed.setAttribute("stroke-dashoffset",1-stage(p,failedAt,receivedAt));
-      ring.setAttribute("r",(m?12:14)+5*Math.sin(Math.PI*stage(p,failedAt,receivedAt)));
+      const n=p<fail?0:p<first?1:p<second?4:5;
+      cursor.setAttribute("cx",xs[n]);cursor.setAttribute("cy",y(pts[n].value));
+      trail.setAttribute("stroke-dashoffset",1-n/(pts.length-1));
+      enter.setAttribute("opacity",.76+.24*stage(p,open,fail));
+      exit.setAttribute("opacity",.76+.24*stage(p,clear,first));
+      bars.forEach((b,i)=>b.setAttribute("opacity",n>=indices[i]?(p<own&&i===0?.88:1):.50));
+      clock.textContent="Sample "+pts[n].minute+" UTC  ·  received "+pts[n].received+" UTC";
     };
   }
 
   function paths(s) {
-    const {g,W,H,m,pad,header,write,shape,arrow,box,pulse,stage,colors:c}=s;
-    header("Which paths carry the alarm?","Workload structure · selected Affects links",c.accent);
-    // These are edges in workloadStructure.final.snapshot.json. Direction
-    // matches the graph, and the animated markers follow the query from web to PostgreSQL.
-    const positions=m?{
-      "apim-shop":[115,105],web:[353,105],api:[123,211],shopcache:[353,211],
-      database:[123,320],"pg-shop":[123,426]
-    }:{
-      "apim-shop":[145,115],web:[145,264],api:[404,117],shopcache:[404,276],
-      database:[671,117],"pg-shop":[956,117]
-    };
-    const states=ShopReplayCases.rollup.frames.find(r=>r.revision===16).states;
-    const names={"apim-shop":"Gateway",web:"Web",api:"API",shopcache:"shopcache",database:"Database service","pg-shop":"pg-shop"};
-    const w=m?164:193,h=m?58:73, routes=[
-      ["database","pg-shop"],["api","database"],["apim-shop","api"],["web","api"],["web","shopcache"]
-    ];
-    const packets=routes.map(([a,b])=>{
-      const [ax,ay]=positions[a],[bx,by]=positions[b],dx=bx-ax,dy=by-ay;
-      const crop=Math.min(w/(2*Math.abs(dx)||1),h/(2*Math.abs(dy)||1));
-      const start=[ax+dx*crop,ay+dy*crop],end=[bx-dx*crop,by-dy*crop];
-      const color=b==="shopcache"?c.states.Healthy:c.states.Unhealthy;
-      arrow(g,...start,...end,color,3.6);
-      return {from:a,to:b,move:pulse(g,start,end,color)};
-    });
-    for(const [key,[x,y]] of Object.entries(positions)) {
-      const color=c.states[states[key]];
-      box(g,x-w/2,y-h/2,w,h,{rx:5,fill:wash(color,24),stroke:color,"stroke-width":2});
-      box(g,x-w/2+1,y+3,w-2,h/2-4,{rx:3,fill:color});
-      write(g,x,y-2,names[key],key==="database"?(m?17:20):(m?19:23),c.ink,720,"middle");
-      write(g,x,y+(m?22:27),symbols[states[key]]+"  "+states[key],m?16:19,c.bg,700,"middle");
+    const {g,W,H,m,header,write,box,stage,colors:c}=s;
+    const {root,nodes}=rollup.tree, byKey=new Map(nodes.map(node=>[node.key,node]));
+    const frame=atRevision(16), depths=[[root]];
+    while(depths.at(-1).some(key=>byKey.get(key).children.length)){
+      depths.push(depths.at(-1).flatMap(key=>byKey.get(key).children));
     }
-    if(m) {
-      write(g,245,315,"Each arrow points",17,c.muted);
-      write(g,245,339,"to a dependency.",17,c.muted);
-      write(g,245,384,"Up to 16 links.",17,c.ink,650);
-      write(g,245,408,"Keep the worst",17,c.ink,650);
-      write(g,245,431,"state reached.",17,c.ink,650);
-    } else {
-      write(g,661,232,"Affects",24,c.ink,730);
-      write(g,661,263,"Follow these edges to find the contributors.",19,c.muted);
-      write(g,661,291,"Keep the worst state within 16 hops.",19,c.muted);
-    }
-    shape(g,`M${pad} ${H-33}H${W-pad}`,c.line,1);
-    write(g,pad,H-10,m?"Same revision  ·  cache stays healthy":"Revision 16  ·  These components are evaluated together. The cache stays healthy.",m?16:18,c.muted);
-    const web=s.spokenAt("Web has a path",.19), cache=s.spokenAt("The cache has no such path",.35);
-    const query=s.spokenAt("The health query follows",.65);
-    const path=["web","api","database","pg-shop"];
-    const route=path.slice(1).map((to,i)=>packets.find(e=>e.from===path[i] && e.to===to));
-    const drawPath=(p,start,end)=>{
-      const step=(end-start)/route.length;
-      route.forEach((edge,i)=>edge.move(stage(p,start+i*step,start+(i+1)*step)));
-    };
-    return p=>{
-      if(p<query)drawPath(p,web,cache);
-      else drawPath(p,query,Math.min(1,query+.21));
-    };
-  }
-
-  function recovery(s) {
-    const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
-    const samples=ShopReplayCases.rollup.readings.filter(r=>r.minute>="10:13" && r.minute<="10:16");
-    const closed=ShopReplayCases.rollup.frames.find(r=>r.revision===18);
-    const open=ShopReplayCases.rollup.frames.find(r=>r.revision===16);
-    header("When does the alarm clear?","pg-shop · "+ShopReplayCases.rollup.rule.id,c.policy);
-    const tableX=m?103:184, right=W-pad, cell=(right-tableX)/samples.length;
-    const start=m?113:96,step=m?64:52;
-    const y=i=>start+step*i;
-    let consecutive=0;
-    const columns=samples.map((sample,i)=>{
-      const x=tableX+i*cell;
-      const col=layer();
-      const state=i<2?open.states["pg-shop"]:closed.states["pg-shop"];
-      const hue=c.states[state];
-      box(col,x+2,y(0)-25,cell-4,y(3)-y(0)+47,{fill:wash(hue,19),rx:4});
-      box(col,x+2,y(3)-(m?27:24),cell-4,m?45:41,{fill:hue,rx:4});
-      write(col,x+cell/2,y(0),sample.minute,m?18:22,c.ink,720,"middle");
-      write(col,x+cell/2,y(1),String(sample.value),m?24:31,sample.value===0?c.states.Unhealthy:c.states.Healthy,720,"middle");
-      consecutive=sample.value===1?consecutive+1:0;
-      const count=Math.min(consecutive,ShopReplayCases.rollup.rule.exitAfter);
-      write(col,x+cell/2,y(2),count+" / "+ShopReplayCases.rollup.rule.exitAfter,m?19:24,c.muted,680,"middle");
-      write(col,x+cell/2,y(3),m?symbols[state]:symbols[state]+"  "+state,m?26:22,c.bg,740,"middle");
-      return col;
+    header("How web gets its state","workloadHealth · revision 16",c.policy);
+    const x0=m?13:20, gap=m?7:13, pw=m?454:(W-2*x0-3*gap)/4, ph=m?77:224;
+    const marks=depths.map((keys,i)=>{
+      const x=m?x0:x0+i*(pw+gap), y=m?75+i*(ph+gap):80;
+      const panel=box(g,x,y,pw,ph,{rx:5,fill:wash(c.accent,11),stroke:c.line,"stroke-width":1.5});
+      write(g,x+10,y+(m?23:31),i+" "+(i===1?"hop":"hops"),m?18:22,c.accent,710);
+      keys.forEach((key,j)=>{
+        const {name,kind}=byKey.get(key), own=frame.treeOwn[key];
+        const color=own===undefined?c.muted:own===0?c.states.Healthy:c.states.Unhealthy;
+        const col=m?j%2:0, row=m?Math.floor(j/2):j;
+        const left=m?x+93+col*180:x+12,top=m?y+8+row*34:y+49+row*40;
+        box(g,left,top,m?29:34,m?25:30,{rx:3,fill:color});
+        write(g,left+(m?14.5:17),top+(m?18:22),own===undefined?"–":String(own),m?16:18,c.bg,720,"middle");
+        write(g,left+(m?35:43),top+(m?18:22),name+" "+(kind==="resource"?"":kind),m?15:18,c.ink,600);
+      });
+      return panel;
     });
-    ["Sample","Reading","Good run","Alarm"].forEach((v,i)=>write(g,pad,y(i),v,m?17:20,c.muted,640));
-    const cursor=shape(g,"",c.accent,4);
-    const foot=m?369:302;
-    write(g,pad,foot,"10:14   ·   One good minute",m?22:25,c.ink,700);
-    write(g,pad,foot+(m?26:29),"Revision 17 holds the alarm open.",m?17:19,c.states.Unhealthy,630);
-    const secondX=m?pad:W*.51,secondY=m?foot+71:foot;
-    write(g,secondX,secondY,"10:15   ·   Two in a row",m?22:25,c.ink,700);
-    write(g,secondX,secondY+(m?26:29),"Revision 18 clears the database and its callers.",m?17:19,c.states.Healthy,630);
-    const first=s.spokenAt("At ten fourteen",.30), second=s.spokenAt("Ten fifteen makes two",.53);
+    const color=c.states[frame.treeStates[root]], dy=m?423:328;
+    const result=box(g,x0,dy,W-x0*2,m?66:61,{rx:5,fill:wash(color,18),stroke:color});
+    const score=write(g,x0+13,dy+(m?25:37),"",m?19:23,color,720);
+    const help=write(g,m?x0+13:x0+425,dy+(m?50:37),"–  No own severity",m?16:19,c.muted);
+    const start=s.spokenAt("Start at web itself",.23), walk=s.spokenAt("Then follow the links",.40),
+      deep=s.spokenAt("Three links down",.56), worst=s.spokenAt("That outranks",.67),
+      raised=s.spokenAt("Web turns red",.88);
+    const steps=[start,walk,(walk+deep)/2,deep];
     return p=>{
-      const col=p<first?0:p<second?1:2, x=tableX+cell*col;
-      cursor.setAttribute("d",`M${x+8} ${y(3)+24}h${cell-16}`);
-      columns.forEach((node,i)=>node.setAttribute("opacity",i>col?.7:1));
+      marks.forEach((panel,i)=>{
+        const active=stage(p,steps[i],steps[i]+.04), shade=i===3?color:c.accent;
+        panel.setAttribute("stroke",active?shade:c.line);
+        panel.setAttribute("fill",wash(shade,10+11*active));
+      });
+      const current=p>=deep?color:p>=walk?c.states.Healthy:c.accent;
+      result.setAttribute("fill",wash(current,18));
+      result.setAttribute("stroke",current);
+      score.setAttribute("fill",current);
+      score.textContent=p>=worst?"Maximum own severity = 3":p>=deep?"Found pg-shop · own severity 3":p>=walk?"Highest seen so far = 0":"Follow Affects · 0 to 16 hops";
+      help.textContent=p>=raised?"×  Web is Unhealthy · inherited from pg-shop":"–  No own severity";
+      help.setAttribute("fill",p>=raised?color:c.muted);
     };
   }
 
@@ -416,7 +470,7 @@ const ShopReplayScenes = (() => {
 
   return {
     rollup(ctx) {
-      const draw=[introduction,signal,paths,recovery][ctx.beat];
+      const draw=[introduction,derive,signal,paths][ctx.beat];
       return draw(studio(ctx));
     },
     discovery(ctx) {
