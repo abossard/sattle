@@ -52,17 +52,17 @@ def main():
         after = result_at(changed, temp/"after")
         assert before["states"]["api"] == "Healthy" and after["states"]["api"] == "Degraded"
         assert not before["configurationEvidence"] and after["configurationEvidence"]
-        # A second counterfactual: the API names a cache before Azure inventory reports it.
+        # In the second run, a Resource Graph row arrives after the API names a cache.
         host = "offers-cache.redis.cache.windows.net"
         obj["spec"]["template"]["spec"]["containers"][0]["env"][-1]["value"] = host
         (changed / "kubernetes/lesson-change.ndjson").write_text(json.dumps(event)+"\n")
         waiting = result_at(changed, temp/"waiting", "offers-cache")
-        inventory = next(json.loads(line) for line in (changed/"arg/resources.ndjson").read_text().splitlines()
+        resource_row = next(json.loads(line) for line in (changed/"arg/resources.ndjson").read_text().splitlines()
                          if json.loads(line)["payload"]["name"] == "shopcache")
-        inventory["payload"]["name"] = "offers-cache"
-        inventory["payload"]["id"] = inventory["payload"]["id"].removesuffix("shopcache")+"offers-cache"
-        inventory.update(capturedAt="2026-01-01T10:05:00.000Z", seq=990, key="arg/resources/"+inventory["payload"]["id"])
-        (changed/"arg/lesson-cache.ndjson").write_text(json.dumps(inventory)+"\n")
+        resource_row["payload"]["name"] = "offers-cache"
+        resource_row["payload"]["id"] = resource_row["payload"]["id"].removesuffix("shopcache")+"offers-cache"
+        resource_row.update(capturedAt="2026-01-01T10:05:00.000Z", seq=990, key="arg/resources/"+resource_row["payload"]["id"])
+        (changed/"arg/lesson-cache.ndjson").write_text(json.dumps(resource_row)+"\n")
         discovered = result_at(changed, temp/"discovered", "offers-cache")
         assert not waiting["configurationEvidence"] and "offers-cache" not in waiting["states"]
         assert discovered["configurationEvidence"] and discovered["states"]["offers-cache"] == "Unknown"

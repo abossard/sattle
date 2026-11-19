@@ -1,4 +1,4 @@
-// The same case appears at three scales: an estate, one conversation and one computation.
+// Software and records behind the support, sandbox and returns chapters.
 const FoundryLiveScenes = (() => {
   function ink({el,txt}) {
     const group = (g,attrs={}) => el(g,"g",attrs);
@@ -19,103 +19,6 @@ const FoundryLiveScenes = (() => {
       };
     }
     return {group,pen,label,mid,arrow};
-  }
-
-  function estate(ctx) {
-    const {g,el,box,dot,stage,mobile:m,W,H,beat}=ctx;
-    const {group,pen,label,mid}=ink(ctx);
-    const pale="#eaf4f3",muted="#c0d2d9",field="#102a38",route="#ffda80",refund="#72e4ca";
-    box(g,0,0,W,H,{fill:field,rx:15});
-    const regions={
-      customer:["Client apps","#83d5f1",0,0], commerce:["Store & checkout","#9bdeb4",1,0],
-      fulfillment:["Logistics APIs","#f8c174",2,0], agents:["Microsoft Foundry","#bfaefe",0,1],
-      systems:["Order & payment","#f0a588",1,1], engagement:["CRM & marketing","#edaad6",2,1],
-      tools:["Agent tools","#72dfc5",0,2], jobs:["Background jobs","#f1d779",1,2],
-      data:["Stored records","#9dbce9",2,2]
-    };
-    const short={
-      "returns-agent":"Returns agent","returns-app":"Returns app","web-client":"Web client",chat:"Chat API",
-      project:"Foundry project","lookup-order":"Order lookup",sandbox:"Sandbox",
-      orders:"Order system",processor:"Payment API","refund-job":"Refund job",reconciler:"Reconciliation",
-      "case-store":"Case store","receipt-blob":"Receipt files",checkout:"Checkout service",
-      storefront:"Storefront","warehouse-api":"Warehouse API","carrier-api":"Carrier API",crm:"CRM",analytics:"Analytics"
-    };
-    const showLabels= new Set(Object.keys(short));
-    const margin=m?9:23,gap=m?9:22,cw=(W-2*margin-2*gap)/3,ch=m?97:82;
-    const firstY=m?83:62,stepY=m?112:96;
-    const sceneBoxHeight=stepY*2+ch+3;
-    const viewport=el(g,"svg",{x:0,y:firstY-1,width:W,height:sceneBoxHeight,
-      viewBox:`0 ${firstY-1} ${W} ${sceneBoxHeight}`,overflow:"hidden"});
-    const camera=group(viewport), panels=group(camera), links=group(camera), marks=group(camera);
-    const coords=new Map(), marksById=new Map();
-    label(g,margin,m?30:34,"The shop’s master graph",{fill:pale,"font-size":m?24:28,"font-weight":740});
-    label(g,m?margin:W-margin,m?57:33,`${FoundryCase.nodes.length} entities  /  ${FoundryCase.edges.length} typed links`,{
-      fill:muted,"font-size":m?17:19,"text-anchor":m?"start":"end"});
-    for(const {id} of FoundryCase.groups) {
-      const [title,color,col,row]=regions[id], members=FoundryCase.nodes.filter(n=>n.group===id);
-      const x=margin+col*(cw+gap), y=firstY+row*stepY;
-      box(panels,x,y,cw,ch,{rx:10,fill:color,"fill-opacity":.065,stroke:color,"stroke-opacity":.58});
-      label(marks,x+(m?7:11),y+(m?18:19),title,{fill:color,"font-size":m?13.1:16.5,"font-weight":720,
-        "paint-order":"stroke",stroke:field,"stroke-width":4});
-      // Anchor each entity once. Adjoining groups and repeated paths can share
-      // it, while the group name stays readable even on the phone map.
-      const lowerCount=Math.floor(members.length/2),upperCount=members.length-lowerCount;
-      members.forEach((node,i)=>{
-        const lower=i>=upperCount, count=lower?lowerCount:upperCount, column=lower?i-upperCount:i;
-        const cx=x+cw*(column+.5)/count, cy=y+(m?39:32)+(lower?(m?32:29):0);
-        coords.set(node.id,{x:cx,y:cy,color,id});
-        const point=group(marks,{"data-foundry-node":node.id});
-        el(point,"title",{},node.label);
-        const circle=dot(point,cx,cy,m?4:4.6,{fill:color,stroke:field,"stroke-width":1.2});
-        const word=showLabels.has(node.id)&&(!m||count<=2&&short[node.id].length<=14)?
-          mid(point,cx,cy+(m?13:14),short[node.id],{fill:pale,"font-size":m?10.4:12.5,"font-weight":600,
-            "paint-order":"stroke",stroke:field,"stroke-width":3.8}):null;
-        marksById.set(node.id,{circle,word,color});
-      });
-    }
-    const sale=["web-client","storefront","checkout","orders","warehouse-api","carrier-api","tracking-service"];
-    const delivery=new Set([...sale,"inventory"]);
-    const recovery=new Set(["web-client","chat","returns-app","returns-api","case-store","inspection-log","approval","refund-job","refund-id","processor","processor-receipt"]);
-    const nodeLabels=new Map(FoundryCase.nodes.map(n=>[n.id,n.label]));
-    const strokes=FoundryCase.edges.map(([aId,bId,kind])=>{
-      const a=coords.get(aId),b=coords.get(bId);
-      const bend=a.id===b.id?0:Math.sign(b.x-a.x||1)*(m?8:15);
-      const d=`M${a.x} ${a.y} Q${(a.x+b.x)/2+bend} ${(a.y+b.y)/2-bend} ${b.x} ${b.y}`;
-      const e=pen(links,d,{"data-foundry-edge":kind});
-      el(e,"title",{},[nodeLabels.get(aId),kind,nodeLabels.get(bId)].join(" "));
-      return {e,aId,bId};
-    });
-    const railY=m?437:367;
-    const caption=label(g,margin,railY,"",{fill:route,"font-size":m?18:19,"font-weight":690});
-    const detail=label(g,margin,railY+(m?28:24),"",{fill:muted,"font-size":m?15:16.5});
-    return p=>{
-      // The film follows the order with the camera. The guide keeps all nine groups in view.
-      const travel=stage(p,.10,.72);
-      const zoom=beat===0 && !ctx.inGuide?1+.31*(1-stage(p,.70,.95)):1;
-      const anchorX=W*(.12+.70*travel),anchorY=firstY+ch*(.60+.44*Math.sin(travel*Math.PI));
-      camera.setAttribute("transform",`translate(${(1-zoom)*anchorX} ${(1-zoom)*anchorY}) scale(${zoom})`);
-      const returns=beat===2&&p>=.52, active=returns?recovery:delivery,color=returns?refund:route;
-      const reveal=1+Math.floor(stage(p,.02,.60)*(sale.length-1));
-      const prefix=new Set(sale.slice(0,reveal+1));
-      const use=beat===0?prefix:active;
-      strokes.forEach(({e,aId,bId})=>{
-        const focus=beat!==1&&use.has(aId)&&use.has(bId);
-        e.setAttribute("stroke",focus?color:"#abc3cf");
-        e.setAttribute("stroke-width",focus?(m?2.1:2.8):(m?.95:1.4));
-        e.setAttribute("stroke-opacity",focus?.96:beat===1?.59:.19);
-      });
-      marksById.forEach(({circle,word,color:base},id)=>{
-        const highlight=beat!==1&&use.has(id);
-        circle.setAttribute("fill",highlight?color:base);
-        circle.setAttribute("r",highlight?(m?5.7:6.5):m?4:4.6);
-        if(word)word.setAttribute("opacity",beat===1||highlight?1:.73);
-      });
-      caption.setAttribute("fill",color);
-      caption.textContent=beat===1?"The whole shop":returns?"Return R-104  ·  refund view":"Order O-104  ·  delivery view";
-      detail.textContent=beat===1?"Each link names an action, such as reads, calls or writes.":returns?
-        "Inspection log → approval → refund job → payment API":"Storefront → checkout → order system → warehouse API → carrier API";
-      if(m&&beat!==1&&!returns)detail.textContent="Checkout → warehouse API → carrier API";
-    };
   }
 
   function live(ctx) {
@@ -313,5 +216,5 @@ const FoundryLiveScenes = (() => {
     };
   }
 
-  return {estate,live,sandbox,logistics};
+  return {live,sandbox,logistics};
 })();

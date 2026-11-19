@@ -30,6 +30,16 @@ def clock(seconds):
     return f'{ms//3600000:02d}:{ms//60000%60:02d}:{ms//1000%60:02d}.{ms%1000:03d}'
 
 
+def write_view_starts(project, story):
+    """Switch outputs at their recorded paragraphs, even after a wording change."""
+    beat = next(scene for scene in story if scene["id"] == "estate")["beats"][-1]
+    if len(beat["answerStarts"]) != 5:
+        raise ValueError("The Five views answer needs one paragraph for each of the five outputs.")
+    duration = beat["end"] - beat["start"]
+    starts = [0] + [round((time-beat["start"])/duration, 6) for time in beat["answerStarts"][1:]]
+    (project/"view-starts.js").write_text("const shopViewStarts = "+json.dumps(starts)+";\n")
+
+
 # Keep captions and diagrams in the project's spelling. Only the narrator sees
 # the spoken forms, including clock times that a general text reader may misread.
 PRONUNCIATIONS = {
@@ -101,28 +111,38 @@ def generate_voice(lesson, temp, voice, documents):
 
     directory = HERE / ".narrator"
     narrator = Kokoro(str(directory/"kokoro-v1.0.onnx"), str(directory/"voices-v1.0.bin"))
-    style = narrator.get_voice_style("af_heart")
+    listener = narrator.get_voice_style("am_michael")
+    guide = narrator.get_voice_style("af_heart")
     audio, captions = bytearray(), ["WEBVTT\n"]
     times = []
     for scene in lesson:
         print(f"Recording {scene['chapter']}", flush=True)
         beats = []
-        for focus, text in scene["cues"]:
+        for cue in scene["cues"]:
             start = len(audio) / (2*RATE)
-            # Give the viewer a moment to find the new term before it is spoken.
-            audio.extend(bytes(round(.35 * RATE) * 2))
-            speech_start = len(audio) / (2*RATE)
-            pcm, cues = narrate(narrator, style, text)
-            audio.extend(pcm)
-            for first, last, phrase in cues:
-                captions.append(f"{clock(speech_start + first/RATE)} --> {clock(speech_start + last/RATE)}\n"
-                                + "\n".join(textwrap.wrap(phrase, 42, break_on_hyphens=False))+"\n")
+            answers = cue["answer"] if isinstance(cue["answer"], list) else [cue["answer"]]
+            answer_starts = []
+            passages = [(listener, cue["question"], "Listener", .35)]
+            for index, paragraph in enumerate(answers):
+                passages.append((guide, paragraph, "Guide" if index == 0 else "", .35 if index == 0 else .18))
+            for turn, (style, text, speaker, pause) in enumerate(passages):
+                audio.extend(bytes(round(pause * RATE) * 2))
+                speech_start = len(audio) / (2*RATE)
+                if turn > 0:
+                    answer_starts.append(speech_start)
+                pcm, phrases = narrate(narrator, style, text)
+                audio.extend(pcm)
+                for i, (first, last, phrase) in enumerate(phrases):
+                    if speaker and i == 0:
+                        phrase = f"{speaker}: {phrase}"
+                    captions.append(f"{clock(speech_start + first/RATE)} --> {clock(speech_start + last/RATE)}\n"
+                                    + "\n".join(textwrap.wrap(phrase, 42, break_on_hyphens=False))+"\n")
             # Hold the finished diagram after the explanation, especially at a
             # chapter boundary. Keep short definitions on screen for eight seconds.
             pause = 1.2 if len(beats) + 1 == len(scene["cues"]) else .8
             end = math.ceil(max(len(audio)/(2*RATE) + pause, start + 8) * FPS) / FPS
             audio.extend(bytes(round(end*RATE)*2-len(audio)))
-            beats.append(dict(focus=focus, text=text, start=start, end=end))
+            beats.append(dict(**cue, start=start, end=end, answerStarts=answer_starts))
         times.append(dict(id=scene["id"],chapter=scene["chapter"],title=scene["title"],beats=beats))
     with wave.open(str(temp/"voice.wav"),"wb") as out:
         out.setparams((1,2,RATE,0,"NONE","not compressed"))
@@ -136,12 +156,11 @@ def generate_voice(lesson, temp, voice, documents):
 
 
 def composition(story, retail):
-    title = "One order through the whole shop" if retail else "How the shop gets its health model"
-    case = "Order O-104 · Retail architecture" if retail else "pg-shop on Azure"
+    title = "From the master graph to system health" if retail else "How the shop gets its health model"
     shared = "../film/" if retail else ""
     voice = "voice.m4a" if retail else "assets/voice.m4a"
     if retail:
-        drawings = ["case.js", "projection.js", "live-scenes.js", "work-scenes.js", "commerce-scene.js", "projection-scene.js", shared+"figure.js", "chapters.js"]
+        drawings = ["case.js", "projection.js", "view-starts.js", "graph-journey.js", "journey-scene.js", "replay-cases.js", "replay-scenes.js", shared+"figure.js", "chapters.js"]
     else:
         drawings = ["master-data.js", "model-scenes.js", "change-scenes.js", "review-scenes.js", "figure.js", "shop-map.js"]
     scripts = "".join(f'<script src="{src}"></script>' for src in [shared+"vendor/gsap.min.js", "terms.js", *drawings])
@@ -161,9 +180,13 @@ def composition(story, retail):
     shots=[]
     for i, scene in enumerate(story):
         beats=scene["beats"]
+        case = {"estate":"Order O-104 · illustrated shop", "rollup":"pg-shop · recorded estate",
+                "discovery":"pg-shop · controlled replay"}.get(scene["id"], "pg-shop on Azure")
         start, end=beats[0]["start"], beats[-1]["end"]
         offsets=",".join(str(b["end"]-start) for b in beats)
-        shots.append(f'''<section class="clip shot" id="{scene['id']}" data-start="{start:.5f}" data-duration="{end-start:.5f}" data-track-index="0" data-beat-ends="{offsets}">
+        questions = html.escape(json.dumps([b["question"] for b in beats], ensure_ascii=False), quote=True)
+        answers = ",".join(str(b["answerStarts"][0]-start) for b in beats)
+        shots.append(f'''<section class="clip shot" id="{scene['id']}" data-start="{start:.5f}" data-duration="{end-start:.5f}" data-track-index="0" data-beat-ends="{offsets}" data-questions="{questions}" data-answer-starts="{answers}">
 <header><b>Sattle</b><span>{case}</span><span class="chapter">{html.escape(scene['chapter'])}</span><span>{i+1:02d} / {len(story):02d}</span></header>
 <h1>{html.escape(scene['title'])}</h1>
 <div class="story-board" data-topic="{scene['id']}"></div>
@@ -189,20 +212,27 @@ def main():
         encoded = (documents/"story-data.js").read_text().removeprefix("const story = ").strip().removesuffix(";")
         story = json.loads(encoded)
         recorded = [{**{key:chapter[key] for key in ("id","chapter","title")},
-                     "cues":[[beat["focus"],beat["text"]] for beat in chapter["beats"]]} for chapter in story]
+                     "cues":[{key:beat[key] for key in ("focus","question","answer")} for beat in chapter["beats"]]} for chapter in story]
         if recorded != lesson:
             parser.error("The lesson has new text. Record the voice before refreshing the markup.")
+        if args.retail:
+            write_view_starts(project, story)
         (project/"index.html").write_text(composition(story, args.retail))
         return
     with tempfile.TemporaryDirectory() as temp:
         story = generate_voice(lesson, Path(temp), voice, documents)
+    if args.retail:
+        write_view_starts(project, story)
     (project/"index.html").write_text(composition(story, args.retail))
     (documents/"story-data.js").write_text("const story = "+json.dumps(story,indent=2,ensure_ascii=False)+";\n")
-    title = "One order through the whole shop" if args.retail else "How the shop gets its health model"
+    title = "From the master graph to system health" if args.retail else "How the shop gets its health model"
     paragraphs = ["# "+title, "Transcript of the narrated Sattle field guide."]
     for scene in story:
         paragraphs.append(f"## {clock(scene['beats'][0]['start'])[3:8]} · {scene['chapter']}")
-        paragraphs.extend(b["text"] for b in scene["beats"])
+        for beat in scene["beats"]:
+            paragraphs.append("**Listener**\n\n"+beat["question"])
+            answer = beat["answer"]
+            paragraphs.append("**Guide**\n\n"+("\n\n".join(answer) if isinstance(answer,list) else answer))
     (documents/"transcript.md").write_text("\n\n".join(paragraphs)+"\n")
     print(f"{len(story)} chapters, {story[-1]['beats'][-1]['end']:.2f} seconds")
 

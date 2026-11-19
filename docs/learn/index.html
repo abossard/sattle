@@ -2,32 +2,34 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="color-scheme" content="light"><title>One order through the whole shop · Sattle</title>
-  <link rel="stylesheet" href="learn.css?v=7b7f9a41f9c677c8">
-  <link rel="stylesheet" href="foundry/projection-guide.css?v=0c16d95e4ae49448">
+  <meta name="color-scheme" content="light"><title>From the master graph to system health · Sattle</title>
+  <link rel="stylesheet" href="learn.css?v=3e2fb0f52e57a10e">
   <script>
     // Preserve links to the original eight replay chapters.
     if (["origins","rules","layers","incident","dependency","azure","replay","inspect"].includes(location.hash.slice(1))) {
       location.replace("pg-shop.html"+location.search+location.hash);
     }
+    const previousChapter = {failure:"rollup",evolution:"discovery",proof:"discovery",dependencies:"estate",commerce:"estate",logistics:"estate",engagement:"estate",live:"estate",sandbox:"estate",jobs:"estate"}[location.hash.slice(1)];
+    if (previousChapter) history.replaceState(null, "", "#"+previousChapter);
   </script>
-  <script defer src="foundry/terms.js?v=17e5bb955cabe1ff"></script>
+  <script defer src="foundry/terms.js?v=c640889ca618faaf"></script>
   <script defer src="foundry/case.js?v=edec1970f87d99af"></script>
   <script defer src="foundry/projection.js?v=6c8298079ccbba4f"></script>
-  <script defer src="foundry/live-scenes.js?v=e8f731474b9ec18f"></script>
-  <script defer src="foundry/work-scenes.js?v=100f4416ade31ad6"></script>
-  <script defer src="foundry/commerce-scene.js?v=26465ced291b2b21"></script>
-  <script defer src="foundry/projection-scene.js?v=f1891c91cf82a75e"></script>
+  <script defer src="foundry/view-starts.js?v=6312b355aab8fb99"></script>
+  <script defer src="foundry/graph-journey.js?v=a78bf18a696b8660"></script>
+  <script defer src="foundry/journey-scene.js?v=6cc6e90e4ca37d57"></script>
+  <script defer src="foundry/replay-cases.js?v=474b538035b55fb7"></script>
+  <script defer src="foundry/replay-scenes.js?v=211704d9f4391ec8"></script>
   <script defer src="film/figure.js?v=1fe50ff7daaaba87"></script>
-  <script defer src="foundry/chapters.js?v=f90bdc0d06376e9d"></script>
-  <script defer src="foundry/story-data.js?v=8dbff7c0b79ad7e0"></script>
-  <script defer src="foundry/captions-local.js?v=2ed74ddd16044ad2"></script>
+  <script defer src="foundry/chapters.js?v=6dc668f91a9421ca"></script>
+  <script defer src="foundry/story-data.js?v=0d4d33d0929efe81"></script>
+  <script defer src="foundry/captions-local.js?v=c5c774de40b13be7"></script>
   <script defer src="guide-ui.js?v=2e06663cb6684eff"></script>
-  <script defer src="foundry/projection-guide.js?v=2e383ea53fc1b17f"></script>
-  <script defer src="foundry/guide.js?v=758cab689a769118"></script>
-  <script defer src="guide-player.js?v=6d1d9f17dd8766b5"></script>
+  <script defer src="foundry/journey-guide.js?v=c5a5a1a84a4426e2"></script>
+  <script defer src="foundry/guide.js?v=c877799904ba45dc"></script>
+  <script defer src="guide-player.js?v=cef9556500dfaf99"></script>
 </head>
-<body data-case="Retail architecture · Worked example">
+<body data-case="Sattle field guide">
 <a href="#lesson" class="skip">Skip to the lesson</a>
 <header class="mast">
   <div class="mast-inner">
@@ -48,20 +50,23 @@
       <div class="stage-tools"><p id="eyebrow" class="eyebrow"></p><button type="button" class="enlarge-figure" aria-haspopup="dialog">Enlarge figure</button></div>
       <h1 id="title"></h1>
     </header>
+    <div id="beat-buttons" class="options stage-stops" role="group" aria-label="Jump to a moment"></div>
     <div id="map" data-responsive="true" data-asset-base="foundry/"></div>
     <div class="player"><button id="listen">▶ Play with narration</button><label for="scene-position" class="sr">Position in chapter</label><input type="range" id="scene-position" min="0" max="1000" value="0" step="1"><output id="elapsed">0:00</output><button id="mute" aria-pressed="false">Mute</button></div>
     <dl class="concept-card" aria-live="polite" aria-atomic="true"><dt id="concept-term"></dt><dd id="concept-meaning"></dd></dl>
   </section>
-  <audio id="narrator" preload="metadata" src="foundry/voice.m4a?v=2ad6289094b37beb"></audio>
+  <audio id="narrator" preload="metadata" src="foundry/voice.m4a?v=fb1fba91be7ec9e5"></audio>
   <div class="chapter-reading">
-    <div id="beat-buttons" class="options" role="group" aria-label="Jump to a moment"></div>
     <p id="intro" class="intro"></p>
     <div id="chapter-reference"></div>
-    <details class="passage"><summary>Read this part of the narration</summary><p id="spoken" class="spoken"></p></details>
+    <details class="passage"><summary>Read this part of the narration</summary>
+      <div id="spoken" class="spoken"></div>
+      <p><a href="https://github.com/abossard/sattle/edit/main/docs/learn/foundry/lesson.json">Edit the narration script on GitHub</a> · <a href="README.md#edit-the-narration">Record your edits locally</a></p>
+    </details>
     <div id="activity"></div><aside id="reading"></aside>
     <div class="pager"><button id="back">← Previous</button><span id="count"></span><button id="next">Next chapter →</button></div>
   </div>
 </main>
-<dialog id="cinema" data-folder="foundry/" aria-labelledby="film-title"><header><h2 id="film-title">One order through the whole shop</h2><button id="close" aria-label="Close film">Close ×</button></header><video controls playsinline preload="none" poster="foundry/poster.jpg?v=597e1c58d55f6e41"><source src="foundry/shop.mp4?v=965e864f78fbb8f3" type="video/mp4"><track kind="captions" srclang="en" label="English" id="film-captions"></video><p><a href="foundry/shop.mp4?v=965e864f78fbb8f3" download>Save the film</a> · <a href="foundry/transcript.md">Read the transcript</a></p></dialog>
-<noscript><p>Enable JavaScript for the interactive chapters, or <a href="foundry/shop.mp4?v=965e864f78fbb8f3">watch the film</a> and <a href="foundry/transcript.md">read the transcript</a>.</p></noscript>
+<dialog id="cinema" data-folder="foundry/" aria-labelledby="film-title"><header><h2 id="film-title">From the master graph to system health</h2><button id="close" aria-label="Close film">Close ×</button></header><video controls playsinline preload="none" poster="foundry/poster.jpg?v=db76171cfa9dc100"><source src="foundry/shop.mp4?v=509634534b25b100" type="video/mp4"><track kind="captions" srclang="en" label="English" id="film-captions"></video><p><a href="foundry/shop.mp4?v=509634534b25b100" download>Save the film</a> · <a href="foundry/transcript.md">Read the transcript</a></p></dialog>
+<noscript><p>Enable JavaScript for the interactive chapters, or <a href="foundry/shop.mp4?v=509634534b25b100">watch the film</a> and <a href="foundry/transcript.md">read the transcript</a>.</p></noscript>
 </body></html>

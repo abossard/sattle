@@ -1,276 +1,162 @@
 const story = [
   {
     "id": "estate",
-    "chapter": "One order through the whole shop",
-    "title": "Which systems share one order record?",
+    "chapter": "From source records to five views",
+    "title": "How does Sattle build the shop’s master graph?",
     "beats": [
       {
-        "focus": "Order record",
-        "text": "Checkout saves an eighty-dollar order. Later, the support app receives a message asking about a refund on two lines of that order. To answer it, the app needs records from several systems. The graph shows the software, the data it stores and the calls between services.",
+        "focus": "Source records",
+        "question": "Why is the refund for order one oh four stuck?",
+        "answer": "The refund job called the payment API and timed out waiting for a reply. Its call record tells us that much. To trace the request, start with what each system recorded. Kubernetes lists workloads, a network flow names two endpoints, and a trace shows a call. Each dot is one source record.",
         "start": 0.0,
-        "end": 18.708333333333332
+        "end": 24.625,
+        "answerStarts": [
+          4.4
+        ]
       },
       {
-        "focus": "Master graph",
-        "text": "Sattle builds a master graph from observations. An adapter reads each source’s records. Rules use identifiers, such as a tracking number, to connect records about the same thing. This shop graph has forty-six entities and sixty-eight links. An arrow can mean that a service calls an API or reads a record.",
-        "start": 18.708333333333332,
-        "end": 39.833333333333336
+        "focus": "Match identities",
+        "question": "What tells us that two records describe the same thing?",
+        "answer": "These two carry the same full Azure resource ID. Azure Resource Graph lists a storage account. Azure Monitor puts that account’s ID on a reading. Matching the ID ties the reading to the account. The DNS record supplies a different link. Its name resolves to an address, and the private endpoint at that address names the storage account.",
+        "start": 24.625,
+        "end": 52.541666666666664,
+        "answerStarts": [
+          29.375
+        ]
       },
       {
-        "focus": "Projection",
-        "text": "The order status page needs tracking updates. The refund page needs a payment receipt. A projection is a rule for turning one graph into another. Applied to the same master graph, one projection can follow delivery updates while another traces the refund from approval to payment.",
-        "start": 39.833333333333336,
-        "end": 59.583333333333336
+        "focus": "Technical groups",
+        "question": "Can I see how the technical parts fit together?",
+        "answer": "Yes. The DNS answer leads to a private endpoint and then to storage. Follow that path as the dots move. This projection groups records by technology. Kubernetes workloads sit together, alongside groups for Azure resources, network connections, DNS, application telemetry and shop software. The links still cross the groups.",
+        "start": 52.541666666666664,
+        "end": 79.875,
+        "answerStarts": [
+          56.94166666666667
+        ]
+      },
+      {
+        "focus": "Capabilities",
+        "question": "Where does that leave the refund job?",
+        "answer": "It belongs to Payout. It reads the case store in Returns Intake and calls the payment API. Grouping by capability puts software with the same job together. Its original links explain what each group depends on. Shared infrastructure has its own group, so the path to storage is still there.",
+        "start": 79.875,
+        "end": 103.33333333333333,
+        "answerStarts": [
+          83.5
+        ]
+      },
+      {
+        "focus": "Five views",
+        "question": "Which view would help me investigate the timeout?",
+        "answer": [
+          "The dashboard shows successful payment calls falling to zero.",
+          "The health tree shows why that blocks Payout.",
+          "The Kubernetes view follows the refund deployment to its pods.",
+          "The Azure resource view lists the storage account.",
+          "The DNS and IP view traces its name to a private address. Each projection draws on the same shop evidence to answer a different question."
+        ],
+        "start": 103.33333333333333,
+        "end": 134.41666666666666,
+        "answerStarts": [
+          107.75833333333334,
+          112.03833333333333,
+          115.11833333333334,
+          119.72333333333333,
+          123.30333333333333
+        ]
       }
     ]
   },
   {
-    "id": "dependencies",
-    "chapter": "From the master graph to shop dependencies",
-    "title": "How can a graph explain the shop in business terms?",
+    "id": "rollup",
+    "chapter": "How health rolls up",
+    "title": "Why does web turn red when the database fails?",
     "beats": [
       {
-        "focus": "Master graph",
-        "text": "The warehouse API sends a shipment request to the carrier API. The refund job reads from the case store. Both connections belong to the master graph. The arrow tells us which way each relationship runs. Its label tells us whether a service calls another service or reads its data.",
-        "start": 59.583333333333336,
-        "end": 79.66666666666667
+        "focus": "Health roll-up",
+        "question": "If the database stops answering, why does web turn red too?",
+        "answer": "Web needs the API, and the API needs the database. A health roll-up lets a problem in a dependency change the state shown for its callers. Follow the recorded pg-shop outage. The database signal turns red, and web inherits that state through the API.",
+        "start": 134.41666666666666,
+        "end": 159.125,
+        "answerStarts": [
+          139.96666666666667
+        ]
       },
       {
-        "focus": "Levels of abstraction",
-        "text": "The business view groups the shop’s software into fourteen activities. The refund job belongs to Payout. The case store and the approval record belong to Returns Intake. The job reads the store and requires the approval. At the higher level those two links support one arrow from Payout to Returns Intake.",
-        "start": 79.66666666666667,
-        "end": 100.625
+        "focus": "Signal rule",
+        "question": "What makes the database red in the first place?",
+        "answer": "Its availability meter reads zero at ten eleven. Azure Monitor reports that sample a minute later. The shop’s database rule opens an alarm after one bad minute. The reading is what the meter saw. The rule decides what it means for health.",
+        "start": 159.125,
+        "end": 180.375,
+        "answerStarts": [
+          163.375
+        ]
       },
       {
-        "focus": "Tree view",
-        "text": "Payout and Support Services both link to Returns Intake. Either path in the tree leads to the same group. On the Payout path, the refund job reads the case store and requires the approval record. Those two links explain what Payout needs from Returns Intake.",
-        "start": 100.625,
-        "end": 119.625
+        "focus": "Affects paths",
+        "question": "How does Sattle work out which services feel that alarm?",
+        "answer": "The structure query records which parts can affect each service. The health query starts at the service, follows up to sixteen links called Affects, and takes the worst severity it finds. Web reaches the database along that path. The cache has no such path to the failing server, so it stays green.",
+        "start": 180.375,
+        "end": 204.70833333333334,
+        "answerStarts": [
+          185.1
+        ]
+      },
+      {
+        "focus": "Recovery",
+        "question": "The meter is back at one. Why is the database still red?",
+        "answer": "The rule waits for two good minutes in a row. Ten fourteen is the first. Ten fifteen clears the alarm, and the callers recover too. In the exported graph, revision sixteen shows the failure and eighteen shows recovery. Those numbers count graph changes. The meter supplies the times.",
+        "start": 204.70833333333334,
+        "end": 229.875,
+        "answerStarts": [
+          209.85833333333332
+        ]
       }
     ]
   },
   {
-    "id": "commerce",
-    "chapter": "From checkout to the books",
-    "title": "Which systems read the order record?",
+    "id": "discovery",
+    "chapter": "A pod starts using Redis",
+    "title": "What changes when a pod starts talking to Redis?",
     "beats": [
       {
-        "focus": "Order records",
-        "text": "Checkout sends order one oh four to the order system. The stock ledger records a reservation for each order line. The warehouse API sends a shipment request to the carrier API. The tracking service can use the tracking number to link later events back to the order.",
-        "start": 119.625,
-        "end": 138.08333333333334
+        "focus": "New call",
+        "question": "Suppose an API pod starts sending traffic to Redis. What does Sattle see first?",
+        "answer": "One new Hubble flow. In a copy of the pg-shop recording, an API pod sends traffic to the address of an existing Redis cache. The master graph gains one link from the pod to the destination. Both were already on the map.",
+        "start": 229.875,
+        "end": 253.29166666666666,
+        "answerStarts": [
+          237.025
+        ]
       },
       {
-        "focus": "Independent subscribers",
-        "text": "A carrier event gives the support system a revised delivery date. A separate order event tells marketing a sale took place. The marketing workflow reads the consent record before sending a promotion. Each system can use the order data its own job needs.",
-        "start": 138.08333333333334,
-        "end": 155.95833333333334
+        "focus": "Service dependency",
+        "question": "How does that address become a Redis dependency in the health model?",
+        "answer": "Kubernetes shows that the pod backs the API service. The destination address matches a private endpoint for the Redis cache. The host name identifies the same cache. The existing structure query uses that evidence to add an API dependency. During the cache warning, the health model now marks both the API and its gateway Degraded.",
+        "start": 253.29166666666666,
+        "end": 282.0833333333333,
+        "answerStarts": [
+          259.09166666666664
+        ]
       },
       {
-        "focus": "Net merchandise",
-        "text": "Finance asks how much of the sale the shop kept. The order records eighty dollars. The payment receipt later confirms a thirty-dollar refund. Joining those two records gives fifty dollars in merchandise sales, before shipping or tax. A return request on its own leaves the amount open.",
-        "start": 155.95833333333334,
-        "end": 176.45833333333334
-      }
-    ]
-  },
-  {
-    "id": "logistics",
-    "chapter": "Inside the warehouse system",
-    "title": "How does a return record lead to a credit?",
-    "beats": [
-      {
-        "focus": "Return lines",
-        "text": "Return one oh four names two lines on the original order. The warehouse API writes receipt scans to the inspection log. Those records explain why the returns API reports that both lines have arrived. The inventory and refund services still need a decision for each line.",
-        "start": 176.45833333333334,
-        "end": 196.95833333333334
+        "focus": "Revision patch",
+        "question": "Where can I see what was new?",
+        "answer": "Look at the revision that adds the dependency. Its patch lists a new link from the API to Redis. Compare the two revisions in the Canvas to highlight what changed. Redis was already on the map. The new part is the API’s dependency, and the existing health rule already knows how to use it.",
+        "start": 282.0833333333333,
+        "end": 304.9583333333333,
+        "answerStarts": [
+          285.2583333333333
+        ]
       },
       {
-        "focus": "Disposition",
-        "text": "The inspection log gives each line a disposition code. The code tells the inventory system how to update the stock ledger. The eighteen-dollar line says restock. The twelve-dollar line says scrap. Both lines also carry a credit decision, which the refund service can read.",
-        "start": 196.95833333333334,
-        "end": 215.79166666666666
-      },
-      {
-        "focus": "Stock and credit",
-        "text": "The graph gives these links different types. The inventory update increases the sellable count by one. The two credit decisions support an approved refund of thirty dollars. To check whether that payment settled, the finance system follows a different link to the payment receipt.",
-        "start": 215.79166666666666,
-        "end": 234.66666666666666
-      }
-    ]
-  },
-  {
-    "id": "engagement",
-    "chapter": "One event, several readers",
-    "title": "Why can support know before finance?",
-    "beats": [
-      {
-        "focus": "Support case",
-        "text": "The carrier API sends delay event D seven to the tracking service. The support system matches its tracking number to order one oh four and attaches the update to its case record. The event carries the time of the scan. Its update can reach the case later.",
-        "start": 234.66666666666666,
-        "end": 253.04166666666666
-      },
-      {
-        "focus": "Event identity",
-        "text": "Order event E eighty-one arrives twice after a retry. An Azure Function checks the event identifier in Cosmos DB. Service Bus carries one message to a marketing workflow. The consent record says promotions are turned off, so the workflow sends no email. Two copies of the event describe one sale.",
-        "start": 253.04166666666666,
-        "end": 275.0416666666667
-      },
-      {
-        "focus": "Reporting cutoff",
-        "text": "At the first reporting cutoff, finance sees an eighty-dollar sale. The support case already shows a delay. A thirty-dollar payment receipt reaches finance later. Its next report shows fifty dollars. Keeping the earlier version makes it possible to explain what finance knew at the first cutoff.",
-        "start": 275.0416666666667,
-        "end": 295.5416666666667
-      }
-    ]
-  },
-  {
-    "id": "live",
-    "chapter": "The live conversation",
-    "title": "How does support find the status of a return?",
-    "beats": [
-      {
-        "focus": "Conversation",
-        "text": "The web client sends a message. “My order shows a delay. What’s the status of my refund?” The chat API calls the returns app. The app continues the conversation for return one oh four and calls a managed agent in Foundry. The agent can use a model and an order lookup tool to answer.",
-        "start": 295.5416666666667,
-        "end": 315.75
-      },
-      {
-        "focus": "Tool request",
-        "text": "The model asks the order lookup tool about order one oh four. Its request names the function and supplies the order identifier. The application runs that function against the order API. The response carries the return status the API holds at that moment.",
-        "start": 315.75,
-        "end": 334.8333333333333
-      },
-      {
-        "focus": "Tool result",
-        "text": "The order API replies, “Return received.” That observation has a source. It comes from the return record the tool just read. The agent can report that status in the chat. To confirm that the refund went through, it would need a payment receipt.",
-        "start": 334.8333333333333,
-        "end": 352.75
-      }
-    ]
-  },
-  {
-    "id": "sandbox",
-    "chapter": "The receipt calculation",
-    "title": "What survives a temporary calculation?",
-    "beats": [
-      {
-        "focus": "Attachment",
-        "text": "The support app receives a receipt file in the same conversation. It contains two return lines, one for eighteen dollars and one for twelve. The app passes the attachment to an analysis tool. Its return identifier links the file to the case.",
-        "start": 352.75,
-        "end": 370.2083333333333
-      },
-      {
-        "focus": "Sandbox",
-        "text": "Foundry’s Code Interpreter runs Python in a sandbox, an isolated place to run code. It can read the attached file and add those two amounts. Thirty dollars is the receipt subtotal. A later step decides whether the case qualifies for a refund.",
-        "start": 370.2083333333333,
-        "end": 388.0416666666667
-      },
-      {
-        "focus": "Stored result",
-        "text": "The application saves the result in Azure Blob Storage and links it to the case. The result survives after the sandbox closes. To check where the thirty dollars came from, a reviewer can trace the calculation back to the two receipt lines. That trail is called lineage.",
-        "start": 388.0416666666667,
-        "end": 406.7916666666667
-      }
-    ]
-  },
-  {
-    "id": "jobs",
-    "chapter": "After the chat",
-    "title": "Which background jobs need a model?",
-    "beats": [
-      {
-        "focus": "Queue",
-        "text": "The chat session closes. A queue holds a message with the case number until the review job can pick it up. The queue lets the live support app finish its request while the return workflow continues in the background.",
-        "start": 406.7916666666667,
-        "end": 421.3333333333333
-      },
-      {
-        "focus": "Background agent",
-        "text": "The review job reads the case record and the saved receipt calculation. It passes that context to a review agent. The agent uses a model to draft a summary. The job saves the output with the case. Payout still needs its own approval record.",
-        "start": 421.3333333333333,
-        "end": 438.875
-      },
-      {
-        "focus": "Fixed procedure",
-        "text": "After approval, the refund job sends the amount and refund identifier to the payment API. It records the payment receipt and posts to the merchant ledger. Later, a schedule starts the reconciliation job. That job reads the ledger and compares its entries with the payment receipts.",
-        "start": 438.875,
-        "end": 459.25
-      }
-    ]
-  },
-  {
-    "id": "failure",
-    "chapter": "Health across both paths",
-    "title": "Can a refund get stuck while chat still works?",
-    "beats": [
-      {
-        "focus": "Degraded",
-        "text": "The health model starts with the dependencies between services. A second projection applies health rules to measurements for those parts. Suppose the summary runs late. The review rule marks the delay amber, or Degraded. Payout can still proceed because it requires the approval record and the summary is optional.",
-        "start": 459.25,
-        "end": 480.2916666666667
-      },
-      {
-        "focus": "Unhealthy",
-        "text": "Now the refund job’s calls to the payment API time out. The rule marks those calls Unhealthy. Payout needs a successful call, so the red state carries up to Payout. This is a health roll-up. The live order lookup still succeeds. The support app can answer while the refund is stuck.",
-        "start": 480.2916666666667,
-        "end": 500.0833333333333
-      },
-      {
-        "focus": "Unknown",
-        "text": "The timeout tells us what happened at the refund job. It sent a request and got no reply in time. The shop has no measurement from inside the external payment service. That service’s own health stays Unknown. The graph shows where the evidence ends.",
-        "start": 500.0833333333333,
-        "end": 517.7916666666666
-      }
-    ]
-  },
-  {
-    "id": "evolution",
-    "chapter": "When Azure changes",
-    "title": "How can a new storage dependency enter the model?",
-    "beats": [
-      {
-        "focus": "Changed setting",
-        "text": "The shop changes the storage address for return attachments. The new address appears in the app’s configuration before Azure inventory identifies an account there. The setting gives the model the first piece of evidence. It tells us where the app intends to write.",
-        "start": 517.7916666666666,
-        "end": 535.5
-      },
-      {
-        "focus": "Inventory match",
-        "text": "Later, Azure reports a storage account with the same address. A projection matches the two records and links the app to that account. The same rule can pick up another move when its inputs change. A separate measurement tells the shop whether a write succeeds.",
-        "start": 535.5,
-        "end": 552.7083333333334
-      },
-      {
-        "focus": "Ontology and rules",
-        "text": "An ontology defines the kinds of things a model can describe and the links between them. Here those include a storage account and a service that writes to it. A team can maintain that vocabulary and choose its health rules. The shop might require a receipt write for payout but treat a case summary as optional.",
-        "start": 552.7083333333334,
-        "end": 573.7916666666666
-      }
-    ]
-  },
-  {
-    "id": "proof",
-    "chapter": "Checking an explanation",
-    "title": "What evidence would support the answer?",
-    "beats": [
-      {
-        "focus": "Revision",
-        "text": "The old view links the returns app to its original storage account. The new view points to the replacement. Each version is a revision. A patch lists the changes between them, so a past investigation can use the map that applied at the time.",
-        "start": 573.7916666666666,
-        "end": 590.75
-      },
-      {
-        "focus": "Lineage",
-        "text": "The payout warning has a trail of its own. The refund job recorded the timeout. The dependency says that a payout needs a successful payment call. The rule brings those facts together. Tracing a conclusion back through the rule to its evidence is called lineage.",
-        "start": 590.75,
-        "end": 608.5
-      },
-      {
-        "focus": "Recorded replay",
-        "text": "The retail order illustrates the rules. The smaller shop has a recorded outage that Sattle can replay. At 10:11, its database meter drops to zero. Revision sixteen shows which callers turn red. Two good minutes clear the alarm. Replaying the same inputs in order under the same rules reproduces those changes.",
-        "start": 608.5,
-        "end": 631.0
+        "focus": "Evidence",
+        "question": "How could I check that the API really started using that cache?",
+        "answer": "The structure query kept two pieces of evidence. One names the pod, its destination address and the private endpoint. The other names the Redis host. You can check both against the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.",
+        "start": 304.9583333333333,
+        "end": 331.0,
+        "answerStarts": [
+          310.55833333333334
+        ]
       }
     ]
   }

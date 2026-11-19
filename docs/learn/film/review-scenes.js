@@ -208,7 +208,7 @@ const ReviewScenes = (() => {
       text(g,x,y,"Kubernetes externalName",mobile?15:17,muted,{"font-weight":650});
       text(g,x,y+(mobile?27:26),"pg-shop.postgres.database.azure.com",mobile?17:23,ink,{"font-family":mono});
       const right=mobile?x:W*.54, ry=mobile?y+69:y;
-      text(g,right,ry,"Azure inventory ID ends in",mobile?15:17,muted,{"font-weight":650});
+      text(g,right,ry,"Resource Graph ID ends in",mobile?15:17,muted,{"font-weight":650});
       text(g,right,ry+26,"…/flexibleservers/pg-shop",mobile?17:23,ink,{"font-family":mono});
       const underline=stroke(g,`M${x} ${y+31}h${mobile?72:99}`,blue,2);
       trace.push(p=>underline.setAttribute("opacity",stage(p,.36,.64)));

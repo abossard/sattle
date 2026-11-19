@@ -5,7 +5,7 @@ const lessons = {
   layers: ["Identity and projection", "Three web pods call two API pods. Those calls support a single service link. A shared resource ID also lets two Azure records describe the same server.", identity, [["Workload ontology","engine/definitions/acme.workload.sattle"],["Paper · Identity","paper/ch01-values-and-identity.md"],["Paper · Ontologies","paper/ch02-ontologies-as-type-graphs.md"],["Paper · Projections","paper/ch05-projection-language.md"]]],
   incident: ["The pg-shop incident", "Read across a row to follow one service through time. Read down a minute to see which services share the outage.", incident, [["Database readings","engine/tests/Sattle.Tests/fixtures/estate/azure-metrics/shop.ndjson"],["Paper · Measurements","paper/ch07-telemetry-plane.md"]]],
   dependency: ["A new dependency", "Both runs use the same cache readings. In the second, one new dependency gives the cache warning a path to the gateway.", compareChange, [["Reproduce the experiment","docs/learn/replay_change.py"],["How dependencies are matched","engine/definitions/acme.workload.workloadStructure.kql"]]],
-  azure: ["A change on Azure", "The API names a host before Azure lists the cache. Matching the two records resolves its identity. Its health is still an open question.", compareAzure, [["Reproduce both inventory cases","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
+  azure: ["A change on Azure", "The API names a host. A later Azure Resource Graph result identifies the cache by name and type. Its health still needs a reading.", compareAzure, [["Reproduce both resource queries","docs/learn/replay_change.py"],["Azure input format","lab/CAPTURE-FORMAT.md"],["Paper · Incomplete sources","paper/ch10-sources-and-adapters.md"]]],
   replay: ["Rewind a revision", "Move between versions 15 and 18 of the saved shop map. Which services change when the database goes down?", revisions, [["Exported workload patches","canvas/public/demo/estate/workload.patches.ndjson"],["Paper · Incremental updates","paper/ch06-semantics-and-incrementality.md"],["Revisions","paper/ch03-graphs-and-revisions.md"]]],
   inspect: ["Trace an alarm", "Open the workload tree to find pg-shop. Then use the other two Canvas views to find the query behind its health.", inspectProject, [["Engine","engine/README.md"],["Canvas","canvas/README.md"],["Paper · Evidence and lineage","paper/ch09-evolution-evidence-provenance.md"],["Paper · Evaluation","paper/ch14-evaluation.md"]]]
 };
@@ -41,11 +41,11 @@ function incident() {
 
 function observations() {
   const sourceRows=[
-    ["Azure inventory","What exists?","Resource name","pg-shop","Azure lists a PostgreSQL server. The inventory supplies its resource ID and type. It takes another source to tell us how the server is doing."],
+    ["Azure Resource Graph","Which resource is this?","Resource name","pg-shop","The query returns the PostgreSQL server’s name, Azure resource ID and resource type. Azure Monitor uses the same ID for its meter readings."],
     ["Kubernetes","Where does the service point?","External name","pg-shop.postgres.database.azure.com","The service named database points to this network name. Sattle matches this name to the Azure server and draws the link."],
-    ["Azure metrics","What happened at 10:11?","Meter / value","is_db_alive / 0","The 10:11 sample reached the capture at 10:12:01 UTC. An adapter picks out the time, server ID and value so Sattle can use the reading."]
+    ["Azure Monitor","What happened at 10:11?","Meter / value","is_db_alive / 0","The 10:11 sample reached the capture at 10:12:01 UTC. An adapter picks out the time, server ID and value so Sattle can use the reading."]
   ];
-  setActivity(radioArea()+plate("Source record","Synthetic estate",'<div id="record" aria-live="polite"></div>')+'<p class="note">If Azure skips a report, Sattle keeps the server on the map. It needs evidence of deletion to remove it.</p>');
+  setActivity(radioArea()+plate("Source record","Synthetic estate",'<div id="record" aria-live="polite"></div>')+'<p class="note">A gap between Resource Graph results leaves the known server on the map. A deletion record can remove it.</p>');
   choices(sourceRows.map(s=>s[0]),i=>{
     const s=sourceRows[i];
     $("#record").innerHTML='<h2>'+s[1]+'</h2><dl><dt>Source</dt><dd>'+s[0]+'</dd><dt>'+s[2]+'</dt><dd class="mono">'+s[3]+'</dd></dl><p>'+s[4]+'</p>';
@@ -53,7 +53,7 @@ function observations() {
 }
 
 function identity() {
-  setActivity(plate("Compare two records","Azure",'<dl><dt>Inventory</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Which field identifies the same server in both records?</p><details><summary>Who defines the terms on the map?</summary><p>The workload ontology names the kinds of things the map can hold and which links connect them. The team can maintain this vocabulary as its workload changes. An identity rule says which key identifies each thing. For an Azure server, that key is its full resource ID.</p></details>');
+  setActivity(plate("Compare two records","Azure",'<dl><dt>Resource Graph result</dt><dd>A server named <code>pg-shop</code></dd><dt>Meter target</dt><dd>A resource whose ID ends in <code>/flexibleservers/pg-shop</code></dd></dl><p class="mono">'+replay.resourceId+'</p>')+'<h2>What joins these reports?</h2>'+radioArea()+'<p id="answer" class="note" role="status">Which field identifies the same server in both records?</p><details><summary>Who defines the terms on the map?</summary><p>The workload ontology names the kinds of things the map can hold and which links connect them. The team can maintain this vocabulary as its workload changes. An identity rule says which key identifies each thing. For an Azure server, that key is its full resource ID.</p></details>');
   const buttons = $("#choices");
   ["The display name","The shared resource ID","The same arrival minute"].forEach((label,i)=>{
     const b=document.createElement("button"); b.className="pick";b.textContent=label;b.setAttribute("aria-pressed","false");
@@ -119,9 +119,9 @@ function compareChange(){
   ],[0,2]);
 }
 function compareAzure(){
-  comparison("A new cache appears on Azure",["API names a host","Azure reports offers-cache"],["waiting","discovered"],["offers-cache","api","apim-shop","shopcache","pg-shop","shop"],[
-    "The host name in the API deployment has no matching inventory record yet. The workload graph has no offers-cache component.",
-    "Azure lists a Redis cache at that address, so Sattle adds the cache and its link to the API. Its health reads Unknown until a meter tells us how it’s doing."
+  comparison("A new cache appears on Azure",["API names a host","Resource Graph lists the cache"],["waiting","discovered"],["offers-cache","api","apim-shop","shopcache","pg-shop","shop"],[
+    "The replay has a host name in the API deployment. Its Resource Graph results have no matching cache yet.",
+    "The Resource Graph row names a matching Redis cache, so Sattle adds the cache and its link to the API. Its health reads Unknown until a meter tells us how it’s doing."
   ],[0,2]);
 }
 function inspectProject(){

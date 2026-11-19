@@ -241,11 +241,11 @@ const ChangeScenes = (() => {
       caption(ctx,g,240,54,"Hosts the API names",18,startColor,center);
       txt(g,240,80,"CACHE_HOST",lettering(14,650,startColor,center));
       txt(g,240,139,".redis.cache.windows.net",lettering(15,500,startColor,center));
-      caption(ctx,g,240,347,"Redis hosts in Azure",18,colors.blue,center);
+      caption(ctx,g,240,347,"Azure Resource Graph",18,colors.blue,center);
       txt(g,240,371,"shopcache",lettering(17,650,colors.blue,center));
     }else{
       caption(ctx,g,96,36,"Hosts named by the API",23,startColor);
-      caption(ctx,g,1022,36,"Redis hosts in Azure inventory",23,colors.blue,"end");
+      caption(ctx,g,1022,36,"Redis caches in Azure Resource Graph",23,colors.blue,"end");
       txt(g,leftAnchor.x,136,"API setting   ·   CACHE_HOST",lettering(17,600,startColor,center));
       txt(g,leftAnchor.x,220,".redis.cache.windows.net",lettering(17,500,startColor,center));
       txt(g,rightAnchor.x,116,"Redis resource names",lettering(17,600,colors.blue,center));

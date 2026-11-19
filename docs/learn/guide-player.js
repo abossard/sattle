@@ -35,7 +35,8 @@ function show(focus=false) {
   $("#animation").style.setProperty("--figure-paper",chapter.tint);
   $("#animation").style.setProperty("--figure-ink",chapter.captionInk || "var(--ink)");
   ShopMap.guideBridge($("#chapter-reference"),chapter);
-  player.load(c);c.activity();
+  player.load(c);
+  player.onPosition(c.activity());
   const references=new Map(c.sources.map(([name,file])=>[file,name]));
   for(const slug of ShopMap.chapters[c.id].papers || []){
     const file="paper/"+slug+".md";
@@ -160,7 +161,7 @@ cinema.addEventListener("close",()=>video.pause());
 
 const player=(()=>{
   const audio=$("#narrator"), range=$("#scene-position"), listen=$("#listen");
-  let scene, activeBeat=-1, map, position=0, frame=0, ghost=0, pendingPlay=0;
+  let scene, activeBeat=-1, map, position=0, frame=0, ghost=0, pendingPlay=0, positionListener;
   function pause() {
     pendingPlay++;
     audio.pause();cancelAnimationFrame(frame);cancelAnimationFrame(ghost);
@@ -177,9 +178,20 @@ const player=(()=>{
       $("#concept-term").textContent=term;
       $("#concept-meaning").textContent=meaning;
       [...$("#beat-buttons").children].forEach((b,k)=>b.setAttribute("aria-pressed",String(k===i)));
-      $("#spoken").textContent=beat.text;
+      const spoken=$("#spoken");
+      spoken.replaceChildren();
+      const answer=Array.isArray(beat.answer) ? beat.answer.join(" ") : beat.answer;
+      for(const [role,words] of [["Listener",beat.question],["Guide",answer]]){
+        const turn=document.createElement("p"), label=document.createElement("strong");
+        turn.className="spoken-turn";
+        label.textContent=role;
+        turn.append(label,document.createTextNode(words));
+        spoken.append(turn);
+      }
     }
-    map.seek(Math.max(0,Math.min(1,(position-beat.start)/(beat.end-beat.start))));
+    const fraction=Math.max(0,Math.min(1,(position-beat.start)/(beat.end-beat.start)));
+    map.seek(fraction);
+    if(positionListener)positionListener(i,fraction);
     const seconds=position-scene.beats[0].start;
     range.value=String(Math.round(1000*seconds/(scene.beats.at(-1).end-scene.beats[0].start)));
     const clock=Math.floor(seconds/60)+":"+String(Math.floor(seconds)%60).padStart(2,"0");
@@ -199,6 +211,16 @@ const player=(()=>{
     cancelAnimationFrame(ghost);
     const beat=scene.beats[i];showTime(beat.start+(beat.end-beat.start)*fraction);
     audio.currentTime=position;
+  }
+  function preview(end) {
+    if(matchMedia("(prefers-reduced-motion: reduce)").matches){map.seek(end);return;}
+    const start=performance.now();
+    function draw(now){
+      const progress=Math.min(1,(now-start)/2200);
+      map.seek(end*progress);
+      if(progress<1)ghost=requestAnimationFrame(draw);
+    }
+    ghost=requestAnimationFrame(draw);
   }
   listen.onclick=async()=>{
     if(!audio.paused){pause();return;}
@@ -226,20 +248,21 @@ const player=(()=>{
     if(audio.paused)listen.textContent=audio.muted?"▶ Play animation":"▶ Play with narration";
   };
   function load(nextScene){
-    pause();scene=nextScene;activeBeat=-1;$("#beat-buttons").replaceChildren();
+    pause();positionListener=null;scene=nextScene;activeBeat=-1;$("#beat-buttons").replaceChildren();
     for(const [i,beat] of scene.beats.entries()){
       const button=document.createElement("button");button.className="pick";button.textContent=beat.focus;
-      button.onclick=()=>jump(i);$("#beat-buttons").append(button);
+      button.type="button";
+      button.onclick=()=>{
+        jump(i);
+        if(scene.id==="estate" && audio.paused)preview(i===scene.beats.length-1 ? .1 : 1);
+      };
+      $("#beat-buttons").append(button);
     }
     showTime(scene.beats[0].start);
     // Brief silent preview. The narration always starts at the chapter opening.
-    if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
-      const start=performance.now();
-      const preview=now=>{const p=Math.min(1,(now-start)/2900);map.seek(p*.6);if(p<1)ghost=requestAnimationFrame(preview);};
-      ghost=requestAnimationFrame(preview);
-    }
+    if(!matchMedia("(prefers-reduced-motion: reduce)").matches)preview(.6);
   }
-  return {load,jump,pause};
+  return {load,jump,pause,onPosition(listener){positionListener=typeof listener==="function" ? listener : null;}};
 })();
 
 function installFigureZoom() {

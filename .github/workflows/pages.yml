@@ -30,7 +30,7 @@ jobs:
           python3 tools/build-atlas.py
       - name: Check guide and source references
         working-directory: brainstorm
-        run: node --test tests/atlas.test.cjs tests/content-projection.test.cjs
+        run: node --test tests/atlas.test.cjs tests/content-projection.test.cjs ../docs/learn/tests/graph-journey.test.cjs
       - name: Package the narrated walkthroughs
         env:
           SOURCE_BASE: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/

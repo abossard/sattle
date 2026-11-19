@@ -1,640 +1,339 @@
 WEBVTT
 
-00:00:00.700 --> 00:00:03.300
-Checkout saves an eighty-dollar order.
+00:00:00.825 --> 00:00:04.025
+Listener: Why is the refund for order one
+oh four stuck?
 
-00:00:03.300 --> 00:00:06.025
-Later, the support app receives a message
-asking
+00:00:04.725 --> 00:00:09.575
+Guide: The refund job called the payment
+API and timed out waiting for a reply.
 
-00:00:06.025 --> 00:00:08.875
-about a refund on two lines of that order.
+00:00:09.575 --> 00:00:11.900
+Its call record tells us that much.
 
-00:00:08.875 --> 00:00:12.750
-To answer it, the app needs records from
-several systems.
+00:00:11.900 --> 00:00:15.575
+To trace the request, start with what each
+system recorded.
 
-00:00:12.750 --> 00:00:15.800
-The graph shows the software, the data it
-stores
+00:00:15.575 --> 00:00:17.600
+Kubernetes lists workloads,
 
-00:00:15.800 --> 00:00:17.850
-and the calls between services.
+00:00:17.600 --> 00:00:21.625
+a network flow names two endpoints, and a
+trace shows a call.
 
-00:00:19.433 --> 00:00:22.408
-Sattle builds a master graph from
-observations.
+00:00:21.625 --> 00:00:23.775
+Each dot is one source record.
 
-00:00:22.408 --> 00:00:25.158
-An adapter reads each source’s records.
+00:00:25.425 --> 00:00:29.000
+Listener: What tells us that two records
+describe the same thing?
 
-00:00:25.158 --> 00:00:28.133
-Rules use identifiers, such as a tracking
-number,
+00:00:29.750 --> 00:00:33.475
+Guide: These two carry the same full Azure
+resource ID.
 
-00:00:28.133 --> 00:00:30.483
-to connect records about the same thing.
+00:00:33.475 --> 00:00:36.475
+Azure Resource Graph lists a storage
+account.
 
-00:00:30.483 --> 00:00:34.633
-This shop graph has forty-six entities and
-sixty-eight links.
+00:00:36.475 --> 00:00:39.825
+Azure Monitor puts that account’s ID on a
+reading.
 
-00:00:34.633 --> 00:00:39.008
-An arrow can mean that a service calls an
-API or reads a record.
+00:00:39.825 --> 00:00:43.075
+Matching the ID ties the reading to the
+account.
 
-00:00:40.508 --> 00:00:43.858
-The order status page needs tracking
-updates.
+00:00:43.075 --> 00:00:45.925
+The DNS record supplies a different link.
 
-00:00:43.858 --> 00:00:46.683
-The refund page needs a payment receipt.
+00:00:45.925 --> 00:00:48.000
+Its name resolves to an address,
 
-00:00:46.683 --> 00:00:50.383
-A projection is a rule for turning one
-graph into another.
+00:00:48.000 --> 00:00:51.700
+and the private endpoint at that address
+names the storage account.
 
-00:00:50.383 --> 00:00:52.458
-Applied to the same master graph,
+00:00:53.317 --> 00:00:56.567
+Listener: Can I see how the technical
+parts fit together?
 
-00:00:52.458 --> 00:00:55.233
-one projection can follow delivery updates
-while
+00:00:57.367 --> 00:00:57.892
+Guide: Yes.
 
-00:00:55.233 --> 00:00:58.358
-another traces the refund from approval to
-payment.
+00:00:57.892 --> 00:01:01.967
+The DNS answer leads to a private endpoint
+and then to storage.
 
-00:01:00.258 --> 00:01:04.758
-The warehouse API sends a shipment request
-to the carrier API.
+00:01:01.967 --> 00:01:04.442
+Follow that path as the dots move.
 
-00:01:04.758 --> 00:01:07.608
-The refund job reads from the case store.
+00:01:04.442 --> 00:01:07.467
+This projection groups records by
+technology.
 
-00:01:07.608 --> 00:01:10.408
-Both connections belong to the master
-graph.
+00:01:07.467 --> 00:01:12.142
+Kubernetes workloads sit together,
+alongside groups for Azure resources,
 
-00:01:10.408 --> 00:01:14.008
-The arrow tells us which way each
-relationship runs.
+00:01:12.142 --> 00:01:17.092
+network connections, DNS, application
+telemetry and shop software.
 
-00:01:14.008 --> 00:01:18.833
-Its label tells us whether a service calls
-another service or reads its data.
+00:01:17.092 --> 00:01:19.017
+The links still cross the groups.
 
-00:01:20.367 --> 00:01:24.492
-The business view groups the shop’s
-software into fourteen activities.
+00:01:20.650 --> 00:01:23.125
+Listener: Where does that leave the refund
+job?
 
-00:01:24.492 --> 00:01:26.942
-The refund job belongs to Payout.
+00:01:23.850 --> 00:01:25.550
+Guide: It belongs to Payout.
 
-00:01:26.942 --> 00:01:31.092
-The case store and the approval record
-belong to Returns Intake.
+00:01:25.550 --> 00:01:30.400
+It reads the case store in Returns Intake
+and calls the payment API.
 
-00:01:31.092 --> 00:01:34.467
-The job reads the store and requires the
-approval.
+00:01:30.400 --> 00:01:34.350
+Grouping by capability puts software with
+the same job together.
 
-00:01:34.467 --> 00:01:36.817
-At the higher level those two links
-support
+00:01:34.350 --> 00:01:37.875
+Its original links explain what each group
+depends on.
 
-00:01:36.817 --> 00:01:39.767
-one arrow from Payout to Returns Intake.
+00:01:37.875 --> 00:01:40.100
+Shared infrastructure has its own group,
 
-00:01:41.300 --> 00:01:45.400
-Payout and Support Services both link to
-Returns Intake.
+00:01:40.100 --> 00:01:42.500
+so the path to storage is still there.
 
-00:01:45.400 --> 00:01:48.625
-Either path in the tree leads to the same
-group.
+00:01:44.133 --> 00:01:47.383
+Listener: Which view would help me
+investigate the timeout?
 
-00:01:48.625 --> 00:01:52.175
-On the Payout path, the refund job reads
-the case store
+00:01:48.083 --> 00:01:51.833
+Guide: The dashboard shows successful
+payment calls falling to zero.
 
-00:01:52.175 --> 00:01:54.475
-and requires the approval record.
+00:01:52.363 --> 00:01:54.913
+The health tree shows why that blocks
+Payout.
 
-00:01:54.475 --> 00:01:58.400
-Those two links explain what Payout needs
-from Returns Intake.
+00:01:55.443 --> 00:01:59.518
+The Kubernetes view follows the refund
+deployment to its pods.
 
-00:02:00.300 --> 00:02:03.600
-Checkout sends order one oh four to the
-order system.
+00:02:00.048 --> 00:02:03.098
+The Azure resource view lists the storage
+account.
 
-00:02:03.600 --> 00:02:07.650
-The stock ledger records a reservation for
-each order line.
+00:02:03.628 --> 00:02:08.253
+The DNS and IP view traces its name to a
+private address.
 
-00:02:07.650 --> 00:02:12.400
-The warehouse API sends a shipment request
-to the carrier API.
+00:02:08.253 --> 00:02:11.328
+Each projection draws on the same shop
+evidence
 
-00:02:12.400 --> 00:02:14.625
-The tracking service can use the tracking
-number
+00:02:11.328 --> 00:02:13.178
+to answer a different question.
 
-00:02:14.625 --> 00:02:17.225
-to link later events back to the order.
+00:02:15.217 --> 00:02:19.592
+Listener: If the database stops answering,
+why does web turn red too?
 
-00:02:18.758 --> 00:02:23.233
-A carrier event gives the support system a
-revised delivery date.
+00:02:20.342 --> 00:02:24.817
+Guide: Web needs the API, and the API
+needs the database.
 
-00:02:23.233 --> 00:02:26.933
-A separate order event tells marketing a
-sale took place.
+00:02:24.817 --> 00:02:27.592
+A health roll-up lets a problem in a
+dependency
 
-00:02:26.933 --> 00:02:31.733
-The marketing workflow reads the consent
-record before sending a promotion.
+00:02:27.592 --> 00:02:30.267
+change the state shown for its callers.
 
-00:02:31.733 --> 00:02:35.133
-Each system can use the order data its own
-job needs.
+00:02:30.267 --> 00:02:33.117
+Follow the recorded pg-shop outage.
 
-00:02:36.658 --> 00:02:39.933
-Finance asks how much of the sale the shop
-kept.
+00:02:33.117 --> 00:02:38.267
+The database signal turns red, and web
+inherits that state through the API.
 
-00:02:39.933 --> 00:02:42.108
-The order records eighty dollars.
+00:02:39.925 --> 00:02:43.000
+Listener: What makes the database red in
+the first place?
 
-00:02:42.108 --> 00:02:45.808
-The payment receipt later confirms a
-thirty-dollar refund.
+00:02:43.725 --> 00:02:47.400
+Guide: Its availability meter reads zero
+at ten eleven.
 
-00:02:45.808 --> 00:02:49.758
-Joining those two records gives fifty
-dollars in merchandise sales,
+00:02:47.400 --> 00:02:50.750
+Azure Monitor reports that sample a minute
+later.
 
-00:02:49.758 --> 00:02:51.933
-before shipping or tax.
+00:02:50.750 --> 00:02:55.000
+The shop’s database rule opens an alarm
+after one bad minute.
 
-00:02:51.933 --> 00:02:55.233
-A return request on its own leaves the
-amount open.
+00:02:55.000 --> 00:02:57.125
+The reading is what the meter saw.
 
-00:02:57.158 --> 00:03:01.183
-Return one oh four names two lines on the
-original order.
+00:02:57.125 --> 00:02:59.525
+The rule decides what it means for health.
 
-00:03:01.183 --> 00:03:05.808
-The warehouse API writes receipt scans to
-the inspection log.
+00:03:01.175 --> 00:03:04.725
+Listener: How does Sattle work out which
+services feel that alarm?
 
-00:03:05.808 --> 00:03:07.983
-Those records explain why the returns
+00:03:05.425 --> 00:03:09.300
+Guide: The structure query records which
+parts can affect each service.
 
-00:03:07.983 --> 00:03:11.608
-API reports that both lines have arrived.
+00:03:09.300 --> 00:03:12.025
+The health query starts at the service,
+follows up
 
-00:03:11.608 --> 00:03:16.133
-The inventory and refund services still
-need a decision for each line.
+00:03:12.025 --> 00:03:16.650
+to sixteen links called Affects, and takes
+the worst severity it finds.
 
-00:03:17.633 --> 00:03:21.308
-The inspection log gives each line a
-disposition code.
+00:03:16.650 --> 00:03:19.575
+Web reaches the database along that path.
 
-00:03:21.308 --> 00:03:25.508
-The code tells the inventory system how to
-update the stock ledger.
+00:03:19.575 --> 00:03:23.850
+The cache has no such path to the failing
+server, so it stays green.
 
-00:03:25.508 --> 00:03:28.058
-The eighteen-dollar line says restock.
+00:03:25.483 --> 00:03:27.183
+Listener: The meter is back at one.
 
-00:03:28.058 --> 00:03:30.283
-The twelve-dollar line says scrap.
+00:03:27.183 --> 00:03:29.483
+Why is the database still red?
 
-00:03:30.283 --> 00:03:34.933
-Both lines also carry a credit decision,
-which the refund service can read.
+00:03:30.208 --> 00:03:32.908
+Guide: The rule waits for two good minutes
+in a row.
 
-00:03:36.467 --> 00:03:39.067
-The graph gives these links different
-types.
+00:03:32.908 --> 00:03:34.983
+Ten fourteen is the first.
 
-00:03:39.067 --> 00:03:43.092
-The inventory update increases the
-sellable count by one.
+00:03:34.983 --> 00:03:39.033
+Ten fifteen clears the alarm, and the
+callers recover too.
 
-00:03:43.092 --> 00:03:47.542
-The two credit decisions support an
-approved refund of thirty dollars.
+00:03:39.033 --> 00:03:42.333
+In the exported graph, revision sixteen
+shows the failure
 
-00:03:47.542 --> 00:03:49.592
-To check whether that payment settled,
+00:03:42.333 --> 00:03:44.333
+and eighteen shows recovery.
 
-00:03:49.592 --> 00:03:53.417
-the finance system follows a different
-link to the payment receipt.
+00:03:44.333 --> 00:03:46.658
+Those numbers count graph changes.
 
-00:03:55.342 --> 00:04:00.392
-The carrier API sends delay event D seven
-to the tracking service.
+00:03:46.658 --> 00:03:48.633
+The meter supplies the times.
 
-00:04:00.392 --> 00:04:02.842
-The support system matches its tracking
-number
+00:03:50.700 --> 00:03:54.725
+Listener: Suppose an API pod starts
+sending traffic to Redis.
 
-00:04:02.842 --> 00:04:07.192
-to order one oh four and attaches the
-update to its case record.
+00:03:54.725 --> 00:03:56.650
+What does Sattle see first?
 
-00:04:07.192 --> 00:04:09.892
-The event carries the time of the scan.
+00:03:57.400 --> 00:03:59.150
+Guide: One new Hubble flow.
 
-00:04:09.892 --> 00:04:12.217
-Its update can reach the case later.
+00:03:59.150 --> 00:04:03.650
+In a copy of the pg-shop recording, an API
+pod sends traffic
 
-00:04:13.767 --> 00:04:17.842
-Order event E eighty-one arrives twice
-after a retry.
+00:04:03.650 --> 00:04:06.425
+to the address of an existing Redis cache.
 
-00:04:17.842 --> 00:04:22.517
-An Azure Function checks the event
-identifier in Cosmos DB.
+00:04:06.425 --> 00:04:10.550
+The master graph gains one link from the
+pod to the destination.
 
-00:04:22.517 --> 00:04:26.417
-Service Bus carries one message to a
-marketing workflow.
+00:04:10.550 --> 00:04:12.450
+Both were already on the map.
 
-00:04:26.417 --> 00:04:29.217
-The consent record says promotions are
-turned off,
+00:04:14.092 --> 00:04:18.717
+Listener: How does that address become a
+Redis dependency in the health model?
 
-00:04:29.217 --> 00:04:31.517
-so the workflow sends no email.
+00:04:19.417 --> 00:04:23.217
+Guide: Kubernetes shows that the pod backs
+the API service.
 
-00:04:31.517 --> 00:04:34.192
-Two copies of the event describe one sale.
+00:04:23.217 --> 00:04:27.317
+The destination address matches a private
+endpoint for the Redis cache.
 
-00:04:35.742 --> 00:04:39.992
-At the first reporting cutoff, finance
-sees an eighty-dollar sale.
+00:04:27.317 --> 00:04:30.092
+The host name identifies the same cache.
 
-00:04:39.992 --> 00:04:42.767
-The support case already shows a delay.
+00:04:30.092 --> 00:04:35.317
+The existing structure query uses that
+evidence to add an API dependency.
 
-00:04:42.767 --> 00:04:46.117
-A thirty-dollar payment receipt reaches
-finance later.
+00:04:35.317 --> 00:04:36.642
+During the cache warning,
 
-00:04:46.117 --> 00:04:48.717
-Its next report shows fifty dollars.
+00:04:36.642 --> 00:04:41.242
+the health model now marks both the API
+and its gateway Degraded.
 
-00:04:48.717 --> 00:04:50.867
-Keeping the earlier version makes it
-possible
+00:04:42.883 --> 00:04:44.883
+Listener: Where can I see what was new?
 
-00:04:50.867 --> 00:04:54.292
-to explain what finance knew at the first
-cutoff.
+00:04:45.633 --> 00:04:48.458
+Guide: Look at the revision that adds the
+dependency.
 
-00:04:56.217 --> 00:04:58.342
-The web client sends a message.
+00:04:48.458 --> 00:04:52.058
+Its patch lists a new link from the API to
+Redis.
 
-00:04:58.342 --> 00:05:00.017
-“My order shows a delay.
+00:04:52.058 --> 00:04:55.983
+Compare the two revisions in the Canvas to
+highlight what changed.
 
-00:05:00.017 --> 00:05:04.917
-What’s the status of my refund?” The chat
-API calls the returns app.
+00:04:55.983 --> 00:04:58.033
+Redis was already on the map.
 
-00:05:04.917 --> 00:05:08.317
-The app continues the conversation for
-return one oh four
+00:04:58.033 --> 00:05:00.833
+The new part is the API’s dependency,
 
-00:05:08.317 --> 00:05:11.067
-and calls a managed agent in Foundry.
+00:05:00.833 --> 00:05:04.108
+and the existing health rule already knows
+how to use it.
 
-00:05:11.067 --> 00:05:14.892
-The agent can use a model and an order
-lookup tool to answer.
+00:05:05.758 --> 00:05:10.183
+Listener: How could I check that the API
+really started using that cache?
 
-00:05:16.425 --> 00:05:20.525
-The model asks the order lookup tool about
-order one oh four.
+00:05:10.883 --> 00:05:14.008
+Guide: The structure query kept two pieces
+of evidence.
 
-00:05:20.525 --> 00:05:25.150
-Its request names the function and
-supplies the order identifier.
+00:05:14.008 --> 00:05:18.408
+One names the pod, its destination address
+and the private endpoint.
 
-00:05:25.150 --> 00:05:29.275
-The application runs that function against
-the order API.
+00:05:18.408 --> 00:05:20.433
+The other names the Redis host.
 
-00:05:29.275 --> 00:05:33.975
-The response carries the return status the
-API holds at that moment.
+00:05:20.433 --> 00:05:23.883
+You can check both against the flow and
+Azure records.
 
-00:05:35.508 --> 00:05:41.283
-The order API replies, “Return received.”
-That observation has a source.
+00:05:23.883 --> 00:05:26.583
+The traffic explains the new dependency.
 
-00:05:41.283 --> 00:05:44.408
-It comes from the return record the tool
-just read.
-
-00:05:44.408 --> 00:05:47.408
-The agent can report that status in the
-chat.
-
-00:05:47.408 --> 00:05:51.508
-To confirm that the refund went through,
-it would need a payment receipt.
-
-00:05:53.425 --> 00:05:57.400
-The support app receives a receipt file in
-the same conversation.
-
-00:05:57.400 --> 00:06:02.850
-It contains two return lines, one for
-eighteen dollars and one for twelve.
-
-00:06:02.850 --> 00:06:06.150
-The app passes the attachment to an
-analysis tool.
-
-00:06:06.150 --> 00:06:09.350
-Its return identifier links the file to
-the case.
-
-00:06:10.908 --> 00:06:14.558
-Foundry’s Code Interpreter runs Python in
-a sandbox,
-
-00:06:14.558 --> 00:06:17.083
-an isolated place to run code.
-
-00:06:17.083 --> 00:06:20.833
-It can read the attached file and add
-those two amounts.
-
-00:06:20.833 --> 00:06:23.383
-Thirty dollars is the receipt subtotal.
-
-00:06:23.383 --> 00:06:27.183
-A later step decides whether the case
-qualifies for a refund.
-
-00:06:28.717 --> 00:06:32.292
-The application saves the result in Azure
-Blob Storage
-
-00:06:32.292 --> 00:06:34.017
-and links it to the case.
-
-00:06:34.017 --> 00:06:37.217
-The result survives after the sandbox
-closes.
-
-00:06:37.217 --> 00:06:39.567
-To check where the thirty dollars came
-from,
-
-00:06:39.567 --> 00:06:43.542
-a reviewer can trace the calculation back
-to the two receipt lines.
-
-00:06:43.542 --> 00:06:45.567
-That trail is called lineage.
-
-00:06:47.467 --> 00:06:49.367
-The chat session closes.
-
-00:06:49.367 --> 00:06:51.217
-A queue holds a message with the case
-
-00:06:51.217 --> 00:06:54.117
-number until the review job can pick it
-up.
-
-00:06:54.117 --> 00:06:57.417
-The queue lets the live support app finish
-its request
-
-00:06:57.417 --> 00:07:00.492
-while the return workflow continues in the
-background.
-
-00:07:02.033 --> 00:07:06.858
-The review job reads the case record and
-the saved receipt calculation.
-
-00:07:06.858 --> 00:07:09.733
-It passes that context to a review agent.
-
-00:07:09.733 --> 00:07:12.683
-The agent uses a model to draft a summary.
-
-00:07:12.683 --> 00:07:15.208
-The job saves the output with the case.
-
-00:07:15.208 --> 00:07:18.033
-Payout still needs its own approval
-record.
-
-00:07:19.575 --> 00:07:22.575
-After approval, the refund job sends the
-amount
-
-00:07:22.575 --> 00:07:25.875
-and refund identifier to the payment API.
-
-00:07:25.875 --> 00:07:29.875
-It records the payment receipt and posts
-to the merchant ledger.
-
-00:07:29.875 --> 00:07:33.550
-Later, a schedule starts the
-reconciliation job.
-
-00:07:33.550 --> 00:07:38.000
-That job reads the ledger and compares its
-entries with the payment receipts.
-
-00:07:39.925 --> 00:07:43.625
-The health model starts with the
-dependencies between services.
-
-00:07:43.625 --> 00:07:47.725
-A second projection applies health rules
-to measurements for those parts.
-
-00:07:47.725 --> 00:07:49.975
-Suppose the summary runs late.
-
-00:07:49.975 --> 00:07:53.700
-The review rule marks the delay amber, or
-Degraded.
-
-00:07:53.700 --> 00:07:57.550
-Payout can still proceed because it
-requires the approval record
-
-00:07:57.550 --> 00:07:59.450
-and the summary is optional.
-
-00:08:01.042 --> 00:08:05.117
-Now the refund job’s calls to the payment
-API time out.
-
-00:08:05.117 --> 00:08:07.717
-The rule marks those calls Unhealthy.
-
-00:08:07.717 --> 00:08:12.092
-Payout needs a successful call, so the red
-state carries up to Payout.
-
-00:08:12.092 --> 00:08:13.742
-This is a health roll-up.
-
-00:08:13.742 --> 00:08:16.242
-The live order lookup still succeeds.
-
-00:08:16.242 --> 00:08:19.242
-The support app can answer while the
-refund is stuck.
-
-00:08:20.758 --> 00:08:23.758
-The timeout tells us what happened at the
-refund job.
-
-00:08:23.758 --> 00:08:27.058
-It sent a request and got no reply in
-time.
-
-00:08:27.058 --> 00:08:31.183
-The shop has no measurement from inside
-the external payment service.
-
-00:08:31.183 --> 00:08:34.008
-That service’s own health stays Unknown.
-
-00:08:34.008 --> 00:08:36.533
-The graph shows where the evidence ends.
-
-00:08:38.467 --> 00:08:42.392
-The shop changes the storage address for
-return attachments.
-
-00:08:42.392 --> 00:08:45.317
-The new address appears in the app’s
-configuration
-
-00:08:45.317 --> 00:08:49.017
-before Azure inventory identifies an
-account there.
-
-00:08:49.017 --> 00:08:52.167
-The setting gives the model the first
-piece of evidence.
-
-00:08:52.167 --> 00:08:54.642
-It tells us where the app intends to
-write.
-
-00:08:56.225 --> 00:09:00.175
-Later, Azure reports a storage account
-with the same address.
-
-00:09:00.175 --> 00:09:04.550
-A projection matches the two records and
-links the app to that account.
-
-00:09:04.550 --> 00:09:08.275
-The same rule can pick up another move
-when its inputs change.
-
-00:09:08.275 --> 00:09:11.875
-A separate measurement tells the shop
-whether a write succeeds.
-
-00:09:13.408 --> 00:09:17.108
-An ontology defines the kinds of things a
-model can describe
-
-00:09:17.108 --> 00:09:18.808
-and the links between them.
-
-00:09:18.808 --> 00:09:22.958
-Here those include a storage account and a
-service that writes to it.
-
-00:09:22.958 --> 00:09:27.158
-A team can maintain that vocabulary and
-choose its health rules.
-
-00:09:27.158 --> 00:09:30.033
-The shop might require a receipt write for
-payout
-
-00:09:30.033 --> 00:09:32.533
-but treat a case summary as optional.
-
-00:09:34.467 --> 00:09:38.667
-The old view links the returns app to its
-original storage account.
-
-00:09:38.667 --> 00:09:41.167
-The new view points to the replacement.
-
-00:09:41.167 --> 00:09:43.267
-Each version is a revision.
-
-00:09:43.267 --> 00:09:45.717
-A patch lists the changes between them,
-
-00:09:45.717 --> 00:09:49.917
-so a past investigation can use the map
-that applied at the time.
-
-00:09:51.425 --> 00:09:54.275
-The payout warning has a trail of its own.
-
-00:09:54.275 --> 00:09:56.825
-The refund job recorded the timeout.
-
-00:09:56.825 --> 00:10:00.900
-The dependency says that a payout needs a
-successful payment call.
-
-00:10:00.900 --> 00:10:03.225
-The rule brings those facts together.
-
-00:10:03.225 --> 00:10:07.675
-Tracing a conclusion back through the rule
-to its evidence is called lineage.
-
-00:10:09.200 --> 00:10:11.875
-The retail order illustrates the rules.
-
-00:10:11.875 --> 00:10:15.775
-The smaller shop has a recorded outage
-that Sattle can replay.
-
-00:10:15.775 --> 00:10:19.500
-At 10:11, its database meter drops to
-zero.
-
-00:10:19.500 --> 00:10:22.625
-Revision sixteen shows which callers turn
-red.
-
-00:10:22.625 --> 00:10:24.775
-Two good minutes clear the alarm.
-
-00:10:24.775 --> 00:10:26.800
-Replaying the same inputs in order under
-
-00:10:26.800 --> 00:10:29.750
-the same rules reproduces those changes.
+00:05:26.583 --> 00:05:29.758
+The cache’s own load readings explain the
+warning.

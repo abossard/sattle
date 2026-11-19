@@ -1,0 +1,400 @@
+// All five diagrams use the same records. Seeking a beat sets its geometry directly,
+// so scrubbing in the guide and rendering frames out of order give the same picture.
+function ShopJourneyScene({g, el, txt, box, dot, line, stage, mobile, W, H, beat}) {
+  const graph = ShopGraphJourney;
+  const background = "#202020", ink = "#f4f4f4", muted = "#c3c3c3", grey = "#969696";
+  const amber = "#ffd480", mint = "#86dfca";
+  const palette = ["#8ed7fa","#b8a6f9","#ffb994","#81e1c1","#f8d16e","#e7a2d8","#a5c8ff"];
+  const states = {Healthy:"#89e3b0",Degraded:"#ffd480",Unhealthy:"#ff9b99",Unknown:"#d2c0ec"};
+  const margin = mobile ? 12 : 22;
+  const nodes = graph.nodes;
+  const byId = new Map(nodes.map(n=>[n.id,n]));
+  const allEdges = [...graph.rawEdges,...graph.identityEdges,...graph.joinedEdges];
+  const group = (parent, attrs={})=>el(parent,"g",attrs);
+  const text = (parent,x,y,s,size=17,color=ink,weight=550,anchor="start")=>
+    txt(parent,x,y,s,{"font-size":size,fill:color,"font-weight":weight,"text-anchor":anchor});
+  const wire = (parent,attrs={})=>el(parent,"path",{fill:"none","stroke-linecap":"round","stroke-linejoin":"round",...attrs});
+  const ease = value=>value*value*(3-2*value);
+  const lerp = (a,b,p)=>a+(b-a)*p;
+  const shift = (a,b,p)=>({x:lerp(a.x,b.x,p),y:lerp(a.y,b.y,p)});
+  const segment = (a,b)=>"M"+a.x.toFixed(1)+" "+a.y.toFixed(1)+"L"+b.x.toFixed(1)+" "+b.y.toFixed(1);
+  const graphPath = (edges,positions)=>edges.map(e=>segment(positions.get(e.from),positions.get(e.to))).join(" ");
+  const title = (node,content)=>el(node,"title",{},content);
+  const opacity = (node,alpha)=>node.setAttribute("opacity",alpha);
+  const setD = (node,d)=>node.setAttribute("d",d);
+  const setXY = (node,p)=>{node.setAttribute("cx",p.x);node.setAttribute("cy",p.y);};
+  const fit = (node,available)=>{
+    // Compress only labels that actually exceed their column. SVG textLength
+    // remains readable when the parent SVG scales or is cloned for enlargement.
+    if(node.getComputedTextLength()>available) {
+      node.setAttribute("textLength",available);
+      node.setAttribute("lengthAdjust","spacingAndGlyphs");
+    }
+    return node;
+  };
+  function header(label,count) {
+    text(g,margin,mobile?29:32,label,mobile?25:29,ink,710);
+    text(g,mobile?margin:W-margin,mobile?52:31,count,mobile?16:18,muted,590,mobile?"start":"end");
+  }
+  function hash(id) {
+    let value=2166136261;
+    for(const c of id)value=Math.imul(value^c.charCodeAt(0),16777619);
+    value^=value>>>16;
+    return value>>>0;
+  }
+  const rawArea = {x:margin+9,y:mobile?71:58,w:mobile?W-2*margin-18:W*.66,h:mobile?226:H-91};
+  // Record order in a collector is arbitrary. A fixed shuffle keeps each record
+  // in place when the identity rules add links, independent of its source.
+  function scattered() {
+    const indexed=nodes.map(n=>({n,h:hash(n.id)})).sort((a,b)=>a.h-b.h);
+    const cols=Math.ceil(Math.sqrt(nodes.length*rawArea.w/rawArea.h)),rows=Math.ceil(nodes.length/cols);
+    return new Map(indexed.map(({n,h},i)=>{
+      const dx=((h&255)/255-.5)*.7,dy=(((h>>>8)&255)/255-.5)*.7;
+      return [n.id,{x:rawArea.x+(i%cols+.5+dx)*rawArea.w/cols,y:rawArea.y+(Math.floor(i/cols)+.5+dy)*rawArea.h/rows}];
+    }));
+  }
+  function partition(model,cols,compact) {
+    const top=mobile?69:54,bottom=H-(mobile?42:39),gap=mobile?7:11;
+    const rows=Math.ceil(model.groups.length/cols),width=(W-2*margin-(cols-1)*gap)/cols,height=(bottom-top-(rows-1)*gap)/rows;
+    const positions=new Map(), centers=new Map(),colors=new Map(),cells=[];
+    model.groups.forEach((bucket,i)=>{
+      const x=margin+(i%cols)*(width+gap),y=top+Math.floor(i/cols)*(height+gap);
+      const headerH=compact?(mobile?23:26):(mobile?30:33);
+      const center={x:x+width*.5,y:y+headerH+(height-headerH)*.47};
+      const color=palette[i%palette.length];
+      const n=bucket.members.length,rw=width*.42,rh=Math.max(5,(height-headerH)*.39);
+      bucket.members.forEach((id,j)=>{
+        // Vogel's spiral spreads members evenly inside an ellipse, including the center.
+        const radius=n===1?0:Math.sqrt((j+.4)/n),angle=j*2.39996;
+        positions.set(id,{x:center.x+rw*radius*Math.cos(angle),y:center.y+rh*radius*Math.sin(angle)});
+        colors.set(id,color);
+      });
+      centers.set(bucket.id,center);
+      cells.push({bucket,x,y,width,height,center,color});
+    });
+    return {positions,centers,colors,cells};
+  }
+  function drawCells(layout,compact) {
+    const panels=group(g),labels=group(g);
+    layout.cells.forEach(({bucket,x,y,width,height,color})=>{
+      box(panels,x,y,width,height,{fill:color,"fill-opacity":.075,stroke:color,"stroke-opacity":.46,rx:8});
+      const label=text(labels,x+(mobile?6:10),y+(mobile?18:21),bucket.label,
+                       compact?(mobile?14:16):(mobile?15.5:19),color,700);
+      fit(label,width-(mobile?11:20));
+    });
+    return {panels,labels};
+  }
+  box(g,0,0,W,H,{fill:background,rx:10});
+  const raw=scattered();
+  const {record:arg,peer:monitor,dns,address,endpoint}=graph.example;
+
+  if(beat===0||beat===1) {
+    const matched=beat===1, nRaw=graph.rawEdges.length, nLoose=graph.stats.isolated;
+    header(matched?"Resolve the record identities":"Source records",matched?
+      graph.identityEdges.length+" identity links   ·   "+graph.joinedEdges.length+" joined links":
+      nodes.length+" records   ·   "+nRaw+" supplied links");
+    const strokes=group(g), marks=group(g), annotation=group(g);
+    wire(strokes,{d:graphPath(graph.rawEdges,raw),stroke:grey,"stroke-opacity":matched?.24:.38,"stroke-width":1.1});
+    const identityLayer=wire(strokes,{stroke:amber,"stroke-width":mobile?1.25:1.55,"stroke-opacity":.76});
+    const joinLayer=wire(strokes,{stroke:mint,"stroke-width":mobile?.85:1.05,"stroke-opacity":.42});
+    const circles=nodes.map(n=>{
+      const point=raw.get(n.id);
+      const c=dot(marks,point.x,point.y,mobile?2.8:3.5,{fill:"#dedede",stroke:background,"stroke-width":.7});
+      title(c,n.source+" · "+n.label);
+      return c;
+    });
+    const activePath=wire(annotation,{stroke:matched?amber:ink,"stroke-width":2.8});
+    const rings=[0,1,2,3].map(()=>dot(annotation,0,0,mobile?7:9,{stroke:matched?amber:ink,fill:background,"stroke-width":2}));
+    const dividerX=W*.70, px=mobile?margin:dividerX+23,py=mobile?321:88;
+    if(mobile)line(g,margin,py-13,W-margin,py-13,{stroke:"#666"});
+    else line(g,dividerX,62,dividerX,H-22,{stroke:"#666"});
+    const note=group(g);
+    const label=text(note,px,py,matched?"Shared identifiers":"A closer look",mobile?16:17,muted,600);
+    const record=text(note,px,py+(mobile?30:43),"",mobile?24:26,ink,700);
+    const first=text(note,px,py+(mobile?59:80),"",mobile?17:18,muted);
+    const second=text(note,px,py+(mobile?83:105),"",mobile?17:18,muted);
+    const ruleY=py+(mobile?104:137);
+    line(note,px,ruleY,W-margin,ruleY,{stroke:"#686868"});
+    const evidence=text(note,px,ruleY+(mobile?24:34),"",mobile?16:17,matched?mint:ink,650);
+    const detail=text(note,px,ruleY+(mobile?47:61),"",mobile?16:17,muted);
+    const indexFor=id=>nodes.findIndex(n=>n.id===id);
+    const shownWidth=W-px-margin;
+    const matchPair=[arg,monitor], dnsPair=[dns,address,endpoint,arg];
+    const rawExamples=[
+      ["k8s-refund-job-rs","k8s-refund-job-deploy"],
+      ["flow-tool-handler-orders-a"],
+      ["span-2"]
+    ];
+    const examples=matched?[matchPair,dnsPair]:rawExamples;
+    let previous=-1,previousIdentities=-1,previousJoins=-1;
+    function changeNote(which) {
+      const ids=examples[which], selected=byId.get(ids[0]);
+      const words=matched?(which===0?
+        ["Shared identifiers","shopreceipts","Azure Resource Graph · …/shopreceipts","Azure Monitor · …/shopreceipts","Same full ARM resource ID.","Two descriptions identify one account."]:
+        ["A different relationship","receipts.shop.internal","A record   →   10.42.2.8","Private endpoint   →   shopreceipts","The DNS answer supplies the address.","The endpoint names the storage resource."]):
+        [selected.source,selected.label,selected.kind,[
+          "Its owner reference names Deployment refund.",
+          "A flow reports two network endpoints.",
+          "10:12 UTC · Payment API timed out."
+        ][which],
+         nLoose+" records have no supplied link.","A dot represents one source record."];
+      for(const [i,node] of [label,record,first,second,evidence,detail].entries()) {
+        node.textContent=words[i];node.removeAttribute("textLength");fit(node,shownWidth);
+      }
+      const color=matched?(which===0?amber:mint):ink;
+      evidence.setAttribute("fill",color);
+      activePath.setAttribute("stroke",color);
+      setD(activePath,ids.slice(1).map((id,i)=>segment(raw.get(ids[i]),raw.get(id))).join(" "));
+      rings.forEach((ring,i)=>{
+        if(i<ids.length){setXY(ring,raw.get(ids[i]));ring.setAttribute("stroke",color);}
+        opacity(ring,i<ids.length?1:0);
+      });
+      // Emphasise the anchored records without recoloring an entire source.
+      circles.forEach(c=>c.setAttribute("fill","#dedede"));
+      ids.forEach(id=>circles[indexFor(id)].setAttribute("fill",color));
+    }
+    return progress=>{
+      const which=matched?Number(progress>=.64):progress<.42?0:progress<.66?1:2;
+      if(which!==previous){changeNote(which);previous=which;}
+      if(matched) {
+        const count=Math.round(stage(progress,0,.39)*graph.identityEdges.length);
+        if(count!==previousIdentities){setD(identityLayer,graphPath(graph.identityEdges.slice(0,count),raw));previousIdentities=count;}
+        const links=Math.round(stage(progress,.20,.76)*graph.joinedEdges.length);
+        if(links!==previousJoins){setD(joinLayer,graphPath(graph.joinedEdges.slice(0,links),raw));previousJoins=links;}
+      }
+      const pulse=stage(progress,which===0?.03:.67,which===0?.32:.90);
+      rings.forEach(ring=>ring.setAttribute("r",(mobile?7:9)+3*Math.sin(Math.PI*pulse)));
+    };
+  }
+
+  const technical=partition(graph.technical,mobile?2:3,false);
+  const capabilities=partition(graph.capabilities,mobile?3:5,true);
+  if(beat===2||beat===3) {
+    const isTechnical=beat===2,layout=isTechnical?technical:capabilities;
+    const from=isTechnical?raw:technical.positions, to=layout.positions;
+    const model=isTechnical?graph.technical:graph.capabilities;
+    header(isTechnical?"Group by technical layer":"Group by capability",isTechnical?
+      model.groups.length+" technical groups   ·   "+nodes.length+" records":
+      model.groups.length+" groups   ·   "+model.edges.length+" group connections");
+    const before=isTechnical?null:drawCells(technical,false);
+    const {panels,labels}=drawCells(layout,!isTechnical);
+    const wires=group(g), atoms=group(g),selected=group(g),bundles=group(g);
+    const thin=wire(wires,{stroke:"#c6d2d7","stroke-width":mobile?.7:.95,"stroke-opacity":.24});
+    const circles=nodes.map(n=>{
+      const c=dot(atoms,0,0,isTechnical?(mobile?2.6:3.4):(mobile?2.1:3),{fill:layout.colors.get(n.id),stroke:background,"stroke-width":.7});
+      title(c,n.label+" · "+n.source);return c;
+    });
+    g.append(labels);
+    const route=isTechnical?[dns,address,endpoint,arg]:[];
+    const routePath=wire(selected,{stroke:mint,"stroke-width":2.4});
+    const highlights=route.map(()=>dot(selected,0,0,mobile?5:6,{fill:mint,stroke:background,"stroke-width":1.2}));
+    if(!isTechnical) {
+      model.edges.forEach(e=>{
+        const width=.75+Math.min(3,Math.sqrt(e.count)*.49);
+        const link=wire(bundles,{d:segment(layout.centers.get(e.from),layout.centers.get(e.to)),stroke:"#b2c7d1","stroke-opacity":.45,"stroke-width":width});
+        title(link,e.count+" source relationship"+(e.count===1?"":"s"));
+      });
+      const payout=model.edges.find(e=>e.from==="payout"&&e.to==="payment");
+      if(payout) {
+        const a=layout.centers.get(payout.from),b=layout.centers.get(payout.to);
+        wire(bundles,{d:segment(a,b),stroke:amber,"stroke-width":3});
+        const mid=shift(a,b,.6),angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;
+        wire(bundles,{d:"M-7 -4 L0 0 L-7 4",stroke:amber,"stroke-width":2.3,transform:"translate("+mid.x+" "+mid.y+") rotate("+angle+")"});
+      }
+      layout.cells.forEach(({bucket,center,color})=>{
+        const node=dot(bundles,center.x,center.y,(mobile?4.1:5.2)+Math.sqrt(bucket.members.length),{fill:color,stroke:background,"stroke-width":2});
+        title(node,bucket.label+" · "+bucket.members.length+" source records");
+      });
+    }
+    const caption=text(g,margin,H-12,isTechnical?"DNS → 10.42.2.8 → private endpoint → storage account":"Payout → Payment API   ·   The refund job calls the payment API.",
+                       mobile?15.5:18,isTechnical?mint:ink,600);
+    fit(caption,W-2*margin);
+    let previous=-1;
+    return progress=>{
+      const move=ease(stage(progress,.035,.57));
+      if(move!==previous) {
+        const points=new Map(nodes.map((n,i)=>{
+          const pos=shift(from.get(n.id),to.get(n.id),move);
+          setXY(circles[i],pos);return [n.id,pos];
+        }));
+        setD(thin,graphPath(allEdges,points));
+        setD(routePath,route.slice(1).map((id,i)=>segment(points.get(route[i]),points.get(id))).join(" "));
+        route.forEach((id,i)=>setXY(highlights[i],points.get(id)));
+        previous=move;
+      }
+      opacity(panels,stage(progress,.11,.55));opacity(labels,stage(progress,.22,.59));
+      if(before){const alpha=1-stage(progress,0,.20);opacity(before.panels,alpha);opacity(before.labels,alpha);}
+      const fold=isTechnical?0:stage(progress,.55,.84);
+      opacity(atoms,1-.74*fold);opacity(wires,1-.84*fold);opacity(bundles,fold);
+      opacity(selected,isTechnical?stage(progress,.54,.7):0);
+    };
+  }
+
+  header("Five views of the shop","Same source records   ·   five projections");
+  const views=graph.views;
+  const navX=margin,navY=mobile?75:55,navGap=mobile?8:10;
+  const navW=mobile?151:(W-2*margin-4*navGap)/5,navH=mobile?72:68;
+  const navColor=["#f8d16e","#ffaaa4","#b7a6f9","#8ed7fa","#81e1c1"];
+  // These thumbnails carry the shape of the result. The selected one is
+  // expanded beside them (phone) or directly below (film and desktop).
+  function thumbnail(parent,x,y,id,col) {
+    const mini=group(parent,{transform:"translate("+x+" "+y+")"});
+    const stroke=(x1,y1,x2,y2)=>line(mini,x1,y1,x2,y2,{stroke:col,"stroke-width":2});
+    if(id==="dashboard") {
+      const samples=views.find(v=>v.id===id).series;
+      const pts=samples.map((s,i)=>({x:i*11,y:2+14*(1-s.ok/s.total)}));
+      wire(mini,{d:pts.slice(1).map((v,i)=>segment(pts[i],v)).join(" "),stroke:col,"stroke-width":2});
+      pts.forEach(p=>dot(mini,p.x,p.y,2.6,{fill:col}));
+    } else if(id==="health") {
+      stroke(2,2,2,16);stroke(2,10,13,10);stroke(2,16,22,16);
+      [[2,2],[13,10],[22,16]].forEach(([x,y])=>dot(mini,x,y,2.4,{fill:col}));
+    } else if(id==="kubernetes") {
+      stroke(10,2,10,9);stroke(3,9,18,9);stroke(3,9,3,16);stroke(18,9,18,16);
+      [[8,0],[0,14],[15,14]].forEach(([x,y])=>box(mini,x,y,6,5,{fill:col,rx:1}));
+    } else if(id==="azure") {
+      box(mini,0,1,23,17,{fill:"none",stroke:col,"stroke-width":1.6,rx:2});
+      [4,12].forEach(x=>box(mini,x,6,5,6,{fill:col,rx:1}));
+    } else {
+      [2,9,16].forEach(y=>{dot(mini,2,y,1.9,{fill:col});stroke(7,y,22,y);});
+    }
+  }
+  const panels=[],tabs=[];
+  const sx=mobile?navX+navW+13:margin,sy=mobile?navY:135;
+  const sw=W-margin-sx,sh=H-sy-(mobile?12:16);
+  const infoW=mobile?sw:sw*.30,infoX=sx+(mobile?9:18);
+  const chartX=mobile?infoX:sx+infoW+20;
+  const chartY=mobile?sy+94:sy+18,chartW=W-margin-chartX-(mobile?10:18),chartH=H-chartY-(mobile?23:32);
+  const rect=(p,x,y,w,h,color)=>box(p,x,y,w,h,{fill:color,"fill-opacity":.095,stroke:color,"stroke-opacity":.62,rx:5});
+  function summary(parent,x,y,copy,width,size,leading) {
+    // Measure the live SVG typeface instead of wrapping identifiers by character count.
+    let row=text(parent,x,y,"",size,muted), words=[];
+    for(const word of copy.split(" ")) {
+      row.textContent=[...words,word].join(" ");
+      if(words.length && row.getComputedTextLength()>width) {
+        row.textContent=words.join(" ");words=[word];y+=leading;row=text(parent,x,y,word,size,muted);
+      } else words.push(word);
+    }
+    return y;
+  }
+  function dashboard(panel,view) {
+    const x=chartX+12, span=chartW-24,y=chartY+58, h=chartH-(mobile?168:127);
+    text(panel,chartX,chartY+(mobile?10:14),"Payment API replies",mobile?16:20,ink,650);
+    [0,.5,1].forEach(v=>line(panel,x,y+h*(1-v),x+span,y+h*(1-v),{stroke:"#596166","stroke-width":1,"stroke-dasharray":"3 5"}));
+    const coords=view.series.map((s,i)=>({x:x+span*(.13+i*.37), y:y+h*(1-s.ok/s.total)}));
+    wire(panel,{d:coords.slice(1).map((p,i)=>segment(coords[i],p)).join(" "),stroke:navColor[0],"stroke-width":3});
+    coords.forEach((p,i)=>{
+      const s=view.series[i],color=states[view.rows[i].state];
+      dot(panel,p.x,p.y,6.5,{fill:color,stroke:background,"stroke-width":1.7});
+      text(panel,p.x,p.y-13,s.ok+" / "+s.total,mobile?16:19,ink,700,"middle");
+      text(panel,p.x,y+h+26,s.time,mobile?15:17,muted,590,"middle");
+    });
+    const tag=text(panel,chartX,y+h+59,"Successful replies / attempts",mobile?15:17,muted);
+    fit(tag,chartW);
+  }
+  function health(panel,view) {
+    const spacing=mobile?55:44, x=chartX+(mobile?2:8),y=chartY+26;
+    const yFor=i=>y+i*spacing+(i===3?11:0);
+    const rows=view.rows;
+    rows.forEach((r,i)=>{
+      const px=x+(r.depth||0)*(mobile?9:32), py=yFor(i), color=states[r.state]||muted;
+      if(r.depth) {
+        const prevx=px-(mobile?9:32),prevy=yFor(i-1);
+        wire(panel,{d:"M"+prevx+" "+(prevy+5)+" V"+py+" H"+px,stroke:"#77818a","stroke-width":1.4});
+      } else if(i>0)line(panel,x,py-spacing*.59,chartX+chartW,py-spacing*.59,{stroke:"#53595d","stroke-dasharray":"4 5"});
+      dot(panel,px,py,4.3,{fill:color});
+      const name=text(panel,px+11,py+5,r.label,mobile?15.5:19,ink,620);
+      fit(name,mobile?chartW-(px-x)-13:chartW*.66);
+      if(mobile)text(panel,px+11,py+25,r.value,15.5,color,650);
+      else text(panel,chartX+chartW-3,py+5,r.value,19,color,670,"end");
+    });
+  }
+  function kubernetes(panel,view) {
+    const rows=view.rows, short=s=>s.replace(/^deployment\/|^replicaset\/|^pod\//i,"");
+    const cards=[];
+    if(mobile) {
+      rows.forEach((r,i)=>{
+        const indent=[0,11,22,22][i],cy=chartY+5+i*55;
+        cards.push({x:chartX+indent+7,y:cy,w:chartW-indent-9,h:43,r});
+      });
+    } else {
+      const cw=(chartW-70)/3, cy=chartY+chartH*.34;
+      rows.forEach((r,i)=>cards.push({x:chartX+Math.min(i,2)*(cw+35),y:i<2?cy:cy+(i===2?-40:40),w:cw,h:64,r}));
+    }
+    for(const [i,parent] of [[1,0],[2,1],[3,1]]) {
+      const a=cards[parent],b=cards[i];
+      const d=mobile?"M"+(a.x+3)+" "+(a.y+a.h)+" V"+(b.y+b.h/2)+" H"+b.x:
+        "M"+(a.x+a.w)+" "+(a.y+a.h/2)+" H"+(a.x+a.w+17)+" V"+(b.y+b.h/2)+" H"+b.x;
+      wire(panel,{d,stroke:navColor[2],"stroke-width":1.7});
+    }
+    cards.forEach(({x,y,w,h,r})=>{
+      rect(panel,x,y,w,h,navColor[2]);
+      text(panel,x+7,y+(mobile?15:21),r.label,mobile?13:15,navColor[2],620);
+      fit(text(panel,x+7,y+(mobile?34:51),short(r.value),mobile?15.5:20,ink,690),w-14);
+    });
+  }
+  function azure(panel,view) {
+    const x=chartX,y=chartY+2,w=chartW,h=Math.min(chartH-5,mobile?254:204);
+    rect(panel,x,y,w,h,navColor[3]);
+    text(panel,x+10,y+22,"rg-shop",mobile?18:21,ink,690);
+    const fields=view.rows.slice(0,mobile?4:6),cols=mobile?1:2, rows=Math.ceil(fields.length/cols),rowH=(h-37)/rows;
+    text(panel,x+w-9,y+21,fields.length+" of "+view.rows.length+" resources",mobile?13:15,muted,570,"end");
+    for(const [i,r] of fields.entries()) {
+      const lx=x+11+(i%cols)*w/cols, ly=y+34+Math.floor(i/cols)*rowH;
+      line(panel,lx,ly,x+(i%cols+1)*w/cols-8,ly,{stroke:"#4b6572","stroke-width":1});
+      if(mobile) {
+        fit(text(panel,lx,ly+13,r.label,12.8,navColor[3],560),w-18);
+        fit(text(panel,lx,ly+36,r.value,15,ink,650),w-18);
+      } else {
+        fit(text(panel,lx,ly+17,r.label,15,navColor[3],550),w/cols-20);
+        fit(text(panel,lx,ly+46,r.value,19,ink,660),w/cols-20);
+      }
+    }
+  }
+  function dnsView(panel,view) {
+    const x=chartX,y=chartY+7,step=mobile?54:49;
+    view.rows.forEach((r,i)=>{
+      const ry=y+i*step,c=r.state?states[r.state]:navColor[4];
+      if(i<3 && i>0)line(panel,x+4,ry-step+10,x+4,ry,{stroke:navColor[4],"stroke-width":1.5});
+      dot(panel,x+4,ry+4,4.3,{fill:c});
+      if(mobile) {
+        fit(text(panel,x+16,ry+6,r.label,15,muted,520),chartW-16);
+        fit(text(panel,x+16,ry+33,r.value,17.5,c,680),chartW-16);
+      } else {
+        fit(text(panel,x+17,ry+9,r.label,19,ink,600),chartW*.55);
+        fit(text(panel,x+chartW*.60,ry+9,r.value,20,c,680),chartW*.40);
+      }
+      if(i===2)line(panel,x,ry+step-.5*step,x+chartW,ry+step-.5*step,{stroke:"#61706d","stroke-dasharray":"3 5"});
+    });
+  }
+  const renderView={dashboard,health,kubernetes,azure,dns:dnsView};
+  views.forEach((view,i)=>{
+    const color=navColor[i],nx=navX+(mobile?0:i*(navW+navGap)),ny=navY+(mobile?i*(navH+navGap):0);
+    const tab=group(g,{"data-view-label":view.id}),bg=box(tab,nx,ny,navW,navH,{rx:6,fill:color,"fill-opacity":.06,stroke:"#555e62"});
+    thumbnail(tab,nx+12,ny+10,view.id,color);
+    const name=text(tab,nx+10,ny+navH-11,view.label,mobile?15:18,ink,650);
+    fit(name,navW-20);
+    const marker=line(tab,nx+3,ny+navH-2,nx+navW-3,ny+navH-2,{stroke:color,"stroke-width":3});
+    tabs.push({bg,marker,color});
+    const panel=group(g,{"data-output-view":view.id});
+    box(panel,sx,sy,sw,sh,{fill:"#272b2d",rx:8,stroke:"#535b5f","stroke-width":1});
+    const heading=text(panel,infoX,sy+(mobile?25:36),view.label,mobile?21:26,color,700);
+    fit(heading,infoW-(mobile?18:24));
+    const paragraph=summary(panel,infoX,sy+(mobile?47:76),view.summary,infoW-(mobile?18:27),mobile?14:18,mobile?18:24);
+    if(mobile)line(panel,infoX,Math.max(paragraph+8,chartY-18),sx+sw-9,Math.max(paragraph+8,chartY-18),{stroke:"#4d575a"});
+    else line(panel,sx+infoW,sy+13,sx+infoW,sy+sh-13,{stroke:"#4d575a"});
+    renderView[view.id](panel,view);
+    panels.push(panel);
+  });
+  let active=-1;
+  return p=>{
+    const next=graph.viewAt(p);
+    if(next===active)return;
+    active=next;
+    panels.forEach((panel,i)=>{
+      panel.setAttribute("display",i===active?"inline":"none");
+      const {bg,marker,color}=tabs[i];
+      bg.setAttribute("stroke",i===active?color:"#555e62");bg.setAttribute("fill-opacity",i===active?.19:.06);
+      opacity(marker,i===active?1:0);
+    });
+  };
+}

@@ -55,7 +55,7 @@ def publish(raw, retail):
     movie = RETAIL/"shop.mp4" if retail else LEARN/"sattle.mp4"
     poster = RETAIL/"poster.jpg" if retail else HERE/"poster.jpg"
     guide = LEARN/("index.html" if retail else "pg-shop.html")
-    title = "One order through the whole shop" if retail else "How the shop gets its health model"
+    title = "From the master graph to system health" if retail else "How the shop gets its health model"
     story = json.loads((documents/"story-data.js").read_text().removeprefix("const story = ").strip().removesuffix(";"))
     length = float(subprocess.check_output(["ffprobe", "-v", "error", "-select_streams", "v:0",
                                            "-show_entries", "stream=duration", "-of", "csv=p=0", raw]))
@@ -78,7 +78,7 @@ def publish(raw, retail):
                "-map", "0:v:0", "-map", "1:a:0", "-map", "2:0", "-map_metadata", "3", "-map_chapters", "3",
                "-c:v", "copy", "-c:a", "copy", "-c:s", "mov_text", "-movie_timescale", "1000",
                "-metadata:s:s:0", "language=eng", "-movflags", "+faststart", temp/movie.name)
-        overview = story[0]["beats"][1]
+        overview = story[0]["beats"][2 if retail else 1]
         at = overview["start"]+.90*(overview["end"]-overview["start"])
         ffmpeg("-ss", str(at), "-i", temp/movie.name, "-frames:v", "1", "-q:v", "3", temp/poster.name)
 
@@ -96,9 +96,7 @@ def publish(raw, retail):
         # own guide and publishes its new playback digest last.
         uploads = {movie:temp/movie.name, poster:temp/poster.name, documents/"chapters.jpg":temp/"chapters.jpg"}
         if retail:
-            # Show the business-level graph and the two original records behind
-            # Payout → Returns intake at a readable, full-frame size.
-            evidence = next(scene for scene in story if scene["id"] == "dependencies")["beats"][2]
+            evidence = next(scene for scene in story if scene["id"] == "rollup")["beats"][2]
             at = evidence["start"]+.90*(evidence["end"]-evidence["start"])
             frame = temp/"projection.jpg"
             ffmpeg("-ss", str(at), "-i", temp/movie.name, "-frames:v", "1", "-q:v", "2", frame)

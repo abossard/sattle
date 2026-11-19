@@ -11,7 +11,7 @@ const ShopTerms = {
     ["Required call", "A health rule can pass trouble back to a caller when that caller needs the service to finish its work."]
   ],
   layers: [
-    ["Identity", "Two sources can describe the same thing. A shared resource ID connects the inventory and the meter to one server."],
+    ["Identity", "Two sources can describe the same thing. A resource row from Azure Resource Graph and a reading from Azure Monitor use the same server ID."],
     ["Projection", "One service link can stand for several calls. The query groups pods by the service they belong to."],
     ["Ontology", "People can maintain this vocabulary. It defines the kinds of things in a graph and the links that can connect them."]
   ],
@@ -27,8 +27,8 @@ const ShopTerms = {
   ],
   azure: [
     ["Unmatched address", "An address in the API’s settings names a destination. Its Azure resource still needs a match."],
-    ["Inventory match", "A join connects records that describe the same host. Here the Redis type and host address match."],
-    ["Unknown", "An inventory record can establish that a cache exists. Its health needs evidence of its own."]
+    ["Resource match", "The configured host matches the cache name and Redis suffix in the replay’s resource query."],
+    ["Unknown", "A resource record identifies the cache. Without a meter reading, its health stays Unknown."]
   ],
   replay: [
     ["Patch", "A list of edits carries the graph from one version to the next."],

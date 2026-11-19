@@ -132,8 +132,8 @@ const FoundryWorkScenes=(() => {
     rect(g,0,0,W,H,bg,"none",12);
     label(g,18,m?35:40,"How a storage link appears",m?25:31);
     const origin=m?[18,245]:[39,552], rowW=m?217:464,rowY=m?80:82,rowH=m?99:92;
-    const source=["Application config","Azure inventory"];
-    const captions=["Receipt upload host","Blob account endpoint"];
+    const source=["Application config","Azure Resource Graph"];
+    const captions=["Receipt upload host","Storage account name"];
     const rows=origin.map((x,i)=>{
       const row=group();
       rect(row,x,rowY,rowW,rowH,"#fff",i?teal:blue,5);
@@ -141,11 +141,11 @@ const FoundryWorkScenes=(() => {
       label(row,x+14,rowY+25,source[i],m?17:22,i?teal:blue,750);
       label(row,x+14,rowY+50,captions[i],m?15:18,ink,580);
       const address=group(row);
-      label(address,x+14,rowY+(m?70:78),m?"returnsfiles2":"returnsfiles2.blob.core.windows.net",m?17:19,ink,640);
-      if(m)label(address,x+14,rowY+90,".blob.core.windows.net",15,ink,540);
+      label(address,x+14,rowY+(m?70:78),m||i?"returnsfiles2":"returnsfiles2.blob.core.windows.net",m?17:19,ink,640);
+      if(m&&!i)label(address,x+14,rowY+90,".blob.core.windows.net",15,ink,540);
       return row;
     });
-    const waiting=label(g,origin[1]+14,rowY+76,m?"Awaiting inventory":"Waiting for an inventory record",m?16:20,muted,620);
+    const waiting=label(g,origin[1]+14,rowY+76,m?"Awaiting resource row":"No matching storage account yet",m?16:20,muted,620);
     const keyY=m?226:210, keyW=m?144:210, keyH=m?46:50,center=W/2;
     const branches=origin.map((x,i)=>{
       const start=x+rowW/2,end=center+(i?1:-1)*keyW/2;
@@ -178,13 +178,13 @@ const FoundryWorkScenes=(() => {
       opacity(rows[1],joined?1:.62);opacity(rows[1].lastChild,joined?1:0);opacity(waiting,joined?0:1);
       opacity(key,joined?1:.56);
       branches[0](beat===0?stage(p,.12,.7):1);branches[1](beat===1?stage(p,.08,.42):beat===2?1:0);
-      key.lastChild.textContent=joined && (beat>1||p>.4)?"Host matches":"Same host?";
+      key.lastChild.textContent=joined && (beat>1||p>.4)?"Blob host matches":"Same host?";
       opacity(result,joined && (beat>1||p>.44)?1:0);
       outputWire(beat===1?stage(p,.42,.68):1);
       opacity(health,beat===2||beat===1&&p>.67?1:0);
       note.textContent=[
         m?"The app now names a different upload destination.":"The receipt writer’s configured storage endpoint changes.",
-        m?"A matching record identifies the new account.":"The matching endpoint connects the writer to the new storage account.",
+        m?"A matching record identifies the new account.":"Account name + Blob suffix matches the host in the app setting.",
         m?"The rule needs a reading for this account.":"The ontology defines a storage account. A health rule names the readings it needs."
       ][beat];
     };

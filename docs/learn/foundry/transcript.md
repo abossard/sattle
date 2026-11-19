@@ -1,91 +1,121 @@
-# One order through the whole shop
+# From the master graph to system health
 
 Transcript of the narrated Sattle field guide.
 
-## 00:00 · One order through the whole shop
+## 00:00 · From source records to five views
 
-Checkout saves an eighty-dollar order. Later, the support app receives a message asking about a refund on two lines of that order. To answer it, the app needs records from several systems. The graph shows the software, the data it stores and the calls between services.
+**Listener**
 
-Sattle builds a master graph from observations. An adapter reads each source’s records. Rules use identifiers, such as a tracking number, to connect records about the same thing. This shop graph has forty-six entities and sixty-eight links. An arrow can mean that a service calls an API or reads a record.
+Why is the refund for order one oh four stuck?
 
-The order status page needs tracking updates. The refund page needs a payment receipt. A projection is a rule for turning one graph into another. Applied to the same master graph, one projection can follow delivery updates while another traces the refund from approval to payment.
+**Guide**
 
-## 00:59 · From the master graph to shop dependencies
+The refund job called the payment API and timed out waiting for a reply. Its call record tells us that much. To trace the request, start with what each system recorded. Kubernetes lists workloads, a network flow names two endpoints, and a trace shows a call. Each dot is one source record.
 
-The warehouse API sends a shipment request to the carrier API. The refund job reads from the case store. Both connections belong to the master graph. The arrow tells us which way each relationship runs. Its label tells us whether a service calls another service or reads its data.
+**Listener**
 
-The business view groups the shop’s software into fourteen activities. The refund job belongs to Payout. The case store and the approval record belong to Returns Intake. The job reads the store and requires the approval. At the higher level those two links support one arrow from Payout to Returns Intake.
+What tells us that two records describe the same thing?
 
-Payout and Support Services both link to Returns Intake. Either path in the tree leads to the same group. On the Payout path, the refund job reads the case store and requires the approval record. Those two links explain what Payout needs from Returns Intake.
+**Guide**
 
-## 01:59 · From checkout to the books
+These two carry the same full Azure resource ID. Azure Resource Graph lists a storage account. Azure Monitor puts that account’s ID on a reading. Matching the ID ties the reading to the account. The DNS record supplies a different link. Its name resolves to an address, and the private endpoint at that address names the storage account.
 
-Checkout sends order one oh four to the order system. The stock ledger records a reservation for each order line. The warehouse API sends a shipment request to the carrier API. The tracking service can use the tracking number to link later events back to the order.
+**Listener**
 
-A carrier event gives the support system a revised delivery date. A separate order event tells marketing a sale took place. The marketing workflow reads the consent record before sending a promotion. Each system can use the order data its own job needs.
+Can I see how the technical parts fit together?
 
-Finance asks how much of the sale the shop kept. The order records eighty dollars. The payment receipt later confirms a thirty-dollar refund. Joining those two records gives fifty dollars in merchandise sales, before shipping or tax. A return request on its own leaves the amount open.
+**Guide**
 
-## 02:56 · Inside the warehouse system
+Yes. The DNS answer leads to a private endpoint and then to storage. Follow that path as the dots move. This projection groups records by technology. Kubernetes workloads sit together, alongside groups for Azure resources, network connections, DNS, application telemetry and shop software. The links still cross the groups.
 
-Return one oh four names two lines on the original order. The warehouse API writes receipt scans to the inspection log. Those records explain why the returns API reports that both lines have arrived. The inventory and refund services still need a decision for each line.
+**Listener**
 
-The inspection log gives each line a disposition code. The code tells the inventory system how to update the stock ledger. The eighteen-dollar line says restock. The twelve-dollar line says scrap. Both lines also carry a credit decision, which the refund service can read.
+Where does that leave the refund job?
 
-The graph gives these links different types. The inventory update increases the sellable count by one. The two credit decisions support an approved refund of thirty dollars. To check whether that payment settled, the finance system follows a different link to the payment receipt.
+**Guide**
 
-## 03:54 · One event, several readers
+It belongs to Payout. It reads the case store in Returns Intake and calls the payment API. Grouping by capability puts software with the same job together. Its original links explain what each group depends on. Shared infrastructure has its own group, so the path to storage is still there.
 
-The carrier API sends delay event D seven to the tracking service. The support system matches its tracking number to order one oh four and attaches the update to its case record. The event carries the time of the scan. Its update can reach the case later.
+**Listener**
 
-Order event E eighty-one arrives twice after a retry. An Azure Function checks the event identifier in Cosmos DB. Service Bus carries one message to a marketing workflow. The consent record says promotions are turned off, so the workflow sends no email. Two copies of the event describe one sale.
+Which view would help me investigate the timeout?
 
-At the first reporting cutoff, finance sees an eighty-dollar sale. The support case already shows a delay. A thirty-dollar payment receipt reaches finance later. Its next report shows fifty dollars. Keeping the earlier version makes it possible to explain what finance knew at the first cutoff.
+**Guide**
 
-## 04:55 · The live conversation
+The dashboard shows successful payment calls falling to zero.
 
-The web client sends a message. “My order shows a delay. What’s the status of my refund?” The chat API calls the returns app. The app continues the conversation for return one oh four and calls a managed agent in Foundry. The agent can use a model and an order lookup tool to answer.
+The health tree shows why that blocks Payout.
 
-The model asks the order lookup tool about order one oh four. Its request names the function and supplies the order identifier. The application runs that function against the order API. The response carries the return status the API holds at that moment.
+The Kubernetes view follows the refund deployment to its pods.
 
-The order API replies, “Return received.” That observation has a source. It comes from the return record the tool just read. The agent can report that status in the chat. To confirm that the refund went through, it would need a payment receipt.
+The Azure resource view lists the storage account.
 
-## 05:52 · The receipt calculation
+The DNS and IP view traces its name to a private address. Each projection draws on the same shop evidence to answer a different question.
 
-The support app receives a receipt file in the same conversation. It contains two return lines, one for eighteen dollars and one for twelve. The app passes the attachment to an analysis tool. Its return identifier links the file to the case.
+## 02:14 · How health rolls up
 
-Foundry’s Code Interpreter runs Python in a sandbox, an isolated place to run code. It can read the attached file and add those two amounts. Thirty dollars is the receipt subtotal. A later step decides whether the case qualifies for a refund.
+**Listener**
 
-The application saves the result in Azure Blob Storage and links it to the case. The result survives after the sandbox closes. To check where the thirty dollars came from, a reviewer can trace the calculation back to the two receipt lines. That trail is called lineage.
+If the database stops answering, why does web turn red too?
 
-## 06:46 · After the chat
+**Guide**
 
-The chat session closes. A queue holds a message with the case number until the review job can pick it up. The queue lets the live support app finish its request while the return workflow continues in the background.
+Web needs the API, and the API needs the database. A health roll-up lets a problem in a dependency change the state shown for its callers. Follow the recorded pg-shop outage. The database signal turns red, and web inherits that state through the API.
 
-The review job reads the case record and the saved receipt calculation. It passes that context to a review agent. The agent uses a model to draft a summary. The job saves the output with the case. Payout still needs its own approval record.
+**Listener**
 
-After approval, the refund job sends the amount and refund identifier to the payment API. It records the payment receipt and posts to the merchant ledger. Later, a schedule starts the reconciliation job. That job reads the ledger and compares its entries with the payment receipts.
+What makes the database red in the first place?
 
-## 07:39 · Health across both paths
+**Guide**
 
-The health model starts with the dependencies between services. A second projection applies health rules to measurements for those parts. Suppose the summary runs late. The review rule marks the delay amber, or Degraded. Payout can still proceed because it requires the approval record and the summary is optional.
+Its availability meter reads zero at ten eleven. Azure Monitor reports that sample a minute later. The shop’s database rule opens an alarm after one bad minute. The reading is what the meter saw. The rule decides what it means for health.
 
-Now the refund job’s calls to the payment API time out. The rule marks those calls Unhealthy. Payout needs a successful call, so the red state carries up to Payout. This is a health roll-up. The live order lookup still succeeds. The support app can answer while the refund is stuck.
+**Listener**
 
-The timeout tells us what happened at the refund job. It sent a request and got no reply in time. The shop has no measurement from inside the external payment service. That service’s own health stays Unknown. The graph shows where the evidence ends.
+How does Sattle work out which services feel that alarm?
 
-## 08:37 · When Azure changes
+**Guide**
 
-The shop changes the storage address for return attachments. The new address appears in the app’s configuration before Azure inventory identifies an account there. The setting gives the model the first piece of evidence. It tells us where the app intends to write.
+The structure query records which parts can affect each service. The health query starts at the service, follows up to sixteen links called Affects, and takes the worst severity it finds. Web reaches the database along that path. The cache has no such path to the failing server, so it stays green.
 
-Later, Azure reports a storage account with the same address. A projection matches the two records and links the app to that account. The same rule can pick up another move when its inputs change. A separate measurement tells the shop whether a write succeeds.
+**Listener**
 
-An ontology defines the kinds of things a model can describe and the links between them. Here those include a storage account and a service that writes to it. A team can maintain that vocabulary and choose its health rules. The shop might require a receipt write for payout but treat a case summary as optional.
+The meter is back at one. Why is the database still red?
 
-## 09:33 · Checking an explanation
+**Guide**
 
-The old view links the returns app to its original storage account. The new view points to the replacement. Each version is a revision. A patch lists the changes between them, so a past investigation can use the map that applied at the time.
+The rule waits for two good minutes in a row. Ten fourteen is the first. Ten fifteen clears the alarm, and the callers recover too. In the exported graph, revision sixteen shows the failure and eighteen shows recovery. Those numbers count graph changes. The meter supplies the times.
 
-The payout warning has a trail of its own. The refund job recorded the timeout. The dependency says that a payout needs a successful payment call. The rule brings those facts together. Tracing a conclusion back through the rule to its evidence is called lineage.
+## 03:49 · A pod starts using Redis
 
-The retail order illustrates the rules. The smaller shop has a recorded outage that Sattle can replay. At 10:11, its database meter drops to zero. Revision sixteen shows which callers turn red. Two good minutes clear the alarm. Replaying the same inputs in order under the same rules reproduces those changes.
+**Listener**
+
+Suppose an API pod starts sending traffic to Redis. What does Sattle see first?
+
+**Guide**
+
+One new Hubble flow. In a copy of the pg-shop recording, an API pod sends traffic to the address of an existing Redis cache. The master graph gains one link from the pod to the destination. Both were already on the map.
+
+**Listener**
+
+How does that address become a Redis dependency in the health model?
+
+**Guide**
+
+Kubernetes shows that the pod backs the API service. The destination address matches a private endpoint for the Redis cache. The host name identifies the same cache. The existing structure query uses that evidence to add an API dependency. During the cache warning, the health model now marks both the API and its gateway Degraded.
+
+**Listener**
+
+Where can I see what was new?
+
+**Guide**
+
+Look at the revision that adds the dependency. Its patch lists a new link from the API to Redis. Compare the two revisions in the Canvas to highlight what changed. Redis was already on the map. The new part is the API’s dependency, and the existing health rule already knows how to use it.
+
+**Listener**
+
+How could I check that the API really started using that cache?
+
+**Guide**
+
+The structure query kept two pieces of evidence. One names the pod, its destination address and the private endpoint. The other names the Redis host. You can check both against the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.

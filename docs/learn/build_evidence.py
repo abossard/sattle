@@ -13,11 +13,11 @@ def records(path):
 
 
 def evidence():
-    inventory = next(row["payload"] for row in records(ESTATE / "arg/resources.ndjson")
+    resource_row = next(row["payload"] for row in records(ESTATE / "arg/resources.ndjson")
                      if row["payload"]["name"] == "pg-shop")
     readings = []
     for row in records(ESTATE / "azure-metrics/shop.ndjson"):
-        if row["meta"]["resourceId"] == inventory["id"]:
+        if row["meta"]["resourceId"] == resource_row["id"]:
             meter = row["payload"]["value"][0]
             sample = meter["timeseries"][0]["data"][0]
             readings.append(dict(minute=sample["timeStamp"][11:16], value=sample["average"],
@@ -41,7 +41,7 @@ def evidence():
             if props.get("kind") in {"workload", "service", "resource", "gateway"}:
                 states[key] = (props["name"], props.get("state", "Unknown"))
         revisions.append(dict(revision=int(patch["to"]["revision"]["value"]), states=dict(states.values())))
-    return dict(resourceId=inventory["id"], readings=readings, rule=rule, revisions=revisions)
+    return dict(resourceId=resource_row["id"], readings=readings, rule=rule, revisions=revisions)
 
 
 if __name__ == "__main__":

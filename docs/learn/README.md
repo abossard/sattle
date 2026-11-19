@@ -1,34 +1,24 @@
-# One order through the whole shop
+# From the master graph to system health
 
-[Explore the retail walkthrough](index.html) · [Watch the film](foundry/shop.mp4) · [Read the transcript](foundry/transcript.md)
+[Open the walkthrough](index.html) · [Watch the film](foundry/shop.mp4) · [Read the dialogue](foundry/transcript.md)
 
-The checkout service records an $80 sale as order O-104. A carrier scan flags a delay, and a support message asks about a refund. The returns API reports two lines received on R-104. The payment receipt is still missing, so the case can show “received” while the refund remains pending.
+1. **How does Sattle build the shop’s master graph?** A refund for order O-104 is stuck. Start with 142 illustrative records. Match identities, group related software, and choose one of five views. Pick a result to see which records support it. [Explore the shop](index.html#estate) · [Architecture and sources](foundry/sources.md)
+2. **Why does web turn red when the database fails?** Follow the database alarm through the API to web in the recorded pg-shop outage. Compare revisions 15, 16 and 18. The database needs two good minutes to recover. [Trace the health roll-up](index.html#rollup) · [Health query](../../engine/definitions/acme.workload.workloadHealth.kql)
+3. **What changes when a pod starts talking to Redis?** A controlled pg-shop replay adds one Hubble flow. The pod sends traffic to a private endpoint for the existing Redis cache. Sattle adds the API dependency using the same queries and rules. Inspect the patch and its two pieces of evidence. [Trace the new dependency](index.html#discovery) · [Structure query](../../engine/definitions/acme.workload.workloadStructure.kql)
 
-The software follows a published retail architecture. In this example, the checkout, warehouse and support systems share order ID O-104. The refund ID connects the payment receipt to the return. The shop calls external carrier and payment APIs. It can observe its own requests and the responses it gets back. [Architecture and source mapping](foundry/sources.md)
+[![The three chapter figures](foundry/chapters.jpg)](index.html)
 
-[![Chapter illustrations from the retail film](foundry/chapters.jpg)](index.html)
+A listener asks a question in each scene. The guide answers with a record or measurement, then explains the idea behind it. The term buttons let you hold a diagram on screen. Open **Read this part of the narration** to find the dialogue and its edit link.
 
-## From the master graph to the shop’s software dependencies
+## Start locally
 
-The retail master graph contains **46 software entities and 68 typed relationships**. The web client calls the storefront. The warehouse API sends a shipment request to the carrier API. A projection groups the services, tools and digital records into 14 capabilities, including Checkout, Logistics APIs and Payout. The links between those groups form a second graph. Of the 68 original links, 32 connect records inside one capability. The other 36 become 35 typed links between capabilities. The drawing bundles them into 30 directed pairs. The explorer keeps the original links behind each result. The same capability can support several activities. Opening a branch in the dependency tree shows the connections and records behind it. [Explore the projection](index.html#dependencies) · [White paper, levels of abstraction](../../paper/ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes)
-
-The ontology defines what a link means. For instance, the refund job **calls the payment API**, and the ledger service **exports settled refunds to the data lake**. Those links have different consequences during an outage. People can maintain this vocabulary and refine the rules that determine when a failed call affects the shop. [Health and ontology](../../paper/ch02-ontologies-as-type-graphs.md#24-worked-example-health-is-an-ontology)
-
-[![The business graph and the records behind Payout → Returns intake](foundry/projection.jpg)](index.html#dependencies)
-
-## A few things to try
-
-- In [the return records](index.html#logistics), change the inspection code on the $12 line. The stock ledger counts a different number of sellable units. The two lines still qualify for $30 in credit.
-- In [CRM, marketing and analytics](index.html#engagement), deliver the same order event twice. Marketing gets one event and honors the opt-out. Then record the payment receipt and watch merchandise sales after settled refunds change from $80 to $50.
-- In [the health model](index.html#failure), change which signals the shop observes. A failing payout can coexist with a healthy order lookup and an unknown state inside the external processor.
-
-Each chapter has a narrated figure. The term buttons and the time control let you hold or replay a change. Both guides and both videos work from disk. A local server also works:
+Open the [walkthrough](index.html) directly from disk, or serve this checkout from the repository root.
 
 ```sh
 python3 -m http.server 8397 --bind 127.0.0.1
 ```
 
-Open the [retail guide](http://127.0.0.1:8397/docs/learn/) or the [recorded replay](http://127.0.0.1:8397/docs/learn/pg-shop.html).
+While the server is running, open the [local walkthrough](http://127.0.0.1:8397/docs/learn/).
 
 ## The recorded pg-shop companion
 
@@ -43,7 +33,7 @@ The dependency chapters use local replay experiments with the same KQL and rules
 | Experiment | Input difference | Engine result |
 | --- | --- | --- |
 | Existing cache | The API deployment gains a CACHE_HOST setting naming shopcache. | During the cache incident, API and gateway change from Healthy to Degraded. The workload structure graph records the configuration setting as evidence. |
-| New Azure cache | The API names offers-cache. In the comparison run, Azure Resource Graph also reports the new Redis resource. | With the matching inventory row, offers-cache and its dependency appear. Its health is Unknown because this experiment provides no readings for the new cache. |
+| New Azure cache | The API names offers-cache. In the comparison run, Azure Resource Graph also reports the new Redis resource. | With the matching resource row, offers-cache and its dependency appear. Its health is Unknown because this experiment provides no readings for the new cache. |
 
 See the [structure query](../../engine/definitions/acme.workload.workloadStructure.kql), [health query](../../engine/definitions/acme.workload.workloadHealth.kql), [authored thresholds](../../engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson), and [white paper](../../paper/README.md). To open the real Canvas alongside the guide, follow the [repository’s getting-started steps](../../README.md) and run `scripts/demo-replay.sh`. Choose the static synthetic estate for the exact revision numbers in the guide. Live replay can group events into different revisions.
 
@@ -54,21 +44,36 @@ The retail graph and projection are in [case.js](foundry/case.js) and [projectio
 ```sh
 dotnet build engine/src/Sattle.Cli -c Release
 python3 -B docs/learn/build_evidence.py
+python3 -B docs/learn/build_graph_cases.py
 python3 -B docs/learn/film/extract_master.py
 python3 -B docs/learn/replay_change.py
 ```
 
-The narration scripts are [the retail case](foundry/lesson.json) and [the recorded replay](film/lesson.json). Both use the local Kokoro Heart voice. Python 3.12, FFmpeg and the repository’s pinned HyperFrames package build the media. Voice setup downloads the model into the ignored `film/.narrator/` directory. Each build writes a matching voice track, captions, chapter timings and transcript. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
+## Edit the narration
+
+Open the [retail narration script](foundry/lesson.json) or the [pg-shop narration script](film/lesson.json) and find the chapter by its title. Each cue in `cues` belongs to one moment in the animation. Edit `question` for the listener’s line (Michael) and `answer` for the explainer’s reply (Heart). In the retail guide’s **Five views** cue, the answer is a list of five paragraphs. Keep the paragraphs in screen order. They cover the dashboard, health tree, Kubernetes, Azure resources, and DNS/IP management.
+
+On a fresh checkout, install the narrator and film tools once. Run these commands from the repository root with Python 3.12, FFmpeg, Node.js and npm installed. The first command downloads the Kokoro model and voices into `docs/learn/film/.narrator/`. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 
 ```sh
 sh docs/learn/film/setup-voice.sh
 npm --prefix docs/learn/film ci
+```
+
+After editing the retail script, run these commands to rebuild the recording and film.
+
+```sh
 npm --prefix docs/learn/film run voice:retail
 npm --prefix docs/learn/film run check:retail
 npm --prefix docs/learn/film run render:retail
+```
+
+For a pg-shop script edit, use the replay commands.
+
+```sh
 npm --prefix docs/learn/film run voice
 npm --prefix docs/learn/film run check
 npm --prefix docs/learn/film run render
 ```
 
-The rendered films include local narration, English captions and chapter markers. The included animation runtime retains its [license notice](film/vendor/gsap.min.js).
+The voice step writes the audio, captions, transcript and animation timings. The render step puts that recording in the MP4. Commit the script and rebuilt files together so visitors hear the new words in both the walkthrough and **Watch the film**. The included animation runtime retains its [license notice](film/vendor/gsap.min.js).

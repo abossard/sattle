@@ -1,63 +1,69 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>How the shop gets its health model</title>
 <script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="master-data.js"></script><script src="model-scenes.js"></script><script src="change-scenes.js"></script><script src="review-scenes.js"></script><script src="figure.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
-<body class="replay"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="414.12500">
-<section class="clip shot" id="origins" data-start="0.00000" data-duration="55.12500" data-track-index="0" data-beat-ends="17.083333333333332,35.041666666666664,55.125">
+<body class="replay"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="478.12500">
+<section class="clip shot" id="origins" data-start="0.00000" data-duration="61.75000" data-track-index="0" data-beat-ends="19.0,39.166666666666664,61.75" data-questions="[&quot;What does checkout need from the rest of the shop?&quot;, &quot;Where did the rest of those dots come from?&quot;, &quot;How does that map become a health model?&quot;]" data-answer-starts="4.225,22.75,43.016666666666666">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
 <h1>Where does the health model come from?</h1>
 <div class="story-board" data-topic="origins"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="rules" data-start="55.12500" data-duration="52.16667" data-track-index="0" data-beat-ends="16.20833333333333,34.83333333333333,52.16666666666667">
+<section class="clip shot" id="rules" data-start="61.75000" data-duration="63.33333" data-track-index="0" data-beat-ends="21.375,41.58333333333333,63.33333333333333" data-questions="[&quot;Why is the database server outside the box?&quot;, &quot;How long does the database have to go quiet before an alarm opens?&quot;, &quot;Could a failed call leave checkout working?&quot;]" data-answer-starts="4.450000000000003,27.174999999999997,45.45833333333333">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The shop’s health rules</span><span>02 / 08</span></header>
 <h1>What makes a reading count as an outage?</h1>
 <div class="story-board" data-topic="rules"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="layers" data-start="107.29167" data-duration="50.75000" data-track-index="0" data-beat-ends="14.833333333333329,31.91666666666667,50.749999999999986">
+<section class="clip shot" id="layers" data-start="125.08333" data-duration="63.50000" data-track-index="0" data-beat-ends="19.250000000000014,40.500000000000014,63.500000000000014" data-questions="[&quot;How does Sattle know which server the meter belongs to?&quot;, &quot;Why is there just one arrow between web and API?&quot;, &quot;What does the arrow from the database service to pg-shop mean?&quot;]" data-answer-starts="4.5249999999999915,24.250000000000014,46.175">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">From records to a map</span><span>03 / 08</span></header>
 <h1>How do many records become one map?</h1>
 <div class="story-board" data-topic="layers"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="incident" data-start="158.04167" data-duration="53.12500" data-track-index="0" data-beat-ends="15.916666666666686,34.291666666666686,53.125">
+<section class="clip shot" id="incident" data-start="188.58333" data-duration="60.29167" data-track-index="0" data-beat-ends="19.125,39.208333333333314,60.29166666666666" data-questions="[&quot;The reading arrived after ten twelve. Why does the chart put it at ten eleven?&quot;, &quot;Why have web and the gateway turned red too?&quot;, &quot;At ten fourteen the database answers again. Why is it still red?&quot;]" data-answer-starts="6.474999999999994,23.25,45.083333333333314">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The pg-shop outage</span><span>04 / 08</span></header>
 <h1>How can one bad reading affect the whole shop?</h1>
 <div class="story-board" data-topic="incident"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="dependency" data-start="211.16667" data-duration="44.79167" data-track-index="0" data-beat-ends="12.208333333333343,27.083333333333343,44.791666666666686">
+<section class="clip shot" id="dependency" data-start="248.87500" data-duration="55.62500" data-track-index="0" data-beat-ends="17.25,36.291666666666686,55.625" data-questions="[&quot;What was that amber patch earlier in the morning?&quot;, &quot;Where did the new arrow from the API to the cache come from?&quot;, &quot;Why does the gateway change color in only one run?&quot;]" data-answer-starts="4.0,22.55000000000001,40.94166666666666">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A new dependency</span><span>05 / 08</span></header>
 <h1>What changes when the API gains a dependency?</h1>
 <div class="story-board" data-topic="dependency"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="azure" data-start="255.95833" data-duration="53.25000" data-track-index="0" data-beat-ends="17.916666666666657,34.49999999999997,53.24999999999997">
+<section class="clip shot" id="azure" data-start="304.50000" data-duration="60.25000" data-track-index="0" data-beat-ends="21.375,40.541666666666686,60.25" data-questions="[&quot;The API now points at offers-cache. Is that enough to put the cache on the map?&quot;, &quot;Which record settles the question?&quot;, &quot;Why is there a question mark on the new cache?&quot;]" data-answer-starts="6.699999999999989,24.875,44.69166666666666">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A change on Azure</span><span>06 / 08</span></header>
 <h1>What can Sattle infer when Azure changes?</h1>
 <div class="story-board" data-topic="azure"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="replay" data-start="309.20833" data-duration="51.45833" data-track-index="0" data-beat-ends="17.041666666666686,32.875,51.45833333333337">
+<section class="clip shot" id="replay" data-start="364.75000" data-duration="55.16667" data-track-index="0" data-beat-ends="17.75,35.833333333333314,55.166666666666686" data-questions="[&quot;Does the Canvas download the whole map when the database fails?&quot;, &quot;How far apart are revisions sixteen and eighteen?&quot;, &quot;How can we check what the map showed during the outage?&quot;]" data-answer-starts="5.399999999999977,22.32499999999999,40.28333333333336">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">A map through time</span><span>07 / 08</span></header>
 <h1>Can Sattle rebuild the shop as it looked during the outage?</h1>
 <div class="story-board" data-topic="replay"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<section class="clip shot" id="inspect" data-start="360.66667" data-duration="53.45833" data-track-index="0" data-beat-ends="18.0,36.04166666666663,53.458333333333314">
+<section class="clip shot" id="inspect" data-start="419.91667" data-duration="58.20833" data-track-index="0" data-beat-ends="20.958333333333314,40.625,58.208333333333314" data-questions="[&quot;Web is red. Where did the failure start?&quot;, &quot;Can we check the link between the database service and pg-shop?&quot;, &quot;Could we try a different rule on this same outage?&quot;]" data-answer-starts="4.024999999999977,26.458333333333314,44.849999999999966">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The evidence for an answer</span><span>08 / 08</span></header>
 <h1>What explains a red web service?</h1>
 <div class="story-board" data-topic="inspect"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<audio id="voice" class="clip" data-start="0" data-duration="414.12500" data-track-index="3" src="assets/voice.m4a"></audio></main><script>
+<audio id="voice" class="clip" data-start="0" data-duration="478.12500" data-track-index="3" src="assets/voice.m4a"></audio></main><script>
 const timeline = gsap.timeline({paused:true});
 for (const scene of document.querySelectorAll(".shot")) {
   const host = scene.querySelector(".story-board");
   const topic = host.dataset.topic;
   const ends = scene.dataset.beatEnds.split(",").map(Number);
+  const questions = JSON.parse(scene.dataset.questions);
+  const answers = scene.dataset.answerStarts.split(",").map(Number);
   const termLabel = scene.querySelector(".term"), meaning = scene.querySelector(".definition");
-  let active = -1, figure;
+  let active = -1, asking, figure;
   function draw(time) {
     const index = ends.findIndex(end => time < end);
     const beat = index < 0 ? ends.length - 1 : index;
+    const isQuestion = time < answers[beat];
     if (beat !== active) {
-      active = beat;
       figure = ShopMap.mount(host, topic, beat);
+    }
+    if (beat !== active || asking !== isQuestion) {
+      active = beat;
+      asking = isQuestion;
       const [term, definition] = ShopTerms[topic][beat];
-      termLabel.textContent = term;
-      meaning.textContent = definition;
+      termLabel.textContent = isQuestion ? "Listener" : term;
+      meaning.textContent = isQuestion ? questions[beat] : definition;
     }
     const start = beat ? ends[beat-1] : 0;
     figure.seek((time-start)/(ends[beat]-start));

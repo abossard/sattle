@@ -40,10 +40,10 @@ const shopChapters = {
       papers:["ch05-projection-language","ch09-evolution-evidence-provenance"], tint:"#faf4e5"
     },
     azure: {
-      figure:"The inventory join", context:"Azure inventory experiment",
-      description:"An API host and an inventory record meet when their keys match. A separate reading is needed to establish health.",
-      example:"Azure lists offers-cache. Its health stays Unknown.",
-      principle:"Missing measurements", meaning:"Inventory identifies a resource. Readings tell us how it is doing.",
+      figure:"Matching the cache host", context:"Azure Resource Graph",
+      description:"The model matches a host in the API configuration to a Redis resource by name and type. A separate meter reading can establish health.",
+      example:"Resource Graph lists offers-cache. Its health stays Unknown.",
+      principle:"Missing measurements", meaning:"A resource record identifies the cache. A reading can establish health.",
       section:"7.5", reading:"ch07-telemetry-plane.md#75-retention-fill-and-no-data",
       papers:["ch09-evolution-evidence-provenance","ch10-sources-and-adapters"], tint:"#f3f0fa"
     },

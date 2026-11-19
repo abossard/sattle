@@ -96,7 +96,7 @@ const ModelScenes = (() => {
     const tags=[
       [m?.015:.045,"Pods and services",blue],
       [m?.49:.50,"Azure activity",gold],
-      [.99,m?"Inventory":"Resources & meters",lilac]
+      [.99,m?"Resources":"Resources & meters",lilac]
     ];
     for(const [fx,label,color] of tags) {
       type(labels,inset+chartW*fx,chartY+chartH+18,label,{
@@ -303,7 +303,7 @@ const ModelScenes = (() => {
         ?`M${startX} ${ry-2} Q${endX} ${ry-2} ${endX} ${endY+6}`
         :`M${startX} ${ry+(i===0?20:-9)} Q${endX} ${ry+(i===0?46:-32)} ${endX} ${endY}`;
       const connection=thread(idEvidence,d,purple,{width:2,arrow:false});
-      const sourceName=i?"Azure Monitor":"Azure inventory";
+      const sourceName=i?"Azure Monitor":"Azure Resource Graph";
       type(idEvidence,recordX,ry-10,sourceName,{fill:ink,"font-size":m?16:19,"font-weight":700});
       type(idEvidence,recordX,ry+14,"…/flexibleservers/pg-shop",{fill:purple,"font-size":m?15:17,"font-family":"Menlo, monospace"});
       return connection;
