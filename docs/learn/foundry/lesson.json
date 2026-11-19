@@ -2,12 +2,12 @@
   {
     "id": "estate",
     "chapter": "From source records to five views",
-    "title": "How does Sattle build the shop’s master graph?",
+    "title": "What is Sattle doing?",
     "cues": [
       {
         "focus": "Source records",
-        "question": "Why is the refund for order one oh four stuck?",
-        "answer": "The payment call timed out. That trace tells us what the refund job saw. Each dot here is a node, one source record in this picture. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means."
+        "question": "What is Sattle doing?",
+        "answer": "It connects the shop’s records so we can follow one order across systems. Each dot in this graph is a record, or node. This one shows why the refund for order one oh four is stuck. The refund job called the payment API and got no reply. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means."
       },
       {
         "focus": "Match identities",

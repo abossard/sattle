@@ -164,7 +164,9 @@ def generate_voice(lesson, temp, voice, documents, retail):
     with wave.open(str(temp/"voice.wav"),"wb") as out:
         out.setparams((1,2,RATE,0,"NONE","not compressed"))
         out.writeframes(audio)
-    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-af","loudnorm=I=-16:TP=-1.5:LRA=9","-ar",str(RATE),"-c:a","aac","-b:a","112k",str(voice))
+    # End the normalized voice track on the film's last frame.
+    run("ffmpeg","-loglevel","error","-y","-i",str(temp/"voice.wav"),"-af","loudnorm=I=-16:TP=-1.5:LRA=9",
+        "-ar",str(RATE),"-t",f"{len(audio)/(2*RATE):.6f}","-c:a","aac","-b:a","112k",str(voice))
     vtt="\n".join(captions)
     (documents/"captions.vtt").write_text(vtt)
     # Keep the captions usable in browsers which restrict file:// text tracks.

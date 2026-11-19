@@ -137,14 +137,14 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
     const shownWidth=W-px-margin;
     const examples=matched ? [
       {start:0, ids:[arg,monitor], words:[
-        "Shared identifiers","shopreceipts","Azure Resource Graph · …/shopreceipts","Azure Monitor · …/shopreceipts","Identity match · same full ARM resource ID.","Two descriptions identify one account."]},
+        "Shared identifiers","shopreceipts","Azure Resource Graph · …/shopreceipts","Azure Monitor · …/shopreceipts","Same Azure resource ID","Two descriptions identify one account."]},
       {start:spokenAt("Now follow the DNS name",.55), ids:[dns,address,endpoint,arg], words:[
         "DNS and private endpoint","receipts.shop.internal","A record   →   10.42.2.8","Private endpoint   →   shopreceipts","The DNS answer supplies the address.","The endpoint names the storage resource."]}
     ] : [
       {start:0, ids:["span-2"], detail:"10:12 UTC · Payment API timed out."},
       {start:spokenAt("In Kubernetes",.53), ids:["k8s-refund-job-rs","k8s-refund-job-deploy"], detail:"Its owner reference names Deployment refund."},
       {start:spokenAt("A network flow",.70), ids:["flow-tool-handler-orders-a"], detail:"A flow reports two network endpoints."},
-      {start:spokenAt("We call a link",.84), ids:["k8s-refund-job-rs","k8s-refund-job-deploy"], detail:"Typed edge · controlled by Deployment refund."}
+      {start:spokenAt("We call a link",.84), ids:["k8s-refund-job-rs","k8s-refund-job-deploy"], detail:"Edge type · controlled by"}
     ];
     let previous=-1,previousIdentities=-1,previousJoins=-1;
     function changeNote(which) {

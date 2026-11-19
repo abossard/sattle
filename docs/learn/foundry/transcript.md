@@ -6,11 +6,11 @@ Transcript of the narrated Sattle field guide.
 
 **Listener**
 
-Why is the refund for order one oh four stuck?
+What is Sattle doing?
 
 **Guide**
 
-The payment call timed out. That trace tells us what the refund job saw. Each dot here is a node, one source record in this picture. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means.
+It connects the shop’s records so we can follow one order across systems. Each dot in this graph is a record, or node. This one shows why the refund for order one oh four is stuck. The refund job called the payment API and got no reply. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means.
 
 **Listener**
 
@@ -52,7 +52,7 @@ The Azure resource view lists the storage account in the shop’s resource group
 
 The DNS and IP view shows how its name reaches a private address. Each view selects what it needs from the same records. That’s why you can follow one problem across all five.
 
-## 02:14 · Health Tree
+## 02:18 · Health Tree
 
 **Listener**
 
@@ -86,7 +86,7 @@ Why does the whole shop show a problem if only the database failed?
 
 Web depends on that database. Start at web itself, so its own readings count. Then follow the links called Affects, up to sixteen steps from web. Three links down, pg-shop has severity three, Unhealthy. That outranks the other branches. The query keeps the worst severity it finds, which is why the database alarm appears at the top of the tree.
 
-## 03:45 · System Changes
+## 03:49 · System Changes
 
 **Listener**
 
@@ -120,7 +120,7 @@ If I find that branch tomorrow, how can I tell why it’s there?
 
 Start with the new link in the health model. It points back to the API’s dependency in the structure graph. One record matches the destination address to the private endpoint. Another matches the host name to Redis. Both lead back to the pod’s recorded call. That trail from a result to the records behind it is called provenance.
 
-## 05:14 · Reading a GKQL program
+## 05:17 · Reading a GKQL program
 
 **Listener**
 

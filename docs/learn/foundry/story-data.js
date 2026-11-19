@@ -2,44 +2,48 @@ const story = [
   {
     "id": "estate",
     "chapter": "From source records to five views",
-    "title": "How does Sattle build the shop’s master graph?",
+    "title": "What is Sattle doing?",
     "beats": [
       {
         "focus": "Source records",
-        "question": "Why is the refund for order one oh four stuck?",
-        "answer": "The payment call timed out. That trace tells us what the refund job saw. Each dot here is a node, one source record in this picture. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means.",
+        "question": "What is Sattle doing?",
+        "answer": "It connects the shop’s records so we can follow one order across systems. Each dot in this graph is a record, or node. This one shows why the refund for order one oh four is stuck. The refund job called the payment API and got no reply. In Kubernetes, the owner link tells us which deployment owns a ReplicaSet. A network flow names the two ends of a connection. We call a link a typed edge because its type tells us what the connection means.",
         "start": 0.0,
-        "end": 22.5,
+        "end": 26.125,
         "answerStarts": [
-          3.065
+          1.74
         ],
         "spokenCues": [
           [
-            3.415,
-            "The payment call timed out."
+            2.14,
+            "It connects the shop’s records so we can follow one order across systems."
           ],
           [
-            4.965,
-            "That trace tells us what the refund job saw."
+            5.865,
+            "Each dot in this graph is a record, or node."
           ],
           [
-            7.365,
-            "Each dot here is a node, one source record in this picture."
+            8.34,
+            "This one shows why the refund for order one oh four is stuck."
           ],
           [
-            10.79,
+            11.29,
+            "The refund job called the payment API and got no reply."
+          ],
+          [
+            14.59,
             "In Kubernetes, the owner link tells us which deployment owns a ReplicaSet."
           ],
           [
-            15.015,
+            18.69,
             "A network flow names the two ends of a connection."
           ],
           [
-            17.665,
+            21.29,
             "We call a link a typed edge"
           ],
           [
-            19.04,
+            22.665,
             "because its type tells us what the connection means."
           ]
         ]
@@ -48,46 +52,46 @@ const story = [
         "focus": "Match identities",
         "question": "What ties this reading to that storage account?",
         "answer": "They share a full Azure resource ID. Azure Resource Graph names the storage account, and Azure Monitor puts that same ID on its reading. That’s an identity match. Sattle’s ontology supplies the naming rule that ties both records to one account. Now follow the DNS name. It resolves to an address, and the private endpoint names the account. These links connect different things.",
-        "start": 22.5,
-        "end": 46.958333333333336,
+        "start": 26.125,
+        "end": 50.583333333333336,
         "answerStarts": [
-          25.365
+          28.99
         ],
         "spokenCues": [
           [
-            25.74,
+            29.365,
             "They share a full Azure resource ID."
           ],
           [
-            27.99,
+            31.615,
             "Azure Resource Graph names the storage account,"
           ],
           [
-            30.34,
+            33.965,
             "and Azure Monitor puts that same ID on its reading."
           ],
           [
-            33.09,
+            36.715,
             "That’s an identity match."
           ],
           [
-            34.515,
+            38.14,
             "Sattle’s ontology supplies the naming rule"
           ],
           [
-            36.665,
+            40.29,
             "that ties both records to one account."
           ],
           [
-            38.94,
+            42.565,
             "Now follow the DNS name."
           ],
           [
-            40.49,
+            44.115,
             "It resolves to an address, and the private endpoint names the account."
           ],
           [
-            44.115,
+            47.74,
             "These links connect different things."
           ]
         ]
@@ -96,42 +100,42 @@ const story = [
         "focus": "Technical groups",
         "question": "What happens to that path when we group the dots?",
         "answer": "It stays connected. Follow the DNS name to the address, the private endpoint and the storage account. The dots move into technical groups, but the links still cross those boundaries. A projection is a rule for building one graph from another. This one groups records by technology so you can see how DNS, networking and Azure resources fit together.",
-        "start": 46.958333333333336,
-        "end": 70.08333333333333,
+        "start": 50.583333333333336,
+        "end": 73.70833333333333,
         "answerStarts": [
-          49.748333333333335
+          53.373333333333335
         ],
         "spokenCues": [
           [
-            50.148,
+            53.773,
             "It stays connected."
           ],
           [
-            51.548,
+            55.173,
             "Follow the DNS name to the address,"
           ],
           [
-            53.373,
+            56.998,
             "the private endpoint and the storage account."
           ],
           [
-            55.873,
+            59.498,
             "The dots move into technical groups,"
           ],
           [
-            57.848,
+            61.473,
             "but the links still cross those boundaries."
           ],
           [
-            60.073,
+            63.698,
             "A projection is a rule for building one graph from another."
           ],
           [
-            63.148,
+            66.773,
             "This one groups records by technology so you can see how DNS,"
           ],
           [
-            66.748,
+            70.373,
             "networking and Azure resources fit together."
           ]
         ]
@@ -140,34 +144,34 @@ const story = [
         "focus": "Capabilities",
         "question": "Where does that leave the refund job?",
         "answer": "It belongs to Payout. A capability groups software by the job it does for the shop. The job reads a case from Returns Intake. Its call to the payment API becomes the blue arrow from Payout to Payment API. That arrow between two groups stands for a call you can trace back to the refund job.",
-        "start": 70.08333333333333,
-        "end": 90.5,
+        "start": 73.70833333333333,
+        "end": 94.125,
         "answerStarts": [
-          72.47333333333333
+          76.09833333333333
         ],
         "spokenCues": [
           [
-            72.873,
+            76.498,
             "It belongs to Payout."
           ],
           [
-            74.298,
+            77.923,
             "A capability groups software by the job it does for the shop."
           ],
           [
-            77.673,
+            81.298,
             "The job reads a case from Returns Intake."
           ],
           [
-            80.248,
+            83.873,
             "Its call to the payment API becomes the blue arrow from Payout to Payment API."
           ],
           [
-            85.423,
+            89.048,
             "That arrow between two groups stands for a"
           ],
           [
-            87.248,
+            90.873,
             "call you can trace back to the refund job."
           ]
         ]
@@ -182,74 +186,74 @@ const story = [
           "The Azure resource view lists the storage account in the shop’s resource group.",
           "The DNS and IP view shows how its name reaches a private address. Each view selects what it needs from the same records. That’s why you can follow one problem across all five."
         ],
-        "start": 90.5,
-        "end": 134.375,
+        "start": 94.125,
+        "end": 138.0,
         "answerStarts": [
-          93.565,
-          102.37,
-          110.525,
-          118.105,
-          122.61
+          97.19,
+          105.995,
+          114.15,
+          121.73,
+          126.235
         ],
         "spokenCues": [
           [
-            93.94,
+            97.565,
             "Start with the dashboard."
           ],
           [
-            95.315,
+            98.94,
             "It counts successful replies."
           ],
           [
-            97.04,
+            100.665,
             "Two out of two payment calls succeeded in the first minute."
           ],
           [
-            99.94,
+            103.565,
             "By the last minute, neither got a reply."
           ],
           [
-            102.745,
+            106.37,
             "The health tree shows what that means for Payout."
           ],
           [
-            105.145,
+            108.77,
             "Its rule needs a successful payment call."
           ],
           [
-            107.545,
+            111.17,
             "Payout is blocked, and the order lookup still works."
           ],
           [
-            110.9,
+            114.525,
             "The Kubernetes view answers a different question."
           ],
           [
-            113.525,
+            117.15,
             "Which pods run the refund job?"
           ],
           [
-            115.45,
+            119.075,
             "Follow the owner links down from the deployment."
           ],
           [
-            118.455,
+            122.08,
             "The Azure resource view lists the storage"
           ],
           [
-            120.455,
+            124.08,
             "account in the shop’s resource group."
           ],
           [
-            122.985,
+            126.61,
             "The DNS and IP view shows how its name reaches a private address."
           ],
           [
-            127.31,
+            130.935,
             "Each view selects what it needs from the same records."
           ],
           [
-            129.985,
+            133.61,
             "That’s why you can follow one problem across all five."
           ]
         ]
@@ -265,38 +269,38 @@ const story = [
         "focus": "Health Tree",
         "question": "Why is my webshop failing, and when did it start?",
         "answer": "The first failed database check was at 10:11 UTC. Follow the branch from the web service through the API to the database server, pg-shop. That’s how a database problem reaches the shop. Redis and storage sit on other branches. A Health Tree lets you start with the service people use and work back to the part that failed.",
-        "start": 134.375,
-        "end": 156.41666666666666,
+        "start": 138.0,
+        "end": 160.04166666666666,
         "answerStarts": [
-          137.54
+          141.165
         ],
         "spokenCues": [
           [
-            137.915,
+            141.54,
             "The first failed database check was at 10:11 UTC."
           ],
           [
-            141.265,
+            144.89,
             "Follow the branch from the web service through the API"
           ],
           [
-            143.69,
+            147.315,
             "to the database server, pg-shop."
           ],
           [
-            146.09,
+            149.715,
             "That’s how a database problem reaches the shop."
           ],
           [
-            148.59,
+            152.215,
             "Redis and storage sit on other branches."
           ],
           [
-            150.89,
+            154.515,
             "A Health Tree lets you start with the service people use"
           ],
           [
-            153.49,
+            157.115,
             "and work back to the part that failed."
           ]
         ]
@@ -305,42 +309,42 @@ const story = [
         "focus": "From the master graph",
         "question": "How do we know that’s the database my shop uses?",
         "answer": "Look at the name on the Kubernetes service. It points to a PostgreSQL host. The structure query builds that host name from the Azure server’s name and type. The names match, so Sattle connects the service to that server. The health query combines those connections with measurements and signal rules. As the source records change, those connections can change too.",
-        "start": 156.41666666666666,
-        "end": 180.08333333333334,
+        "start": 160.04166666666666,
+        "end": 183.70833333333334,
         "answerStarts": [
-          159.68166666666667
+          163.30666666666667
         ],
         "spokenCues": [
           [
-            160.082,
+            163.707,
             "Look at the name on the Kubernetes service."
           ],
           [
-            162.157,
+            165.782,
             "It points to a PostgreSQL host."
           ],
           [
-            164.432,
+            168.057,
             "The structure query builds that host name"
           ],
           [
-            166.282,
+            169.907,
             "from the Azure server’s name and type."
           ],
           [
-            168.332,
+            171.957,
             "The names match, so Sattle connects the service to that server."
           ],
           [
-            171.657,
+            175.282,
             "The health query combines those connections"
           ],
           [
-            173.657,
+            177.282,
             "with measurements and signal rules."
           ],
           [
-            175.732,
+            179.357,
             "As the source records change, those connections can change too."
           ]
         ]
@@ -349,38 +353,38 @@ const story = [
         "focus": "Signal rule",
         "question": "How long was the database in trouble?",
         "answer": "It failed three checks in a row. At 10:11 the database returned its first zero. Sattle raised the alarm at 10:13. At 10:14 the server answered again. The rule waits for two good minutes in a row. At 10:15 that second good check met the rule. The tree showed the recovery at 10:17.",
-        "start": 180.08333333333334,
-        "end": 201.33333333333334,
+        "start": 183.70833333333334,
+        "end": 204.95833333333334,
         "answerStarts": [
-          182.79833333333335
+          186.42333333333335
         ],
         "spokenCues": [
           [
-            183.198,
+            186.823,
             "It failed three checks in a row."
           ],
           [
-            185.073,
+            188.698,
             "At 10:11 the database returned its first zero."
           ],
           [
-            188.123,
+            191.748,
             "Sattle raised the alarm at 10:13."
           ],
           [
-            190.373,
+            193.998,
             "At 10:14 the server answered again."
           ],
           [
-            192.623,
+            196.248,
             "The rule waits for two good minutes in a row."
           ],
           [
-            195.023,
+            198.648,
             "At 10:15 that second good check met the rule."
           ],
           [
-            197.723,
+            201.348,
             "The tree showed the recovery at 10:17."
           ]
         ]
@@ -389,38 +393,38 @@ const story = [
         "focus": "Health roll-up",
         "question": "Why does the whole shop show a problem if only the database failed?",
         "answer": "Web depends on that database. Start at web itself, so its own readings count. Then follow the links called Affects, up to sixteen steps from web. Three links down, pg-shop has severity three, Unhealthy. That outranks the other branches. The query keeps the worst severity it finds, which is why the database alarm appears at the top of the tree.",
-        "start": 201.33333333333334,
-        "end": 225.83333333333334,
+        "start": 204.95833333333334,
+        "end": 229.45833333333334,
         "answerStarts": [
-          205.49833333333333
+          209.12333333333333
         ],
         "spokenCues": [
           [
-            205.923,
+            209.548,
             "Web depends on that database."
           ],
           [
-            207.748,
+            211.373,
             "Start at web itself, so its own readings count."
           ],
           [
-            210.323,
+            213.948,
             "Then follow the links called Affects, up to sixteen steps from web."
           ],
           [
-            213.823,
+            217.448,
             "Three links down, pg-shop has severity three, Unhealthy."
           ],
           [
-            217.473,
+            221.098,
             "That outranks the other branches."
           ],
           [
-            219.198,
+            222.823,
             "The query keeps the worst severity it finds,"
           ],
           [
-            221.523,
+            225.148,
             "which is why the database alarm appears at the top of the tree."
           ]
         ]
@@ -436,34 +440,34 @@ const story = [
         "focus": "New call",
         "question": "Our API just started using Redis. Will that show up in its health model?",
         "answer": "Yes. Web already uses Redis, and the API already calls the database. At fifteen seconds past ten oh seven, Hubble records an API pod sending traffic to a new address. That one call gives Sattle something new to investigate. It can use the records it already has to work out what’s at the other end.",
-        "start": 225.83333333333334,
-        "end": 248.79166666666666,
+        "start": 229.45833333333334,
+        "end": 252.41666666666666,
         "answerStarts": [
-          230.84833333333333
+          234.47333333333333
         ],
         "spokenCues": [
           [
-            231.273,
+            234.898,
             "Yes."
           ],
           [
-            231.773,
+            235.398,
             "Web already uses Redis, and the API already calls the database."
           ],
           [
-            235.898,
+            239.523,
             "At fifteen seconds past ten oh seven,"
           ],
           [
-            238.023,
+            241.648,
             "Hubble records an API pod sending traffic to a new address."
           ],
           [
-            241.648,
+            245.273,
             "That one call gives Sattle something new to investigate."
           ],
           [
-            244.548,
+            248.173,
             "It can use the records it already has to work out what’s at the other end."
           ]
         ]
@@ -472,34 +476,34 @@ const story = [
         "focus": "Identify the dependency",
         "question": "All I see is an IP address. How do we know that’s Redis?",
         "answer": "Look at the two ends of the call. Kubernetes lists the sending pod under the API service. The destination address matches a private endpoint connected to the Redis cache. The host name on the call also identifies that cache. Put those matches together and you get a dependency from the API to Redis.",
-        "start": 248.79166666666666,
-        "end": 270.6666666666667,
+        "start": 252.41666666666666,
+        "end": 274.2916666666667,
         "answerStarts": [
-          252.80666666666667
+          256.4316666666667
         ],
         "spokenCues": [
           [
-            253.207,
+            256.832,
             "Look at the two ends of the call."
           ],
           [
-            254.732,
+            258.357,
             "Kubernetes lists the sending pod under the API service."
           ],
           [
-            258.182,
+            261.807,
             "The destination address matches a private"
           ],
           [
-            260.107,
+            263.732,
             "endpoint connected to the Redis cache."
           ],
           [
-            262.432,
+            266.057,
             "The host name on the call also identifies that cache."
           ],
           [
-            265.557,
+            269.182,
             "Put those matches together and you get a dependency from the API to Redis."
           ]
         ]
@@ -508,42 +512,42 @@ const story = [
         "focus": "The new branch",
         "question": "Did someone have to add Redis to the API’s tree?",
         "answer": "No. Look at the API branch before the call. The database is already there. Now look after the call. Redis appears alongside the database, and web still has its own link to the same cache. The existing rules picked up a new dependency. Nobody had to draw that branch or change the rules.",
-        "start": 270.6666666666667,
-        "end": 290.9166666666667,
+        "start": 274.2916666666667,
+        "end": 294.5416666666667,
         "answerStarts": [
-          273.9316666666667
+          277.5566666666667
         ],
         "spokenCues": [
           [
-            274.357,
+            277.982,
             "No."
           ],
           [
-            274.732,
+            278.357,
             "Look at the API branch before the call."
           ],
           [
-            276.882,
+            280.507,
             "The database is already there."
           ],
           [
-            278.557,
+            282.182,
             "Now look after the call."
           ],
           [
-            280.007,
+            283.632,
             "Redis appears alongside the database,"
           ],
           [
-            281.957,
+            285.582,
             "and web still has its own link to the same cache."
           ],
           [
-            284.707,
+            288.332,
             "The existing rules picked up a new dependency."
           ],
           [
-            287.307,
+            290.932,
             "Nobody had to draw that branch or change the rules."
           ]
         ]
@@ -552,34 +556,34 @@ const story = [
         "focus": "Trace the evidence",
         "question": "If I find that branch tomorrow, how can I tell why it’s there?",
         "answer": "Start with the new link in the health model. It points back to the API’s dependency in the structure graph. One record matches the destination address to the private endpoint. Another matches the host name to Redis. Both lead back to the pod’s recorded call. That trail from a result to the records behind it is called provenance.",
-        "start": 290.9166666666667,
-        "end": 314.2916666666667,
+        "start": 294.5416666666667,
+        "end": 317.9166666666667,
         "answerStarts": [
-          294.8066666666667
+          298.4316666666667
         ],
         "spokenCues": [
           [
-            295.207,
+            298.832,
             "Start with the new link in the health model."
           ],
           [
-            297.357,
+            300.982,
             "It points back to the API’s dependency in the structure graph."
           ],
           [
-            300.857,
+            304.482,
             "One record matches the destination address to the private endpoint."
           ],
           [
-            304.432,
+            308.057,
             "Another matches the host name to Redis."
           ],
           [
-            306.732,
+            310.357,
             "Both lead back to the pod’s recorded call."
           ],
           [
-            309.357,
+            312.982,
             "That trail from a result to the records behind it is called provenance."
           ]
         ]
@@ -595,42 +599,42 @@ const story = [
         "focus": "Program graph",
         "question": "Can we see the query that builds a health graph?",
         "answer": "Yes. This is a GKQL program from Sattle’s deployment health experiment. The dots in the master graph are pods. Web has two, and the database has one. The query itself is a graph, too. Its boxes are operations. A wire tells us which operation uses another’s result. The target graph shows each workload and the traffic between them.",
-        "start": 314.2916666666667,
-        "end": 338.0,
+        "start": 317.9166666666667,
+        "end": 341.625,
         "answerStarts": [
-          317.13166666666666
+          320.75666666666666
         ],
         "spokenCues": [
           [
-            317.557,
+            321.182,
             "Yes."
           ],
           [
-            317.957,
+            321.582,
             "This is a GKQL program from Sattle’s deployment health experiment."
           ],
           [
-            322.057,
+            325.682,
             "The dots in the master graph are pods."
           ],
           [
-            324.282,
+            327.907,
             "Web has two, and the database has one."
           ],
           [
-            326.632,
+            330.257,
             "The query itself is a graph, too."
           ],
           [
-            328.732,
+            332.357,
             "Its boxes are operations."
           ],
           [
-            330.657,
+            334.282,
             "A wire tells us which operation uses another’s result."
           ],
           [
-            333.782,
+            337.407,
             "The target graph shows each workload and the traffic between them."
           ]
         ]
@@ -639,42 +643,42 @@ const story = [
         "focus": "Match a pattern",
         "question": "What does the little arrow inside graph-match look for?",
         "answer": "A ready pod and the deployment that controls it. The letters p and d hold their places in the pattern. Watch the first web pod light up. In this match, p stands for that pod, and d stands for web. That pairing is called a binding. The other web pod fits too. So does the database pod. Three matches.",
-        "start": 338.0,
-        "end": 359.2916666666667,
+        "start": 341.625,
+        "end": 362.9166666666667,
         "answerStarts": [
-          341.365
+          344.99
         ],
         "spokenCues": [
           [
-            341.765,
+            345.39,
             "A ready pod and the deployment that controls it."
           ],
           [
-            344.265,
+            347.89,
             "The letters p and d hold their places in the pattern."
           ],
           [
-            347.065,
+            350.69,
             "Watch the first web pod light up."
           ],
           [
-            349.065,
+            352.69,
             "In this match, p stands for that pod, and d stands for web."
           ],
           [
-            352.39,
+            356.015,
             "That pairing is called a binding."
           ],
           [
-            354.24,
+            357.865,
             "The other web pod fits too."
           ],
           [
-            355.94,
+            359.565,
             "So does the database pod."
           ],
           [
-            357.34,
+            360.965,
             "Three matches."
           ]
         ]
@@ -683,42 +687,42 @@ const story = [
         "focus": "Count ready pods",
         "question": "How do those matches give web a health state?",
         "answer": "Start each deployment at zero. Add one for every ready pod. The summarize step groups those numbers by deployment and adds them up. Web gets two. The database gets one. The threshold here is zero, so any count above zero means Healthy. Web appears once in the target graph, with its deployment ID and a count of two.",
-        "start": 359.2916666666667,
-        "end": 381.1666666666667,
+        "start": 362.9166666666667,
+        "end": 384.7916666666667,
         "answerStarts": [
-          362.20666666666665
+          365.83166666666665
         ],
         "spokenCues": [
           [
-            362.582,
+            366.207,
             "Start each deployment at zero."
           ],
           [
-            364.432,
+            368.057,
             "Add one for every ready pod."
           ],
           [
-            366.207,
+            369.832,
             "The summarize step groups those numbers by deployment and adds them up."
           ],
           [
-            369.782,
+            373.407,
             "Web gets two."
           ],
           [
-            370.857,
+            374.482,
             "The database gets one."
           ],
           [
-            372.357,
+            375.982,
             "The threshold here is zero, so any count above zero means Healthy."
           ],
           [
-            376.132,
+            379.757,
             "Web appears once in the target graph,"
           ],
           [
-            377.932,
+            381.557,
             "with its deployment ID and a count of two."
           ]
         ]
@@ -727,42 +731,42 @@ const story = [
         "focus": "Two calls, one edge",
         "question": "What happens to the connection if the database pod stops being ready?",
         "answer": "Follow the two pod calls. Both reach the same database pod, so their matches build one Talks edge from web to the database. At ten oh three, the database pod stops being ready. Its count falls to zero. The edge takes the worse state of its two ends, so it turns red with the database. Web still has two ready pods and stays green.",
-        "start": 381.1666666666667,
-        "end": 405.7916666666667,
+        "start": 384.7916666666667,
+        "end": 409.4166666666667,
         "answerStarts": [
-          385.58166666666665
+          389.20666666666665
         ],
         "spokenCues": [
           [
-            385.982,
+            389.607,
             "Follow the two pod calls."
           ],
           [
-            387.707,
+            391.332,
             "Both reach the same database pod,"
           ],
           [
-            389.707,
+            393.332,
             "so their matches build one Talks edge from web to the database."
           ],
           [
-            393.107,
+            396.732,
             "At ten oh three, the database pod stops being ready."
           ],
           [
-            395.982,
+            399.607,
             "Its count falls to zero."
           ],
           [
-            397.682,
+            401.307,
             "The edge takes the worse state of its two ends,"
           ],
           [
-            399.807,
+            403.432,
             "so it turns red with the database."
           ],
           [
-            401.757,
+            405.382,
             "Web still has two ready pods and stays green."
           ]
         ]
