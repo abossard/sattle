@@ -22,9 +22,8 @@ public class LineageTests
 
     static JsonNode LiftedEdge(SpaceHost h, string graph, string from, string to)
     {
-        var snap = h.Snapshot(graph, null)["extent"]!;
-        var names = snap["entities"]!.AsArray().ToDictionary(e => e!["id"]!["value"]!.GetValue<string>(), e => e!["properties"]!.AsArray().First(p => p!["property"]!["value"]!.GetValue<string>().EndsWith("name", StringComparison.Ordinal))!["value"]!["value"]!.GetValue<string>());
-        return snap["relationships"]!.AsArray().Single(r => names[r!["source"]!["value"]!.GetValue<string>()] == from && names[r["target"]!["value"]!.GetValue<string>()] == to && r["type"]!["value"]!.GetValue<string>().EndsWith("DependsOn", StringComparison.Ordinal))!;
+        var names = h.Entities(graph).ToDictionary(e => e["id"].Id(), e => e.Prop("name"));
+        return h.Relationships(graph, "DependsOn").Single(r => names[r["source"].Id()] == from && names[r["target"].Id()] == to);
     }
 
     static List<string> Sources(JsonNode lineage) => lineage["sources"]!.AsArray().Select(s => s!["role"]!.GetValue<string>() + "@" + s["graph"]!.GetValue<string>()).ToList();
@@ -57,31 +56,116 @@ public class LineageTests
         Assert.Equal("3", l["sourceCount"]!.GetValue<string>());
     }
 
-    /// <summary>web to api and web to db both lift to Storefront to Ordering (api and db in one capability): the edge stands for both, and the api to db call is a self-loop.</summary>
+    /// <summary>web calls both api and db. Each service mapped to Ordering supports the same lifted edge from Storefront.</summary>
     [Fact]
-    public void A_lifted_edge_of_parallel_edges_names_all_of_them_and_the_pages_give_the_same_list()
+    public void A_shared_capability_edge_retracts_only_after_its_last_service_dependency_is_withdrawn()
     {
-        var dir = ProjectionEdgesTests.CopyEstate(["storefront", "ordering", "ordering"], extraWebToDb: true, retired: null);
+        var dir = ProjectionEdgesTests.CopyEstate(["storefront", null, null], extraWebToDb: true, retired: null);
         try
         {
             using var h = Serve(dir);
-            var edge = LiftedEdge(h, "capabilities", "Storefront", "Ordering")["id"]!["value"]!.GetValue<string>();
-            var full = h.Lineage("capabilities", edge, int.MaxValue - 1);
-            Assert.Equal("2", full["contributions"]!.GetValue<string>());
-            Assert.Equal(2, full["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "dependency"));
-            Assert.Null(full["next"]);
-            var paged = new List<string>(); string? after = null; var pages = 0;
-            do
-            {
-                var page = h.Lineage("capabilities", edge, 3, after);
-                Assert.True(page["sources"]!.AsArray().Count <= 3);
-                paged.AddRange(page["sources"]!.AsArray().Select(s => s!["role"]!.GetValue<string>() + "/" + s["element"]!.GetValue<string>()));
-                after = page["next"]?.GetValue<string>(); pages++;
-            } while (after is not null);
-            Assert.True(pages > 1);
-            Assert.Equal(full["sources"]!.AsArray().Select(s => s!["role"]!.GetValue<string>() + "/" + s["element"]!.GetValue<string>()).ToList(), paged);
+            AssertSharedEdgeHistory(h);
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    static void AssertSharedEdgeHistory(SpaceHost h)
+    {
+        const string graph = "capabilities";
+        const string edgeId = "r:ghriwdezbx4gecwuh7rpcjik2l"; // public migration baseline
+        var caps = h.Entities(graph).ToDictionary(c => c.Prop("name")!, c => c["id"].Id());
+        Assert.Equal(("e:hrlof5d4tmf5zh4hhika2h3wdv", "e:uz7p6jwlkl5asl3dfh7za265qz"), (caps["Storefront"], caps["Ordering"]));
+        var parent = h.Relationships(graph, "Under").Single(r => r["source"].Id() == caps["Storefront"] && r["target"].Id() == caps["Commerce"]);
+        var api = LiftedEdge(h, "serviceTree", "web", "api");
+        var db = LiftedEdge(h, "serviceTree", "web", "db");
+        long sequence = 10_000;
+
+        // Apply one signed RealizesRow. Ordering's service count changes at each step, so each has a capability revision.
+        List<JsonNode> Change(string service, int weight)
+        {
+            var head = h.Head(graph);
+            using var row = new RowWriter(h.RowLayout("realizes"), h.Interner);
+            row.Begin(weight);
+            row.Text("capId", "ordering");
+            row.Text("cluster", "synth");
+            row.Text("namespace", "shop");
+            row.Text("service", service);
+            h.Ingest("realizes", row.Build()!, ++sequence);
+
+            Assert.Contains(h.Relationships(graph, "Under"), r => JsonNode.DeepEquals(parent, r));
+            var patch = Assert.Single(h.Patches(graph, head));
+            Assert.Equal(head + 1, h.Head(graph));
+            Assert.Equal(head.ToString(), patch["from"]!["revision"].Id());
+            Assert.Equal((head + 1).ToString(), patch["to"]!["revision"].Id());
+            return [.. patch["edits"]!.AsArray().Where(e => e!["kind"]!.GetValue<string>() == "relationship").Select(e => e!)];
+        }
+
+        JsonNode Evidence(params JsonNode[] dependencies)
+        {
+            var edge = Assert.Single(h.Relationships(graph, "DependsOn"));
+            Assert.Equal((edgeId, caps["Storefront"], caps["Ordering"]), (edge["id"].Id(), edge["source"].Id(), edge["target"].Id()));
+            var lineage = h.Lineage(graph, edgeId);
+            Assert.True(lineage["complete"]!.GetValue<bool>());
+            Assert.Equal(dependencies.Length.ToString(), lineage["contributions"]!.GetValue<string>());
+
+            var expected = new HashSet<(string Role, string Graph, string Kind, string Id)>
+            {
+                ("fromCapability", "authored", "entity", caps["Storefront"]),
+                ("toCapability", "authored", "entity", caps["Ordering"])
+            };
+            foreach (var dep in dependencies)
+            {
+                expected.Add(("dependency", "serviceTree", "relationship", dep["id"].Id()));
+                expected.Add(("fromNode", "serviceTree", "entity", dep["source"].Id()));
+                expected.Add(("toNode", "serviceTree", "entity", dep["target"].Id()));
+            }
+            var sources = lineage["sources"]!.AsArray().Select(s => (
+                s!["role"]!.GetValue<string>(), s["graph"]!.GetValue<string>(), s["kind"]!.GetValue<string>(), s["element"]!.GetValue<string>()));
+            Assert.Equal(expected.Count.ToString(), lineage["sourceCount"]!.GetValue<string>());
+            Assert.Equal(expected.Order(), sources.Order());
+            return lineage;
+        }
+
+        Assert.Equal(2, h.Head(graph));
+        Assert.Empty(h.Relationships(graph, "DependsOn"));
+
+        var create = Assert.Single(Change("api", 1));
+        Evidence(api);
+        var shared = Assert.Single(h.Relationships(graph, "DependsOn"));
+        Assert.Equal(edgeId, create["id"].Id());
+        Assert.Null(create["before"]);
+        Assert.True(JsonNode.DeepEquals(shared, create["after"]));
+
+        Assert.Empty(Change("db", 1));
+        AssertPagedSources(h, graph, edgeId, Evidence(api, db));
+        Assert.Empty(Change("api", -1));
+        Evidence(db);
+
+        var delete = Assert.Single(Change("db", -1));
+        Assert.Equal(edgeId, delete["id"].Id());
+        Assert.True(JsonNode.DeepEquals(shared, delete["before"]));
+        Assert.Null(delete["after"]);
+        Assert.Empty(h.Relationships(graph, "DependsOn"));
+        Assert.Equal(404, Assert.Throws<HostError>(() => h.Lineage(graph, edgeId)).Status);
+    }
+
+    static void AssertPagedSources(SpaceHost h, string graph, string edge, JsonNode full)
+    {
+        var all = full["sources"]!.AsArray();
+        Assert.Null(full["next"]);
+        Assert.True(all.Count > 3);
+        var paged = new List<JsonNode?>();
+        string? after = null;
+        do
+        {
+            var page = h.Lineage(graph, edge, 3, after);
+            var sources = page["sources"]!.AsArray();
+            Assert.InRange(sources.Count, 1, 3);
+            paged.AddRange(sources);
+            Assert.True(paged.Count <= all.Count);
+            after = page["next"]?.GetValue<string>();
+        } while (after is not null);
+        Assert.Equal(all.AsEnumerable(), paged, JsonNode.DeepEquals);
     }
 
     [Fact]
