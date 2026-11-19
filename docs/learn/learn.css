@@ -30,17 +30,15 @@ input { accent-color:var(--blue); }
 .mast-inner { display:flex; align-items:center; gap:clamp(14px,2.4vw,36px); padding:12px var(--page-gutter); }
 .brand { display:inline-flex; align-items:center; gap:9px; text-decoration:none; color:var(--ink); font-size:24px; font-weight:700; letter-spacing:-.04em; }
 .symbol { display:grid; place-items:center; width:31px; height:31px; border-radius:4px; background:var(--raised); color:var(--master); font:700 28px/1 var(--mono); }
-.watch,#chapters-toggle,.enlarge-figure,.player button,.pager button,dialog header button {
+#chapters-toggle,.enlarge-figure,.player button,dialog header button {
   padding:8px 13px; font-size:14px; line-height:1.45; font-weight:600;
 }
-.watch { margin-left:auto; }
-.watch,.player #listen,#next {
+.player #listen {
   background:color-mix(in srgb,var(--blue) 13%,var(--surface)); border-color:var(--blue); color:var(--blue);
 }
-.watch:not(:disabled):hover,.player #listen:hover,#next:hover {
+.player #listen:hover {
   background:color-mix(in srgb,var(--blue) 24%,var(--surface));
 }
-.watch span { padding-right:4px; }
 #chapters-toggle { anchor-name:--chapter-toggle; }
 #chapter-menu {
   position:fixed; inset:auto; inset-block-start:3.3rem; inset-block-start:anchor(--chapter-toggle bottom);
@@ -49,14 +47,28 @@ input { accent-color:var(--blue); }
   z-index:3; margin:6px 0 0; padding:8px; overflow:auto;
   background:var(--surface); color:var(--ink); border:1px solid var(--wire); border-radius:5px;
 }
-#chapters a {
+#chapter-menu #chapters a {
   display:flex; align-items:center; gap:12px; padding:9px 10px;
   border-inline-start:3px solid transparent; color:var(--muted); text-decoration:none; font-size:14px;
 }
-#chapters a span { color:var(--muted); font:12px var(--mono); }
+.chapter-number { color:var(--muted); font:12px var(--mono); }
 #chapters a:hover { background:var(--raised); color:var(--ink); }
-#chapters a[aria-current] { background:var(--raised); border-color:var(--blue); color:var(--ink); font-weight:650; }
-.guide-links { display:flex; flex-wrap:wrap; gap:6px 16px; padding:10px 8px 4px; margin-top:6px; border-top:1px solid var(--line); font-size:13px; }
+#chapter-menu #chapters a[aria-current] { background:var(--raised); border-color:var(--blue); color:var(--ink); font-weight:650; }
+.mast:has(.chapter-strip) { position:sticky; top:0; z-index:2; }
+html:has(.chapter-strip) { scroll-padding-top:96px; }
+.chapter-strip { display:flex; align-self:stretch; align-items:stretch; gap:4px; }
+.chapter-strip a {
+  display:flex; align-items:center; gap:7px; padding:8px 13px;
+  border-bottom:2px solid transparent; color:var(--muted);
+  text-decoration:none; line-height:1.3; font-size:15px; font-weight:600;
+}
+.chapter-strip a[aria-current] { background:var(--raised); color:var(--ink); border-color:var(--blue); }
+#chapters.chapter-strip a[aria-current] .chapter-number { color:var(--blue); }
+#chapters.chapter-strip a[data-up-next] { background:var(--blue); color:var(--page); border-color:var(--blue); }
+#chapters.chapter-strip a[data-up-next] .chapter-number { color:inherit; white-space:nowrap; font-weight:700; }
+.guide-footer,.guide-links { display:flex; flex-wrap:wrap; gap:8px 18px; }
+.guide-footer { margin-top:22px; border-top:1px solid var(--line); padding-block:16px; font-size:14px; }
+.guide-links { gap:6px 16px; padding:10px 8px 4px; margin-top:6px; border-top:1px solid var(--line); font-size:13px; }
 
 #lesson { min-width:0; padding:var(--page-gutter) var(--page-gutter) 48px; outline:0; }
 .plate,.case-inspect { background:var(--surface); border:1px solid var(--line); border-radius:6px; color:var(--ink); }
@@ -182,13 +194,31 @@ details p { margin:9px 0 0; }
 
 #reading { margin:22px 0; font-size:14px; color:var(--muted); }
 #reading a { display:inline-block; margin:4px 14px 4px 0; }
-.pager { display:flex; align-items:center; gap:12px; padding-top:18px; border-top:1px solid var(--line); }
-.pager span { margin-left:auto; color:var(--muted); font:13px var(--mono); }
+.chapter-pager {
+  display:flex; justify-content:space-between; align-items:center; gap:16px;
+  padding:12px var(--stage-inset); background:var(--surface); border-top:1px solid var(--line);
+}
+.chapter-progress { display:flex; align-items:baseline; flex-wrap:wrap; gap:5px 14px; color:var(--muted); font-size:14px; }
+#count { font:13px var(--mono); }
+#chapter-status:empty { position:absolute; }
+#chapter-status { color:var(--ink); font-weight:600; }
+#back { font-size:13px; }
+.next-chapter {
+  display:grid; grid-template-columns:1fr auto; align-items:center; column-gap:22px;
+  min-width:min(100%,240px); padding:9px 14px; border:1px solid var(--blue); border-radius:4px;
+  background:color-mix(in srgb,var(--blue) 12%,var(--surface)); color:var(--blue); text-decoration:none;
+}
+.next-label { font-size:12px; line-height:1.4; }
+.next-title { font-size:17px; line-height:1.35; }
+.next-arrow { grid-row:1 / 3; grid-column:2; font-size:23px; line-height:1; }
+.next-chapter:hover { background:var(--raised); }
+.next-chapter:hover .next-title { text-decoration:underline; text-underline-offset:.18em; }
+.chapter-pager.complete .next-chapter { background:var(--blue); color:var(--page); }
+.chapter-pager.complete { border-top-color:var(--blue); }
 dialog { width:min(94vw,1060px); max-height:94dvh; padding:16px 20px; background:var(--surface); color:var(--ink); border:1px solid var(--wire); border-radius:6px; }
 dialog::backdrop { background:color-mix(in srgb,var(--page) 88%,transparent); }
 dialog header { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px; }
 dialog h2 { margin:0; font-size:24px; }
-dialog video { display:block; width:100%; max-height:69dvh; aspect-ratio:16/9; background:var(--page); }
 dialog p { margin:10px 0 0; font-size:14px; }
 .figure-zoom { width:min(96vw,1500px); max-width:96vw; padding:0; overflow:hidden; }
 .figure-zoom[open] { display:flex; flex-direction:column; }
@@ -214,7 +244,12 @@ dialog p { margin:10px 0 0; font-size:14px; }
   .mast-inner { gap:8px; padding-block:8px; }
   .brand { gap:6px; font-size:21px; }
   .symbol { width:26px; height:26px; font-size:24px; }
-  #chapters-toggle,.watch { padding:8px 9px; font-size:13px; }
+  .mast-inner:has(.chapter-strip) { flex-wrap:wrap; gap:4px; padding-block:5px 0; }
+  .chapter-strip { width:100%; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:2px; }
+  .chapter-strip a { align-items:center; justify-content:center; padding:6px 3px; gap:3px 6px; text-align:center; font-size:13px; min-height:40px; }
+  .chapter-strip .chapter-number { font-size:10px; }
+  #chapters.chapter-strip a[data-up-next] { flex-direction:column; gap:1px; }
+  #chapters-toggle { padding:8px 9px; font-size:13px; }
   #chapter-menu { inset-inline-start:var(--page-gutter); }
   .stage-heading { padding-top:9px; }
   .stage-tools .eyebrow { font-size:10px; }
@@ -222,14 +257,17 @@ dialog p { margin:10px 0 0; font-size:14px; }
   .stage-stops { gap:5px; padding-bottom:8px; }
   .stage-stops .pick { padding:5px 7px; font-size:13px; }
   .player { gap:7px; padding-block:8px; }
-  .player button,.pager button { padding:6px 8px; font-size:13px; }
+  .player button { padding:6px 8px; font-size:13px; }
   .chapter-reading { padding-inline:3px; }
   .journey-inspector { padding:14px; }
   .journey-inspector table { table-layout:fixed; font-size:13px; }
   .journey-inspector td,.journey-inspector th { padding:7px 4px; }
   .two { grid-template-columns:1fr; }
   .status-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .headline,.pager { gap:8px; }
+  .headline { gap:8px; }
+  .chapter-pager { align-items:stretch; flex-direction:column; gap:8px; }
+  .chapter-progress #back { margin-left:auto; }
+  .next-chapter { width:100%; }
   .plate-top { font-size:11px; }
   .figure-zoom { width:98vw; max-width:98vw; max-height:96dvh; }
   .figure-zoom header { padding:9px 10px; }

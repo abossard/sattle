@@ -1,6 +1,6 @@
 # From the master graph to system health
 
-[Open the walkthrough](index.html) · [Watch the film](foundry/shop.mp4) · [Read the dialogue](foundry/transcript.md)
+[Open the walkthrough](index.html) · [Read the dialogue](foundry/transcript.md)
 
 1. **How does Sattle build the shop’s master graph?** A refund for order O-104 is stuck. Start with 142 illustrative records. Match identities, group related software, and choose one of five views. Pick a result to see which records support it. [Explore the shop](index.html#estate) · [Architecture and sources](foundry/sources.md)
 2. **Why does web turn red when the database fails?** Follow the database alarm through the API to web in the recorded pg-shop outage. Compare revisions 15, 16 and 18. The database needs two good minutes to recover. [Trace the health roll-up](index.html#rollup) · [Health query](../../engine/definitions/acme.workload.workloadHealth.kql)
@@ -22,7 +22,7 @@ While the server is running, open the [local walkthrough](http://127.0.0.1:8397/
 
 ## The recorded pg-shop companion
 
-[Explore the replay](pg-shop.html) · [Watch the pg-shop film](sattle.mp4) · [Read its transcript](transcript.md)
+[Explore the replay](pg-shop.html) · [Read its transcript](transcript.md)
 
 The Sattle engine ran the bundled pg-shop estate. At master revision 44 its graph has **73 entities and 69 relationships**. Its structure query groups pod calls into service dependencies. The health query combines the resulting graph, meter readings and authored rules. [Master snapshot](../../canvas/public/demo/estate/master.final.snapshot.json) · [Eight replay figures](chapters.jpg)
 
@@ -39,6 +39,8 @@ See the [structure query](../../engine/definitions/acme.workload.workloadStructu
 
 ## Reproduce the guides and films
 
+Both recordings are available as MP4s with captions and chapter markers. [Three-chapter walkthrough](foundry/shop.mp4) · [Recorded pg-shop replay](sattle.mp4)
+
 The retail graph and projection are in [case.js](foundry/case.js) and [projection.js](foundry/projection.js). The recorded companion uses the .NET 11 engine and its estate fixture. These commands rebuild the companion evidence:
 
 ```sh
@@ -51,7 +53,9 @@ python3 -B docs/learn/replay_change.py
 
 ## Edit the narration
 
-Open the [retail narration script](foundry/lesson.json) or the [pg-shop narration script](film/lesson.json) and find the chapter by its title. Each cue in `cues` belongs to one moment in the animation. Edit `question` for the listener’s line (Michael) and `answer` for the explainer’s reply (Heart). In the retail guide’s **Five views** cue, the answer is a list of five paragraphs. Keep the paragraphs in screen order. They cover the dashboard, health tree, Kubernetes, Azure resources, and DNS/IP management.
+Open the [retail narration script](foundry/lesson.json) or the [pg-shop narration script](film/lesson.json) and find the chapter by its title. Each entry in `cues` belongs to one moment in the animation. Edit `question` for the listener’s line and `answer` for the guide’s reply. The retail guide’s **Five views** answer has one paragraph per view. Keep them in screen order so each diagram appears as the guide names it.
+
+The three-chapter recording blends Michael with Fenrir for the listener and Heart with Sarah for the guide. The pg-shop companion uses Michael and Heart. The voice blends, speaking pace and pauses live in the [narration generator](film/build.py).
 
 On a fresh checkout, install the narrator and film tools once. Run these commands from the repository root with Python 3.12, FFmpeg, Node.js and npm installed. The first command downloads the Kokoro model and voices into `docs/learn/film/.narrator/`. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 
@@ -76,4 +80,4 @@ npm --prefix docs/learn/film run check
 npm --prefix docs/learn/film run render
 ```
 
-The voice step writes the audio, captions, transcript and animation timings. The render step puts that recording in the MP4. Commit the script and rebuilt files together so visitors hear the new words in both the walkthrough and **Watch the film**. The included animation runtime retains its [license notice](film/vendor/gsap.min.js).
+The voice step writes the audio, captions, transcript and animation timings. The render step puts that recording in the MP4. Commit the script and rebuilt files together so the walkthrough and the MP4 use the same recording. The included animation runtime retains its [license notice](film/vendor/gsap.min.js).

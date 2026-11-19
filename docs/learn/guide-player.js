@@ -5,30 +5,44 @@ const chapters=story.map(scene=>{
 
 const chapterNav=$("#chapters");
 const chapterMenu=$("#chapter-menu"), chapterToggle=$("#chapters-toggle");
-if (!chapterMenu.hidePopover) {
-  chapterMenu.hidden=true;
-  chapterToggle.setAttribute("aria-expanded","false");
-  chapterToggle.onclick=()=>{
-    chapterMenu.hidden=!chapterMenu.hidden;
-    chapterToggle.setAttribute("aria-expanded",String(!chapterMenu.hidden));
-  };
-  chapterMenu.addEventListener("keydown",event=>{
-    if(event.key==="Escape"){closeChapters();chapterToggle.focus();}
+function closeChapters() {
+  if (!chapterMenu) return;
+  if (chapterMenu.hidePopover) chapterMenu.hidePopover();
+  else {
+    chapterMenu.hidden=true;
+    chapterToggle.setAttribute("aria-expanded","false");
+  }
+}
+if (chapterMenu) {
+  for (const [index, chapter] of chapters.entries()) {
+    const a=document.createElement("a"), number=document.createElement("span");
+    a.href="#"+chapter.id;
+    number.className="chapter-number";
+    number.textContent=String(index+1).padStart(2,"0");
+    a.append(number,chapter.nav);
+    chapterNav.append(a);
+  }
+  if (!chapterMenu.hidePopover) {
+    closeChapters();
+    chapterToggle.onclick=()=>{
+      chapterMenu.hidden=!chapterMenu.hidden;
+      chapterToggle.setAttribute("aria-expanded",String(!chapterMenu.hidden));
+    };
+    chapterMenu.addEventListener("keydown",event=>{
+      if(event.key==="Escape"){closeChapters();chapterToggle.focus();}
+    });
+  }
+  chapterNav.addEventListener("click",event=>{
+    if (event.target.closest("a")?.hash===location.hash) {
+      closeChapters();
+      $("#title").focus();
+    }
   });
 }
-function closeChapters() {
-  if(chapterMenu.hidePopover)chapterMenu.hidePopover();
-  else {chapterMenu.hidden=true;chapterToggle.setAttribute("aria-expanded","false");}
-}
-chapterNav.addEventListener("click",event=>{
-  if(event.target.closest("a")){closeChapters();$("#lesson").focus({preventScroll:true});}
-});
-chapters.forEach((c,i)=>{
-  const a=document.createElement("a");a.href="#"+c.id;a.innerHTML='<span>'+String(i+1).padStart(2,'0')+'</span>'+c.nav;chapterNav.append(a);
-});
+const chapterLinks=[...chapterNav.children];
 function show(focus=false) {
   const i=Math.max(0,chapters.findIndex(c=>c.id===location.hash.slice(1))), c=chapters[i];
-  [...chapterNav.children].forEach((a,k)=>{if(k===i)a.setAttribute("aria-current","step");else a.removeAttribute("aria-current");});
+  chapterLinks.forEach((a,k)=>{if(k===i)a.setAttribute("aria-current","step");else a.removeAttribute("aria-current");});
   $("#eyebrow").textContent=document.body.dataset.case+" / "+String(i+1).padStart(2,"0");
   $("#title").textContent=c.title;$("#intro").textContent=c.intro;
   const chapter=ShopMap.chapters[c.id];
@@ -41,133 +55,76 @@ function show(focus=false) {
     if(!references.has(file))references.set(file,"White paper · chapter "+Number(slug.slice(2,4)));
   }
   $("#reading").innerHTML='<div class="label">Explore the source</div>'+[...references].map(([file,name])=>link(name,file)).join("");
-  $("#back").disabled=i===0;$("#back").onclick=()=>location.hash=chapters[i-1].id;
-  $("#next").textContent=i===chapters.length-1?"Replay from start ↺":"Next chapter →";
-  $("#next").onclick=()=>location.hash=chapters[(i+1)%chapters.length].id;
-  $("#count").textContent=(i+1)+" / "+chapters.length;
+  const back=$("#back"), next=$("#next"), last=i===chapters.length-1;
+  back.hidden=i===0;
+  if (i>0) back.href="#"+chapters[i-1].id;
+  else back.removeAttribute("href");
+  const destinationIndex=last ? 0 : i+1;
+  const destination=chapters[destinationIndex];
+  next.href="#"+destination.id;
+  next.querySelector(".next-label").textContent=last ? "Start again" : "Next chapter";
+  next.querySelector(".next-title").textContent=chapterLinks[destinationIndex].querySelector(".chapter-name")?.textContent ?? destination.nav;
+  next.querySelector(".next-arrow").textContent=last ? "↺" : "→";
+  $("#count").textContent="Chapter "+(i+1)+" of "+chapters.length;
   document.title=c.nav+" · Sattle field guide";
-  if(focus){closeChapters();$("#lesson").focus({preventScroll:true});window.scrollTo(0,0);}
+  if(focus){closeChapters();$("#title").focus({preventScroll:true});window.scrollTo(0,0);}
 }
 window.addEventListener("hashchange",()=>show(true));
 $(".skip").onclick=e=>{e.preventDefault();$("#lesson").focus();};
-// Some basic static servers omit byte ranges. A local Blob makes their media seekable.
-const mediaReady=new WeakMap();
-function prepareMedia(media, source){
-  if(mediaReady.has(media))return mediaReady.get(media);
-  const prepare=async()=>{
-    if(location.protocol==="file:")return;
-    const url=source || media.currentSrc || media.src;
+// A local Blob lets the narrator seek on static servers that omit byte ranges.
+let narrationReady;
+function prepareNarration(audio){
+  if (location.protocol==="file:") return;
+  if (narrationReady) return narrationReady;
+  const url=audio.src;
+  async function prepare(){
     const headers=await fetch(url,{method:"HEAD"});
-    if(headers.headers.get("accept-ranges")?.includes("bytes")){
-      if(source)media.src=source;
-      return;
-    }
+    if(headers.headers.get("accept-ranges")?.includes("bytes"))return;
     const response=await fetch(url);
     if(!response.ok)throw Error("Media unavailable: "+response.status);
     const blob=await response.blob();
     const loaded=new Promise((resolve,reject)=>{
-      media.addEventListener("loadedmetadata",resolve,{once:true});
-      media.addEventListener("error",reject,{once:true});
+      audio.addEventListener("loadedmetadata",resolve,{once:true});
+      audio.addEventListener("error",reject,{once:true});
     });
-    media.preload="metadata";media.src=URL.createObjectURL(blob);media.load();await loaded;
-  };
-  const ready=prepare().catch(()=>{
-    mediaReady.delete(media);
-    if(source)media.src=source;
-  });
-  mediaReady.set(media,ready);return ready;
-}
-const cinema=$("#cinema"), video=cinema.querySelector("video");
-const mediaFolder=cinema.dataset.folder || "";
-const posterPath=video.getAttribute("poster");
-const filmSource=video.querySelector("source"), filmCaptions=$("#film-captions");
-const filePlayback=location.protocol==="file:";
-
-function localTrack(captions) {
-  const previous=filmCaptions.getAttribute("src");
-  filmCaptions.src=URL.createObjectURL(new Blob([captions],{type:"text/vtt"}));
-  if(previous?.startsWith("blob:"))URL.revokeObjectURL(previous);
-}
-if(filePlayback){
-  const payload=[...document.scripts].find(script=>script.sattleFilm)?.sattleFilm;
-  if(payload)localTrack(payload.captions);
-}else filmCaptions.src=mediaFolder+"captions.vtt";
-
-let localVersion;
-async function refreshLocalFilm() {
-  // file:// blocks fetch of a sibling manifest. A small classic script carries
-  // the movie digest and the matching captions. Load it fresh before opening.
-  const script=document.createElement("script");
-  const probe=new URL(mediaFolder+"captions-local.js",document.baseURI);
-  probe.searchParams.set("check",String(Date.now()));
-  script.src=probe.href;
-  const edition=await new Promise(resolve=>{
-    script.onload=()=>resolve(script.sattleFilm);
-    script.onerror=()=>resolve(null);
-    document.head.append(script);
-  });
-  script.remove();
-  if(!edition||!edition.version||edition.version===localVersion)return;
-  const movie=new URL(filmSource.src), poster=new URL(posterPath,document.baseURI);
-  movie.searchParams.set("v",edition.version);
-  poster.searchParams.set("v",edition.version);
-  filmSource.src=movie.href;
-  cinema.querySelector("a[download]").href=movie.href;
-  video.poster=poster.href;
-  localTrack(edition.captions);
-  video.load();
-  localVersion=edition.version;
-}
-
-async function prepareFilm(){
-  if(filePlayback)return refreshLocalFilm();
-  // An open guide can outlive a render. Check the small digest before reusing
-  // a movie from the browser cache or the blob kept for servers without ranges.
-  let version;
-  try{
-    const response=await fetch(mediaFolder+"film-version.txt",{cache:"no-store"});
-    if(response.ok)version=(await response.text()).trim();
-  }catch{/* Some static hosts serve only the media files. */}
-  if(!/^[a-f0-9]{64}$/.test(version || ""))version=String(Date.now());
-
-  const url=new URL(filmSource.src);
-  url.searchParams.set("v",version);
-  const changed=filmSource.src!==url.href, oldBlob=video.getAttribute("src");
-  if(changed)mediaReady.delete(video);
-  // Choose a native stream or a blob before changing the <source>. Starting
-  // both requests for the same movie can block playback on a no-range server.
-  await prepareMedia(video,url.href);
-  if(changed){
-    filmSource.src=url.href;
-    cinema.querySelector("a[download]").href=url.href;
-    filmCaptions.src=mediaFolder+"captions.vtt?v="+version;
-    const poster=new URL(posterPath,document.baseURI);
-    poster.searchParams.set("v",version);
-    video.poster=poster.href;
-    if(oldBlob?.startsWith("blob:")&&oldBlob!==video.src)URL.revokeObjectURL(oldBlob);
+    audio.preload="metadata";audio.src=URL.createObjectURL(blob);audio.load();await loaded;
   }
+  narrationReady=prepare().catch(()=>{narrationReady=null;});
+  return narrationReady;
 }
-const watch=$("#watch");
-watch.onclick=async()=>{
-  player.pause();watch.disabled=true;
-  try{await prepareFilm();cinema.showModal();}
-  finally{watch.disabled=false;}
-};
-$("#close").onclick=()=>{video.pause();cinema.close();};
-cinema.addEventListener("cancel",()=>video.pause());
-cinema.addEventListener("close",()=>video.pause());
 
 const player=(()=>{
   const audio=$("#narrator"), range=$("#scene-position"), listen=$("#listen");
   let scene, activeBeat=-1, map, position=0, frame=0, ghost=0, pendingPlay=0, positionListener;
+  const pager=$(".chapter-pager"), status=$("#chapter-status");
+  let complete=false;
+  function pausedLabel(){
+    if(complete)return audio.muted ? "↺ Replay animation" : "↺ Replay narration";
+    return audio.muted ? "▶ Play animation" : "▶ Play with narration";
+  }
   function pause() {
     pendingPlay++;
     audio.pause();cancelAnimationFrame(frame);cancelAnimationFrame(ghost);
-    listen.textContent="▶ Play with narration";
-    if(audio.muted)listen.textContent="▶ Play animation";
+    listen.textContent=pausedLabel();
   }
   function showTime(time) {
     position=Math.max(scene.beats[0].start,Math.min(time,scene.beats.at(-1).end));
+    const atEnd=position>=scene.beats.at(-1).end;
+    if(complete!==atEnd){
+      complete=atEnd;
+      pager.classList.toggle("complete",complete);
+      status.textContent=complete ? "Chapter complete" : "";
+      if (chapterNav.classList.contains("chapter-strip")) {
+        for (const [index,link] of chapterLinks.entries()) {
+          const upNext=complete && link.hash===$("#next").hash;
+          link.toggleAttribute("data-up-next",upNext);
+          link.querySelector(".chapter-number").textContent=upNext
+            ? (index===0 ? "Restart ↺" : "Next →")
+            : String(index+1).padStart(2,"0");
+        }
+      }
+      if(audio.paused)listen.textContent=pausedLabel();
+    }
     let i=scene.beats.findIndex(b=>position<b.end-.001);if(i<0)i=scene.beats.length-1;
     const beat=scene.beats[i];
     if(i!==activeBeat){
@@ -201,8 +158,9 @@ const player=(()=>{
     showTime(position);
   });
   function tick() {
+    const end=scene.beats.at(-1).end;
+    if(audio.currentTime>=end-.06){showTime(end);pause();return;}
     showTime(audio.currentTime);
-    if(position>=scene.beats.at(-1).end-.06){pause();return;}
     if(!audio.paused)frame=requestAnimationFrame(tick);
   }
   function jump(i,fraction=0) {
@@ -226,7 +184,7 @@ const player=(()=>{
     const token=++pendingPlay;
     if(position>=scene.beats.at(-1).end-.08)showTime(scene.beats[0].start);
     try{
-      await prepareMedia(audio);
+      await prepareNarration(audio);
       if(token!==pendingPlay)return;
       audio.currentTime=position;
       await audio.play();
@@ -243,7 +201,7 @@ const player=(()=>{
   $("#mute").onclick=()=>{
     audio.muted=!audio.muted;
     $("#mute").setAttribute("aria-pressed",String(audio.muted));$("#mute").textContent=audio.muted?"Unmute":"Mute";
-    if(audio.paused)listen.textContent=audio.muted?"▶ Play animation":"▶ Play with narration";
+    if(audio.paused)listen.textContent=pausedLabel();
   };
   function load(nextScene){
     pause();positionListener=null;scene=nextScene;activeBeat=-1;$("#beat-buttons").replaceChildren();
@@ -301,5 +259,5 @@ function installFigureZoom() {
   window.addEventListener("hashchange",()=>{if(dialog.open)dialog.close();});
 }
 installFigureZoom();
-prepareMedia($("#narrator"));
+prepareNarration($("#narrator"));
 show();

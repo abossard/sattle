@@ -10,23 +10,23 @@ Why is the refund for order one oh four stuck?
 
 **Guide**
 
-The refund job called the payment API and timed out waiting for a reply. Its call record tells us that much. To trace the request, start with what each system recorded. Kubernetes lists workloads, a network flow names two endpoints, and a trace shows a call. Each dot is one source record.
+The refund job called the payment API. It waited for a reply and timed out. See those dots? Each is a record from one system. Kubernetes lists workloads. A network flow names two endpoints. A trace records a call. The refund job’s call is our starting point.
 
 **Listener**
 
-What tells us that two records describe the same thing?
+What ties this reading to that storage account?
 
 **Guide**
 
-These two carry the same full Azure resource ID. Azure Resource Graph lists a storage account. Azure Monitor puts that account’s ID on a reading. Matching the ID ties the reading to the account. The DNS record supplies a different link. Its name resolves to an address, and the private endpoint at that address names the storage account.
+They share a full Azure resource ID. Azure Resource Graph lists the storage account, and Azure Monitor puts that ID on its reading. Now follow the DNS name. It resolves to an address. The private endpoint at that address names the storage account. That gives us a path from the name to storage.
 
 **Listener**
 
-Can I see how the technical parts fit together?
+What happens to that path when we group the dots?
 
 **Guide**
 
-Yes. The DNS answer leads to a private endpoint and then to storage. Follow that path as the dots move. This projection groups records by technology. Kubernetes workloads sit together, alongside groups for Azure resources, network connections, DNS, application telemetry and shop software. The links still cross the groups.
+Watch the DNS name, the private endpoint and the storage account. They move into different groups and stay connected. This projection groups records by technology. Kubernetes workloads cluster together. Azure resources, network connections, DNS, application telemetry and shop software each get a group.
 
 **Listener**
 
@@ -34,7 +34,7 @@ Where does that leave the refund job?
 
 **Guide**
 
-It belongs to Payout. It reads the case store in Returns Intake and calls the payment API. Grouping by capability puts software with the same job together. Its original links explain what each group depends on. Shared infrastructure has its own group, so the path to storage is still there.
+It belongs to Payout. The job reads the case store in Returns Intake and calls the payment API. Now we’re grouping software by the job it does. Those links show what Payout needs from the other groups. Shared infrastructure has a group too, so we can still trace the path to storage.
 
 **Listener**
 
@@ -42,17 +42,17 @@ Which view would help me investigate the timeout?
 
 **Guide**
 
-The dashboard shows successful payment calls falling to zero.
+Start with the dashboard. Successful payment calls drop to zero.
 
-The health tree shows why that blocks Payout.
+Open the health tree and you can see why that blocks Payout.
 
-The Kubernetes view follows the refund deployment to its pods.
+Want to find the pods? The Kubernetes view starts at the refund deployment and follows it to them.
 
 The Azure resource view lists the storage account.
 
-The DNS and IP view traces its name to a private address. Each projection draws on the same shop evidence to answer a different question.
+In the DNS and IP view, its name resolves to a private address. All five views draw on the same shop records.
 
-## 02:14 · How health rolls up
+## 01:49 · How health rolls up
 
 **Listener**
 
@@ -60,7 +60,7 @@ If the database stops answering, why does web turn red too?
 
 **Guide**
 
-Web needs the API, and the API needs the database. A health roll-up lets a problem in a dependency change the state shown for its callers. Follow the recorded pg-shop outage. The database signal turns red, and web inherits that state through the API.
+Web needs the API, and the API needs the database. Watch the recorded pg-shop outage. First the database signal turns red. Then you see that failure on the API and web. That’s a health roll-up. A caller’s state reflects what happened to a service it depends on.
 
 **Listener**
 
@@ -68,15 +68,15 @@ What makes the database red in the first place?
 
 **Guide**
 
-Its availability meter reads zero at ten eleven. Azure Monitor reports that sample a minute later. The shop’s database rule opens an alarm after one bad minute. The reading is what the meter saw. The rule decides what it means for health.
+At ten eleven, its availability meter reads zero. Azure Monitor reports the sample a minute later. That’s enough for the shop’s database rule. One bad minute opens the alarm. The reading tells us what the meter saw. The rule decides when that reading means Unhealthy.
 
 **Listener**
 
-How does Sattle work out which services feel that alarm?
+Why does the alarm reach web and leave the cache green?
 
 **Guide**
 
-The structure query records which parts can affect each service. The health query starts at the service, follows up to sixteen links called Affects, and takes the worst severity it finds. Web reaches the database along that path. The cache has no such path to the failing server, so it stays green.
+Start at web and follow the arrows marked Affects. There’s a path through the API to the database. The structure query builds those links. The health query follows up to sixteen of them and keeps the worst severity it finds. Start at the cache, though, and no path leads to the failing server. The cache stays green.
 
 **Listener**
 
@@ -84,9 +84,9 @@ The meter is back at one. Why is the database still red?
 
 **Guide**
 
-The rule waits for two good minutes in a row. Ten fourteen is the first. Ten fifteen clears the alarm, and the callers recover too. In the exported graph, revision sixteen shows the failure and eighteen shows recovery. Those numbers count graph changes. The meter supplies the times.
+That’s one good minute. The rule needs two in a row. Ten fourteen is the first. At ten fifteen, the alarm clears and the callers recover. You can see the failure in graph revision sixteen and the recovery in eighteen. The revision numbers count changes. The meter gives us the times.
 
-## 03:49 · A pod starts using Redis
+## 03:11 · A pod starts using Redis
 
 **Listener**
 
@@ -94,7 +94,7 @@ Suppose an API pod starts sending traffic to Redis. What does Sattle see first?
 
 **Guide**
 
-One new Hubble flow. In a copy of the pg-shop recording, an API pod sends traffic to the address of an existing Redis cache. The master graph gains one link from the pod to the destination. Both were already on the map.
+One new Hubble flow. In this copy of the pg-shop recording, an API pod sends traffic to an existing Redis cache. The pod and the destination are already on the map. The new line on the master graph connects the pod to that destination.
 
 **Listener**
 
@@ -102,15 +102,15 @@ How does that address become a Redis dependency in the health model?
 
 **Guide**
 
-Kubernetes shows that the pod backs the API service. The destination address matches a private endpoint for the Redis cache. The host name identifies the same cache. The existing structure query uses that evidence to add an API dependency. During the cache warning, the health model now marks both the API and its gateway Degraded.
+Kubernetes tells us which service the pod belongs to. It’s the API. At the other end, the address matches a private endpoint for Redis, and the host name identifies the same cache. The existing structure query links the API to Redis. Now when the cache is Degraded, so are the API and its gateway.
 
 **Listener**
 
-Where can I see what was new?
+Redis was already there. Where can I find the new link?
 
 **Guide**
 
-Look at the revision that adds the dependency. Its patch lists a new link from the API to Redis. Compare the two revisions in the Canvas to highlight what changed. Redis was already on the map. The new part is the API’s dependency, and the existing health rule already knows how to use it.
+Compare the two revisions in the Canvas. The patch lists the link it added, from the API to Redis. That’s the change you see highlighted. The existing health rule follows that dependency. A warning on the cache can now reach the API.
 
 **Listener**
 
@@ -118,4 +118,4 @@ How could I check that the API really started using that cache?
 
 **Guide**
 
-The structure query kept two pieces of evidence. One names the pod, its destination address and the private endpoint. The other names the Redis host. You can check both against the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.
+Open the evidence for the link. The structure query kept two matches. One names the pod, the destination address and the private endpoint. The other names the Redis host. Both lead back to the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.

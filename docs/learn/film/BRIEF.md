@@ -2,7 +2,7 @@
 
 Each chapter starts with something that happened in the recorded shop. A full-size figure explains how it happened, then names the principle that carries over to another system. The opening pulls back from one checkout path to the entire recorded master graph. The vocabulary and rules can be maintained by people. The figures show what Sattle can derive from those definitions and from evidence.
 
-Michael asks a question about the figure. Heart answers from the shop’s records and explains the concept. The film shows the question while Michael speaks, then holds the term and its definition while Heart explains. The film and interactive guide share the drawings and the same local Kokoro recording.
+The listener asks a question about the figure. The guide answers from the shop’s records and explains the concept. Show the question while the listener speaks, then hold the term and its definition during the reply. The film and interactive guide share the drawings and the local Kokoro recording.
 
 The shop is the bundled pg-shop replay. The cache chapters compare controlled edits to copies of that recording. Keep the settings, readings and rules that each experiment holds fixed visible when comparing outcomes.
 

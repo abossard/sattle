@@ -66,7 +66,7 @@ def caption_phrases(passage):
         yield sentence
 
 
-def narrate(narrator, style, passage):
+def narrate(narrator, style, passage, speed):
     """Read a whole diagram beat. Use the model's phoneme durations for captions."""
     import numpy as np
     from kokoro_onnx.config import MAX_PHONEME_LENGTH
@@ -89,7 +89,7 @@ def narrate(narrator, style, passage):
     # This v1.1 export returns both a waveform and the duration of each token.
     samples, durations = narrator.sess.run(["waveform", "duration"], {
         "input_ids": np.array([tokens], dtype=np.int64),
-        "style": style[count], "speed": np.array([1.0], dtype=np.float32),
+        "style": style[count], "speed": np.array([speed], dtype=np.float32),
     })
     boundaries = np.concatenate(([0], np.cumsum(durations)))
     if len(durations) != len(tokens) or not np.all(np.isfinite(samples)):
@@ -106,13 +106,22 @@ def narrate(narrator, style, passage):
     return pcm, cues
 
 
-def generate_voice(lesson, temp, voice, documents):
+def generate_voice(lesson, temp, voice, documents, retail):
     from kokoro_onnx import Kokoro
 
     directory = HERE / ".narrator"
     narrator = Kokoro(str(directory/"kokoro-v1.0.onnx"), str(directory/"voices-v1.0.bin"))
     listener = narrator.get_voice_style("am_michael")
     guide = narrator.get_voice_style("af_heart")
+    listener_speed = guide_speed = 1.0
+    turn_gap, paragraph_gap = .35, .18
+    if retail:
+        # The voices have their own rhythm. Kokoro predicts the phoneme lengths
+        # at these speeds, so the captions follow what each speaker actually says.
+        listener = .45*listener + .55*narrator.get_voice_style("am_fenrir")
+        guide = .45*guide + .55*narrator.get_voice_style("af_sarah")
+        listener_speed, guide_speed = 1.24, 1.22
+        turn_gap, paragraph_gap = .12, .08
     audio, captions = bytearray(), ["WEBVTT\n"]
     times = []
     for scene in lesson:
@@ -122,15 +131,16 @@ def generate_voice(lesson, temp, voice, documents):
             start = len(audio) / (2*RATE)
             answers = cue["answer"] if isinstance(cue["answer"], list) else [cue["answer"]]
             answer_starts = []
-            passages = [(listener, cue["question"], "Listener", .35)]
+            passages = [(listener, cue["question"], "Listener", listener_speed, turn_gap)]
             for index, paragraph in enumerate(answers):
-                passages.append((guide, paragraph, "Guide" if index == 0 else "", .35 if index == 0 else .18))
-            for turn, (style, text, speaker, pause) in enumerate(passages):
+                speaker = "Guide" if index == 0 else ""
+                passages.append((guide, paragraph, speaker, guide_speed, turn_gap if speaker else paragraph_gap))
+            for turn, (style, text, speaker, speed, pause) in enumerate(passages):
                 audio.extend(bytes(round(pause * RATE) * 2))
                 speech_start = len(audio) / (2*RATE)
                 if turn > 0:
                     answer_starts.append(speech_start)
-                pcm, phrases = narrate(narrator, style, text)
+                pcm, phrases = narrate(narrator, style, text, speed)
                 audio.extend(pcm)
                 for i, (first, last, phrase) in enumerate(phrases):
                     if speaker and i == 0:
@@ -207,7 +217,7 @@ def main():
         (project/"index.html").write_text(composition(story, args.retail))
         return
     with tempfile.TemporaryDirectory() as temp:
-        story = generate_voice(lesson, Path(temp), voice, documents)
+        story = generate_voice(lesson, Path(temp), voice, documents, args.retail)
     if args.retail:
         write_view_starts(project, story)
     (project/"index.html").write_text(composition(story, args.retail))

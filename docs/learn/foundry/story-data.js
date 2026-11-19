@@ -7,61 +7,61 @@ const story = [
       {
         "focus": "Source records",
         "question": "Why is the refund for order one oh four stuck?",
-        "answer": "The refund job called the payment API and timed out waiting for a reply. Its call record tells us that much. To trace the request, start with what each system recorded. Kubernetes lists workloads, a network flow names two endpoints, and a trace shows a call. Each dot is one source record.",
+        "answer": "The refund job called the payment API. It waited for a reply and timed out. See those dots? Each is a record from one system. Kubernetes lists workloads. A network flow names two endpoints. A trace records a call. The refund job’s call is our starting point.",
         "start": 0.0,
-        "end": 24.625,
+        "end": 19.541666666666668,
         "answerStarts": [
-          4.4
+          3.065
         ]
       },
       {
         "focus": "Match identities",
-        "question": "What tells us that two records describe the same thing?",
-        "answer": "These two carry the same full Azure resource ID. Azure Resource Graph lists a storage account. Azure Monitor puts that account’s ID on a reading. Matching the ID ties the reading to the account. The DNS record supplies a different link. Its name resolves to an address, and the private endpoint at that address names the storage account.",
-        "start": 24.625,
-        "end": 52.541666666666664,
+        "question": "What ties this reading to that storage account?",
+        "answer": "They share a full Azure resource ID. Azure Resource Graph lists the storage account, and Azure Monitor puts that ID on its reading. Now follow the DNS name. It resolves to an address. The private endpoint at that address names the storage account. That gives us a path from the name to storage.",
+        "start": 19.541666666666668,
+        "end": 40.041666666666664,
         "answerStarts": [
-          29.375
+          22.406666666666666
         ]
       },
       {
         "focus": "Technical groups",
-        "question": "Can I see how the technical parts fit together?",
-        "answer": "Yes. The DNS answer leads to a private endpoint and then to storage. Follow that path as the dots move. This projection groups records by technology. Kubernetes workloads sit together, alongside groups for Azure resources, network connections, DNS, application telemetry and shop software. The links still cross the groups.",
-        "start": 52.541666666666664,
-        "end": 79.875,
+        "question": "What happens to that path when we group the dots?",
+        "answer": "Watch the DNS name, the private endpoint and the storage account. They move into different groups and stay connected. This projection groups records by technology. Kubernetes workloads cluster together. Azure resources, network connections, DNS, application telemetry and shop software each get a group.",
+        "start": 40.041666666666664,
+        "end": 61.166666666666664,
         "answerStarts": [
-          56.94166666666667
+          42.83166666666666
         ]
       },
       {
         "focus": "Capabilities",
         "question": "Where does that leave the refund job?",
-        "answer": "It belongs to Payout. It reads the case store in Returns Intake and calls the payment API. Grouping by capability puts software with the same job together. Its original links explain what each group depends on. Shared infrastructure has its own group, so the path to storage is still there.",
-        "start": 79.875,
-        "end": 103.33333333333333,
+        "answer": "It belongs to Payout. The job reads the case store in Returns Intake and calls the payment API. Now we’re grouping software by the job it does. Those links show what Payout needs from the other groups. Shared infrastructure has a group too, so we can still trace the path to storage.",
+        "start": 61.166666666666664,
+        "end": 80.45833333333333,
         "answerStarts": [
-          83.5
+          63.556666666666665
         ]
       },
       {
         "focus": "Five views",
         "question": "Which view would help me investigate the timeout?",
         "answer": [
-          "The dashboard shows successful payment calls falling to zero.",
-          "The health tree shows why that blocks Payout.",
-          "The Kubernetes view follows the refund deployment to its pods.",
+          "Start with the dashboard. Successful payment calls drop to zero.",
+          "Open the health tree and you can see why that blocks Payout.",
+          "Want to find the pods? The Kubernetes view starts at the refund deployment and follows it to them.",
           "The Azure resource view lists the storage account.",
-          "The DNS and IP view traces its name to a private address. Each projection draws on the same shop evidence to answer a different question."
+          "In the DNS and IP view, its name resolves to a private address. All five views draw on the same shop records."
         ],
-        "start": 103.33333333333333,
-        "end": 134.41666666666666,
+        "start": 80.45833333333333,
+        "end": 109.20833333333333,
         "answerStarts": [
-          107.75833333333334,
-          112.03833333333333,
-          115.11833333333334,
-          119.72333333333333,
-          123.30333333333333
+          83.52333333333333,
+          87.85333333333334,
+          91.58333333333333,
+          97.51333333333334,
+          100.79333333333334
         ]
       }
     ]
@@ -74,41 +74,41 @@ const story = [
       {
         "focus": "Health roll-up",
         "question": "If the database stops answering, why does web turn red too?",
-        "answer": "Web needs the API, and the API needs the database. A health roll-up lets a problem in a dependency change the state shown for its callers. Follow the recorded pg-shop outage. The database signal turns red, and web inherits that state through the API.",
-        "start": 134.41666666666666,
-        "end": 159.125,
+        "answer": "Web needs the API, and the API needs the database. Watch the recorded pg-shop outage. First the database signal turns red. Then you see that failure on the API and web. That’s a health roll-up. A caller’s state reflects what happened to a service it depends on.",
+        "start": 109.20833333333333,
+        "end": 130.125,
         "answerStarts": [
-          139.96666666666667
+          113.39833333333333
         ]
       },
       {
         "focus": "Signal rule",
         "question": "What makes the database red in the first place?",
-        "answer": "Its availability meter reads zero at ten eleven. Azure Monitor reports that sample a minute later. The shop’s database rule opens an alarm after one bad minute. The reading is what the meter saw. The rule decides what it means for health.",
-        "start": 159.125,
-        "end": 180.375,
+        "answer": "At ten eleven, its availability meter reads zero. Azure Monitor reports the sample a minute later. That’s enough for the shop’s database rule. One bad minute opens the alarm. The reading tells us what the meter saw. The rule decides when that reading means Unhealthy.",
+        "start": 130.125,
+        "end": 149.04166666666666,
         "answerStarts": [
-          163.375
+          132.99
         ]
       },
       {
         "focus": "Affects paths",
-        "question": "How does Sattle work out which services feel that alarm?",
-        "answer": "The structure query records which parts can affect each service. The health query starts at the service, follows up to sixteen links called Affects, and takes the worst severity it finds. Web reaches the database along that path. The cache has no such path to the failing server, so it stays green.",
-        "start": 180.375,
-        "end": 204.70833333333334,
+        "question": "Why does the alarm reach web and leave the cache green?",
+        "answer": "Start at web and follow the arrows marked Affects. There’s a path through the API to the database. The structure query builds those links. The health query follows up to sixteen of them and keeps the worst severity it finds. Start at the cache, though, and no path leads to the failing server. The cache stays green.",
+        "start": 149.04166666666666,
+        "end": 170.375,
         "answerStarts": [
-          185.1
+          152.38166666666666
         ]
       },
       {
         "focus": "Recovery",
         "question": "The meter is back at one. Why is the database still red?",
-        "answer": "The rule waits for two good minutes in a row. Ten fourteen is the first. Ten fifteen clears the alarm, and the callers recover too. In the exported graph, revision sixteen shows the failure and eighteen shows recovery. Those numbers count graph changes. The meter supplies the times.",
-        "start": 204.70833333333334,
-        "end": 229.875,
+        "answer": "That’s one good minute. The rule needs two in a row. Ten fourteen is the first. At ten fifteen, the alarm clears and the callers recover. You can see the failure in graph revision sixteen and the recovery in eighteen. The revision numbers count changes. The meter gives us the times.",
+        "start": 170.375,
+        "end": 191.25,
         "answerStarts": [
-          209.85833333333332
+          174.165
         ]
       }
     ]
@@ -121,41 +121,41 @@ const story = [
       {
         "focus": "New call",
         "question": "Suppose an API pod starts sending traffic to Redis. What does Sattle see first?",
-        "answer": "One new Hubble flow. In a copy of the pg-shop recording, an API pod sends traffic to the address of an existing Redis cache. The master graph gains one link from the pod to the destination. Both were already on the map.",
-        "start": 229.875,
-        "end": 253.29166666666666,
+        "answer": "One new Hubble flow. In this copy of the pg-shop recording, an API pod sends traffic to an existing Redis cache. The pod and the destination are already on the map. The new line on the master graph connects the pod to that destination.",
+        "start": 191.25,
+        "end": 211.875,
         "answerStarts": [
-          237.025
+          196.79
         ]
       },
       {
         "focus": "Service dependency",
         "question": "How does that address become a Redis dependency in the health model?",
-        "answer": "Kubernetes shows that the pod backs the API service. The destination address matches a private endpoint for the Redis cache. The host name identifies the same cache. The existing structure query uses that evidence to add an API dependency. During the cache warning, the health model now marks both the API and its gateway Degraded.",
-        "start": 253.29166666666666,
-        "end": 282.0833333333333,
+        "answer": "Kubernetes tells us which service the pod belongs to. It’s the API. At the other end, the address matches a private endpoint for Redis, and the host name identifies the same cache. The existing structure query links the API to Redis. Now when the cache is Degraded, so are the API and its gateway.",
+        "start": 211.875,
+        "end": 234.375,
         "answerStarts": [
-          259.09166666666664
+          215.99
         ]
       },
       {
         "focus": "Revision patch",
-        "question": "Where can I see what was new?",
-        "answer": "Look at the revision that adds the dependency. Its patch lists a new link from the API to Redis. Compare the two revisions in the Canvas to highlight what changed. Redis was already on the map. The new part is the API’s dependency, and the existing health rule already knows how to use it.",
-        "start": 282.0833333333333,
-        "end": 304.9583333333333,
+        "question": "Redis was already there. Where can I find the new link?",
+        "answer": "Compare the two revisions in the Canvas. The patch lists the link it added, from the API to Redis. That’s the change you see highlighted. The existing health rule follows that dependency. A warning on the cache can now reach the API.",
+        "start": 234.375,
+        "end": 252.08333333333334,
         "answerStarts": [
-          285.2583333333333
+          237.865
         ]
       },
       {
         "focus": "Evidence",
         "question": "How could I check that the API really started using that cache?",
-        "answer": "The structure query kept two pieces of evidence. One names the pod, its destination address and the private endpoint. The other names the Redis host. You can check both against the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.",
-        "start": 304.9583333333333,
-        "end": 331.0,
+        "answer": "Open the evidence for the link. The structure query kept two matches. One names the pod, the destination address and the private endpoint. The other names the Redis host. Both lead back to the flow and Azure records. The traffic explains the new dependency. The cache’s own load readings explain the warning.",
+        "start": 252.08333333333334,
+        "end": 274.5416666666667,
         "answerStarts": [
-          310.55833333333334
+          256.22333333333336
         ]
       }
     ]

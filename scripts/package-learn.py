@@ -38,9 +38,12 @@ def package(site, source_base):
     target = site / GUIDE
     target.mkdir(parents=True, exist_ok=True)
 
-    # Metadata and Canvas captures are opened by JavaScript after the first paint.
+    # Keep the published film URLs available to people who saved them.
+    assets.paths.update(GUIDE / name for name in
+                        ("foundry/shop.mp4", "foundry/poster.jpg", "sattle.mp4", "film/poster.jpg"))
     for folder in (GUIDE, GUIDE / "foundry"):
-        assets.paths.update([folder / "film-version.txt", folder / "captions.vtt"])
+        assets.paths.update(folder / name for name in ("film-version.txt", "captions.vtt", "captions-local.js"))
+    # The replay opens Canvas captures when the reader reaches their chapter.
     captures = GUIDE / "film/assets"
     assets.paths.update(path for path in tracked if path.parent == captures and path.suffix == ".webp")
     assets.paths.add(captures / "canvas-replay.mp4")
