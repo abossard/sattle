@@ -42,6 +42,7 @@ if (chapterMenu) {
 const chapterLinks=[...chapterNav.children];
 function show(focus=false) {
   const i=Math.max(0,chapters.findIndex(c=>c.id===location.hash.slice(1))), c=chapters[i];
+  document.body.dataset.chapter=c.id;
   chapterLinks.forEach((a,k)=>{if(k===i)a.setAttribute("aria-current","step");else a.removeAttribute("aria-current");});
   $("#eyebrow").textContent=document.body.dataset.case+" / "+String(i+1).padStart(2,"0");
   $("#title").textContent=c.title;$("#intro").textContent=c.intro;

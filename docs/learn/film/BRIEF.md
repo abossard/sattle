@@ -13,3 +13,5 @@ The main film has three chapters. The first follows the illustrated shop from so
 Both guides and films use Sattle Canvas’s dark drawing sheet. Graphite is the drawing area. A slightly lighter surface holds controls and evidence. Thin rules separate sections. Use the system sans serif for questions, labels and explanations, and monospace for identifiers, times and revision numbers. [Canvas design](../../../canvas/DESIGN.md) · [Shared palette](theme.css)
 
 Begin the master graph in grayscale. Introduce color when the model can say what a mark means. Pink identifies a match, blue marks a selection or projection, and mint with a plus sign marks an addition in a revision. Pair health colors with their names. Healthy is green, Degraded is amber, Unhealthy is coral and Unknown is gray.
+
+The chapter heading and definition share a color in both the walkthrough and the film. Teal marks the master graph, violet marks health rules, and pink marks Redis discovery. Within the drawings, color the groups, paths and state panels that the guide describes. Keep their labels legible against the dark fills.

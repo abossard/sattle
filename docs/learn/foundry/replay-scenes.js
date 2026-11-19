@@ -2,12 +2,13 @@
 // Arrows on dependency graphs point from a consumer to the component it needs.
 const ShopReplayScenes = (() => {
   const colors = {
-    bg:"var(--page)", panel:"var(--surface)", raised:"var(--raised)", ink:"var(--ink)", muted:"var(--muted)",
+    bg:"var(--page)", ink:"var(--ink)", muted:"var(--muted)",
     line:"var(--line)", accent:"var(--blue)", master:"var(--master)", identity:"var(--identity)",
     added:"var(--added)", policy:"var(--rule)",
     states:{Healthy:"var(--healthy)",Unhealthy:"var(--unhealthy)",Degraded:"var(--degraded)",Unknown:"var(--unknown)"}
   };
   const symbols = {Healthy:"✓", Unhealthy:"×", Degraded:"▲", Unknown:"?"};
+  const wash=(color,percent)=>`color-mix(in srgb, ${color} ${percent}%, var(--page))`;
   function studio(ctx) {
     const {el,txt,g,box,W,H,mobile:m,stage}=ctx, pad=m?13:25;
     const layer=(parent=g,attrs={})=>el(parent,"g",attrs);
@@ -15,11 +16,13 @@ const ShopReplayScenes = (() => {
       txt(parent,x,y,s,{"font-size":size,fill:color,"font-weight":weight,"text-anchor":anchor});
     const shape=(parent,d,color=colors.line,width=2,extra={})=>
       el(parent,"path",{d,fill:"none",stroke:color,"stroke-width":width,"stroke-linejoin":"round","stroke-linecap":"round",...extra});
-    function header(title,source) {
+    function header(title,source,color) {
       box(g,0,0,W,H,{fill:colors.bg});
+      box(g,0,0,W,m?63:48,{fill:wash(color,13)});
+      box(g,0,0,5,m?63:48,{fill:color});
       write(g,pad,m?27:32,title,m?23:29,colors.ink,650);
-      write(g,m?pad:W-pad,m?51:31,source,m?15.5:17,colors.muted,550,m?"start":"end");
-      shape(g,`M${pad} ${m?63:48}H${W-pad}`,colors.line,1);
+      write(g,m?pad:W-pad,m?51:31,source,m?15.5:17,color,550,m?"start":"end");
+      shape(g,`M0 ${m?63:48}H${W}`,color,1,{"stroke-opacity":.52});
     }
     function arrow(parent,x1,y1,x2,y2,color=colors.line,width=2.7) {
       const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len;
@@ -27,7 +30,8 @@ const ShopReplayScenes = (() => {
     }
     function block(parent,x,y,w,h,title,detail,color=colors.accent) {
       const row=layer(parent);
-      box(row,x,y,w,h,{rx:4,fill:colors.panel,stroke:color,"stroke-width":1.8});
+      box(row,x,y,w,h,{rx:5,fill:wash(color,24),stroke:color,"stroke-width":2});
+      box(row,x+2,y+3,5,h-6,{rx:2,fill:color});
       write(row,x+w/2,y+h*.40,title,m?19:23,colors.ink,700,"middle");
       write(row,x+w/2,y+h*.83,detail,m?15:17,color,600,"middle");
       return row;
@@ -46,7 +50,7 @@ const ShopReplayScenes = (() => {
 
   function introduction(s) {
     const {g,W,H,m,pad,header,write,shape,arrow,block,pulse,dot,opacity,layer,stage,colors:c}=s;
-    header("Why the database service turns red","pg-shop replay · workload revision 16");
+    header("Why the database service turns red","pg-shop replay · workload revision 16",c.states.Unhealthy);
     const cx=m?W/2:283, w=m?275:355;
     const y1=m?76:65,y2=m?203:232,bh=m?67:80;
     const states=ShopReplayCases.rollup.frames.find(r=>r.revision===16).states;
@@ -70,8 +74,10 @@ const ShopReplayScenes = (() => {
       if(i) arrow(downstream,lineX,h-step+11,lineX,h-11,c.states.Unhealthy,2.4);
       dot(downstream,lineX,h,9,{fill:c.bg,stroke:c.states.Unhealthy,"stroke-width":2.5});
       const record=layer(downstream);
+      const sx=m?W-pad-112:W-pad-142;
+      s.box(record,sx,h-(m?15:19),m?112:125,m?29:36,{rx:4,fill:c.states[states[key]]});
       write(record,lineX+23,h+6,label,m?17:21,c.ink,650);
-      write(record,m?W-pad:W-pad-20,h+6,states[key],m?16:19,c.states[states[key]],650,"end");
+      write(record,sx+(m?56:62.5),h+6,symbols[states[key]]+" "+states[key],m?16:19,c.bg,700,"middle");
       return record;
     });
     write(g,pad,H-12,m?"Revision 16   ·   One update for all four":"Revision 16 records the database, API and web as Unhealthy in the same update.",m?16:19,c.muted);
@@ -88,9 +94,12 @@ const ShopReplayScenes = (() => {
     const {g,W,H,m,pad,header,write,shape,box,dot,stage,colors:c}=s;
     const rule=ShopReplayCases.rollup.rule, window=ShopReplayCases.rollup.readings.filter(r=>r.minute>="10:09" && r.minute<="10:13");
     const failed=window.find(r=>r.value===0);
-    header("The first failed reading","Azure Monitor · "+failed.meter);
+    header("The first failed reading","Azure Monitor · "+failed.meter,c.policy);
     const left=m?56:89, right=m?W-31:690, top=m?105:106, base=m?230:258;
     const x=i=>left+i*(right-left)/(window.length-1), y=v=>base-(base-top)*v;
+    const failX=x(window.indexOf(failed));
+    box(g,left,top-15,failX-left,base-top+30,{fill:wash(c.accent,20)});
+    box(g,failX,top-15,right-failX,base-top+30,{fill:wash(c.states.Unhealthy,24)});
     for(const v of [0,1]) {
       shape(g,`M${left} ${y(v)}H${right}`,c.line,1.4,{"stroke-dasharray":"4 6"});
       write(g,left-19,y(v)+7,String(v),m?20:25,c.ink,720,"end");
@@ -102,12 +111,12 @@ const ShopReplayScenes = (() => {
       dot(g,x(i),y(r.value),m?6:8,{fill:c.bg,stroke:r.value===0?c.states.Unhealthy:c.accent,"stroke-width":3});
       write(g,x(i),base+(m?33:45),r.minute,m?15:18,c.muted,600,"middle");
     });
-    const failX=x(window.indexOf(failed));
     const ring=dot(g,failX,y(0),m?13:16,{fill:"none",stroke:c.states.Unhealthy,"stroke-width":3});
     write(g,failX+8,base-24,"First zero",m?16:21,c.states.Unhealthy,700);
     const x0=m?pad:742, y0=m?295:70, width=W-pad-x0, height=m?187:263;
-    box(g,x0,y0,width,height,{rx:4,fill:c.panel});
-    write(g,x0+16,y0+32,rule.id,m?22:27,c.policy,700);
+    box(g,x0,y0,width,height,{rx:4,fill:wash(c.policy,17)});
+    box(g,x0,y0,width,43,{rx:4,fill:c.policy});
+    write(g,x0+16,y0+32,rule.id,m?22:27,c.bg,700);
     write(g,x0+16,y0+63,"Enter after "+rule.enterAfter+" failed sample",m?18:20,c.states.Unhealthy,660);
     write(g,x0+16,y0+90,"Clear after "+rule.exitAfter+" good samples",m?18:20,c.states.Healthy,660);
     shape(g,`M${x0+16} ${y0+108}H${x0+width-16}`,c.line,1);
@@ -123,7 +132,7 @@ const ShopReplayScenes = (() => {
 
   function paths(s) {
     const {g,W,H,m,pad,header,write,shape,arrow,box,pulse,stage,colors:c}=s;
-    header("Which paths carry the alarm?","Workload structure · selected Affects links");
+    header("Which paths carry the alarm?","Workload structure · selected Affects links",c.accent);
     // These are edges in workloadStructure.final.snapshot.json. Direction
     // matches the graph, and the animated markers follow the query from web to PostgreSQL.
     const positions=m?{
@@ -143,14 +152,15 @@ const ShopReplayScenes = (() => {
       const crop=Math.min(w/(2*Math.abs(dx)||1),h/(2*Math.abs(dy)||1));
       const start=[ax+dx*crop,ay+dy*crop],end=[bx-dx*crop,by-dy*crop];
       const color=b==="shopcache"?c.states.Healthy:c.states.Unhealthy;
-      arrow(g,...start,...end,color,2.7);
+      arrow(g,...start,...end,color,3.6);
       return {from:a,to:b,move:pulse(g,start,end,color)};
     });
     for(const [key,[x,y]] of Object.entries(positions)) {
       const color=c.states[states[key]];
-      box(g,x-w/2,y-h/2,w,h,{rx:4,fill:c.panel,stroke:color,"stroke-width":2});
+      box(g,x-w/2,y-h/2,w,h,{rx:5,fill:wash(color,24),stroke:color,"stroke-width":2});
+      box(g,x-w/2+1,y+3,w-2,h/2-4,{rx:3,fill:color});
       write(g,x,y-2,names[key],key==="database"?(m?17:20):(m?19:23),c.ink,720,"middle");
-      write(g,x,y+(m?19:24),symbols[states[key]]+"  "+states[key],m?16:19,color,650,"middle");
+      write(g,x,y+(m?22:27),symbols[states[key]]+"  "+states[key],m?16:19,c.bg,700,"middle");
     }
     if(m) {
       write(g,245,315,"Each arrow points",17,c.muted);
@@ -184,7 +194,7 @@ const ShopReplayScenes = (() => {
     const samples=ShopReplayCases.rollup.readings.filter(r=>r.minute>="10:13" && r.minute<="10:16");
     const closed=ShopReplayCases.rollup.frames.find(r=>r.revision===18);
     const open=ShopReplayCases.rollup.frames.find(r=>r.revision===16);
-    header("When does the alarm clear?","pg-shop · "+ShopReplayCases.rollup.rule.id);
+    header("When does the alarm clear?","pg-shop · "+ShopReplayCases.rollup.rule.id,c.policy);
     const tableX=m?103:184, right=W-pad, cell=(right-tableX)/samples.length;
     const start=m?113:96,step=m?64:52;
     const y=i=>start+step*i;
@@ -192,14 +202,16 @@ const ShopReplayScenes = (() => {
     const columns=samples.map((sample,i)=>{
       const x=tableX+i*cell;
       const col=layer();
-      box(col,x+2,y(0)-25,cell-4,y(3)-y(0)+47,{fill:i===2?c.raised:c.panel,rx:4});
+      const state=i<2?open.states["pg-shop"]:closed.states["pg-shop"];
+      const hue=c.states[state];
+      box(col,x+2,y(0)-25,cell-4,y(3)-y(0)+47,{fill:wash(hue,19),rx:4});
+      box(col,x+2,y(3)-(m?27:24),cell-4,m?45:41,{fill:hue,rx:4});
       write(col,x+cell/2,y(0),sample.minute,m?18:22,c.ink,720,"middle");
       write(col,x+cell/2,y(1),String(sample.value),m?24:31,sample.value===0?c.states.Unhealthy:c.states.Healthy,720,"middle");
       consecutive=sample.value===1?consecutive+1:0;
       const count=Math.min(consecutive,ShopReplayCases.rollup.rule.exitAfter);
-      const state=i<2?open.states["pg-shop"]:closed.states["pg-shop"];
       write(col,x+cell/2,y(2),count+" / "+ShopReplayCases.rollup.rule.exitAfter,m?19:24,c.muted,680,"middle");
-      write(col,x+cell/2,y(3),m?symbols[state]:symbols[state]+"  "+state,m?26:22,c.states[state],740,"middle");
+      write(col,x+cell/2,y(3),m?symbols[state]:symbols[state]+"  "+state,m?26:22,c.bg,740,"middle");
       return col;
     });
     ["Sample","Reading","Good run","Alarm"].forEach((v,i)=>write(g,pad,y(i),v,m?17:20,c.muted,640));
@@ -221,7 +233,7 @@ const ShopReplayScenes = (() => {
   function observation(s, data) {
     const {g,W,H,m,pad,header,write,shape,arrow,pulse,block,box,stage,colors:c}=s;
     const flow=data.flow;
-    header("One more destination for the API pod","Controlled Hubble replay · shop namespace");
+    header("One more destination for the API pod","Controlled Hubble replay · shop namespace",c.master);
     const lx=m?17:26,rx=m?303:501, y1=m?107:104,y2=m?224:264,
       w=m?157:185,h=m?56:68,edgeX=lx+w;
     block(g,lx,y1,w,h,"web-7d4-1","Web pod");
@@ -230,13 +242,14 @@ const ShopReplayScenes = (() => {
     block(g,rx,y2,w,h,"10.2.0.6","PostgreSQL address",c.identity);
     for(const y of [y1,y2]) arrow(g,edgeX+2,y+h/2,rx-3,y+h/2,c.muted);
     const p1=[edgeX+2,y2+h*.42], p2=[rx-3,y1+h*.68];
-    arrow(g,...p1,...p2,c.added,3);
+    arrow(g,...p1,...p2,c.added,4);
     const move=pulse(g,p1,p2,c.added,7);
     write(g,(edgeX+rx)/2,m?202:214,"New flow",m?16:19,c.added,740,"middle");
     const ax=m?pad:742, ay=m?311:78, aw=W-ax-pad, ah=m?174:245;
-    box(g,ax,ay,aw,ah,{rx:4,fill:c.panel,stroke:c.line,"stroke-width":1.4});
+    box(g,ax,ay,aw,ah,{rx:4,fill:wash(c.master,18),stroke:c.master,"stroke-width":1.4});
+    box(g,ax,ay,aw,42,{rx:4,fill:c.master});
     const time=flow.time;
-    write(g,ax+16,ay+31,"Hubble  ·  "+time+" UTC",m?20:23,c.ink,710);
+    write(g,ax+16,ay+31,"Hubble  ·  "+time+" UTC",m?20:23,c.bg,710);
     write(g,ax+16,ay+64,flow.verdict,m?18:21,c.ink,720);
     write(g,ax+16,ay+94,"Destination named by the flow",m?16:18,c.muted);
     write(g,ax+16,ay+119,flow.host,m?16:17,c.ink,620);
@@ -248,7 +261,7 @@ const ShopReplayScenes = (() => {
   function resolve(s,data) {
     const {g,W,H,m,pad,header,write,shape,arrow,block,pulse,stage,colors:c}=s;
     const {flow,endpointSlice:slice,dependency}=data;
-    header("How the flow becomes a dependency","Hubble + Kubernetes + Azure Resource Graph");
+    header("How the flow becomes a dependency","Hubble + Kubernetes + Azure Resource Graph",c.identity);
     // The endpoint slice identifies the caller. Two independent matches
     // support the same Redis target, one by address and one by DNS name.
     const left=m?pad:24, right=m?260:692, ww=m?205:401,
@@ -269,7 +282,7 @@ const ShopReplayScenes = (() => {
       matches.push(pulse(g,[x,top+hh+1],[x,mid-3],color),pulse(g,[x,mid+hh+1],[x,low-3],color));
     }
     const packet=pulse(g,[left+ww+3,low+hh/2],[right-3,low+hh/2],c.added);
-    arrow(g,left+ww+1,low+hh/2,right-3,low+hh/2,c.added,3);
+    arrow(g,left+ww+1,low+hh/2,right-3,low+hh/2,c.added,4);
     if(!m)write(g,(left+ww+right)/2,low+hh/2-12,dependency.type,21,c.added,700,"middle");
     const fy=m?306:319;
     shape(g,`M${pad} ${fy}H${W-pad}`,c.line,1);
@@ -283,7 +296,8 @@ const ShopReplayScenes = (() => {
     for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
       const state=after[key],x=wx+i*(m?147:163);
       write(warning,x,wy+25,label,m?16:17,c.ink,650);
-      write(warning,x,wy+47,symbols[state]+" "+state,m?16:17,c.states[state],680);
+      s.box(warning,x,wy+29,m?133:148,25,{rx:4,fill:c.states[state]});
+      write(warning,x+8,wy+47,symbols[state]+" "+state,m?16:17,c.bg,680);
     }
     const caller=s.spokenAt("Kubernetes ties",.18), endpoint=s.spokenAt("At the other end",.32);
     const dns=s.spokenAt("The DNS name",.49), derived=s.spokenAt("That gives",.61);
@@ -302,7 +316,7 @@ const ShopReplayScenes = (() => {
     const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
     const master=data.masterPatch, structure=data.structurePatch, health=data.healthPatch;
     const count=(patch,type)=>patch.edits.filter(edit=>edit.operation==="added" && edit.type===type).length;
-    header("Three graphs, three revisions","Controlled replay · selected patch edits");
+    header("Three graphs, three revisions","Controlled replay · selected patch edits",c.added);
     const groups=[
       [master,"Master",c.master,[
         ["+ Sends","Pod → destination"],
@@ -321,10 +335,10 @@ const ShopReplayScenes = (() => {
     const sheets=groups.map(([patch,name,color,changes],i)=>{
       const x=m?pad:pad+i*(cardW+gap),y=m?band+i*(cardH+gap):band;
       const sheet=layer();
-      box(sheet,x,y,cardW,cardH,{rx:4,fill:c.panel,stroke:c.line,"stroke-width":1.5});
-      write(sheet,x+13,y+(m?28:36),name,m?19:23,color,720);
-      write(sheet,x+cardW-13,y+(m?28:36),patch.from+" → "+patch.to,m?16:19,color,680,"end");
-      shape(sheet,`M${x+13} ${y+(m?40:55)}H${x+cardW-13}`,c.line,1);
+      box(sheet,x,y,cardW,cardH,{rx:4,fill:wash(color,17),stroke:color,"stroke-width":1.5});
+      box(sheet,x,y,cardW,m?40:55,{rx:4,fill:color});
+      write(sheet,x+13,y+(m?28:36),name,m?19:23,c.bg,720);
+      write(sheet,x+cardW-13,y+(m?28:36),patch.from+" → "+patch.to,m?16:19,c.bg,680,"end");
       changes.forEach(([edit,detail],j)=>{
         if(m) {
           write(sheet,x+13,y+68+j*33,edit,16.5,edit.startsWith("+")?c.added:c.ink,650);
@@ -341,7 +355,7 @@ const ShopReplayScenes = (() => {
     const marks=[s.spokenAt("In the master graph",.35),s.spokenAt("In the structure graph",.55),s.spokenAt("In the health graph",.74)];
     return p=>sheets.forEach(({sheet,progress},i)=>{
       const value=stage(p,marks[i],marks[i]+.075);
-      sheet.setAttribute("opacity",.72+.28*value);
+      sheet.setAttribute("opacity",.85+.15*value);
       progress.setAttribute("stroke-dashoffset",1-value);
     });
   }
@@ -350,7 +364,7 @@ const ShopReplayScenes = (() => {
     const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
     const {before,after,proofs}=data;
     const cutoff=data.cutoff;
-    header("Where did this dependency come from?","Same readings in both runs · "+cutoff+" UTC");
+    header("Where did this dependency come from?","Same readings in both runs · "+cutoff+" UTC",c.identity);
     const lx=m?pad:590;
     const colA=m?249:312,colB=m?400:471, colY=m?354:147, rowH=m?28:46;
     const table=s.layer();
@@ -360,8 +374,11 @@ const ShopReplayScenes = (() => {
     for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
       const y=colY+(i+1)*rowH;
       write(table,pad,y,label,m?17:22,c.ink,680);
-      for(const [x,state] of [[colA,before[key]],[colB,after[key]]])
-        write(table,x,y,symbols[state]+"  "+state,m?16:19,c.states[state],670,"middle");
+      for(const [x,state] of [[colA,before[key]],[colB,after[key]]]) {
+        const width=m?130:153;
+        box(table,x-width/2,y-(m?17:21),width,m?24:32,{rx:4,fill:c.states[state]});
+        write(table,x,y+1,symbols[state]+"  "+state,m?16:19,c.bg,700,"middle");
+      }
     }
     write(table,pad,colY+rowH*4+4,"Same Redis serverLoad readings in both runs",m?16:20,c.states.Degraded,650);
     // Follow the recorded workload edge to its source in workloadStructure.
@@ -373,7 +390,8 @@ const ShopReplayScenes = (() => {
     const proofGroups=proofs.map(proof=>{
       const address=proof.how==="privateEndpoint",x=m?pad:lx, y=at+(address?0:(m?86:113));
       const row=layer(), width=W-x-pad, height=m?75:91;
-      box(row,x,y,width,height,{rx:4,fill:c.panel,stroke:c.line});
+      box(row,x,y,width,height,{rx:4,fill:wash(c.identity,20),stroke:c.identity});
+      box(row,x+2,y+3,5,height-6,{rx:2,fill:c.identity});
       write(row,x+13,y+(m?22:27),address?"Private endpoint match":"DNS name match",m?17:21,c.identity,680);
       if(address) {
         const label=role=>proof.sources.find(source=>source.role===role).label;
@@ -391,8 +409,8 @@ const ShopReplayScenes = (() => {
     const marks=[s.spokenAt("One links",.30),s.spokenAt("The other identifies",.45)];
     const compare=s.spokenAt("Now compare",.71);
     return p=>{
-      proofGroups.forEach((row,i)=>row.setAttribute("opacity",.73+.27*stage(p,marks[i],marks[i]+.06)));
-      table.setAttribute("opacity",.73+.27*stage(p,compare,compare+.06));
+      proofGroups.forEach((row,i)=>row.setAttribute("opacity",.87+.13*stage(p,marks[i],marks[i]+.06)));
+      table.setAttribute("opacity",.87+.13*stage(p,compare,compare+.06));
     };
   }
 

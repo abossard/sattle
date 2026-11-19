@@ -5,7 +5,10 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
   const background="var(--page)", ink="var(--ink)", muted="var(--muted)";
   const edge="var(--wire)", hairline="var(--line)", blue="var(--blue)";
   const identity="var(--identity)", master="var(--master)";
-  const palette=[blue,master,"var(--rule)",identity,"var(--document)","var(--input)"];
+  const violet="var(--rule)", gold="var(--input)", cyan="var(--cyan)", orange="var(--orange)", indigo="var(--indigo)";
+  const technicalColors={azure:blue,kubernetes:violet,network:cyan,dns:master,telemetry:gold,applications:orange};
+  const capabilityColors=[cyan,indigo,orange,master,violet,identity,"var(--document)",violet,blue,gold,orange,identity,master,gold,indigo];
+  const viewColors={dashboard:gold,health:cyan,kubernetes:violet,azure:blue,dns:master};
   const states={Healthy:"var(--healthy)",Degraded:"var(--degraded)",Unhealthy:"var(--unhealthy)",Unknown:"var(--unknown)"};
   const symbols={Healthy:"✓",Degraded:"▲",Unhealthy:"×",Unknown:"?"};
   const margin = mobile ? 13 : 25;
@@ -36,8 +39,9 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
   };
   function header(label,count) {
     text(g,margin,mobile?27:32,label,mobile?23:29,ink,650);
-    text(g,mobile?margin:W-margin,mobile?51:31,count,mobile?15.5:17,muted,550,mobile?"start":"end");
+    const source=text(g,mobile?margin:W-margin,mobile?51:31,count,mobile?15.5:17,muted,550,mobile?"start":"end");
     line(g,margin,mobile?63:48,W-margin,mobile?63:48,{stroke:hairline,"stroke-width":1});
+    return source;
   }
   function hash(id) {
     let value=2166136261;
@@ -64,7 +68,7 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
       const x=margin+(i%cols)*(width+gap),y=top+Math.floor(i/cols)*(height+gap);
       const headerH=compact?(mobile?23:26):(mobile?30:33);
       const center={x:x+width*.5,y:y+headerH+(height-headerH)*.47};
-      const color=palette[i%palette.length];
+      const color=compact?capabilityColors[i%capabilityColors.length]:technicalColors[bucket.id];
       const n=bucket.members.length,rw=width*.42,rh=Math.max(5,(height-headerH)*.39);
       bucket.members.forEach((id,j)=>{
         // Vogel's spiral spreads members evenly inside an ellipse, including the center.
@@ -80,9 +84,11 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
   function drawCells(layout,compact) {
     const panels=group(g),labels=group(g);
     layout.cells.forEach(({bucket,x,y,width,height,color})=>{
-      box(panels,x,y,width,height,{fill:color,"fill-opacity":.075,stroke:color,"stroke-opacity":.46,rx:4});
+      box(panels,x,y,width,height,{fill:color,"fill-opacity":.17,stroke:color,"stroke-opacity":.8,rx:4});
+      const bandH=compact?(mobile?23:26):(mobile?28:31);
+      box(labels,x,y,width,bandH,{fill:color,"fill-opacity":.87,rx:3});
       const label=text(labels,x+(mobile?6:10),y+(mobile?18:21),bucket.label,
-                       compact?(mobile?14:16):(mobile?15.5:19),color,700);
+                       compact?(mobile?14:16):(mobile?15.5:19),background,700);
       fit(label,width-(mobile?11:20));
     });
     return {panels,labels};
@@ -93,15 +99,19 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
 
   if(beat===0||beat===1) {
     const matched=beat===1, nRaw=graph.rawEdges.length, nLoose=graph.stats.isolated;
-    header(matched?"Resolve the record identities":"Source records",matched?
-      graph.identityEdges.length+" identity links   ·   "+graph.joinedEdges.length+" joined links":
-      nodes.length+" records   ·   "+nRaw+" supplied links");
+    const source=header(matched?"Resolve the record identities":"Source records",
+      matched?"":nodes.length+" records   ·   "+nRaw+" supplied links");
+    if(matched){
+      el(source,"tspan",{fill:identity},graph.identityEdges.length+" identity links");
+      el(source,"tspan",{},"   ·   ");
+      el(source,"tspan",{fill:master},graph.joinedEdges.length+" joined links");
+    }
     const pointInk=matched?ink:"rgb(from var(--ink) g g g)";
     const neutralWire=matched?edge:"rgb(from var(--wire) g g g)";
     const strokes=group(g), marks=group(g), annotation=group(g);
     wire(strokes,{d:graphPath(graph.rawEdges,raw),stroke:neutralWire,"stroke-opacity":matched?.4:.66,"stroke-width":1.1});
-    const identityLayer=wire(strokes,{stroke:matched?identity:edge,"stroke-width":mobile?1.25:1.55,"stroke-opacity":.76});
-    const joinLayer=wire(strokes,{stroke:matched?master:edge,"stroke-width":mobile?.85:1.05,"stroke-opacity":.42});
+    const joinLayer=wire(strokes,{stroke:matched?master:edge,"stroke-width":mobile?1.35:1.6,"stroke-opacity":.60});
+    const identityLayer=wire(strokes,{stroke:matched?identity:edge,"stroke-width":mobile?2.2:2.65,"stroke-opacity":.96});
     const circles=nodes.map(n=>{
       const point=raw.get(n.id);
       const c=dot(marks,point.x,point.y,mobile?2.8:3.5,{fill:pointInk,stroke:background,"stroke-width":.7});
@@ -114,6 +124,7 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
     if(mobile)line(g,margin,py-13,W-margin,py-13,{stroke:hairline});
     else line(g,dividerX,62,dividerX,H-22,{stroke:hairline});
     const note=group(g);
+    const roleFill=matched?box(note,px-8,py-21,W-margin-px+8,mobile?179:238,{rx:4,"fill-opacity":.13}):null;
     const label=text(note,px,py,matched?"Shared identifiers":"A closer look",mobile?16:17,muted,600);
     const record=text(note,px,py+(mobile?30:43),"",mobile?24:26,ink,700);
     const first=text(note,px,py+(mobile?59:80),"",mobile?17:18,muted);
@@ -144,6 +155,10 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
         node.textContent=noteLines[i];node.removeAttribute("textLength");fit(node,shownWidth);
       }
       const color=matched?(which===0?identity:master):pointInk;
+      if(roleFill){
+        roleFill.setAttribute("fill",color);
+        label.setAttribute("fill",color);
+      }
       evidence.setAttribute("fill",color);
       activePath.setAttribute("stroke",color);
       setD(activePath,ids.slice(1).map((id,i)=>segment(raw.get(ids[i]),raw.get(id))).join(" "));
@@ -196,13 +211,15 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
       {start:spokenAt("The job reads a case",.28),ids:["refund-job","case-store"],label:"Payout → Returns intake · The refund job reads the case store."},
       {start:spokenAt("Its call to the payment API",.49),ids:["refund-job","processor"],label:"Payout → Payment API · The refund job calls the payment API."}
     ];
+    const routeOutline=wire(selected,{stroke:background,"stroke-width":6});
     const routePath=wire(selected,{stroke:routeColor,"stroke-width":3});
     const arrow=wire(selected,{d:"M-7 -4 L0 0 L-7 4",stroke:routeColor,"stroke-width":2.3});
     const highlights=Array.from({length:isTechnical?4:2},()=>dot(selected,0,0,mobile?5:6,{fill:background,stroke:routeColor,"stroke-width":2.6}));
     if(!isTechnical) {
       model.edges.forEach(e=>{
         const width=.75+Math.min(3,Math.sqrt(e.count)*.49);
-        const link=wire(bundles,{d:segment(layout.centers.get(e.from),layout.centers.get(e.to)),stroke:edge,"stroke-opacity":.65,"stroke-width":width});
+        const color=layout.colors.get(e.evidence[0].from);
+        const link=wire(bundles,{d:segment(layout.centers.get(e.from),layout.centers.get(e.to)),stroke:color,"stroke-opacity":.62,"stroke-width":width});
         title(link,e.count+" source relationship"+(e.count===1?"":"s"));
       });
       layout.cells.forEach(({bucket,center,color})=>{
@@ -235,7 +252,8 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
           const p=shift(from.get(id),to.get(id),move);
           return fold?shift(p,layout.centers.get(byId.get(id).capability),fold):p;
         });
-        setD(routePath,points.slice(1).map((p,i)=>segment(points[i],p)).join(" "));
+        const routeLine=points.slice(1).map((p,i)=>segment(points[i],p)).join(" ");
+        setD(routePath,routeLine);setD(routeOutline,routeLine);
         highlights.forEach((ring,i)=>{
           if(points[i])setXY(ring,points[i]);
           opacity(ring,points[i]?1:0);
@@ -288,7 +306,7 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
   const infoW=mobile?sw:sw*.30,infoX=sx+(mobile?9:18);
   const chartX=mobile?infoX:sx+infoW+20;
   const chartY=mobile?sy+94:sy+18,chartW=W-margin-chartX-(mobile?10:18),chartH=H-chartY-(mobile?23:32);
-  const rect=(p,x,y,w,h,color)=>box(p,x,y,w,h,{fill:color,"fill-opacity":.095,stroke:color,"stroke-opacity":.62,rx:3});
+  const rect=(p,x,y,w,h,color)=>box(p,x,y,w,h,{fill:color,"fill-opacity":.18,stroke:color,"stroke-opacity":.76,rx:3});
   function summary(parent,x,y,copy,width,size,leading) {
     // Measure the live SVG typeface instead of wrapping identifiers by character count.
     let row=text(parent,x,y,"",size,muted), words=[];
@@ -305,7 +323,9 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
     text(panel,chartX,chartY+(mobile?10:14),"Payment API replies",mobile?16:20,ink,650);
     [0,.5,1].forEach(v=>line(panel,x,y+h*(1-v),x+span,y+h*(1-v),{stroke:hairline,"stroke-width":1,"stroke-dasharray":"3 5"}));
     const coords=view.series.map((s,i)=>({x:x+span*(.13+i*.37), y:y+h*(1-s.ok/s.total)}));
-    wire(panel,{d:coords.slice(1).map((p,i)=>segment(coords[i],p)).join(" "),stroke:blue,"stroke-width":3});
+    const curve=coords.map((p,i)=>(i?"L":"M")+p.x+" "+p.y).join(" ");
+    el(panel,"path",{d:curve+" V"+(y+h)+" H"+coords[0].x+" Z",fill:viewColors.dashboard,"fill-opacity":.25});
+    wire(panel,{d:curve,stroke:viewColors.dashboard,"stroke-width":3});
     coords.forEach((p,i)=>{
       const s=view.series[i],color=states[view.rows[i].state];
       dot(panel,p.x,p.y,6.5,{fill:color,stroke:background,"stroke-width":1.7});
@@ -321,6 +341,7 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
     const rows=view.rows;
     rows.forEach((r,i)=>{
       const px=x+(r.depth||0)*(mobile?9:32), py=yFor(i), color=states[r.state]||muted;
+      box(panel,px+6,py-(mobile?15:19),chartX+chartW-px-6,mobile?47:36,{fill:color,"fill-opacity":.14,rx:3});
       if(r.depth) {
         const prevx=px-(mobile?9:32),prevy=yFor(i-1);
         wire(panel,{d:"M"+prevx+" "+(prevy+5)+" V"+py+" H"+px,stroke:edge,"stroke-width":1.4});
@@ -349,11 +370,11 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
       const a=cards[parent],b=cards[i];
       const d=mobile?"M"+(a.x+3)+" "+(a.y+a.h)+" V"+(b.y+b.h/2)+" H"+b.x:
         "M"+(a.x+a.w)+" "+(a.y+a.h/2)+" H"+(a.x+a.w+17)+" V"+(b.y+b.h/2)+" H"+b.x;
-      wire(panel,{d,stroke:blue,"stroke-width":1.7});
+      wire(panel,{d,stroke:viewColors.kubernetes,"stroke-width":2});
     }
     cards.forEach(({x,y,w,h,r})=>{
-      rect(panel,x,y,w,h,blue);
-      text(panel,x+7,y+(mobile?15:21),r.label,mobile?13:15,blue,620);
+      rect(panel,x,y,w,h,viewColors.kubernetes);
+      text(panel,x+7,y+(mobile?15:21),r.label,mobile?13:15,viewColors.kubernetes,620);
       fit(text(panel,x+7,y+(mobile?34:51),short(r.value),mobile?15.5:20,ink,690),w-14);
     });
   }
@@ -394,15 +415,17 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
   const renderView={dashboard,health,kubernetes,azure,dns:dnsView};
   views.forEach((view,i)=>{
     const nx=navX+(mobile?0:i*(navW+navGap)),ny=navY+(mobile?i*(navH+navGap):0);
-    const tab=group(g,{"data-view-label":view.id}),bg=box(tab,nx,ny,navW,navH,{rx:3,fill:"var(--surface)",stroke:hairline});
-    thumbnail(tab,nx+12,ny+10,view.id,blue);
-    const name=text(tab,nx+10,ny+navH-11,view.label,mobile?15:18,ink,650);
+    const color=viewColors[view.id];
+    const tab=group(g,{"data-view-label":view.id}),bg=box(tab,nx,ny,navW,navH,{rx:3,fill:color,stroke:color});
+    const contents=group(tab);
+    thumbnail(contents,nx+12,ny+10,view.id,"currentColor");
+    const name=text(contents,nx+10,ny+navH-11,view.label,mobile?15:18,"currentColor",650);
     fit(name,navW-20);
-    const marker=line(tab,nx+3,ny+navH-2,nx+navW-3,ny+navH-2,{stroke:blue,"stroke-width":3});
-    tabs.push({bg,marker});
+    const marker=line(tab,nx+3,ny+navH-3,nx+navW-3,ny+navH-3,{stroke:background,"stroke-width":2});
+    tabs.push({bg,contents,marker,color});
     const panel=group(g,{"data-output-view":view.id});
-    box(panel,sx,sy,sw,sh,{fill:"var(--surface)",rx:4,stroke:hairline,"stroke-width":1});
-    const heading=text(panel,infoX,sy+(mobile?25:36),view.label,mobile?21:26,ink,650);
+    box(panel,sx,sy,sw,sh,{fill:color,"fill-opacity":.09,rx:4,stroke:color,"stroke-opacity":.65});
+    const heading=text(panel,infoX,sy+(mobile?25:36),view.label,mobile?21:26,color,650);
     fit(heading,infoW-(mobile?18:24));
     const paragraph=summary(panel,infoX,sy+(mobile?47:76),view.summary,infoW-(mobile?18:27),mobile?14:18,mobile?18:24);
     if(mobile)line(panel,infoX,Math.max(paragraph+8,chartY-18),sx+sw-9,Math.max(paragraph+8,chartY-18),{stroke:hairline});
@@ -417,9 +440,10 @@ function ShopJourneyScene({g, el, txt, box, dot, line, stage, spokenAt, mobile, 
     active=next;
     panels.forEach((panel,i)=>{
       panel.setAttribute("display",i===active?"inline":"none");
-      const {bg,marker}=tabs[i];
-      bg.setAttribute("stroke",i===active?blue:hairline);
-      bg.setAttribute("fill",i===active?"var(--raised)":"var(--surface)");
+      const {bg,contents,marker,color}=tabs[i];
+      bg.setAttribute("stroke-opacity",i===active?1:.62);
+      bg.setAttribute("fill-opacity",i===active?.92:.15);
+      contents.setAttribute("color",i===active?background:color);
       opacity(marker,i===active?1:0);
     });
   };

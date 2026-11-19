@@ -28,3 +28,10 @@ h1 {
 }
 .term { flex:none; font:650 23px/1.25 var(--sans); color:var(--blue); }
 .definition { font:400 20px/1.35 var(--sans); }
+.retail .shot > header, .retail .shot > h1 {
+  margin-inline:-40px; padding-inline:40px; background:var(--chapter-wash);
+}
+.retail .shot > header { border-top:3px solid var(--chapter-color); color:var(--ink); }
+.retail header .chapter { color:var(--chapter-color); border-color:var(--chapter-color); }
+.retail .term-card { background:var(--chapter-surface); border-inline-start:5px solid var(--chapter-color); }
+.retail .term { color:var(--chapter-color); }

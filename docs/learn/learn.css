@@ -59,11 +59,15 @@ html:has(.chapter-strip) { scroll-padding-top:96px; }
 .chapter-strip { display:flex; align-self:stretch; align-items:stretch; gap:4px; }
 .chapter-strip a {
   display:flex; align-items:center; gap:7px; padding:8px 13px;
-  border-bottom:2px solid transparent; color:var(--muted);
+  border-bottom:2px solid transparent; color:var(--ink);
+  background:color-mix(in srgb,var(--chapter-color) 9%,var(--surface));
   text-decoration:none; line-height:1.3; font-size:15px; font-weight:600;
 }
-.chapter-strip a[aria-current] { background:var(--raised); color:var(--ink); border-color:var(--blue); }
-#chapters.chapter-strip a[aria-current] .chapter-number { color:var(--blue); }
+.chapter-strip a .chapter-number {
+  color:var(--chapter-color); font-weight:700;
+}
+.chapter-strip a[aria-current], #chapters.chapter-strip a:hover { background:var(--chapter-surface); }
+.chapter-strip a[aria-current] { border-color:var(--blue); }
 #chapters.chapter-strip a[data-up-next] { background:var(--blue); color:var(--page); border-color:var(--blue); }
 #chapters.chapter-strip a[data-up-next] .chapter-number { color:inherit; white-space:nowrap; font-weight:700; }
 .guide-footer,.guide-links { display:flex; flex-wrap:wrap; gap:8px 18px; }
@@ -111,6 +115,16 @@ html:has(.chapter-strip) { scroll-padding-top:96px; }
 #animation .concept-card dt,#animation .concept-card dd { border:0; margin:0; padding:0; }
 #animation .concept-card dt { color:var(--ink); font:650 clamp(17px,1.45vw,22px)/1.25 var(--sans); }
 #animation .concept-card dd { flex:1 1 32ch; color:var(--muted); line-height:1.45; }
+.retail .stage-heading, .retail .stage-stops { background:var(--chapter-wash); }
+.retail .stage-heading { border-top:3px solid var(--chapter-color); }
+.retail .stage-heading h1 { margin-bottom:0; padding-bottom:13px; }
+.retail .stage-tools .eyebrow { color:var(--chapter-color); }
+.retail .stage-stops { margin-bottom:10px; }
+.retail #animation .concept-card {
+  background:var(--chapter-surface); border-inline-start:5px solid var(--chapter-color);
+}
+.retail #animation .concept-card dt { color:var(--chapter-color); }
+.retail #animation .concept-card dd { color:var(--ink); }
 
 .chapter-reading { max-width:1120px; margin:clamp(24px,3vw,42px) auto 0; }
 .intro { max-width:80ch; margin:0 0 18px; color:var(--ink); font-size:clamp(17px,1.25vw,20px); }
@@ -164,6 +178,12 @@ details p { margin:9px 0 0; }
 .flow-states > div {
   padding:5px 9px; border:1px solid var(--state,var(--wire)); border-radius:4px;
   background:color-mix(in srgb,var(--state,var(--wire)) 8%,var(--surface)); color:var(--state,var(--ink)); font-size:14px; font-weight:600;
+}
+.retail .flow-states > div,.retail .journey-inspector td [data-state] {
+  background:color-mix(in srgb,var(--state) 19%,var(--surface)); color:var(--state);
+}
+.retail .journey-inspector td [data-state] {
+  display:inline-block; padding:2px 6px; border-inline-start:3px solid; border-radius:2px;
 }
 
 .plate-top { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 16px; padding-bottom:12px; border-bottom:1px solid var(--line); color:var(--muted); font:12px var(--mono); }

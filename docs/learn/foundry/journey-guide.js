@@ -30,7 +30,14 @@ function exploreJourney() {
     for(const item of view.rows) {
       const row=add(body,"tr");
       add(row,"th",item.label).scope="row";
-      add(row,"td",item.value);
+      const result=add(row,"td");
+      if(item.state) {
+        const mark=add(result,"span",item.value);
+        mark.dataset.state=item.state;
+        mark.title=item.state;
+      } else {
+        result.textContent=item.value;
+      }
       const records=add(row,"td");
       for(const id of item.evidence) {
         const button=add(records,"button",byId.get(id).label);
