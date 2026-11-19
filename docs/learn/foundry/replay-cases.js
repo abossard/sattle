@@ -195,7 +195,10 @@ const ShopReplayCases = {
           "resource:pg-shop": 0,
           "resource:shopassets": 0,
           "resource:shopcache": 0
-        }
+        },
+        "minute": "10:10",
+        "received": "10:11:01",
+        "value": 1
       },
       {
         "revision": 16,
@@ -232,7 +235,10 @@ const ShopReplayCases = {
           "resource:pg-shop": 3,
           "resource:shopassets": 0,
           "resource:shopcache": 0
-        }
+        },
+        "minute": "10:11",
+        "received": "10:12:01",
+        "value": 0
       },
       {
         "revision": 17,
@@ -269,7 +275,10 @@ const ShopReplayCases = {
           "resource:pg-shop": 3,
           "resource:shopassets": 0,
           "resource:shopcache": 0
-        }
+        },
+        "minute": "10:14",
+        "received": "10:15:01",
+        "value": 1
       },
       {
         "revision": 18,
@@ -306,7 +315,10 @@ const ShopReplayCases = {
           "resource:pg-shop": 0,
           "resource:shopassets": 0,
           "resource:shopcache": 0
-        }
+        },
+        "minute": "10:15",
+        "received": "10:16:01",
+        "value": 1
       }
     ],
     "paths": [
@@ -392,6 +404,10 @@ const ShopReplayCases = {
         "resourceType": "microsoft.dbforpostgresql/flexibleservers",
         "meter": "is_db_alive"
       }
+    },
+    "alarmTimes": {
+      "opened": "10:13:00",
+      "cleared": "10:17:00"
     }
   },
   "discovery": {
@@ -424,6 +440,90 @@ const ShopReplayCases = {
       "shopcache": "Degraded",
       "shop": "Degraded",
       "shopassets": "Healthy"
+    },
+    "topology": {
+      "type": "DependsOn",
+      "nodes": [
+        {
+          "key": "resource:shopassets",
+          "name": "shopassets",
+          "kind": "resource",
+          "id": "e:ynq3ewtn4agqnswp5dkupxso3q"
+        },
+        {
+          "key": "resource:shopcache",
+          "name": "shopcache",
+          "kind": "resource",
+          "id": "e:srocqyqojxcj45ui5fbobdgvkg"
+        },
+        {
+          "key": "service:api",
+          "name": "api",
+          "kind": "service",
+          "id": "e:gyz33iui5m6rbp2b2bg3folwaj"
+        },
+        {
+          "key": "service:database",
+          "name": "database",
+          "kind": "service",
+          "id": "e:fxtwha4b3xskiejnp46e5gcosz"
+        },
+        {
+          "key": "service:web",
+          "name": "web",
+          "kind": "service",
+          "id": "e:2dy5qu5oq7r4m5z6tvdepbvv63"
+        }
+      ],
+      "before": [
+        {
+          "from": "service:api",
+          "to": "service:database",
+          "id": "r:z7pz25sezr4qlarxh7ob7sdrzm"
+        },
+        {
+          "from": "service:web",
+          "to": "resource:shopassets",
+          "id": "r:oq42jezanbczt26zs3mj75ckih"
+        },
+        {
+          "from": "service:web",
+          "to": "resource:shopcache",
+          "id": "r:2tj45mbih4gcbofiji2ln3hwhm"
+        },
+        {
+          "from": "service:web",
+          "to": "service:api",
+          "id": "r:eyci5rrp7h5ormaet4rh6ra44t"
+        }
+      ],
+      "after": [
+        {
+          "from": "service:api",
+          "to": "resource:shopcache",
+          "id": "r:qxjxbi5nng4y676dru2s674m6o"
+        },
+        {
+          "from": "service:api",
+          "to": "service:database",
+          "id": "r:z7pz25sezr4qlarxh7ob7sdrzm"
+        },
+        {
+          "from": "service:web",
+          "to": "resource:shopassets",
+          "id": "r:oq42jezanbczt26zs3mj75ckih"
+        },
+        {
+          "from": "service:web",
+          "to": "resource:shopcache",
+          "id": "r:2tj45mbih4gcbofiji2ln3hwhm"
+        },
+        {
+          "from": "service:web",
+          "to": "service:api",
+          "id": "r:eyci5rrp7h5ormaet4rh6ra44t"
+        }
+      ]
     },
     "masterPatch": {
       "graph": "master",

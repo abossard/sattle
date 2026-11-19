@@ -82,7 +82,7 @@ def publish(raw, retail):
         at = overview["start"]+.90*(overview["end"]-overview["start"])
         ffmpeg("-ss", str(at), "-i", temp/movie.name, "-frames:v", "1", "-q:v", "3", temp/poster.name)
 
-        preview_beats = ({"rollup":0,"logistics":2,"sandbox":2,"jobs":2,"engagement":2}
+        preview_beats = ({"rollup":0,"discovery":2,"logistics":2,"sandbox":2,"jobs":2,"engagement":2}
                          if retail else {"incident":2,"dependency":2,"azure":2})
         for i, scene in enumerate(story):
             beat = scene["beats"][preview_beats.get(scene["id"],1)]

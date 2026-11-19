@@ -28,7 +28,11 @@ The workload’s structure query identifies the service behind a pod and matches
 
 The web service has four direct contributors in the recorded structure graph. They are the web deployment, the API service, Redis and storage. Follow the API service to find its deployment and the database service. The database service points to PostgreSQL. A service and deployment can share a name and still be separate nodes. [Recorded structure](../../../canvas/public/demo/estate/workloadStructure.final.snapshot.json) · [Which edges carry health](../../../engine/definitions/acme.workload.workloadStructure.kql)
 
-At workload revision 16, PostgreSQL contributes severity 3. Web reports Unhealthy because its branch reaches PostgreSQL. Redis and storage remain Healthy. The query includes each component’s own severity and follows up to 16 links of type `Affects`. It takes the maximum severity for each starting component. [Signal rules](../../../engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson) · [Health query](../../../engine/definitions/acme.workload.workloadHealth.kql) · [White paper §7.4](../../../paper/ch07-telemetry-plane.md#74-worked-example-the-workload-model)
+The first failed PostgreSQL check has a sample time of 10:11 UTC. It arrived at 10:12:01 UTC. The running model raised the alarm at 10:13 UTC. Checks passed at 10:14 and 10:15. The model cleared the alarm at 10:17 UTC. While the alarm is open, PostgreSQL contributes severity 3. Web reports Unhealthy because its branch reaches PostgreSQL. Redis and storage remain Healthy. The query includes each component’s own severity and follows up to 16 links of type `Affects`. It takes the maximum severity for each starting component. [Signal rules](../../../engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson) · [Health query](../../../engine/definitions/acme.workload.workloadHealth.kql) · [White paper §7.4](../../../paper/ch07-telemetry-plane.md#74-worked-example-the-workload-model)
+
+## System Changes
+
+The comparison uses two copies of the pg-shop replay with the same rules and the same end time, 10:07:30 UTC. One copy includes an extra Hubble flow at 10:07:15 UTC. In both health graphs, web already depends on the Redis cache. With the extra call, the API also has a `DependsOn` edge to that same cache. The database branch remains. The endpoint and DNS matches explain the new edge. [Replay comparison](../build_graph_cases.py) · [Exported graph evidence](replay-cases.js)
 
 ## The GKQL program
 

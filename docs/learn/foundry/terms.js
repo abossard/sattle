@@ -14,10 +14,10 @@ const ShopTerms = {
     ["Health roll-up","Starting at each component, the query follows up to 16 Affects links and keeps the worst severity it finds, including the component’s own."]
   ],
   discovery:[
-    ["New call","A network flow records a new call. Sattle can use that evidence to update the health model as it processes the change."],
-    ["Service dependency","The pod backs the API service. The destination matches a private endpoint for Redis."],
-    ["Revision patch","A patch lists the edits between two versions of a graph. Here it adds the API’s dependency on Redis."],
-    ["Evidence","Provenance traces a result back to its inputs. The endpoint and the DNS name both identify the Redis cache."]
+    ["New call","The API pod sends traffic to an address that web already uses. The flow records the caller and its destination."],
+    ["Identify the dependency","Kubernetes identifies the caller. A private endpoint and a DNS name identify the Redis cache."],
+    ["The new branch","The API now depends on the database and Redis. Web still points to that same cache."],
+    ["Trace the evidence","Provenance is the trail from the new API dependency to the call and the records that identify its destination."]
   ],
   gkql:[
     ["Program graph","The query is a graph. Each block names an operation. Its outgoing wires lead to the operations that use its result."],

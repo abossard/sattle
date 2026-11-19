@@ -49,7 +49,7 @@ const ShopReplayScenes = (() => {
   }
 
   const rollup = ShopReplayCases.rollup;
-  const atRevision = n => rollup.frames.find(frame => frame.revision === n);
+  const atMinute = minute => rollup.frames.find(frame => frame.minute === minute);
   function treeRoute(s,parent,points,color,baseline=true) {
     const [first,...rest]=points;
     const d="M"+first.join(" ")+rest.map(p=>"L"+p.join(" ")).join("");
@@ -61,8 +61,8 @@ const ShopReplayScenes = (() => {
 
   function introduction(s) {
     const {g,W,H,m,header,write,box,colors:c,stage}=s;
-    const {root,nodes}=rollup.tree, frame=atRevision(16);
-    header("Web’s Health Tree","pg-shop · workload revision 16",c.policy);
+    const {root,nodes}=rollup.tree, frame=atMinute("10:11");
+    header("Where the shop’s problem starts","Webshop · database availability",c.policy);
     const positions=m?{
       "service:web":[241,100],"service:api":[67,199],"deployment:web":[182,199],
       "resource:shopcache":[297,199],"resource:shopassets":[412,199],
@@ -95,15 +95,17 @@ const ShopReplayScenes = (() => {
       write(g,x,b+h-5,symbols[state]+" "+state,m?14.5:16,c.bg,700,"middle");
     }
     const nx=m?246:570,ny=m?274:247,nw=W-nx-(m?14:25);
-    box(g,nx,ny,nw,m?159:111,{rx:4,fill:wash(c.policy,13),stroke:c.policy});
-    write(g,nx+11,ny+26,"Rooted at "+root.split(":")[1],m?20:23,c.ink,700);
-    write(g,nx+11,ny+(m?55:53),"↓  Follow a dependency",m?16:19,c.accent,630);
-    write(g,nx+11,ny+(m?82:79),"↑  Trace its effect",m?16:19,c.states.Unhealthy,630);
-    if(m)write(g,nx+11,ny+121,nodes.length+" components",16,c.muted);
-    write(g,m?14:570,H-(m?15:16),"A parent’s state includes what it depends on.",m?16:18,c.muted);
-    const fail=s.spokenAt("The database server failed",.16), follow=s.spokenAt("Follow the branch",.29),
-      impact=s.spokenAt("Its failure reaches",.56), cache=s.spokenAt("The cache and storage",.70),
-      principle=s.spokenAt("A Health Tree starts",.84);
+    box(g,nx,ny,nw,m?150:111,{rx:4,fill:wash(c.policy,13),stroke:c.policy});
+    write(g,nx+11,ny+26,"Database checks (UTC)",m?18:23,c.ink,700);
+    const failed=rollup.readings.findIndex(sample=>sample.value===0);
+    const good=rollup.readings[failed-1], bad=rollup.readings[failed];
+    write(g,nx+11,ny+(m?60:59),good.minute+"   ✓  Answered",m?16:20,c.states.Healthy,630);
+    const firstFailure=write(g,nx+11,ny+(m?91:88),bad.minute+"   ×  First failure",m?16:20,c.states.Unhealthy,720);
+    if(m)write(g,nx+11,ny+125,"One check per minute",15,c.muted);
+    write(g,m?14:570,H-(m?15:16),"pg-shop is the database behind the shop’s API.",m?16:18,c.muted);
+    const fail=s.spokenAt("The first failed database check",.16), follow=s.spokenAt("Follow the branch",.29),
+      impact=s.spokenAt("That’s how a database problem",.56), cache=s.spokenAt("Redis and storage",.70),
+      principle=s.spokenAt("A Health Tree lets you",.84);
     const branch=["service:api","service:database","resource:pg-shop"];
     return p=>{
       for(const draw of down.values())draw(0);
@@ -116,6 +118,7 @@ const ShopReplayScenes = (() => {
       });
       for(const key of ["resource:shopcache","resource:shopassets"])
         down.get(key)(stage(p,cache,principle));
+      firstFailure.setAttribute("opacity",.70+.30*stage(p,fail,follow));
       borders.get("resource:pg-shop").setAttribute("stroke-width",1.6+2.5*stage(p,fail,follow));
       borders.get(root).setAttribute("stroke-width",1.6+2.5*stage(p,principle,principle+.05));
     };
@@ -167,9 +170,9 @@ const ShopReplayScenes = (() => {
     write(g,tx+13,hy+(m?52:64),"Structure  +  measurements  +  signal rules",m?17:20,c.ink,620);
     const bar=box(g,tx+13,hy+(m?66:84),tw-26,m?26:37,{rx:3,fill:c.states.Unhealthy});
     const label=write(g,center,hy+(m?85:110),"×  pg-shop and database service · Unhealthy",m?16:19,c.bg,700,"middle");
-    const kube=s.spokenAt("Kubernetes gives",.25),
+    const kube=s.spokenAt("Look at the name",.25),
       azure=s.spokenAt("The structure query builds",.38), same=s.spokenAt("The names match",.53),
-      rule=s.spokenAt("The health query combines",.70), update=s.spokenAt("When new evidence changes",.85);
+      rule=s.spokenAt("The health query combines",.70), update=s.spokenAt("As the source records",.85);
     return p=>{
       cards.forEach(({tile,host},i)=>{
         const t=stage(p,i?azure:kube,i?same:azure);
@@ -186,7 +189,7 @@ const ShopReplayScenes = (() => {
 
   function signal(s) {
     const {g,W,H,m,header,write,box,shape,dot,stage,colors:c}=s, rule=rollup.rule;
-    header("One failed minute opens the alarm","pg-shop · Azure Monitor",c.policy);
+    header("When did the alarm open and clear?","pg-shop · database checks in UTC",c.policy);
     const x0=m?13:20,y0=m?75:71,rw=m?454:315,rh=m?104:267;
     box(g,x0,y0,rw,rh,{rx:5,fill:wash(c.policy,16),stroke:c.policy});
     write(g,x0+12,y0+(m?24:35),rule.id,m?20:25,c.policy,720);
@@ -210,28 +213,33 @@ const ShopReplayScenes = (() => {
       write(g,xs[i],low+(m?27:34),v.minute,m?15:18,c.muted,610,"middle");
     });
     const t0=m?14:357, width=m?452:747, y0b=m?356:287, spacing=width/3;
-    const frames=[16,17,18].map(atRevision), indices=[1,4,5];
-    const bars=frames.map((frame,i)=>{
+    const events=[
+      [rollup.alarmTimes.opened.slice(0,5),"Alarm opens",atMinute("10:11")],
+      ["10:14","First good check",atMinute("10:14")],
+      [rollup.alarmTimes.cleared.slice(0,5),"Alarm clears",atMinute("10:15")]
+    ];
+    const bars=events.map(([minute,label,frame],i)=>{
       const left=t0+i*spacing, state=frame.states["pg-shop"], color=c.states[state], group=s.layer();
       box(group,left+2,y0b,spacing-5,m?103:95,{rx:4,fill:wash(color,20),stroke:color});
-      write(group,left+10,y0b+(m?25:27),"Revision "+frame.revision,m?16:19,c.ink,650);
-      write(group,left+10,y0b+(m?52:54),["First zero","1 good minute","2 good minutes"][i],m?16:19,c.muted,590);
+      write(group,left+10,y0b+(m?25:27),minute+" UTC",m?16:19,c.ink,650);
+      write(group,left+10,y0b+(m?52:54),label,m?16:19,c.muted,590);
       box(group,left+3,y0b+(m?67:62),spacing-7,m?34:31,{rx:2,fill:color});
       write(group,left+spacing/2,y0b+(m?90:84),symbols[state]+" "+state,m?16:18,c.bg,720,"middle");
       return group;
     });
     const clock=write(g,m?14:21,H-(m?15:19),"",m?16:17,c.muted,600);
     const cursor=dot(g,0,0,m?11:13,{fill:"none",stroke:c.ink,"stroke-width":2.5});
-    const open=s.spokenAt("The database rule says",.12), fail=s.spokenAt("At ten eleven",.24),
-      own=s.spokenAt("That gives the server",.35), clear=s.spokenAt("The rule also sets",.47),
-      first=s.spokenAt("At ten fourteen",.56), second=s.spokenAt("At ten fifteen",.73);
+    const open=s.spokenAt("It failed three checks",.12), fail=s.spokenAt("At 10:11",.24),
+      own=s.spokenAt("Sattle raised the alarm",.35), first=s.spokenAt("At 10:14",.50),
+      clear=s.spokenAt("The rule waits",.62), second=s.spokenAt("At 10:15",.73),
+      recovery=s.spokenAt("The tree showed the recovery",.88);
     return p=>{
       const n=p<fail?0:p<first?1:p<second?4:5;
       cursor.setAttribute("cx",xs[n]);cursor.setAttribute("cy",y(pts[n].value));
       trail.setAttribute("stroke-dashoffset",1-n/(pts.length-1));
       enter.setAttribute("opacity",.76+.24*stage(p,open,fail));
-      exit.setAttribute("opacity",.76+.24*stage(p,clear,first));
-      bars.forEach((b,i)=>b.setAttribute("opacity",n>=indices[i]?(p<own&&i===0?.88:1):.50));
+      exit.setAttribute("opacity",.76+.24*stage(p,clear,second));
+      bars.forEach((b,i)=>b.setAttribute("opacity",p>=[own,first,recovery][i]?1:.50));
       clock.textContent="Sample "+pts[n].minute+" UTC  ·  received "+pts[n].received+" UTC";
     };
   }
@@ -239,11 +247,11 @@ const ShopReplayScenes = (() => {
   function paths(s) {
     const {g,W,H,m,header,write,box,stage,colors:c}=s;
     const {root,nodes}=rollup.tree, byKey=new Map(nodes.map(node=>[node.key,node]));
-    const frame=atRevision(16), depths=[[root]];
+    const frame=atMinute("10:11"), depths=[[root]];
     while(depths.at(-1).some(key=>byKey.get(key).children.length)){
       depths.push(depths.at(-1).flatMap(key=>byKey.get(key).children));
     }
-    header("How web gets its state","workloadHealth · revision 16",c.policy);
+    header("Why the problem reaches web","pg-shop · first failed check at 10:11 UTC",c.policy);
     const x0=m?13:20, gap=m?7:13, pw=m?454:(W-2*x0-3*gap)/4, ph=m?77:224;
     const marks=depths.map((keys,i)=>{
       const x=m?x0:x0+i*(pw+gap), y=m?75+i*(ph+gap):80;
@@ -266,7 +274,7 @@ const ShopReplayScenes = (() => {
     const help=write(g,m?x0+13:x0+425,dy+(m?50:37),"–  No own severity",m?16:19,c.muted);
     const start=s.spokenAt("Start at web itself",.23), walk=s.spokenAt("Then follow the links",.40),
       deep=s.spokenAt("Three links down",.56), worst=s.spokenAt("That outranks",.67),
-      raised=s.spokenAt("Web turns red",.88);
+      raised=s.spokenAt("The query keeps",.88);
     const steps=[start,walk,(walk+deep)/2,deep];
     return p=>{
       marks.forEach((panel,i)=>{
@@ -284,187 +292,176 @@ const ShopReplayScenes = (() => {
     };
   }
 
-  function observation(s, data) {
-    const {g,W,H,m,pad,header,write,shape,arrow,pulse,block,box,stage,colors:c}=s;
+  function observation(s,data) {
+    const {g,W,m,pad,header,write,arrow,block,box,stage,colors:c}=s;
     const flow=data.flow;
-    header("One more destination for the API pod","Controlled Hubble replay · shop namespace",c.master);
-    const lx=m?17:26,rx=m?303:501, y1=m?107:104,y2=m?224:264,
-      w=m?157:185,h=m?56:68,edgeX=lx+w;
-    block(g,lx,y1,w,h,"web-7d4-1","Web pod");
-    block(g,lx,y2,w,h,flow.pod,"API pod");
+    header("The API pod calls a new address","pg-shop · network traffic",c.master);
+    const lx=m?17:26,rx=m?303:505,y1=m?102:99,y2=m?228:254,w=m?157:192,h=m?56:68;
+    const edgeX=lx+w;
+    for(const y of [y1,y2])arrow(g,edgeX+1,y+h/2,rx-3,y+h/2,c.accent,2.5);
+    const a=[edgeX+1,y2+h*.37],b=[rx-3,y1+h*.72];
+    const newCall=treeRoute(s,g,[a,b],c.added,false);
+    const label=s.layer();
+    const head=s.layer();
+    arrow(head,b[0]+(a[0]-b[0])*.035,b[1]+(a[1]-b[1])*.035,...b,c.added,3);
+    block(g,lx,y1,w,h,"web-7d4-1","Web pod",c.accent);
+    block(g,lx,y2,w,h,flow.pod,"API pod",c.accent);
     block(g,rx,y1,w,h,flow.address,"Redis address",c.identity);
     block(g,rx,y2,w,h,"10.2.0.6","PostgreSQL address",c.identity);
-    for(const y of [y1,y2]) arrow(g,edgeX+2,y+h/2,rx-3,y+h/2,c.muted);
-    const p1=[edgeX+2,y2+h*.42], p2=[rx-3,y1+h*.68];
-    arrow(g,...p1,...p2,c.added,4);
-    const move=pulse(g,p1,p2,c.added,7);
-    write(g,(edgeX+rx)/2,m?202:214,"New flow",m?16:19,c.added,740,"middle");
-    const ax=m?pad:742, ay=m?311:78, aw=W-ax-pad, ah=m?174:245;
-    box(g,ax,ay,aw,ah,{rx:4,fill:wash(c.master,18),stroke:c.master,"stroke-width":1.4});
-    box(g,ax,ay,aw,42,{rx:4,fill:c.master});
-    const time=flow.time;
-    write(g,ax+16,ay+31,"Hubble  ·  "+time+" UTC",m?20:23,c.bg,710);
-    write(g,ax+16,ay+64,flow.verdict,m?18:21,c.ink,720);
-    write(g,ax+16,ay+94,"Destination named by the flow",m?16:18,c.muted);
-    write(g,ax+16,ay+119,flow.host,m?16:17,c.ink,620);
-    write(g,ax+16,ay+(m?150:180),"Redis already exists in the graph.",m?16:18,c.muted);
-    const call=s.spokenAt("Hubble recorded",.25), observed=s.spokenAt("The new line means",.53);
-    return p=>move(stage(p,call,observed));
-  }
-
-  function resolve(s,data) {
-    const {g,W,H,m,pad,header,write,shape,arrow,block,pulse,stage,colors:c}=s;
-    const {flow,endpointSlice:slice,dependency}=data;
-    header("How the flow becomes a dependency","Hubble + Kubernetes + Azure Resource Graph",c.identity);
-    // The endpoint slice identifies the caller. Two independent matches
-    // support the same Redis target, one by address and one by DNS name.
-    const left=m?pad:24, right=m?260:692, ww=m?205:401,
-      top=m?82:72, gap=m?74:86, hh=m?53:66;
-    const x1=left+ww/2,x2=right+ww/2;
-    block(g,left,top,ww,hh,flow.pod,"Observed source pod",c.accent);
-    block(g,right,top,ww,hh,flow.address,"Observed destination",c.identity);
-    arrow(g,left+ww+2,top+hh/2,right-3,top+hh/2,c.added,2.3);
-    const mid=top+gap, low=mid+gap;
-    block(g,left,mid,ww,hh,slice.name,"EndpointSlice",c.accent);
-    block(g,left,low,ww,hh,"API","Kubernetes service",c.accent);
-    block(g,right,mid,ww,hh,"pe-shopcache","Private endpoint",c.identity);
-    block(g,right,low,ww,hh,dependency.targetLabel,"Azure Redis resource",c.identity);
-    const matches=[];
-    for(const [x,color] of [[x1,c.accent],[x2,c.identity]]) {
-      arrow(g,x,top+hh+1,x,mid-3,color);
-      arrow(g,x,mid+hh+1,x,low-3,color);
-      matches.push(pulse(g,[x,top+hh+1],[x,mid-3],color),pulse(g,[x,mid+hh+1],[x,low-3],color));
-    }
-    const packet=pulse(g,[left+ww+3,low+hh/2],[right-3,low+hh/2],c.added);
-    arrow(g,left+ww+1,low+hh/2,right-3,low+hh/2,c.added,4);
-    if(!m)write(g,(left+ww+right)/2,low+hh/2-12,dependency.type,21,c.added,700,"middle");
-    const fy=m?306:319;
-    shape(g,`M${pad} ${fy}H${W-pad}`,c.line,1);
-    const name=write(g,pad,fy+26,flow.host,m?18:21,c.identity,680);
-    const match=write(g,pad,fy+49,"DNS name on the flow and Redis resource",m?15.5:17,c.muted);
-    if(m)write(g,pad,fy+83,"API  →  "+dependency.type+"  →  "+dependency.targetLabel,20,c.added,720);
-    const warning=s.layer();
-    const wx=m?pad:605, wy=m?fy+124:fy+26;
-    write(warning,wx,wy,"With the new dependency",m?17:19,c.muted,650);
-    const after=data.after;
-    for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
-      const state=after[key],x=wx+i*(m?147:163);
-      write(warning,x,wy+25,label,m?16:17,c.ink,650);
-      s.box(warning,x,wy+29,m?133:148,25,{rx:4,fill:c.states[state]});
-      write(warning,x+8,wy+47,symbols[state]+" "+state,m?16:17,c.bg,680);
-    }
-    const caller=s.spokenAt("Kubernetes ties",.18), endpoint=s.spokenAt("At the other end",.32);
-    const dns=s.spokenAt("The DNS name",.49), derived=s.spokenAt("That gives",.61);
-    const health=s.spokenAt("The health model can",.82);
-    const stops=[caller,(caller+endpoint)/2,endpoint,(endpoint+dns)/2,dns];
+    write(label,(a[0]+b[0])/2,m?152:167,"+ New call",m?17:20,c.added,730,"middle");
+    const ax=m?pad:752,ay=m?314:80,aw=W-ax-pad,ah=m?170:240;
+    const record=s.layer();
+    box(record,ax,ay,aw,ah,{rx:5,fill:wash(c.master,18),stroke:c.master});
+    box(record,ax,ay,aw,39,{rx:4,fill:c.master});
+    write(record,ax+13,ay+27,"Hubble · "+flow.time+" UTC",m?20:22,c.bg,710);
+    write(record,ax+13,ay+(m?64:78),flow.pod+" → "+flow.address,m?18:22,c.ink,690);
+    write(record,ax+13,ay+(m?91:120),"Destination name in the flow",m?16:17,c.muted,560);
+    write(record,ax+13,ay+(m?114:148),flow.host,m?18:19,c.identity,650);
+    write(record,ax+13,ay+(m?149:199),flow.verdict,m?16:18,c.master,650);
+    const call=s.spokenAt("At fifteen seconds past",.27), recordAt=s.spokenAt("That one call",.48);
     return p=>{
-      matches.forEach((move,i)=>move(stage(p,stops[i],stops[i+1])));
-      const seen=.72+.28*stage(p,dns,derived);
-      name.setAttribute("opacity",seen);match.setAttribute("opacity",seen);
-      packet(stage(p,derived,health));
-      warning.setAttribute("opacity",p>=health?1:0);
+      const shown=stage(p,call,call+.12);
+      newCall(shown);
+      head.setAttribute("opacity",stage(shown,.86,1));
+      label.setAttribute("opacity",shown);
+      record.setAttribute("opacity",.8+.2*stage(p,recordAt,recordAt+.10));
     };
   }
 
-  function patches(s,data) {
-    const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
-    const master=data.masterPatch, structure=data.structurePatch, health=data.healthPatch;
-    const count=(patch,type)=>patch.edits.filter(edit=>edit.operation==="added" && edit.type===type).length;
-    header("Three graphs, three revisions","Controlled replay · selected patch edits",c.added);
-    const groups=[
-      [master,"Master",c.master,[
-        ["+ Sends","Pod → destination"],
-        ["Existing endpoints","0 new entities"]
-      ]],
-      [structure,"Workload structure",c.accent,[
-        ["+ DependsOn, TalksTo, Affects","API → shopcache"],
-        ["+ "+count(structure,"DependencyEvidence")+" evidence records","+ "+count(structure,"EvidenceFor")+" EvidenceFor links"]
-      ]],
-      [health,"Workload health",c.policy,[
-        ["+ DependsOn","API → shopcache"],
-        ["Changed states","API and gateway"]
-      ]]
+  function resolve(s,data) {
+    const {g,W,m,pad,header,write,block,box,stage,colors:c}=s;
+    const {flow,endpointSlice:slice,dependency,proofs}=data;
+    const endpoint=proofs.find(proof=>proof.how==="privateEndpoint").sources.find(item=>item.role==="endpoint").label;
+    header("Which services are at the two ends?","pg-shop · workload structure",c.identity);
+    const left=m?pad:24,right=m?262:692,w=m?205:404,top=m?79:67,gap=m?77:84,h=m?51:62;
+    const rows=[
+      [[flow.pod,"Observed source pod",c.accent],[flow.address,"Observed destination",c.identity]],
+      [[slice.name,"Kubernetes EndpointSlice",c.accent],[endpoint,"Azure private endpoint",c.identity]],
+      [["API","Kubernetes service",c.accent],[dependency.targetLabel,"Redis resource",c.identity]]
     ];
-    const band=m?77:77,gap=m?13:20,cardW=m?W-pad*2:(W-pad*2-gap*2)/3,cardH=m?124:260;
-    const sheets=groups.map(([patch,name,color,changes],i)=>{
-      const x=m?pad:pad+i*(cardW+gap),y=m?band+i*(cardH+gap):band;
-      const sheet=layer();
-      box(sheet,x,y,cardW,cardH,{rx:4,fill:wash(color,17),stroke:color,"stroke-width":1.5});
-      box(sheet,x,y,cardW,m?40:55,{rx:4,fill:color});
-      write(sheet,x+13,y+(m?28:36),name,m?19:23,c.bg,720);
-      write(sheet,x+cardW-13,y+(m?28:36),patch.from+" → "+patch.to,m?16:19,c.bg,680,"end");
-      changes.forEach(([edit,detail],j)=>{
-        if(m) {
-          write(sheet,x+13,y+68+j*33,edit,16.5,edit.startsWith("+")?c.added:c.ink,650);
-          write(sheet,x+cardW-13,y+68+j*33,detail,15.5,c.muted,570,"end");
-        }else{
-          write(sheet,x+13,y+96+j*80,edit,20,edit.startsWith("+")?c.added:c.ink,650);
-          write(sheet,x+13,y+125+j*80,detail,18,c.muted);
-        }
+    const x=[left,right];
+    const guides=[[],[]],links=[[],[]];
+    for(const col of [0,1]){
+      const center=x[col]+w/2;
+      for(const i of [0,1]){
+        const y=top+i*gap+h;
+        links[col].push(treeRoute(s,g,[[center,y],[center,y+gap-h]],col===0?c.accent:c.identity));
+      }
+    }
+    rows.forEach((r,i)=>r.forEach(([name,description,color],col)=>{
+      guides[col].push(block(g,x[col],top+i*gap,w,h,name,description,color));
+    }));
+    const bridgeY=top+2*gap+h/2, a=left+w+3, b=right-3;
+    const bridge=treeRoute(s,g,[[a,bridgeY],[b,bridgeY]],c.added);
+    if(!m)write(g,(a+b)/2,bridgeY-12,dependency.type,21,c.added,690,"middle");
+    const fy=m?327:320,footer=s.layer(),fw=W-pad*2;
+    box(footer,pad,fy,fw,m?149:66,{rx:4,fill:wash(c.identity,13),stroke:c.identity});
+    write(footer,pad+12,fy+24,"DNS name on the flow",m?17:18,c.identity,660);
+    write(footer,pad+12,fy+(m?50:52),flow.host,m?18:20,c.ink,640);
+    if(m){
+      write(footer,pad+12,fy+87,"Matched resource",17,c.identity,650);
+      write(footer,pad+12,fy+115,"Redis · "+dependency.targetLabel,20,c.ink,660);
+    }else{
+      write(footer,600,fy+24,"Matched resource",18,c.identity,650);
+      write(footer,600,fy+52,"Redis · "+dependency.targetLabel,20,c.ink,660);
+    }
+    const caller=s.spokenAt("Kubernetes lists",.19),target=s.spokenAt("The destination address matches",.39);
+    const dns=s.spokenAt("The host name",.57),both=s.spokenAt("Put those matches together",.77);
+    return p=>{
+      [caller,target].forEach((at,col)=>{
+        links[col].forEach((paint,i)=>paint(stage(p,at+i*.045,at+.08+i*.045)));
+        guides[col].forEach((tile,i)=>tile.setAttribute("opacity",i===0?1:.80+.20*stage(p,at+(i-1)*.04,at+.10+(i-1)*.04)));
       });
-      s.el(sheet,"title",{},patch.graph+" "+patch.from+" → "+patch.to+" · "+patch.edits.map(edit=>edit.operation+" "+edit.type+" "+edit.id).join(", "));
-      const progress=shape(sheet,`M${x+5} ${y+cardH-3}H${x+cardW-5}`,color,3,{pathLength:1,"stroke-dasharray":"1 1"});
-      return {sheet,progress};
+      footer.setAttribute("opacity",.80+.20*stage(p,dns,dns+.09));
+      bridge(stage(p,both,both+.11));
+    };
+  }
+
+  function newBranch(s,data) {
+    const {g,W,m,pad,header,write,box,block,stage,colors:c}=s;
+    const {before,after,nodes,type}=data.topology;
+    const apiKey="service:api",redisKey="resource:shopcache";
+    const existing=new Set(before.filter(link=>link.from===apiKey).map(link=>link.to));
+    const names=new Map(nodes.map(node=>[node.key,node.name]));
+    header("Redis appears under the API","Health model · compared through "+data.cutoff+" UTC",c.policy);
+    const gap=m?12:26, pw=m?W-pad*2:(W-pad*2-gap)/2, ph=m?160:230;
+    const top=m?77:75;
+    let revealLink,revealCard;
+    [before,after].forEach((edges,i)=>{
+      const x=m?pad:pad+i*(pw+gap),y=m?top+i*(ph+gap):top;
+      const shade=i===0?c.accent:c.added;
+      box(g,x,y,pw,ph,{rx:5,fill:wash(shade,10),stroke:shade});
+      box(g,x,y,pw,m?31:39,{rx:4,fill:wash(shade,30)});
+      write(g,x+12,y+(m?22:27),i===0?"Original API branch":"With the new call",m?18:22,shade,710);
+      const serviceX=x+(m?12:17),childX=x+pw*(m?.515:.52),startY=y+(m?49:65);
+      const parentW=m?128:150,childW=x+pw-childX-13,nh=m?44:57,dy=m?54:73;
+      const parentY=startY+dy*.5;
+      block(g,serviceX,parentY,parentW,nh,"API","Service",c.accent);
+      const children=edges.filter(link=>link.from===apiKey)
+        .sort((a,b)=>Number(a.to===redisKey)-Number(b.to===redisKey));
+      children.forEach(({to},j)=>{
+        const newEdge=!existing.has(to), nodeColor=newEdge?c.added:c.accent;
+        const cy=startY+dy*j, sourceX=serviceX+parentW,midX=(sourceX+childX)/2;
+        const route=treeRoute(s,g,[[sourceX,parentY+nh/2],[midX,parentY+nh/2],[midX,cy+nh/2],[childX,cy+nh/2]],nodeColor,false);
+        const card=block(g,childX,cy,childW,nh,names.get(to),to===redisKey?"Redis cache":"Database service",nodeColor);
+        if(newEdge){
+          card.setAttribute("data-added-dependency",to);
+          revealLink=route;revealCard=card;
+        }
+        else route(1);
+      });
     });
-    const marks=[s.spokenAt("In the master graph",.35),s.spokenAt("In the structure graph",.55),s.spokenAt("In the health graph",.74)];
-    return p=>sheets.forEach(({sheet,progress},i)=>{
-      const value=stage(p,marks[i],marks[i]+.075);
-      sheet.setAttribute("opacity",.85+.15*value);
-      progress.setAttribute("stroke-dashoffset",1-value);
-    });
+    const footerY=m?438:341;
+    write(g,pad,footerY,m?"Web → Redis in both runs":"Web already depends on Redis in both runs.",m?17:21,c.ink,660);
+    write(g,pad,footerY+(m?29:34),m?"Same rules · "+type:"Same model rules   ·   "+type+" links",m?16:18,c.muted,580);
+    const aside=write(g,W-pad,footerY+(m?29:34),"+ API → Redis",m?17:20,c.added,710,"end");
+    const redis=s.spokenAt("Redis appears alongside",.50), same=s.spokenAt("The existing rules picked up",.77);
+    return p=>{
+      const shown=stage(p,redis,redis+.10);
+      revealLink(shown);
+      revealCard.setAttribute("opacity",shown);
+      aside.setAttribute("opacity",stage(p,same,same+.07));
+    };
   }
 
   function inspect(s,data) {
-    const {g,W,H,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
-    const {before,after,proofs}=data;
-    const cutoff=data.cutoff;
-    header("Where did this dependency come from?","Same readings in both runs · "+cutoff+" UTC",c.identity);
-    const lx=m?pad:590;
-    const colA=m?249:312,colB=m?400:471, colY=m?354:147, rowH=m?28:46;
-    const table=s.layer();
-    write(table,pad,colY,"Component",m?15:18,c.muted,650);
-    write(table,colA,colY,"Original",m?16:18,c.muted,650,"middle");
-    write(table,colB,colY,"With the flow",m?16:18,c.muted,650,"middle");
-    for(const [i,[key,label]] of [["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]].entries()) {
-      const y=colY+(i+1)*rowH;
-      write(table,pad,y,label,m?17:22,c.ink,680);
-      for(const [x,state] of [[colA,before[key]],[colB,after[key]]]) {
-        const width=m?130:153;
-        box(table,x-width/2,y-(m?17:21),width,m?24:32,{rx:4,fill:c.states[state]});
-        write(table,x,y+1,symbols[state]+"  "+state,m?16:19,c.bg,700,"middle");
-      }
-    }
-    write(table,pad,colY+rowH*4+4,"Same Redis serverLoad readings in both runs",m?16:20,c.states.Degraded,650);
-    // Follow the recorded workload edge to its source in workloadStructure.
-    const lineageX=pad, lineY=m?85:89;
-    write(g,lineageX,lineY,"Workload → Workload structure → Master",m?17:22,c.accent,680);
-    write(g,m?pad:lx,m?107:74,"Provenance",m?15:18,c.muted,680);
-    if(!m)shape(g,`M555 68V${H-25}`,c.line,1);
-    const at=m?117:93;
+    const {g,W,m,pad,header,write,shape,box,layer,stage,colors:c}=s;
+    const {proofs,flow,dependency}=data;
+    header("What put Redis on this branch?","pg-shop · evidence for the API link",c.identity);
+    const bw=m?W-2*pad:395,bx=m?pad:23,by=m?76:90,bh=m?70:165;
+    box(g,bx,by,bw,bh,{rx:5,fill:wash(c.policy,18),stroke:c.policy});
+    write(g,bx+13,by+(m?25:37),"Health model · "+dependency.type,m?17:21,c.policy,690);
+    write(g,bx+13,by+(m?55:84),"API → Redis",m?24:31,c.ink,710);
+    if(!m)write(g,bx+13,by+125,"Source · workload structure",18,c.muted);
+    else write(g,pad,by+bh+23,"Source · workload structure",16,c.muted,610);
+    const ex=m?pad:514,ey=m?179:74,ew=W-ex-pad,eh=m?85:102,step=m?97:120;
     const proofGroups=proofs.map(proof=>{
-      const address=proof.how==="privateEndpoint",x=m?pad:lx, y=at+(address?0:(m?86:113));
-      const row=layer(), width=W-x-pad, height=m?75:91;
-      box(row,x,y,width,height,{rx:4,fill:wash(c.identity,20),stroke:c.identity});
-      box(row,x+2,y+3,5,height-6,{rx:2,fill:c.identity});
-      write(row,x+13,y+(m?22:27),address?"Private endpoint match":"DNS name match",m?17:21,c.identity,680);
-      if(address) {
-        const label=role=>proof.sources.find(source=>source.role===role).label;
-        write(row,x+13,y+(m?44:52),label("pod")+"  →  "+label("destination"),m?16:20,c.ink,650);
-        write(row,x+13,y+(m?64:77),"Private endpoint   "+label("endpoint"),m?15:17,c.muted);
-      } else {
-        write(row,x+13,y+(m?44:52),data.flow.host,m?16:19,c.ink,650);
-        write(row,x+13,y+(m?64:77),"Azure Redis   "+data.dependency.targetLabel,m?15:17,c.muted);
-      }
+      const addr=proof.how==="privateEndpoint",y=ey+(addr?0:step),row=layer();
+      const find=role=>proof.sources.find(source=>source.role===role).label;
+      box(row,ex,y,ew,eh,{rx:5,fill:wash(c.identity,17),stroke:c.identity});
+      box(row,ex+2,y+3,5,eh-6,{rx:2,fill:c.identity});
+      write(row,ex+15,y+(m?23:27),addr?"Private endpoint match":"DNS name match",m?18:21,c.identity,710);
+      write(row,ex+15,y+(m?48:58),addr?find("destination")+" → "+find("endpoint"):flow.host,m?18:21,c.ink,670);
+      write(row,ex+15,y+(m?72:85),addr?"Resource reached · "+dependency.targetLabel:"Resource named · "+find("azureResource"),m?16:18,c.muted,600);
       s.el(row,"title",{},proof.detail);
-      return row;
+      return {row,addr,y};
     });
-    write(g,m?pad:lx,m?304:340,"Hubble flow   "+data.flow.record,m?15:18,c.master,600);
-    if(m)shape(g,`M${pad} 326H${W-pad}`,c.line,1);
-    const marks=[s.spokenAt("One links",.30),s.spokenAt("The other identifies",.45)];
-    const compare=s.spokenAt("Now compare",.71);
+    const origin=layer(),oy=m?393:321,ow=W-pad*2;
+    box(origin,pad,oy,ow,m?82:62,{rx:4,fill:wash(c.master,15),stroke:c.master});
+    write(origin,pad+13,oy+24,"Hubble · "+flow.time+" UTC",m?17:19,c.master,680);
+    write(origin,pad+13,oy+(m?53:49),flow.pod+" → "+flow.address,m?20:21,c.ink,670);
+    if(!m)write(origin,W-pad-12,oy+38,flow.record,18,c.master,590,"end");
+    const trails=proofGroups.map(({y})=>m?
+      treeRoute(s,g,[[bx+bw-13,by+bh],[bx+bw-5,by+bh],[bx+bw-5,y-5],[bx+bw-13,y]],c.identity,false):
+      treeRoute(s,g,[[bx+bw,by+bh/2],[ex-52,by+bh/2],[ex-52,y+eh/2],[ex,y+eh/2]],c.identity,false));
+    const endpoint=s.spokenAt("One record matches",.31),dns=s.spokenAt("Another matches",.51),seen=s.spokenAt("Both lead back",.72);
     return p=>{
-      proofGroups.forEach((row,i)=>row.setAttribute("opacity",.87+.13*stage(p,marks[i],marks[i]+.06)));
-      table.setAttribute("opacity",.87+.13*stage(p,compare,compare+.06));
+      proofGroups.forEach(({row,addr},i)=>{
+        const at=addr?endpoint:dns,phase=stage(p,at,at+.10);
+        row.setAttribute("opacity",.78+.22*phase);
+        trails[i](phase);
+      });
+      origin.setAttribute("opacity",.80+.20*stage(p,seen,seen+.09));
     };
   }
 
@@ -474,7 +471,7 @@ const ShopReplayScenes = (() => {
       return draw(studio(ctx));
     },
     discovery(ctx) {
-      const draw=[observation,resolve,patches,inspect][ctx.beat];
+      const draw=[observation,resolve,newBranch,inspect][ctx.beat];
       return draw(studio(ctx),ShopReplayCases.discovery);
     }
   };

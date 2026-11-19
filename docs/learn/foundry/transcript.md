@@ -56,71 +56,71 @@ The DNS and IP view shows how its name reaches a private address. Each view sele
 
 **Listener**
 
-Web is red, but the cache is green. What happened?
+Why is my webshop failing, and when did it start?
 
 **Guide**
 
-The database server failed a health check. Follow the branch from web through the API and the database service to pg-shop. Its failure reaches each parent on the way back up. The cache and storage stay green. A Health Tree starts at one component. Its branches show what can affect that component’s health.
+The first failed database check was at 10:11 UTC. Follow the branch from the web service through the API to the database server, pg-shop. That’s how a database problem reaches the shop. Redis and storage sit on other branches. A Health Tree lets you start with the service people use and work back to the part that failed.
 
 **Listener**
 
-Where did that branch of the tree come from?
+How do we know that’s the database my shop uses?
 
 **Guide**
 
-From two records in the master graph. Kubernetes gives the database service an external name. The structure query builds a host name from the Azure server’s name and type. The names match, so the query records which server backs the service. The health query combines that structure with readings and signal rules. When new evidence changes a match, Sattle updates the model.
+Look at the name on the Kubernetes service. It points to a PostgreSQL host. The structure query builds that host name from the Azure server’s name and type. The names match, so Sattle connects the service to that server. The health query combines those connections with measurements and signal rules. As the source records change, those connections can change too.
 
 **Listener**
 
-How does one reading turn the database red?
+How long was the database in trouble?
 
 **Guide**
 
-The database rule says one failed minute opens the alarm. At ten eleven, the reading drops to zero. That gives the server its own severity, Unhealthy. The rule also sets the recovery time. At ten fourteen, the first good minute leaves the alarm open. At ten fifteen, the second good minute clears it. Requiring two good samples keeps one brief recovery from clearing the alarm.
+It failed three checks in a row. At 10:11 the database returned its first zero. Sattle raised the alarm at 10:13. At 10:14 the server answered again. The rule waits for two good minutes in a row. At 10:15 that second good check met the rule. The tree showed the recovery at 10:17.
 
 **Listener**
 
-How does Sattle choose the color at the top of the tree?
+Why does the whole shop show a problem if only the database failed?
 
 **Guide**
 
-It takes the worst severity web can reach. Start at web itself. Zero steps means a component’s own signals count too. Then follow the links called Affects, up to sixteen steps. Three links down, pg-shop has severity three, Unhealthy. That outranks the healthy cache and storage. The failed reading belongs to the server. Web turns red because it depends on that server.
+Web depends on that database. Start at web itself, so its own readings count. Then follow the links called Affects, up to sixteen steps from web. Three links down, pg-shop has severity three, Unhealthy. That outranks the other branches. The query keeps the worst severity it finds, which is why the database alarm appears at the top of the tree.
 
-## 03:48 · When the system changes
+## 03:45 · System Changes
 
 **Listener**
 
-Can the health model pick up a new dependency on its own?
+Our API just started using Redis. Will that show up in its health model?
 
 **Guide**
 
-Yes. Hubble recorded one flow from the API pod to this address. The new line means the pod sent traffic there. When Sattle processes that observation, the existing rules connect the pod to the API and the address to Redis. The health model picks up the new dependency without anyone editing it.
+Yes. Web already uses Redis, and the API already calls the database. At fifteen seconds past ten oh seven, Hubble records an API pod sending traffic to a new address. That one call gives Sattle something new to investigate. It can use the records it already has to work out what’s at the other end.
 
 **Listener**
 
-How does that address become a Redis dependency in the health model?
+All I see is an IP address. How do we know that’s Redis?
 
 **Guide**
 
-Kubernetes ties the pod to the API service. At the other end, the address matches a private endpoint for Redis. The DNS name points to the same cache. That gives the structure query both ends of a service dependency. It derives the API to Redis link from those records. The health model can now follow it using its existing rule.
+Look at the two ends of the call. Kubernetes lists the sending pod under the API service. The destination address matches a private endpoint connected to the Redis cache. The host name on the call also identifies that cache. Put those matches together and you get a dependency from the API to Redis.
 
 **Listener**
 
-Redis was already there. Where can I find the new link?
+Did someone have to add Redis to the API’s tree?
 
 **Guide**
 
-Look for the plus sign. A patch lists the edits from one graph revision to the next. In the master graph, the added line means the pod sent traffic. In the structure graph, it means the API depends on Redis. In the health graph, revision fourteen adds that dependency. The cache was there all along.
+No. Look at the API branch before the call. The database is already there. Now look after the call. Redis appears alongside the database, and web still has its own link to the same cache. The existing rules picked up a new dependency. Nobody had to draw that branch or change the rules.
 
 **Listener**
 
-How could I check that the API really started using that cache?
+If I find that branch tomorrow, how can I tell why it’s there?
 
 **Guide**
 
-Follow the dependency back through the graphs. The structure query kept two matches. One links the pod’s destination to a private endpoint. The other identifies Redis by its DNS name. That trail from a conclusion back to its inputs is called provenance. Now compare the two runs. Redis has the same load warning in both. The added dependency explains why the API and gateway turn amber.
+Start with the new link in the health model. It points back to the API’s dependency in the structure graph. One record matches the destination address to the private endpoint. Another matches the host name to Redis. Both lead back to the pod’s recorded call. That trail from a result to the records behind it is called provenance.
 
-## 05:22 · Reading a GKQL program
+## 05:14 · Reading a GKQL program
 
 **Listener**
 

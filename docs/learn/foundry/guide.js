@@ -6,12 +6,12 @@ const lessons={
   estate:["The shop’s master graph","Start with the stuck refund for order O-104. Each point in this illustrated shop starts as a source record. Follow the same records through five views, or choose a result below to see its evidence.",exploreJourney,[
     ["Sources and adapters","paper/ch10-sources-and-adapters.md"],["Identity","paper/ch01-values-and-identity.md"],
     ["Shop source records","docs/learn/foundry/graph-journey.js"],["Retail architecture and sources","docs/learn/foundry/sources.md"]]],
-  rollup:["Health Tree","The web service turns red when PostgreSQL stops answering. Open its Health Tree to see which branch carried the alarm, where the branches came from, and how the query decides the color at the root.",exploreHealthTree,[
+  rollup:["Health Tree","The database answered at 10:10 UTC. A minute later its check failed. Follow the web service’s branch to PostgreSQL, then move through the checks to see when the alarm clears.",exploreHealthTree,[
     ["How the graphs are connected","engine/definitions/acme.space.sattle"],["Where the branches come from",structureFile],
     ["Database and cache rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["How the health query rolls up severity",healthFile],
     ["How the runtime updates reachable components","engine/src/Sattle.Runtime/Engine.cs#L208"],
     ["Recorded workload patches","canvas/public/demo/estate/workload.patches.ndjson"]]],
-  discovery:["When the system changes","What if the shop changes and nobody updates its health model? Here an API pod starts calling Redis. When Sattle processes the new flow, its existing rules add the dependency and carry the cache warning to the API and its gateway.",exploreDiscovery,[
+  discovery:["System Changes","Redis already appears under web in the shop’s health model. When the API starts using the same cache, Sattle adds Redis under the API too. Follow the new branch back to the call that put it there.",exploreDiscovery,[
     ["How the structure query matches traffic",structureFile],["How the health query uses the result",healthFile],
     ["Replay the extra Hubble flow","docs/learn/build_graph_cases.py"],["Evidence from the controlled replay","docs/learn/foundry/replay-cases.js"]]],
   gkql:["Reading a GKQL program","GKQL lets you draw a query as a graph. In Sattle’s deployment-health experiment, each ready pod counts toward one workload. Follow the blocks to see how two calls from web to db produce one link.",exploreGkql,[
@@ -23,28 +23,18 @@ const lessons={
     ["GKQL migration progress","https://github.com/abossard/sattle/issues/7"]]]
 };
 
-function stateCells(host, states, components){
-  const cells=components.map(([key,label])=>{
-    const cell=document.createElement("div");
-    cell.dataset.state=states[key];
-    cell.textContent=label+" · "+states[key];
-    return cell;
-  });
-  host.replaceChildren(...cells);
-}
-
 function exploreHealthTree(){
-  const {tree,frames,rule}=ShopReplayCases.rollup;
+  const {tree,frames,rule,alarmTimes}=ShopReplayCases.rollup;
   const byKey=new Map(tree.nodes.map(node=>[node.key,node]));
   const resourceNames={"resource:pg-shop":"PostgreSQL · pg-shop","resource:shopcache":"Redis · shopcache","resource:shopassets":"Storage · shopassets"};
   const nameOf=node=>resourceNames[node.key] || node.name+" "+node.kind;
   setActivity(`<section class="case-inspect health-explorer"><h2>Trace a state through the Health Tree</h2>
-    <fieldset><legend>Recorded workload revision</legend><div id="revision-choices" class="options"></div></fieldset>
+    <fieldset><legend>Choose a database check (UTC)</legend><div id="revision-choices" class="options"></div></fieldset>
+    <p id="revision-note"></p>
     <div class="health-tree-inspector"><div id="revision-tree"></div>
     <section class="health-tree-evidence" aria-labelledby="health-selection">
       <h3 id="health-selection"></h3><p id="health-explanation" role="status"></p>
     </section></div>
-    <p id="revision-note"></p>
     <details><summary>See the signal rule and the roll-up query</summary>
       <p id="database-config"></p>
       <dl class="health-query"><dt>Which paths count?</dt><dd><code>(c)-[a*0..16]-&gt;(d)</code> includes the component itself and paths up to 16 links long.</dd>
@@ -99,7 +89,7 @@ function exploreHealthTree(){
     $("#health-selection").textContent=nameOf(node)+" · "+frame.treeStates[selected];
     let explanation;
     if(selected==="resource:pg-shop"){
-      explanation="The "+rule.id+" signal is "+frame.signal+". That gives PostgreSQL its own severity of "+own+".";
+      explanation=frame.signal==="on" ? "The database alarm is open. PostgreSQL contributes severity "+own+" to the shop’s Health Tree." : "The database alarm is clear. PostgreSQL contributes severity "+own+".";
     }else if(!contributors.length){
       explanation="No measured severity is available on this branch.";
     }else if(!node.children.length){
@@ -110,37 +100,63 @@ function exploreHealthTree(){
     }
     $("#health-explanation").textContent=explanation;
   }
+  const labels=["Last good check","First failed check","First good check","Second good check"];
   const notes=[
-    "Before the outage, every branch reports Healthy.",
-    "The database alarm opens. Follow the red branch from web to PostgreSQL.",
-    "The alarm is still open. The database rule needs two good minutes in a row to clear.",
-    "The alarm clears. The same branches now lead to a healthy database."
+    "PostgreSQL answered. The shop’s database branch is healthy.",
+    "PostgreSQL missed its check. The tree shows the alarm it triggered at "+alarmTimes.opened.slice(0,5)+" UTC.",
+    "PostgreSQL answered again. The alarm stays open while the rule waits for a second good check.",
+    "PostgreSQL answered twice in a row. The model cleared the alarm at "+alarmTimes.cleared.slice(0,5)+" UTC."
   ];
-  const labels=["Before the outage","Alarm opens","Alarm still open","Alarm clears"];
-  choices(frames.map((f,i)=>f.revision+" · "+labels[i]),i=>{
+  choices(frames.map((f,i)=>f.minute+" · "+labels[i]),i=>{
     frame=frames[i]; draw();
-    $("#revision-note").textContent=notes[i];
+    $("#revision-note").textContent=notes[i]+" Sampled at "+frame.minute+" UTC, received at "+frame.received+" UTC.";
   },$("#revision-choices"),1);
 }
 
 function exploreDiscovery(){
-  const data=ShopReplayCases.discovery;
-  setActivity('<section class="case-inspect journey-inspector"><h2>How does one new flow change the model?</h2><div id="flow-choices" class="options"></div><div class="flow-states" id="compared-states" role="status"></div><p id="comparison-note"></p><details id="redis-trace"><summary>Trace the added dependency</summary></details></section>');
-  choices(["Original replay","With the API flow"],i=>{
-    stateCells($("#compared-states"),i ? data.after : data.before,[["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]]);
-    $("#comparison-note").textContent=i
-      ? "The existing rules pick up the API’s new dependency. The cache warning now reaches the API and its gateway."
-      : "Web already uses Redis. The API has no dependency on that cache in this run.";
-    $("#redis-trace").hidden=!i;
-  },$("#flow-choices"),1);
+  const {topology,flow,cutoff,proofs}=ShopReplayCases.discovery;
+  const targets=new Map(topology.nodes.map(node=>[node.key,node.name]));
+  const names={"service:api":"API","service:web":"Web","service:database":"Database service","resource:shopcache":"Redis · shopcache","resource:shopassets":"Storage · shopassets"};
+  setActivity(`<section class="case-inspect journey-inspector dependency-compare">
+    <h2>Where does Redis appear in the health model?</h2>
+    <p>Both replays use the same rules and end at ${cutoff} UTC. The second includes one extra call from the API pod to Redis.</p>
+    <fieldset><legend>Choose a service</legend><div id="model-services" class="options"></div></fieldset>
+    <div class="model-branches">
+      <section><h3>Without the new call</h3><p></p><ul></ul></section>
+      <section><h3>With the new call</h3><p></p><ul></ul></section>
+    </div>
+    <p id="model-result" role="status"></p>
+    <details id="redis-trace"><summary>See the records behind the API’s Redis branch</summary></details>
+    </section>`);
+  const services=["service:api","service:web"], cards=[...document.querySelectorAll(".model-branches > section")];
+  const baseline=new Set(topology.before.map(edge=>edge.id));
+  choices(services.map(id=>names[id]),index=>{
+    const service=services[index];
+    for(const [i,edges] of [topology.before,topology.after].entries()){
+      const card=cards[i], list=card.querySelector("ul");
+      card.querySelector("p").textContent=names[service]+" depends on";
+      list.replaceChildren();
+      const dependencies=edges.filter(edge=>edge.from===service);
+      dependencies.sort((a,b)=>Number(baseline.has(b.id))-Number(baseline.has(a.id)));
+      for(const edge of dependencies){
+        const item=document.createElement("li");
+        item.textContent=names[edge.to] || targets.get(edge.to);
+        if(!baseline.has(edge.id)){
+          const mark=document.createElement("strong");mark.textContent="+ New dependency";
+          item.className="added-dependency";item.append(mark);
+        }
+        list.append(item);
+      }
+    }
+    $("#model-result").textContent=service==="service:api"
+      ? "The API still needs the database. Its first observed call to Redis adds a second dependency under the API."
+      : "Web already used this Redis cache. Its branch looks the same in both runs.";
+  },$("#model-services"));
   const trace=$("#redis-trace"), list=document.createElement("dl");
   for(const [name,value] of [
-    ["Hubble flow",data.flow.time+" UTC · "+data.flow.pod+" → "+data.flow.address+" · "+data.flow.verdict],
-    ["Input record in the replay",data.flow.record],
-    ["Master graph","Revision "+data.masterPatch.from+" → "+data.masterPatch.to+" · new Sends link"],
-    ["Structure graph","Revision "+data.structurePatch.from+" → "+data.structurePatch.to+" · API depends on shopcache"],
-    ["Health graph","Revision "+data.healthPatch.from+" → "+data.healthPatch.to+" · added DependsOn relationship "+data.lineage.workload.id],
-    ...data.proofs.map(proof=>[proof.how==="privateEndpoint" ? "Private endpoint evidence" : "Host name evidence",proof.detail])
+    ["Observed call",flow.pod+" → "+flow.address+" at "+flow.time+" UTC"],
+    ...proofs.map(proof=>[proof.how==="privateEndpoint" ? "Private endpoint" : "DNS name",proof.detail]),
+    ["Result in the health model","API → DependsOn → Redis (shopcache)"]
   ]){
     const term=document.createElement("dt"), meaning=document.createElement("dd");
     term.textContent=name;meaning.textContent=value;list.append(term,meaning);

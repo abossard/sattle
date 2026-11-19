@@ -13,17 +13,27 @@ const links = [...journey.rawEdges, ...journey.joinedEdges];
 const views = new Map(journey.views.map(view => [view.id, view]));
 const hasLink = (from, kind, to) => links.some(link => link.from === from && link.kind === kind && link.to === to);
 
-test('the Redis comparison identifies the added health edge and its recorded evidence', () => {
+test('one extra API call adds one Redis branch to the health model', () => {
   const file = readFileSync(join(__dirname, '../foundry/replay-cases.js'), 'utf8');
-  const {discovery:d, rollup} = vm.runInNewContext(file + '\nShopReplayCases;');
+  const {discovery:d} = vm.runInNewContext(file + '\nShopReplayCases;');
   assert.deepEqual(Array.from(d.masterPatch.edits, edit => [edit.operation,edit.type]), [['added','Sends']]);
   assert.ok(d.healthPatch.edits.some(e => e.id === d.lineage.workload.id && e.operation === 'added' && e.type === 'DependsOn'));
   assert.ok(d.lineage.workload.sources.some(s => s.graph === d.structurePatch.graph && s.id === d.dependency.id));
   assert.deepEqual(new Set(Array.from(d.proofs,p => p.how)), new Set(['privateEndpoint','dnsName']));
-  assert.deepEqual(Object.keys(d.before).filter(key => d.before[key] !== d.after[key]).sort(), ['api','apim-shop']);
-  assert.equal(d.before.shopcache, 'Degraded');
-  assert.equal(d.after.api, d.after.shopcache);
-  assert.deepEqual(Array.from(rollup.frames,f => f.states['pg-shop']), ['Healthy','Unhealthy','Unhealthy','Healthy']);
+  const {before,after,nodes,type} = d.topology;
+  const byId = new Map(after.map(edge => [edge.id,edge]));
+  assert.equal(type, 'DependsOn');
+  assert.equal(after.length, before.length + 1);
+  for (const edge of before) assert.deepEqual(byId.get(edge.id), edge);
+  assert.ok(before.some(edge => edge.from === 'service:api' && edge.to === 'service:database'));
+  assert.ok(before.some(edge => edge.from === 'service:web' && edge.to === 'resource:shopcache'));
+  const added = after.filter(edge => !before.some(prior => prior.id === edge.id));
+  assert.deepEqual(Array.from(added, e => [e.from,e.to,e.id]), [
+    ['service:api','resource:shopcache',d.lineage.workload.id]
+  ]);
+  const endpoints = edges => new Set(edges.flatMap(edge => [edge.from,edge.to]));
+  assert.deepEqual(endpoints(before), endpoints(after));
+  assert.deepEqual(endpoints(after), new Set(nodes.map(n => n.key)));
 });
 
 test('recorded questions, answers and view changes follow the editable scripts', () => {
@@ -219,7 +229,7 @@ test('the GKQL drawing and replay follow the authored query and captured inputs'
 test('the Health Tree preserves the recorded Affects branches and the source of the alarm', () => {
   const lesson = file => readFileSync(join(__dirname, '../foundry', file), 'utf8');
   const repo = file => readFileSync(join(__dirname, '../../..', file), 'utf8');
-  const {tree, frames} = JSON.parse(vm.runInNewContext(lesson('replay-cases.js') + '\nJSON.stringify(ShopReplayCases.rollup)'));
+  const {tree, frames, readings, alarmTimes} = JSON.parse(vm.runInNewContext(lesson('replay-cases.js') + '\nJSON.stringify(ShopReplayCases.rollup)'));
   const {extent} = JSON.parse(repo('canvas/public/demo/estate/workloadStructure.final.snapshot.json'));
   const keys = new Map(extent.entities.map(entity => {
     const properties = Object.fromEntries(entity.properties.map(p => [p.property.value.split('.').at(-1), p.value.value]));
@@ -236,7 +246,14 @@ test('the Health Tree preserves the recorded Affects branches and the source of 
   }
   assert.equal(tree.nodes.length, 8);
   assert.deepEqual(branch, new Set(tree.nodes.map(n => n.key)));
+  assert.deepEqual(frames.map(f => [f.minute,f.value,f.treeStates[tree.root]]), [
+    ['10:10',1,'Healthy'], ['10:11',0,'Unhealthy'], ['10:14',1,'Unhealthy'], ['10:15',1,'Healthy']
+  ]);
+  assert.deepEqual(alarmTimes, {opened:'10:13:00',cleared:'10:17:00'});
   for (const frame of frames) {
+    const reading = readings.find(sample => sample.minute === frame.minute);
+    assert.equal(frame.received, reading.received);
+    assert.equal(frame.value, reading.value);
     const alarm = frame.signal === 'on';
     const affected = new Set(['service:web','service:api','service:database','resource:pg-shop']);
     assert.equal(frame.treeOwn['resource:pg-shop'], alarm ? 3 : 0);

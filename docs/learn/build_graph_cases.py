@@ -68,13 +68,22 @@ def health_tree(structure, master, meter):
                        "resourceType": resource["type"], "meter": meter}}
 
 
-def rollup():
+def tree_values(elements, keys):
+    typed = {p["kind"] + ":" + p["name"]: p for el in elements.values()
+             if "source" not in el and (p := fields(el)).get("kind") and "name" in p}
+    states = {key: typed[key]["state"] for key in sorted(keys)}
+    own = {key: int(typed[key]["own"]) for key in states if "own" in typed[key]}
+    return states, own
+
+
+def rollup(staging):
     recorded = evidence()
     structure = graph_index(EXPORT, "workloadStructure")
     tree = health_tree(structure, graph_index(EXPORT, "master"), recorded["rule"]["meter"])
     keys = {node["key"] for node in tree["nodes"]}
     current, frames = {}, []
-    for patch in records(EXPORT / "workload.patches.ndjson"):
+    patches = records(EXPORT / "workload.patches.ndjson")
+    for patch in patches:
         for edit in patch["edits"]:
             key = edit["id"]["value"]
             if edit["after"] is None:
@@ -84,10 +93,7 @@ def rollup():
         revision = int(patch["to"]["revision"]["value"])
         if 15 <= revision <= 18:
             selected = components(current)
-            typed = {p["kind"] + ":" + p["name"]: p for el in current.values()
-                     if "source" not in el and (p := fields(el)).get("kind") and "name" in p}
-            tree_states = {key: typed[key]["state"] for key in sorted(keys)}
-            tree_own = {key: int(typed[key]["own"]) for key in tree_states if "own" in typed[key]}
+            tree_states, tree_own = tree_values(current, keys)
             signal = next(fields(el) for el in current.values() if fields(el).get("rule") == "database-down")
             frames.append({"revision": revision, "states": {n: p["state"] for n, p in selected.items()},
                            "own": {n: int(p["own"]) for n, p in selected.items() if "own" in p},
@@ -98,7 +104,32 @@ def rollup():
     for path in paths:
         assert all(pair in links for pair in zip(path, path[1:])), path
     assert [frame["signal"] for frame in frames] == ["off", "on", "on", "off"]
-    return {"rule": recorded["rule"], "readings": recorded["readings"], "frames": frames, "paths": paths, "tree": tree}
+    # An observation minute, its capture time, and the commit that publishes a
+    # state have different clocks. Replay the captured prefix for each sample
+    # before associating its checkpoint with a frame from the complete run.
+    selected_minutes = ["10:10", "10:11", "10:14", "10:15"]
+    for frame, minute in zip(frames, selected_minutes, strict=True):
+        sample, = [reading for reading in recorded["readings"] if reading["minute"] == minute]
+        destination = staging / ("sample-" + minute.replace(":", ""))
+        replay(ESTATE, destination, "2026-01-01T" + sample["received"] + "Z")
+        snapshot = graph_index(destination, "workload")
+        assert tree_values(snapshot, keys) == (frame["treeStates"], frame["treeOwn"])
+        signal, = [p for el in snapshot.values() if (p := fields(el)).get("rule") == recorded["rule"]["id"]]
+        assert signal["signalState"] == frame["signal"]
+        frame.update(minute=sample["minute"], received=sample["received"], value=sample["value"])
+    # --no-flush keeps the replay from advancing the clock just because the
+    # input was cut short. Bracket each published change by one millisecond
+    # and check the entire last patch against the uninterrupted estate replay.
+    alarm_times = {"opened": "10:13:00", "cleared": "10:17:00"}
+    boundaries = ["10:12:59.999", alarm_times["opened"], "10:16:59.999", alarm_times["cleared"]]
+    for frame, at in zip(frames, boundaries, strict=True):
+        destination = staging / ("open-" + at.replace(":", ""))
+        replay(ESTATE, destination, "2026-01-01T" + at + "Z", flush_at_end=False)
+        published = records(destination / "workload.patches.ndjson")[-1]
+        reference, = [p for p in patches if int(p["to"]["revision"]["value"]) == frame["revision"]]
+        assert published == reference, at
+    return {"rule": recorded["rule"], "readings": recorded["readings"], "frames": frames, "paths": paths,
+            "tree": tree, "alarmTimes": alarm_times}
 
 
 def add_flow(capture):
@@ -127,9 +158,12 @@ def add_flow(capture):
              "verdict": flow["verdict"], "record": event["key"]}, slice_info)
 
 
-def replay(capture, destination):
-    subprocess.run(["dotnet", str(ENGINE), "replay", str(capture), "--cluster", "synth",
-                    "--until", CUTOFF, "--out", str(destination)], cwd=ROOT, stdout=subprocess.DEVNULL, check=True)
+def replay(capture, destination, cutoff=CUTOFF, *, flush_at_end=True):
+    command = ["dotnet", str(ENGINE), "replay", str(capture), "--cluster", "synth",
+               "--until", cutoff, "--out", str(destination)]
+    if not flush_at_end:
+        command.append("--no-flush")
+    subprocess.run(command, cwd=ROOT, stdout=subprocess.DEVNULL, check=True)
 
 
 def patch_between(original, changed, graph):
@@ -171,6 +205,26 @@ def lineage(output, indexes, graph, identifier):
             "inputs": row["inputs"], "sources": sources, "complete": row["complete"]}
 
 
+def health_dependencies(index):
+    """Read the actual DependsOn edges of web and api from one workload health output."""
+    nodes, links = {}, []
+    for element in index.values():
+        if short_type(element) != "DependsOn":
+            continue
+        source, target = (element[end]["value"] for end in ("source", "target"))
+        caller = fields(index[source])
+        if caller["kind"] != "service" or caller["name"] not in {"web", "api"}:
+            continue
+        ends = []
+        for identifier in (source, target):
+            p = fields(index[identifier])
+            key = p["kind"] + ":" + p["name"]
+            nodes[key] = {"key": key, "name": p["name"], "kind": p["kind"], "id": identifier}
+            ends.append(key)
+        links.append({"from": ends[0], "to": ends[1], "id": element["id"]["value"]})
+    return [nodes[key] for key in sorted(nodes)], sorted(links, key=lambda link: (link["from"], link["to"]))
+
+
 def discovery(staging):
     capture, original, changed = (staging / name for name in ("capture", "original", "changed"))
     shutil.copytree(ESTATE, capture)
@@ -200,12 +254,23 @@ def discovery(staging):
             proofs.append({"id": e["id"], "how": p["how"], "detail": p["detail"], "sources": proof["sources"]})
     assert {p["how"] for p in proofs} == {"dnsName", "privateEndpoint"}
     proofs.sort(key=lambda p: p["how"] != "privateEndpoint")
-    before = {n: p["state"] for n, p in components(graph_index(original, "workload")).items()}
+    original_health = graph_index(original, "workload")
+    before = {n: p["state"] for n, p in components(original_health).items()}
     after = {n: p["state"] for n, p in components(indexes["workload"]).items()}
     assert {n for n in before if before[n] != after[n]} == {"api", "apim-shop"}
     assert before["shopcache"] == after["shopcache"] == after["api"] == after["apim-shop"] == "Degraded"
     assert before["api"] == before["apim-shop"] == "Healthy"
+    before_nodes, before_links = health_dependencies(original_health)
+    after_nodes, after_links = health_dependencies(indexes["workload"])
+    assert before_nodes == after_nodes
+    added = [link for link in after_links if link not in before_links]
+    assert added == [{"from": "service:api", "to": "resource:shopcache", "id": health_depends["id"]}]
+    assert all(link in after_links for link in before_links)
+    assert {("service:web", "resource:shopcache"), ("service:api", "service:database")} <= {
+        (link["from"], link["to"]) for link in before_links}
+    assert graph_index(original, "authored") == graph_index(changed, "authored")
     return {"flow": flow, "cutoff": CUTOFF[11:19], "before": before, "after": after,
+            "topology": {"type": "DependsOn", "nodes": before_nodes, "before": before_links, "after": after_links},
             "masterPatch": master, "structurePatch": structure, "healthPatch": health, "proofs": proofs,
             "dependency": {**depends, "sourceLabel": source_name, "targetLabel": target_name},
             "lineage": {"master": lineage(changed, indexes, "master", sends["id"]),
@@ -218,7 +283,7 @@ if __name__ == "__main__":
     if not ENGINE.is_file():
         raise SystemExit("Build the replay CLI first with dotnet build engine/src/Sattle.Cli -c Release")
     with tempfile.TemporaryDirectory(prefix="sattle-graph-cases-") as temp:
-        result = {"rollup": rollup(), "discovery": discovery(Path(temp))}
+        result = {"rollup": rollup(Path(temp)), "discovery": discovery(Path(temp))}
     destination = HERE / "foundry/replay-cases.js"
     destination.write_text("// Generated by ../build_graph_cases.py from Sattle replay evidence.\n"
                            + "const ShopReplayCases = " + json.dumps(result, indent=2) + ";\n")
