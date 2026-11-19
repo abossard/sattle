@@ -1,17 +1,17 @@
 // This quotient maps every entity to one business capability and lifts both
 // endpoints of every relationship through that same map (white paper, §5.8).
 const retailCapabilities = [
-  ["checkout","Shopping & checkout",["shopper","storefront","checkout"]],
-  ["fulfillment","Order fulfillment",["orders","inventory","order-feed"]],
-  ["logistics","Logistics",["warehouse","carrier","tracking"]],
-  ["support","Customer support",["chat","conversation","returns-app","lookup-order","tool-handler"]],
+  ["checkout","Checkout",["web-client","storefront","checkout"]],
+  ["fulfillment","Order services",["orders","inventory","order-feed"]],
+  ["logistics","Logistics APIs",["warehouse-api","carrier-api","tracking-service"]],
+  ["support","Support services",["chat","conversation","returns-app","lookup-order","tool-handler"]],
   ["agents","Managed agents",["project","returns-agent","review-agent","chat-model","review-model"]],
-  ["intake","Returns intake",["returns-desk","inspection","case-queue","case-store","approval"]],
+  ["intake","Returns intake",["returns-api","inspection-log","case-queue","case-store","approval"]],
   ["evidence","Receipt evidence",["interpreter","sandbox","artifact-writer","receipt-blob"]],
-  ["review","AI review",["review-worker","summary-store"]],
-  ["payout","Payout",["refund-worker","refund-id"]],
-  ["payment","Payment processing",["processor","processor-receipt"]],
-  ["reconciliation","Financial reconciliation",["merchant-ledger","scheduler","reconciler"]],
+  ["review","AI review",["review-job","summary-store"]],
+  ["payout","Payout",["refund-job","refund-id"]],
+  ["payment","Payment API",["processor","processor-receipt"]],
+  ["reconciliation","Reconciliation",["merchant-ledger","scheduler","reconciler"]],
   ["crm","CRM",["crm"]],
   ["marketing","Marketing",["consent","marketing","event-reader","dedupe","bus","journey-flow"]],
   ["analytics","Analytics",["data-lake","analytics"]]
@@ -20,19 +20,18 @@ const retailCapabilities = [
 // Roles help a reader interpret the original directed verb. A "calls" edge
 // says which service was invoked. A health rule separately establishes impact.
 const retailRelationRoles = {
-  "Service call":["calls","requests","queries"],
+  "Service call":["calls","requests","queries","sends order request to","submits order to",
+    "sends fulfillment request to","sends shipment request to","starts campaign in"],
   "Optional call":["can call"],
   "Required input":["requires"],
   "Runtime structure":["hosts","runs","implements","runs code in","uses","starts"],
   "Reads a record":["reads","retrieves output from","compares","references","matches original lines in",
-    "reads customer case from","checks event ID in","checks before sending"],
+    "reads customer case from","checks event ID in","reads consent from"],
   "Writes a record":["writes","links evidence to","writes agent output to","records","posts to","continues",
-    "updates delivery on","records disposition for","opens case with","updates support case in"],
-  "Event flow":["sends a message to","sends case to","sends scan to","publishes sale to","polls",
-    "queues event on","consumes","triggers journey in","exports sale to","exports delivery to",
-    "exports settled refund to","exports returned lines to"],
-  "Business operation":["places order at","submits order to","reserves stock in","requests fulfillment from",
-    "hands parcel to","receives returned items for"]
+    "updates delivery on","opens case with","updates support case in","writes reservation to","writes receipt scan to"],
+  "Supporting evidence":["supplies inspection result for"],
+  "Event flow":["sends a message to","sends case to","sends scan event to","publishes sale to","polls",
+    "queues event on","consumes","exports sale to","exports delivery to","exports settled refund to","exports returned lines to"]
 };
 
 function projectRetailGraph(nodes,edges,capabilities=retailCapabilities,relationRoles=retailRelationRoles) {

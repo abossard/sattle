@@ -1,27 +1,27 @@
 // One definition stays beside the case while the corresponding passage plays.
 const ShopTerms = {
   estate: [
-    ["Customer journey", "Order O-104 connects checkout, the warehouse, delivery and return R-104. Each stage can leave a record."],
-    ["Master graph", "Entities are the things that sources describe. Typed links say how they relate, such as ships, reads or pays."],
+    ["Order record", "O-104 is the order ID. The stock reservation, tracking update and return record each refer back to it."],
+    ["Master graph", "Each dot represents software or data in the shop. Each link names a relationship, such as calls, reads or writes."],
     ["Projection", "A query can transform the same source graph into a shop-level view of orders, logistics, customer service, marketing and finance."]
   ],
   dependencies: [
     ["Master graph", "All 46 entities and 68 typed links belong to this example’s first graph. It covers the whole shop, including its services and records."],
-    ["Levels of abstraction", "A projection groups the shop into 14 activities. The refund worker reads the case store and requires the approval record. Both links remain as evidence."],
-    ["Tree view", "Payout and Customer Support both reach Returns Intake. The tree can show both paths to the same capability."]
+    ["Levels of abstraction", "A projection groups the software by what it does. Two links support Payout → Returns intake. The refund job reads the case store and requires an approval record."],
+    ["Tree view", "Payout and Support services both link to Returns intake. Either path leads to the same group of services and records."]
   ],
   commerce: [
-    ["Order fulfillment", "A shared order ID links stock reservations and packing records. The tracking number connects the parcel to delivery updates."],
+    ["Order records", "A reservation and a shipment request share order ID O-104. A tracking number links later carrier events to that order."],
     ["Independent subscribers", "Support can use a delivery update while marketing checks consent. A promotional email is optional for fulfillment."],
     ["Net merchandise", "A settled $30 refund on an $80 order leaves $50 in merchandise sales. This example leaves out shipping and tax."]
   ],
   logistics: [
-    ["Return lines", "R-104 links both returned items to O-104. Arrival records say which items reached the warehouse."],
-    ["Disposition", "The inspection decides what happens to each item and whether to credit it. Here the $18 item goes back into stock and the $12 item goes to scrap."],
-    ["Stock and credit", "One item can sell again. Both lines qualify for credit. A separate payment record shows when the $30 refund settles."]
+    ["Return lines", "R-104 references two order lines on O-104. A receipt scan gives each line a recorded arrival status."],
+    ["Disposition", "The inspection log records a decision for each line. The $18 line says restock. The $12 line says scrap. Both carry a credit decision."],
+    ["Stock and credit", "The stock ledger gains one sellable unit. The approval covers $30. A separate payment receipt confirms settlement."]
   ],
   engagement: [
-    ["Customer record", "A tracking number connects delay D-7 to order O-104 and one support case."],
+    ["Support case", "A tracking number connects delay event D-7 to order O-104 and one support case."],
     ["Event identity", "A retry keeps the same event ID. Checking E-81 in Cosmos DB lets the integration queue one message."],
     ["Reporting cutoff", "The ledger shows $80 before payment receipt P-30 and $50 after it. The support case can update earlier."]
   ],
@@ -37,13 +37,13 @@ const ShopTerms = {
   ],
   jobs: [
     ["Queue", "A message carries a case number across the gap between a live request and work that happens later."],
-    ["Background agent", "A model can draft a case summary from a receipt and the customer’s explanation."],
+    ["Background agent", "A model can draft a case summary from a receipt file and the text of a support conversation."],
     ["Fixed procedure", "Payment and reconciliation follow written steps. Neither step needs a language model."]
   ],
   failure: [
-    ["Degraded", "An amber warning marks a delay. Here a reviewer still has the original receipt."],
+    ["Degraded", "An amber warning marks a late summary. The original receipt file is still available for review."],
     ["Unhealthy", "A required call has failed. Payout can be blocked while order lookup succeeds."],
-    ["Unknown", "A failed call shows what the worker experienced. The processor’s own health needs separate evidence."]
+    ["Unknown", "The refund job recorded a timeout. The payment service’s own health needs a separate reading."]
   ],
   evolution: [
     ["Changed setting", "A new storage address gives the model something to match against Azure’s inventory."],

@@ -1,7 +1,11 @@
 "use strict";
 
 const $ = (selector) => document.querySelector(selector);
-const root = "../../";
+function sourceHref(file) {
+  if (file.startsWith("https:")) return file;
+  if (/^docs\/learn\/[^/]+\.html(?:#|$)/.test(file)) return "../../" + file;
+  return (document.documentElement.dataset.sourceBase || "../../") + file;
+}
 function plate(name, context, content) {
   return '<div class="plate"><div class="plate-inner"><div class="plate-top"><span>'+name+'</span><span class="chip">'+context+'</span></div>'+content+'</div></div>';
 }
@@ -20,4 +24,4 @@ function choices(labels, onChange, container, initial=0) {
 }
 function radioArea() { return '<div class="options" id="choices"></div>'; }
 function setActivity(html) { $("#activity").innerHTML = html; }
-function link(label, file) { return '<a href="'+(file.startsWith("https:")?file:root+file)+'">'+label+'</a>'; }
+function link(label, file) { return '<a href="'+sourceHref(file)+'">'+label+'</a>'; }

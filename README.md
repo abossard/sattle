@@ -2,6 +2,8 @@
 
 Sattle turns what a cloud system reports into graphs that explain it, and keeps them up to date as the input changes. The words are defined once in the [glossary](paper/glossary.md).
 
+[Explore the narrated shop walkthrough](https://abossard.github.io/sattle/docs/learn/) · [Replay the recorded database outage](https://abossard.github.io/sattle/docs/learn/pg-shop.html#incident)
+
 ```mermaid
 flowchart TB
   subgraph IN["Semi-structured data in"]

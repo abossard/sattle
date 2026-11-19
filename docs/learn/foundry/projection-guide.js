@@ -27,7 +27,7 @@ function projectionExplorer(host) {
       add(item,"span",nodes.get(a).label+" ");
       add(item,"strong",kind);
       add(item,"span"," "+nodes.get(b).label+".");
-      add(item,"small",p.roleOf[kind]+" · "+a+" → "+b);
+      add(item,"small",p.roleOf[kind]+" · Source link "+(sourceIndices[i]+1));
     });
   }
   function forest(first) {
@@ -51,7 +51,7 @@ function projectionExplorer(host) {
   root.className="projection-browser case-inspect";
   add(root,"h2","Explore the capability map");
   const nSources=p.internal.length+p.links.reduce((sum,link)=>sum+link.evidence.length,0);
-  add(root,"p",nodes.size+" source entities form "+groups.size+" capabilities. The "+nSources+
+  add(root,"p",nodes.size+" services, tools and records form "+groups.size+" software capabilities. The "+nSources+
     " original links support "+p.links.length+" connections between capabilities and "+
     p.internal.length+" relationships inside them.");
   const menu=add(root,"label","","projection-start");
@@ -61,7 +61,7 @@ function projectionExplorer(host) {
   select.value="payout";
   add(root,"p","Open an arrow to see its original relationships. A shared capability appears once in the tree. Cross-references take you to it.","projection-hint");
   const semantics=disclosure(root,"What do the arrows mean?","projection-hint");
-  add(semantics,"p","Read from the source to the destination. A worker can read a case, require approval or publish an event. Each verb stays with its source record. A health rule decides which failures affect a capability.");
+  add(semantics,"p","Read from the source to the destination. A job can read a case, require approval or publish an event. Each verb stays with its source record. A health rule decides which failures affect a capability.");
   const tree=add(root,"div","","projection-tree");
 
   function render() {
@@ -85,16 +85,13 @@ function projectionExplorer(host) {
       if(id===start)entry.open=true;
       const local=disclosure(entry,"Inside "+group.label+" · "+quantity(group.nodes.length,"entity","entities"),"projection-inside");
       const members=add(local,"ul","","projection-members");
-      for(const node of group.nodes) {
-        const item=add(members,"li",node.label+" ");
-        add(item,"code",node.id);
-      }
+      for(const node of group.nodes)add(members,"li",node.label);
       if(group.internal.length) {
         const within=disclosure(local,quantity(group.internal.length,"internal relationship"),"projection-internal");
         evidence(within,group.internal,group.internalSourceIndices);
-      } else add(local,"p","This capability has no internal links in the teaching model.");
+      } else add(local,"p","This capability has no internal links in this graph.");
       const links=outgoing.get(id);
-      if(!links.length)add(entry,"p","This capability has no outgoing links in the teaching model.","projection-hint");
+      if(!links.length)add(entry,"p","This capability has no outgoing links in this graph.","projection-hint");
       for(const link of links) {
         const target=groups.get(link.to),isTreeLink=parent.get(target.id)===id;
         const row=disclosure(entry,"→ "+target.label+" · "+quantity(link.evidence.length,"source link"),"projection-link");

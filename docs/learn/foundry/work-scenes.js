@@ -43,7 +43,7 @@ const FoundryWorkScenes=(() => {
     const ys=m?[123,255,387]:[105,216,327];
     const lanes=[
       {title:"Review",ink:purple,pale:"#e9dff4",steps:["Return queued","Review agent","Case summary"]},
-      {title:"Payout",ink:teal,pale:"#cbe8d8",steps:["Approved case","Refund worker","Processor call"]},
+      {title:"Payout",ink:teal,pale:"#cbe8d8",steps:["Approved case","Refund job","Processor call"]},
       {title:"Reconciliation",ink:blue,pale:"#dce9f1",steps:["Schedule","Reconciler","Receipt check"]}
     ];
     const runs=lanes.map((row,i)=>{
@@ -71,8 +71,8 @@ const FoundryWorkScenes=(() => {
       return {lane,threads};
     });
     const foot=m?
-      ["The queue holds the return after the customer leaves.","The model drafts a summary for the reviewer.","The worker sends the approved amount and refund ID."]:
-      ["The warehouse receives the returned items. The return case can stay in the queue after chat ends.","The review agent reads the receipt and drafts a summary for the reviewer.","The worker sends the approved amount and refund ID. The scheduled job checks settlement later."];
+      ["The queue holds the return after the chat ends.","The review agent writes a case summary.","The refund job sends the approved amount and refund ID."]:
+      ["The returns app queues R-104. The queue keeps the case after the chat ends.","The review job reads the receipt and calls the agent to draft a case summary.","The refund job sends the approved amount and refund ID. The scheduled job checks settlement later."];
     label(g,17,H-11,foot[beat],m?15.5:18,muted,620);
     return p=>runs.forEach(({lane,threads},i)=>{
       opacity(lane,i===0||beat===2?1:.48);
@@ -89,7 +89,7 @@ const FoundryWorkScenes=(() => {
     const {label,path,group,rect,rule,circle,opacity}=pen(ctx);
     rect(g,0,0,W,H,"#f8f1ec","none",12);
     label(g,18,m?32:38,"Which part can still do its job?",m?23:31);
-    if(!m)label(g,W-22,37,"Late parcel  /  O-104  /  R-104",18,muted,600,"end");
+    if(!m)label(g,W-22,37,"Delivery event D-7  /  Return R-104",18,muted,600,"end");
     const cx=m?W/2:267, cy=m?170:208, ro=m?106:141, ri=m?48:66;
     const places=[
       {name:"Review",state:"Degraded",text:"The case summary arrives late.",introduced:0},
@@ -114,7 +114,7 @@ const FoundryWorkScenes=(() => {
     circle(g,cx,cy,ri-3,"#273d46");
     label(g,cx,cy-6,"Return",m?16:22,"#fff",700,"middle");
     label(g,cx,cy+(m?17:24),"service",m?16:22,"#fff",550,"middle");
-    label(g,m?22:533,m?486:377,m?"Order O-104 stays visible while its refund waits.":"The order still shows the shipment while its refund waits.",m?17:19,muted,600);
+    label(g,m?22:533,m?486:377,"Order lookup still answers while the refund waits.",m?17:19,muted,600);
     return p=>items.forEach(({item,pale,deep,mark,sector,markLabel,details,status},i)=>{
       const visible=beat>item.introduced || beat===item.introduced && p>=(i===3?0:.18);
       sector.setAttribute("fill",visible?pale:"#e4e5df");
@@ -185,30 +185,28 @@ const FoundryWorkScenes=(() => {
       note.textContent=[
         m?"The app now names a different upload destination.":"The receipt writer’s configured storage endpoint changes.",
         m?"A matching record identifies the new account.":"The matching endpoint connects the writer to the new storage account.",
-        m?"Teams can refine the types and health rules.":"People can maintain the types behind this link and refine the rule that judges health."
+        m?"The rule needs a reading for this account.":"The ontology defines a storage account. A health rule names the readings it needs."
       ][beat];
     };
   }
 
-  // An investigation notebook. The left page carries the assertion, the right
-  // page carries its warrant; the last spread compares with a recorded case.
+  // Pair each reported result with the records or rule that support it.
   function proof(ctx) {
     const {g,W,H,mobile:m,beat,stage}=ctx;
     const {label,path,group,rect,rule,circle,opacity,travel}=pen(ctx);
-    const page="#fffbef",print="#2d3a37",warm="#805845";
-    rect(g,0,0,W,H,"#e9dfcc","none",12);
+    const page="#f6f7ee",print="#2d3a37",warm="#456454";
+    rect(g,0,0,W,H,page,"none",12);
     const sx=m?12:21,sy=m?15:20,sw=m?W-24:W-42,sh=m?H-30:H-40;
-    rect(g,sx+3,sy+4,sw,sh,"#c5bba7","none",3);
-    rect(g,sx,sy,sw,sh,page,"#b6ad98",3);
+    rect(g,sx,sy,sw,sh,"#fcfcf5","#b5c4b7",8);
     const fold=m?243:560;
     if(m)rule(g,sx+12,fold,W-sx-12,fold,"#b4aa91",1.2);
-    else {rule(g,fold,sy+6,fold,H-sy-6,"#c4bba4",2);rule(g,fold+4,sy+6,fold+4,H-sy-6,"#ded6c1",1);}
+    else rule(g,fold,sy+8,fold,H-sy-8,"#b5c4b7",1.5);
     const left=m?29:49, right=m?29:594, rb=m?fold:0, a=left+(m?0:10);
     const leftTitle=["Change record","Blocked payout","A second case"][beat];
-    label(g,left,m?46:59,"Foundry case R-104  ·  illustration",m?15:18,warm,700);
+    label(g,left,m?46:59,"Return service  /  case R-104",m?15:18,warm,700);
     label(g,left,m?80:107,leftTitle,m?26:34,print,740);
-    const items=beat===0?["Before","After"]:beat===1?["Payout","Required payment call"]:["Review of a return","Illustrative evidence"];
-    const val=beat===0?["Original receipt storage","Replacement storage account"]:beat===1?["Unhealthy","Timeout"]:["Payment timed out","Processor state unknown"];
+    const items=beat===0?["Before","After"]:beat===1?["Payout","Required payment call"]:["Payment call","Payment API health"];
+    const val=beat===0?["Original receipt storage","Replacement storage account"]:beat===1?["Unhealthy","Timeout"]:["Timed out","Unknown"];
     const rowY=m?[132,201]:[179,278];
     const leftWidth=m?W-68:471;
     const leftRows=items.map((name,i)=>{
@@ -219,12 +217,12 @@ const FoundryWorkScenes=(() => {
       return row;
     });
     const ry=rb+(m?35:59);
-    label(g,right,ry,["Graph history","Evidence trail","Recorded companion  ·  pg-shop"][beat],m?16:19,warm,700);
-    const title=beat===0?"The patch":beat===1?"What supports that state?":"The same question in a replay";
+    label(g,right,ry,["Graph history","Evidence trail","pg-shop  /  replay evidence"][beat],m?16:19,warm,700);
+    const title=beat===0?"The patch":beat===1?"What supports that state?":"Database health by revision";
     label(g,right,ry+(m?34:49),title,m?24:29,print,740);
     const labels=beat===0?[["−","Remove link","App → original storage"],["+","Add link","App → new storage"]]:
-      beat===1?[["1","Rule","Payout needs a payment reply."],["2","Observation","The worker reports a timeout."]]:
-      [["16","pg-shop · workload revision","10:11  ·  The meter reads zero."],["18","After two good minutes","The alarm clears."]];
+      beat===1?[["1","Rule","Payout needs a payment reply."],["2","Observation","The refund job reports a timeout."]]:
+      [["16","pg-shop · workload revision","10:11  ·  The meter reads zero."],["18","After two healthy readings","The alarm clears."]];
     const rightRows=labels.map(([symbol,key,value],i)=>{
       const lineY=ry+(m?74:112)+i*(m?72:102),item=group();
       circle(item,right+17,lineY+4,m?14:18,beat===0?(i?"#c9e9d6":"#f4d7d1"):"#eadfcb");
@@ -242,7 +240,7 @@ const FoundryWorkScenes=(() => {
   // by that system visible: an order link, an event ID, or a settlement receipt.
   function engagement(ctx) {
     const {g,W,H,mobile:m,beat,stage}=ctx;
-    const {label,path,group,rect,rule,circle,opacity,travel}=pen(ctx);
+    const {label,group,rect,rule,circle,opacity,travel}=pen(ctx);
     const paper="#f5efe6",wine="#763955",slate="#384b60",gold="#875d17";
     rect(g,0,0,W,H,paper,"none",12);
     const spread=["Customer service","Marketing events","Sales analytics"][beat];
@@ -252,7 +250,7 @@ const FoundryWorkScenes=(() => {
     if(beat===0) {
       const fileX=m?25:557,fileY=m?214:100,fileW=m?W-50:W-fileX-27,fileH=m?219:221;
       const x=m?23:37,top=m?79:107,rw=m?205:326,rh=m?73:80;
-      const sourceCards=[["Order record","O-104","Sale"],["Carrier scan","D-7","Parcel delayed"]];
+      const sourceCards=[["Order record","O-104","Sale"],["Tracking event","D-7","Status: delayed"]];
       const inputs=sourceCards.map(([kind,id,detail],i)=>{
         const px=x+(m?i*(rw+18):0),py=top+(m?0:i*(rh+44));
         const a=group();
@@ -267,12 +265,12 @@ const FoundryWorkScenes=(() => {
       });
       label(g,m?W/2:454,m?184:223,"Tracking number",m?16:17,wine,660,"middle");
       const file=group();
-      path(file,`M${fileX},${fileY} h${fileW*.31} l12,14 h${fileW*.69-12} v${fileH-14} h-${fileW} Z`,{fill:"#eed9df",stroke:wine,"stroke-width":2});
+      rect(file,fileX,fileY,fileW,fileH,"#eed9df",wine,7);
       label(file,fileX+18,fileY+36,"CRM  /  one support case",m?20:24,wine,720);
       const spineX=fileX+35,base=fileY+81;
       const trail=travel(file,`M${spineX},${base} v78`,wine,3);
-      [[base,"Delivery update","Scan D-7 links the delay to O-104."],
-       [base+78,"Return R-104","Support adds the two returned items."]].forEach(([y,title,desc])=>{
+      [[base,"Delivery update","Event D-7 links the delay to O-104."],
+       [base+78,"Return R-104","The CRM case includes both return lines."]].forEach(([y,title,desc])=>{
         circle(file,spineX,y,7,paper,wine,3);
         label(file,spineX+21,y+5,title,m?18:22,ink,700);
         label(file,spineX+21,y+31,desc,m?16:18,ink,520);
@@ -309,7 +307,7 @@ const FoundryWorkScenes=(() => {
       const amount=label(g,busX,busY+(m?34:43),"",m?19:23,teal,720,"middle");
       label(g,busX,busY+(m?58:69),"Service Bus",m?16:20,ink,560,"middle");
       label(g,terminalX,busY+(m?34:43),"Logic Apps",m?19:23,teal,720,"middle");
-      label(g,terminalX,busY+(m?58:69),"Journeys",m?16:20,ink,560,"middle");
+      label(g,terminalX,busY+(m?58:69),"Marketing",m?16:20,ink,560,"middle");
       const stamp=group(), a=m?30:649, y=m?411:306;
       rect(stamp,a,y,m?W-60:W-a-31,m?54:53,"#f1dbd6",red,6);
       label(stamp,a+14,y+(m?33:34),m?"Opted out  ·  promotion suppressed":"Consent check  ·  Opted out  ·  Promotion suppressed",m?19:17,red,720);

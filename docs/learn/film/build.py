@@ -36,7 +36,6 @@ PRONUNCIATIONS = {
     "pg-shop": "P G shop", "offers-cache": "offers cache",
     "10:06:30": "thirty seconds past ten oh six", "10:11": "ten eleven",
     "10:14": "ten fourteen", "10:15": "ten fifteen",
-    "Dynamics 365": "Dynamics three sixty five",
 }
 
 
@@ -179,7 +178,7 @@ def composition(story, retail):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--retail", action="store_true", help="build the illustrated Dynamics 365 retail case")
+    parser.add_argument("--retail", action="store_true", help="build the illustrated shop case")
     parser.add_argument("--compose-only", action="store_true", help="refresh the film markup from the existing recording")
     args = parser.parse_args()
     project = HERE.parent/"foundry" if args.retail else HERE

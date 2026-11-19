@@ -4,88 +4,88 @@ Transcript of the narrated Sattle field guide.
 
 ## 00:00 · One order through the whole shop
 
-A shopper orders eighty dollars of merchandise. The parcel arrives late, and she sends back two items. The shop follows Microsoft’s Dynamics 365 Commerce architecture. Order one oh four and the Foundry service that helps with her return are examples we’ve added to it.
+Checkout saves an eighty-dollar order. Later, the support app receives a message asking about a refund on two lines of that order. To answer it, the app needs records from several systems. The graph shows the software, the data it stores and the calls between services.
 
-At checkout, the storefront sends the order to the Commerce Scale Unit, the engine behind the store. Pull back to the whole shop. This version of its master graph has forty-six entities and sixty-eight links. Each link says something specific, such as who ships a parcel or which system looks up an order.
+Sattle builds a master graph from observations. An adapter reads each source’s records. Rules use identifiers, such as a tracking number, to connect records about the same thing. This shop graph has forty-six entities and sixty-eight links. An arrow can mean that a service calls an API or reads a record.
 
-A packing list and a financial report can both refer to order one oh four. A person looking after the whole shop needs a different view again. Which parts of the business depend on each other, and what would explain a broken link between them?
+The order status page needs tracking updates. The refund page needs a payment receipt. A projection is a rule for turning one graph into another. Applied to the same master graph, one projection can follow delivery updates while another traces the refund from approval to payment.
 
-## 00:55 · From the master graph to shop dependencies
+## 00:59 · From the master graph to shop dependencies
 
-The warehouse hands parcels to a carrier. The refund worker reads a case record. Both links belong to the same master graph, along with the services and records for the rest of the shop. Their verbs tell us what each connection means.
+The warehouse API sends a shipment request to the carrier API. The refund job reads from the case store. Both connections belong to the master graph. The arrow tells us which way each relationship runs. Its label tells us whether a service calls another service or reads its data.
 
-A projection can group the whole shop into fourteen business activities. The refund worker belongs to Payout. The case store and the approval record belong to Returns Intake. The worker reads the store and requires the approval. Both links carry up to the business view. The white paper calls these levels of abstraction.
+The business view groups the shop’s software into fourteen activities. The refund job belongs to Payout. The case store and the approval record belong to Returns Intake. The job reads the store and requires the approval. At the higher level those two links support one arrow from Payout to Returns Intake.
 
-In a tree view, Returns Intake appears under Payout and under Customer Support. Both entries point to one part of the shop. Under Payout the evidence still says which record the worker reads and which it requires. Only the approval link declares a requirement. A read alone cannot tell us that a failure will block payment.
+Payout and Support Services both link to Returns Intake. Either path in the tree leads to the same group. On the Payout path, the refund job reads the case store and requires the approval record. Those two links explain what Payout needs from Returns Intake.
 
-## 01:54 · From checkout to the books
+## 01:59 · From checkout to the books
 
-Checkout records order one oh four and reserves the items so another shopper can’t buy the same stock. Dynamics 365 Supply Chain Management covers the warehouse and transportation. The packer uses the order lines. The carrier assigns a tracking number that ties delivery updates back to the order.
+Checkout sends order one oh four to the order system. The stock ledger records a reservation for each order line. The warehouse API sends a shipment request to the carrier API. The tracking service can use the tracking number to link later events back to the order.
 
-A scan from the carrier changes the delivery date. That one event can serve several purposes. Support wants to answer a question about the parcel. Marketing may send a message, depending on the shopper’s consent. Neither process controls the truck carrying her order.
+A carrier event gives the support system a revised delivery date. A separate order event tells marketing a sale took place. The marketing workflow reads the consent record before sending a promotion. Each system can use the order data its own job needs.
 
-At the end of this order, analytics can join the sale, delivery and refund. The original sale was eighty dollars. The shopper sends back two items. Finance needs to know the value of those items and whether the money has gone back to the customer. The warehouse can answer the first part.
+Finance asks how much of the sale the shop kept. The order records eighty dollars. The payment receipt later confirms a thirty-dollar refund. Joining those two records gives fifty dollars in merchandise sales, before shipping or tax. A return request on its own leaves the amount open.
 
-## 02:54 · Inside the returns warehouse
+## 02:56 · Inside the warehouse system
 
-Return one oh four points back to two lines on the original order. The warehouse scans both items at the receiving dock. That proves both arrived. The boxes still need inspection before the shop knows what to do with the goods or how much credit to approve.
+Return one oh four names two lines on the original order. The warehouse API writes receipt scans to the inspection log. Those records explain why the returns API reports that both lines have arrived. The inventory and refund services still need a decision for each line.
 
-The eighteen-dollar item can go back on the shelf. The twelve-dollar item arrived damaged and goes to scrap. Dynamics calls the decision for each item its disposition. In this case both decisions include a credit, although only one item can be sold again.
+The inspection log gives each line a disposition code. The code tells the inventory system how to update the stock ledger. The eighteen-dollar line says restock. The twelve-dollar line says scrap. Both lines also carry a credit decision, which the refund service can read.
 
-The stock count gains one sellable item. The warehouse records one item as scrap. Finance now has two approved lines worth thirty dollars. The inspection accounts for the goods. A receipt from the payment processor will show when the money went back to the shopper.
+The graph gives these links different types. The inventory update increases the sellable count by one. The two credit decisions support an approved refund of thirty dollars. To check whether that payment settled, the finance system follows a different link to the payment receipt.
 
-## 03:49 · One event, several readers
+## 03:54 · One event, several readers
 
-The carrier’s delayed scan, D seven, carries a tracking number. That number points back to order one oh four. The shop’s customer records system attaches the update to one support case. An agent can see what happened to the parcel as soon as that case updates.
+The carrier API sends delay event D seven to the tracking service. The support system matches its tracking number to order one oh four and attaches the update to its case record. The event carries the time of the scan. Its update can reach the case later.
 
-An order event called E eighty-one arrives twice after a retry. In Microsoft’s reference design, an Azure Function checks its ID in Cosmos DB and puts one message on Service Bus. Logic Apps starts one Customer Insights journey. The shopper opted out of promotions, so the journey sends her no marketing email.
+Order event E eighty-one arrives twice after a retry. An Azure Function checks the event identifier in Cosmos DB. Service Bus carries one message to a marketing workflow. The consent record says promotions are turned off, so the workflow sends no email. Two copies of the event describe one sale.
 
-At the first reporting cutoff, finance has an eighty-dollar sale and no settled refund. The support case is already visible. Later the payment receipt arrives for thirty dollars. Finance now reports fifty dollars in merchandise sales, before shipping or tax. Each answer reflects the evidence available at that time.
+At the first reporting cutoff, finance sees an eighty-dollar sale. The support case already shows a delay. A thirty-dollar payment receipt reaches finance later. Its next report shows fifty dollars. Keeping the earlier version makes it possible to explain what finance knew at the first cutoff.
 
-## 04:51 · The live conversation
+## 04:55 · The live conversation
 
-The parcel has arrived. The customer writes, “My order came late. I sent two items back. Where’s my refund?” The shop has opened return one oh four for her order. Its support agent runs in Microsoft Foundry Agent Service with instructions, a deployed model and an order lookup tool.
+The web client sends a message. “My order shows a delay. What’s the status of my refund?” The chat API calls the returns app. The app continues the conversation for return one oh four and calls a managed agent in Foundry. The agent can use a model and an order lookup tool to answer.
 
-The model asks the order lookup tool about order one oh four. The request has a function name and an argument, the order identifier. The shop’s application runs the function against the merchant’s order system. That system can tell whether the warehouse has received the return.
+The model asks the order lookup tool about order one oh four. Its request names the function and supplies the order identifier. The application runs that function against the order API. The response carries the return status the API holds at that moment.
 
-The order system replies, “Return received.” The agent can say, “We’ve received your items. Your refund is still pending.” The warehouse can inspect a return before the shop approves a credit. The record supports an answer about receipt. A payment confirmation would support an answer about money.
+The order API replies, “Return received.” That observation has a source. It comes from the return record the tool just read. The agent can report that status in the chat. To confirm that the refund went through, it would need a payment receipt.
 
-## 05:50 · The receipt calculation
+## 05:52 · The receipt calculation
 
-The customer attaches an itemized receipt to the same conversation. It lists the two items she sent back, one at eighteen dollars and one at twelve. The shop supplies the receipt to the agent’s analysis tool. The return number ties that file to her case.
+The support app receives a receipt file in the same conversation. It contains two return lines, one for eighteen dollars and one for twelve. The app passes the attachment to an analysis tool. Its return identifier links the file to the case.
 
 Foundry’s Code Interpreter runs Python in a sandbox, an isolated place to run code. It can read the attached file and add those two amounts. Thirty dollars is the receipt subtotal. A later step decides whether the case qualifies for a refund.
 
-The application saves the calculation in Azure Blob Storage and adds a link to the case. A reviewer can open the result after the sandbox session ends. The graph can distinguish where the work happened from where its evidence remains.
+The application saves the result in Azure Blob Storage and links it to the case. The result survives after the sandbox closes. To check where the thirty dollars came from, a reviewer can trace the calculation back to the two receipt lines. That trail is called lineage.
 
-## 06:42 · After the chat
+## 06:46 · After the chat
 
-The conversation ends. A queue holds a message with the case number so work can continue later. The live chat can finish even while another service is waiting to pick up the return.
+The chat session closes. A queue holds a message with the case number until the review job can pick it up. The queue lets the live support app finish its request while the return workflow continues in the background.
 
-A review agent picks up the case. It reads the saved calculation and drafts a summary of the customer’s explanation. A model helps with this step because the wording varies from case to case. Its summary can help a reviewer decide what to check.
+The review job reads the case record and the saved receipt calculation. It passes that context to a review agent. The agent uses a model to draft a summary. The job saves the output with the case. Payout still needs its own approval record.
 
-Once the case has approval, the payout worker sends the approved amount and refund ID to the payment processor. Later, a scheduled job compares the processor’s receipts with the case records. Both jobs follow fixed procedures. Neither needs the model that wrote the summary.
+After approval, the refund job sends the amount and refund identifier to the payment API. It records the payment receipt and posts to the merchant ledger. Later, a schedule starts the reconciliation job. That job reads the ledger and compares its entries with the payment receipts.
 
-## 07:31 · Health across both paths
+## 07:39 · Health across both paths
 
-Suppose the summary is late. A reviewer can still open the original receipt, so the summary is optional here. An amber warning marks the delay in case review. An approved payout can still go ahead.
+The health model starts with the dependencies between services. A second projection applies health rules to measurements for those parts. Suppose the summary runs late. The review rule marks the delay amber, or Degraded. Payout can still proceed because it requires the approval record and the summary is optional.
 
-Now the payout worker’s calls to the payment processor time out. Sending money requires a successful call, so the payout rule turns red. The live order lookup still succeeds and stays green. One customer can get an accurate status update while her refund is stuck.
+Now the refund job’s calls to the payment API time out. The rule marks those calls Unhealthy. Payout needs a successful call, so the red state carries up to Payout. This is a health roll-up. The live order lookup still succeeds. The support app can answer while the refund is stuck.
 
-Does the timeout prove that the processor itself is down? The worker recorded a failed call. It has no direct readings from inside the external processor. The health model can mark the payout path Unhealthy and leave the processor’s own health Unknown.
+The timeout tells us what happened at the refund job. It sent a request and got no reply in time. The shop has no measurement from inside the external payment service. That service’s own health stays Unknown. The graph shows where the evidence ends.
 
-## 08:21 · When Azure changes
+## 08:37 · When Azure changes
 
-The shop starts saving return attachments at a new storage address. Its configuration names the destination. That setting supplies evidence for a new dependency, even before the Azure inventory contains a matching account. Warehouse and carrier records have their own paths.
+The shop changes the storage address for return attachments. The new address appears in the app’s configuration before Azure inventory identifies an account there. The setting gives the model the first piece of evidence. It tells us where the app intends to write.
 
-Azure then reports a storage account at that address. A query can match the setting to the inventory record and connect the app to the account. A separate reading can show whether a file write succeeds. Finding a resource and measuring it answer different questions.
+Later, Azure reports a storage account with the same address. A projection matches the two records and links the app to that account. The same rule can pick up another move when its inputs change. A separate measurement tells the shop whether a write succeeds.
 
-The model needs words for what changed. Its ontology defines kinds of things and links, such as a storage account and a service that writes to it. People can maintain that vocabulary and refine the health rules. A receipt write might be required while a summary remains optional.
+An ontology defines the kinds of things a model can describe and the links between them. Here those include a storage account and a service that writes to it. A team can maintain that vocabulary and choose its health rules. The shop might require a receipt write for payout but treat a case summary as optional.
 
-## 09:18 · Checking an explanation
+## 09:33 · Checking an explanation
 
 The old view links the returns app to its original storage account. The new view points to the replacement. Each version is a revision. A patch lists the changes between them, so a past investigation can use the map that applied at the time.
 
-The payout warning has a trail of its own. The worker recorded the timeout. The dependency says that a payout needs a successful payment call. The rule brings those facts together. Tracing a conclusion back through the rule to its evidence is called lineage.
+The payout warning has a trail of its own. The refund job recorded the timeout. The dependency says that a payout needs a successful payment call. The rule brings those facts together. Tracing a conclusion back through the rule to its evidence is called lineage.
 
-Order one oh four is an illustration. In the companion shop there’s a recording the Sattle engine can replay. At 10:11, the database meter drops to zero. Revision sixteen shows which callers turn red. Two good minutes clear the alarm. The recorded inputs and rules let Sattle reproduce the result.
+The retail order illustrates the rules. The smaller shop has a recorded outage that Sattle can replay. At 10:11, its database meter drops to zero. Revision sixteen shows which callers turn red. Two good minutes clear the alarm. Replaying the same inputs in order under the same rules reproduces those changes.

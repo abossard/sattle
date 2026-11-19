@@ -6,4 +6,4 @@ The three passages explore different parts of each figure. Keep the current term
 
 The shop is the bundled pg-shop replay. The cache chapters compare controlled edits to copies of that recording. Keep the settings, readings and rules that each experiment holds fixed visible when comparing outcomes.
 
-The primary lesson now follows order O-104 through a larger, source-mapped retail architecture. Its full-graph chapter lifts every entity and relationship to the level of business activities. The published retail integration and local teaching choices are documented in [the retail source notes](../foundry/sources.md). The larger shop has its own local audio, captions and figures. The pg-shop film remains the reproducible engine example.
+The retail guide follows order O-104 from checkout to delivery and through a refund. Its projection groups the shop’s systems and records by business activity. Each link between activities can be traced to the records that support it. The companion pg-shop replay shows how the engine derives a health model from recorded inputs. [Retail architecture sources](../foundry/sources.md)

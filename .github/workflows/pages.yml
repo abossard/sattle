@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - 'brainstorm/**'
+      - 'docs/learn/**'
+      - 'scripts/package-learn.py'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 permissions:
@@ -29,6 +31,10 @@ jobs:
       - name: Check guide and source references
         working-directory: brainstorm
         run: node --test tests/atlas.test.cjs tests/content-projection.test.cjs
+      - name: Package the narrated walkthroughs
+        env:
+          SOURCE_BASE: ${{ github.server_url }}/${{ github.repository }}/blob/${{ github.sha }}/
+        run: python3 scripts/package-learn.py brainstorm/dist "$SOURCE_BASE"
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:

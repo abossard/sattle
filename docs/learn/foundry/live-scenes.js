@@ -27,18 +27,18 @@ const FoundryLiveScenes = (() => {
     const pale="#eaf4f3",muted="#c0d2d9",field="#102a38",route="#ffda80",refund="#72e4ca";
     box(g,0,0,W,H,{fill:field,rx:15});
     const regions={
-      customer:["Customer","#83d5f1",0,0], commerce:["Store & checkout","#9bdeb4",1,0],
-      fulfillment:["Logistics","#f8c174",2,0], agents:["Microsoft Foundry","#bfaefe",0,1],
+      customer:["Client apps","#83d5f1",0,0], commerce:["Store & checkout","#9bdeb4",1,0],
+      fulfillment:["Logistics APIs","#f8c174",2,0], agents:["Microsoft Foundry","#bfaefe",0,1],
       systems:["Order & payment","#f0a588",1,1], engagement:["CRM & marketing","#edaad6",2,1],
       tools:["Agent tools","#72dfc5",0,2], jobs:["Background jobs","#f1d779",1,2],
       data:["Stored records","#9dbce9",2,2]
     };
     const short={
-      "returns-agent":"Returns agent","returns-app":"Returns app",shopper:"Customer",chat:"Chat",
+      "returns-agent":"Returns agent","returns-app":"Returns app","web-client":"Web client",chat:"Chat API",
       project:"Foundry project","lookup-order":"Order lookup",sandbox:"Sandbox",
-      orders:"Order system",processor:"Payments","refund-worker":"Refund worker",reconciler:"Reconciliation",
-      "case-store":"Case store","receipt-blob":"Receipt files",checkout:"Commerce Scale Unit",
-      storefront:"Storefront",warehouse:"Warehouse",carrier:"Carrier",crm:"CRM",analytics:"Analytics"
+      orders:"Order system",processor:"Payment API","refund-job":"Refund job",reconciler:"Reconciliation",
+      "case-store":"Case store","receipt-blob":"Receipt files",checkout:"Checkout service",
+      storefront:"Storefront","warehouse-api":"Warehouse API","carrier-api":"Carrier API",crm:"CRM",analytics:"Analytics"
     };
     const showLabels= new Set(Object.keys(short));
     const margin=m?9:23,gap=m?9:22,cw=(W-2*margin-2*gap)/3,ch=m?97:82;
@@ -73,15 +73,16 @@ const FoundryLiveScenes = (() => {
         marksById.set(node.id,{circle,word,color});
       });
     }
-    const sale=["shopper","storefront","checkout","orders","warehouse","carrier","tracking"];
+    const sale=["web-client","storefront","checkout","orders","warehouse-api","carrier-api","tracking-service"];
     const delivery=new Set([...sale,"inventory"]);
-    const recovery=new Set(["shopper","chat","returns-app","returns-desk","case-store","inspection","approval","refund-worker","refund-id","processor","processor-receipt"]);
+    const recovery=new Set(["web-client","chat","returns-app","returns-api","case-store","inspection-log","approval","refund-job","refund-id","processor","processor-receipt"]);
+    const nodeLabels=new Map(FoundryCase.nodes.map(n=>[n.id,n.label]));
     const strokes=FoundryCase.edges.map(([aId,bId,kind])=>{
       const a=coords.get(aId),b=coords.get(bId);
       const bend=a.id===b.id?0:Math.sign(b.x-a.x||1)*(m?8:15);
       const d=`M${a.x} ${a.y} Q${(a.x+b.x)/2+bend} ${(a.y+b.y)/2-bend} ${b.x} ${b.y}`;
       const e=pen(links,d,{"data-foundry-edge":kind});
-      el(e,"title",{},aId+" → "+bId+" · "+kind);
+      el(e,"title",{},[nodeLabels.get(aId),kind,nodeLabels.get(bId)].join(" "));
       return {e,aId,bId};
     });
     const railY=m?437:367;
@@ -111,9 +112,9 @@ const FoundryLiveScenes = (() => {
       });
       caption.setAttribute("fill",color);
       caption.textContent=beat===1?"The whole shop":returns?"Return R-104  ·  refund view":"Order O-104  ·  delivery view";
-      detail.textContent=beat===1?"A line can mean places, ships, reads or pays.":returns?
-        "Case → inspection → approval → payment":"Storefront → checkout → order system → warehouse → carrier";
-      if(m&&beat!==1&&!returns)detail.textContent="Checkout → order system → warehouse → carrier";
+      detail.textContent=beat===1?"Each link names an action, such as reads, calls or writes.":returns?
+        "Inspection log → approval → refund job → payment API":"Storefront → checkout → order system → warehouse API → carrier API";
+      if(m&&beat!==1&&!returns)detail.textContent="Checkout → warehouse API → carrier API";
     };
   }
 
@@ -126,7 +127,7 @@ const FoundryLiveScenes = (() => {
     label(g,m?16:29,m?56:62,"Order O-104  /  Return R-104",{fill:muted,"font-size":m?15:17});
     const lanes=m?[55,184,312,425]:[137,405,687,966];
     const header=m?90:92;
-    const lanesData=[["Customer","Chat",blue],["Returns agent","Foundry",purple],["App handler","Merchant app",teal],["Order system","External",inkColor]];
+    const lanesData=[["Chat API","Web client",blue],["Returns agent","Foundry",purple],["App handler","Merchant app",teal],["Order system","External",inkColor]];
     lanes.forEach((x,i)=>{
       const [name,scope,color]=lanesData[i];
       mid(g,x,header,name,{fill:color,"font-size":m?15:21,"font-weight":710});
@@ -136,8 +137,8 @@ const FoundryLiveScenes = (() => {
     const first=m?157:148, step=m?56:42;
     const rows=[
       [0,1,"Where is my refund?",blue,0],[1,2,"lookup_order",purple,1],
-      [2,3,"Read O-104",teal,1],[3,2,"Return received",inkColor,2],
-      [2,1,"Tool result",teal,2],[1,0,"Your return arrived.",purple,2]
+      [2,3,"Read O-104",teal,1],[3,2,"Status: received",inkColor,2],
+      [2,1,"Tool result",teal,2],[1,0,"Status: received.",purple,2]
     ];
     const tracks=rows.map(([from,to,message,color,part],i)=>{
       const y=first+i*step, a=lanes[from],b=lanes[to],dir=Math.sign(b-a);
@@ -176,19 +177,17 @@ const FoundryLiveScenes = (() => {
     label(g,W-(m?15:25),m?29:36,"Return R-104",{fill:soft,"font-size":m?15:18,"text-anchor":"end"});
     const paperX=m?14:28, paperY=m?83:94, paperW=m?161:214, paperH=m?164:210;
     const receipt=group(g);
-    let outline=`M${paperX} ${paperY} h${paperW} v${paperH}`;
-    for(let k=0;k<8;k++)outline+=` l-${paperW/16} -5 l-${paperW/16} 5`;
-    pen(receipt,outline+" Z",{fill:"#fffefa",stroke:"#b89a74","stroke-width":1.6});
-    label(receipt,paperX+13,paperY+28,"Itemized receipt",{fill:inkColor,"font-size":m?15:20,"font-weight":700});
-    label(receipt,paperX+13,paperY+51,"Eligible items",{fill:soft,"font-size":m?13:16});
+    box(receipt,paperX,paperY,paperW,paperH,{rx:7,fill:"#fffefa",stroke:"#b89a74","stroke-width":1.6});
+    label(receipt,paperX+13,paperY+28,"Receipt file",{fill:inkColor,"font-size":m?15:20,"font-weight":700});
+    label(receipt,paperX+13,paperY+51,"Eligible lines",{fill:soft,"font-size":m?13:16});
     const moneyLine=(id,y,amount)=>{
       label(receipt,paperX+13,y,id,{fill:soft,"font-size":m?13:16});
       label(receipt,paperX+paperW-13,y,amount,{"text-anchor":"end",fill:inkColor,"font-size":m?16:20,"font-weight":690});
     };
     line(receipt,paperX+12,paperY+64,paperX+paperW-12,paperY+64,{stroke:"#b39f88","stroke-width":1.5});
-    moneyLine("Item 1",paperY+(m?88:101),"$18");
-    moneyLine("Item 2",paperY+(m?116:139),"$12");
-    label(receipt,paperX+13,paperY+paperH-15,"Customer attachment",{fill:gold,"font-size":m?12:15});
+    moneyLine("Line 1",paperY+(m?88:101),"$18");
+    moneyLine("Line 2",paperY+(m?116:139),"$12");
+    label(receipt,paperX+13,paperY+paperH-15,"Chat attachment",{fill:gold,"font-size":m?12:15});
 
     const sx=m?206:306,sy=m?57:67,sw=m?260:363,sh=m?214:242;
     const session=group(g);
@@ -235,114 +234,82 @@ const FoundryLiveScenes = (() => {
       output(beat===2?stage(p,.06,.38):0);
       save(beat===2?stage(p,.33,.63):0);
       reference(beat===2?stage(p,.60,.85):0);
-      note.textContent=beat===0?"The app supplies the receipt.":beat===1?"Working files live inside this session.":"A later review can open the saved calculation.";
+      note.textContent=beat===0?"The app sends the receipt file.":beat===1?"Working files live inside this session.":"A later review can open the saved calculation.";
     };
   }
   function logistics(ctx) {
-    const {g,el,box,dot,line,stage,W,H,mobile:m,beat}=ctx;
-    const {group,pen,label,mid,arrow}=ink(ctx);
-    const inkColor="#193e38",muted="#465e54",floor="#f6f4df",page="#edf2e8";
-    const green="#175f43",red="#963e35",gold="#88601e",blue="#225d7d";
+    const {g,box,line,stage,W,H,mobile:m,beat}=ctx;
+    const {group,label,arrow}=ink(ctx);
+    const page="#edf2e8",inkColor="#193e38",muted="#465e54";
+    const green="#175f43",red="#963e35",blue="#225d7d";
     box(g,0,0,W,H,{fill:page,rx:15});
-    label(g,m?15:25,m?31:37,"Warehouse receiving",{fill:inkColor,"font-size":m?22:28,"font-weight":740});
-    label(g,m?15:W-24,m?56:35,"Order O-104  →  Return R-104",{
-      fill:muted,"font-size":m?15:19,"text-anchor":m?"start":"end"});
-    const fx=m?10:23,fy=m?71:68,fw=m?460:704,fh=m?243:268;
-    const plan=group(g);
-    box(plan,fx,fy,fw,fh,{fill:floor,rx:5});
-    // Warehouse walls have an opening for returns. Three small stripes are a
-    // dock marking. The bench, shelf and bin use their floor positions throughout.
-    pen(plan,`M${fx} ${fy+51} V${fy+1} H${fx+fw-1} V${fy+fh-1} H${fx} V${fy+fh-43}`,
-      {stroke:"#98a797","stroke-width":m?2:3});
-    for(let i=0;i<4;i++) {
-      const y=fy+fh*.37+i*(m?15:18);
-      pen(plan,`M${fx+1} ${y} l${m?12:16} -6`,{stroke:"#c5a771","stroke-width":m?3:4});
-    }
-    const dockX=fx+fw*.15,benchX=fx+fw*.47,stockX=fx+fw*.81;
-    const centerY=fy+fh*.49, upperY=fy+fh*.22, lowerY=fy+fh*.80;
-    // Shutter and desk are seen from the side; its scanner registers each item.
-    const dockW=m?71:98, dockH=m?53:66;
-    box(plan,dockX-dockW/2,centerY-dockH/2,dockW,dockH,{rx:3,fill:"#e0e5d8",stroke:muted,"stroke-width":2});
-    for(let i=1;i<5;i++)line(plan,dockX-dockW/2+5,centerY-dockH/2+i*dockH/5,dockX+dockW/2-5,centerY-dockH/2+i*dockH/5,
-      {stroke:"#9cae9d","stroke-width":1.5});
-    mid(plan,dockX,centerY-dockH/2-11,"Returns desk",{fill:inkColor,"font-size":m?14:18,"font-weight":690});
-    const scan=mid(plan,dockX,centerY+dockH/2+23,"",{fill:blue,"font-size":m?13:17,"font-weight":700});
-    const benchW=m?60:90,benchH=m?30:38;
-    box(plan,benchX-benchW/2,centerY-benchH/2,benchW,benchH,{fill:"#cfbd8e",rx:3,stroke:"#897a4f","stroke-width":2});
-    for(const side of [-1,1]) {
-      line(plan,benchX+side*(benchW/2-4),centerY+benchH/2,benchX+side*(benchW/2-4),centerY+benchH/2+12,{stroke:"#897a4f","stroke-width":3});
-    }
-    mid(plan,benchX,centerY-31,"Inspection",{fill:inkColor,"font-size":m?15:19,"font-weight":690});
+    label(g,m?14:25,m?30:37,"Return event log",{fill:inkColor,"font-size":m?24:29,"font-weight":740});
+    label(g,W-(m?14:25),m?29:35,"O-104  /  R-104",{"text-anchor":"end",fill:muted,"font-size":m?16:20});
 
-    const shelfW=m?73:93,shelfH=m?34:42;
-    for(const side of [-1,1])line(plan,stockX+side*shelfW/2,upperY-shelfH/2,stockX+side*shelfW/2,upperY+shelfH/2+4,
-      {stroke:green,"stroke-width":3.1});
-    for(const edge of [-1,0,1])line(plan,stockX-shelfW/2,upperY+edge*shelfH/2,stockX+shelfW/2,upperY+edge*shelfH/2,
-      {stroke:green,"stroke-width":2.5});
-    mid(plan,stockX,upperY-shelfH/2-9,"Restock shelf",{fill:green,"font-size":m?14:18,"font-weight":700});
-    mid(plan,stockX,upperY+shelfH/2+23,"Credit · $18",{fill:green,"font-size":m?14:17});
-    const binW=m?59:74,binH=m?27:33;
-    pen(plan,`M${stockX-binW/2} ${lowerY-binH/2} h${binW} l-6 ${binH} h-${binW-12} Z`,{
-      fill:"#e4c7a7",stroke:red,"stroke-width":2.4});
-    pen(plan,`M${stockX-binW/2-3} ${lowerY-binH/2-3} H${stockX+binW/2+3}`,{stroke:red,"stroke-width":3});
-    for(let i=-1;i<=1;i++)pen(plan,`M${stockX+i*11-3} ${lowerY+binH/2-4} l7 -11`,{stroke:"#b16f57","stroke-width":1.6});
-    mid(plan,stockX,lowerY-binH/2-11,"Scrap bin",{fill:red,"font-size":m?14:18,"font-weight":700});
-    mid(plan,stockX,lowerY+binH/2+22,"Scrap · $12",{fill:red,"font-size":m?14:17});
-
-    const approach=arrow(plan,`M${dockX+dockW/2+4} ${centerY} H${benchX-benchW/2-5}`,blue,2.4);
-    const routeX=benchX+fw*.105;
-    function forkPath(target) {
-      const side=target<centerY?-1:1;
-      return `M${benchX+benchW/2+3} ${centerY} Q${routeX} ${centerY} ${routeX+7} ${centerY+side*14} L${routeX+fw*.085} ${target} H${stockX-shelfW/2-6}`;
-    }
-    const forks=[arrow(plan,forkPath(upperY),green,2.5),arrow(plan,forkPath(lowerY),red,2.5)];
-    const cartons=[["$18","#e9bf62","#644d28",upperY],["$12","#8db8cf","#334f62",lowerY]].map(([amount,fill,stroke,target],i)=>{
-      const item=group(plan);
-      pen(item,"M-16 -7 l7 -5 h24 l-6 5 Z",{fill:"#fcf5da",stroke,"stroke-width":1.3});
-      pen(item,"M9 -7 l6 -5 v14 l-6 6 Z",{fill:stroke,stroke,"stroke-width":1});
-      box(item,-16,-7,25,15,{fill,stroke,"stroke-width":1.2});
-      mid(item,-3,4,amount,{fill:"#20343d","font-size":10.4,"font-weight":750});
-      const offset=i===0?-9:10;
-      const motion=pen(plan,`M${dockX+(i===0?-8:10)} ${centerY+offset} H${benchX-fw*.06} Q${benchX} ${centerY+offset} ${benchX+fw*.03} ${centerY} C${routeX+10} ${centerY} ${routeX+fw*.04} ${target} ${stockX} ${target}`,{});
-      const length=motion.getTotalLength();
-      return v=>{
-        const point=motion.getPointAtLength(v*length);
-        item.setAttribute("transform",`translate(${point.x} ${point.y}) scale(${m?.88:1})`);
-      };
+    const x=m?12:24,y=m?51:73,w=m?W-24:610,h=m?203:246;
+    box(g,x,y,w,h,{rx:9,fill:"#fffdf2",stroke:"#97ad9c","stroke-width":1.5});
+    label(g,x+15,y+26,"Warehouse API events",{fill:inkColor,"font-size":m?17:22,"font-weight":710});
+    const columns=m?[15,67,158,247]:[18,88,202,340];
+    const headerY=y+(m?52:61);
+    ["Seq.","Record","Order line","Recorded value"].forEach((title,i)=>{
+      label(g,x+columns[i],headerY,title,{fill:muted,"font-size":m?13:16,"font-weight":650});
     });
-    const rail=m?325:0;
-    function ruledSheet(x,y,w,h,title,color,rows) {
-      const sheet=group(g);
-      box(sheet,x+3,y+4,w,h,{rx:2,fill:"#d4ddcc"});
-      box(sheet,x,y,w,h,{rx:2,fill:"#fffcf1",stroke:"#adbaa8","stroke-width":1.4});
-      const margin=m?14:22;
-      label(sheet,x+margin,y+(m?26:29),title,{fill:color,"font-size":m?17:20,"font-weight":720});
-      const outputs=rows.map((name,i)=>{
-        const rowY=y+(m?53:58)+i*(m?30:29);
-        line(sheet,x+9,rowY+8,x+w-9,rowY+8,{stroke:"#d4dbcf","stroke-width":1});
-        label(sheet,x+margin,rowY,name,{fill:muted,"font-size":m?13:16});
-        return label(sheet,x+w-margin,rowY,"",{"text-anchor":"end",fill:inkColor,"font-size":m?14:18,"font-weight":690});
+    const entries=[
+      ["01","Receipt","Line 1","Received"],
+      ["02","Receipt","Line 2","Received"],
+      ["03","Inspection","Line 1","Restock · $18 credit"],
+      ["04","Inspection","Line 2","Scrap · $12 credit"]
+    ];
+    const rowHeight=m?31:38;
+    const rows=entries.map((cells,i)=>{
+      const row=group(g), ry=headerY+12+i*rowHeight;
+      box(row,x+7,ry,w-14,rowHeight-3,{rx:4,fill:[ "#e7f1f5","#e7f1f5","#dbefdf","#f4dfd4" ][i]});
+      cells.forEach((cell,j)=>label(row,x+columns[j],ry+rowHeight*.66,cell,{
+        fill:j===3?[blue,blue,green,red][i]:inkColor,"font-size":m?13.5:17,"font-weight":j===3?690:560
+      }));
+      return row;
+    });
+
+    const panelX=m?12:752,panelY=m?294:62,panelW=m?(W-37)/2:W-panelX-24;
+    const secondX=m?W-panelW-12:panelX, secondY=m?panelY:218;
+    const connectionY=panelY-17;
+    const inventoryFlow=arrow(g,m?
+      `M${W/2} ${y+h+2} V${connectionY} H${panelX+panelW/2} V${panelY-3}`:
+      `M${x+w+3} ${y+h*.58} H${panelX-65} V${panelY+56} H${panelX-4}`,green,3);
+    const approvalFlow=arrow(g,m?
+      `M${W/2} ${y+h+2} V${connectionY} H${secondX+panelW/2} V${secondY-3}`:
+      `M${x+w+3} ${y+h*.77} H${panelX-88} V${secondY+54} H${panelX-4}`,blue,3);
+    function resultPanel(px,py,title,color,names) {
+      const ph=m?137:125;
+      box(g,px,py,panelW,ph,{rx:8,fill:"#f8fbf5",stroke:color,"stroke-width":1.7});
+      label(g,px+13,py+27,title,{fill:color,"font-size":m?17:21,"font-weight":730});
+      return names.map((name,i)=>{
+        const rowY=py+(m?54:51)+i*(m?29:26);
+        line(g,px+12,rowY-15,px+panelW-12,rowY-15,{stroke:"#d6dfd1","stroke-width":1});
+        label(g,px+13,rowY+3,name,{fill:muted,"font-size":m?13.5:16});
+        return label(g,px+panelW-13,rowY+3,"",{"text-anchor":"end",fill:inkColor,"font-size":m?16:19,"font-weight":690});
       });
-      return outputs;
     }
-    const sheetW=m?217:344;
-    const stock=ruledSheet(m?12:761,m?rail:61,sheetW,m?134:131,"Stock ledger",green,["Received","Sellable stock","Scrapped"]);
-    const money=ruledSheet(m?250:761,m?rail:216,sheetW,m?134:118,"Refund ledger",blue,["Eligible credit","Settlement"]);
-    const note=label(g,m?12:25,H-(m?15:22),"",{fill:muted,"font-size":m?14:18});
+    const stock=resultPanel(panelX,panelY,"Stock ledger",green,["Received lines","Available","Scrap"]);
+    const credit=resultPanel(secondX,secondY,"Refund ledger",blue,["Approved","Settled"]);
+    const note=label(g,m?13:25,H-(m?19:17),"",{fill:muted,"font-size":m?15:18});
     return p=>{
-      const scanned=beat>0?2:p<.30?0:p<.58?1:2;
-      const inspected=beat===0?0:beat===2?2:p<.50?0:p<.85?1:2;
-      scan.textContent=scanned+" of 2 scanned";
-      stock[0].textContent=String(scanned);
-      stock[1].textContent=inspected>=1?"+1":"—";
-      stock[2].textContent=inspected===2?"1":"—";
-      money[0].textContent=inspected===2?"$30":inspected===1?"$18":"—";
-      money[1].textContent=beat===2&&p>.30?"Await receipt":"—";
-      approach(beat===0?stage(p,.55,.86):1);
-      cartons.forEach((move,i)=>move(beat===0?0:beat===2?1:stage(p,.05+i*.27,.51+i*.34)));
-      forks.forEach((advance,i)=>advance(beat===0?0:beat===2?1:stage(p,.22+i*.32,.47+i*.32)));
-      note.textContent=beat===0?"Two returned items match the original order lines.":beat===1?
-        "The inspector chooses a disposition for each item.":"Settlement still needs a payment receipt.";
+      const received=beat===0?(p<.2?0:p<.52?1:2):2;
+      const inspected=beat===0?0:beat===2?2:p<.24?0:p<.62?1:2;
+      const count=received+inspected;
+      rows.forEach((row,i)=>row.setAttribute("opacity",i<count?1:0));
+      stock[0].textContent=String(received);
+      stock[1].textContent=inspected?"+1":"—";
+      stock[2].textContent=inspected===2?"+1":"—";
+      credit[0].textContent=["—","$18","$30"][inspected];
+      credit[1].textContent=beat===2?"Pending":"—";
+      inventoryFlow(beat===0?stage(p,.27,.72):1);
+      approvalFlow(beat===0?0:beat===1?stage(p,.27,.72):1);
+      note.textContent=[
+        "Both receipt events refer to order O-104.",
+        "Each inspection sets a stock status and a credit amount.",
+        "The refund stays pending until a payment receipt arrives."
+      ][beat];
     };
   }
 

@@ -19,9 +19,7 @@ function dependencyProjectionScene(ctx) {
   const shared=incoming.find(e=>e.from==="support") || incoming[0];
   const internal=groups.reduce((n,c)=>n+c.internal.length,0);
   const external=links.reduce((n,e)=>n+e.evidence.length,0);
-  const captions={customer:"Customer interaction",agents:"Microsoft Foundry",tools:"Tools & sandbox",systems:"External systems",jobs:"Background work",data:"Stored records",commerce:"Store & orders",fulfillment:"Logistics & returns",engagement:"CRM & analytics"};
-  const shorter={checkout:"Shop checkout",reconciliation:"Reconciliation",payment:"Payment processing",agents:"Managed agents"};
-  const capName=id=>m&&(id in shorter)?shorter[id]:groupById.get(id).label;
+  const captions={customer:"Client & chat",agents:"Microsoft Foundry",tools:"Tools & sandbox",systems:"External systems",jobs:"Background jobs",data:"Stored records",commerce:"Order services",fulfillment:"Logistics APIs",engagement:"CRM & analytics"};
   const draw=(p,x,y,s,size=18,color=ink,weight=550,anchor="start")=>txt(p,x,y,s,{fill:color,"font-size":size,"font-weight":weight,"text-anchor":anchor});
   const group=(p=g,extra={})=>el(p,"g",extra);
   const path=(p,d,attrs={})=>el(p,"path",{d,fill:"none","stroke-linecap":"round","stroke-linejoin":"round",...attrs});
@@ -128,7 +126,7 @@ function dependencyProjectionScene(ctx) {
     circle(node,c.x,c.y,radius,col,paper,1.3);
     el(node,"title",{},cap.label+" · "+cap.nodes.length+" entities · "+cap.internal.length+" links inside");
     if(cap.id===focusFrom||cap.id===focusTo||beat===2&&shared&&cap.id===shared.from)circle(node,c.x,c.y,radius+3,"none",col,1.3);
-    draw(node,c.x+(c.side?12:-12),c.y+(m?4:6),capName(cap.id),m?13.5:17,col,cap.id===focusFrom||cap.id===focusTo?740:580,c.side?"start":"end");
+    draw(node,c.x+(c.side?12:-12),c.y+(m?4:6),cap.label,m?13.5:17,col,cap.id===focusFrom||cap.id===focusTo?740:580,c.side?"start":"end");
   }
   const panel=group(), lx=m?15:graphW+30, top=m?347:101, panelW=W-lx-margin;
   let sourceNote,sharedNote;
@@ -146,13 +144,12 @@ function dependencyProjectionScene(ctx) {
     sourceNote=draw(panel,lx,H-12,"",m?15:15.5,rust,650);
   }else if(beat===1) {
     draw(panel,lx,top,"What a capability contains",m?19:22,ink,720);
-    const lanes=[{id:"payout",names:["Refund worker","Refund ID"]},{id:"intake",names:["Case store","Approval record"]}];
-    lanes.forEach(({id,names},i)=>{
+    const lanes=[{id:"payout",members:["refund-job","refund-id"]},{id:"intake",members:["case-store","approval"]}];
+    lanes.forEach(({id,members},i)=>{
       const x=m?lx+i*(panelW/2):lx,y=top+(m?23:42)+i*(m?0:68),col=selectedColor(id);
       stroke(panel,x,y,x+(m?panelW/2-12:panelW),y,"#9aaea4");
       draw(panel,x,y+(m?19:23),groupById.get(id).label,m?16:20,col,710);
-      const members=names.filter(t=>groupById.get(id).nodes.some(n=>n.label===t));
-      draw(panel,x,y+(m?40:47),members.join(" · "),m?13:16,ink,560);
+      draw(panel,x,y+(m?40:47),members.map(key=>nodeById.get(key).label).join(" · "),m?13:16,ink,560);
     });
     const y=m?top+98:top+200;
     draw(panel,lx,y,internal+" links stay inside their capability.",m?15:18,quiet,600);
@@ -205,7 +202,7 @@ function dependencyProjectionScene(ctx) {
     if(beat===0) {
       const example=p<.43?0:p<.80?1:2;
       if(example!==previousExample) {
-        const selected=[["warehouse","carrier"],["refund-worker","case-store"]][example];
+        const selected=[["warehouse-api","carrier-api"],["refund-job","case-store"]][example];
         rawEdges.forEach(({p:e,aId,bId})=>{
           const focus=selected&&aId===selected[0]&&bId===selected[1];
           e.setAttribute("stroke",focus?rust:"#62858b");
@@ -217,7 +214,7 @@ function dependencyProjectionScene(ctx) {
           mark.setAttribute("r",focus?(m?8:9):m?4:5);
           mark.setAttribute("stroke",focus?ink:paper);
         });
-        sourceNote.textContent=["Warehouse hands the parcel to the carrier.","The refund worker reads the case store.","Each dot is an entity. Each curve is a typed link."][example];
+        sourceNote.textContent=["Warehouse API → Carrier API: shipment request","The refund job reads the case store.","Dots are system entities. Curves are typed links."][example];
         previousExample=example;
       }
     }else if(beat===2) {

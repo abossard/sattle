@@ -42,7 +42,7 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     const context=document.createElement("span"), source=document.createElement("a");
     context.textContent=caseLabel+" · "+chapter.context;
     source.textContent=chapter.principle+" · White paper §"+chapter.section;
-    source.href="../../paper/"+chapter.reading;
+    source.href=sourceHref("paper/"+chapter.reading);
     const observation=document.createElement("p"), meaning=document.createElement("p");
     observation.textContent=chapter.example;
     meaning.textContent=chapter.meaning;

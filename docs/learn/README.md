@@ -2,23 +2,23 @@
 
 [Explore the retail walkthrough](index.html) · [Watch the film](foundry/shop.mp4) · [Read the transcript](foundry/transcript.md)
 
-A shopper spends $80. Her package arrives late. She returns two items and asks where her refund is. The warehouse has received both items, the support agent can see her case, and finance is still waiting for a payment receipt. Each system can give a different, accurate answer about the same order.
+The checkout service records an $80 sale as order O-104. A carrier scan flags a delay, and a support message asks about a refund. The returns API reports two lines received on R-104. The payment receipt is still missing, so the case can show “received” while the refund remains pending.
 
-The store follows Microsoft’s **Dynamics 365 Commerce** architecture. Its marketing integration follows Microsoft’s published path through Azure Functions, Service Bus, Logic Apps and Customer Insights – Journeys. The order, the incidents and the Foundry-assisted support workflow are local teaching examples. [Architecture and source mapping](foundry/sources.md)
+The software follows a published retail architecture. In this example, the checkout, warehouse and support systems share order ID O-104. The refund ID connects the payment receipt to the return. The shop calls external carrier and payment APIs. It can observe its own requests and the responses it gets back. [Architecture and source mapping](foundry/sources.md)
 
 [![Chapter illustrations from the retail film](foundry/chapters.jpg)](index.html)
 
-## From the master graph to the shop people know
+## From the master graph to the shop’s software dependencies
 
-The first illustrated master graph contains **46 entities and 68 typed relationships**. A projection transforms that graph into another graph. For this view it groups technical components into activities such as fulfilling an order, supporting a customer or paying a refund. Here 46 entities become 14 business capabilities. Of the 68 original links, 32 connect records inside one capability. The other 36 become 35 typed links between capabilities. The drawing bundles them into 30 directed pairs. The explorer keeps the original links behind each result. The same capability can support several activities. Opening a branch in the dependency tree shows the connections and records behind it. [Explore the projection](index.html#dependencies) · [White paper, levels of abstraction](../../paper/ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes)
+The retail master graph contains **46 software entities and 68 typed relationships**. The web client calls the storefront. The warehouse API sends a shipment request to the carrier API. A projection groups the services, tools and digital records into 14 capabilities, including Checkout, Logistics APIs and Payout. The links between those groups form a second graph. Of the 68 original links, 32 connect records inside one capability. The other 36 become 35 typed links between capabilities. The drawing bundles them into 30 directed pairs. The explorer keeps the original links behind each result. The same capability can support several activities. Opening a branch in the dependency tree shows the connections and records behind it. [Explore the projection](index.html#dependencies) · [White paper, levels of abstraction](../../paper/ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes)
 
-The ontology defines what a link means. For instance, the worker **requests a payment** and the data lake **receives a payment record**. Those links have different consequences during an outage. People can maintain this vocabulary and refine the rules that determine when a failed call affects the shop. [Health and ontology](../../paper/ch02-ontologies-as-type-graphs.md#24-worked-example-health-is-an-ontology)
+The ontology defines what a link means. For instance, the refund job **calls the payment API**, and the ledger service **exports settled refunds to the data lake**. Those links have different consequences during an outage. People can maintain this vocabulary and refine the rules that determine when a failed call affects the shop. [Health and ontology](../../paper/ch02-ontologies-as-type-graphs.md#24-worked-example-health-is-an-ontology)
 
 [![The business graph and the records behind Payout → Returns intake](foundry/projection.jpg)](index.html#dependencies)
 
 ## A few things to try
 
-- In [the warehouse](index.html#logistics), change the disposition of the damaged item. Sellable stock changes while the amount eligible for credit stays at $30.
+- In [the return records](index.html#logistics), change the inspection code on the $12 line. The stock ledger counts a different number of sellable units. The two lines still qualify for $30 in credit.
 - In [CRM, marketing and analytics](index.html#engagement), deliver the same order event twice. Marketing gets one event and honors the opt-out. Then record the payment receipt and watch merchandise sales after settled refunds change from $80 to $50.
 - In [the health model](index.html#failure), change which signals the shop observes. A failing payout can coexist with a healthy order lookup and an unknown state inside the external processor.
 
