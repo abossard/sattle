@@ -164,19 +164,6 @@ def composition(story, retail):
     else:
         drawings = ["master-data.js", "model-scenes.js", "change-scenes.js", "review-scenes.js", "figure.js", "shop-map.js"]
     scripts = "".join(f'<script src="{src}"></script>' for src in [shared+"vendor/gsap.min.js", "terms.js", *drawings])
-    theme = ""
-    if retail:
-        # Use each drawing's paper and ink in the surrounding chapter header too.
-        theme = """for (const scene of document.querySelectorAll('.shot')) {
-  const chapter = ShopMap.chapters[scene.id];
-  scene.style.setProperty('--page', chapter.tint);
-  if (chapter.captionInk) {
-    scene.style.setProperty('--type', '#f8faf2');
-    scene.style.setProperty('--secondary', chapter.captionInk);
-    scene.style.setProperty('--hairline', '#74909d');
-    scene.style.setProperty('--spot', '#a7e6d9');
-  }
-}"""
     shots=[]
     for i, scene in enumerate(story):
         beats=scene["beats"]
@@ -193,10 +180,10 @@ def composition(story, retail):
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>''')
     total=story[-1]["beats"][-1]["end"]
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>
-{scripts}<link rel="stylesheet" href="{shared}style.css"></head>
+<meta name="color-scheme" content="dark"><link rel="stylesheet" href="{shared}theme.css"><link rel="stylesheet" href="{shared}style.css">{scripts}</head>
 <body class="{'retail' if retail else 'replay'}"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="{total:.5f}">
 {chr(10).join(shots)}
-<audio id="voice" class="clip" data-start="0" data-duration="{total:.5f}" data-track-index="3" src="{voice}"></audio></main><script>{theme}\n{(HERE/"motion.js").read_text()}</script></body></html>'''
+<audio id="voice" class="clip" data-start="0" data-duration="{total:.5f}" data-track-index="3" src="{voice}"></audio></main><script>{(HERE/"motion.js").read_text()}</script></body></html>'''
 
 
 def main():

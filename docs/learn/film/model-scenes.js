@@ -39,12 +39,12 @@ const ModelScenes = (() => {
     const {g,el,box,dot,line,mobile:m,W,H,stage,beat}=ctx;
     const {group,type,center,thread}=pens(ctx);
     const {master,structure,health,nodes,edges}=ShopMaster;
-    const pale="#edf6f1", light="#bcd3dc", mint="#7befce", blue="#8aceed", gold="#ffcb80", lilac="#d5b1ff";
-    box(g,0,0,W,H,{fill:"#102a37",rx:15});
+    const pale="var(--ink)", light="var(--muted)", mint="var(--master)", blue="var(--blue)", gold="var(--input)", lilac="var(--rule)";
+    box(g,0,0,W,H,{fill:"var(--page)",rx:0});
     const inset=m?17:25, chartW=m?W-inset*2:718, chartY=m?75:83, chartH=m?183:224;
     const scopeWidth=m?W:769;
-    if(m) line(g,inset,322,W-inset,322,{stroke:"#42616d","stroke-width":1.5});
-    else line(g,scopeWidth,23,scopeWidth,H-22,{stroke:"#42616d","stroke-width":1.5});
+    if(m) line(g,inset,322,W-inset,322,{stroke:"var(--line)","stroke-width":1.5});
+    else line(g,scopeWidth,23,scopeWidth,H-22,{stroke:"var(--line)","stroke-width":1.5});
     type(g,inset,m?30:38,"Master graph",{fill:pale,"font-size":m?23:29,"font-weight":730});
     type(g,scopeWidth-inset,m?29:37,"Final snapshot  ·  r"+master.revision,{
       fill:light,"font-size":m?14:17,"text-anchor":"end"});
@@ -65,7 +65,7 @@ const ModelScenes = (() => {
       const [x,y,w,h]=regions[region];
       return {x:(x+w*fx)*chartW,y:(y+h*fy)*chartH,kind,name,region};
     });
-    const palette={runtime:blue,activity:gold,meters:lilac,other:"#95b2be"};
+    const palette={runtime:blue,activity:gold,meters:lilac,other:"var(--wire)"};
     const strokes=group(atlas);
     for(const [a,b,kind] of edges) {
       const s=points[a],t=points[b];
@@ -88,7 +88,7 @@ const ModelScenes = (() => {
       const hollow=kind==="Meter";
       const color=active?mint:palette[region];
       const r=(m?3.5:4.6)*(hub?1.42:kind==="Pod"?1.22:1);
-      dot(node,x,y,r,{fill:hollow?"#102a37":color,stroke:color,"stroke-width":hollow?2.2:.7});
+      dot(node,x,y,r,{fill:hollow?"var(--page)":color,stroke:color,"stroke-width":hollow?2.2:.7});
       if(active)highlights.push([name,dot(node,x,y,r+(m?3.1:4.1),{
         fill:"none",stroke:mint,"stroke-width":1.9})]);
     }
@@ -117,7 +117,7 @@ const ModelScenes = (() => {
           const [nx,ny]=positions[i+1];
           links.push(thread(g,m?`M${x+13} ${y} H${nx-17}`:`M${x} ${y+13} V${ny-16}`,mint,{width:3}));
         }
-        routeDots.push(dot(g,x,y,10,{fill:"#163a3c",stroke:mint,"stroke-width":2.5}));
+        routeDots.push(dot(g,x,y,10,{fill:"var(--surface)",stroke:mint,"stroke-width":2.5}));
         if(m) center(g,x,y+34,names[i],{fill:pale,"font-size":17,"font-weight":700});
         else {
           type(g,x+29,y-1,names[i],{fill:pale,"font-size":24,"font-weight":690});
@@ -129,12 +129,12 @@ const ModelScenes = (() => {
       const boxW=m?(W-2*inset-26)/2:277;
       const cardTop=m?367:70, cardHeight=m?88:81;
       const views=[
-        [structure,"Workload structure","#8aceed","Which parts connect?"],
-        [health,"Health model","#7befce","Which part is failing?"]
+        [structure,"Workload structure",blue,"Which parts connect?"],
+        [health,"Health model",mint,"Which part is failing?"]
       ];
       views.forEach(([graph,name,color,question],i)=>{
         const x=right+(m?i*(boxW+26):0), y=cardTop+(m?0:i*173);
-        box(g,x,y,boxW,cardHeight,{fill:i?"#173c3e":"#193b4b",rx:12,stroke:color,"stroke-width":1.3});
+        box(g,x,y,boxW,cardHeight,{fill:"var(--surface)",rx:4,stroke:color,"stroke-width":1.3});
         type(g,x+13,y+25,name,{fill:color,"font-size":m?17:20,"font-weight":740});
         type(g,x+13,y+48,question,{fill:pale,"font-size":m?14.5:17});
         type(g,x+13,y+69,graph.entities+" entities · "+graph.relationships+" links",{fill:light,"font-size":m?13.5:15});
@@ -158,7 +158,7 @@ const ModelScenes = (() => {
         "Each dot represents one entity. Each line represents one relationship.";
       if(m && zoom<=1.1)scaleLine.textContent="One dot per entity. One line per relationship.";
       links.forEach((fn,i)=>fn(beat===0?stage(p,.08+i*.20,.30+i*.20):beat===2?stage(p,.38,.71):1));
-      routeDots.forEach((node,i)=>node.setAttribute("fill",beat>0||p>.05+i*.19?mint:"#163a3c"));
+      routeDots.forEach((node,i)=>node.setAttribute("fill",beat>0||p>.05+i*.19?mint:"var(--surface)"));
       highlights.forEach(([name,ring])=>ring.setAttribute("opacity",beat===0?
         stage(p,.03+.17*highlightOrder.indexOf(name),.20+.17*highlightOrder.indexOf(name)):beat===1?1:.52));
     };
@@ -167,8 +167,8 @@ const ModelScenes = (() => {
   function rules(ctx) {
     const {g,box,dot,line,W,H,mobile:m,stage,beat}=ctx;
     const {group,path,type,center,thread}=pens(ctx);
-    const ink="#183649",muted="#465d67",blue="#235a82",good="#11654c",bad="#a02f47",gold="#875211";
-    box(g,0,0,W,H,{fill:"#fff5de",rx:15});
+    const ink="var(--ink)",muted="var(--muted)",blue="var(--blue)",good="var(--healthy)",bad="var(--unhealthy)",gold="var(--input)";
+    box(g,0,0,W,H,{fill:"var(--page)",rx:0});
     const sx=m?24:605, sy=m?284:63, sw=m?431:491, sh=m?148:222;
     const ay=m?145:198, cx1=m?104:130, cx2=m?345:416;
     const radius=m?37:47, ring=group(g);
@@ -180,7 +180,7 @@ const ModelScenes = (() => {
     center(ring,(cx1+cx2)/2,m?254:324,"2 good minutes",{fill:good,"font-size":m?19:23,"font-weight":700});
     const circles=[[cx1,good,"✓","Healthy"],[cx2,bad,"×","Unhealthy"]].map(([cx,color,sign,name])=>{
       const node=group(ring);
-      const disc=dot(node,cx,ay,radius,{fill:"#fffaf0",stroke:color,"stroke-width":3});
+      const disc=dot(node,cx,ay,radius,{fill:"var(--surface)",stroke:color,"stroke-width":3});
       center(node,cx,ay-4,sign,{fill:color,"font-size":m?29:39,"font-weight":730});
       center(node,cx,ay+(m?23:31),name,{fill:color,"font-size":m?12:15,"font-weight":700});
       return disc;
@@ -191,13 +191,13 @@ const ModelScenes = (() => {
     // Draw a literal scope boundary around Kubernetes services. The Azure
     // server and the example cache are external dependencies.
     const scope=group(g);
-    const scopeBorder=box(scope,sx,sy,sw,sh,{rx:18,fill:"#eef2e7",stroke:blue,"stroke-width":2.5,"stroke-dasharray":"10 6"});
+    const scopeBorder=box(scope,sx,sy,sw,sh,{rx:4,fill:"var(--surface)",stroke:blue,"stroke-width":2.5,"stroke-dasharray":"10 6"});
     type(scope,sx+17,sy+29,"Cluster   aks-synth",{fill:blue,"font-size":m?17:21,"font-weight":690});
     type(scope,sx+17,sy+59,"Namespace   shop",{fill:ink,"font-size":m?17:21,"font-weight":690});
     const dbx=sx+sw*.23, apix=sx+sw*.73, nodeY=sy+(m?96:129);
     const scopedFlow=thread(scope,`M${apix-14} ${nodeY} H${dbx+17}`,blue,{width:3});
-    dot(scope,dbx,nodeY,10,{fill:"#ccdef0",stroke:blue,"stroke-width":3});
-    dot(scope,apix,nodeY,10,{fill:"#ccdef0",stroke:blue,"stroke-width":3});
+    dot(scope,dbx,nodeY,10,{fill:"var(--raised)",stroke:blue,"stroke-width":3});
+    dot(scope,apix,nodeY,10,{fill:"var(--raised)",stroke:blue,"stroke-width":3});
     center(scope,dbx,nodeY+30,"database service",{fill:ink,"font-size":m?15:19});
     center(scope,apix,nodeY+30,"API",{fill:ink,"font-size":m?16:20});
     center(scope,(dbx+apix)/2,nodeY-15,"required",{fill:blue,"font-size":m?13:16});
@@ -228,8 +228,8 @@ const ModelScenes = (() => {
       memory.setAttribute("opacity",transition?1:0);
       count.textContent=p<.43?"—":p<.61?"0 / 2":p<.82?"1 / 2":"2 / 2";
       count.setAttribute("fill",alarming?bad:good);
-      circles[0].setAttribute("fill",alarming?"#fffaf0":"#c7f0db");
-      circles[1].setAttribute("fill",alarming?"#ffd4d6":"#fffaf0");
+      circles[0].setAttribute("fill",alarming?"var(--surface)":"color-mix(in srgb, var(--healthy) 18%, var(--surface))");
+      circles[1].setAttribute("fill",alarming?"color-mix(in srgb, var(--unhealthy) 18%, var(--surface))":"var(--surface)");
       scopedFlow(beat===2?stage(p,.08,.38):beat===0?stage(p,.38,.69):.35);
       backs(beat===2?stage(p,.35,.58):beat===0?stage(p,.68,.9):.35);
       optional.setAttribute("opacity",beat===2?stage(p,.42,.70):0);
@@ -239,8 +239,8 @@ const ModelScenes = (() => {
   function layers(ctx) {
     const {g,el,box,dot,W,H,mobile:m,stage,beat}=ctx;
     const {group,path,type,center,thread}=pens(ctx);
-    const ink="#1b3443", blue="#0b6183", teal="#096c61", purple="#67408f";
-    box(g,0,0,W,H,{fill:"#f3f4f0",rx:15});
+    const ink="var(--ink)", blue="var(--blue)", teal="var(--master)", identity="var(--identity)";
+    box(g,0,0,W,H,{fill:"var(--page)",rx:0});
     // The five pod positions and their three observed web→API pairs come
     // from the replay's Kubernetes watch and Hubble records.
     const a=m?99:142, b=m?371:439, y=m?172:224;
@@ -264,7 +264,7 @@ const ModelScenes = (() => {
     });
     [...webPods,...apiPods].forEach(([x,py],i)=>{
       const web=i<3, color=web?blue:teal;
-      dot(graph,x,py,6.5,{fill:color,stroke:"#ffffff","stroke-width":2});
+      dot(graph,x,py,6.5,{fill:color,stroke:"var(--page)","stroke-width":2});
       type(graph,x+(web?-13:13),py+5,"pod "+(web?i+1:i-2),{
         fill:ink,"font-size":m?15:17,"text-anchor":web?"end":"start"});
     });
@@ -280,16 +280,16 @@ const ModelScenes = (() => {
     const apiToService=m
       ?`M${b+15} ${y+ry+2} C${b+12} ${y+ry+65} ${db.x} ${db.y-67} ${db.x} ${db.y-dh/2-6}`
       :`M${b+rx+3} ${y} H${db.x-dw/2-6}`;
-    thread(g,apiToService,"#677f85",{width:2})(1);
-    if(!m)center(g,(b+rx+db.x-dw/2)/2,y-12,"needs",{fill:"#526b72","font-size":15});
-    const translate=thread(pair,`M${db.x+dw/2+3} ${db.y} H${pg.x-pr-6}`,purple,{width:3.5});
-    center(pair,(db.x+dw/2+pg.x-pr)/2,db.y-12,"BackedBy",{fill:purple,"font-size":m?17:20,"font-weight":730});
-    box(pair,db.x-dw/2,db.y-dh/2,dw,dh,{rx:8,fill:"#d9eaf3",stroke:blue,"stroke-width":2.5});
+    thread(g,apiToService,"var(--wire)",{width:2})(1);
+    if(!m)center(g,(b+rx+db.x-dw/2)/2,y-12,"needs",{fill:"var(--muted)","font-size":15});
+    const translate=thread(pair,`M${db.x+dw/2+3} ${db.y} H${pg.x-pr-6}`,identity,{width:3.5});
+    center(pair,(db.x+dw/2+pg.x-pr)/2,db.y-12,"BackedBy",{fill:identity,"font-size":m?17:20,"font-weight":730});
+    box(pair,db.x-dw/2,db.y-dh/2,dw,dh,{rx:4,fill:"var(--surface)",stroke:blue,"stroke-width":2.5});
     center(pair,db.x,db.y-6,"database",{fill:ink,"font-size":m?17:21,"font-weight":700});
     center(pair,db.x,db.y+20,"service",{fill:blue,"font-size":m?14:16});
-    el(pair,"ellipse",{cx:pg.x,cy:pg.y,rx:pr,ry:dh/2+4,fill:"#e8dff3",stroke:purple,"stroke-width":2.5});
+    el(pair,"ellipse",{cx:pg.x,cy:pg.y,rx:pr,ry:dh/2+4,fill:"var(--surface)",stroke:identity,"stroke-width":2.5});
     center(pair,pg.x,pg.y-6,"pg-shop",{fill:ink,"font-size":m?17:20,"font-weight":700});
-    center(pair,pg.x,pg.y+20,"server",{fill:purple,"font-size":m?14:16});
+    center(pair,pg.x,pg.y+20,"server",{fill:identity,"font-size":m?14:16});
 
     // Two sources use the same stable Azure resource key. The paths terminate
     // on one server; the Kubernetes database service remains a separate entity.
@@ -302,15 +302,15 @@ const ModelScenes = (() => {
       const d=m
         ?`M${startX} ${ry-2} Q${endX} ${ry-2} ${endX} ${endY+6}`
         :`M${startX} ${ry+(i===0?20:-9)} Q${endX} ${ry+(i===0?46:-32)} ${endX} ${endY}`;
-      const connection=thread(idEvidence,d,purple,{width:2,arrow:false});
+      const connection=thread(idEvidence,d,identity,{width:2,arrow:false});
       const sourceName=i?"Azure Monitor":"Azure Resource Graph";
       type(idEvidence,recordX,ry-10,sourceName,{fill:ink,"font-size":m?16:19,"font-weight":700});
-      type(idEvidence,recordX,ry+14,"…/flexibleservers/pg-shop",{fill:purple,"font-size":m?15:17,"font-family":"Menlo, monospace"});
+      type(idEvidence,recordX,ry+14,"…/flexibleservers/pg-shop",{fill:identity,"font-size":m?15:17,"font-family":"var(--mono)"});
       return connection;
     });
     if(!m) {
       type(g,37,45,"Running copies",{fill:blue,"font-size":25,"font-weight":730});
-      type(g,647,45,"One backing server",{fill:purple,"font-size":25,"font-weight":730});
+      type(g,647,45,"One backing server",{fill:identity,"font-size":25,"font-weight":730});
 
     }
     return p=>{

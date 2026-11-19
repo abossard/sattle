@@ -2,8 +2,8 @@
 function createChapterFigures(chapters, drawings, caseLabel) {
   const ns = "http://www.w3.org/2000/svg";
   const colors = {
-    ink:"#172d3b", muted:"#466071", paper:"#fbf7ec", blue:"#126388", teal:"#087165",
-    purple:"#674795", amber:"#8b5206", red:"#a12c4a", green:"#166045", rule:"#b3c4c3"
+    ink:"var(--ink)", muted:"var(--muted)", paper:"var(--page)", blue:"var(--blue)", teal:"var(--master)",
+    purple:"var(--rule)", amber:"var(--input)", red:"var(--unhealthy)", green:"var(--healthy)", rule:"var(--wire)"
   };
   const mounted = new WeakMap();
   function el(parent, tag, attrs={}, text="") {
@@ -21,8 +21,8 @@ function createChapterFigures(chapters, drawings, caseLabel) {
 
   function filmBridge(svg,chapter,x,y,width) {
     const g=el(svg,"g",{"data-principle":chapter.principle});
-    const ink=chapter.captionInk || colors.ink;
-    const secondary=chapter.captionInk || colors.muted;
+    const ink=colors.ink;
+    const secondary=colors.muted;
     const middle=Math.round(width*.49);
     line(g,x,y,width-x,y,{stroke:secondary,"stroke-opacity":.6,"stroke-width":1});
     const heading={"font-size":15,"font-weight":650,fill:secondary};
@@ -61,11 +61,11 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     host.replaceChildren();
     const svg = el(host,"svg",{
       viewBox:`0 0 ${width} ${height}`,role:"img","aria-label":chapter.description,
-      "data-figure":topic,"font-family":"'Avenir Next', Arial, sans-serif"
+      "data-figure":topic,"font-family":"var(--sans)"
     });
     el(svg,"title",{},chapter.figure);
     el(svg,"desc",{},[chapter.description,chapter.example,chapter.principle+".",chapter.meaning].join(" "));
-    box(svg,0,0,width,height,{fill:chapter.tint});
+    box(svg,0,0,width,height,{fill:colors.paper});
     const plot=el(svg,"g",{transform:`translate(${gutter} 7)`});
     if (!inGuide) filmBridge(svg,chapter,gutter,H+11,width);
     return {topic,mobile,svg,plot,W,H,beats:[],active:-1};

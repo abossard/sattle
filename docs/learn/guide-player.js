@@ -32,8 +32,6 @@ function show(focus=false) {
   $("#eyebrow").textContent=document.body.dataset.case+" / "+String(i+1).padStart(2,"0");
   $("#title").textContent=c.title;$("#intro").textContent=c.intro;
   const chapter=ShopMap.chapters[c.id];
-  $("#animation").style.setProperty("--figure-paper",chapter.tint);
-  $("#animation").style.setProperty("--figure-ink",chapter.captionInk || "var(--ink)");
   ShopMap.guideBridge($("#chapter-reference"),chapter);
   player.load(c);
   player.onPosition(c.activity());
@@ -294,7 +292,6 @@ function installFigureZoom() {
     dialog.querySelector("h2").textContent=live.querySelector("title").textContent;
     dialog.querySelector(".figure-zoom-caption strong").textContent=$("#concept-term").textContent+".";
     dialog.querySelector(".figure-zoom-caption span").textContent=$("#concept-meaning").textContent;
-    viewport.style.background=ShopMap.chapters[live.dataset.figure].tint;
     dialog.showModal();
     viewport.scrollTo(0,0);
     viewport.focus({preventScroll:true});

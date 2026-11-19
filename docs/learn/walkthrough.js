@@ -22,14 +22,14 @@ function incident() {
   });
   const x = i => 65+i*70, y = value => value ? 38 : 117;
   const path = 'M'+x(0)+' '+y(samples[0].value)+samples.slice(1).map((s,i) => 'H'+x(i+1)+'V'+y(s.value)).join('');
-  const grid = [38,117].map(h => '<line x1="53" x2="715" y1="'+h+'" y2="'+h+'" stroke="#486165" stroke-dasharray="3 5"/>').join('');
-  const ticks = samples.map((s,i) => '<circle cx="'+x(i)+'" cy="'+y(s.value)+'" r="3.4" fill="#adddc9"/>'+([0,3,6,9].includes(i)?'<text x="'+x(i)+'" y="153" text-anchor="middle" fill="#c5d7d0">'+s.minute+'</text>':'')).join('');
-  setActivity(plate("Database signal / pg-shop","Synthetic replay",'<div class="headline"><div class="clock"><span id="time"></span> <small>UTC</small></div><strong id="health" class="state"></strong></div><svg class="chart" viewBox="0 0 740 166" role="img" aria-label="Database meter. One until 10:10, zero from 10:11 through 10:13, then one again."><g font-family="monospace" font-size="15">'+grid+'<text x="22" y="43" fill="#c5d7d0">1</text><text x="22" y="122" fill="#c5d7d0">0</text><path d="'+path+'" fill="none" stroke="#9be2be" stroke-width="4" stroke-linejoin="round"/>'+ticks+'<g class="cursor" id="marker"><circle r="13" fill="#fff2bd" opacity=".25"/><circle r="6" fill="#f9db89"/></g></g></svg><div class="scrub"><label for="minute">Sample minute</label><input id="minute" type="range" min="0" max="9" value="3" step="1"></div>')+'<p class="note" id="signal-note"></p><details><summary>Why does the alarm stay on after a good reading?</summary><p>One minute at or below 0.5 trips this alarm. Two minutes in a row at or above 0.9 clear it. That’s why the first good reading leaves the database red.</p></details>');
+  const grid = [38,117].map(h => '<line x1="53" x2="715" y1="'+h+'" y2="'+h+'" stroke="var(--wire)" stroke-dasharray="3 5"/>').join('');
+  const ticks = samples.map((s,i) => '<circle cx="'+x(i)+'" cy="'+y(s.value)+'" r="3.4" fill="var(--blue)"/>'+([0,3,6,9].includes(i)?'<text x="'+x(i)+'" y="153" text-anchor="middle" fill="var(--muted)">'+s.minute+'</text>':'')).join('');
+  setActivity(plate("Database signal / pg-shop","Synthetic replay",'<div class="headline"><div class="clock"><span id="time"></span> <small>UTC</small></div><strong id="health" class="state"></strong></div><svg class="chart" viewBox="0 0 740 166" role="img" aria-label="Database meter. One until 10:10, zero from 10:11 through 10:13, then one again."><g font-family="var(--mono)" font-size="15">'+grid+'<text x="22" y="43" fill="var(--muted)">1</text><text x="22" y="122" fill="var(--muted)">0</text><path d="'+path+'" fill="none" stroke="var(--blue)" stroke-width="4" stroke-linejoin="round"/>'+ticks+'<g class="cursor" id="marker"><circle r="13" fill="var(--input)" opacity=".25"/><circle r="6" fill="var(--input)"/></g></g></svg><div class="scrub"><label for="minute">Sample minute</label><input id="minute" type="range" min="0" max="9" value="3" step="1"></div>')+'<p class="note" id="signal-note"></p><details><summary>Why does the alarm stay on after a good reading?</summary><p>One minute at or below 0.5 trips this alarm. Two minutes in a row at or above 0.9 clear it. That’s why the first good reading leaves the database red.</p></details>');
   const slider = $("#minute");
   function update() {
     const i=Number(slider.value), s=samples[i], unhealthy=states[i];
     $("#time").textContent=s.minute;
-    $("#health").textContent=unhealthy?"● Database unhealthy":"✓ Database healthy";
+    $("#health").textContent=unhealthy?"× Database unhealthy":"✓ Database healthy";
     $("#health").classList.toggle("danger",unhealthy);
     $("#marker").style.transform="translate("+x(i)+"px,"+y(s.value)+"px)";
     slider.setAttribute("aria-valuetext",s.minute+" UTC, reading "+s.value+", database "+(unhealthy?"unhealthy":"healthy"));
@@ -72,7 +72,7 @@ function revisions() {
   function update(){
     const i=Number(slider.value)-15, f=frame[i];
     $("#rev").textContent=f.revision;slider.setAttribute("aria-valuetext","workload revision "+f.revision);
-    $("#states").innerHTML=["pg-shop","database","api","web","shop","shopcache"].map(name=>'<div class="status-cell"><b>'+name+'</b><span class="'+(f.states[name]==="Unhealthy"?"danger":"")+'">'+f.states[name]+'</span></div>').join('');
+    $("#states").innerHTML=["pg-shop","database","api","web","shop","shopcache"].map(name=>'<div class="status-cell"><b>'+name+'</b><span data-state="'+f.states[name]+'">'+f.states[name]+'</span></div>').join('');
     $("#change").textContent=["Before the database incident, the six components shown here are healthy.","The patch marks pg-shop, its dependent services, and the shop unhealthy. The cache stays healthy.","This revision has other edits. The health states of these six components stay the same.","The recovery patch returns the database and the affected services to healthy."][i];
   }
   slider.oninput=update;update();
@@ -105,7 +105,7 @@ function comparison(title, labels, runs, names, explain, beats) {
     const run=changeResult[runs[i]];
     $("#compare-states").innerHTML=names.map(n=>{
       const state=run.states[n]||"Absent";
-      return '<div class="status-cell"><b>'+n+'</b><span class="'+(state==="Degraded"?"amber":"")+'">'+state+'</span></div>';
+      return '<div class="status-cell"><b>'+n+'</b><span data-state="'+state+'">'+state+'</span></div>';
     }).join("");
     $("#comparison-note").textContent=explain[i]+(run.configurationEvidence.length?" Engine evidence: "+run.configurationEvidence[0]+".":"");
     if(initialized) player.jump(beats[i],.97);

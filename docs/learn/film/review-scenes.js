@@ -1,13 +1,12 @@
 // Both views use the synthetic estate's workload export. The revision-zero
 // snapshot is empty; revisions 16 and 18 each have seven entity edits.
 const ReviewScenes = (() => {
-  const mono = "Menlo, Consolas, monospace";
-  const paper = "#f9f4e4";
-  const navy = "#122637";
-  const soft = "#c2d7db";
-  const mint = "#85e9ae";
-  const coral = "#ff93a3";
-  const gold = "#ffd378";
+  const mono = "var(--mono)";
+  const sheet = "var(--page)";
+  const soft = "var(--muted)";
+  const mint = "var(--healthy)";
+  const coral = "var(--unhealthy)";
+  const selection = "var(--blue)";
 
   function replay({g, el, txt, line, box, dot, stage, W, H, mobile, beat}) {
     const frames = [
@@ -19,23 +18,23 @@ const ReviewScenes = (() => {
     const curve = (parent,d,color,extra={}) =>
       el(parent,"path",{d,fill:"none",stroke:color,"stroke-width":3,"stroke-linecap":"round",...extra});
 
-    box(g,0,0,W,H,{rx:14,fill:navy});
-    title(g,22,31,"WORKLOAD HISTORY",mobile?16:18,gold,{"letter-spacing":2,"font-weight":800});
-    title(g,W-22,31,"pg-shop",mobile?18:21,"#ffffff",{"text-anchor":"end","font-weight":750});
+    box(g,0,0,W,H,{rx:0,fill:sheet});
+    title(g,22,31,"WORKLOAD HISTORY",mobile?16:18,selection,{"letter-spacing":2,"font-weight":800});
+    title(g,W-22,31,"pg-shop",mobile?18:21,"var(--ink)",{"text-anchor":"end","font-weight":750});
 
     // The desktop filmstrip turns into a vertical contact sheet on a phone.
     const left = mobile?30:22, top = mobile?60:73;
     const frameWidth = mobile?W-60:(W-44)/4, frameHeight = mobile?73:145;
     const stripHeight = mobile?292:171;
-    box(g,mobile?17:14,top-12,W-(mobile?34:28),stripHeight+6,{rx:8,fill:"#243e4f"});
+    box(g,mobile?17:14,top-12,W-(mobile?34:28),stripHeight+6,{rx:4,fill:"var(--raised)"});
     const holeCount = mobile?17:38;
     for(let i=0;i<holeCount;i++){
       if(mobile){
         const y=top-6+i*17.5;
-        box(g,19,y,6,9,{rx:2,fill:"#91a7ae"});box(g,W-25,y,6,9,{rx:2,fill:"#91a7ae"});
+        box(g,19,y,6,9,{rx:2,fill:"var(--line)"});box(g,W-25,y,6,9,{rx:2,fill:"var(--line)"});
       }else{
         const x=25+i*(W-66)/(holeCount-1);
-        box(g,x,top-7,13,5,{rx:2,fill:"#adc1c5"});box(g,x,top+frameHeight+6,13,5,{rx:2,fill:"#adc1c5"});
+        box(g,x,top-7,13,5,{rx:2,fill:"var(--line)"});box(g,x,top+frameHeight+6,13,5,{rx:2,fill:"var(--line)"});
       }
     }
     const bright = [], locations = [];
@@ -43,50 +42,50 @@ const ReviewScenes = (() => {
       const x=mobile?left:left+i*frameWidth;
       const y=mobile?top+i*frameHeight:top;
       const w=mobile?frameWidth:frameWidth-5, h=frameHeight-3;
-      box(g,x,y,w,h,{rx:4,fill:"#162d3a"});
-      bright.push(box(g,x+1,y+1,w-2,h-2,{rx:4,fill:"none",stroke:gold,"stroke-width":3}));
+      box(g,x,y,w,h,{rx:4,fill:"var(--surface)"});
+      bright.push(box(g,x+1,y+1,w-2,h-2,{rx:4,fill:"none",stroke:selection,"stroke-width":3}));
       const color=good?mint:coral;
       if(mobile){
-        title(g,x+12,y+27,"r"+rev,22,"#ffffff",{"font-family":mono,"font-weight":750});
+        title(g,x+12,y+27,"r"+rev,22,"var(--ink)",{"font-family":mono,"font-weight":750});
         title(g,x+12,y+53,good?"✓ healthy":"× unhealthy",16,color,{"font-weight":750});
       }else{
-        title(g,x+13,y+31,"r"+rev,25,"#ffffff",{"font-family":mono,"font-weight":800});
+        title(g,x+13,y+31,"r"+rev,25,"var(--ink)",{"font-family":mono,"font-weight":800});
         title(g,x+w-13,y+28,good?"✓ Healthy":"× Unhealthy",17,color,{"text-anchor":"end","font-weight":750});
       }
       // These three nodes are a dependency path. Cache is a separate,
       // unchanged resource and is intentionally outside this miniature.
       const nx=mobile?[x+173,x+257,x+345]:[x+42,x+w/2,x+w-42];
       const ny=mobile?y+26:y+79;
-      line(g,nx[0]+10,ny,nx[2]-10,ny,{stroke:"#7e9da8","stroke-width":2});
+      line(g,nx[0]+10,ny,nx[2]-10,ny,{stroke:"var(--wire)","stroke-width":2});
       for(const [j,name] of ["API","database","pg-shop"].entries()){
-        dot(g,nx[j],ny,9,{fill:good?"#1d614b":"#853a48",stroke:color,"stroke-width":2});
+        dot(g,nx[j],ny,9,{fill:good?"color-mix(in srgb, var(--healthy) 15%, var(--surface))":"color-mix(in srgb, var(--unhealthy) 15%, var(--surface))",stroke:color,"stroke-width":2});
         if(good)curve(g,`M${nx[j]-4} ${ny}l3 3 5-6`,mint,{"stroke-width":1.7});
         else curve(g,`M${nx[j]-3} ${ny-3}l6 6m0-6-6 6`,coral,{"stroke-width":1.7});
-        title(g,nx[j],ny+(mobile?24:30),name,mobile?15:17,"#e2edf0",{"text-anchor":"middle"});
+        title(g,nx[j],ny+(mobile?24:30),name,mobile?15:17,"var(--ink)",{"text-anchor":"middle"});
       }
       locations.push(mobile?[x-5,y+h/2]:[x+w/2,y-14]);
     });
-    const playhead=el(g,"path",{d:mobile?"M-9 -6L0 0 -9 6Z":"M-7 -7H7L0 1Z",fill:gold});
+    const playhead=el(g,"path",{d:mobile?"M-9 -6L0 0 -9 6Z":"M-7 -7H7L0 1Z",fill:selection});
 
     const routeY = mobile?385:267;
     const routeStart=mobile?37:55, routeEnd=W-(mobile?38:62);
     const routeWidth=routeEnd-routeStart;
-    const section = title(g,mobile?25:28,routeY-10,"",mobile?16:19,"#ffffff",{"font-weight":750});
+    const section = title(g,mobile?25:28,routeY-10,"",mobile?16:19,"var(--ink)",{"font-weight":750});
     const compare=beat===2;
     const inputLabel=mobile?"Records · clock · rules":"Same records, clock events and rules";
     const first=routeStart+6, last=routeEnd-6;
     let bead, fastBead;
     if(compare){
       const sy=routeY+(mobile?41:50), peak=mobile?18:24;
-      const incremental=curve(g,`M${first} ${sy}C${first+routeWidth*.24} ${sy},${first+routeWidth*.23} ${sy-peak},${first+routeWidth*.45} ${sy-peak}S${last-routeWidth*.22} ${sy},${last} ${sy}`,mint);
-      const rebuilt=curve(g,`M${first} ${sy}C${first+routeWidth*.24} ${sy},${first+routeWidth*.23} ${sy+peak},${first+routeWidth*.45} ${sy+peak}S${last-routeWidth*.22} ${sy},${last} ${sy}`,"#a2baff");
-      dot(g,first,sy,6,{fill:gold});dot(g,last,sy,7,{fill:gold});
-      title(g,(first+last)/2,sy-peak-6,"Update as records arrive",mobile?14:17,mint,{"text-anchor":"middle"});
-      title(g,(first+last)/2,sy+peak+18,"Rebuild from scratch",mobile?14:17,"#bacaff",{"text-anchor":"middle"});
+      const incremental=curve(g,`M${first} ${sy}C${first+routeWidth*.24} ${sy},${first+routeWidth*.23} ${sy-peak},${first+routeWidth*.45} ${sy-peak}S${last-routeWidth*.22} ${sy},${last} ${sy}`,"var(--master)");
+      const rebuilt=curve(g,`M${first} ${sy}C${first+routeWidth*.24} ${sy},${first+routeWidth*.23} ${sy+peak},${first+routeWidth*.45} ${sy+peak}S${last-routeWidth*.22} ${sy},${last} ${sy}`,"var(--rule)");
+      dot(g,first,sy,6,{fill:selection});dot(g,last,sy,7,{fill:selection});
+      title(g,(first+last)/2,sy-peak-6,"Update as records arrive",mobile?14:17,"var(--master)",{"text-anchor":"middle"});
+      title(g,(first+last)/2,sy+peak+18,"Rebuild from scratch",mobile?14:17,"var(--rule)",{"text-anchor":"middle"});
       title(g,first,sy+peak+(mobile?37:46),inputLabel,mobile?14:17,soft);
       title(g,last,sy+peak+(mobile?37:46),"Same graph",mobile?14:17,soft,{"text-anchor":"end"});
-      bead=dot(g,first,sy,5,{fill:"#fff"});
-      fastBead=dot(g,first,sy,5,{fill:"#fff"});
+      bead=dot(g,first,sy,5,{fill:"var(--ink)"});
+      fastBead=dot(g,first,sy,5,{fill:"var(--ink)"});
       section.textContent="Two routes through the same input";
       return p=>{
         const t=stage(p,.12,.76);
@@ -101,16 +100,16 @@ const ReviewScenes = (() => {
     }
     const railY=routeY+(mobile?41:57);
     const stops=[first, first+routeWidth*.40,first+routeWidth*.57,first+routeWidth*.74,last];
-    line(g,first,railY,last,railY,{stroke:"#6a8792","stroke-width":3});
-    const track=line(g,first,railY,first,railY,{stroke:gold,"stroke-width":4});
+    line(g,first,railY,last,railY,{stroke:"var(--wire)","stroke-width":3});
+    const track=line(g,first,railY,first,railY,{stroke:selection,"stroke-width":4});
     const names=["r0","… 15","+16","+17","18"];
     stops.forEach((x,i)=>{
-      dot(g,x,railY,i===0||i===4?9:6,{fill:navy,stroke:i===4?mint:gold,"stroke-width":2});
+      dot(g,x,railY,i===0||i===4?9:6,{fill:sheet,stroke:i===4?mint:selection,"stroke-width":2});
       title(g,x,railY-14,names[i],mobile?15:18,soft,{"font-family":mono,"text-anchor":"middle"});
     });
-    bead=dot(g,first,railY,5,{fill:"#fff"});
+    bead=dot(g,first,railY,5,{fill:"var(--ink)"});
     section.textContent=beat===0?"A patch travels from engine to Canvas":"Ordered patches rebuild a saved map.";
-    const note=title(g,22,H-18,"",mobile?15:19,gold,{"font-weight":650});
+    const note=title(g,22,H-18,"",mobile?15:19,selection,{"font-weight":650});
     return p=>{
       const t=stage(p,.10,.78);
       const progress=beat===0?1+Math.min(1,t*2):Math.min(2,t*4.6)+2*stage(t,.55,.91);
@@ -137,7 +136,7 @@ const ReviewScenes = (() => {
     const fx=mobile?104:481, fy=mobile?191:142, radius=mobile?58:85;
     const trace=[];
     function pencil(d,color,lo,hi){
-      stroke(g,d,"#c6beb0",2);
+      stroke(g,d,"var(--wire)",2);
       const foreground=stroke(g,d,color,3.5);
       const length=foreground.getTotalLength();
       foreground.setAttribute("stroke-dasharray",length+" "+length);
@@ -146,14 +145,12 @@ const ReviewScenes = (() => {
         foreground.setAttribute("stroke-dashoffset",length*(1-t));
       });
     }
-    box(g,0,0,W,H,{rx:12,fill:paper});
-    // A ruled evidence sheet keeps the original symptom, its origin and its
-    // source records on the same physical page throughout the investigation.
+    box(g,0,0,W,H,{rx:0,fill:sheet});
+    // Keep the original symptom and its source records together across steps.
     const tear=mobile?282:258;
-    for(let y=tear+22;y<H;y+=27)line(g,18,y,W-18,y,{stroke:"#e2dcca","stroke-width":1});
     heading(g,22,29,"CANVAS CASE FILE");
     text(g,W-22,29,"WORKLOAD  /  r16",mobile?15:17,purple,{"font-family":mono,"text-anchor":"end","font-weight":750});
-    line(g,21,40,W-21,40,{stroke:"#bdb4a1","stroke-width":1.5});
+    line(g,21,40,W-21,40,{stroke:"var(--line)","stroke-width":1.5});
 
     const chain=mobile?[[42,91],[157,91],[289,91]]:[[59,109],[176,163],[299,112]];
     const [web,api,db]=chain;
@@ -162,7 +159,7 @@ const ReviewScenes = (() => {
       `M${db}C${db[0]+47} ${db[1]},${fx-radius-25} ${fy},${fx-radius} ${fy}`;
     pencil(toOrigin,red,.35,.60);
     chain.forEach(([x,y],i)=>{
-      dot(g,x,y,10,{fill:"#f5cfd0",stroke:red,"stroke-width":2});
+      dot(g,x,y,10,{fill:"color-mix(in srgb, var(--unhealthy) 18%, var(--surface))",stroke:red,"stroke-width":2});
       stroke(g,`M${x-3.5} ${y-3.5}l7 7m0-7-7 7`,red,2);
       text(g,x,y-(mobile?18:23),["web","API","database"][i],mobile?17:21,ink,{"font-weight":700,"text-anchor":"middle"});
     });
@@ -172,11 +169,11 @@ const ReviewScenes = (() => {
     pencil(`M${branchFrom} ${fy}C${branchFrom+32} ${fy},${branchX-51} ${topY},${branchX} ${topY}`,purple,.21,.57);
     pencil(`M${branchFrom} ${fy}C${branchFrom+29} ${fy},${branchX-49} ${lowerY},${branchX} ${lowerY}`,blue,.44,.77);
     // The magnifier is centered on the component whose own signal fired.
-    stroke(g,`M${fx+radius*.65} ${fy+radius*.67}l${mobile?24:39} ${mobile?22:34}`,"#85613c",mobile?10:14);
-    dot(g,fx,fy,radius,{fill:"#f9ddd2",stroke:"#84512f","stroke-width":5});
+    stroke(g,`M${fx+radius*.65} ${fy+radius*.67}l${mobile?24:39} ${mobile?22:34}`,"var(--wire)",mobile?10:14);
+    dot(g,fx,fy,radius,{fill:"var(--surface)",stroke:"var(--wire)","stroke-width":5});
     const lens=dot(g,fx,fy,radius-7,{fill:"none",stroke:red,"stroke-width":2});
     text(g,fx,fy-(mobile?12:20),"ORIGIN",mobile?13:16,red,{"text-anchor":"middle","font-weight":800,"letter-spacing":2});
-    text(g,fx,fy+(mobile?12:14),"pg-shop",mobile?24:34,ink,{"text-anchor":"middle","font-weight":800,"font-family":"Georgia, serif"});
+    text(g,fx,fy+(mobile?12:14),"pg-shop",mobile?24:34,ink,{"text-anchor":"middle","font-weight":800,"font-family":mono});
     text(g,fx,fy+(mobile?31:41),"own alarm",mobile?13:18,red,{"text-anchor":"middle","font-weight":700});
 
     // Distinguish evidence of the outage from evidence supporting the link.
@@ -186,10 +183,10 @@ const ReviewScenes = (() => {
     ]){
       dot(g,branchX,y,5,{fill:c});
       heading(g,branchX+13,y-7,kicker,c);
-      text(g,branchX+13,y+17,detail,mobile?16:22,ink,{"font-family":i===0?mono:"Arial, sans-serif","font-weight":650});
+      text(g,branchX+13,y+17,detail,mobile?16:22,ink,{"font-family":i===0?mono:"inherit","font-weight":650});
       if(!mobile)text(g,branchX+13,y+42,i===0?"10:11 UTC · first low minute":"Kubernetes ExternalName service",17,muted);
     }
-    line(g,21,tear,W-21,tear,{stroke:"#a79d89","stroke-width":1.5,"stroke-dasharray":"6 5"});
+    line(g,21,tear,W-21,tear,{stroke:"var(--line)","stroke-width":1.5,"stroke-dasharray":"6 5"});
     const headingY=tear+26;
     if(beat===0){
       heading(g,24,headingY,"EXHIBIT  /  WORKLOAD TREE",red);

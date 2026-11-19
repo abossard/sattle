@@ -5,7 +5,7 @@ const shopChapters = {
       example:"The shop’s database is one part of a larger estate.",
       principle:"Layers of projection", meaning:"One master graph can answer several different questions.",
       section:"0.2", reading:"ch00-introduction.md#02-the-idea-and-the-terms-it-needs",
-      papers:["ch00-introduction","ch05-projection-language"], tint:"#142e3b", captionInk:"#d5e4e8"
+      papers:["ch00-introduction","ch05-projection-language"]
     },
     rules: {
       figure:"How the alarm works", context:"Shop namespace",
@@ -13,7 +13,7 @@ const shopChapters = {
       example:"Two good minutes clear the pg-shop alarm.",
       principle:"Thresholds with memory", meaning:"A rule can remember earlier readings before it changes state.",
       section:"7.2", reading:"ch07-telemetry-plane.md#72-definitions",
-      papers:["ch07-telemetry-plane"], tint:"#f1f6ed"
+      papers:["ch07-telemetry-plane"]
     },
     layers: {
       figure:"The quotient graph", context:"Three web pods and two API pods",
@@ -21,7 +21,7 @@ const shopChapters = {
       example:"Calls between pods become one web → API link.",
       principle:"Levels of abstraction", meaning:"A projection can group both the parts and their connections.",
       section:"5.8", reading:"ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes",
-      papers:["ch01-values-and-identity","ch02-ontologies-as-type-graphs","ch05-projection-language"], tint:"#f0f4fb"
+      papers:["ch01-values-and-identity","ch02-ontologies-as-type-graphs","ch05-projection-language"]
     },
     incident: {
       figure:"The outage across time", context:"10:11–10:15 UTC",
@@ -29,7 +29,7 @@ const shopChapters = {
       example:"Web turns red with pg-shop. The cache stays healthy.",
       principle:"Health roll-up", meaning:"A failure can affect any caller that depends on that part.",
       section:"7.4", reading:"ch07-telemetry-plane.md#74-worked-example-the-workload-model",
-      papers:["ch07-telemetry-plane"], tint:"#fcf4ed"
+      papers:["ch07-telemetry-plane"]
     },
     dependency: {
       figure:"The two-run experiment", context:"Two runs at 10:06:30 UTC",
@@ -37,7 +37,7 @@ const shopChapters = {
       example:"The gateway turns amber when the API gains a cache link.",
       principle:"Evidence for dependencies", meaning:"A new link can change health with the same meter readings.",
       section:"7.4", reading:"ch07-telemetry-plane.md#74-worked-example-the-workload-model",
-      papers:["ch05-projection-language","ch09-evolution-evidence-provenance"], tint:"#faf4e5"
+      papers:["ch05-projection-language","ch09-evolution-evidence-provenance"]
     },
     azure: {
       figure:"Matching the cache host", context:"Azure Resource Graph",
@@ -45,7 +45,7 @@ const shopChapters = {
       example:"Resource Graph lists offers-cache. Its health stays Unknown.",
       principle:"Missing measurements", meaning:"A resource record identifies the cache. A reading can establish health.",
       section:"7.5", reading:"ch07-telemetry-plane.md#75-retention-fill-and-no-data",
-      papers:["ch09-evolution-evidence-provenance","ch10-sources-and-adapters"], tint:"#f3f0fa"
+      papers:["ch09-evolution-evidence-provenance","ch10-sources-and-adapters"]
     },
     replay: {
       figure:"The revision history", context:"Workload revisions 15–18",
@@ -53,7 +53,7 @@ const shopChapters = {
       example:"Both ways of rebuilding revision 16 show the outage.",
       principle:"Incremental equivalence", meaning:"Updating a graph in steps can give the same result as a rebuild.",
       section:"6.3", reading:"ch06-semantics-and-incrementality.md#63-theorems",
-      papers:["ch03-graphs-and-revisions","ch04-change-algebra","ch06-semantics-and-incrementality"], tint:"#182c3a", captionInk:"#d9e3ed"
+      papers:["ch03-graphs-and-revisions","ch04-change-algebra","ch06-semantics-and-incrementality"]
     },
     inspect: {
       figure:"The pg-shop case file", context:"Canvas at workload revision 16",
@@ -61,7 +61,7 @@ const shopChapters = {
       example:"The database link leads back to a hostname and an ID.",
       principle:"Lineage", meaning:"A result can point back to the records that support it.",
       section:"9.4", reading:"ch09-evolution-evidence-provenance.md#94-provenance-record-and-the-history-of-an-element",
-      papers:["ch09-evolution-evidence-provenance","ch12-outputs-documents-and-canvas"], tint:"#f8f1e8"
+      papers:["ch09-evolution-evidence-provenance","ch12-outputs-documents-and-canvas"]
     }
   };
 const ShopMap = createChapterFigures(shopChapters, {...ModelScenes, ...ChangeScenes, ...ReviewScenes}, "Shop replay");

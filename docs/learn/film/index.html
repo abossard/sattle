@@ -1,5 +1,5 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><title>How the shop gets its health model</title>
-<script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="master-data.js"></script><script src="model-scenes.js"></script><script src="change-scenes.js"></script><script src="review-scenes.js"></script><script src="figure.js"></script><script src="shop-map.js"></script><link rel="stylesheet" href="style.css"></head>
+<meta name="color-scheme" content="dark"><link rel="stylesheet" href="theme.css"><link rel="stylesheet" href="style.css"><script src="vendor/gsap.min.js"></script><script src="terms.js"></script><script src="master-data.js"></script><script src="model-scenes.js"></script><script src="change-scenes.js"></script><script src="review-scenes.js"></script><script src="figure.js"></script><script src="shop-map.js"></script></head>
 <body class="replay"><main id="film" data-composition-id="shop" data-width="1280" data-height="720" data-fps="24" data-duration="478.12500">
 <section class="clip shot" id="origins" data-start="0.00000" data-duration="61.75000" data-track-index="0" data-beat-ends="19.0,39.166666666666664,61.75" data-questions="[&quot;What does checkout need from the rest of the shop?&quot;, &quot;Where did the rest of those dots come from?&quot;, &quot;How does that map become a health model?&quot;]" data-answer-starts="4.225,22.75,43.016666666666666">
 <header><b>Sattle</b><span>pg-shop on Azure</span><span class="chapter">The shop on Azure</span><span>01 / 08</span></header>
@@ -41,8 +41,7 @@
 <h1>What explains a red web service?</h1>
 <div class="story-board" data-topic="inspect"></div>
 <div class="term-card"><strong class="term"></strong><span class="definition"></span></div></section>
-<audio id="voice" class="clip" data-start="0" data-duration="478.12500" data-track-index="3" src="assets/voice.m4a"></audio></main><script>
-const timeline = gsap.timeline({paused:true});
+<audio id="voice" class="clip" data-start="0" data-duration="478.12500" data-track-index="3" src="assets/voice.m4a"></audio></main><script>const timeline = gsap.timeline({paused:true});
 for (const scene of document.querySelectorAll(".shot")) {
   const host = scene.querySelector(".story-board");
   const topic = host.dataset.topic;

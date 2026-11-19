@@ -1,15 +1,15 @@
 // The pg-shop fixture supplies the samples and the two replay comparisons.
 const ChangeScenes = (() => {
   const state = {
-    Healthy:   { ink: "#0e604b", pale: "#bfe6cc", mark: "✓" },
-    Degraded:  { ink: "#86510a", pale: "#ffda81", mark: "▲" },
-    Unhealthy: { ink: "#a02643", pale: "#fac7cf", mark: "×" },
-    Unknown:   { ink: "#65418e", pale: "#e5d5fb", mark: "?" }
+    Healthy:   { ink: "var(--healthy)", wash: "color-mix(in srgb, var(--healthy) 16%, var(--surface))", mark: "✓" },
+    Degraded:  { ink: "var(--degraded)", wash: "color-mix(in srgb, var(--degraded) 16%, var(--surface))", mark: "▲" },
+    Unhealthy: { ink: "var(--unhealthy)", wash: "color-mix(in srgb, var(--unhealthy) 16%, var(--surface))", mark: "×" },
+    Unknown:   { ink: "var(--unknown)", wash: "color-mix(in srgb, var(--unknown) 16%, var(--surface))", mark: "?" }
   };
   function paint(node, attrs) {
     for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
   }
-  function lettering(size, weight=500, fill="#172d3b", anchor="start") {
+  function lettering(size, weight=500, fill="var(--ink)", anchor="start") {
     return {"font-size":size,"font-weight":weight,fill,"text-anchor":anchor};
   }
   function caption(ctx, group, x, y, text, size, color, anchor="start") {
@@ -27,14 +27,14 @@ const ChangeScenes = (() => {
   // health states. Highlight callers one by one without inventing time delays.
   function incident(ctx) {
     const {g,el,txt,box,dot,line,stage,colors,W,H,mobile,beat} = ctx;
-    const left = mobile?122:208, right=W-(mobile?10:19);
+    const left = mobile?140:208, right=W-(mobile?10:19);
     const width=(right-left)/7, x=i=>left+(i+.5)*width;
     const gridTop=mobile?77:52, traceBase=mobile?163:114, traceHeight=mobile?55:35;
     const labelY=mobile?202:153, rowTop=mobile?222:166, rowH=mobile?35:31;
     const lanes=["pg-shop","Database service","API","Gateway","Web","Cache"];
     const cellLabels=mobile?16:18;
     const blue=colors.blue, red=state.Unhealthy.ink;
-    const cursorColor="#454f96";
+    const cursorColor="var(--blue)";
     const minutes=["10:10","10:11","10:12","10:13","10:14","10:15","10:16"];
     const values=[1,0,0,0,1,1,1];
 
@@ -44,13 +44,13 @@ const ChangeScenes = (() => {
     txt(g,15,traceBase+3,mobile?"1 up  /  0 down":"1 answers   /   0 silent",lettering(mobile?13:17,500,colors.muted));
     caption(ctx,g,15,labelY,"Sample · UTC",mobile?14:17,colors.muted);
     for (const [i,t] of minutes.entries()) {
-      line(g,x(i),gridTop,x(i),rowTop+lanes.length*rowH,{stroke:"#b9c5c4","stroke-width":1,"stroke-dasharray":"2 5"});
+      line(g,x(i),gridTop,x(i),rowTop+lanes.length*rowH,{stroke:"var(--line)","stroke-width":1,"stroke-dasharray":"2 5"});
       txt(g,x(i),labelY,t,lettering(mobile?14:18,600,colors.ink,"middle"));
     }
     const meterY=v=>traceBase-v*traceHeight;
     let trace="M"+x(0)+" "+meterY(values[0]);
     values.slice(1).forEach((v,i)=>{trace+="H"+x(i+1)+"V"+meterY(v);});
-    path(ctx,g,trace,"#9cbebd",3);
+    path(ctx,g,trace,"var(--wire)",3);
     const activeTrace=path(ctx,g,trace,blue,mobile?4:5);
     const clipId="change-meter-"+beat+(mobile?"-m":"-w");
     const defs=el(g,"defs"),clip=el(defs,"clipPath",{id:clipId});
@@ -64,17 +64,17 @@ const ChangeScenes = (() => {
       for (let i=0;i<minutes.length;i++) {
         const status=(r<5 && i>=1 && i<=4)?state.Unhealthy:state.Healthy;
         const cell=el(g,"g");
-        box(cell,left+i*width+2,y+2,width-4,rowH-4,{fill:status.pale,rx:4});
+        box(cell,left+i*width+2,y+2,width-4,rowH-4,{fill:status.wash,rx:4});
         txt(cell,x(i),y+rowH*.73,status.mark,lettering(cellLabels,800,status.ink,"middle"));
         cells.push(cell);
       }
       return cells;
     });
     const vertical=line(g,x(0),gridTop,x(0),rowTop+lanes.length*rowH,{stroke:cursorColor,"stroke-width":2,"stroke-dasharray":"4 4","pointer-events":"none"});
-    const marker=dot(g,x(0),meterY(1),mobile?6:8,{fill:blue,stroke:"white","stroke-width":2});
+    const marker=dot(g,x(0),meterY(1),mobile?6:8,{fill:blue,stroke:"var(--page)","stroke-width":2});
     // Each minute is a complete graph result. This outline walks the caller
     // chain inside the 10:11 column while the source timestamp remains fixed.
-    const focus=box(g,left+width+1,rowTop,width-2,rowH,{"fill":"none",stroke:red,"stroke-width":3,rx:5});
+    const focus=box(g,left+width+1,rowTop,width-2,rowH,{"fill":"none",stroke:red,"stroke-width":3,rx:4});
     const footer=txt(g,15,H-(mobile?36:17),"",lettering(mobile?17:21,700));
     const footer2=txt(g,15,H-12,"",lettering(15,550,colors.muted));
     return p=>{
@@ -115,7 +115,7 @@ const ChangeScenes = (() => {
   function dependency(ctx) {
     const {g,el,txt,box,dot,line,stage,colors,W,H,mobile,beat} = ctx;
     const amber=state.Degraded.ink, green=state.Healthy.ink;
-    const trace=colors.ink, quiet="#a5b8bd";
+    const trace=colors.ink, quiet="var(--wire)";
     const anchor="middle", small=mobile?15:17;
     const sx=mobile?100:116,sy=mobile?91:170,r=mobile?45:61;
     if(mobile)caption(ctx,g,W-18,28,"10:06:30 UTC",17,colors.ink,"end");
@@ -127,13 +127,13 @@ const ChangeScenes = (() => {
     path(ctx,g,commonWeb,amber,4);
     path(ctx,g,rootPath,amber,4);
     dot(g,fork.x,fork.y,5,{fill:amber});
-    dot(g,sx,sy,r,{fill:"#fff0c9",stroke:"#d9a548","stroke-width":2});
+    dot(g,sx,sy,r,{fill:"color-mix(in srgb, var(--degraded) 16%, var(--surface))",stroke:"var(--degraded)","stroke-width":2});
     el(g,"circle",{cx:sx,cy:sy,r:r-6,fill:"none",stroke:amber,"stroke-width":6,
       pathLength:100,"stroke-dasharray":"85 100",transform:`rotate(-90 ${sx} ${sy})`});
     txt(g,sx,sy-3,"85%",lettering(mobile?29:36,800,amber,anchor));
     txt(g,sx,sy+(mobile?24:31),"load",lettering(mobile?14:17,600,amber,anchor));
     caption(ctx,g,sx,mobile?28:sy-r-14,"shopcache",mobile?19:22,trace,anchor);
-    dot(g,web.x,web.y,18,{fill:state.Degraded.pale,stroke:amber,"stroke-width":2});
+    dot(g,web.x,web.y,18,{fill:state.Degraded.wash,stroke:amber,"stroke-width":2});
     txt(g,web.x,web.y+6,"▲",lettering(16,800,amber,anchor));
     txt(g,web.x+(mobile?0:29),web.y+(mobile?39:6),mobile?"Web":"Web in both runs",lettering(mobile?18:20,700,trace,mobile?anchor:"start"));
     if(mobile)txt(g,web.x,web.y+59,"Degraded in both runs",lettering(14,600,amber,anchor));
@@ -152,10 +152,10 @@ const ChangeScenes = (() => {
       path(ctx,group,arriving,amber,3);
       const name=isEdit?"Changed run":"Original run";
       if(mobile){
-        box(group,lane-87,192,174,39,{rx:18,fill:isEdit?"#e5dbf2":"#dceafa"});
-        txt(group,lane,217,name,lettering(18,750,isEdit?colors.purple:colors.blue,anchor));
+        box(group,lane-87,192,174,39,{rx:4,fill:isEdit?"color-mix(in srgb, var(--added) 12%, var(--surface))":"color-mix(in srgb, var(--blue) 12%, var(--surface))"});
+        txt(group,lane,217,name,lettering(18,750,isEdit?"var(--added)":colors.blue,anchor));
       }else{
-        caption(ctx,group,326,lane-20,name,23,isEdit?colors.purple:colors.blue);
+        caption(ctx,group,326,lane-20,name,23,isEdit?"var(--added)":colors.blue);
       }
       [start,end].forEach(pt=>dot(group,pt.x,pt.y,6,{fill:colors.paper,stroke:amber,"stroke-width":3}));
       const downstream=mobile?`M${end.x} ${end.y+6}V${api.y-19}`:`M${end.x+6} ${end.y}H${api.x-19}`;
@@ -164,19 +164,20 @@ const ChangeScenes = (() => {
       path(ctx,group,last,quiet,2);
       const downFlow=movingStroke(ctx,group,downstream,amber,4);
       const gwFlow=movingStroke(ctx,group,last,amber,4);
-      const switchLine=path(ctx,group,"",isEdit?colors.purple:quiet,5);
+      const switchLine=path(ctx,group,"",isEdit?"var(--added)":quiet,5);
       const note=txt(group,mobile?lane+(isEdit?20:-20):(start.x+end.x)/2,
-        mobile?272:lane+39,"",lettering(mobile?13:17,650,isEdit?colors.purple:colors.muted,mobile?(isEdit?"start":"end"):anchor));
+        mobile?272:lane+39,"",lettering(mobile?13:17,650,isEdit?"var(--added)":colors.muted,mobile?(isEdit?"start":"end"):anchor));
       const taps=[];
       for(const [label,pt] of [["API",api],["Gateway",gw]]){
-        const disk=dot(group,pt.x,pt.y,17,{fill:state.Healthy.pale,stroke:green,"stroke-width":2});
+        const disk=dot(group,pt.x,pt.y,17,{fill:state.Healthy.wash,stroke:green,"stroke-width":2});
         const symbol=txt(group,pt.x,pt.y+6,"✓",lettering(19,800,green,anchor));
         if(mobile) {
           txt(group,pt.x+25,pt.y+4,label,lettering(small,700,trace));
         }else{
           txt(group,pt.x,pt.y-29,label,lettering(21,700,trace,anchor));
         }
-        const stateLabel=txt(group,pt.x,pt.y+(mobile?37:44),"Healthy",lettering(mobile?14:18,650,green,anchor));
+        const stateLabel=txt(group,pt.x+(mobile?25:0),pt.y+(mobile?22:44),"Healthy",
+          lettering(mobile?14:18,650,green,mobile?"start":anchor));
         taps.push({disk,symbol,stateLabel});
       }
       if(isEdit)Object.assign(changed,{switchLine,note,downFlow,gwFlow,taps,start,end});
@@ -186,10 +187,10 @@ const ChangeScenes = (() => {
         note.textContent=mobile?"Open":"No cache setting";
       }
     }
-    const proof=txt(g,mobile?W/2:325,H-(mobile?9:21),"",lettering(mobile?15:21,650,colors.purple,mobile?anchor:"start"));
+    const proof=txt(g,mobile?W/2:325,H-(mobile?9:21),"",lettering(mobile?15:21,650,"var(--added)",mobile?anchor:"start"));
     function tapState(tap,status){
       const style=state[status];
-      paint(tap.disk,{fill:style.pale,stroke:style.ink});
+      paint(tap.disk,{fill:style.wash,stroke:style.ink});
       tap.symbol.textContent=style.mark;tap.symbol.setAttribute("fill",style.ink);
       tap.stateLabel.textContent=status;tap.stateLabel.setAttribute("fill",style.ink);
     }
@@ -198,7 +199,7 @@ const ChangeScenes = (() => {
       const {start,end}=changed;
       const tipX=mobile?end.x-19*(1-close):end.x-3*(1-close);
       const tipY=mobile?end.y-3*(1-close):end.y-26*(1-close);
-      paint(changed.switchLine,{d:`M${start.x} ${start.y}L${tipX} ${tipY}`,stroke:close>0?colors.purple:quiet});
+      paint(changed.switchLine,{d:`M${start.x} ${start.y}L${tipX} ${tipY}`,stroke:close>0?"var(--added)":quiet});
       changed.note.textContent=mobile?(close===1?"Closed":"Open"):(close===1?"CACHE_HOST matches":"No match yet");
       branches[1].setAttribute("opacity",beat===0?.16:1);
       const apiFlow=beat===2?stage(p,.16,.35):0;
@@ -206,7 +207,7 @@ const ChangeScenes = (() => {
       changed.downFlow(apiFlow);changed.gwFlow(gwFlow);
       changed.taps.forEach((tap,i)=>{
         if(beat<2){
-          paint(tap.disk,{fill:"#eeeae3",stroke:quiet});tap.symbol.textContent="·";tap.symbol.setAttribute("fill",quiet);
+          paint(tap.disk,{fill:"var(--surface)",stroke:quiet});tap.symbol.textContent="·";tap.symbol.setAttribute("fill",quiet);
           tap.stateLabel.textContent="";
         }else tapState(tap,(i?gwFlow:apiFlow)===1?"Degraded":"Healthy");
       });
@@ -225,18 +226,18 @@ const ChangeScenes = (() => {
     const rx=mobile?209:319, ry=mobile?114:129;
     const mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
     const ellipse=(group,point,attrs)=>el(group,"ellipse",{cx:point.x,cy:point.y,rx,ry,...attrs});
-    ellipse(g,a,{fill:"#e9dff3",stroke:"#9074b2","stroke-width":2.2});
-    ellipse(g,b,{fill:"#d7eaf3",stroke:"#66a1b9","stroke-width":2.2});
+    ellipse(g,a,{fill:"color-mix(in srgb, var(--input) 8%, var(--surface))",stroke:"var(--input)","stroke-width":2.2});
+    ellipse(g,b,{fill:"color-mix(in srgb, var(--blue) 8%, var(--surface))",stroke:"var(--blue)","stroke-width":2.2});
     const id="change-join-"+beat+(mobile?"-m":"-w");
     const clip=el(el(g,"defs"),"clipPath",{id});
     ellipse(clip,a,{fill:"white"});
-    const lens=ellipse(g,b,{fill:"#d2dfd8","clip-path":"url(#"+id+")"});
-    ellipse(g,a,{fill:"none",stroke:"#9074b2","stroke-width":2});
+    const lens=ellipse(g,b,{fill:"var(--raised)","clip-path":"url(#"+id+")"});
+    ellipse(g,a,{fill:"none",stroke:"var(--input)","stroke-width":2});
     const center="middle";
     const leftAnchor=mobile?{x:240,y:106}:{x:232,y:173};
     const rightAnchor=mobile?{x:240,y:296}:{x:875,y:206};
     const joint={x:mid.x,y:mid.y+(mobile?14:16)};
-    const startColor=colors.purple;
+    const startColor="var(--input)";
     if(mobile){
       caption(ctx,g,240,54,"Hosts the API names",18,startColor,center);
       txt(g,240,80,"CACHE_HOST",lettering(14,650,startColor,center));
@@ -255,21 +256,21 @@ const ChangeScenes = (() => {
     const waiting=txt(g,joint.x,joint.y,"No match yet",lettering(mobile?17:21,550,colors.muted,center));
     function hostToken(ink,fill){
       const token=el(g,"g");
-      box(token,-(mobile?70:83),-(mobile?17:21),mobile?140:166,mobile?32:39,{fill,stroke:ink,"stroke-width":1.8,rx:17});
+      box(token,-(mobile?70:83),-(mobile?17:21),mobile?140:166,mobile?32:39,{fill,stroke:ink,"stroke-width":1.8,rx:4});
       txt(token,0,mobile?5:7,"offers-cache",lettering(mobile?18:22,700,ink,center));
       return token;
     }
-    const fromSetting=hostToken(startColor,"#f5effa");
-    const fromAzure=hostToken(colors.blue,"#eef9fc");
-    const match=hostToken(colors.teal,"#dbf2e2");
+    const fromSetting=hostToken(startColor,"var(--surface)");
+    const fromAzure=hostToken(colors.blue,"var(--surface)");
+    const match=hostToken("var(--identity)","var(--surface)");
     const originY=mobile?412:321;
-    line(g,mobile?13:49,originY,W-(mobile?13:49),originY,{stroke:"#aac0bb","stroke-width":1.5});
+    line(g,mobile?13:49,originY,W-(mobile?13:49),originY,{stroke:"var(--line)","stroke-width":1.5});
     const y=mobile?459:371;
     const lhs=mobile?36:132,dest=mobile?233:485;
     const statusX=mobile?415:959;
     txt(g,lhs,y,"API",lettering(mobile?19:25,750,colors.ink,"middle"));
     const arrowPath=`M${lhs+22} ${y-6}H${dest-(mobile?67:90)}`;
-    const faint=path(ctx,g,arrowPath,"#8b9b9e",2,{"stroke-dasharray":"5 5"});
+    const faint=path(ctx,g,arrowPath,"var(--wire)",2,{"stroke-dasharray":"5 5"});
     const arrow=movingStroke(ctx,g,arrowPath,colors.teal,3);
     const head=path(ctx,g,`M${dest-(mobile?75:98)} ${y-13}l8 7 -8 7`,colors.teal,3);
     const destination=txt(g,dest,y,"?",lettering(mobile?19:26,700,colors.muted,center));
@@ -283,13 +284,13 @@ const ChangeScenes = (() => {
       const appeared=beat===0?0:beat===1?stage(p,.04,.22):1;
       const joined=beat===0?0:beat===1?stage(p,.32,.61):1;
       const target=beat===0?0:beat===1?stage(p,.58,.77):1;
-      // Only one token remains once the source records identify the same host.
-      const merge=stage(joined,.55,1);
-      moveToken(fromSetting,leftAnchor,joint,joined,1-merge);
-      moveToken(fromAzure,rightAnchor,joint,joined,appeared*(1-merge));
-      moveToken(match,joint,joint,0,merge);
+      // Let the source names clear the middle before the shared name appears.
+      const sourceOpacity=1-stage(joined,.40,.68);
+      moveToken(fromSetting,leftAnchor,joint,joined,sourceOpacity);
+      moveToken(fromAzure,rightAnchor,joint,joined,appeared*sourceOpacity);
+      moveToken(match,joint,joint,0,stage(joined,.68,.9));
       paint(waiting,{opacity:1-stage(joined,0,.19)});
-      lens.setAttribute("fill",joined>.52?"#ccebd8":"#e0e7e0");
+      lens.setAttribute("fill",joined>.52?"color-mix(in srgb, var(--identity) 22%, var(--surface))":"var(--raised)");
       lensLabel.textContent=joined>.75?"One matching host":"Matching hosts";
       if(mobile)lensLabel.setAttribute("opacity",Math.max(1-stage(joined,0,.14),stage(joined,.96,1)));
       paint(faint,{opacity:1-target});arrow(target);paint(head,{opacity:target});

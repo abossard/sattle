@@ -1,0 +1,25 @@
+/* Sattle Canvas dark surfaces and atlas graph roles, shared by the guides and films. */
+:root {
+  color-scheme: dark;
+  --page: #121316;
+  --surface: #1b1d20;
+  --raised: #252a30;
+  --ink: #e8eef4;
+  --muted: #aebbc7;
+  --line: #3e4b55;
+  --wire: #8295a6;
+  --blue: #8ec8ff;
+  --master: #83ead1;
+  --rule: #c2a5ff;
+  --identity: #f3a8d4;
+  --input: #ffcf7c;
+  --document: #d7e68f;
+  --healthy: #83dfa1;
+  --degraded: var(--input);
+  --unhealthy: #ff9b9e;
+  --unknown: #bac3cf;
+  --added: var(--master);
+  --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Cascadia Mono", "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}

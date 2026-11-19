@@ -88,8 +88,9 @@ def publish(raw, retail):
             at = beat["start"]+.86*(beat["end"]-beat["start"])
             ffmpeg("-ss", str(at), "-i", temp/movie.name, "-vf", "crop=1240:552:20:45,scale=600:-2:flags=lanczos",
                    "-frames:v", "1", temp/f"plate-{i:02d}.png")
+        columns = 3 if len(story) == 3 else 2
         ffmpeg("-framerate", "1", "-i", temp/"plate-%02d.png", "-vf",
-               f"tile=2x{math.ceil(len(story)/2)}:padding=8:margin=8:color=0xd1d3c9",
+               f"tile={columns}x{math.ceil(len(story)/columns)}:padding=8:margin=8:color=0x1b1d20",
                "-frames:v", "1", "-q:v", "2", temp/"chapters.jpg")
 
         # Hash the incoming files before moving them. Each edition updates its
