@@ -88,10 +88,9 @@ const FoundryLiveScenes = (() => {
     const caption=label(g,margin,railY,"",{fill:route,"font-size":m?18:19,"font-weight":690});
     const detail=label(g,margin,railY+(m?28:24),"",{fill:muted,"font-size":m?15:16.5});
     return p=>{
-      // Start at human scale and move the lens from the shop to the carrier.
-      // The full map settles before the census and both projected views.
+      // The film follows the order with the camera. The guide keeps all nine groups in view.
       const travel=stage(p,.10,.72);
-      const zoom=beat===0?1+.31*(1-stage(p,.70,.95)):1;
+      const zoom=beat===0 && !ctx.inGuide?1+.31*(1-stage(p,.70,.95)):1;
       const anchorX=W*(.12+.70*travel),anchorY=firstY+ch*(.60+.44*Math.sin(travel*Math.PI));
       camera.setAttribute("transform",`translate(${(1-zoom)*anchorX} ${(1-zoom)*anchorY}) scale(${zoom})`);
       const returns=beat===2&&p>=.52, active=returns?recovery:delivery,color=returns?refund:route;

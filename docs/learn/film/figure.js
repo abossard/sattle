@@ -49,8 +49,7 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     example.append(context,observation);
     principle.append(source,meaning);
     bridge.append(example,principle);
-    if (chapter.captionInk) bridge.classList.add("on-dark");
-    host.append(bridge);
+    host.replaceChildren(bridge);
   }
 
   function create(host, topic, mobile) {
@@ -68,8 +67,7 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     el(svg,"desc",{},[chapter.description,chapter.example,chapter.principle+".",chapter.meaning].join(" "));
     box(svg,0,0,width,height,{fill:chapter.tint});
     const plot=el(svg,"g",{transform:`translate(${gutter} 7)`});
-    if (inGuide) guideBridge(host,chapter);
-    else filmBridge(svg,chapter,gutter,H+11,width);
+    if (!inGuide) filmBridge(svg,chapter,gutter,H+11,width);
     return {topic,mobile,svg,plot,W,H,beats:[],active:-1};
   }
 
@@ -83,7 +81,7 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     if (!view.beats[beat]) {
       const g=el(view.plot,"g",{"data-figure-step":beat});
       const seek=drawings[topic]({
-        svg:view.svg,g,el,txt,line,box,dot,stage,colors,W:view.W,H:view.H,mobile,beat,
+        svg:view.svg,g,el,txt,line,box,dot,stage,colors,W:view.W,H:view.H,mobile,beat,inGuide:host.dataset.responsive==="true",
         assetBase:host.dataset.assetBase||"assets/"
       });
       view.beats[beat]={g,seek};
@@ -98,5 +96,5 @@ function createChapterFigures(chapters, drawings, caseLabel) {
     current.seek(0);
     return {seek:p=>current.seek(Math.max(0,Math.min(1,p)))};
   }
-  return {chapters,mount};
+  return {chapters,mount,guideBridge};
 }

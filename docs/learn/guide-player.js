@@ -4,19 +4,37 @@ const chapters=story.map(scene=>{
 });
 
 const chapterNav=$("#chapters");
+const chapterMenu=$("#chapter-menu"), chapterToggle=$("#chapters-toggle");
+if (!chapterMenu.hidePopover) {
+  chapterMenu.hidden=true;
+  chapterToggle.setAttribute("aria-expanded","false");
+  chapterToggle.onclick=()=>{
+    chapterMenu.hidden=!chapterMenu.hidden;
+    chapterToggle.setAttribute("aria-expanded",String(!chapterMenu.hidden));
+  };
+  chapterMenu.addEventListener("keydown",event=>{
+    if(event.key==="Escape"){closeChapters();chapterToggle.focus();}
+  });
+}
+function closeChapters() {
+  if(chapterMenu.hidePopover)chapterMenu.hidePopover();
+  else {chapterMenu.hidden=true;chapterToggle.setAttribute("aria-expanded","false");}
+}
+chapterNav.addEventListener("click",event=>{
+  if(event.target.closest("a")){closeChapters();$("#lesson").focus({preventScroll:true});}
+});
 chapters.forEach((c,i)=>{
   const a=document.createElement("a");a.href="#"+c.id;a.innerHTML='<span>'+String(i+1).padStart(2,'0')+'</span>'+c.nav;chapterNav.append(a);
 });
 function show(focus=false) {
   const i=Math.max(0,chapters.findIndex(c=>c.id===location.hash.slice(1))), c=chapters[i];
   [...chapterNav.children].forEach((a,k)=>{if(k===i)a.setAttribute("aria-current","step");else a.removeAttribute("aria-current");});
-  if(matchMedia("(max-width:640px)").matches){
-    const selected=chapterNav.children[i];
-    chapterNav.scrollLeft+=selected.getBoundingClientRect().left-chapterNav.getBoundingClientRect().left-5;
-  }
   $("#eyebrow").textContent=document.body.dataset.case+" / "+String(i+1).padStart(2,"0");
   $("#title").textContent=c.title;$("#intro").textContent=c.intro;
-  $("#animation").style.setProperty("--figure-paper",ShopMap.chapters[c.id].tint);
+  const chapter=ShopMap.chapters[c.id];
+  $("#animation").style.setProperty("--figure-paper",chapter.tint);
+  $("#animation").style.setProperty("--figure-ink",chapter.captionInk || "var(--ink)");
+  ShopMap.guideBridge($("#chapter-reference"),chapter);
   player.load(c);c.activity();
   const references=new Map(c.sources.map(([name,file])=>[file,name]));
   for(const slug of ShopMap.chapters[c.id].papers || []){
@@ -29,7 +47,7 @@ function show(focus=false) {
   $("#next").onclick=()=>location.hash=chapters[(i+1)%chapters.length].id;
   $("#count").textContent=(i+1)+" / "+chapters.length;
   document.title=c.nav+" · Sattle field guide";
-  if(focus){$("#lesson").focus({preventScroll:true});window.scrollTo(0,0);}
+  if(focus){closeChapters();$("#lesson").focus({preventScroll:true});window.scrollTo(0,0);}
 }
 window.addEventListener("hashchange",()=>show(true));
 $(".skip").onclick=e=>{e.preventDefault();$("#lesson").focus();};
@@ -225,12 +243,7 @@ const player=(()=>{
 })();
 
 function installFigureZoom() {
-  const enlarge=document.createElement("button");
-  enlarge.type="button";
-  enlarge.className="enlarge-figure";
-  enlarge.textContent="Enlarge figure";
-  enlarge.setAttribute("aria-haspopup","dialog");
-  $("#map").before(enlarge);
+  const enlarge=$(".enlarge-figure");
 
   const dialog=document.createElement("dialog");
   dialog.className="figure-zoom";

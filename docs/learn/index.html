@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light"><title>One order through the whole shop · Sattle</title>
-  <link rel="stylesheet" href="learn.css?v=186f278b348cdbd1">
+  <link rel="stylesheet" href="learn.css?v=7b7f9a41f9c677c8">
   <link rel="stylesheet" href="foundry/projection-guide.css?v=0c16d95e4ae49448">
   <script>
     // Preserve links to the original eight replay chapters.
@@ -14,38 +14,54 @@
   <script defer src="foundry/terms.js?v=541b043f84cb981f"></script>
   <script defer src="foundry/case.js?v=d45b1a976f83fd89"></script>
   <script defer src="foundry/projection.js?v=2ed33f60b0e071d0"></script>
-  <script defer src="foundry/live-scenes.js?v=7af352a8448684a5"></script>
+  <script defer src="foundry/live-scenes.js?v=17ce7d47669c0ad6"></script>
   <script defer src="foundry/work-scenes.js?v=bd6e081e28141daf"></script>
   <script defer src="foundry/commerce-scene.js?v=663f382515acea58"></script>
   <script defer src="foundry/projection-scene.js?v=1d9baa4da25cf35c"></script>
-  <script defer src="film/figure.js?v=c9af34db08d4495b"></script>
-  <script defer src="foundry/chapters.js?v=ba723cf73740f159"></script>
+  <script defer src="film/figure.js?v=4ed7ac7847476618"></script>
+  <script defer src="foundry/chapters.js?v=711a0d8b967ca0ac"></script>
   <script defer src="foundry/story-data.js?v=a242a3f191ba6c51"></script>
   <script defer src="foundry/captions-local.js?v=0c6d08b334e7ea53"></script>
   <script defer src="guide-ui.js?v=f8c40c8d2a69b872"></script>
   <script defer src="foundry/projection-guide.js?v=3fdbd793bcfec11f"></script>
   <script defer src="foundry/guide.js?v=43cd2a779641cdc0"></script>
-  <script defer src="guide-player.js?v=7f7451cf3dd4badd"></script>
+  <script defer src="guide-player.js?v=6d1d9f17dd8766b5"></script>
 </head>
 <body data-case="Retail architecture · Worked example">
 <a href="#lesson" class="skip">Skip to the lesson</a>
-<header class="mast"><div class="mast-inner"><a class="brand" href="#estate" aria-label="Sattle field guide home"><span class="symbol" aria-hidden="true">∷</span>Sattle</a><span class="mast-rule"></span><a class="case-link" href="pg-shop.html">Recorded pg-shop replay</a>
-<button id="watch" class="watch"><span aria-hidden="true">▶</span> Watch the film</button></div></header>
-<div class="shell">
-  <nav class="contents" aria-label="Field guide chapters"><p class="eyebrow">Contents</p><div id="chapters"></div><a class="paper-link" href="../../paper/README.md">Read the white paper ↗</a></nav>
-  <main id="lesson" tabindex="-1">
-    <p id="eyebrow" class="eyebrow"></p><h1 id="title"></h1><p id="intro" class="intro"></p>
-    <div id="animation" class="plate">
-      <div id="map" data-responsive="true" data-asset-base="foundry/"></div>
-      <dl class="concept-card" aria-live="polite" aria-atomic="true"><dt id="concept-term"></dt><dd id="concept-meaning"></dd></dl>
-      <div class="player"><button id="listen">▶ Play with narration</button><label for="scene-position" class="sr">Position in chapter</label><input type="range" id="scene-position" min="0" max="1000" value="0" step="1"><output id="elapsed">0:00</output><button id="mute" aria-pressed="false">Mute</button></div>
-    </div><audio id="narrator" preload="metadata" src="foundry/voice.m4a?v=09d9521d96269a94"></audio>
+<header class="mast">
+  <div class="mast-inner">
+    <a class="brand" href="#estate" aria-label="Sattle field guide home"><span class="symbol" aria-hidden="true">∷</span>Sattle</a>
+    <nav class="contents" aria-label="Field guide chapters">
+      <button type="button" id="chapters-toggle" popovertarget="chapter-menu" aria-controls="chapter-menu">Chapters <span aria-hidden="true">▾</span></button>
+      <div id="chapter-menu" popover="auto">
+        <div id="chapters"></div>
+        <div class="guide-links"><a href="pg-shop.html">Recorded pg-shop replay</a><a href="../../paper/README.md">Read the white paper ↗</a></div>
+      </div>
+    </nav>
+    <button id="watch" class="watch"><span aria-hidden="true">▶</span> Watch the film</button>
+  </div>
+</header>
+<main id="lesson" tabindex="-1">
+  <section id="animation" class="plate" aria-labelledby="title">
+    <header class="stage-heading">
+      <div class="stage-tools"><p id="eyebrow" class="eyebrow"></p><button type="button" class="enlarge-figure" aria-haspopup="dialog">Enlarge figure</button></div>
+      <h1 id="title"></h1>
+    </header>
+    <div id="map" data-responsive="true" data-asset-base="foundry/"></div>
+    <div class="player"><button id="listen">▶ Play with narration</button><label for="scene-position" class="sr">Position in chapter</label><input type="range" id="scene-position" min="0" max="1000" value="0" step="1"><output id="elapsed">0:00</output><button id="mute" aria-pressed="false">Mute</button></div>
+    <dl class="concept-card" aria-live="polite" aria-atomic="true"><dt id="concept-term"></dt><dd id="concept-meaning"></dd></dl>
+  </section>
+  <audio id="narrator" preload="metadata" src="foundry/voice.m4a?v=09d9521d96269a94"></audio>
+  <div class="chapter-reading">
     <div id="beat-buttons" class="options" role="group" aria-label="Jump to a moment"></div>
+    <p id="intro" class="intro"></p>
+    <div id="chapter-reference"></div>
     <details class="passage"><summary>Read this part of the narration</summary><p id="spoken" class="spoken"></p></details>
     <div id="activity"></div><aside id="reading"></aside>
     <div class="pager"><button id="back">← Previous</button><span id="count"></span><button id="next">Next chapter →</button></div>
-  </main>
-</div>
+  </div>
+</main>
 <dialog id="cinema" data-folder="foundry/" aria-labelledby="film-title"><header><h2 id="film-title">One order through the whole shop</h2><button id="close" aria-label="Close film">Close ×</button></header><video controls playsinline preload="none" poster="foundry/poster.jpg?v=438a49936064e392"><source src="foundry/shop.mp4?v=326470684ca9cda5" type="video/mp4"><track kind="captions" srclang="en" label="English" id="film-captions"></video><p><a href="foundry/shop.mp4?v=326470684ca9cda5" download>Save the film</a> · <a href="foundry/transcript.md">Read the transcript</a></p></dialog>
 <noscript><p>Enable JavaScript for the interactive chapters, or <a href="foundry/shop.mp4?v=326470684ca9cda5">watch the film</a> and <a href="foundry/transcript.md">read the transcript</a>.</p></noscript>
 </body></html>

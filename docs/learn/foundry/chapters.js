@@ -1,7 +1,7 @@
 // The figure, the replay fact and the paper section stay together on both screens.
 const retailChapters = {
   estate:{figure:"The whole retail estate",context:"Order O-104",
-    description:"One order crosses the shop. A pullback reveals the full illustrative master graph, then two views isolate different business questions.",
+    description:"The master graph shows nine groups of shop systems. Highlighted paths trace an order from checkout to delivery, then a return from inspection to refund.",
     example:"One order touches stock, a carrier and a return.",principle:"Projection",meaning:"A query can show the links that matter to one question.",
     section:"0.2",reading:"ch00-introduction.md#02-the-idea-and-the-terms-it-needs",tint:"#102a38",captionInk:"#eaf4f3"},
   dependencies:{figure:"From the master graph to the business graph",context:"All 46 entities",
