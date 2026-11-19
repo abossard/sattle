@@ -9,9 +9,16 @@ const lessons={
   rollup:["How health rolls up","In Sattle’s pg-shop recording, the database stops answering at 10:11 UTC. Trace the alarm from the PostgreSQL server to the services that need it.",exploreRollup,[
     ["Database and cache rules","engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson"],["How the health query rolls up severity",healthFile],
     ["Recorded workload patches","canvas/public/demo/estate/workload.patches.ndjson"]]],
-  discovery:["A pod starts using Redis","Redis already serves web in the pg-shop recording. Replay the same shop with one extra Hubble flow and follow the API’s new dependency from its network address to the health graph.",exploreDiscovery,[
+  discovery:["When the system changes","What if the shop changes and nobody updates its health model? Here an API pod starts calling Redis. When Sattle processes the new flow, its existing rules add the dependency and carry the cache warning to the API and its gateway.",exploreDiscovery,[
     ["How the structure query matches traffic",structureFile],["How the health query uses the result",healthFile],
-    ["Replay the extra Hubble flow","docs/learn/build_graph_cases.py"],["Evidence from the controlled replay","docs/learn/foundry/replay-cases.js"]]]
+    ["Replay the extra Hubble flow","docs/learn/build_graph_cases.py"],["Evidence from the controlled replay","docs/learn/foundry/replay-cases.js"]]],
+  gkql:["Reading a GKQL program","GKQL lets you draw a query as a graph. In Sattle’s deployment-health experiment, each ready pod counts toward one workload. Follow the blocks to see how two calls from web to db produce one link.",exploreGkql,[
+    ["The executable GKQL program",ShopGkqlExample.sources.program],
+    ["The pod readiness events",ShopGkqlExample.sources.kubernetes],
+    ["The two recorded calls",ShopGkqlExample.sources.hubble],
+    ["The replay comparison",ShopGkqlExample.sources.tests],
+    ["The graph-language design","paper/research/14-graph-native-projection-language.md"],
+    ["GKQL migration progress","https://github.com/abossard/sattle/issues/7"]]]
 };
 
 function stateCells(host, states, components){
@@ -41,11 +48,11 @@ function exploreRollup(){
 
 function exploreDiscovery(){
   const data=ShopReplayCases.discovery;
-  setActivity('<section class="case-inspect journey-inspector"><h2>What changed with one extra flow?</h2><div id="flow-choices" class="options"></div><div class="flow-states" id="compared-states" role="status"></div><p id="comparison-note"></p><details id="redis-trace"><summary>Trace the added dependency</summary></details></section>');
+  setActivity('<section class="case-inspect journey-inspector"><h2>How does one new flow change the model?</h2><div id="flow-choices" class="options"></div><div class="flow-states" id="compared-states" role="status"></div><p id="comparison-note"></p><details id="redis-trace"><summary>Trace the added dependency</summary></details></section>');
   choices(["Original replay","With the API flow"],i=>{
     stateCells($("#compared-states"),i ? data.after : data.before,[["shopcache","Redis"],["api","API"],["apim-shop","Gateway"]]);
     $("#comparison-note").textContent=i
-      ? "The same cache warning reaches the API and its gateway through the new dependency."
+      ? "The existing rules pick up the API’s new dependency. The cache warning now reaches the API and its gateway."
       : "Web already uses Redis. The API has no dependency on that cache in this run.";
     $("#redis-trace").hidden=!i;
   },$("#flow-choices"),1);

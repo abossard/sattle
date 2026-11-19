@@ -184,3 +184,34 @@ test('the five output views trace their answers back to the same shop evidence',
   assert.ok(journey.unresolved.some(ref => ref.from === missing));
   assert.ok(links.every(edge => edge.from !== missing && edge.to !== missing));
 });
+
+test('the GKQL drawing and replay follow the authored query and captured inputs', () => {
+  const source = readFileSync(join(__dirname, '../foundry/gkql-example.js'), 'utf8');
+  const example = JSON.parse(vm.runInNewContext(source + '\nJSON.stringify(ShopGkqlExample)'));
+  const fromRepo = file => readFileSync(join(__dirname, '../../..', file), 'utf8');
+  const records = file => fromRepo(file).trim().split('\n').map(line => JSON.parse(line));
+  const program = JSON.parse(fromRepo(example.sources.program));
+  assert.deepEqual(example.verbs.map(({id,verb}) => ({id,verb})), program.verbs.map(({id,verb}) => ({id,verb})));
+  assert.deepEqual(example.wires, program.wires);
+  assert.equal(example.minReady, program.parameters.find(p => p.name === 'minReady').default);
+  const watch = records(example.sources.kubernetes);
+  const calls = records(example.sources.hubble).map(entry => entry.payload.flow);
+  assert.deepEqual(example.calls.map(call => [call.from,call.to,call.at]), calls.map(flow =>
+    [flow.source.pod_name,flow.destination.pod_name,flow.time.slice(11,19)]));
+  for (const frame of example.frames) {
+    const ready = {};
+    for (const event of watch) {
+      const pod = event.payload.object;
+      if (pod.kind === 'Pod' && event.capturedAt.slice(11,19) <= frame.time) {
+        ready[pod.metadata.name] = pod.status.conditions.find(c => c.type === 'Ready').status === 'True';
+      }
+    }
+    assert.deepEqual(frame.ready, ready);
+    for (const deployment of example.deployments) {
+      const count = example.pods.filter(pod => pod.deployment === deployment && ready[pod.id]).length;
+      assert.equal(frame.counts[deployment], count);
+      assert.equal(frame.states[deployment], count > example.minReady ? 'Healthy' : 'Unhealthy');
+    }
+    assert.equal(frame.talks, Object.values(frame.states).includes('Unhealthy') ? 'Unhealthy' : 'Healthy');
+  }
+});

@@ -43,6 +43,7 @@ def write_view_starts(project, story):
 # Keep captions and diagrams in the project's spelling. Only the narrator sees
 # the spoken forms, including clock times that a general text reader may misread.
 PRONUNCIATIONS = {
+    "GKQL": "G K Q L", "graph-match": "graph match",
     "pg-shop": "P G shop", "offers-cache": "offers cache",
     "10:06:30": "thirty seconds past ten oh six", "10:11": "ten eleven",
     "10:14": "ten fourteen", "10:15": "ten fifteen",
@@ -176,7 +177,7 @@ def composition(story, retail):
     shared = "../film/" if retail else ""
     voice = "voice.m4a" if retail else "assets/voice.m4a"
     if retail:
-        drawings = ["case.js", "projection.js", "view-starts.js", "graph-journey.js", "journey-scene.js", "replay-cases.js", "replay-scenes.js", shared+"figure.js", "story-data.js", "chapters.js"]
+        drawings = ["case.js", "projection.js", "view-starts.js", "graph-journey.js", "journey-scene.js", "replay-cases.js", "replay-scenes.js", "gkql-example.js", "gkql-scene.js", shared+"figure.js", "story-data.js", "chapters.js"]
     else:
         drawings = ["master-data.js", "model-scenes.js", "change-scenes.js", "review-scenes.js", "figure.js", "shop-map.js"]
     scripts = "".join(f'<script src="{src}"></script>' for src in [shared+"vendor/gsap.min.js", "terms.js", *drawings])
@@ -184,7 +185,7 @@ def composition(story, retail):
     for i, scene in enumerate(story):
         beats=scene["beats"]
         case = {"estate":"Order O-104 · illustrated shop", "rollup":"pg-shop · recorded estate",
-                "discovery":"pg-shop · controlled replay"}.get(scene["id"], "pg-shop on Azure")
+                "discovery":"pg-shop · new API call to Redis", "gkql":"X12 · deployment health"}.get(scene["id"], "pg-shop on Azure")
         start, end=beats[0]["start"], beats[-1]["end"]
         offsets=",".join(str(b["end"]-start) for b in beats)
         questions = html.escape(json.dumps([b["question"] for b in beats], ensure_ascii=False), quote=True)

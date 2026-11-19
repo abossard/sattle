@@ -417,42 +417,42 @@ const story = [
   },
   {
     "id": "discovery",
-    "chapter": "A pod starts using Redis",
-    "title": "What changes when a pod starts talking to Redis?",
+    "chapter": "When the system changes",
+    "title": "How does the health model keep up when something changes?",
     "beats": [
       {
         "focus": "New call",
-        "question": "Suppose an API pod starts sending traffic to Redis. What does Sattle see first?",
-        "answer": "Hubble recorded one flow from the API pod to this address. In our copy of the replay, the pod and the address already exist. The new line means the pod sent traffic there. That’s what the network observed. To call Redis a dependency of the whole API service, the model needs to know who’s at each end.",
+        "question": "Can the health model pick up a new dependency on its own?",
+        "answer": "Yes. Hubble recorded one flow from the API pod to this address. The new line means the pod sent traffic there. When Sattle processes that observation, the existing rules connect the pod to the API and the address to Redis. The health model picks up the new dependency without anyone editing it.",
         "start": 219.45833333333334,
-        "end": 242.79166666666666,
+        "end": 240.75,
         "answerStarts": [
-          224.99833333333333
+          223.07333333333332
         ],
         "spokenCues": [
           [
-            225.398,
+            223.498,
+            "Yes."
+          ],
+          [
+            223.948,
             "Hubble recorded one flow from the API pod to this address."
           ],
           [
-            229.048,
-            "In our copy of the replay, the pod and the address already exist."
-          ],
-          [
-            232.598,
+            227.423,
             "The new line means the pod sent traffic there."
           ],
           [
-            235.023,
-            "That’s what the network observed."
+            229.948,
+            "When Sattle processes that observation,"
           ],
           [
-            236.698,
-            "To call Redis a dependency of the whole API service,"
+            232.023,
+            "the existing rules connect the pod to the API and the address to Redis."
           ],
           [
-            239.673,
-            "the model needs to know who’s at each end."
+            236.298,
+            "The health model picks up the new dependency without anyone editing it."
           ]
         ]
       },
@@ -460,34 +460,34 @@ const story = [
         "focus": "Service dependency",
         "question": "How does that address become a Redis dependency in the health model?",
         "answer": "Kubernetes ties the pod to the API service. At the other end, the address matches a private endpoint for Redis. The DNS name points to the same cache. That gives the structure query both ends of a service dependency. It derives the API to Redis link from those records. The health model can now follow it using its existing rule.",
-        "start": 242.79166666666666,
-        "end": 267.2083333333333,
+        "start": 240.75,
+        "end": 265.1666666666667,
         "answerStarts": [
-          246.90666666666667
+          244.865
         ],
         "spokenCues": [
           [
-            247.282,
+            245.24,
             "Kubernetes ties the pod to the API service."
           ],
           [
-            250.407,
+            248.365,
             "At the other end, the address matches a private endpoint for Redis."
           ],
           [
-            254.057,
+            252.015,
             "The DNS name points to the same cache."
           ],
           [
-            256.382,
+            254.34,
             "That gives the structure query both ends of a service dependency."
           ],
           [
-            259.932,
+            257.89,
             "It derives the API to Redis link from those records."
           ],
           [
-            263.082,
+            261.04,
             "The health model can now follow it using its existing rule."
           ]
         ]
@@ -496,34 +496,34 @@ const story = [
         "focus": "Revision patch",
         "question": "Redis was already there. Where can I find the new link?",
         "answer": "Look for the plus sign. A patch lists the edits from one graph revision to the next. In the master graph, the added line means the pod sent traffic. In the structure graph, it means the API depends on Redis. In the health graph, revision fourteen adds that dependency. The cache was there all along.",
-        "start": 267.2083333333333,
-        "end": 288.4166666666667,
+        "start": 265.1666666666667,
+        "end": 286.375,
         "answerStarts": [
-          270.6983333333333
+          268.6566666666667
         ],
         "spokenCues": [
           [
-            271.098,
+            269.057,
             "Look for the plus sign."
           ],
           [
-            272.448,
+            270.407,
             "A patch lists the edits from one graph revision to the next."
           ],
           [
-            275.573,
+            273.532,
             "In the master graph, the added line means the pod sent traffic."
           ],
           [
-            278.923,
+            276.882,
             "In the structure graph, it means the API depends on Redis."
           ],
           [
-            282.498,
+            280.457,
             "In the health graph, revision fourteen adds that dependency."
           ],
           [
-            285.798,
+            283.757,
             "The cache was there all along."
           ]
         ]
@@ -532,43 +532,226 @@ const story = [
         "focus": "Evidence",
         "question": "How could I check that the API really started using that cache?",
         "answer": "Follow the dependency back through the graphs. The structure query kept two matches. One links the pod’s destination to a private endpoint. The other identifies Redis by its DNS name. That trail from a conclusion back to its inputs is called provenance. Now compare the two runs. Redis has the same load warning in both. The added dependency explains why the API and gateway turn amber.",
-        "start": 288.4166666666667,
-        "end": 315.5416666666667,
+        "start": 286.375,
+        "end": 313.5,
         "answerStarts": [
-          292.5566666666667
+          290.515
         ],
         "spokenCues": [
           [
-            292.957,
+            290.915,
             "Follow the dependency back through the graphs."
           ],
           [
-            295.157,
+            293.115,
             "The structure query kept two matches."
           ],
           [
-            297.282,
+            295.24,
             "One links the pod’s destination to a private endpoint."
           ],
           [
-            300.207,
+            298.165,
             "The other identifies Redis by its DNS name."
           ],
           [
-            302.882,
+            300.84,
             "That trail from a conclusion back to its inputs is called provenance."
           ],
           [
-            306.482,
+            304.44,
             "Now compare the two runs."
           ],
           [
-            308.032,
+            305.99,
             "Redis has the same load warning in both."
           ],
           [
-            310.232,
+            308.19,
             "The added dependency explains why the API and gateway turn amber."
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "id": "gkql",
+    "chapter": "Reading a GKQL program",
+    "title": "How does GKQL turn pods and calls into a health graph?",
+    "beats": [
+      {
+        "focus": "Program graph",
+        "question": "Can we see the query that builds a health graph?",
+        "answer": "Yes. This is a GKQL program from Sattle’s deployment health experiment. The dots in the master graph are pods. Web has two, and the database has one. The query itself is a graph, too. Its boxes are operations. A wire tells us which operation uses another’s result. The target graph shows each workload and the traffic between them.",
+        "start": 313.5,
+        "end": 337.2083333333333,
+        "answerStarts": [
+          316.34
+        ],
+        "spokenCues": [
+          [
+            316.765,
+            "Yes."
+          ],
+          [
+            317.165,
+            "This is a GKQL program from Sattle’s deployment health experiment."
+          ],
+          [
+            321.265,
+            "The dots in the master graph are pods."
+          ],
+          [
+            323.49,
+            "Web has two, and the database has one."
+          ],
+          [
+            325.84,
+            "The query itself is a graph, too."
+          ],
+          [
+            327.94,
+            "Its boxes are operations."
+          ],
+          [
+            329.865,
+            "A wire tells us which operation uses another’s result."
+          ],
+          [
+            332.99,
+            "The target graph shows each workload and the traffic between them."
+          ]
+        ]
+      },
+      {
+        "focus": "Match a pattern",
+        "question": "What does the little arrow inside graph-match look for?",
+        "answer": "A ready pod and the deployment that controls it. The letters p and d hold their places in the pattern. Watch the first web pod light up. In this match, p stands for that pod, and d stands for web. That pairing is called a binding. The other web pod fits too. So does the database pod. Three matches.",
+        "start": 337.2083333333333,
+        "end": 358.5,
+        "answerStarts": [
+          340.5733333333333
+        ],
+        "spokenCues": [
+          [
+            340.973,
+            "A ready pod and the deployment that controls it."
+          ],
+          [
+            343.473,
+            "The letters p and d hold their places in the pattern."
+          ],
+          [
+            346.273,
+            "Watch the first web pod light up."
+          ],
+          [
+            348.273,
+            "In this match, p stands for that pod, and d stands for web."
+          ],
+          [
+            351.598,
+            "That pairing is called a binding."
+          ],
+          [
+            353.448,
+            "The other web pod fits too."
+          ],
+          [
+            355.148,
+            "So does the database pod."
+          ],
+          [
+            356.548,
+            "Three matches."
+          ]
+        ]
+      },
+      {
+        "focus": "Count ready pods",
+        "question": "How do those matches give web a health state?",
+        "answer": "Start each deployment at zero. Add one for every ready pod. The summarize step groups those numbers by deployment and adds them up. Web gets two. The database gets one. The threshold here is zero, so any count above zero means Healthy. Web appears once in the target graph, with its deployment ID and a count of two.",
+        "start": 358.5,
+        "end": 380.375,
+        "answerStarts": [
+          361.415
+        ],
+        "spokenCues": [
+          [
+            361.79,
+            "Start each deployment at zero."
+          ],
+          [
+            363.64,
+            "Add one for every ready pod."
+          ],
+          [
+            365.415,
+            "The summarize step groups those numbers by deployment and adds them up."
+          ],
+          [
+            368.99,
+            "Web gets two."
+          ],
+          [
+            370.065,
+            "The database gets one."
+          ],
+          [
+            371.565,
+            "The threshold here is zero, so any count above zero means Healthy."
+          ],
+          [
+            375.34,
+            "Web appears once in the target graph,"
+          ],
+          [
+            377.14,
+            "with its deployment ID and a count of two."
+          ]
+        ]
+      },
+      {
+        "focus": "Two calls, one edge",
+        "question": "What happens to the connection if the database pod stops being ready?",
+        "answer": "Follow the two pod calls. Both reach the same database pod, so their matches build one Talks edge from web to the database. At ten oh three, the database pod stops being ready. Its count falls to zero. The edge takes the worse state of its two ends, so it turns red with the database. Web still has two ready pods and stays green.",
+        "start": 380.375,
+        "end": 405.0,
+        "answerStarts": [
+          384.79
+        ],
+        "spokenCues": [
+          [
+            385.19,
+            "Follow the two pod calls."
+          ],
+          [
+            386.915,
+            "Both reach the same database pod,"
+          ],
+          [
+            388.915,
+            "so their matches build one Talks edge from web to the database."
+          ],
+          [
+            392.315,
+            "At ten oh three, the database pod stops being ready."
+          ],
+          [
+            395.19,
+            "Its count falls to zero."
+          ],
+          [
+            396.89,
+            "The edge takes the worse state of its two ends,"
+          ],
+          [
+            399.015,
+            "so it turns red with the database."
+          ],
+          [
+            400.965,
+            "Web still has two ready pods and stays green."
           ]
         ]
       }

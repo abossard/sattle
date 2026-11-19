@@ -8,9 +8,14 @@ const retailChapters = {
     description:"Follow a database alarm through the services that depend on it. Compare the meter, the alarm rule and the health state in the graph.",
     example:"The database alarm reaches the API and web.",principle:"Health roll-up",meaning:"Each service reflects the dependencies that can affect it.",
     section:"7.4",reading:"ch07-telemetry-plane.md#74-worked-example-the-workload-model"},
-  discovery:{figure:"A new Redis dependency",context:"Controlled pg-shop replay",
-    description:"Follow a recorded network call from its source through the structure and health projections. Inspect the patch and its evidence.",
-    example:"A new call connects two services.",principle:"Patches and provenance",meaning:"A patch records the edit. Its evidence explains the link.",
-    section:"9.4",reading:"ch09-evolution-evidence-provenance.md#94-provenance-record-and-the-history-of-an-element"}
+  discovery:{figure:"When the system changes",context:"pg-shop · new API call to Redis",
+    description:"An API pod starts using Redis. Follow the new observation through the existing rules to see the health model update automatically. Inspect the resulting patch and its evidence.",
+    example:"The API starts calling Redis. The model picks it up.",principle:"Patches and provenance",meaning:"The rules update the graph and keep the evidence for the link.",
+    section:"9.4",reading:"ch09-evolution-evidence-provenance.md#94-provenance-record-and-the-history-of-an-element"},
+  gkql:{figure:"Reading a GKQL program",context:"X12 · deployment health",
+    description:"Follow the wired operations of a GKQL program. Match ready pods to deployments, count them, then trace two pod calls to one link between workloads.",
+    example:"Two pod calls support one Talks link.",
+    principle:"Levels of abstraction",meaning:"A projection can lift a link to the workloads at its ends.",
+    section:"5.8",reading:"ch05-projection-language.md#58-levels-of-abstraction-a-projection-lifts-the-edges-with-the-nodes"}
 };
-const ShopMap = createChapterFigures(retailChapters, {estate:ShopJourneyScene, ...ShopReplayScenes}, "Sattle", story);
+const ShopMap = createChapterFigures(retailChapters, {estate:ShopJourneyScene, ...ShopReplayScenes, gkql:ShopGkqlScene}, "Sattle", story);

@@ -24,7 +24,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The three-chapter shop uses the same drawing colors in the guide and film. */
+/* The shop uses the same drawing colors in the guide and film. */
 .retail {
   --blue: #76bdff;
   --master: #39e7c5;
@@ -43,6 +43,7 @@
 .retail[data-chapter="estate"], .retail .shot#estate, .chapter-strip [href="#estate"] { --chapter-color:var(--master); }
 .retail[data-chapter="rollup"], .retail .shot#rollup, .chapter-strip [href="#rollup"] { --chapter-color:var(--rule); }
 .retail[data-chapter="discovery"], .retail .shot#discovery, .chapter-strip [href="#discovery"] { --chapter-color:var(--identity); }
+.retail[data-chapter="gkql"], .retail .shot#gkql, .chapter-strip [href="#gkql"] { --chapter-color:var(--input); }
 .retail[data-chapter], .retail .shot, .chapter-strip a {
   --chapter-surface:color-mix(in srgb,var(--chapter-color) 18%,var(--page));
   --chapter-wash:linear-gradient(105deg,color-mix(in srgb,var(--chapter-color) 27%,var(--page)),var(--chapter-surface) 55%,color-mix(in srgb,var(--chapter-color) 8%,var(--page)));

@@ -14,9 +14,15 @@ const ShopTerms = {
     ["Recovery","A positive sample arrives before the alarm clears. The rule waits for a second one."]
   ],
   discovery:[
-    ["New call","Hubble records traffic from a Kubernetes pod to an IP address."],
+    ["New call","A network flow records a new call. Sattle can use that evidence to update the health model as it processes the change."],
     ["Service dependency","The pod backs the API service. The destination matches a private endpoint for Redis."],
     ["Revision patch","A patch lists the edits between two versions of a graph. Here it adds the API’s dependency on Redis."],
     ["Evidence","Provenance traces a result back to its inputs. The endpoint and the DNS name both identify the Redis cache."]
+  ],
+  gkql:[
+    ["Program graph","The query is a graph. Each block names an operation. Its outgoing wires lead to the operations that use its result."],
+    ["Match a pattern","A pattern describes a shape to look for. Each match here pairs a ready pod with the deployment that controls it."],
+    ["Count ready pods","Each deployment contributes a zero. Each ready pod adds one. The deployment keeps its count even when its last ready pod drops out."],
+    ["Two calls, one edge","Both calls connect the same two workloads. Their target is one Talks edge, whose state depends on the workloads at both ends."]
   ]
 };

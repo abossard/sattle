@@ -4,9 +4,10 @@
 
 1. **How does Sattle build the shop’s master graph?** A refund for order O-104 is stuck. Start with 142 illustrative records. Match identities, group related software, and choose one of five views. Pick a result to see which records support it. [Explore the shop](index.html#estate) · [Architecture and sources](foundry/sources.md)
 2. **Why does web turn red when the database fails?** Follow the database alarm through the API to web in the recorded pg-shop outage. Compare revisions 15, 16 and 18. The database needs two good minutes to recover. [Trace the health roll-up](index.html#rollup) · [Health query](../../engine/definitions/acme.workload.workloadHealth.kql)
-3. **What changes when a pod starts talking to Redis?** A controlled pg-shop replay adds one Hubble flow. The pod sends traffic to a private endpoint for the existing Redis cache. Sattle adds the API dependency using the same queries and rules. Inspect the patch and its two pieces of evidence. [Trace the new dependency](index.html#discovery) · [Structure query](../../engine/definitions/acme.workload.workloadStructure.kql)
+3. **How does the health model keep up when something changes?** An API pod starts calling Redis. When Sattle processes the new flow, the existing rules add the dependency and update the health model. Nobody has to edit it. The patch shows what changed and which records support it. [Trace the new dependency](index.html#discovery) · [Structure query](../../engine/definitions/acme.workload.workloadStructure.kql)
+4. **How does GKQL turn pods and calls into a health graph?** Follow a drawn query from three pods to two workloads. Change the replay time to see what happens when the database pod loses readiness, or pick an operation and follow its wires. [Explore GKQL](index.html#gkql) · [Executable query](../../engine/experiments/X12-picture-c/acme.deployhealth.deploymentHealth.gkql.json)
 
-[![The three chapter figures](foundry/chapters.jpg)](index.html)
+[![The four chapter figures](foundry/chapters.jpg)](index.html)
 
 A listener asks a question in each scene. The guide answers with a record or measurement, then explains the idea behind it. The term buttons let you hold a diagram on screen. Open **Read this part of the narration** to find the dialogue and its edit link.
 
@@ -39,7 +40,7 @@ See the [structure query](../../engine/definitions/acme.workload.workloadStructu
 
 ## Reproduce the guides and films
 
-Both recordings are available as MP4s with captions and chapter markers. [Three-chapter walkthrough](foundry/shop.mp4) · [Recorded pg-shop replay](sattle.mp4)
+Both recordings are available as MP4s with captions and chapter markers. [Four-chapter walkthrough](foundry/shop.mp4) · [Recorded pg-shop replay](sattle.mp4)
 
 The retail graph and projection are in [case.js](foundry/case.js) and [projection.js](foundry/projection.js). The recorded companion uses the .NET 11 engine and its estate fixture. These commands rebuild the companion evidence:
 
@@ -55,9 +56,9 @@ python3 -B docs/learn/replay_change.py
 
 Open the [retail narration script](foundry/lesson.json) or the [pg-shop narration script](film/lesson.json) and find the chapter by its title. Each entry in `cues` belongs to one moment in the animation. Edit `question` for the listener’s line and `answer` for the guide’s reply. The retail guide’s **Five views** answer has one paragraph per view. Keep them in screen order so each diagram appears as the guide names it.
 
-The guide answers with something visible, then explains the graph idea behind it. For instance, the “controlled by” edge tells you which deployment owns the ReplicaSet. A highlight can start on a particular phrase in the recording. If you reword that phrase, update its `spokenAt` cue in the [master graph drawing](foundry/journey-scene.js) or the [pg-shop drawings](foundry/replay-scenes.js).
+The guide answers with something visible, then explains the graph idea behind it. For instance, the “controlled by” edge tells you which deployment owns the ReplicaSet. A highlight can start on a particular phrase in the recording. If you reword that phrase, update its `spokenAt` cue in the [master graph drawing](foundry/journey-scene.js), the [pg-shop drawings](foundry/replay-scenes.js), or the [GKQL drawing](foundry/gkql-scene.js).
 
-The three-chapter recording blends Michael with Fenrir for the listener and Heart with Sarah for the guide. The pg-shop companion uses Michael and Heart. The voice blends, speaking pace and pauses live in the [narration generator](film/build.py).
+The main recording blends Michael with Fenrir for the listener and Heart with Sarah for the guide. The pg-shop companion uses Michael and Heart. The voice blends, speaking pace and pauses live in the [narration generator](film/build.py).
 
 On a fresh checkout, install the narrator and film tools once. Run these commands from the repository root with Python 3.12, FFmpeg, Node.js and npm installed. The first command downloads the Kokoro model and voices into `docs/learn/film/.narrator/`. [Kokoro ONNX](https://github.com/thewh1teagle/kokoro-onnx)
 

@@ -86,15 +86,15 @@ The meter is back at one. Why is the database still red?
 
 The rule remembers how many good minutes came in a row. At ten fourteen the count is one, and the alarm stays open. Ten fifteen makes two. The alarm clears and the callers recover. The times across the top come from the meter. Revision eighteen names the version of the graph that records the recovery.
 
-## 03:39 · A pod starts using Redis
+## 03:39 · When the system changes
 
 **Listener**
 
-Suppose an API pod starts sending traffic to Redis. What does Sattle see first?
+Can the health model pick up a new dependency on its own?
 
 **Guide**
 
-Hubble recorded one flow from the API pod to this address. In our copy of the replay, the pod and the address already exist. The new line means the pod sent traffic there. That’s what the network observed. To call Redis a dependency of the whole API service, the model needs to know who’s at each end.
+Yes. Hubble recorded one flow from the API pod to this address. The new line means the pod sent traffic there. When Sattle processes that observation, the existing rules connect the pod to the API and the address to Redis. The health model picks up the new dependency without anyone editing it.
 
 **Listener**
 
@@ -119,3 +119,37 @@ How could I check that the API really started using that cache?
 **Guide**
 
 Follow the dependency back through the graphs. The structure query kept two matches. One links the pod’s destination to a private endpoint. The other identifies Redis by its DNS name. That trail from a conclusion back to its inputs is called provenance. Now compare the two runs. Redis has the same load warning in both. The added dependency explains why the API and gateway turn amber.
+
+## 05:13 · Reading a GKQL program
+
+**Listener**
+
+Can we see the query that builds a health graph?
+
+**Guide**
+
+Yes. This is a GKQL program from Sattle’s deployment health experiment. The dots in the master graph are pods. Web has two, and the database has one. The query itself is a graph, too. Its boxes are operations. A wire tells us which operation uses another’s result. The target graph shows each workload and the traffic between them.
+
+**Listener**
+
+What does the little arrow inside graph-match look for?
+
+**Guide**
+
+A ready pod and the deployment that controls it. The letters p and d hold their places in the pattern. Watch the first web pod light up. In this match, p stands for that pod, and d stands for web. That pairing is called a binding. The other web pod fits too. So does the database pod. Three matches.
+
+**Listener**
+
+How do those matches give web a health state?
+
+**Guide**
+
+Start each deployment at zero. Add one for every ready pod. The summarize step groups those numbers by deployment and adds them up. Web gets two. The database gets one. The threshold here is zero, so any count above zero means Healthy. Web appears once in the target graph, with its deployment ID and a count of two.
+
+**Listener**
+
+What happens to the connection if the database pod stops being ready?
+
+**Guide**
+
+Follow the two pod calls. Both reach the same database pod, so their matches build one Talks edge from web to the database. At ten oh three, the database pod stops being ready. Its count falls to zero. The edge takes the worse state of its two ends, so it turns red with the database. Web still has two ready pods and stays green.

@@ -6,7 +6,7 @@ The listener asks a question about the figure. The guide answers from the shopâ€
 
 The shop is the bundled pg-shop replay. The cache chapters compare controlled edits to copies of that recording. Keep the settings, readings and rules that each experiment holds fixed visible when comparing outcomes.
 
-The main film has three chapters. The first follows the illustrated shop from source records to five views. The second uses the recorded pg-shop database alarm to explain how health rolls up. The third compares two pg-shop runs with the same rules and one extra Hubble flow. Show the added API-to-Redis dependency, the evidence that identifies its destination, and how that changes the health model. [Sources](../foundry/sources.md)
+The main film has four chapters. The first follows the illustrated shop from source records to five views. The second uses the recorded pg-shop database alarm to explain how health rolls up. The third asks how a health model keeps up when the system changes. Compare two pg-shop runs with the same rules and one extra Hubble flow. Show the added API-to-Redis dependency, the evidence that identifies its destination, and how that changes the health model. The fourth follows the executable deployment-health GKQL experiment. Its drawn pattern matches pods to deployments. Two pod calls produce one workload edge. [Sources](../foundry/sources.md)
 
 ## Visual language
 
@@ -14,4 +14,4 @@ Both guides and films use Sattle Canvasâ€™s dark drawing sheet. Graphite is the 
 
 Begin the master graph in grayscale. Introduce color when the model can say what a mark means. Pink identifies a match, blue marks a selection or projection, and mint with a plus sign marks an addition in a revision. Pair health colors with their names. Healthy is green, Degraded is amber, Unhealthy is coral and Unknown is gray.
 
-The chapter heading and definition share a color in both the walkthrough and the film. Teal marks the master graph, violet marks health rules, and pink marks Redis discovery. Within the drawings, color the groups, paths and state panels that the guide describes. Keep their labels legible against the dark fills.
+The chapter heading and definition share a color in both the walkthrough and the film. Teal marks the master graph, violet marks health rules, pink marks system changes, and amber marks the GKQL program. Within the drawings, color the groups, paths and state panels that the guide describes. Keep their labels legible against the dark fills.

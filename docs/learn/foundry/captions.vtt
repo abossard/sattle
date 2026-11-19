@@ -290,119 +290,240 @@ meter.
 Revision eighteen names the version of the
 graph that records the recovery.
 
-00:03:39.878 --> 00:03:43.228
-Listener: Suppose an API pod starts
-sending traffic to Redis.
+00:03:39.828 --> 00:03:42.928
+Listener: Can the health model pick up a
+new dependency on its own?
 
-00:03:43.228 --> 00:03:44.853
-What does Sattle see first?
+00:03:43.498 --> 00:03:43.948
+Guide: Yes.
 
-00:03:45.398 --> 00:03:49.048
-Guide: Hubble recorded one flow from the
-API pod to this address.
+00:03:43.948 --> 00:03:47.423
+Hubble recorded one flow from the API pod
+to this address.
 
-00:03:49.048 --> 00:03:52.598
-In our copy of the replay, the pod and the
-address already exist.
-
-00:03:52.598 --> 00:03:55.023
+00:03:47.423 --> 00:03:49.948
 The new line means the pod sent traffic
 there.
 
-00:03:55.023 --> 00:03:56.698
-That’s what the network observed.
+00:03:49.948 --> 00:03:52.023
+When Sattle processes that observation,
 
-00:03:56.698 --> 00:03:59.673
-To call Redis a dependency of the whole
-API service,
+00:03:52.023 --> 00:03:56.298
+the existing rules connect the pod to the
+API and the address to Redis.
 
-00:03:59.673 --> 00:04:01.948
-the model needs to know who’s at each end.
+00:03:56.298 --> 00:03:59.923
+The health model picks up the new
+dependency without anyone editing it.
 
-00:04:03.187 --> 00:04:06.762
+00:04:01.145 --> 00:04:04.720
 Listener: How does that address become a
 Redis dependency in the health model?
 
-00:04:07.282 --> 00:04:10.407
+00:04:05.240 --> 00:04:08.365
 Guide: Kubernetes ties the pod to the API
 service.
 
-00:04:10.407 --> 00:04:14.057
+00:04:08.365 --> 00:04:12.015
 At the other end, the address matches a
 private endpoint for Redis.
 
-00:04:14.057 --> 00:04:16.382
+00:04:12.015 --> 00:04:14.340
 The DNS name points to the same cache.
 
-00:04:16.382 --> 00:04:19.932
+00:04:14.340 --> 00:04:17.890
 That gives the structure query both ends
 of a service dependency.
 
-00:04:19.932 --> 00:04:23.082
+00:04:17.890 --> 00:04:21.040
 It derives the API to Redis link from
 those records.
 
-00:04:23.082 --> 00:04:26.382
+00:04:21.040 --> 00:04:24.340
 The health model can now follow it using
 its existing rule.
 
-00:04:27.603 --> 00:04:28.978
+00:04:25.562 --> 00:04:26.937
 Listener: Redis was already there.
 
-00:04:28.978 --> 00:04:30.553
+00:04:26.937 --> 00:04:28.512
 Where can I find the new link?
 
-00:04:31.098 --> 00:04:32.448
+00:04:29.057 --> 00:04:30.407
 Guide: Look for the plus sign.
 
-00:04:32.448 --> 00:04:35.573
+00:04:30.407 --> 00:04:33.532
 A patch lists the edits from one graph
 revision to the next.
 
-00:04:35.573 --> 00:04:38.923
+00:04:33.532 --> 00:04:36.882
 In the master graph, the added line means
 the pod sent traffic.
 
-00:04:38.923 --> 00:04:42.498
+00:04:36.882 --> 00:04:40.457
 In the structure graph, it means the API
 depends on Redis.
 
-00:04:42.498 --> 00:04:45.798
+00:04:40.457 --> 00:04:43.757
 In the health graph, revision fourteen
 adds that dependency.
 
-00:04:45.798 --> 00:04:47.573
+00:04:43.757 --> 00:04:45.532
 The cache was there all along.
 
-00:04:48.812 --> 00:04:52.412
+00:04:46.770 --> 00:04:50.370
 Listener: How could I check that the API
 really started using that cache?
 
-00:04:52.957 --> 00:04:55.157
+00:04:50.915 --> 00:04:53.115
 Guide: Follow the dependency back through
 the graphs.
 
-00:04:55.157 --> 00:04:57.282
+00:04:53.115 --> 00:04:55.240
 The structure query kept two matches.
 
-00:04:57.282 --> 00:05:00.207
+00:04:55.240 --> 00:04:58.165
 One links the pod’s destination to a
 private endpoint.
 
-00:05:00.207 --> 00:05:02.882
+00:04:58.165 --> 00:05:00.840
 The other identifies Redis by its DNS
 name.
 
-00:05:02.882 --> 00:05:06.482
+00:05:00.840 --> 00:05:04.440
 That trail from a conclusion back to its
 inputs is called provenance.
 
-00:05:06.482 --> 00:05:08.032
+00:05:04.440 --> 00:05:05.990
 Now compare the two runs.
 
-00:05:08.032 --> 00:05:10.232
+00:05:05.990 --> 00:05:08.190
 Redis has the same load warning in both.
 
-00:05:10.232 --> 00:05:14.282
+00:05:08.190 --> 00:05:12.240
 The added dependency explains why the API
 and gateway turn amber.
+
+00:05:13.870 --> 00:05:16.195
+Listener: Can we see the query that builds
+a health graph?
+
+00:05:16.765 --> 00:05:17.165
+Guide: Yes.
+
+00:05:17.165 --> 00:05:21.265
+This is a GKQL program from Sattle’s
+deployment health experiment.
+
+00:05:21.265 --> 00:05:23.490
+The dots in the master graph are pods.
+
+00:05:23.490 --> 00:05:25.840
+Web has two, and the database has one.
+
+00:05:25.840 --> 00:05:27.940
+The query itself is a graph, too.
+
+00:05:27.940 --> 00:05:29.865
+Its boxes are operations.
+
+00:05:29.865 --> 00:05:32.990
+A wire tells us which operation uses
+another’s result.
+
+00:05:32.990 --> 00:05:36.365
+The target graph shows each workload and
+the traffic between them.
+
+00:05:37.578 --> 00:05:40.428
+Listener: What does the little arrow
+inside graph-match look for?
+
+00:05:40.973 --> 00:05:43.473
+Guide: A ready pod and the deployment that
+controls it.
+
+00:05:43.473 --> 00:05:46.273
+The letters p and d hold their places in
+the pattern.
+
+00:05:46.273 --> 00:05:48.273
+Watch the first web pod light up.
+
+00:05:48.273 --> 00:05:51.598
+In this match, p stands for that pod, and
+d stands for web.
+
+00:05:51.598 --> 00:05:53.448
+That pairing is called a binding.
+
+00:05:53.448 --> 00:05:55.148
+The other web pod fits too.
+
+00:05:55.148 --> 00:05:56.548
+So does the database pod.
+
+00:05:56.548 --> 00:05:57.648
+Three matches.
+
+00:05:58.870 --> 00:06:01.270
+Listener: How do those matches give web a
+health state?
+
+00:06:01.790 --> 00:06:03.640
+Guide: Start each deployment at zero.
+
+00:06:03.640 --> 00:06:05.415
+Add one for every ready pod.
+
+00:06:05.415 --> 00:06:08.990
+The summarize step groups those numbers by
+deployment and adds them up.
+
+00:06:08.990 --> 00:06:10.065
+Web gets two.
+
+00:06:10.065 --> 00:06:11.565
+The database gets one.
+
+00:06:11.565 --> 00:06:15.340
+The threshold here is zero, so any count
+above zero means Healthy.
+
+00:06:15.340 --> 00:06:17.140
+Web appears once in the target graph,
+
+00:06:17.140 --> 00:06:19.540
+with its deployment ID and a count of two.
+
+00:06:20.770 --> 00:06:24.645
+Listener: What happens to the connection
+if the database pod stops being ready?
+
+00:06:25.190 --> 00:06:26.915
+Guide: Follow the two pod calls.
+
+00:06:26.915 --> 00:06:28.915
+Both reach the same database pod,
+
+00:06:28.915 --> 00:06:32.315
+so their matches build one Talks edge from
+web to the database.
+
+00:06:32.315 --> 00:06:35.190
+At ten oh three, the database pod stops
+being ready.
+
+00:06:35.190 --> 00:06:36.890
+Its count falls to zero.
+
+00:06:36.890 --> 00:06:39.015
+The edge takes the worse state of its two
+ends,
+
+00:06:39.015 --> 00:06:40.965
+so it turns red with the database.
+
+00:06:40.965 --> 00:06:43.765
+Web still has two ready pods and stays
+green.
