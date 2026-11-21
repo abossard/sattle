@@ -150,7 +150,7 @@ sealed class Names(ITextTable texts)
     readonly Dictionary<int, string> names = [];
     public int Intern(string s) { if (!codes.TryGetValue(s, out var c)) { c = texts.Intern(s); codes[s] = c; names[c] = s; } return c; }
     public bool TryFind(string s, out int c) => codes.TryGetValue(s, out c) || texts.TryFind(s, out c);
-    public string Get(int c) => names.TryGetValue(c, out var s) ? s : texts.Get(c);
+    public string Get(int c, ITextTable? reader = null) => names.TryGetValue(c, out var s) ? s : (reader ?? texts).Get(c);
     public Names Clone() { var n = new Names(texts); foreach (var (s, c) in codes) { n.codes[s] = c; n.names[c] = s; } return n; }
 }
 
@@ -258,7 +258,7 @@ static class PropCodec
         var n = (int)ReadVarint(b, ref p);
         if (n == 0) return Props.Empty;
         var kv = new KeyValuePair<string, Value>[n];
-        for (var i = 0; i < n; i++) { var k = keys.Get((int)ReadVarint(b, ref p)); kv[i] = KeyValuePair.Create(k, ReadVal(b, ref p, texts)); }
+        for (var i = 0; i < n; i++) { var k = keys.Get((int)ReadVarint(b, ref p), texts); kv[i] = KeyValuePair.Create(k, ReadVal(b, ref p, texts)); }
         return Props.FromSorted(kv);
     }
 }
@@ -314,7 +314,7 @@ public sealed class Graph
         var at = poolLen + 4; poolLen += 4 + block.Length;
         return at;
     }
-    Props LoadProps(int at) => at == 0 ? Props.Empty : PropCodec.Decode(pool, at, names, texts);
+    Props LoadProps(int at, ITextTable? reader = null) => at == 0 ? Props.Empty : PropCodec.Decode(pool, at, names, reader ?? texts);
 
     /// <summary>Copies the blocks of the live elements together; a removed element forgets its block.</summary>
     void CompactProps()
@@ -333,7 +333,11 @@ public sealed class Graph
     }
 
     Entity MakeEntity(int ix) => new(ents.Get(ix), names.Get(eType[ix]), LoadProps(eProps[ix]));
-    Rel MakeRel(int ix) => new(rels.Get(ix), ents.Get(rSrc[ix]), ents.Get(rTgt[ix]), names.Get(rType[ix]), LoadProps(rProps[ix]));
+    Rel MakeRel(int ix, ITextTable? reader = null)
+    {
+        var table = reader ?? texts;
+        return new(table.Get(rels.Code(ix)), table.Get(ents.Code(rSrc[ix])), table.Get(ents.Code(rTgt[ix])), names.Get(rType[ix], table), LoadProps(rProps[ix], table));
+    }
 
     /// <summary>
     /// Whether the graph has exactly this element, given in codes of its text table: an entity (`source` and `target` -1) or a relationship of
@@ -379,13 +383,15 @@ public sealed class Graph
     // ---- reads ----
     public Entity? Entity(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? MakeEntity(ix) : null; }
     /// <summary>One property of an entity the graph has, without making the entity or its other properties: null when it has no such entity or property.</summary>
-    public Value? EntityProp(string id, string key)
+    public Value? EntityProp(string id, string key) => EntityProp(id, key, null);
+    internal Value? EntityProp(string id, string key, ITextTable? reader)
     {
         var ix = ents.Find(id);
-        return ix < 0 || eKind[ix] != 1 || eProps[ix] == 0 || !names.TryFind(key, out var k) ? null : PropCodec.Find(pool, eProps[ix], k, texts);
+        return ix < 0 || eKind[ix] != 1 || eProps[ix] == 0 || !names.TryFind(key, out var k) ? null : PropCodec.Find(pool, eProps[ix], k, reader ?? texts);
     }
     /// <summary>The type of an entity the graph has, without making the entity: null when it has none.</summary>
-    public string? EntityType(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? names.Get(eType[ix]) : null; }
+    public string? EntityType(string id) => EntityType(id, null);
+    internal string? EntityType(string id, ITextTable? reader) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1 ? names.Get(eType[ix], reader) : null; }
     public Rel? Rel(string id) { var ix = rels.Find(id); return ix >= 0 && rKind[ix] == 1 ? MakeRel(ix) : null; }
     public bool HasEntity(string id) { var ix = ents.Find(id); return ix >= 0 && eKind[ix] == 1; }
     public IEnumerable<Entity> Entities { get { for (var i = 0; i < ents.Count; i++) if (eKind[i] == 1) yield return MakeEntity(i); } }
@@ -421,17 +427,19 @@ public sealed class Graph
         else for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) yield return (names.Get(rType[r - 1]), ents.Get(rSrc[r - 1]));
     }
     /// <summary>Out-going relationships whose type passes `type`, as materialized elements, without the id round trip; the others are not made.</summary>
-    public IEnumerable<Rel> OutEdges(string entityId, Func<string, bool> type)
+    public IEnumerable<Rel> OutEdges(string entityId, Func<string, bool> type) => OutEdges(entityId, type, null);
+    internal IEnumerable<Rel> OutEdges(string entityId, Func<string, bool> type, ITextTable? reader)
     {
         var ix = ents.Find(entityId);
         if (ix < 0) yield break;
-        for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) if (type(names.Get(rType[r - 1]))) yield return MakeRel(r - 1);
+        for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) if (type(names.Get(rType[r - 1], reader))) yield return MakeRel(r - 1, reader);
     }
-    public IEnumerable<Rel> InEdges(string entityId, Func<string, bool> type)
+    public IEnumerable<Rel> InEdges(string entityId, Func<string, bool> type) => InEdges(entityId, type, null);
+    internal IEnumerable<Rel> InEdges(string entityId, Func<string, bool> type, ITextTable? reader)
     {
         var ix = ents.Find(entityId);
         if (ix < 0) yield break;
-        for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) if (type(names.Get(rType[r - 1]))) yield return MakeRel(r - 1);
+        for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) if (type(names.Get(rType[r - 1], reader))) yield return MakeRel(r - 1, reader);
     }
     public int OutDegree(string entityId) { var ix = ents.Find(entityId); var n = 0; if (ix >= 0) for (var r = eOut[ix]; r != 0; r = rOutNext[r - 1]) n++; return n; }
     public int InDegree(string entityId) { var ix = ents.Find(entityId); var n = 0; if (ix >= 0) for (var r = eIn[ix]; r != 0; r = rInNext[r - 1]) n++; return n; }

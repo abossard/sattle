@@ -1,19 +1,16 @@
-// X12: picture C, a projection that is itself a graph (research note 14). Verbs wired as a dataflow, a drawn pattern inside each graph-match,
-// a drawn target inside each sink. `ProgramSource` reads `module.projection.gkql.json` beside the KQL files and lowers it to the engine's
-// existing operators (Match, Filter, Map, Union, Group, Join, EmitEntity, EmitRelationship); nothing in the engine changes.
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Sattle.Core;
 using Sattle.Language;
 
-namespace PictureC;
+namespace Sattle.Gkql;
 
 // ---- data: the program graph, as stored
 
 /// <summary>A program: the graphs it reads, its parameters, its verbs and the wires between them. Wires carry rows with named columns; a pattern
 /// variable is a column that holds an element.</summary>
 public sealed record ProgramGraph(string Graph, string Ontology, string? Description, long History, List<Input> Inputs, List<Parameter> Parameters, List<VerbNode> Verbs, List<Wire> Wires);
-public sealed record Input(string Name, string Ontology);
+public sealed record Input(string Name, string? Ontology, string? Rows = null);
 public sealed record Parameter(string Name, string Kind, JsonElement? Default);
 /// <summary>A wire from a verb's output to a named input port of another verb: `in`, or `left` and `right` of a join.</summary>
 public sealed record Wire(string From, string To, string Port = "in");
@@ -21,7 +18,12 @@ public sealed record On(string Left, string Right);
 /// <summary>A verb. Which fields it uses depends on `Verb`: graph-match (Graph, Pattern), where (Condition), project and extend (Columns), union,
 /// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target).</summary>
 public sealed record VerbNode(string Id, string Verb, string? Graph, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
-    Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target);
+    Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
+    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null);
+public sealed record WindowSpec(string Time, string Period);
+public sealed record SeriesSpec(string Element, string Property, string Lookback);
+public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
+    string High, string Low, string Initial);
 /// <summary>A drawn graph: the pattern of a graph-match, or the target of a sink with placeholders (expressions over the rows) for ids and properties.</summary>
 public sealed record Drawing(List<DrawnNode>? Nodes, List<DrawnEdge>? Edges);
 /// <summary>`Extend`: a sink's node that adds properties to a node another sink makes.</summary>
@@ -34,6 +36,7 @@ sealed record Ref(string Path) : Expr;
 sealed record Lit(Value V) : Expr;
 sealed record Param(string Name) : Expr;
 sealed record Fn(string Name, Expr[] Args) : Expr;
+sealed record Identity(string Domain, Expr[] Args) : Expr;
 
 sealed class Refused(string at, string message) : Exception($"{at}: {message}");
 
@@ -44,7 +47,7 @@ sealed record Rows(string Port, List<string> Cols, Dictionary<string, string> Ty
 
 public static class Lowering
 {
-    static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, ReadCommentHandling = JsonCommentHandling.Skip, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
+    internal static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, ReadCommentHandling = JsonCommentHandling.Skip, UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow };
 
     public static ProgramGraph Parse(string text) => JsonSerializer.Deserialize<ProgramGraph>(text, Json) ?? throw new JsonException("empty program");
 
@@ -61,20 +64,37 @@ public static class Lowering
         public readonly DefBuilder B = new();
         public string Pid = "";
         readonly Dictionary<string, string> graphPorts = new(StringComparer.Ordinal);
+        readonly Dictionary<string, (string Port, string Type)> rowPorts = new(StringComparer.Ordinal);
         readonly Dictionary<string, OntologyView> views = new(StringComparer.Ordinal);
         readonly Dictionary<string, int> opNo = new(StringComparer.Ordinal);
-        int emits;
 
         public void Run()
         {
+            var ingestion = p.Inputs.Any(i => i.Rows is not null);
+            var rules = p.Verbs.Select(v => v.Rule).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
             Pid = B.Contain(Ids.Module(module), "projection", p.Graph, "Projection", null,
-                [("name", T(p.Graph)), ("purpose", T("view")), ("retain", Value.Integer(p.History)), ("forward", Value.Boolean(true)), .. p.Description is { } d ? [("description", T(d))] : Array.Empty<(string, Value)>()]);
+                [("name", T(p.Graph)), ("purpose", T(ingestion ? "ingestion" : "view")),
+                    ("retain", Value.Integer(p.History)), ("forward", Value.Boolean(rules.Count == 0)), .. p.Description is { } d ? [("description", T(d))] : Array.Empty<(string, Value)>()]);
             B.Edge(Pid, "outputOntology", Ids.Module(p.Ontology));
+            foreach (var rule in rules)
+                B.Contain(Pid, "rule", rule, "Rule", null, ("name", T(rule)), ("class", T("readonly")), ("putput", Value.Boolean(false)));
             foreach (var g in p.Inputs)
             {
-                var id = B.Contain(Pid, "port", g.Name, "Port", null, ("name", T(g.Name)), ("direction", T("in")), ("kind", T("graph")));
-                B.Edge(id, "expects", Ids.Module(g.Ontology));
-                graphPorts[g.Name] = id;
+                if (g.Ontology is { } ontology && g.Rows is null)
+                {
+                    var id = InputPort(g.Name, "graph");
+                    B.Edge(id, "expects", Ids.Module(ontology));
+                    if (!graphPorts.TryAdd(g.Name, id)) throw new Refused(g.Name, "duplicate graph input");
+                }
+                else if (g.Rows is { } rows && g.Ontology is null && rows.LastIndexOf('.') is > 0 and var dot)
+                {
+                    var type = Ids.Child(Ids.Module(rows[..dot]), "rows", rows[(dot + 1)..]);
+                    if (catalog.Entity(type) is null) throw new Refused(g.Name, $"'{rows}' is not a row type");
+                    var id = InputPort(g.Name, "rows");
+                    B.Edge(id, "rowType", type);
+                    if (!rowPorts.TryAdd(g.Name, (id, type))) throw new Refused(g.Name, "duplicate row input");
+                }
+                else throw new Refused(g.Name, "an input names either an ontology or a qualified row type");
             }
             foreach (var q in p.Parameters)
             {
@@ -84,10 +104,15 @@ public static class Lowering
             var outs = new Dictionary<string, Rows>(StringComparer.Ordinal);
             foreach (var v in Order())
             {
-                var ins = p.Wires.Where(x => x.To == v.Id).Select(x => (x.Port, Rows: outs[x.From])).ToList();
+                var ins = p.Wires.Where(x => x.To == v.Id)
+                    .Select(x => (x.Port, Rows: outs.TryGetValue(x.From, out var rows) ? rows : throw new Refused(v.Id, $"'{x.From}' has no output")))
+                    .ToList();
                 if (Lower(v, ins) is { } rows) outs[v.Id] = rows;
             }
         }
+
+        string InputPort(string name, string kind) =>
+            B.Contain(Pid, "port", name, "Port", null, ("name", T(name)), ("direction", T("in")), ("kind", T(kind)));
 
         /// <summary>The verbs in an order in which every verb comes after the verbs wired into it; a program graph has no loops.</summary>
         List<VerbNode> Order()
@@ -107,20 +132,68 @@ public static class Lowering
 
         Rows? Lower(VerbNode v, List<(string Port, Rows Rows)> ins)
         {
+            if (v.Rule is not null && v.Verb is not ("nodes" or "edges")) throw new Refused(v.Id, "a rule labels a nodes or edges sink");
             Rows One() => ins is [("in", var r)] ? r : throw new Refused(v.Id, $"{v.Verb} has one wire in, to its port in");
             return v.Verb switch
             {
+                "rows" => ins.Count == 0 ? SourceRows(v) : throw new Refused(v.Id, "rows reads a source directly"),
                 "graph-match" => ins.Count == 0 ? Match(v) : throw new Refused(v.Id, "graph-match reads its graph, no wire goes in"),
                 "where" => Filter(v.Id, One(), Read(v.Id, v.Condition ?? throw new Refused(v.Id, "where has a condition"))),
                 "project" => Map(v, One(), keep: false),
                 "extend" => Map(v, One(), keep: true),
                 "union" => Union(v, ins),
                 "summarize" => Summarize(v, One()),
+                "window" => Window(v, One()),
+                "series" => Series(v, One()),
+                "hysteresis" => Threshold(v, One()),
                 "join" => Join(v, ins),
                 "nodes" => Nodes(v, One()),
                 "edges" => Edges(v, One()),
-                var other => throw new Refused(v.Id, $"'{other}' is not a verb: graph-match, where, project, extend, union, summarize, join, nodes, edges"),
+                var other => throw new Refused(v.Id, $"unknown verb '{other}'"),
             };
+        }
+
+        Rows SourceRows(VerbNode v)
+        {
+            if (v.Source is not { } source || !rowPorts.TryGetValue(source, out var input)) throw new Refused(v.Id, "rows names a row input");
+            return new Rows(input.Port, [.. new DefView(catalog).Children(input.Type, "field").Select(Ids.Name)], new(StringComparer.Ordinal));
+        }
+
+        Rows Window(VerbNode v, Rows r)
+        {
+            if (v.Window is not { } w || !r.Cols.Contains(w.Time)) throw new Refused(v.Id, "window names a timestamp column and a period");
+            var op = Op("Window", v.Id, ("timestampField", T(w.Time)), ("width", Value.Integer(Duration(v.Id, w.Period))), ("late", T("revise")));
+            B.Edge(r.Port, "wire", P(op, "in"));
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd"] };
+        }
+
+        Rows Series(VerbNode v, Rows r)
+        {
+            if (v.Series is not { } s || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)
+                || !r.Types.ContainsKey(s.Element)) throw new Refused(v.Id, "series names a graph, an element column, a metric property and a lookback");
+            var op = Op("Series", v.Id, ("within", Value.Integer(Duration(v.Id, s.Lookback))));
+            B.Edge(port, "wire", P(op, "graph"));
+            B.Edge(r.Port, "wire", P(op, "in"));
+            B.Contain(op, "read", "#0", "FieldRef", 0, ("path", T($"{s.Element}.{s.Property}")));
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property] };
+        }
+
+        Rows Threshold(VerbNode v, Rows r)
+        {
+            if (v.Hysteresis is not { By.Length: > 0 } h) throw new Refused(v.Id, "hysteresis names the reading, its keys, thresholds, dwell times and states");
+            var op = Op("Threshold", v.Id, ("target", T("state")), ("above", Value.Decimal(h.Above)), ("below", Value.Decimal(h.Below)),
+                ("enterAfter", Value.Integer(h.EnterAfter)), ("exitAfter", Value.Integer(h.ExitAfter)), ("initial", T(h.Initial)), ("high", T(h.High)), ("low", T(h.Low)));
+            B.Edge(r.Port, "wire", P(op, "in"));
+            Write(v.Id, r, new Ref(h.Value), op, "value", 0);
+            foreach (var name in h.By)
+                Write(v.Id, r, new Ref(name), B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
+            return new Rows(P(op, "out"), [.. h.By, "state"], r.Types.Where(kv => h.By.Contains(kv.Key)).ToDictionary());
+        }
+
+        static long Duration(string at, string duration)
+        {
+            try { return Lexer.DurationNs(duration); }
+            catch (Exception e) when (e is ArgumentException or FormatException or OverflowException) { throw new Refused(at, $"'{duration}' is not a duration"); }
         }
 
         Rows Match(VerbNode v)
@@ -128,7 +201,7 @@ public static class Lowering
             if (v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)) throw new Refused(v.Id, "graph-match names a graph the program reads");
             var nodes = v.Pattern?.Nodes ?? []; var edges = v.Pattern?.Edges ?? [];
             if (nodes.Count == 0) throw new Refused(v.Id, "a pattern has at least one node");
-            var view = View(p.Inputs.Single(i => i.Name == g).Ontology);
+            var view = View(p.Inputs.Single(i => i.Name == g).Ontology!);
             var op = Op("Match", v.Id);
             B.Edge(port, "wire", P(op, "graph"));
             var rows = new Rows(P(op, "out"), [], new(StringComparer.Ordinal));
@@ -229,7 +302,7 @@ public static class Lowering
             var next = new Rows(P(op, "out"), [], new(StringComparer.Ordinal));
             foreach (var (name, x) in v.By ?? [])
             {
-                Column(v.Id, name);
+                if (name != "windowStart") Column(v.Id, name);
                 var e = Read(v.Id, x);
                 Write(v.Id, r, e, B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
                 next.Cols.Add(name);
@@ -276,6 +349,7 @@ public static class Lowering
             var view = View(p.Ontology);
             var type = TypeOf(v.Id, view, n.Label, rel: false);
             var sink = Op("EmitEntity", v.Id, ("mode", T(n.Extend ? "update" : "create")));
+            Govern(v, sink);
             Sink(v.Id, r, sink, type, view, n.Props);
             Write(v.Id, r, Read(v.Id, n.Id ?? throw new Refused(v.Id, "a target node has an id: a function of the match")), sink, "id", 0);
             return null;
@@ -295,10 +369,16 @@ public static class Lowering
                 throw new Refused(v.Id, $"{e.Label} does not go from {src.Label} to {dst.Label}");
             // the key of the relationship's id is the type's name, as a KQL edge step without a key setting has it
             var sink = Op("EmitRelationship", v.Id, ("mode", T("create")), ("key", T(char.ToLowerInvariant(e.Label[0]) + e.Label[1..])), ("retype", T("reject")));
+            Govern(v, sink);
             Sink(v.Id, r, sink, type, view, e.Props);
             Write(v.Id, r, Read(v.Id, src.Id!.Value), sink, "source", 0);
             Write(v.Id, r, Read(v.Id, dst.Id!.Value), sink, "target", 0);
             return null;
+        }
+
+        void Govern(VerbNode v, string sink)
+        {
+            if (v.Rule is { } rule) B.Edge(Ids.Child(Pid, "rule", rule), "governs", sink);
         }
 
         void Sink(string at, Rows r, string sink, string type, OntologyView view, Dictionary<string, JsonElement>? props)
@@ -318,8 +398,7 @@ public static class Lowering
 
         string Op(string kind, string verb, params (string, Value)[] props)
         {
-            var sink = kind is "EmitEntity" or "EmitRelationship";
-            var name = sink ? $"emit.{++emits}" : $"{verb}_{opNo[verb] = opNo.GetValueOrDefault(verb) + 1}";
+            var name = $"{verb}_{opNo[verb] = opNo.GetValueOrDefault(verb) + 1}";
             var id = B.Contain(Pid, "op", name, kind, null, [("name", T(name)), .. props]);
             foreach (var (pn, dir, pk) in KernelTable.OperatorPorts(kind)) B.Contain(id, "port", pn, "Port", null, ("name", T(pn)), ("direction", T(dir)), ("kind", T(pk)));
             return id;
@@ -336,19 +415,25 @@ public static class Lowering
         static string TypeOf(string at, OntologyView view, string label, bool rel)
         {
             var hits = view.Types.Values.Where(t => t.Name == label && t.IsRel == rel).Select(t => t.Id).ToList();
+            if (hits.Count > 1) hits.RemoveAll(t => Ids.ModuleOf(t) == Ids.KernelModule);
             return hits is [var one] ? one : throw new Refused(at, $"'{label}' is {(hits.Count == 0 ? "no" : "more than one")} {(rel ? "relationship" : "entity")} type");
         }
 
         static Expr Read(string at, JsonElement e)
         {
-            if (e.ValueKind != JsonValueKind.Object || e.EnumerateObject().ToList() is not [var only, ..] || e.EnumerateObject().Count() > (only.Name == "fn" ? 2 : 1))
-                throw new Refused(at, $"a placeholder is {{\"ref\": ...}}, {{\"lit\": ...}}, {{\"param\": ...}} or {{\"fn\": ..., \"args\": [...]}}: {e}");
-            return only.Name switch
+            if (e.ValueKind != JsonValueKind.Object) throw new Refused(at, "an expression is an object");
+            var fields = e.EnumerateObject().ToList();
+            if (fields.Where(x => x.Name != "args").ToList() is not [var field]) throw new Refused(at, "an expression has one of ref, lit, param, fn or identity");
+            var (kind, value) = (field.Name, field.Value);
+            if (fields.Count > (kind is "fn" or "identity" ? 2 : 1)) throw new Refused(at, "only fn and identity take args");
+            Expr[] Args() => e.TryGetProperty("args", out var args) ? [.. args.EnumerateArray().Select(a => Read(at, a))] : [];
+            return kind switch
             {
-                "ref" => new Ref(only.Value.GetString()!),
-                "lit" => new Lit(Literal(only.Value)),
-                "param" => new Param(only.Value.GetString()!),
-                "fn" => new Fn(only.Value.GetString()!, e.TryGetProperty("args", out var args) ? [.. args.EnumerateArray().Select(a => Read(at, a))] : []),
+                "ref" => new Ref(value.GetString()!),
+                "lit" => new Lit(Literal(value)),
+                "param" => new Param(value.GetString()!),
+                "fn" => new Fn(value.GetString()!, Args()),
+                "identity" => new Identity(value.GetString()!, Args()),
                 var other => throw new Refused(at, $"'{other}' is not a placeholder"),
             };
         }
@@ -368,6 +453,8 @@ public static class Lowering
         {
             ["=="] = "Equal", ["!="] = "NotEqual", ["<"] = "LessThan", ["<="] = "LessOrEqual", [">"] = "GreaterThan", [">="] = "GreaterOrEqual",
             ["and"] = "And", ["or"] = "Or", ["not"] = "Not", ["iff"] = "If", ["coalesce"] = "Coalesce",
+            ["startswith"] = "StartsWith", ["endswith"] = "EndsWith", ["contains"] = "Contains",
+            ["concat"] = "Concat", ["lower"] = "LowerInvariant",
         };
 
         void Write(string at, Rows r, Expr x, string parent, string slot, int ordinal, bool ordered = false)
@@ -384,6 +471,23 @@ public static class Lowering
                     if (!p.Parameters.Any(q => q.Name == name)) throw new Refused(at, $"'{name}' is not a parameter of the program");
                     B.Contain(parent, slot, seg, "FieldRef", ord, ("path", T(name))); break;
                 case Lit { V: var v }: B.Contain(parent, slot, seg, "Literal", ord, ("value", v)); break;
+                case Identity identity:
+                    var defs = new DefView(catalog);
+                    var domains = ProjectionChecker.Closure(catalog, p.Ontology)
+                        .Select(m => Ids.Child(Ids.Module(m), "identity", identity.Domain)).Where(d => catalog.Entity(d) is not null).ToList();
+                    if (domains is not [var domain]) throw new Refused(at, $"'{identity.Domain}' does not name one identity domain");
+                    var components = defs.Children(domain, "component");
+                    if (components.Count != identity.Args.Length) throw new Refused(at, $"'{identity.Domain}' takes {components.Count} identity components");
+                    var key = B.Contain(parent, slot, seg, "IdOf", ord);
+                    B.Edge(key, "domain", domain);
+                    for (var i = 0; i < components.Count; i++)
+                    {
+                        var component = components[i];
+                        var set = B.Contain(key, "component", Ids.Name(component), "SetComponent");
+                        B.Edge(set, "component", component);
+                        Write(at, r, identity.Args[i], set, "value", 0);
+                    }
+                    break;
                 case Fn { Name: var fn, Args: var args }:
                     if (!Functions.TryGetValue(fn, out var builtin)) throw new Refused(at, $"'{fn}' is not a function here: {string.Join(", ", Functions.Keys)}");
                     var id = B.Contain(parent, slot, seg, "Call", ord);
@@ -404,29 +508,42 @@ public static class Lowering
 
 // ---- action at the edge: the catalog reads program files beside the KQL files
 
-/// <summary>Projections in KQL (through `text`) and program graphs in `module.projection.gkql.json`.</summary>
-public sealed class ProgramSource(IProjectionSource text) : IProjectionSource
+/// <summary>Graph-native projection programs and declarations.</summary>
+public sealed partial class GkqlSource : IProjectionSource
 {
     public const string Extension = ".gkql.json";
 
     public ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files)
     {
-        var t = text.Lower(catalog, module, files);
-        var projections = new Dictionary<string, IReadOnlyList<Element>>(t.Projections, StringComparer.Ordinal);
-        var places = new Dictionary<string, (string File, Pos Pos)>(t.Places, StringComparer.Ordinal);
-        var diags = t.Diagnostics.ToList();
+        var projections = new Dictionary<string, IReadOnlyList<Element>>(StringComparer.Ordinal);
+        var places = new Dictionary<string, (string File, Pos Pos)>(StringComparer.Ordinal);
+        var diags = new List<Diagnostic>();
         foreach (var f in files.Where(f => f.Path.EndsWith(Extension, StringComparison.Ordinal)).OrderBy(f => f.Path, StringComparer.Ordinal))
         {
             var name = Path.GetFileName(f.Path)[..^Extension.Length];
             if (name.LastIndexOf('.') is not (> 0 and var dot) || name[..dot] != module) continue;
-            var (pid, facts, fault) = Lowering.Lower(Lowering.Parse(f.Text), catalog, module);
-            if (fault is null && Ids.Name(pid) != name[(dot + 1)..]) fault = $"the program names its graph {Ids.Name(pid)}, the file {name[(dot + 1)..]}";
-            if (fault is not null) { diags.Add(new Diagnostic("Program", "error", pid, fault, f.Path, 1, 1)); continue; }
-            projections[pid] = facts;
-            places[pid] = (f.Path, new Pos(1, 1));
+            var pid = Ids.Child(Ids.Module(module), "projection", name[(dot + 1)..]);
+            try
+            {
+                var (actual, facts, fault) = Lowering.Lower(Lowering.Parse(f.Text), catalog, module);
+                if (fault is null && actual != pid) fault = $"the program names its graph {Ids.Name(actual)}, the file {Ids.Name(pid)}";
+                if (fault is not null) { diags.Add(new Diagnostic("Program", "error", pid, fault, f.Path, 1, 1)); continue; }
+                projections[pid] = facts;
+                places[pid] = (f.Path, new Pos(1, 1));
+                foreach (var op in facts.OfType<Entity>().Where(e => e.Id.StartsWith(pid + "/op:", StringComparison.Ordinal)))
+                    places[op.Id] = (f.Path, new Pos(1, 1));
+            }
+            catch (JsonException e)
+            {
+                diags.Add(new Diagnostic("Program", "error", pid, e.Message, f.Path, (int)(e.LineNumber ?? 0) + 1, (int)(e.BytePositionInLine ?? 0) + 1));
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException or NullReferenceException or OverflowException)
+            {
+                diags.Add(new Diagnostic("Program", "error", pid, $"invalid program shape: {e.Message}", f.Path, 1, 1));
+            }
         }
         return new ProjectionFacts(projections, places, diags);
     }
 
-    public string? Language(string fileName) => fileName.EndsWith(Extension, StringComparison.Ordinal) ? "gkql" : text.Language(fileName);
+    public string? Language(string fileName) => fileName.EndsWith(Extension, StringComparison.Ordinal) && !IsModuleFile(fileName) ? "gkql" : null;
 }

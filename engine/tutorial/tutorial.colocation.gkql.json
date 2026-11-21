@@ -1,0 +1,68 @@
+{
+  "graph": "colocation",
+  "ontology": "tutorial",
+  "description": "Connect deployments that use the same Azure VM scale set.",
+  "history": 120,
+  "inputs": [{"name": "placement", "ontology": "tutorial"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "deployments",
+      "verb": "graph-match",
+      "graph": "placement",
+      "pattern": {"nodes": [{"var": "d", "label": "Deployment"}]}
+    },
+    {
+      "id": "deploymentView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Deployment",
+            "id": {"ref": "d"},
+            "props": {
+              "cluster": {"ref": "d.cluster"},
+              "namespace": {"ref": "d.namespace"},
+              "name": {"ref": "d.name"},
+              "replicas": {"ref": "d.replicas"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sharedHost",
+      "verb": "graph-match",
+      "graph": "placement",
+      "pattern": {
+        "nodes": [
+          {"var": "a", "label": "Deployment"},
+          {"var": "b", "label": "Deployment"},
+          {"var": "v", "label": "VmScaleSet"}
+        ],
+        "edges": [
+          {"var": "av", "label": "RunsOnVmss", "from": "a", "to": "v"},
+          {"var": "bv", "label": "RunsOnVmss", "from": "b", "to": "v"}
+        ]
+      }
+    },
+    {"id": "separateDeployments", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "a"}, {"ref": "b"}]}},
+    {
+      "id": "colocated",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Deployment", "id": {"ref": "a"}},
+          {"var": "target", "label": "Deployment", "id": {"ref": "b"}}
+        ],
+        "edges": [{"var": "edge", "label": "SharesVmssWith", "from": "source", "to": "target"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "deployments", "to": "deploymentView"},
+    {"from": "sharedHost", "to": "separateDeployments"},
+    {"from": "separateDeployments", "to": "colocated"}
+  ]
+}

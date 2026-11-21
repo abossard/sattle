@@ -1,0 +1,296 @@
+{
+  "graph": "health",
+  "ontology": "tutorial",
+  "description": "Keep the worst state from each cluster and roll it up to its resource group.",
+  "history": 120,
+  "inputs": [
+    {"name": "master", "ontology": "tutorial"},
+    {"name": "tree", "ontology": "tutorial"},
+    {"name": "signals", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "tree",
+      "verb": "graph-match",
+      "graph": "tree",
+      "pattern": {
+        "nodes": [
+          {"var": "g", "label": "Group"},
+          {"var": "c", "label": "Cluster"}
+        ],
+        "edges": [
+          {"var": "link", "label": "Contains", "from": "g", "to": "c"}
+        ]
+      }
+    },
+    {
+      "id": "azure",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "r", "label": "Resource"}
+        ]
+      }
+    },
+    {
+      "id": "members",
+      "verb": "project",
+      "columns": {
+        "g": {"ref": "g"},
+        "c": {"ref": "c"},
+        "groupKey": {"ref": "g.armId"},
+        "groupName": {"ref": "g.name"},
+        "clusterKey": {"ref": "c.armId"},
+        "clusterName": {"ref": "c.name"}
+      }
+    },
+    {
+      "id": "observed",
+      "verb": "project",
+      "columns": {
+        "observedKey": {"ref": "r.armId"}
+      }
+    },
+    {
+      "id": "knownClusters",
+      "verb": "join",
+      "kind": "inner",
+      "on": [
+        {"left": "clusterKey", "right": "observedKey"}
+      ]
+    },
+    {
+      "id": "signals",
+      "verb": "graph-match",
+      "graph": "signals",
+      "pattern": {
+        "nodes": [
+          {"var": "s", "label": "Signal"}
+        ]
+      }
+    },
+    {
+      "id": "status",
+      "verb": "project",
+      "columns": {
+        "signalKey": {"ref": "s.armId"},
+        "severity": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "==",
+              "args": [
+                {"ref": "s.state"},
+                {"lit": "Degraded"}
+              ]
+            },
+            {"lit": 2},
+            {"lit": 1}
+          ]
+        }
+      }
+    },
+    {
+      "id": "withStatus",
+      "verb": "join",
+      "kind": "inner",
+      "on": [
+        {"left": "clusterKey", "right": "signalKey"}
+      ]
+    },
+    {
+      "id": "unknown",
+      "verb": "project",
+      "columns": {
+        "g": {"ref": "g"},
+        "c": {"ref": "c"},
+        "groupKey": {"ref": "groupKey"},
+        "groupName": {"ref": "groupName"},
+        "clusterKey": {"ref": "clusterKey"},
+        "clusterName": {"ref": "clusterName"},
+        "rank": {"lit": 0}
+      }
+    },
+    {
+      "id": "ranked",
+      "verb": "project",
+      "columns": {
+        "g": {"ref": "g"},
+        "c": {"ref": "c"},
+        "groupKey": {"ref": "groupKey"},
+        "groupName": {"ref": "groupName"},
+        "clusterKey": {"ref": "clusterKey"},
+        "clusterName": {"ref": "clusterName"},
+        "rank": {"ref": "severity"}
+      }
+    },
+    {"id": "candidates", "verb": "union"},
+    {
+      "id": "clusterState",
+      "verb": "summarize",
+      "by": {
+        "g": {"ref": "g"},
+        "c": {"ref": "c"},
+        "groupKey": {"ref": "groupKey"},
+        "groupName": {"ref": "groupName"},
+        "clusterKey": {"ref": "clusterKey"},
+        "clusterName": {"ref": "clusterName"}
+      },
+      "aggregates": {
+        "worst": {
+          "fn": "max",
+          "args": [
+            {"ref": "rank"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "groupState",
+      "verb": "summarize",
+      "by": {
+        "g": {"ref": "g"},
+        "groupKey": {"ref": "groupKey"},
+        "groupName": {"ref": "groupName"}
+      },
+      "aggregates": {
+        "worst": {
+          "fn": "max",
+          "args": [
+            {"ref": "worst"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "cluster",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "HealthCluster",
+            "id": {"ref": "c"},
+            "props": {
+              "armId": {"ref": "clusterKey"},
+              "name": {"ref": "clusterName"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {
+                    "fn": "==",
+                    "args": [
+                      {"ref": "worst"},
+                      {"lit": 2}
+                    ]
+                  },
+                  {"lit": "Degraded"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {
+                        "fn": "==",
+                        "args": [
+                          {"ref": "worst"},
+                          {"lit": 1}
+                        ]
+                      },
+                      {"lit": "Healthy"},
+                      {"lit": "Unknown"}
+                    ]
+                  }
+                ]
+              },
+              "metric": {"lit": "apiserver_cpu_usage_percentage"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "root",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "HealthGroup",
+            "id": {"ref": "g"},
+            "props": {
+              "armId": {"ref": "groupKey"},
+              "name": {"ref": "groupName"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {
+                    "fn": "==",
+                    "args": [
+                      {"ref": "worst"},
+                      {"lit": 2}
+                    ]
+                  },
+                  {"lit": "Degraded"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {
+                        "fn": "==",
+                        "args": [
+                          {"ref": "worst"},
+                          {"lit": 1}
+                        ]
+                      },
+                      {"lit": "Healthy"},
+                      {"lit": "Unknown"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "hierarchy",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "HealthGroup",
+            "id": {"ref": "g"}
+          },
+          {
+            "var": "child",
+            "label": "HealthCluster",
+            "id": {"ref": "c"}
+          }
+        ],
+        "edges": [
+          {"var": "link", "label": "HealthContains", "from": "parent", "to": "child"}
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "tree", "to": "members"},
+    {"from": "azure", "to": "observed"},
+    {"from": "members", "to": "knownClusters", "port": "left"},
+    {"from": "observed", "to": "knownClusters", "port": "right"},
+    {"from": "signals", "to": "status"},
+    {"from": "knownClusters", "to": "withStatus", "port": "left"},
+    {"from": "status", "to": "withStatus", "port": "right"},
+    {"from": "knownClusters", "to": "unknown"},
+    {"from": "withStatus", "to": "ranked"},
+    {"from": "unknown", "to": "candidates"},
+    {"from": "ranked", "to": "candidates"},
+    {"from": "candidates", "to": "clusterState"},
+    {"from": "clusterState", "to": "groupState"},
+    {"from": "clusterState", "to": "cluster"},
+    {"from": "clusterState", "to": "hierarchy"},
+    {"from": "groupState", "to": "root"}
+  ]
+}

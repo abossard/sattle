@@ -18,8 +18,8 @@ export const isEdgeKind = (k: unknown): k is EdgeKind => (EDGE_KINDS as unknown[
 
 /** What the ontology says about a hierarchy (engine 3.14); absent from a graph that is not one. */
 export interface TreeSpec {
-  /** the hierarchy relationship type (the one the ontology marks `hierarchy: true`), and whether its edges point child to parent (the engine's point parent to child) */
-  hierarchy: { relationship: string; childIsSource: boolean; /** more types that form the hierarchy together with `relationship` (a hierarchy chosen by kind) */ also?: string[]; /** a hierarchy chosen by kind: an edge whose target is one of these types and whose source is not hangs its source below its target (a gateway under what it exposes) */ parentRows?: string[] };
+  /** the first relationship type that forms the hierarchy, and whether its edges point child to parent (the engine's point parent to child) */
+  hierarchy: { relationship: string; childIsSource: boolean; /** more types that form the hierarchy together with `relationship` */ also?: string[]; /** a hierarchy chosen by kind: an edge whose target is one of these types and whose source is not hangs its source below its target (a gateway under what it exposes) */ parentRows?: string[] };
   /** relationship types that are not the hierarchy, read from the structure of the ontology: `support` has an end outside the tree types (evidence, signals) and explains a node, `cross` joins two types of the tree (a dependency) */
   edgeRoles: Record<string, "support" | "cross">;
   /** per entity type: the properties of its own state, of its rolled-up state, of the integer that orders states (higher is worse), of its kind (what the row says it is), and of the count of descendants per state value */
@@ -29,7 +29,7 @@ export interface TreeSpec {
 }
 
 /**
- * The hierarchy of an ontology: the relationship type marked `hierarchy: true` (parent is the source, child the target), and per entity type
+ * The hierarchy of an ontology: relationship types marked `hierarchy: true` (parent is the source, child the target), and per entity type
  * `treeState { own, rolledUp, severity, kind, counts }` naming the properties that hold its states. Like the value roles they are data of the
  * ontology and are removed before it is validated against the contract schema.
  */
@@ -50,7 +50,7 @@ export function readTree(raw: unknown): { tree: TreeSpec | null; ontology: unkno
     return others;
   }) : null;
   const rels = Array.isArray(o.relationshipTypes) ? (o.relationshipTypes as Rel[]) : null;
-  const hierarchyRel = rels?.find((r) => r.hierarchy === true);
+  const hierarchyRels = rels?.flatMap((r) => r.hierarchy === true && r.id?.value ? [{ id: r.id.value, rel: r }] : []) ?? [];
   const kinds: Record<string, EdgeKind> = {};
   // engine 3.49: the relationship types marked `rollup: true` restate others
   const restating: string[] = [];
@@ -62,18 +62,19 @@ export function readTree(raw: unknown): { tree: TreeSpec | null; ontology: unkno
     return others;
   });
   const ontology = { ...o, ...(entityTypes ? { entityTypes } : {}), ...(relationshipTypes ? { relationshipTypes } : {}) };
-  if (!hierarchyRel?.id?.value) return { tree: null, ontology, kinds, labels, restating };
+  const [relationship, ...also] = hierarchyRels.map((r) => r.id);
+  if (!relationship) return { tree: null, ontology, kinds, labels, restating };
   const ends = (r: Rel) => [...(r.sourceTypes ?? []), ...(r.targetTypes ?? [])].map((t) => t.value).filter((x): x is string => !!x);
-  const types = [...new Set(ends(hierarchyRel))];
+  const types = [...new Set(hierarchyRels.flatMap((r) => ends(r.rel)))];
   const edgeRoles: TreeSpec["edgeRoles"] = {};
   for (const r of rels ?? []) {
-    if (r === hierarchyRel || !r.id?.value) continue;
+    if (r.hierarchy === true || !r.id?.value) continue;
     const e = ends(r);
     if (!e.length || !types.length) continue;
     const inside = e.filter((t) => types.includes(t)).length;
     if (inside === e.length) edgeRoles[r.id.value] = "cross"; else if (inside > 0) edgeRoles[r.id.value] = "support";
   }
-  return { ontology, kinds, labels, restating, tree: { hierarchy: { relationship: hierarchyRel.id.value, childIsSource: false }, edgeRoles, state, ...(types.length ? { types } : {}) } };
+  return { ontology, kinds, labels, restating, tree: { hierarchy: { relationship, childIsSource: false, ...(also.length ? { also } : {}) }, edgeRoles, state, ...(types.length ? { types } : {}) } };
 }
 
 export function readPresentation(raw0: unknown): { hints: PresentationHint[]; ontology: unknown; tree: TreeSpec | null; kinds: Record<string, EdgeKind>; labels: Record<string, string>; restating: string[] } {

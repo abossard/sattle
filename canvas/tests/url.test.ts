@@ -12,6 +12,12 @@ describe("url hash", () => {
     ["", undefined, { source: "demo", view: "data" }],
   ])("%j parses to %j", (hash, current, want) => expect(parseHash(hash, current)).toEqual(want));
   it("format and parse are inverse", () => expect(parseHash(formatHash({ source: "synth-100k", view: "ontology" }))).toEqual({ source: "synth-100k", view: "ontology" }));
+  it("opens a lesson in its engine view from a short link", () => expect(parseHash("#guide=first-projection")).toEqual({ source: "engine", view: "editor", guide: "first-projection" }));
+  it("links the same lesson to an alternate view", () => {
+    const route = { source: "engine", view: "data" as const, guide: "first-projection" };
+    expect(parseHash(formatHash(route))).toEqual(route);
+  });
+  it("closes the guide through ordinary view links", () => expect(actionsFor(parseHash("#view=data", cur), { sourceId: "engine", view: "data", guide: "start" })).toEqual([{ type: "ui/guide", lesson: null }]));
   it.each([
     [{ source: "engine", view: "editor" as const }, { sourceId: "engine", view: "data" as const }, ["ui/view"]],
     [{ source: "demo", view: "data" as const }, { sourceId: "engine", view: "data" as const }, ["source/opening"]],

@@ -1,8 +1,12 @@
+import connections from "./connections.json";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const enginePort = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env.ENGINE_PORT ?? "5080";
-const engine = { "/engine": { target: `http://127.0.0.1:${enginePort}`, changeOrigin: true, ws: true, rewrite: (p: string) => p.replace(/^\/engine/, "") } };
+const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
+const proxy = (prefix: string, port: string) => ({ target: `http://127.0.0.1:${port}`, changeOrigin: true, ws: true, rewrite: (path: string) => path.slice(prefix.length) });
+const configs = env.VITE_CANVAS_EXAMPLES === "off" ? [] : connections;
+const engine = Object.fromEntries([["/engine", proxy("/engine", env.ENGINE_PORT ?? "5080")],
+  ...configs.map(c => [c.url, proxy(c.url, env[c.portEnv] ?? String(c.port))])]);
 
 export default defineConfig({
   base: "./",

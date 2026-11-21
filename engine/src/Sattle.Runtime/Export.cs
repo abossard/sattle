@@ -184,7 +184,10 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         if (roles.Count == 0) return null;
         var o = new JsonObject(); var counts = new JsonObject();
         foreach (var (p, r) in roles.OrderBy(x => x.Prop, StringComparer.Ordinal))
-            switch (r) { case "own" or "rolledUp" or "severity" or "kind" or "curatedBy" or "critical" or "hidden" or "mode" or "share": o[r] = PropName(p); break; case "healthy" or "degraded" or "unhealthy" or "unknown": counts[char.ToUpperInvariant(r![0]) + r[1..]] = PropName(p); break; }
+        {
+            if (TreeRoles.IsStructural(r!)) o[r!] = PropName(p);
+            else if (TreeRoles.CountLabel(r!) is { Length: > 0 } label) counts[label] = PropName(p);
+        }
         if (counts.Count > 0) o["counts"] = counts;
         return o;
     }

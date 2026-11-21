@@ -8,7 +8,7 @@ const DocumentView = lazy(() => import("./DocumentView").then((m) => ({ default:
 import { TreeView } from "./TreeView";
 import { hasHierarchyEdges, hasTreeRows, tileRows, treeOf, treeRowCount } from "../app/tree-model";
 import { ROLE_GLYPH } from "../app/color-by";
-import { edgelessNotice } from "../app/graph-view-model";
+import { defaultHiddenKinds, edgelessNotice } from "../app/graph-view-model";
 import { countsByType, describeGraph, isolatedNodes, purposesOf, tileKind, tileThinsIsolated, typesHeld } from "../app/tile";
 import { DirectionBadge, TypeGlyph, roleColor, useGraphSummary, useRevision, useWorkspace } from "./common";
 import { ElementsPanel } from "./Elements";
@@ -23,6 +23,7 @@ const useStyles = makeStyles({
   right: { overflow: "auto", minHeight: 0, borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
   center: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr) auto", minHeight: 0 },
   bar: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}` },
+  graphPicker: { width: "min(280px, 100%)", gridTemplateColumns: "max-content minmax(0, 1fr)", "& .fui-Select": { width: "100%", minWidth: 0 } },
   grow: { flexGrow: 1 },
   grid: { display: "grid", gap: "6px", minHeight: 0, overflow: "auto", padding: "6px", alignContent: "start", gridAutoRows: "440px" },
   pane: { display: "grid", gridTemplateRows: "auto minmax(0, 1fr)", minHeight: 0, overflow: "hidden", border: `1px solid ${tokens.colorNeutralStroke2}`, borderRadius: tokens.borderRadiusMedium },
@@ -69,6 +70,7 @@ export function DataView() {
   const ws = useWorkspace();
   const graphs = useStore((x) => x.graphs);
   const active = useStore((x) => x.activeGraph);
+  const hiddenKinds = useStore((x) => x.filters[active]?.hiddenKinds);
   const info = ws?.graphInfo(active);
   const sum = useGraphSummary(active);
   const [shown, setShown] = useState<Record<string, string>>({});
@@ -79,18 +81,29 @@ export function DataView() {
   const isTree = !isDoc && !!info.tree && !!hist && hasTreeRows(hist.graph, info.tree);
   const first = isDoc ? "document" : "tree";
   const mode = isDoc || isTree ? shown[active] ?? first : "graph";
+  const pane = mode === "graph" ? ws.pane(active) : undefined;
+  const visibleEdges = pane?.scene.visibleEdgeCount;
+  const references = pane?.visibleReferenceCount ?? 0;
+  const kinds = pane?.presentKinds();
+  const hidden = hiddenKinds ?? (kinds ? defaultHiddenKinds(false, kinds) : []);
+  const evidenceHidden = hidden.includes("support");
   return (
     <div className={s.root}>
       <aside className={s.side} aria-label="Search, filters and element list"><SidePanel graph={active} /></aside>
       <section className={s.center} aria-label="Graph">
         <div className={s.bar}>
-          <Field label="Graph" orientation="horizontal"><Select style={{ width: 220 }} value={active} onChange={(_, d) => dispatch({ type: "ui/activeGraph", graph: d.value })}>{graphs.map((g) => <option key={g.id} value={g.id}>{g.id} ({g.role})</option>)}</Select></Field>
+          <Field label="Graph" orientation="horizontal" className={s.graphPicker}><Select value={active} onChange={(_, d) => dispatch({ type: "ui/activeGraph", graph: d.value })}>{graphs.map((g) => <option key={g.id} value={g.id}>{g.id} ({g.role})</option>)}</Select></Field>
           <Badge color={roleColor(info.role)} appearance="outline">{info.role}</Badge>
           {info.direction && <DirectionBadge direction={info.direction} />}
           <Badge appearance="outline">ontology {info.ontology.reference.id}@{info.ontology.reference.version}</Badge>
-          {sum && <Text size={200}>{sum.nodes.toLocaleString()} nodes · {sum.edges.toLocaleString()} edges</Text>}
+          {sum && <Text size={200}>{sum.nodes.toLocaleString()} nodes{references > 0 && ` + ${references.toLocaleString()} ${references === 1 ? "reference" : "references"}`} · {visibleEdges !== undefined && visibleEdges !== sum.edges
+            ? `${visibleEdges.toLocaleString()} of ${sum.edges.toLocaleString()} edges shown` : `${sum.edges.toLocaleString()} edges`}</Text>}
           <span className={s.grow} />
           {(isDoc || isTree) && <TabList size="small" selectedValue={mode} onTabSelect={(_, d) => setShown({ ...shown, [active]: String(d.value) })} aria-label="How to show this graph"><Tab value={first}>{isDoc ? "Document" : "Tree"}</Tab><Tab value="graph">Graph</Tab></TabList>}
+          {kinds?.has("support") && kinds.size > 1 && <Button size="small" onClick={() => dispatch({ type: "filter/set", graph: active,
+            filter: { hiddenKinds: evidenceHidden ? hidden.filter((kind) => kind !== "support") : [...hidden, "support"] } })}>
+            {evidenceHidden ? "Show evidence" : "Hide evidence"}
+          </Button>}
           {mode === "graph" && <><Button size="small" onClick={() => dispatch({ type: "pane/command", graph: active, command: "fit" })}>Fit</Button><Legend graph={active} /></>}
         </div>
         {mode === "document" ? <Suspense><DocumentView graph={active} /></Suspense> : mode === "tree" ? <TreeView graph={active} /> : <CanvasHost graph={active} />}

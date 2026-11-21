@@ -802,6 +802,18 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     /// <summary>The (element, property) series the plane holds.</summary>
     public int SeriesCount(GraphKey g) { lock (gate) return Get(g).Series.Count; }
 
+    /// <summary>The number of stored windows across all series in a graph.</summary>
+    public long WindowCount(GraphKey g)
+    {
+        lock (gate)
+        {
+            if (!planes.TryGetValue(g, out var plane)) return 0;
+            long count = 0;
+            foreach (var series in plane.Series) count += series.Value.Count;
+            return count;
+        }
+    }
+
     /// <summary>Two windows of one property under two ids of a class, as value and optional pair: their combination as if every row had been written under one id (Law 7.5 item 3). `sum`, `min`, `max` in their monoid; `mean` with sum and count by adding both and dividing; `last` with its order by the greater order, a tie by the greater value; otherwise equal values are that value and different ones none.</summary>
     public static (decimal Value, (decimal A, decimal B)? Aux)? Combine(string? rule, decimal v1, (decimal A, decimal B)? a1, decimal v2, (decimal A, decimal B)? a2) => rule switch
     {

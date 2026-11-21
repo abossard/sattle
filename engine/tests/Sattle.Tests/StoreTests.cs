@@ -312,6 +312,31 @@ public class TelemetryStoreTests
     const long W = 60_000_000_000;
 
     [Fact]
+    public void Window_count_tracks_only_the_windows_present_in_the_requested_graph()
+    {
+        var store = new InMemoryTelemetryStore();
+        var other = new GraphKey("t", "other");
+        var first = new Sample(1, 1, 0, W, 10, 1);
+        var deleted = new Sample(3, 2, W, W, 30, 1);
+        store.AppendNew(other, first);
+        Assert.Equal(0L, store.WindowCount(G));
+
+        store.AppendNew(G, first);
+        store.Append(G, [first with { WindowStart = W }, first with { Element = 2 }, deleted]);
+        Assert.Equal(4L, store.WindowCount(G));
+        store.Append(G, [first with { Value = 11 }, deleted with { Deleted = true }]);
+        Assert.Equal(3L, store.WindowCount(G));
+        store.MoveElement(G, 2, 1, _ => "sum");
+        Assert.Equal(2L, store.WindowCount(G));
+
+        store.Retain(G, 2 * W, W);
+        Assert.Equal(1L, store.WindowCount(G));
+        store.Retain(G, 3 * W, W);
+        Assert.Equal(0L, store.WindowCount(G));
+        Assert.Equal(1L, store.WindowCount(other));
+    }
+
+    [Fact]
     public void Append_dedupes_replaces_and_reports_closed_windows_once_in_order()
     {
         var s = new InMemoryTelemetryStore();

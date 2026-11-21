@@ -177,7 +177,7 @@ export interface ConnectionStatus {
 }
 
 /** Diagnostic from the engine's checker: positioned in the module text (line and col are 1-based, 0 when there is no position) and tied to a catalog element. */
-export interface EngineDiagnostic { code: string; severity: "error" | "warning" | string; focus: string; message: string; line: number; col: number }
+export interface EngineDiagnostic { code: string; severity: "error" | "warning" | string; focus: string; message: string; line: number; col: number; file?: string }
 
 export interface ModuleText { module: string; text: string; version: string; digest: string; revision: string }
 

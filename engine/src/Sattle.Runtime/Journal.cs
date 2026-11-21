@@ -22,7 +22,7 @@ public interface IJournalStore
 public sealed record SealRecord(long Position, string Meta, byte[] Data);
 
 /// <summary>One entry of the journal, as a value. The journal is the ordered list of these, and everything that enters a space is one of them. `Text` is the stored form and `Parse` reads it back; the stored form of every kind is the one journals have always had.</summary>
-public abstract record Entry
+public closed record Entry
 {
     /// <summary>The first entry: what the space was started with.</summary>
     public sealed record Header(string Tenant, int? LateHorizon, string Cluster, string Space, string Mode, IReadOnlyList<SourceFile> Files) : Entry;
@@ -76,7 +76,6 @@ public abstract record Entry
         SequenceStep => "{\"k\":\"s\"}",
         Commit c => new JsonObject { ["k"] = "c", ["e"] = c.Expected, ["t"] = new JsonObject(c.Texts.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))) }.ToJsonString(),
         CommitRefused => "{\"k\":\"x\"}",
-        _ => throw new InvalidOperationException("unknown entry " + GetType().Name),
     };
 
     /// <summary>The kind letter of a stored entry, without reading the rest of it.</summary>

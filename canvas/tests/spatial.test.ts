@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SpatialGrid, type PointSet } from "../src/render/spatial";
-import { mulberry32 } from "../src/core/synth";
+import { mulberry32 } from "../examples/synthetic-estate/synth";
 
 const points = (n: number, seed = 3): PointSet => {
   const r = mulberry32(seed);

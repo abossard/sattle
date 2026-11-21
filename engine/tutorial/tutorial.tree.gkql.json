@@ -1,0 +1,87 @@
+{
+  "graph": "tree",
+  "ontology": "tutorial",
+  "description": "Use the resource group as the root and containment as the tree edge.",
+  "history": 120,
+  "inputs": [
+    {"name": "inventory", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "inventory",
+      "verb": "graph-match",
+      "graph": "inventory",
+      "pattern": {
+        "nodes": [
+          {"var": "g", "label": "Group"},
+          {"var": "c", "label": "Cluster"}
+        ],
+        "edges": [
+          {"var": "link", "label": "InventoryContains", "from": "g", "to": "c"}
+        ]
+      }
+    },
+    {
+      "id": "root",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Group",
+            "id": {"ref": "g"},
+            "props": {
+              "armId": {"ref": "g.armId"},
+              "name": {"ref": "g.name"},
+              "policy": {"ref": "g.policy"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "leaf",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Cluster",
+            "id": {"ref": "c"},
+            "props": {
+              "armId": {"ref": "c.armId"},
+              "name": {"ref": "c.name"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "parent",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "Group",
+            "id": {"ref": "g"}
+          },
+          {
+            "var": "child",
+            "label": "Cluster",
+            "id": {"ref": "c"}
+          }
+        ],
+        "edges": [
+          {"var": "link", "label": "Contains", "from": "parent", "to": "child"}
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "inventory", "to": "root"},
+    {"from": "inventory", "to": "leaf"},
+    {"from": "inventory", "to": "parent"}
+  ]
+}

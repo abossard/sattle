@@ -213,7 +213,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         var cat = new Catalog(projections);
         var res = cat.Load(files, updatePins: true);
         if (res.HasErrors) throw new InvalidOperationException(string.Join("\n", res.Diagnostics));
-        return new LoadedDefinitions(cat, Catalog.ApplyPinFixes(files, res.PinFixes));
+        return new LoadedDefinitions(cat, Catalog.ApplyPinFixes(files, res.PinFixes, projections));
     }
 
     public SpaceHost(IReadOnlyList<SourceFile> files, HostOptions options) : this(files, options, LoadDefinitions(files, options.Projections)) { }
@@ -232,7 +232,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         others.AddRange(files.Where(f => !sources.Values.Any(m => m.Path == f.Path)));
         spaceId = options.SpaceName is { } sn ? cat.Spaces.Keys.First(k => Ids.Name(k) == sn) : cat.Spaces.Keys.First();
         Catalog = cat;
-        Adapters = AdapterRegistry.Create(options.Cluster);
+        Adapters = AdapterRegistry.Create(options.Cluster, cat.Spaces[spaceId], cat);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], Adapters);
         if (bad.Count > 0) throw new InvalidOperationException(string.Join("\n", bad));
         catalogHistory.AddRange(cat.Log.Commits.Select(c => c.Patch));
@@ -300,7 +300,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         if (kept is not null) return kept;
         if (journal is null) throw new HostError("InputsNotRetained", "the inputs of this space are beyond the row cap and it has no journal to read them from; activating a changed definition needs a restart", 422);
         var entries = journal.JournalRead(0).Take((int)Math.Min(journalPos, int.MaxValue)).Skip(1).Select(text => Entry.Parse(text, RowLayout, interner));
-        return EngineInput.Derive(entries, Space, AdapterRegistry.Create(options.Cluster), RowLayout, interner, WantsProgress);
+        return EngineInput.Derive(entries, Space, AdapterRegistry.Create(options.Cluster, Space, Catalog), RowLayout, interner, WantsProgress);
     }
 
     /// <summary>A fresh engine for a candidate catalog, given every input so far, or as many as hold `rowLimit` rows. Used by a definition commit and by a preview.</summary>
@@ -832,6 +832,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         lock (Gate)
         {
             if (IsFileName(name)) return others.FirstOrDefault(f => Path.GetFileName(f.Path) == name)?.Text ?? throw new HostError("UnknownModule", $"no definition file {name}", 404);
+            if (sources.TryGetValue(name, out var source) && options.Projections?.IsModuleFile(source.Path) == true) return source.Text;
             return Catalog.Modules.ContainsKey(name) && name != Ids.KernelModule ? Printer.Print(Catalog.Graph, name) : throw new HostError("UnknownModule", $"no module {name}", 404);
         }
     }
@@ -967,7 +968,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         List<SourceFile> files = [.. SourceList(all).Select(f => new SourceFile(f.Path, f.Text)), .. OthersWith(texts, baseOthers)];
         var cat = new Catalog(options.Projections);
         res = cat.Load(files, updatePins: true);
-        fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes);
+        fixedTexts = Catalog.ApplyPinFixes(files, res.PinFixes, options.Projections);
         foreach (var kv in all.Where(kv => !texts.ContainsKey(kv.Key)))      // dependents whose import version was rewritten
             if (sources.TryGetValue(kv.Key, out var s) && !fixedTexts.ContainsKey(s.Path)) fixedTexts[s.Path] = kv.Value!;
         return cat;
@@ -986,7 +987,14 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     string ParseModuleName(string module, string text)
     {
-        try { var ast = Parser.Parse(text); if (ast.Name != module) throw new HostError("ModuleMismatch", $"text declares module {ast.Name}, not {module}", 422); return ast.Name; }
+        try
+        {
+            var ast = sources.TryGetValue(module, out var f) && options.Projections?.IsModuleFile(f.Path) == true
+                ? options.Projections.ReadModule(new SourceFile(f.Path, text))
+                : Parser.Parse(text);
+            if (ast.Name != module) throw new HostError("ModuleMismatch", $"text declares module {ast.Name}, not {module}", 422);
+            return ast.Name;
+        }
         catch (SyntaxError) { return module; }
     }
 
@@ -1103,8 +1111,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var catPatch = new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, Graph.Diff(Catalog.Graph, cand.Graph));
             // swap
             Engine = fresh; Catalog = cand;
-            foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
+            foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             var withFiles = OthersWith(texts); var removed = others.Where(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) && t is null).ToList(); others.Clear(); others.AddRange(withFiles);
             if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying)
             {

@@ -237,16 +237,43 @@ public sealed class Interner : ITextTable
     {
         var slot = i & (CacheSize - 1);
         if (cached[slot] == i) return cache[slot]!;
+        var s = Decode(i);
+        cached[slot] = i; cache[slot] = s; values[slot] = null;
+        return s;
+    }
+
+    string Decode(int i)
+    {
         if ((uint)i >= (uint)codes || !start.Has(i)) throw new InvalidOperationException($"text {i} was freed");
         var b = Bytes(i);
-        var s = ((meta[i] >> 1) & 3) switch
+        return ((meta[i] >> 1) & 3) switch
         {
             Wide => new string(System.Runtime.InteropServices.MemoryMarshal.Cast<byte, char>(b)),
             IdForm => UnpackId(b),
             _ => System.Text.Encoding.Latin1.GetString(b),
         };
-        cached[slot] = i; cache[slot] = s; values[slot] = null;
-        return s;
+    }
+
+    /// <summary>A reader for one match partition. The writer holds the graph and its codes fixed until every partition joins.
+    /// Graph ids, endpoints and property texts have already been interned by graph apply. The decoding cache belongs to this reader.</summary>
+    internal sealed class MatchReader(Interner owner) : ITextTable
+    {
+        const int Size = 256;
+        readonly (int Code, string? Text, Value? Value)[] cache = new (int, string?, Value?)[Size];
+        public void Clear() => Array.Clear(cache);
+        public bool TryFind(string text, out int code) => owner.TryFind(text, out code);
+        public int Intern(string text) => TryFind(text, out var code) && !owner.IsYoung(code) ? code : throw new InvalidOperationException("match read a text outside the committed graph");
+        public string Get(int code)
+        {
+            ref var slot = ref cache[code & (Size - 1)];
+            if (slot.Code != code || slot.Text is null) slot = (code, owner.Decode(code), null);
+            return slot.Text;
+        }
+        public Value Text(int code)
+        {
+            var text = Get(code);
+            return cache[code & (Size - 1)].Value ??= Value.Text(text);
+        }
     }
 }
 
@@ -352,6 +379,13 @@ public static class WorkingArrays
     [ThreadStatic] static long steps;
     /// <summary>The engine starts the operators of a step on this thread.</summary>
     public static void Open() => open = true;
+    /// <summary>Partition buffers are owned by a single preparation call, including when its work is scheduled on the writer.</summary>
+    internal readonly struct Pause : IDisposable
+    {
+        readonly bool wasOpen;
+        public Pause() { wasOpen = open; open = false; }
+        public void Dispose() => open = wasOpen;
+    }
     /// <summary>A reused view that shows a batch past its first size: it lets go of it when the step ends.</summary>
     public static void Shows(Batch view) => List(view);
     /// <summary>The step's operators are done and their outputs read: what grew is cut and its arrays go back to the pool.</summary>
@@ -404,7 +438,8 @@ public static class WorkingArrays
 /// <summary>Per-engine element id handles and a few conversions between values and columns.</summary>
 public static class Codec
 {
-    public static long ToCode(Value v, Interner it) => v switch
+    public static long ToCode(Value v, Interner it) => ToCode(v, (ITextTable)it);
+    internal static long ToCode(Value v, ITextTable it) => v switch
     {
         TextValue t => it.Intern(t.S),
         IntegerValue i => (long)i.N,

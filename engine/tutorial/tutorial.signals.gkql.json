@@ -1,0 +1,91 @@
+{
+  "graph": "signals",
+  "ontology": "tutorial",
+  "description": "Enter after two high readings and recover after three low readings.",
+  "history": 120,
+  "inputs": [
+    {"name": "master", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "meter",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "m", "label": "Meter"},
+          {"var": "r", "label": "Resource"}
+        ],
+        "edges": [
+          {"var": "measures", "label": "MeterOf", "from": "m", "to": "r"}
+        ]
+      }
+    },
+    {
+      "id": "apiServerCpu",
+      "verb": "where",
+      "condition": {
+        "fn": "==",
+        "args": [
+          {"ref": "m.metric"},
+          {"lit": "apiserver_cpu_usage_percentage"}
+        ]
+      }
+    },
+    {
+      "id": "keys",
+      "verb": "extend",
+      "columns": {
+        "armId": {"ref": "r.armId"},
+        "metric": {"ref": "m.metric"}
+      }
+    },
+    {
+      "id": "readings",
+      "verb": "series",
+      "graph": "master",
+      "series": {"element": "m", "property": "reading", "lookback": "2h"}
+    },
+    {
+      "id": "cpuState",
+      "verb": "hysteresis",
+      "hysteresis": {
+        "by": ["r", "m", "armId", "metric"],
+        "value": "reading",
+        "above": 8,
+        "enterAfter": 2,
+        "below": 7,
+        "exitAfter": 3,
+        "high": "Degraded",
+        "low": "Healthy",
+        "initial": "Healthy"
+      }
+    },
+    {
+      "id": "signal",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Signal",
+            "id": {"ref": "m"},
+            "props": {
+              "armId": {"ref": "armId"},
+              "metric": {"ref": "metric"},
+              "state": {"ref": "state"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "meter", "to": "apiServerCpu"},
+    {"from": "apiServerCpu", "to": "keys"},
+    {"from": "keys", "to": "readings"},
+    {"from": "readings", "to": "cpuState"},
+    {"from": "cpuState", "to": "signal"}
+  ]
+}

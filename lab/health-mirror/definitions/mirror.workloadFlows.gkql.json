@@ -1,0 +1,869 @@
+{
+  "graph": "workloadFlows",
+  "ontology": "mirror",
+  "description": "Connect declared user journeys to the applications that run each step.",
+  "history": 240,
+  "inputs": [
+    {"name": "master", "ontology": "mirror"},
+    {"name": "containerApps", "ontology": "mirror"},
+    {"name": "health", "ontology": "mirror"},
+    {"name": "network", "ontology": "mirror"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "deployedApps",
+      "verb": "graph-match",
+      "graph": "containerApps",
+      "pattern": {"nodes": [{"var": "a", "label": "ContainerApp"}]}
+    },
+    {
+      "id": "showApps",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ContainerApp",
+            "id": {"ref": "a"},
+            "props": {
+              "armId": {"ref": "a.armId"},
+              "armKey": {"ref": "a.armKey"},
+              "name": {"ref": "a.name"},
+              "resourceType": {"ref": "a.resourceType"},
+              "location": {"ref": "a.location"},
+              "subscriptionId": {"ref": "a.subscriptionId"},
+              "resourceGroup": {"ref": "a.resourceGroup"},
+              "groupId": {"ref": "a.groupId"},
+              "environmentId": {"ref": "a.environmentId"},
+              "provisioningState": {"ref": "a.provisioningState"},
+              "runningStatus": {"ref": "a.runningStatus"},
+              "ingressHost": {"ref": "a.ingressHost"},
+              "tags": {"ref": "a.tags"},
+              "observedAt": {"ref": "a.observedAt"},
+              "state": {"ref": "a.state"},
+              "assignment": {"ref": "a.assignment"},
+              "ontologyStatus": {"ref": "a.ontologyStatus"},
+              "classCount": {"ref": "a.classCount"},
+              "healthBasis": {"ref": "a.healthBasis"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "boundResources",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "SystemComponent"}, {"var": "r", "label": "ArmResource"}],
+        "edges": [{"var": "b", "label": "RunsOnResource", "from": "s", "to": "r"}]
+      }
+    },
+    {
+      "id": "boundIds",
+      "verb": "project",
+      "columns": {
+        "step": {"ref": "s"},
+        "stepKey": {"ref": "s.key"},
+        "armKey": {"ref": "r.armKey"},
+        "evidence": {"ref": "b.provenance"}
+      }
+    },
+    {
+      "id": "appDeployments",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "deployedKey": {"ref": "a.armKey"}, "appState": {"ref": "a.state"}}
+    },
+    {
+      "id": "deployedSystems",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "armKey", "right": "deployedKey"}]
+    },
+    {
+      "id": "systemDeployments",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "SystemComponent", "id": {"ref": "step"}},
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "app"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "RunsOnApp",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "evidence"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "flowSteps",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "f", "label": "UserFlow"}, {"var": "s", "label": "SystemComponent"}],
+        "edges": [{"var": "path", "label": "DeclaresStep", "from": "f", "to": "s"}]
+      }
+    },
+    {
+      "id": "flowSystemPath",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "UserFlow", "id": {"ref": "f"}},
+          {"var": "b", "label": "SystemComponent", "id": {"ref": "s"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "DeclaresStep",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "path.provenance"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "evaluatedModel",
+      "verb": "graph-match",
+      "graph": "health",
+      "pattern": {"nodes": [{"var": "e", "label": "ModelEntity"}]}
+    },
+    {
+      "id": "sourceHealth",
+      "verb": "project",
+      "columns": {
+        "sourceId": {"ref": "e.key"},
+        "modelState": {"fn": "coalesce", "args": [{"ref": "e.state"}, {"lit": "Unknown"}]}
+      }
+    },
+    {
+      "id": "operationalRanks",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "stepKey"},
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "appState"}, {"lit": "Unknown"}]},
+            {"lit": 0},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "appState"}, {"lit": "Healthy"}]},
+                {"lit": 1},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": "==", "args": [{"ref": "appState"}, {"lit": "Degraded"}]},
+                    {"lit": 2},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "appState"}, {"lit": "Unhealthy"}]},
+                        {"lit": 3},
+                        {"lit": 0}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "declaredSystemComponent",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "s", "label": "SystemComponent"}]}
+    },
+    {"id": "allSystemComponent", "verb": "project", "columns": {"key": {"ref": "s.key"}, "rank": {"lit": 0}}},
+    {
+      "id": "SystemComponentIdentity",
+      "verb": "project",
+      "columns": {"role": {"ref": "s"}, "roleKey": {"ref": "s.key"}, "modelKey": {"ref": "s.modelKey"}}
+    },
+    {
+      "id": "SystemComponentModelState",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "modelKey", "right": "sourceId"}]
+    },
+    {
+      "id": "SystemComponentMeasured",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "roleKey"},
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unknown"}]},
+            {"lit": 10},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Healthy"}]},
+                {"lit": 11},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Degraded"}]},
+                    {"lit": 12},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unhealthy"}]},
+                        {"lit": 13},
+                        {"lit": 10}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {"id": "SystemComponentSelectedInputs", "verb": "union"},
+    {
+      "id": "SystemComponentSelected",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "SystemComponentResults",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "roleKey", "right": "key"}]
+    },
+    {
+      "id": "SystemComponentHealth",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {"ref": "role"},
+            "props": {
+              "key": {"ref": "role.key"},
+              "name": {"ref": "role.name"},
+              "modelKey": {"ref": "role.modelKey"},
+              "provenance": {"ref": "role.provenance"},
+              "configuration": {"ref": "role.configuration"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                  {"lit": "Unknown"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                      {"lit": "Healthy"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                          {"lit": "Degraded"},
+                          {
+                            "fn": "iff",
+                            "args": [
+                              {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                              {"lit": "Unhealthy"},
+                              {
+                                "fn": "iff",
+                                "args": [
+                                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                  {"lit": "Unhealthy"},
+                                  {
+                                    "fn": "iff",
+                                    "args": [
+                                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                      {"lit": "Degraded"},
+                                      {
+                                        "fn": "iff",
+                                        "args": [
+                                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                          {"lit": "Healthy"},
+                                          {"lit": "Unknown"}
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {
+                "fn": "iff",
+                "args": [
+                  {"fn": ">=", "args": [{"ref": "rank"}, {"lit": 10}]},
+                  {"lit": "Evaluated source model"},
+                  {"lit": "Worst observed Container App deployment state"}
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "stepsForFlows",
+      "verb": "project",
+      "columns": {"flowKey": {"ref": "f.key"}, "componentKey": {"ref": "s.key"}}
+    },
+    {"id": "healthOfSteps", "verb": "join", "kind": "inner", "on": [{"left": "componentKey", "right": "key"}]},
+    {
+      "id": "systemRanks",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "flowKey"},
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "==",
+              "args": [
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                    {"lit": "Unknown"},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                        {"lit": "Healthy"},
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                            {"lit": "Degraded"},
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                                {"lit": "Unhealthy"},
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                    {"lit": "Unhealthy"},
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                        {"lit": "Degraded"},
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                            {"lit": "Healthy"},
+                                            {"lit": "Unknown"}
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {"lit": "Unknown"}
+              ]
+            },
+            {"lit": 0},
+            {
+              "fn": "iff",
+              "args": [
+                {
+                  "fn": "==",
+                  "args": [
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                        {"lit": "Unknown"},
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                            {"lit": "Healthy"},
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                                {"lit": "Degraded"},
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                                    {"lit": "Unhealthy"},
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                        {"lit": "Unhealthy"},
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                            {"lit": "Degraded"},
+                                            {
+                                              "fn": "iff",
+                                              "args": [
+                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                                {"lit": "Healthy"},
+                                                {"lit": "Unknown"}
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {"lit": "Healthy"}
+                  ]
+                },
+                {"lit": 1},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {
+                      "fn": "==",
+                      "args": [
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                            {"lit": "Unknown"},
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                                {"lit": "Healthy"},
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                                    {"lit": "Degraded"},
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                                        {"lit": "Unhealthy"},
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                            {"lit": "Unhealthy"},
+                                            {
+                                              "fn": "iff",
+                                              "args": [
+                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                                {"lit": "Degraded"},
+                                                {
+                                                  "fn": "iff",
+                                                  "args": [
+                                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                                    {"lit": "Healthy"},
+                                                    {"lit": "Unknown"}
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {"lit": "Degraded"}
+                      ]
+                    },
+                    {"lit": 2},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {
+                          "fn": "==",
+                          "args": [
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                                {"lit": "Unknown"},
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                                    {"lit": "Healthy"},
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                                        {"lit": "Degraded"},
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                                            {"lit": "Unhealthy"},
+                                            {
+                                              "fn": "iff",
+                                              "args": [
+                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                                {"lit": "Unhealthy"},
+                                                {
+                                                  "fn": "iff",
+                                                  "args": [
+                                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                                    {"lit": "Degraded"},
+                                                    {
+                                                      "fn": "iff",
+                                                      "args": [
+                                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                                        {"lit": "Healthy"},
+                                                        {"lit": "Unknown"}
+                                                      ]
+                                                    }
+                                                  ]
+                                                }
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {"lit": "Unhealthy"}
+                          ]
+                        },
+                        {"lit": 3},
+                        {"lit": 0}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "declaredUserFlow",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "f", "label": "UserFlow"}]}
+    },
+    {"id": "allUserFlow", "verb": "project", "columns": {"key": {"ref": "f.key"}, "rank": {"lit": 0}}},
+    {
+      "id": "UserFlowIdentity",
+      "verb": "project",
+      "columns": {"role": {"ref": "f"}, "roleKey": {"ref": "f.key"}, "modelKey": {"ref": "f.modelKey"}}
+    },
+    {
+      "id": "UserFlowModelState",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "modelKey", "right": "sourceId"}]
+    },
+    {
+      "id": "UserFlowMeasured",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "roleKey"},
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unknown"}]},
+            {"lit": 10},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Healthy"}]},
+                {"lit": 11},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Degraded"}]},
+                    {"lit": 12},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unhealthy"}]},
+                        {"lit": 13},
+                        {"lit": 10}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {"id": "UserFlowSelectedInputs", "verb": "union"},
+    {
+      "id": "UserFlowSelected",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {"id": "UserFlowResults", "verb": "join", "kind": "inner", "on": [{"left": "roleKey", "right": "key"}]},
+    {
+      "id": "UserFlowHealth",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "UserFlow",
+            "id": {"ref": "role"},
+            "props": {
+              "key": {"ref": "role.key"},
+              "name": {"ref": "role.name"},
+              "modelKey": {"ref": "role.modelKey"},
+              "provenance": {"ref": "role.provenance"},
+              "configuration": {"ref": "role.configuration"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
+                  {"lit": "Unknown"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
+                      {"lit": "Healthy"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
+                          {"lit": "Degraded"},
+                          {
+                            "fn": "iff",
+                            "args": [
+                              {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
+                              {"lit": "Unhealthy"},
+                              {
+                                "fn": "iff",
+                                "args": [
+                                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                                  {"lit": "Unhealthy"},
+                                  {
+                                    "fn": "iff",
+                                    "args": [
+                                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                                      {"lit": "Degraded"},
+                                      {
+                                        "fn": "iff",
+                                        "args": [
+                                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                                          {"lit": "Healthy"},
+                                          {"lit": "Unknown"}
+                                        ]
+                                      }
+                                    ]
+                                  }
+                                ]
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {
+                "fn": "iff",
+                "args": [
+                  {"fn": ">=", "args": [{"ref": "rank"}, {"lit": 10}]},
+                  {"lit": "Evaluated source model"},
+                  {"lit": "Worst observed Container App deployment state"}
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "requestTargets",
+      "verb": "graph-match",
+      "graph": "network",
+      "pattern": {
+        "nodes": [{"var": "source", "label": "ApplicationRole"}, {"var": "h", "label": "DependencyHost"}],
+        "edges": [{"var": "call", "label": "CalledEndpoint", "from": "source", "to": "h"}]
+      }
+    },
+    {
+      "id": "measuredHosts",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "source"},
+        "h": {"ref": "h"},
+        "hostKey": {"ref": "h.destination"},
+        "call": {"ref": "call"}
+      }
+    },
+    {
+      "id": "ingressHosts",
+      "verb": "project",
+      "columns": {"a": {"ref": "a"}, "ingress": {"fn": "lower", "args": [{"ref": "a.ingressHost"}]}}
+    },
+    {
+      "id": "callsToExactIngress",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "hostKey", "right": "ingress"}]
+    },
+    {
+      "id": "measuredTarget",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DependencyHost",
+            "id": {"ref": "h"},
+            "props": {"destination": {"ref": "h.destination"}, "endpointScope": {"ref": "h.endpointScope"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "measuredSource",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ApplicationRole",
+            "id": {"ref": "source"},
+            "props": {"scopeId": {"ref": "source.scopeId"}, "sourceComponent": {"ref": "source.sourceComponent"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "observedRequests",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ApplicationRole", "id": {"ref": "source"}},
+          {"var": "b", "label": "DependencyHost", "id": {"ref": "h"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "CalledEndpoint",
+            "from": "a",
+            "to": "b",
+            "props": {
+              "calls": {"ref": "call.calls"},
+              "spanCount": {"ref": "call.spanCount"},
+              "failedCalls": {"ref": "call.failedCalls"},
+              "unknownResultCalls": {"ref": "call.unknownResultCalls"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "appIngress",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "a"}},
+          {"var": "b", "label": "DependencyHost", "id": {"ref": "h"}}
+        ],
+        "edges": [{"var": "edge", "label": "HasObservedEndpoint", "from": "a", "to": "b"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "deployedApps", "to": "showApps"},
+    {"from": "boundResources", "to": "boundIds"},
+    {"from": "deployedApps", "to": "appDeployments"},
+    {"from": "boundIds", "to": "deployedSystems", "port": "left"},
+    {"from": "appDeployments", "to": "deployedSystems", "port": "right"},
+    {"from": "deployedSystems", "to": "systemDeployments"},
+    {"from": "flowSteps", "to": "flowSystemPath"},
+    {"from": "evaluatedModel", "to": "sourceHealth"},
+    {"from": "deployedSystems", "to": "operationalRanks"},
+    {"from": "declaredSystemComponent", "to": "allSystemComponent"},
+    {"from": "declaredSystemComponent", "to": "SystemComponentIdentity"},
+    {"from": "SystemComponentIdentity", "to": "SystemComponentModelState", "port": "left"},
+    {"from": "sourceHealth", "to": "SystemComponentModelState", "port": "right"},
+    {"from": "SystemComponentModelState", "to": "SystemComponentMeasured"},
+    {"from": "allSystemComponent", "to": "SystemComponentSelectedInputs"},
+    {"from": "operationalRanks", "to": "SystemComponentSelectedInputs"},
+    {"from": "SystemComponentMeasured", "to": "SystemComponentSelectedInputs"},
+    {"from": "SystemComponentSelectedInputs", "to": "SystemComponentSelected"},
+    {"from": "SystemComponentIdentity", "to": "SystemComponentResults", "port": "left"},
+    {"from": "SystemComponentSelected", "to": "SystemComponentResults", "port": "right"},
+    {"from": "SystemComponentResults", "to": "SystemComponentHealth"},
+    {"from": "flowSteps", "to": "stepsForFlows"},
+    {"from": "stepsForFlows", "to": "healthOfSteps", "port": "left"},
+    {"from": "SystemComponentSelected", "to": "healthOfSteps", "port": "right"},
+    {"from": "healthOfSteps", "to": "systemRanks"},
+    {"from": "declaredUserFlow", "to": "allUserFlow"},
+    {"from": "declaredUserFlow", "to": "UserFlowIdentity"},
+    {"from": "UserFlowIdentity", "to": "UserFlowModelState", "port": "left"},
+    {"from": "sourceHealth", "to": "UserFlowModelState", "port": "right"},
+    {"from": "UserFlowModelState", "to": "UserFlowMeasured"},
+    {"from": "allUserFlow", "to": "UserFlowSelectedInputs"},
+    {"from": "systemRanks", "to": "UserFlowSelectedInputs"},
+    {"from": "UserFlowMeasured", "to": "UserFlowSelectedInputs"},
+    {"from": "UserFlowSelectedInputs", "to": "UserFlowSelected"},
+    {"from": "UserFlowIdentity", "to": "UserFlowResults", "port": "left"},
+    {"from": "UserFlowSelected", "to": "UserFlowResults", "port": "right"},
+    {"from": "UserFlowResults", "to": "UserFlowHealth"},
+    {"from": "requestTargets", "to": "measuredHosts"},
+    {"from": "deployedApps", "to": "ingressHosts"},
+    {"from": "measuredHosts", "to": "callsToExactIngress", "port": "left"},
+    {"from": "ingressHosts", "to": "callsToExactIngress", "port": "right"},
+    {"from": "callsToExactIngress", "to": "measuredTarget"},
+    {"from": "callsToExactIngress", "to": "measuredSource"},
+    {"from": "callsToExactIngress", "to": "observedRequests"},
+    {"from": "callsToExactIngress", "to": "appIngress"}
+  ]
+}

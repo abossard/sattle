@@ -1,0 +1,711 @@
+{
+  "graph": "containerApps",
+  "ontology": "mirror",
+  "description": "Discover Azure Container Apps and classify their deployment state and names.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "resources",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "r", "label": "ArmResource"}]}
+    },
+    {
+      "id": "containerAppRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.resourceType"}, {"lit": "microsoft.app/containerapps"}]}
+    },
+    {
+      "id": "deploymentState",
+      "verb": "extend",
+      "columns": {
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "or",
+              "args": [
+                {
+                  "fn": "or",
+                  "args": [
+                    {
+                      "fn": "==",
+                      "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "failed"}]
+                    },
+                    {
+                      "fn": "==",
+                      "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "canceled"}]
+                    },
+                    {
+                      "fn": "==",
+                      "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "cancelled"}]
+                    }
+                  ]
+                },
+                {
+                  "fn": "or",
+                  "args": [
+                    {
+                      "fn": "==",
+                      "args": [{"fn": "lower", "args": [{"ref": "r.runningStatus"}]}, {"lit": "failed"}]
+                    },
+                    {
+                      "fn": "==",
+                      "args": [{"fn": "lower", "args": [{"ref": "r.runningStatus"}]}, {"lit": "stopped"}]
+                    }
+                  ]
+                }
+              ]
+            },
+            {"lit": 3},
+            {
+              "fn": "iff",
+              "args": [
+                {
+                  "fn": "or",
+                  "args": [
+                    {
+                      "fn": "or",
+                      "args": [
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "updating"}]
+                        },
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "creating"}]
+                        },
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "deleting"}]
+                        }
+                      ]
+                    },
+                    {
+                      "fn": "or",
+                      "args": [
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.runningStatus"}]}, {"lit": "progressing"}]
+                        },
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.runningStatus"}]}, {"lit": "degraded"}]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {"lit": 2},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {
+                      "fn": "and",
+                      "args": [
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.provisioningState"}]}, {"lit": "succeeded"}]
+                        },
+                        {
+                          "fn": "==",
+                          "args": [{"fn": "lower", "args": [{"ref": "r.runningStatus"}]}, {"lit": "running"}]
+                        }
+                      ]
+                    },
+                    {"lit": 1},
+                    {"lit": 0}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "appKeys",
+      "verb": "project",
+      "columns": {"appKey": {"ref": "r.armKey"}, "r": {"ref": "r"}, "appRank": {"ref": "rank"}}
+    },
+    {"id": "everyApp", "verb": "project", "columns": {"key": {"ref": "r.armKey"}, "rank": {"lit": 0}}},
+    {
+      "id": "declaredFlowPath",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "f", "label": "UserFlow"},
+          {"var": "s", "label": "SystemComponent"},
+          {"var": "a", "label": "ArmResource"}
+        ],
+        "edges": [
+          {"var": "step", "label": "DeclaresStep", "from": "f", "to": "s"},
+          {"var": "deployment", "label": "RunsOnResource", "from": "s", "to": "a"}
+        ]
+      }
+    },
+    {"id": "flowMembership", "verb": "project", "columns": {"key": {"ref": "a.armKey"}, "rank": {"lit": 1}}},
+    {"id": "hasDeclaredFlowInputs", "verb": "union"},
+    {
+      "id": "hasDeclaredFlow",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {"id": "attachMembership", "verb": "join", "kind": "inner", "on": [{"left": "appKey", "right": "key"}]},
+    {
+      "id": "appMembership",
+      "verb": "project",
+      "columns": {
+        "r": {"ref": "r"},
+        "appKey": {"ref": "appKey"},
+        "appRank": {"ref": "appRank"},
+        "assigned": {"ref": "rank"}
+      }
+    },
+    {
+      "id": "observedAppsForRules",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "r", "label": "ArmResource"}]}
+    },
+    {
+      "id": "scopedContainerNames",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.resourceType"}, {"lit": "microsoft.app/containerapps"}]}
+    },
+    {
+      "id": "deployedNames",
+      "verb": "project",
+      "columns": {
+        "app": {"ref": "r"},
+        "appKey": {"ref": "r.armKey"},
+        "scope": {"ref": "r.groupId"},
+        "appName": {"ref": "r.name"}
+      }
+    },
+    {
+      "id": "curatedNames",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "n", "label": "NameRule"}]}
+    },
+    {
+      "id": "rulesByScope",
+      "verb": "project",
+      "columns": {"rule": {"ref": "n"}, "ruleScope": {"ref": "n.scopeId"}}
+    },
+    {"id": "ruleCandidates", "verb": "join", "kind": "inner", "on": [{"left": "scope", "right": "ruleScope"}]},
+    {
+      "id": "matchingNames",
+      "verb": "where",
+      "condition": {
+        "fn": "iff",
+        "args": [
+          {"fn": "==", "args": [{"ref": "rule.matchKind"}, {"lit": "prefix"}]},
+          {"fn": "startswith", "args": [{"ref": "appName"}, {"ref": "rule.pattern"}]},
+          {
+            "fn": "iff",
+            "args": [
+              {"fn": "==", "args": [{"ref": "rule.matchKind"}, {"lit": "suffix"}]},
+              {"fn": "endswith", "args": [{"ref": "appName"}, {"ref": "rule.pattern"}]},
+              {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rule.matchKind"}, {"lit": "contains"}]},
+                  {"fn": "contains", "args": [{"ref": "appName"}, {"ref": "rule.pattern"}]},
+                  {"lit": false}
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "matchedRules",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "NameRule",
+            "id": {"ref": "rule"},
+            "props": {
+              "key": {"ref": "rule.key"},
+              "name": {"ref": "rule.name"},
+              "scopeId": {"ref": "rule.scopeId"},
+              "matchKind": {"ref": "rule.matchKind"},
+              "pattern": {"ref": "rule.pattern"},
+              "className": {"ref": "rule.className"},
+              "evidence": {"ref": "rule.evidence"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "matchingRule",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "app"}},
+          {"var": "b", "label": "NameRule", "id": {"ref": "rule"}}
+        ],
+        "edges": [{"var": "edge", "label": "MatchedRule", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "distinctClasses",
+      "verb": "summarize",
+      "by": {"key": {"ref": "appKey"}, "className": {"ref": "rule.className"}},
+      "aggregates": {"rules": {"fn": "count", "args": []}}
+    },
+    {
+      "id": "countDistinctClasses",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "count", "args": []}}
+    },
+    {"id": "classesPerAppInputs", "verb": "union"},
+    {
+      "id": "classesPerApp",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {"id": "attachClassification", "verb": "join", "kind": "inner", "on": [{"left": "appKey", "right": "key"}]},
+    {
+      "id": "inventoryApp",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ContainerApp",
+            "id": {"ref": "r"},
+            "props": {
+              "armId": {"ref": "r.armId"},
+              "armKey": {"ref": "r.armKey"},
+              "name": {"ref": "r.name"},
+              "resourceType": {"ref": "r.resourceType"},
+              "location": {"ref": "r.location"},
+              "subscriptionId": {"ref": "r.subscriptionId"},
+              "resourceGroup": {"ref": "r.resourceGroup"},
+              "groupId": {"ref": "r.groupId"},
+              "environmentId": {"ref": "r.environmentId"},
+              "provisioningState": {"ref": "r.provisioningState"},
+              "runningStatus": {"ref": "r.runningStatus"},
+              "ingressHost": {"ref": "r.ingressHost"},
+              "tags": {"ref": "r.tags"},
+              "observedAt": {"ref": "r.observedAt"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "appRank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "appRank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "appRank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "ARM provisioning and running status"},
+              "assignment": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "assigned"}, {"lit": 1}]},
+                  {"lit": "Assigned"},
+                  {"lit": "Unassigned"}
+                ]
+              },
+              "ontologyStatus": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 0}]},
+                  {"lit": "Unmapped"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                      {"lit": "Mapped"},
+                      {"lit": "Ambiguous"}
+                    ]
+                  }
+                ]
+              },
+              "classCount": {"ref": "rank"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "environments",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.resourceType"}, {"lit": "microsoft.app/managedenvironments"}]}
+    },
+    {
+      "id": "observedEnvironments",
+      "verb": "project",
+      "columns": {"env": {"ref": "r"}, "envKey": {"ref": "r.armKey"}, "envName": {"ref": "r.name"}}
+    },
+    {
+      "id": "appEnvironmentIds",
+      "verb": "project",
+      "columns": {"app": {"ref": "r"}, "envRef": {"ref": "r.environmentId"}, "rank": {"ref": "rank"}}
+    },
+    {"id": "resolveEnvironment", "verb": "join", "kind": "inner", "on": [{"left": "envRef", "right": "envKey"}]},
+    {
+      "id": "hostedApps",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ManagedEnvironment", "id": {"ref": "env"}},
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "app"}}
+        ],
+        "edges": [{"var": "edge", "label": "HostsApp", "from": "a", "to": "b"}]
+      }
+    },
+    {"id": "everyEnvironment", "verb": "project", "columns": {"key": {"ref": "envKey"}, "rank": {"lit": 0}}},
+    {"id": "hostedAppRanks", "verb": "project", "columns": {"key": {"ref": "envKey"}, "rank": {"ref": "rank"}}},
+    {"id": "environmentHealthInputs", "verb": "union"},
+    {
+      "id": "environmentHealth",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "attachEnvironmentHealth",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "envKey", "right": "key"}]
+    },
+    {
+      "id": "environment",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ManagedEnvironment",
+            "id": {"ref": "env"},
+            "props": {
+              "key": {"ref": "envKey"},
+              "name": {"ref": "envName"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "Worst observed Container App deployment state"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "knownResourceGroup",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "r.groupId"}, {"lit": ""}]}
+    },
+    {
+      "id": "knownEnvironmentResourceGroup",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "r.groupId"}, {"lit": ""}]}
+    },
+    {
+      "id": "ResourceGroupAppRanks",
+      "verb": "project",
+      "columns": {"key": {"ref": "r.groupId"}, "name": {"ref": "r.resourceGroup"}, "rank": {"ref": "rank"}}
+    },
+    {
+      "id": "ResourceGroupEnvironmentRanks",
+      "verb": "project",
+      "columns": {"key": {"ref": "r.groupId"}, "name": {"ref": "r.resourceGroup"}, "rank": {"lit": 0}}
+    },
+    {"id": "ResourceGroupAssignments", "verb": "union"},
+    {
+      "id": "ResourceGroupWorst",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}, "name": {"ref": "name"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "inventoryResourceGroup",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "Worst observed Container App deployment state"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ResourceGroupApps",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "r.groupId"}]}
+          },
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "ContainsApp", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "ResourceGroupEnvironments",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "r.groupId"}]}
+          },
+          {"var": "b", "label": "ManagedEnvironment", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "ContainsEnvironment", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "knownAzureRegion",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "r.location"}, {"lit": ""}]}
+    },
+    {
+      "id": "knownEnvironmentAzureRegion",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "r.location"}, {"lit": ""}]}
+    },
+    {
+      "id": "AzureRegionAppRanks",
+      "verb": "project",
+      "columns": {
+        "key": {"fn": "concat", "args": [{"ref": "r.subscriptionId"}, {"lit": "/"}, {"ref": "r.location"}]},
+        "name": {"ref": "r.location"},
+        "rank": {"ref": "rank"}
+      }
+    },
+    {
+      "id": "AzureRegionEnvironmentRanks",
+      "verb": "project",
+      "columns": {
+        "key": {"fn": "concat", "args": [{"ref": "r.subscriptionId"}, {"lit": "/"}, {"ref": "r.location"}]},
+        "name": {"ref": "r.location"},
+        "rank": {"lit": 0}
+      }
+    },
+    {"id": "AzureRegionAssignments", "verb": "union"},
+    {
+      "id": "AzureRegionWorst",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}, "name": {"ref": "name"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "inventoryAzureRegion",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "AzureRegion",
+            "id": {"identity": "idAzureRegion", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "Worst observed Container App deployment state"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "AzureRegionApps",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "AzureRegion",
+            "id": {
+              "identity": "idAzureRegion",
+              "args": [{"fn": "concat", "args": [{"ref": "r.subscriptionId"}, {"lit": "/"}, {"ref": "r.location"}]}]
+            }
+          },
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "AppInRegion", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "AzureRegionEnvironments",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "AzureRegion",
+            "id": {
+              "identity": "idAzureRegion",
+              "args": [{"fn": "concat", "args": [{"ref": "r.subscriptionId"}, {"lit": "/"}, {"ref": "r.location"}]}]
+            }
+          },
+          {"var": "b", "label": "ManagedEnvironment", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "EnvironmentInRegion", "from": "a", "to": "b"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "resources", "to": "containerAppRows"},
+    {"from": "containerAppRows", "to": "deploymentState"},
+    {"from": "deploymentState", "to": "appKeys"},
+    {"from": "deploymentState", "to": "everyApp"},
+    {"from": "declaredFlowPath", "to": "flowMembership"},
+    {"from": "everyApp", "to": "hasDeclaredFlowInputs"},
+    {"from": "flowMembership", "to": "hasDeclaredFlowInputs"},
+    {"from": "hasDeclaredFlowInputs", "to": "hasDeclaredFlow"},
+    {"from": "appKeys", "to": "attachMembership", "port": "left"},
+    {"from": "hasDeclaredFlow", "to": "attachMembership", "port": "right"},
+    {"from": "attachMembership", "to": "appMembership"},
+    {"from": "observedAppsForRules", "to": "scopedContainerNames"},
+    {"from": "scopedContainerNames", "to": "deployedNames"},
+    {"from": "curatedNames", "to": "rulesByScope"},
+    {"from": "deployedNames", "to": "ruleCandidates", "port": "left"},
+    {"from": "rulesByScope", "to": "ruleCandidates", "port": "right"},
+    {"from": "ruleCandidates", "to": "matchingNames"},
+    {"from": "matchingNames", "to": "matchedRules"},
+    {"from": "matchingNames", "to": "matchingRule"},
+    {"from": "matchingNames", "to": "distinctClasses"},
+    {"from": "distinctClasses", "to": "countDistinctClasses"},
+    {"from": "everyApp", "to": "classesPerAppInputs"},
+    {"from": "countDistinctClasses", "to": "classesPerAppInputs"},
+    {"from": "classesPerAppInputs", "to": "classesPerApp"},
+    {"from": "appMembership", "to": "attachClassification", "port": "left"},
+    {"from": "classesPerApp", "to": "attachClassification", "port": "right"},
+    {"from": "attachClassification", "to": "inventoryApp"},
+    {"from": "resources", "to": "environments"},
+    {"from": "environments", "to": "observedEnvironments"},
+    {"from": "deploymentState", "to": "appEnvironmentIds"},
+    {"from": "appEnvironmentIds", "to": "resolveEnvironment", "port": "left"},
+    {"from": "observedEnvironments", "to": "resolveEnvironment", "port": "right"},
+    {"from": "resolveEnvironment", "to": "hostedApps"},
+    {"from": "observedEnvironments", "to": "everyEnvironment"},
+    {"from": "resolveEnvironment", "to": "hostedAppRanks"},
+    {"from": "everyEnvironment", "to": "environmentHealthInputs"},
+    {"from": "hostedAppRanks", "to": "environmentHealthInputs"},
+    {"from": "environmentHealthInputs", "to": "environmentHealth"},
+    {"from": "observedEnvironments", "to": "attachEnvironmentHealth", "port": "left"},
+    {"from": "environmentHealth", "to": "attachEnvironmentHealth", "port": "right"},
+    {"from": "attachEnvironmentHealth", "to": "environment"},
+    {"from": "deploymentState", "to": "knownResourceGroup"},
+    {"from": "environments", "to": "knownEnvironmentResourceGroup"},
+    {"from": "knownResourceGroup", "to": "ResourceGroupAppRanks"},
+    {"from": "knownEnvironmentResourceGroup", "to": "ResourceGroupEnvironmentRanks"},
+    {"from": "ResourceGroupAppRanks", "to": "ResourceGroupAssignments"},
+    {"from": "ResourceGroupEnvironmentRanks", "to": "ResourceGroupAssignments"},
+    {"from": "ResourceGroupAssignments", "to": "ResourceGroupWorst"},
+    {"from": "ResourceGroupWorst", "to": "inventoryResourceGroup"},
+    {"from": "knownResourceGroup", "to": "ResourceGroupApps"},
+    {"from": "knownEnvironmentResourceGroup", "to": "ResourceGroupEnvironments"},
+    {"from": "deploymentState", "to": "knownAzureRegion"},
+    {"from": "environments", "to": "knownEnvironmentAzureRegion"},
+    {"from": "knownAzureRegion", "to": "AzureRegionAppRanks"},
+    {"from": "knownEnvironmentAzureRegion", "to": "AzureRegionEnvironmentRanks"},
+    {"from": "AzureRegionAppRanks", "to": "AzureRegionAssignments"},
+    {"from": "AzureRegionEnvironmentRanks", "to": "AzureRegionAssignments"},
+    {"from": "AzureRegionAssignments", "to": "AzureRegionWorst"},
+    {"from": "AzureRegionWorst", "to": "inventoryAzureRegion"},
+    {"from": "knownAzureRegion", "to": "AzureRegionApps"},
+    {"from": "knownEnvironmentAzureRegion", "to": "AzureRegionEnvironments"}
+  ]
+}

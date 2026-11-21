@@ -41,10 +41,39 @@ public class RecordReadingTests
         /// <summary>A text of the first row of a type.</summary>
         public string? Text(string rowType, string column)
         {
-            if (!built.TryGetValue(rowType, out var b)) built[rowType] = b = writers[rowType].Build()!;
-            var c = b.Cols[b.Layout.Index(column)];
+            var c = GetColumn(rowType, column);
             return c.Present(0) ? Texts.Get((int)c.L[0]) : null;
         }
+
+        public bool? Flag(string rowType, string column)
+        {
+            var c = GetColumn(rowType, column);
+            return c.Present(0) ? c.L[0] != 0 : null;
+        }
+
+        Column GetColumn(string rowType, string column)
+        {
+            if (!built.TryGetValue(rowType, out var b)) built[rowType] = b = writers[rowType].Build()!;
+            return b.Cols[b.Layout.Index(column)];
+        }
+    }
+
+    [Theory]
+    [InlineData("True", true)]
+    [InlineData("False", false)]
+    [InlineData("Unknown", null)]
+    [InlineData(null, null)]
+    public void A_pod_reports_readiness_only_when_the_source_knows_it(string? status, bool? ready)
+    {
+        var adapter = new KubernetesAdapter("test");
+        var rows = new Rows(adapter);
+        var payload = new { type = "ADDED", @object = new {
+            kind = "Pod", metadata = new { uid = "p1", @namespace = "default", name = "api" },
+            status = new { conditions = status is null ? [] : new[] { new { type = "Ready", status } } }
+        } };
+        using var envelope = CaptureReader.Parse(Line(1, payload, "kubernetes-watch"), "", 1)!;
+        adapter.Consume(envelope, rows);
+        Assert.Equal(ready, rows.Flag("PodRow", "ready"));
     }
 
     public static TheoryData<string, string> Separators => new()

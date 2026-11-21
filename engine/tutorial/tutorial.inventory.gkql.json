@@ -1,0 +1,99 @@
+{
+  "graph": "inventory",
+  "ontology": "tutorial",
+  "description": "Select AKS clusters and their resource groups.",
+  "history": 120,
+  "inputs": [
+    {"name": "master", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "azure",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "g", "label": "Resource"},
+          {"var": "r", "label": "Resource"}
+        ],
+        "edges": [
+          {"var": "owns", "label": "AzureContains", "from": "g", "to": "r"}
+        ]
+      }
+    },
+    {
+      "id": "onlyAks",
+      "verb": "where",
+      "condition": {
+        "fn": "==",
+        "args": [
+          {"ref": "r.resourceType"},
+          {"lit": "microsoft.containerservice/managedclusters"}
+        ]
+      }
+    },
+    {
+      "id": "clusters",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Cluster",
+            "id": {"ref": "r"},
+            "props": {
+              "armId": {"ref": "r.armId"},
+              "name": {"ref": "r.name"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "groups",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Group",
+            "id": {"ref": "g"},
+            "props": {
+              "armId": {"ref": "g.armId"},
+              "name": {"ref": "g.name"},
+              "policy": {"lit": "Worst child"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "links",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "Group",
+            "id": {"ref": "g"}
+          },
+          {
+            "var": "child",
+            "label": "Cluster",
+            "id": {"ref": "r"}
+          }
+        ],
+        "edges": [
+          {"var": "link", "label": "InventoryContains", "from": "parent", "to": "child"}
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "azure", "to": "onlyAks"},
+    {"from": "onlyAks", "to": "clusters"},
+    {"from": "onlyAks", "to": "groups"},
+    {"from": "onlyAks", "to": "links"}
+  ]
+}

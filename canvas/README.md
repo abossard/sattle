@@ -6,6 +6,7 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 
 - `npm install`
 - `npm run dev` (starts Vite). `ENGINE_PORT=5091 npm run dev` points the `/engine` proxy at another engine port (default 5080).
+- [Developer guide](http://localhost:5173/#guide=start). Eleven Canvas lessons use GKQL and a local, sanitized Azure replay.
 - `npm run build` (type check plus production build in `dist/`)
 - `npm test`: 1,174 parametrized unit and component tests in 55 files, as two vitest projects. `npm test -- --project pure` runs the 1,158 tests that need no engine (no `dotnet`, about two minutes); the project `engine` is the folder `tests/engine`, which builds and starts a real engine (see the projection editor's tests below). A test written for a defect stands with the tests of its module, titled by the behaviour.
 - `npm run a11y` (dev server or `vite preview` running on `http://localhost:5173/` unless a base URL is given, engine on the proxied port; it stops with a clear message when the app does not start): axe-core with color contrast on every view, theme and dialog in real Chrome, plus keyboard-only walkthroughs with real key events. `A11Y_SOURCE` and `A11Y_ENGINE` select the sources. Three checks need the estate engine and skip with a note otherwise: the document view (an engine that serves a document graph) and the value roles of the `workload` graph (`A11Y_ROLES_GRAPH`) in each theme: no coloring is chosen, a real screenshot of the canvas must contain pixels of every role color of the legend, every element of a type that carries a hinted property must have a role, and the legend in the panel must name each role.
@@ -55,7 +56,7 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 
 ## Projection editor (engine source)
 
-An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a file of its own, written in a language the engine names for it (`GET /definitions`, `projections`: projection, file, language). `src/ui/editor/languages.tsx` is the one place that maps a language to its editor: KQL (research note 11) is the only entry, and a projection in any other language opens as its text (`GET /definitions/{file}`), read-only, with a note that the canvas has no editor for it.
+An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a file of its own, written in a language the engine names for it (`GET /definitions`, `projections`: projection, file, language). `src/ui/editor/languages.tsx` maps GKQL and KQL to their editors. Other languages open as read-only source (`GET /definitions/{file}`).
 
 The phase of the editor (`src/state/editor-phase.ts`); a draft session is open only in `ready`:
 

@@ -43,8 +43,6 @@ export const SHAPE_NAME: Record<number, string> = { [Shape.Circle]: "circle", [S
 
 const KNOWN: Record<string, [number, number, number]> = {
   // type: [palette index, shape index, radius]
-  Subscription: [2, 4, 14], Cluster: [1, 4, 11], Node: [0, 1, 6], Namespace: [4, 1, 8], Workload: [3, 2, 6.5], Service: [5, 0, 6], Pod: [0, 0, 3.6],
-  Deployment: [3, 2, 7], AzureResource: [1, 4, 9], NetworkEndpoint: [5, 3, 6], Capability: [4, 4, 9],
   EntityType: [0, 4, 9], Property: [5, 0, 5],
 };
 function hash(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }

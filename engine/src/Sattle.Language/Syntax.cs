@@ -139,6 +139,21 @@ public static class RelationshipKinds
 {
     public static readonly string[] All = ["communication", "composition", "dependency", "support"];
 }
+/// <summary>Tree presentation metadata. New counts carry the exact state label declared by the ontology.</summary>
+public static class TreeRoles
+{
+    public const string CountPrefix = "count:";
+    public static bool IsStructural(string role) =>
+        role is "own" or "rolledUp" or "severity" or "kind" or "curatedBy" or "critical" or "hidden" or "mode" or "share";
+    // These were the only state-count keywords supported by the original .sattle grammar.
+    // Keep their stored metadata unmodified so existing module import pins remain valid.
+    public static string? LegacyCount(string role) => role switch
+    {
+        "healthy" => "Healthy", "degraded" => "Degraded", "unhealthy" => "Unhealthy", "unknown" => "Unknown", _ => null,
+    };
+    public static string? CountLabel(string role) => role.StartsWith(CountPrefix, StringComparison.Ordinal)
+        ? role[CountPrefix.Length..] : LegacyCount(role);
+}
 public sealed record Member(string Name, string? Was, bool Optional, VType Type, bool Nullable, string? Unit, TeleMod? Tele, string? Doc, Pos Pos, List<(Value Value, string Role)>? Roles = null, string? TreeRole = null, bool Label = false);
 public sealed record TeleMod(string Temporality, string Combine, long PeriodNs);
 
@@ -331,7 +346,18 @@ public sealed class Parser
                     Sym("}");
                 }
                 else
-                if (TryWord("treerole")) treeRole = Cur.Kind == T.Ident && Cur.Text is "own" or "rolledUp" or "severity" or "kind" or "healthy" or "degraded" or "unhealthy" or "unknown" or "curatedBy" or "critical" or "hidden" or "mode" or "share" ? Next().Text : throw Err("expected own, rolledUp, severity, kind, healthy, degraded, unhealthy, unknown, curatedBy, critical, hidden, mode or share");
+                if (TryWord("treerole"))
+                {
+                    var role = Ident();
+                    if (role == "count")
+                    {
+                        var state = Str();
+                        if (string.IsNullOrWhiteSpace(state)) throw Err("a tree count needs a state label");
+                        treeRole = TreeRoles.CountPrefix + state;
+                    }
+                    else if (TreeRoles.IsStructural(role) || TreeRoles.LegacyCount(role) is not null) treeRole = role;
+                    else throw Err("expected a structural tree role or count \"state label\"");
+                }
                 else if (TryWord("nullable")) nullable = true;
                 else if (TryWord("label")) label = true;
                 else if (TryWord("unit")) unit = Str();

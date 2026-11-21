@@ -1,0 +1,319 @@
+{
+  "graph": "signals",
+  "ontology": "mirror",
+  "description": "Classify each observed binding using its deployed thresholds or resource availability.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "boundReadings",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "b", "label": "SignalBinding"},
+          {"var": "d", "label": "SignalDefinition"},
+          {"var": "o", "label": "Observation"}
+        ],
+        "edges": [
+          {"var": "uses", "label": "UsesDefinition", "from": "b", "to": "d"},
+          {"var": "reading", "label": "MeasuredBy", "from": "b", "to": "o"}
+        ]
+      }
+    },
+    {
+      "id": "applyRules",
+      "verb": "extend",
+      "columns": {
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "o.status"}, {"lit": "value"}]},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "d.signalKind"}, {"lit": "AzureResourceHealth"}]},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": "==", "args": [{"ref": "o.availabilityState"}, {"lit": "Unavailable"}]},
+                    {"lit": 3},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "o.availabilityState"}, {"lit": "Degraded"}]},
+                        {"lit": 2},
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "o.availabilityState"}, {"lit": "Available"}]},
+                            {"lit": 1},
+                            {"lit": 0}
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "fn": "iff",
+                  "args": [
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": "==", "args": [{"ref": "d.unhealthyOperator"}, {"lit": "GreaterThan"}]},
+                        {
+                          "fn": ">",
+                          "args": [
+                            {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                            {"fn": "coalesce", "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]}
+                          ]
+                        },
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {
+                              "fn": "==",
+                              "args": [{"ref": "d.unhealthyOperator"}, {"lit": "GreaterThanOrEqual"}]
+                            },
+                            {
+                              "fn": ">=",
+                              "args": [
+                                {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                {"fn": "coalesce", "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]}
+                              ]
+                            },
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {"fn": "==", "args": [{"ref": "d.unhealthyOperator"}, {"lit": "LessThan"}]},
+                                {
+                                  "fn": "<",
+                                  "args": [
+                                    {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                    {"fn": "coalesce", "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]}
+                                  ]
+                                },
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {
+                                      "fn": "==",
+                                      "args": [{"ref": "d.unhealthyOperator"}, {"lit": "LessThanOrEqual"}]
+                                    },
+                                    {
+                                      "fn": "<=",
+                                      "args": [
+                                        {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                        {"fn": "coalesce", "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]}
+                                      ]
+                                    },
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {"fn": "==", "args": [{"ref": "d.unhealthyOperator"}, {"lit": "Equal"}]},
+                                        {
+                                          "fn": "==",
+                                          "args": [
+                                            {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                            {"fn": "coalesce", "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]}
+                                          ]
+                                        },
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {
+                                              "fn": "==",
+                                              "args": [{"ref": "d.unhealthyOperator"}, {"lit": "NotEqual"}]
+                                            },
+                                            {
+                                              "fn": "!=",
+                                              "args": [
+                                                {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                                {
+                                                  "fn": "coalesce",
+                                                  "args": [{"ref": "d.unhealthyAt"}, {"lit": 0.0}]
+                                                }
+                                              ]
+                                            },
+                                            {"lit": false}
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {"lit": 3},
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "d.degradedOperator"}, {"lit": "GreaterThan"}]},
+                            {
+                              "fn": ">",
+                              "args": [
+                                {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                {"fn": "coalesce", "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]}
+                              ]
+                            },
+                            {
+                              "fn": "iff",
+                              "args": [
+                                {
+                                  "fn": "==",
+                                  "args": [{"ref": "d.degradedOperator"}, {"lit": "GreaterThanOrEqual"}]
+                                },
+                                {
+                                  "fn": ">=",
+                                  "args": [
+                                    {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                    {"fn": "coalesce", "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]}
+                                  ]
+                                },
+                                {
+                                  "fn": "iff",
+                                  "args": [
+                                    {"fn": "==", "args": [{"ref": "d.degradedOperator"}, {"lit": "LessThan"}]},
+                                    {
+                                      "fn": "<",
+                                      "args": [
+                                        {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                        {"fn": "coalesce", "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]}
+                                      ]
+                                    },
+                                    {
+                                      "fn": "iff",
+                                      "args": [
+                                        {
+                                          "fn": "==",
+                                          "args": [{"ref": "d.degradedOperator"}, {"lit": "LessThanOrEqual"}]
+                                        },
+                                        {
+                                          "fn": "<=",
+                                          "args": [
+                                            {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                            {"fn": "coalesce", "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]}
+                                          ]
+                                        },
+                                        {
+                                          "fn": "iff",
+                                          "args": [
+                                            {
+                                              "fn": "==",
+                                              "args": [{"ref": "d.degradedOperator"}, {"lit": "Equal"}]
+                                            },
+                                            {
+                                              "fn": "==",
+                                              "args": [
+                                                {"fn": "coalesce", "args": [{"ref": "o.value"}, {"lit": 0.0}]},
+                                                {
+                                                  "fn": "coalesce",
+                                                  "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "fn": "iff",
+                                              "args": [
+                                                {
+                                                  "fn": "==",
+                                                  "args": [{"ref": "d.degradedOperator"}, {"lit": "NotEqual"}]
+                                                },
+                                                {
+                                                  "fn": "!=",
+                                                  "args": [
+                                                    {
+                                                      "fn": "coalesce",
+                                                      "args": [{"ref": "o.value"}, {"lit": 0.0}]
+                                                    },
+                                                    {
+                                                      "fn": "coalesce",
+                                                      "args": [{"ref": "d.degradedAt"}, {"lit": 0.0}]
+                                                    }
+                                                  ]
+                                                },
+                                                {"lit": false}
+                                              ]
+                                            }
+                                          ]
+                                        }
+                                      ]
+                                    }
+                                  ]
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {"lit": 2},
+                        {"lit": 1}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {"lit": 0}
+          ]
+        }
+      }
+    },
+    {
+      "id": "evaluatedBinding",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "EvaluatedSignal",
+            "id": {"ref": "b"},
+            "props": {
+              "key": {"ref": "b.key"},
+              "name": {"ref": "b.name"},
+              "configuration": {"ref": "b.configuration"},
+              "entityKey": {"ref": "b.entityKey"},
+              "definitionKey": {"ref": "b.definitionKey"},
+              "status": {"ref": "o.status"},
+              "checkpoint": {"ref": "o.checkpoint"},
+              "value": {"ref": "o.value"},
+              "availabilityState": {"ref": "o.availabilityState"},
+              "rank": {"ref": "rank"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [{"from": "boundReadings", "to": "applyRules"}, {"from": "applyRules", "to": "evaluatedBinding"}]
+}

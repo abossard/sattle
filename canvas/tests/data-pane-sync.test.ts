@@ -122,6 +122,42 @@ describe("a pane after a patch draws what a fresh pane draws from the same graph
     expect(scene(p).edgeVisible(h.graph.edgeSlot.get("m")!), "the incremental path drew it by the kinds of the last full pass").toBe(false);
   });
 
+  it("counts external evidence once per check and lays it out when Support is enabled", async () => {
+    const health: GraphInfo = { ...info, edgeKinds: { RequiresCheck: "dependency", ObservedBy: "support", MeasuredBy: "support" } };
+    const h = new History({
+      version: ver("1"), entities: [ent("flow"), ent("check")],
+      relationships: [
+        rel("check-link", "flow", "check", "RequiresCheck"),
+        rel("observation", "check", "external-pod", "ObservedBy"),
+        rel("reading", "check", "external-pod", "MeasuredBy"),
+        rel("probe", "check", "external-meter", "MeasuredBy"),
+      ],
+    });
+    const pane = paneOf(h, health);
+    pane.start({ layout: "layered" });
+    await flush();
+    const snapshot = () => shown(pane, h);
+    expect(pane.labelsShown().sort()).toEqual(["check (+2)", "flow"]);
+    expect(snapshot().edges).toEqual({ "check-link": true, observation: false, reading: false, probe: false });
+    expect([pane.visibleReferenceCount, pane.scene.visibleEdgeCount]).toEqual([0, 1]);
+
+    pane.setView({ hiddenKinds: [] });
+    await flush();
+    const evidenceSlots = [...h.graph.stubSlot.values()];
+    expect(evidenceSlots.every((slot) => pane.scene.nodeVisible(slot) && (pane.scene.nodeExtra(slot) & Ex.Reference))).toBe(true);
+    expect(Object.values(snapshot().edges)).toEqual([true, true, true, true]);
+    expect([pane.visibleReferenceCount, pane.scene.visibleEdgeCount]).toEqual([2, 4]);
+    const evidencePositions = evidenceSlots.map((slot) => Array.from(pane.scene.positions.slice(2 * slot, 2 * slot + 2)));
+    expect(evidencePositions.flat().every(Number.isFinite)).toBe(true);
+    expect(evidencePositions[0]).not.toEqual(evidencePositions[1]);
+    expect(pane.labelsShown()).toContain("check");
+
+    pane.setView({ hiddenKinds: null });
+    await flush();
+    expect(pane.labelsShown().sort()).toEqual(["check (+2)", "flow"]);
+    expect([pane.visibleReferenceCount, pane.scene.visibleEdgeCount]).toEqual([0, 1]);
+  });
+
   it("a hover keeps a stub (an endpoint the graph does not hold) drawn as a reference", () => {
     const h = new History({ version: ver("1"), entities: [ent("a")], relationships: [rel("r", "a", "missing")] });
     const p = paneOf(h); p.refreshAll();
@@ -163,6 +199,53 @@ const positions = (pane: DataPane): Map<string, [number, number]> => {
   for (let i = 0; i < g.nodes.length; i++) { const e = g.nodes[i]; if (e && pane.scene.nodeVisible(i)) out.set(e.id, [p[2 * i], p[2 * i + 1]]); }
   return out;
 };
+
+describe("a hierarchy with independent checks and evidence", () => {
+  const health: GraphInfo = { ...info,
+    tree: { hierarchy: { relationship: "Contains", also: ["IncludesFlow"], childIsSource: false }, edgeRoles: {}, state: {} },
+    edgeKinds: { IncludesFlow: "composition", RequiresCheck: "dependency", ObservedBy: "support" },
+  };
+  const owners = ["serve", "deploy", "serve", "deploy", "serve", "serve", "serve", "serve"];
+  const snap: Snapshot = {
+    version: ver("1"),
+    entities: ["root", "serve", "deploy", ...owners.map((_, i) => `check-${i}`)].map((id) => ent(id)),
+    relationships: [
+      ...["serve", "deploy"].map((id) => rel(`includes-${id}`, "root", id, "IncludesFlow")),
+      ...owners.map((flow, i) => rel(`dependency-${i}`, flow, `check-${i}`, "RequiresCheck")),
+      ...owners.map((_, i) => rel(`observation-${i}`, `meter-${i}`, `check-${i}`, "ObservedBy")),
+    ],
+  };
+  it.each([false, true])("centres each flow on its own checks, independent of slot order (evidence shown %s)", async (showEvidence) => {
+    const load = async (snapshot: Snapshot) => {
+      const pane = paneOf(new History(snapshot), health);
+      pane.start({ hiddenKinds: showEvidence ? [] : null });
+      await flush();
+      return positions(pane);
+    };
+    const nodes = await load(snap);
+    const reversed = await load({ ...snap, entities: [...snap.entities].reverse(), relationships: [...snap.relationships].reverse() });
+    expect(reversed).toEqual(nodes);
+    for (const flow of ["serve", "deploy"]) {
+      const [fx, fy] = nodes.get(flow)!;
+      expect(fx).toBeGreaterThan(nodes.get("root")![0]);
+      const checkRows: number[] = [];
+      for (const [i, owner] of owners.entries()) {
+        if (owner !== flow) continue;
+        const [x, y] = nodes.get(`check-${i}`)!;
+        checkRows.push(y);
+        expect(x).toBeGreaterThan(fx);
+        if (showEvidence) {
+          const [mx, my] = nodes.get(`meter-${i}`)!;
+          expect(mx).toBeGreaterThan(x);
+          expect(my).toBeCloseTo(y, 3);
+        }
+      }
+      expect(fy).toBeCloseTo((Math.min(...checkRows) + Math.max(...checkRows)) / 2, 3);
+      const other = nodes.get(flow === "serve" ? "deploy" : "serve")![1];
+      expect(other < Math.min(...checkRows) || other > Math.max(...checkRows)).toBe(true);
+    }
+  });
+});
 
 async function fresh(info: GraphInfo, history: () => History, r: number): Promise<DataPane> {
   const h = history();

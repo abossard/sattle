@@ -1,0 +1,211 @@
+{
+  "graph": "workloads",
+  "ontology": "tutorial",
+  "description": "Lift real pod calls to deployments and the services backed by those pods.",
+  "history": 120,
+  "inputs": [{"name": "master", "ontology": "tutorial"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "deployments",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "d", "label": "Deployment"}]}
+    },
+    {
+      "id": "deploymentsView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Deployment",
+            "id": {"ref": "d"},
+            "props": {
+              "cluster": {"ref": "d.cluster"},
+              "namespace": {"ref": "d.namespace"},
+              "name": {"ref": "d.name"},
+              "replicas": {"ref": "d.replicas"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "services",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "s", "label": "Service"}]}
+    },
+    {
+      "id": "servicesView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Service",
+            "id": {"ref": "s"},
+            "props": {
+              "cluster": {"ref": "s.cluster"},
+              "namespace": {"ref": "s.namespace"},
+              "name": {"ref": "s.name"},
+              "externalName": {"ref": "s.externalName"},
+              "address": {"ref": "s.address"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "nodes",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "n", "label": "KubernetesNode"}]}
+    },
+    {
+      "id": "nodesView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "KubernetesNode",
+            "id": {"ref": "n"},
+            "props": {
+              "cluster": {"ref": "n.cluster"},
+              "name": {"ref": "n.name"},
+              "uid": {"ref": "n.uid"},
+              "resourceId": {"ref": "n.resourceId"},
+              "pool": {"ref": "n.pool"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ownedPodCalls",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "p1", "label": "Pod"},
+          {"var": "p2", "label": "Pod"},
+          {"var": "r1", "label": "ReplicaSet"},
+          {"var": "r2", "label": "ReplicaSet"},
+          {"var": "d1", "label": "Deployment"},
+          {"var": "d2", "label": "Deployment"}
+        ],
+        "edges": [
+          {"var": "o1", "label": "PodOwnedBy", "from": "p1", "to": "r1"},
+          {"var": "o2", "label": "ReplicaSetOwnedBy", "from": "r1", "to": "d1"},
+          {"var": "q1", "label": "PodOwnedBy", "from": "p2", "to": "r2"},
+          {"var": "q2", "label": "ReplicaSetOwnedBy", "from": "r2", "to": "d2"},
+          {"var": "call", "label": "PodCalls", "from": "p1", "to": "p2"}
+        ]
+      }
+    },
+    {"id": "crossDeployment", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "d1"}, {"ref": "d2"}]}},
+    {
+      "id": "deploymentCalls",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Deployment", "id": {"ref": "d1"}},
+          {"var": "target", "label": "Deployment", "id": {"ref": "d2"}}
+        ],
+        "edges": [{"var": "edge", "label": "DeploymentCalls", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "backedPodCalls",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "p1", "label": "Pod"},
+          {"var": "p2", "label": "Pod"},
+          {"var": "s1", "label": "Service"},
+          {"var": "s2", "label": "Service"}
+        ],
+        "edges": [
+          {"var": "back1", "label": "BacksService", "from": "p1", "to": "s1"},
+          {"var": "back2", "label": "BacksService", "from": "p2", "to": "s2"},
+          {"var": "call", "label": "PodCalls", "from": "p1", "to": "p2"}
+        ]
+      }
+    },
+    {"id": "crossService", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "s1"}, {"ref": "s2"}]}},
+    {
+      "id": "serviceCalls",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Service", "id": {"ref": "s1"}},
+          {"var": "target", "label": "Service", "id": {"ref": "s2"}}
+        ],
+        "edges": [{"var": "edge", "label": "ServiceCalls", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "selectors",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "Service"}, {"var": "d", "label": "Deployment"}],
+        "edges": [{"var": "selects", "label": "SelectsDeployment", "from": "s", "to": "d"}]
+      }
+    },
+    {
+      "id": "selections",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Service", "id": {"ref": "s"}},
+          {"var": "target", "label": "Deployment", "id": {"ref": "d"}}
+        ],
+        "edges": [{"var": "edge", "label": "SelectsDeployment", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "ownedPodPlacement",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "p1", "label": "Pod"},
+          {"var": "r1", "label": "ReplicaSet"},
+          {"var": "d1", "label": "Deployment"},
+          {"var": "n", "label": "KubernetesNode"}
+        ],
+        "edges": [
+          {"var": "o1", "label": "PodOwnedBy", "from": "p1", "to": "r1"},
+          {"var": "o2", "label": "ReplicaSetOwnedBy", "from": "r1", "to": "d1"},
+          {"var": "runs", "label": "RunsOnNode", "from": "p1", "to": "n"}
+        ]
+      }
+    },
+    {
+      "id": "scheduling",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Deployment", "id": {"ref": "d1"}},
+          {"var": "target", "label": "KubernetesNode", "id": {"ref": "n"}}
+        ],
+        "edges": [{"var": "edge", "label": "ScheduledOn", "from": "source", "to": "target"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "deployments", "to": "deploymentsView"},
+    {"from": "services", "to": "servicesView"},
+    {"from": "nodes", "to": "nodesView"},
+    {"from": "ownedPodCalls", "to": "crossDeployment"},
+    {"from": "crossDeployment", "to": "deploymentCalls"},
+    {"from": "backedPodCalls", "to": "crossService"},
+    {"from": "crossService", "to": "serviceCalls"},
+    {"from": "selectors", "to": "selections"},
+    {"from": "ownedPodPlacement", "to": "scheduling"}
+  ]
+}

@@ -2,6 +2,8 @@
 lab/captures/
 # Fixtures derived from real captures stay local: scrubbing cannot be proven complete. Generate them with lab/fixtures/build.sh.
 lab/fixtures/**/*.ndjson
+lab/tutorial-fixtures/
+lab/tutorial-state/
 lab/.kube/
 lab/.env
 **/node_modules/
@@ -12,3 +14,6 @@ engine/out/
 # Work folders and live runs: their recordings and stores hold real subscription ids, pod names and IPs.
 /tmp/
 /out/
+lab/health-mirror/fixture/
+lab/health-mirror/state/
+lab/health-mirror/__pycache__/

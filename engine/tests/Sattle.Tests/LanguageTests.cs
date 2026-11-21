@@ -24,6 +24,22 @@ public class LanguageTests
     }
 
     [Fact]
+    public void Authored_tree_count_labels_round_trip_through_text_and_catalog()
+    {
+        const string source = """
+            module workflow @1.0.0;
+            entity Queue { waiting?: Integer treerole count "Needs review"; }
+            """;
+        var first = Load(new() { ["workflow.sattle"] = source });
+        Assert.DoesNotContain(first.Result.Diagnostics, d => d.IsError);
+        var text = Printer.Print(first.Cat.Graph, "workflow");
+        Assert.Contains("treerole count \"Needs review\"", text);
+        var second = Load(new() { ["workflow.sattle"] = text });
+        Assert.DoesNotContain(second.Result.Diagnostics, d => d.IsError);
+        Assert.Equal(first.Cat.Modules["workflow"].Digest, second.Cat.Modules["workflow"].Digest);
+    }
+
+    [Fact]
     public void Examples_parse_check_and_activate_cleanly()
     {
         var (cat, res) = Load(Sources());

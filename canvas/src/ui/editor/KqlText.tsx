@@ -128,7 +128,7 @@ type Port = KqlPort & { kqlText(projection: string, draft?: string): Promise<{ t
  * is given); `rows`, when given, previews the stored text and answers the rows after each engine operator; `picked` gives, by example, a `let`
  * with the graph-match that finds the picked element's like.
  */
-export default function KqlText({ port, file, draft, rows, store, picked }: Omit<EditorProps, "port"> & { port: Port }) {
+export default function KqlText({ port, file, draft, rows, store, picked, recoveredText, onEdit, onDraftError }: Omit<EditorProps, "port"> & { port: Port }) {
   const projection = file.projection;
   const s = useStyles();
   const host = useRef<HTMLDivElement>(null);
@@ -140,18 +140,20 @@ export default function KqlText({ port, file, draft, rows, store, picked }: Omit
   const [notation, setNotation] = useState<"steps" | "outline" | "wires">("steps");
   const [rowsBy, setRowsBy] = useState<{ status: "idle" | "busy" } | { status: "ready"; by: Map<string, string> } | { status: "error"; message: string }>({ status: "idle" });
   const [forms, setForms] = useState<string[] | undefined>(undefined);
+  const restored = useRef(recoveredText).current;
   useEffect(() => {
     let gone = false;
     setState({ status: "loading" }); setReading(null); setRowsBy({ status: "idle" }); setForms(undefined);
     port.kqlText(projection, draft).then(({ text }) => {
       if (gone || !host.current) return;
-      const follow = EditorView.updateListener.of((u) => { if (u.docChanged) setDoc(u.state.doc.toString()); if (u.selectionSet || u.docChanged) setCursor(u.state.selection.main.head); });
-      view.current = new EditorView({ parent: host.current, state: EditorState.create({ doc: text, extensions: [...kqlExtensions(port, projection, (a, t) => setReading({ text: t, analysis: a })), follow] }) });
-      setDoc(text);
+      const follow = EditorView.updateListener.of((u) => { if (u.docChanged) { const next = u.state.doc.toString(); setDoc(next); onEdit?.(next); } if (u.selectionSet || u.docChanged) setCursor(u.state.selection.main.head); });
+      const initial = restored ?? text;
+      view.current = new EditorView({ parent: host.current, state: EditorState.create({ doc: initial, extensions: [...kqlExtensions(port, projection, (a, t) => setReading({ text: t, analysis: a })), follow] }) });
+      setDoc(initial);
       setState({ status: "ready", stored: text });
-    }, (e: Error) => !gone && setState({ status: "error", message: e.message }));
+    }, (e: Error) => { if (!gone) { onDraftError?.(e); setState({ status: "error", message: e.message }); } });
     return () => { gone = true; view.current?.destroy(); view.current = null; };
-  }, [port, projection, draft]);
+  }, [port, projection, draft, restored, onEdit, onDraftError]);
   // the forms a new statement starts with: what the engine completes at the start of a statement after the last one
   const hasReading = !!reading;
   useEffect(() => {

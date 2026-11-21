@@ -1097,6 +1097,11 @@ public sealed class ProjectionChecker(Graph defs)
                 if (!Arity(1, 1)) break;
                 if (args[0].Type.Ty.Tag != Tag.Integer) { Err("E-Call", node, "ToDecimal needs an Integer"); return null; }
                 return new TCall(fn, args, new FType(Ty.Dec(args[0].Type.Ty.Unit), true, args[0].Type.Role));
+            case "StartsWith" or "EndsWith" or "Contains":
+                if (!Arity(2, 2)) break;
+                if (args.Any(a => a.Type.Ty.Tag != Tag.Text)) { Err("E-Call", node, $"{fn} takes two Text arguments"); return null; }
+                role = Types.Join(fn, roles, out je); if (role is null) { Err("E-Call", node, je!); return null; }
+                return new TCall(fn, args, Bool(true, role));
             case "Concat":
                 if (!Arity(2)) break;
                 if (args.Any(a => a.Type.Ty.Tag != Tag.Text || !a.Type.Role.IsData)) { Err("E-Call", node, "Concat takes data Text arguments"); return null; }

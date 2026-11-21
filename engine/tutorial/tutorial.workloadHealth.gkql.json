@@ -1,0 +1,733 @@
+{
+  "graph": "workloadHealth",
+  "ontology": "tutorial",
+  "description": "Roll measured service readiness, load-balancer probes and API capacity up to their own user flows.",
+  "history": 120,
+  "inputs": [
+    {"name": "master", "ontology": "tutorial"},
+    {"name": "tree", "ontology": "tutorial"},
+    {"name": "signals", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "services",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "s", "label": "Service"}]}
+    },
+    {
+      "id": "serviceEndpoints",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "Service"}, {"var": "endpoint", "label": "ServiceEndpoint"}],
+        "edges": [{"var": "exposes", "label": "HasServiceEndpoint", "from": "s", "to": "endpoint"}]
+      }
+    },
+    {
+      "id": "backingPods",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "Service"}, {"var": "p", "label": "Pod"}],
+        "edges": [{"var": "backs", "label": "BacksService", "from": "p", "to": "s"}]
+      }
+    },
+    {
+      "id": "unmeasuredServices",
+      "verb": "project",
+      "columns": {
+        "key": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "sourceKey": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "name": {"fn": "concat", "args": [{"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]},
+        "endpoints": {"lit": 0},
+        "ready": {"lit": 0},
+        "known": {"lit": 0}
+      }
+    },
+    {
+      "id": "observedEndpoints",
+      "verb": "project",
+      "columns": {
+        "key": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "sourceKey": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "name": {"fn": "concat", "args": [{"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]},
+        "endpoints": {"lit": 1},
+        "ready": {"lit": 0},
+        "known": {"lit": 0}
+      }
+    },
+    {
+      "id": "observedReadiness",
+      "verb": "project",
+      "columns": {
+        "key": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "sourceKey": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "name": {"fn": "concat", "args": [{"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]},
+        "endpoints": {"lit": 0},
+        "ready": {
+          "fn": "iff",
+          "args": [{"fn": "coalesce", "args": [{"ref": "p.ready"}, {"lit": false}]}, {"lit": 1}, {"lit": 0}]
+        },
+        "known": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "or",
+              "args": [
+                {"fn": "coalesce", "args": [{"ref": "p.ready"}, {"lit": false}]},
+                {"fn": "not", "args": [{"fn": "coalesce", "args": [{"ref": "p.ready"}, {"lit": true}]}]}
+              ]
+            },
+            {"lit": 1},
+            {"lit": 0}
+          ]
+        }
+      }
+    },
+    {"id": "serviceEvidence", "verb": "union"},
+    {
+      "id": "serviceCounts",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}, "sourceKey": {"ref": "sourceKey"}, "name": {"ref": "name"}},
+      "aggregates": {
+        "endpoints": {"fn": "sum", "args": [{"ref": "endpoints"}]},
+        "ready": {"fn": "sum", "args": [{"ref": "ready"}]},
+        "known": {"fn": "sum", "args": [{"ref": "known"}]}
+      }
+    },
+    {
+      "id": "readinessChecks",
+      "verb": "project",
+      "columns": {
+        "role": {"lit": "Service backends"},
+        "flow": {"lit": "serve"},
+        "key": {"ref": "key"},
+        "sourceKey": {"ref": "sourceKey"},
+        "name": {"ref": "name"},
+        "evidence": {
+          "fn": "iff",
+          "args": [
+            {"fn": ">", "args": [{"ref": "ready"}, {"lit": 0}]},
+            {"lit": "At least one backing Pod was Ready in the snapshot."},
+            {
+              "fn": "iff",
+              "args": [
+                {
+                  "fn": "==",
+                  "args": [
+                    {
+                      "fn": "iff",
+                      "args": [
+                        {"fn": ">", "args": [{"ref": "ready"}, {"lit": 0}]},
+                        {"lit": 1},
+                        {
+                          "fn": "iff",
+                          "args": [
+                            {
+                              "fn": "and",
+                              "args": [
+                                {"fn": ">", "args": [{"ref": "endpoints"}, {"lit": 0}]},
+                                {"fn": ">=", "args": [{"ref": "known"}, {"ref": "endpoints"}]}
+                              ]
+                            },
+                            {"lit": 4},
+                            {"lit": 2}
+                          ]
+                        }
+                      ]
+                    },
+                    {"lit": 4}
+                  ]
+                },
+                {"lit": "Every captured endpoint was matched and checked. No backing Pod was Ready."},
+                {"lit": "No Ready backing Pod was observed; endpoint evidence is incomplete."}
+              ]
+            }
+          ]
+        },
+        "rank": {
+          "fn": "iff",
+          "args": [
+            {"fn": ">", "args": [{"ref": "ready"}, {"lit": 0}]},
+            {"lit": 1},
+            {
+              "fn": "iff",
+              "args": [
+                {
+                  "fn": "and",
+                  "args": [
+                    {"fn": ">", "args": [{"ref": "endpoints"}, {"lit": 0}]},
+                    {"fn": ">=", "args": [{"ref": "known"}, {"ref": "endpoints"}]}
+                  ]
+                },
+                {"lit": 4},
+                {"lit": 2}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "clusters",
+      "verb": "graph-match",
+      "graph": "tree",
+      "pattern": {"nodes": [{"var": "c", "label": "Cluster"}]}
+    },
+    {
+      "id": "cpuSignals",
+      "verb": "graph-match",
+      "graph": "signals",
+      "pattern": {"nodes": [{"var": "s", "label": "Signal"}]}
+    },
+    {
+      "id": "cpuObservations",
+      "verb": "project",
+      "columns": {
+        "sampleKey": {"ref": "s.armId"},
+        "sampleSignal": {"ref": "s"},
+        "observation": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "s.state"}, {"lit": "Degraded"}]},
+            {"lit": 3},
+            {
+              "fn": "iff",
+              "args": [{"fn": "==", "args": [{"ref": "s.state"}, {"lit": "Healthy"}]}, {"lit": 1}, {"lit": 0}]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "clusterKeys",
+      "verb": "project",
+      "columns": {"key": {"ref": "c.armId"}, "sourceKey": {"ref": "c.armId"}, "name": {"ref": "c.name"}}
+    },
+    {
+      "id": "unmeasuredClusters",
+      "verb": "project",
+      "columns": {"key": {"ref": "key"}, "sourceKey": {"ref": "sourceKey"}, "name": {"ref": "name"}, "observed": {"lit": 0}}
+    },
+    {"id": "attachApiCpu", "verb": "join", "kind": "inner", "on": [{"left": "key", "right": "sampleKey"}]},
+    {
+      "id": "matchedCpu",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "key"},
+        "sourceKey": {"ref": "sourceKey"},
+        "name": {"ref": "name"},
+        "observed": {"ref": "observation"}
+      }
+    },
+    {"id": "apiCpuEvidence", "verb": "union"},
+    {
+      "id": "apiCpuStates",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}, "sourceKey": {"ref": "sourceKey"}, "name": {"ref": "name"}},
+      "aggregates": {"observed": {"fn": "max", "args": [{"ref": "observed"}]}}
+    },
+    {
+      "id": "controlPlaneChecks",
+      "verb": "project",
+      "columns": {
+        "role": {"lit": "API CPU capacity"},
+        "flow": {"lit": "deploy"},
+        "key": {"ref": "key"},
+        "sourceKey": {"ref": "sourceKey"},
+        "name": {"ref": "name"},
+        "evidence": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "observed"}, {"lit": 0}]},
+            {"lit": "No API CPU reading was captured."},
+            {"lit": "Azure Monitor API-server CPU evaluated by the signals projection."}
+          ]
+        },
+        "rank": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "observed"}, {"lit": 0}]}, {"lit": 2}, {"ref": "observed"}]
+        }
+      }
+    },
+    {
+      "id": "azureFrontends",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "lb", "label": "Resource", "props": {"resourceType": {"lit": "microsoft.network/loadbalancers"}}},
+          {
+            "var": "ip",
+            "label": "Resource",
+            "props": {"resourceType": {"lit": "microsoft.network/publicipaddresses"}}
+          },
+          {"var": "address", "label": "IpAddress"}
+        ],
+        "edges": [
+          {"var": "attached", "label": "NetworkAttachment", "from": "lb", "to": "ip"},
+          {"var": "holds", "label": "HasIpAddress", "from": "ip", "to": "address"}
+        ]
+      }
+    },
+    {
+      "id": "frontendKeys",
+      "verb": "project",
+      "columns": {
+        "frontendAddress": {"ref": "address.address"},
+        "loadBalancer": {"ref": "lb"},
+        "loadBalancerKey": {"ref": "lb.armId"}
+      }
+    },
+    {
+      "id": "serviceAddresses",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "s.address"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "ingressKeys",
+      "verb": "project",
+      "columns": {
+        "ingressAddress": {"fn": "coalesce", "args": [{"ref": "s.address"}, {"lit": ""}]},
+        "ingressKey": {
+          "fn": "concat",
+          "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+        },
+        "ingressName": {"fn": "concat", "args": [{"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]}
+      }
+    },
+    {
+      "id": "publicIngress",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "ingressAddress", "right": "frontendAddress"}]
+    },
+    {
+      "id": "loadBalancerBindings",
+      "verb": "project",
+      "columns": {
+        "key": {"fn": "concat", "args": [{"ref": "ingressKey"}, {"lit": "|"}, {"ref": "loadBalancerKey"}]},
+        "sourceKey": {"ref": "loadBalancerKey"},
+        "name": {"ref": "ingressName"}
+      }
+    },
+    {
+      "id": "unmeasuredLoadBalancers",
+      "verb": "project",
+      "columns": {"key": {"ref": "key"}, "sourceKey": {"ref": "sourceKey"}, "name": {"ref": "name"}, "observed": {"lit": 0}}
+    },
+    {
+      "id": "vipMeters",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "meter", "label": "Meter", "props": {"metric": {"lit": "VipAvailability"}}},
+          {"var": "lb", "label": "Resource", "props": {"resourceType": {"lit": "microsoft.network/loadbalancers"}}}
+        ],
+        "edges": [{"var": "measures", "label": "MeterOf", "from": "meter", "to": "lb"}]
+      }
+    },
+    {"id": "probeKeys", "verb": "project", "columns": {"meter": {"ref": "meter"}, "meterKey": {"ref": "lb.armId"}}},
+    {"id": "attachProbe", "verb": "join", "kind": "inner", "on": [{"left": "sourceKey", "right": "meterKey"}]},
+    {
+      "id": "probeReadings",
+      "verb": "series",
+      "graph": "master",
+      "series": {"element": "meter", "property": "reading", "lookback": "2h"}
+    },
+    {
+      "id": "probeHysteresis",
+      "verb": "hysteresis",
+      "hysteresis": {
+        "by": ["key", "sourceKey", "name", "meter"],
+        "value": "reading",
+        "above": 99,
+        "enterAfter": 3,
+        "below": 98,
+        "exitAfter": 2,
+        "high": "Healthy",
+        "low": "Degraded",
+        "initial": "Healthy"
+      }
+    },
+    {
+      "id": "matchedProbe",
+      "verb": "project",
+      "columns": {
+        "key": {"ref": "key"},
+        "sourceKey": {"ref": "sourceKey"},
+        "name": {"ref": "name"},
+        "observed": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "state"}, {"lit": "Degraded"}]},
+            {"lit": 3},
+            {
+              "fn": "iff",
+              "args": [{"fn": "==", "args": [{"ref": "state"}, {"lit": "Healthy"}]}, {"lit": 1}, {"lit": 0}]
+            }
+          ]
+        }
+      }
+    },
+    {"id": "loadBalancerEvidence", "verb": "union"},
+    {
+      "id": "loadBalancerStates",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}, "sourceKey": {"ref": "sourceKey"}, "name": {"ref": "name"}},
+      "aggregates": {"observed": {"fn": "max", "args": [{"ref": "observed"}]}}
+    },
+    {
+      "id": "frontendChecks",
+      "verb": "project",
+      "columns": {
+        "role": {"lit": "Azure ingress probe"},
+        "flow": {"lit": "serve"},
+        "key": {"ref": "key"},
+        "sourceKey": {"ref": "sourceKey"},
+        "name": {"ref": "name"},
+        "evidence": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "observed"}, {"lit": 0}]},
+            {"lit": "No Azure load-balancer probe reading was captured."},
+            {"lit": "Azure Monitor VipAvailability for the load balancer that serves this ingress."}
+          ]
+        },
+        "rank": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "observed"}, {"lit": 0}]}, {"lit": 2}, {"ref": "observed"}]
+        }
+      }
+    },
+    {"id": "allChecks", "verb": "union"},
+    {
+      "id": "flowStates",
+      "verb": "summarize",
+      "by": {"flow": {"ref": "flow"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {"id": "workloadMembers", "verb": "project", "columns": {"key": {"lit": "tutorial"}, "rank": {"ref": "rank"}}},
+    {
+      "id": "workloadState",
+      "verb": "summarize",
+      "by": {"key": {"ref": "key"}},
+      "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "checkNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"ref": "role"}, {"ref": "key"}]},
+            "props": {
+              "name": {"ref": "name"},
+              "role": {"ref": "role"},
+              "sourceKey": {"ref": "sourceKey"},
+              "scope": {"ref": "flow"},
+              "evidence": {"ref": "evidence"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "ownState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "flowNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Flow"}, {"ref": "flow"}]},
+            "props": {
+              "name": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "flow"}, {"lit": "serve"}]},
+                  {"lit": "Serve traffic to Services"},
+                  {"lit": "Deploy to AKS"}
+                ]
+              },
+              "role": {"lit": "Flow"},
+              "scope": {"ref": "flow"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "workloadNode",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Workload"}, {"lit": "tutorial"}]},
+            "props": {
+              "name": {"lit": "Kubernetes workload"},
+              "role": {"lit": "Workload"},
+              "scope": {"lit": "tutorial"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "flowMembership",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Workload"}, {"lit": "tutorial"}]}
+          },
+          {
+            "var": "child",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Flow"}, {"ref": "flow"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "IncludesFlow", "from": "parent", "to": "child"}]
+      }
+    },
+    {
+      "id": "checkDependencies",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Flow"}, {"ref": "flow"}]}
+          },
+          {
+            "var": "child",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"ref": "role"}, {"ref": "key"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "RequiresCheck", "from": "parent", "to": "child"}]
+      }
+    },
+    {
+      "id": "podEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "check",
+            "label": "WorkloadHealthNode",
+            "id": {
+              "identity": "workloadHealthRole",
+              "args": [
+                {"lit": "Service backends"},
+                {
+                  "fn": "concat",
+                  "args": [{"ref": "s.cluster"}, {"lit": "/"}, {"ref": "s.namespace"}, {"lit": "/"}, {"ref": "s.name"}]
+                }
+              ]
+            }
+          },
+          {"var": "observation", "label": "Pod", "id": {"ref": "p"}}
+        ],
+        "edges": [{"var": "edge", "label": "ReadinessFromPod", "from": "check", "to": "observation"}]
+      }
+    },
+    {
+      "id": "cpuEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "check",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "API CPU capacity"}, {"ref": "key"}]}
+          },
+          {"var": "observation", "label": "Signal", "id": {"ref": "sampleSignal"}}
+        ],
+        "edges": [{"var": "edge", "label": "CpuFromSignal", "from": "check", "to": "observation"}]
+      }
+    },
+    {
+      "id": "probeEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "check",
+            "label": "WorkloadHealthNode",
+            "id": {"identity": "workloadHealthRole", "args": [{"lit": "Azure ingress probe"}, {"ref": "key"}]}
+          },
+          {"var": "observation", "label": "Meter", "id": {"ref": "meter"}}
+        ],
+        "edges": [{"var": "edge", "label": "IngressFromMeter", "from": "check", "to": "observation"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "services", "to": "unmeasuredServices"},
+    {"from": "serviceEndpoints", "to": "observedEndpoints"},
+    {"from": "backingPods", "to": "observedReadiness"},
+    {"from": "unmeasuredServices", "to": "serviceEvidence"},
+    {"from": "observedEndpoints", "to": "serviceEvidence"},
+    {"from": "observedReadiness", "to": "serviceEvidence"},
+    {"from": "serviceEvidence", "to": "serviceCounts"},
+    {"from": "serviceCounts", "to": "readinessChecks"},
+    {"from": "cpuSignals", "to": "cpuObservations"},
+    {"from": "clusters", "to": "clusterKeys"},
+    {"from": "clusterKeys", "to": "unmeasuredClusters"},
+    {"from": "clusterKeys", "to": "attachApiCpu", "port": "left"},
+    {"from": "cpuObservations", "to": "attachApiCpu", "port": "right"},
+    {"from": "attachApiCpu", "to": "matchedCpu"},
+    {"from": "unmeasuredClusters", "to": "apiCpuEvidence"},
+    {"from": "matchedCpu", "to": "apiCpuEvidence"},
+    {"from": "apiCpuEvidence", "to": "apiCpuStates"},
+    {"from": "apiCpuStates", "to": "controlPlaneChecks"},
+    {"from": "azureFrontends", "to": "frontendKeys"},
+    {"from": "services", "to": "serviceAddresses"},
+    {"from": "serviceAddresses", "to": "ingressKeys"},
+    {"from": "ingressKeys", "to": "publicIngress", "port": "left"},
+    {"from": "frontendKeys", "to": "publicIngress", "port": "right"},
+    {"from": "publicIngress", "to": "loadBalancerBindings"},
+    {"from": "loadBalancerBindings", "to": "unmeasuredLoadBalancers"},
+    {"from": "vipMeters", "to": "probeKeys"},
+    {"from": "loadBalancerBindings", "to": "attachProbe", "port": "left"},
+    {"from": "probeKeys", "to": "attachProbe", "port": "right"},
+    {"from": "attachProbe", "to": "probeReadings"},
+    {"from": "probeReadings", "to": "probeHysteresis"},
+    {"from": "probeHysteresis", "to": "matchedProbe"},
+    {"from": "unmeasuredLoadBalancers", "to": "loadBalancerEvidence"},
+    {"from": "matchedProbe", "to": "loadBalancerEvidence"},
+    {"from": "loadBalancerEvidence", "to": "loadBalancerStates"},
+    {"from": "loadBalancerStates", "to": "frontendChecks"},
+    {"from": "readinessChecks", "to": "allChecks"},
+    {"from": "frontendChecks", "to": "allChecks"},
+    {"from": "controlPlaneChecks", "to": "allChecks"},
+    {"from": "allChecks", "to": "flowStates"},
+    {"from": "flowStates", "to": "workloadMembers"},
+    {"from": "workloadMembers", "to": "workloadState"},
+    {"from": "allChecks", "to": "checkNodes"},
+    {"from": "flowStates", "to": "flowNodes"},
+    {"from": "workloadState", "to": "workloadNode"},
+    {"from": "flowStates", "to": "flowMembership"},
+    {"from": "allChecks", "to": "checkDependencies"},
+    {"from": "backingPods", "to": "podEvidence"},
+    {"from": "attachApiCpu", "to": "cpuEvidence"},
+    {"from": "attachProbe", "to": "probeEvidence"}
+  ]
+}

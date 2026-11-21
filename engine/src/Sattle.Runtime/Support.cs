@@ -64,6 +64,7 @@ public static class Support
     public static readonly HashSet<string> Functions =
     [
         "Equal", "NotEqual", "LessThan", "LessOrEqual", "GreaterThan", "GreaterOrEqual", "And", "Or", "Not", "Add", "Subtract", "Shift", "Multiply", "Divide", "Negate",
+        "StartsWith", "EndsWith", "Contains",
         "ToDecimal", "Concat", "Coalesce", "IsPresent", "If", "Rate", "LowerInvariant", "Trim", "EntityId",
     ];
     public static readonly Dictionary<string, string> RuleClasses = new() { ["readonly"] = "", ["bijective"] = "", ["lens"] = "putput", ["sync"] = "" };

@@ -47,6 +47,7 @@ export interface EditorState {
   diagnostics: EngineDiagnostic[];
   /** a message to the author that outlives a phase change (a refused edit, a failed preview) */
   notice: string;
+  recoveredText: Readonly<Record<string, string>>;
   textVersion: number;
   releases: Release[];
   releaseDiff: ReleaseDiff | null;
@@ -55,7 +56,7 @@ export interface EditorState {
   /** the last commit, said after the session it ended */
   committed: string;
 }
-export const emptyEditor = (): EditorState => ({ phase: { t: "closed" }, draft: "", base: "", revision: "", version: 0, module: "", projection: "", undo: [], redo: [], diagnostics: [], notice: "", textVersion: 0, releases: [], releaseDiff: null, preview: null, headRevision: "", committed: "" });
+export const emptyEditor = (): EditorState => ({ phase: { t: "closed" }, draft: "", base: "", revision: "", version: 0, module: "", projection: "", undo: [], redo: [], diagnostics: [], notice: "", recoveredText: {}, textVersion: 0, releases: [], releaseDiff: null, preview: null, headRevision: "", committed: "" });
 
 /** Everything an author can do to the draft. Effects turn a command into catalog edits, the engine checks them, the session records them for undo. */
 export type Command =
@@ -72,6 +73,7 @@ export type Command =
 
 export interface State {
   sourceId: string;
+  guide: string | null;
   /** incremented when a source is opened: components that hold runtime objects key on it */
   generation: number;
   load: { status: "idle" | "loading" | "ready" | "error"; message: string; ms: number };
@@ -113,7 +115,8 @@ export type Action =
   | { type: "feed/rejected"; rejection: Rejection; at: number }
   | { type: "feed/connection"; status: ConnectionStatus }
   // editor
-  | { type: "editor/open" }
+  | { type: "editor/open"; recovery?: Readonly<Record<string, string>> }
+  | { type: "editor/clearRecoveredText"; file: string }
   | { type: "editor/summary"; patch: Partial<Omit<EditorState, "phase">> }
   | { type: "editor/event"; event: EditorEvent }
   | { type: "editor/projection"; module: string; projection: string }
@@ -128,6 +131,7 @@ export type Action =
   | { type: "editor/diffRelease"; from: string; to: string }
   | { type: "editor/dismiss"; what: "preview" | "notice" | "releaseDiff" }
   // interaction
+  | { type: "ui/guide"; lesson: string | null }
   | { type: "ui/view"; view: View }
   | { type: "ui/theme"; theme: ThemeName }
   | { type: "ui/dialog"; dialog: Dialog }

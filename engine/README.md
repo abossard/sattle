@@ -75,6 +75,8 @@ What the protocol changes against the first slice (details in PROTOCOL.md):
 ## Hot graph layout
 `Graph` (`Graph.cs`) is the second layout of the hot graph, see `PERF.md`: `sattle bench` prints the memory line (managed heap of the hot graph for 750,000 entities and 2.5 M relationships; the numbers and the method are in `PERF.md`). `ReferenceGraph` in the tests is the first layout; `HotGraphTests` compares them on random edit sequences.
 
+Graph matches run serially by default (`SATTLE_PREPARATION_WORKERS=1`). A higher limit lets workers scan separate ranges of a large graph patch. The writer joins their rows in patch order before the next operator runs. [Read the design and replay measurements](PERF.md#parallel-preparation-of-graph-matches).
+
 ## Module map
 | Project | Module | What it hides |
 |---|---|---|

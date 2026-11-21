@@ -14,6 +14,26 @@ const labelOf = (r: Element) => r.querySelector("[data-label]")?.textContent ?? 
 const names = (tree: HTMLElement) => within(tree).getAllByRole("treeitem").map(labelOf);
 const row = (tree: HTMLElement, name: string) => within(tree).getAllByRole("treeitem").find((r) => labelOf(r) === name)!;
 
+it("waits for both direct lineage lookups before describing missing correspondence data", async () => {
+  let finishForward!: () => void;
+  let finishReverse!: () => void;
+  const forward = new Promise<null>((resolve) => { finishForward = () => resolve(null); });
+  const reverse = new Promise<null>((resolve) => { finishReverse = () => resolve(null); });
+  SOURCES.push({ id: "tree-pending-lineage", label: "Tree with pending lineage", make: () => Object.assign(new TreeSource(), {
+    lineage: () => forward, reverseLineage: () => reverse,
+  }) });
+  await openApp("tree-pending-lineage", "data");
+  act(() => dispatch({ type: "select/element", selection: { graph: "tree", kind: "entity", id: "db" } }));
+
+  expect(await screen.findByText("Loading lineage…")).toBeTruthy();
+  expect(screen.queryByText(/This source provides no correspondence data/)).toBeNull();
+  await act(async () => finishForward());
+  expect(screen.getByText("Loading lineage…")).toBeTruthy();
+  await act(async () => finishReverse());
+  expect(await screen.findByText(/This source provides no correspondence data/)).toBeTruthy();
+  expect(screen.queryByText("Loading lineage…")).toBeNull();
+});
+
 describe("a graph whose ontology marks a hierarchy opens as a tree a person reads, moves through and selects in, which follows the timeline", () => {
   it("opens as a tree, with the graph as the other tab, on the paths to what is wrong", async () => {
     const tree = await open();

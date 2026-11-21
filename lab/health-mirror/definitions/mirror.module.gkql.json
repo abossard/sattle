@@ -1,0 +1,638 @@
+{
+  "module": "mirror",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {
+      "name": "ModelEntity",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"},
+        {"name": "impact", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "treeRole": "rolledUp",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        },
+        {
+          "name": "ownState",
+          "type": "Text",
+          "optional": true,
+          "treeRole": "own",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        }
+      ]
+    },
+    {
+      "name": "SignalDefinition",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"},
+        {"name": "signalKind", "type": "Text"},
+        {"name": "degradedOperator", "type": "Text"},
+        {"name": "degradedAt", "type": "Decimal", "optional": true},
+        {"name": "unhealthyOperator", "type": "Text"},
+        {"name": "unhealthyAt", "type": "Decimal", "optional": true}
+      ]
+    },
+    {
+      "name": "SignalBinding",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"},
+        {"name": "entityKey", "type": "Text"},
+        {"name": "definitionKey", "type": "Text"}
+      ]
+    },
+    {
+      "name": "Observation",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"},
+        {"name": "status", "type": "Text"},
+        {"name": "availabilityState", "type": "Text"},
+        {"name": "value", "type": "Decimal", "optional": true},
+        {"name": "checkpoint", "type": "Text"}
+      ]
+    },
+    {
+      "name": "EvaluatedSignal",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"},
+        {"name": "entityKey", "type": "Text"},
+        {"name": "definitionKey", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "treeRole": "rolledUp",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        },
+        {"name": "rank", "type": "Integer"},
+        {"name": "status", "type": "Text"},
+        {"name": "value", "type": "Decimal", "optional": true},
+        {"name": "checkpoint", "type": "Text"},
+        {"name": "availabilityState", "type": "Text"}
+      ]
+    },
+    {
+      "name": "Model",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"}
+      ]
+    },
+    {
+      "name": "DiscoveryRule",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"}
+      ]
+    },
+    {
+      "name": "AuthenticationSetting",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "configuration", "type": "Text"}
+      ]
+    },
+    {
+      "name": "IpAddress",
+      "properties": [{"name": "address", "type": "Text", "label": true}, {"name": "vnetId", "type": "Text"}]
+    },
+    {
+      "name": "NetworkFlow",
+      "properties": [
+        {"name": "vnetId", "type": "Text"},
+        {"name": "observer", "type": "Text"},
+        {"name": "acl", "type": "Text"},
+        {"name": "rule", "type": "Text"},
+        {"name": "series", "type": "Text"},
+        {"name": "tuple", "type": "Text"},
+        {"name": "time", "type": "Instant"},
+        {"name": "srcIp", "type": "Text"},
+        {"name": "dstIp", "type": "Text"},
+        {"name": "srcPort", "type": "Integer"},
+        {"name": "dstPort", "type": "Integer"},
+        {"name": "protocol", "type": "Integer"},
+        {"name": "direction", "type": "Text"},
+        {"name": "flowState", "type": "Text"},
+        {"name": "encryption", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ApplicationRole",
+      "properties": [{"name": "sourceComponent", "type": "Text", "label": true}, {"name": "scopeId", "type": "Text"}]
+    },
+    {
+      "name": "DependencyHost",
+      "properties": [{"name": "destination", "type": "Text", "label": true}, {"name": "endpointScope", "type": "Text"}]
+    },
+    {
+      "name": "DependencyObservation",
+      "properties": [
+        {"name": "scopeId", "type": "Text"},
+        {"name": "scopeKey", "type": "Text"},
+        {"name": "sourceComponent", "type": "Text"},
+        {"name": "destination", "type": "Text"},
+        {"name": "dependencyType", "type": "Text"},
+        {"name": "result", "type": "Text"},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "series", "type": "Text"},
+        {"name": "calls", "type": "Integer"},
+        {"name": "spanCount", "type": "Integer"},
+        {"name": "targetResourceId", "type": "Text"},
+        {"name": "targetScopeKey", "type": "Text"},
+        {"name": "endpointScope", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ArmResource",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "armKey", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "resourceType", "type": "Text"},
+        {"name": "location", "type": "Text"},
+        {"name": "subscriptionId", "type": "Text"},
+        {"name": "resourceGroup", "type": "Text"},
+        {"name": "groupId", "type": "Text"},
+        {"name": "environmentId", "type": "Text"},
+        {"name": "provisioningState", "type": "Text"},
+        {"name": "runningStatus", "type": "Text"},
+        {"name": "ingressHost", "type": "Text"},
+        {"name": "tags", "type": "Text"},
+        {"name": "observedAt", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ContainerApp",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "armKey", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "resourceType", "type": "Text"},
+        {"name": "location", "type": "Text"},
+        {"name": "subscriptionId", "type": "Text"},
+        {"name": "resourceGroup", "type": "Text"},
+        {"name": "groupId", "type": "Text"},
+        {"name": "environmentId", "type": "Text"},
+        {"name": "provisioningState", "type": "Text"},
+        {"name": "runningStatus", "type": "Text"},
+        {"name": "ingressHost", "type": "Text"},
+        {"name": "tags", "type": "Text"},
+        {"name": "observedAt", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"},
+          "treeRole": "rolledUp"
+        },
+        {"name": "assignment", "type": "Text"},
+        {"name": "ontologyStatus", "type": "Text"},
+        {"name": "classCount", "type": "Integer"},
+        {"name": "healthBasis", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ManagedEnvironment",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "healthBasis", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"},
+          "treeRole": "rolledUp"
+        }
+      ]
+    },
+    {
+      "name": "ResourceGroup",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "healthBasis", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"},
+          "treeRole": "rolledUp"
+        }
+      ]
+    },
+    {
+      "name": "AzureRegion",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "healthBasis", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"},
+          "treeRole": "rolledUp"
+        }
+      ]
+    },
+    {
+      "name": "UserFlow",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "modelKey", "type": "Text"},
+        {"name": "provenance", "type": "Text"},
+        {"name": "configuration", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        },
+        {"name": "healthBasis", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "SystemComponent",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "modelKey", "type": "Text"},
+        {"name": "provenance", "type": "Text"},
+        {"name": "configuration", "type": "Text"},
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        },
+        {"name": "healthBasis", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "NameRule",
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "scopeId", "type": "Text"},
+        {"name": "matchKind", "type": "Text"},
+        {"name": "pattern", "type": "Text"},
+        {"name": "className", "type": "Text"},
+        {"name": "evidence", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ArmReference",
+      "properties": [
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "kind", "type": "Text"},
+        {"name": "sourceId", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "resolvedAddress", "type": "Text"},
+        {"name": "fieldPath", "type": "Text"}
+      ]
+    },
+    {"name": "AzureIp", "properties": [{"name": "address", "type": "Text", "label": true}]},
+    {"name": "DnsName", "properties": [{"name": "host", "type": "Text", "label": true}]}
+  ],
+  "relationships": [
+    {
+      "name": "DependsOn",
+      "from": "ModelEntity",
+      "to": "ModelEntity",
+      "kind": "dependency",
+      "hierarchy": true,
+      "properties": [
+        {"name": "key", "type": "Text"},
+        {"name": "impact", "type": "Text"},
+        {"name": "configuration", "type": "Text"}
+      ]
+    },
+    {"name": "HasSignal", "from": "ModelEntity", "to": "SignalBinding", "kind": "support"},
+    {"name": "UsesDefinition", "from": "SignalBinding", "to": "SignalDefinition", "kind": "support"},
+    {"name": "MeasuredBy", "from": "SignalBinding", "to": "Observation", "kind": "support"},
+    {"name": "SentFlow", "from": "IpAddress", "to": "NetworkFlow", "kind": "support"},
+    {"name": "ReceivedBy", "from": "NetworkFlow", "to": "IpAddress", "kind": "support"},
+    {
+      "name": "ObservedTraffic",
+      "from": "IpAddress",
+      "to": "IpAddress",
+      "kind": "support",
+      "properties": [{"name": "tuples", "type": "Integer"}]
+    },
+    {"name": "ReportedDependency", "from": "ApplicationRole", "to": "DependencyObservation", "kind": "support"},
+    {"name": "ObservedTarget", "from": "DependencyObservation", "to": "DependencyHost", "kind": "support"},
+    {
+      "name": "CalledEndpoint",
+      "from": "ApplicationRole",
+      "to": "DependencyHost",
+      "kind": "dependency",
+      "properties": [
+        {"name": "calls", "type": "Integer"},
+        {"name": "spanCount", "type": "Integer"},
+        {"name": "failedCalls", "type": "Integer"},
+        {"name": "unknownResultCalls", "type": "Integer"}
+      ]
+    },
+    {"name": "InstrumentedBy", "from": "ApplicationRole", "to": "ModelEntity", "kind": "support"},
+    {"name": "EndpointOf", "from": "DependencyHost", "to": "ModelEntity", "kind": "support"},
+    {
+      "name": "DeclaresStep",
+      "from": "UserFlow",
+      "to": "SystemComponent",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}]
+    },
+    {
+      "name": "RunsOnResource",
+      "from": "SystemComponent",
+      "to": "ArmResource",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}]
+    },
+    {
+      "name": "RunsOnApp",
+      "from": "SystemComponent",
+      "to": "ContainerApp",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}]
+    },
+    {"name": "MatchedRule", "from": "ContainerApp", "to": "NameRule", "kind": "support"},
+    {"name": "HasObservedEndpoint", "from": "ContainerApp", "to": "DependencyHost", "kind": "support"},
+    {"name": "HostsApp", "from": "ManagedEnvironment", "to": "ContainerApp", "kind": "support"},
+    {"name": "ContainsApp", "from": "ResourceGroup", "to": "ContainerApp", "kind": "support"},
+    {"name": "ContainsEnvironment", "from": "ResourceGroup", "to": "ManagedEnvironment", "kind": "support"},
+    {"name": "EnvironmentInRegion", "from": "AzureRegion", "to": "ManagedEnvironment", "kind": "support"},
+    {"name": "AppInRegion", "from": "AzureRegion", "to": "ContainerApp", "kind": "support"},
+    {"name": "HasArmReference", "from": "ArmResource", "to": "ArmReference", "kind": "support"},
+    {"name": "RefersToResource", "from": "ArmReference", "to": "ArmResource", "kind": "support"},
+    {"name": "RefersToIp", "from": "ArmReference", "to": "AzureIp", "kind": "support"},
+    {"name": "RefersToName", "from": "ArmReference", "to": "DnsName", "kind": "support"}
+  ],
+  "identities": [
+    {
+      "name": "idModelEntity",
+      "type": "ModelEntity",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idSignalDefinition",
+      "type": "SignalDefinition",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idSignalBinding",
+      "type": "SignalBinding",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idObservation",
+      "type": "Observation",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {"name": "idModel", "type": "Model", "components": [{"name": "key", "type": "Text", "normalize": "exact"}]},
+    {
+      "name": "idDiscoveryRule",
+      "type": "DiscoveryRule",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idAuthenticationSetting",
+      "type": "AuthenticationSetting",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idIpAddress",
+      "type": "IpAddress",
+      "components": [
+        {"name": "vnetId", "type": "Text", "normalize": "exact"},
+        {"name": "address", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idNetworkFlow",
+      "type": "NetworkFlow",
+      "components": [
+        {"name": "vnetId", "type": "Text", "normalize": "exact"},
+        {"name": "series", "type": "Text", "normalize": "exact"},
+        {"name": "tuple", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idApplicationRole",
+      "type": "ApplicationRole",
+      "components": [
+        {"name": "scopeKey", "type": "Text", "normalize": "exact"},
+        {"name": "sourceComponent", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idDependencyHost",
+      "type": "DependencyHost",
+      "components": [
+        {"name": "destination", "type": "Text", "normalize": "exact"},
+        {"name": "endpointScope", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idDependencyObservation",
+      "type": "DependencyObservation",
+      "components": [
+        {"name": "scopeKey", "type": "Text", "normalize": "exact"},
+        {"name": "series", "type": "Text", "normalize": "exact"},
+        {"name": "windowStart", "type": "Text", "normalize": "exact"},
+        {"name": "windowEnd", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idArmResource",
+      "type": "ArmResource",
+      "components": [{"name": "armKey", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idUserFlow",
+      "type": "UserFlow",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idSystemComponent",
+      "type": "SystemComponent",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idNameRule",
+      "type": "NameRule",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idResourceGroup",
+      "type": "ResourceGroup",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idAzureRegion",
+      "type": "AzureRegion",
+      "components": [{"name": "key", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idArmReference",
+      "type": "ArmReference",
+      "components": [
+        {"name": "sourceId", "type": "Text", "normalize": "exact"},
+        {"name": "fieldPath", "type": "Text", "normalize": "exact"},
+        {"name": "target", "type": "Text", "normalize": "exact"},
+        {"name": "resolvedAddress", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idAzureIp",
+      "type": "AzureIp",
+      "components": [{"name": "address", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idDnsName",
+      "type": "DnsName",
+      "components": [{"name": "host", "type": "Text", "normalize": "exact"}]
+    }
+  ],
+  "rows": [
+    {
+      "name": "CloudHealthRow",
+      "fields": [
+        {"name": "kind", "type": "Text"},
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "sourceKey", "type": "Text"},
+        {"name": "targetKey", "type": "Text"},
+        {"name": "impact", "type": "Text"},
+        {"name": "configuration", "type": "Text"},
+        {"name": "status", "type": "Text"},
+        {"name": "availabilityState", "type": "Text"},
+        {"name": "value", "type": "Decimal", "optional": true},
+        {"name": "checkpoint", "type": "Text"},
+        {"name": "signalKind", "type": "Text"},
+        {"name": "degradedOperator", "type": "Text"},
+        {"name": "degradedAt", "type": "Decimal", "optional": true},
+        {"name": "unhealthyOperator", "type": "Text"},
+        {"name": "unhealthyAt", "type": "Decimal", "optional": true},
+        {"name": "iconName", "type": "Text"},
+        {"name": "sourceModelId", "type": "Text"}
+      ]
+    },
+    {
+      "name": "VnetEvidenceRow",
+      "fields": [
+        {"name": "vnetId", "type": "Text"},
+        {"name": "observer", "type": "Text"},
+        {"name": "acl", "type": "Text"},
+        {"name": "rule", "type": "Text"},
+        {"name": "series", "type": "Text"},
+        {"name": "tuple", "type": "Text"},
+        {"name": "time", "type": "Instant"},
+        {"name": "srcIp", "type": "Text"},
+        {"name": "dstIp", "type": "Text"},
+        {"name": "srcPort", "type": "Integer"},
+        {"name": "dstPort", "type": "Integer"},
+        {"name": "protocol", "type": "Integer"},
+        {"name": "direction", "type": "Text"},
+        {"name": "flowState", "type": "Text"},
+        {"name": "encryption", "type": "Text"}
+      ]
+    },
+    {
+      "name": "AppDependencyRow",
+      "fields": [
+        {"name": "scopeId", "type": "Text"},
+        {"name": "scopeKey", "type": "Text"},
+        {"name": "sourceComponent", "type": "Text"},
+        {"name": "destination", "type": "Text"},
+        {"name": "dependencyType", "type": "Text"},
+        {"name": "result", "type": "Text"},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "series", "type": "Text"},
+        {"name": "calls", "type": "Integer"},
+        {"name": "spanCount", "type": "Integer"},
+        {"name": "targetResourceId", "type": "Text"},
+        {"name": "targetScopeKey", "type": "Text"},
+        {"name": "endpointScope", "type": "Text"}
+      ]
+    },
+    {
+      "name": "ArmInventoryRow",
+      "fields": [
+        {"name": "armId", "type": "Text"},
+        {"name": "armKey", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "resourceType", "type": "Text"},
+        {"name": "location", "type": "Text"},
+        {"name": "subscriptionId", "type": "Text"},
+        {"name": "resourceGroup", "type": "Text"},
+        {"name": "groupId", "type": "Text"},
+        {"name": "environmentId", "type": "Text"},
+        {"name": "provisioningState", "type": "Text"},
+        {"name": "runningStatus", "type": "Text"},
+        {"name": "ingressHost", "type": "Text"},
+        {"name": "tags", "type": "Text"},
+        {"name": "observedAt", "type": "Text"}
+      ]
+    },
+    {
+      "name": "AzureNetworkRow",
+      "fields": [
+        {"name": "resourceId", "type": "Text"},
+        {"name": "kind", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "resolvedAddress", "type": "Text", "optional": true},
+        {"name": "fieldPath", "type": "Text"}
+      ]
+    }
+  ],
+  "space": {
+    "name": "healthMirror",
+    "sources": [
+      {"name": "export", "adapter": "record", "rows": "CloudHealthRow"},
+      {"name": "traffic", "adapter": "record", "rows": "VnetEvidenceRow"},
+      {"name": "appCalls", "adapter": "record", "rows": "AppDependencyRow"},
+      {"name": "inventory", "adapter": "record", "rows": "ArmInventoryRow"},
+      {"name": "armNetwork", "adapter": "record", "rows": "AzureNetworkRow"}
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "ingest",
+        "master": true,
+        "inputs": {
+          "export": "export",
+          "traffic": "traffic",
+          "appCalls": "appCalls",
+          "inventory": "inventory",
+          "armNetwork": "armNetwork"
+        }
+      },
+      {"name": "containerApps", "projection": "containerApps", "inputs": {"master": "master"}},
+      {
+        "name": "workloadFlows",
+        "projection": "workloadFlows",
+        "inputs": {"master": "master", "containerApps": "containerApps", "health": "health", "network": "network"}
+      },
+      {"name": "ontologyGaps", "projection": "ontologyGaps", "inputs": {"containerApps": "containerApps"}},
+      {"name": "network", "projection": "network", "inputs": {"master": "master"}},
+      {"name": "structure", "projection": "structure", "inputs": {"master": "master"}},
+      {"name": "signals", "projection": "signals", "inputs": {"master": "master"}},
+      {"name": "health", "projection": "health", "inputs": {"structure": "structure", "signals": "signals"}}
+    ]
+  }
+}

@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using Sattle.Core;
 using Sattle.Kql;
+using Sattle.Gkql;
 using Sattle.Language;
 using Sattle.Runtime;
 using Xunit.Abstractions;
@@ -48,7 +49,7 @@ public class PictureCTests(ITestOutputHelper output)
         if (Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments) files = Sattle.Cli.Program.WithArguments(files, arguments);
         files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("dh.deploymentHealth(master: master)", $"dh.deploymentHealth(master: master, minReady: {minReady})") } : f)];
         if (program) files = [.. files.Where(f => !f.Path.EndsWith(Twin, StringComparison.Ordinal)), new SourceFile(Path.Combine(Here(), Program), File.ReadAllText(Path.Combine(Here(), Program)))];
-        var cat = new Catalog(program ? new ProgramSource(new KqlSource()) : new KqlSource());
+        var cat = new Catalog(program ? new ProjectionSources(new KqlSource(), new GkqlSource()) : new KqlSource());
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         var space = cat.Spaces.Keys.Single();

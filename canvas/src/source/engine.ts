@@ -31,7 +31,7 @@ export class EngineSource implements GraphSource {
   readonly bus = new RejectionBus();
   readonly status: ConnectionStatus = { state: "connecting", detail: "not connected", gapsFilled: 0, reconnects: 0 };
   catalogGraph: string | undefined;
-  private readonly base: string;
+  readonly base: string;
   private doc: SpaceDoc | null = null;
   private info: SpaceInfo | null = null;
   private snaps = new Map<string, { snapshot: Snapshot; descriptor: GraphInfo["descriptor"] }>();

@@ -1404,6 +1404,131 @@ Every recorded digest changes once (old is the digest of the written form, new t
 - Cost at 10^5: the state digest costs what the set digest cost in the step before (4.82 s thread CPU, 888 MB allocated, against 3.12 s and 1,160 MB for the streamed written form). It is computed once at the end of a run and at a seal, not per record.
 - Before is main 393f8e1 with the set digest and two #119 patches.
 
+## First populated window and steady closes on the scale ladder (2026-11-19)
+
+The capped run of `a5ca9da` on November 18 advanced twice with zero telemetry series. Advance 2 then created 1,985,732 series in 62.282 s, including 1.368 s of GC pauses. The previous summary skipped only advance 0 and included this initial population in its steady sample. Across the nine closes that followed, the median was 3.750 s and the maximum was 4.356 s. The all-advance median was 3.721 s and the maximum was 62.282 s. These measurements start with an empty engine. Restart from a stored seal and journal has a separate benchmark.
+
+`bench phases` now reports all advances, those before telemetry, the first close with changed windows or resident series, and those after that first populated close. Regular source-driven closes with no changes still count. The final synthetic advance counts toward the steady sample when it commits a change. An empty synthetic advance appears in its own group. Percentiles use nearest rank. With nine steady observations, the observed p99 equals the sample maximum.
+
+Use `bench phases --timing-only` to bypass the per-record, per-ingest and per-operator diagnostic counters. The replay still measures each close from the first source progress record through the window advance and downstream commits. The report gives writer CPU, whole-process CPU, all-thread allocation, GC pauses and the peak resident set through replay. The process CPU includes garbage collection and any worker threads. Graph reporting, the final state digest and the forced compaction used to measure live bytes happen outside the replay timing.
+
+One serial Release replay at each scale used the engine at `6a7108c`, the new benchmark, .NET SDK 11.0.100, server GC and a 12 GiB managed-heap cap on the shared M1 Max. Each ten-minute estate had one initial structure load. Run these commands from the repository root.
+
+```sh
+dotnet build engine/src/Sattle.Cli -c Release
+DOTNET_GCHeapHardLimit=0x300000000 dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll bench phases --timing-only --capture tmp/issue-49/gen/n100k
+DOTNET_GCHeapHardLimit=0x300000000 dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll bench phases --timing-only --capture tmp/orchestrator/n1m
+```
+
+Use `bench gen-estate --nodes 100000 --minutes 10 --out DIR` and `bench gen-estate --nodes 1000000 --minutes 10 --out DIR` to regenerate the two inputs in separate empty directories.
+
+| Measurement | 100,011 master nodes | 1,000,006 master nodes |
+| --- | ---: | ---: |
+| Records replayed | 816,075 | 8,159,533 |
+| Replay wall time | 28.81 s | 334.48 s |
+| Writer CPU per record, including parsing | 32.65 µs | 38.61 µs |
+| Whole-process CPU per record, including parsing | 39.77 µs | 43.72 µs |
+| Peak RSS through replay | 1,717 MB | 9,215 MB (8.58 GiB) |
+| GC pause time during replay | 0.44 s | 5.06 s (1.51%) |
+| First populated close, after two empty advances | 4.697 s | 69.819 s |
+| Steady closes observed | 9 | 9 |
+| Steady p50 / maximum | 0.261 / 0.337 s | 4.080 / 4.531 s |
+| Final state digest, abbreviated | `dc2b3192…2598` | `5b266957…77f5` |
+
+The million-node end state matched the November 18 digest. It held 7,691,409,016 live managed bytes after forced compaction, or 7.69 KB per master node. The resident high-water mark through graph reporting and the end-state digest was 10,415 MB (9.70 GiB). In the measured build the diagnostic graph table ran before the digest. The timing-only command now samples the digest and retained heap before producing that table. The raw reports are local files `engine/out/20261119-n100k-timing-only.txt` and `engine/out/20261119-n1m-timing-only.txt`.
+
+The million-node run started at a one-minute system load average of 62.76. Both CPU measures exceed 37 µs per record. The November 18 run enabled detailed counters and reported about 44 µs of writer CPU per record. These runs differ in instrumentation and machine load. The first populated close still cost 69.819 s with the counters off, including 1.427 s of GC pauses. Nine later observations within 5 s leave the long-run p99 open.
+
+To check a longer series of closes, `bench gen-estate --nodes 10000 --minutes 110 --out DIR` produced 9,995 master nodes, initialized once, and 762,998 records. One capped `bench phases --timing-only --capture DIR` replay of that input took 13.43 s, with a one-minute load average of 106.96 at the start on the shared host. Two advances preceded telemetry. Initial population took 518 ms. Across 109 consecutive later closes the median was 36 ms, the observed p99 was 117 ms and the maximum was 208 ms. This is evidence at 9,995 nodes. The local report is `engine/out/20261119-n10k-110min-timing-only.txt`.
+
+### Commit visibility in the parallel graph prototype
+
+The parallel-waves patch for #119 passed 19 ordering and restart cases and 394 default differential cases. A subscriber that reads a different graph during a commit exposed a discrepancy. In a single `Engine.Advance(0)` the engine publishes `deploymentReport` before `healthReport`. During the first callback, the canvas snapshot of `healthReport` on the parallel prototype already contained two elements whose edits had yet to be published. The serial engine exposed its previously published state. The focused reproduction is `dotnet test engine/tests/Sattle.Tests -c Release --filter FullyQualifiedName~CommitVisibilityTests`. The serial engine is the baseline for the measurements above. The implementation below preserves that callback boundary.
+
+### Parallel preparation of graph matches
+
+The engine evaluates graphs and operators in order. Inside a `MatchOp`, workers can scan ranges of a committed upstream patch. The writer holds the graph and its text codes fixed until the workers join. Each range owns its bindings, decoding cache and output rows. Workers share a read-only index of old relationship endpoints when a match needs the graph before the patch.
+
+The writer consumes ranges in pattern-component order, then canonical edit order. Each range visits an edit's old value before its new one. The writer copies the signed rows and their presence bits into the operator's output before running the next operator. Only the writer applies downstream graph edits, writes telemetry and revisions, and calls commit subscribers. It rethrows worker failures in range order before committing this graph. Earlier graph commits remain visible. Range buffers and worker counters are transient. Seals and journal restart use the published engine state.
+
+Workers can prepare a patch from an engine graph that uses its interner. A progress record or window advance needs at least 1,024 edits to qualify. An ingest needs 8,192. Both serial and parallel matches check which types occur before and after the edits. Each pattern component scans only its kind of element and skips the scan if none of those types can match.
+
+The engine processes one group of ranges at a time. Each range covers up to 8,192 edits. The private row arrays have a 1 MiB budget per active range, separate from the final operator output and shared index. If a range produces enough matches to exhaust the budget, the writer reruns it into its final position. The writer scans small patches and very wide output layouts itself. The engine clears its reusable worker text caches after each match.
+
+The worker limit defaults to one and includes the writer. Set `SATTLE_PREPARATION_WORKERS` for the CLI and host, or set `EngineOptions.PreparationWorkers` when embedding the engine. The engine caps the limit at the runtime's available processor count. For a replay comparison in the repository root, build once and use the same process settings and capture for each worker limit.
+
+```sh
+dotnet build engine/src/Sattle.Cli -c Release
+cli=engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll
+capture=tmp/issue-49/gen/n100k
+DOTNET_GCHeapHardLimit=0x300000000 dotnet "$cli" bench phases --timing-only --graph-workers 1 --capture "$capture"
+DOTNET_GCHeapHardLimit=0x300000000 dotnet "$cli" bench phases --timing-only --graph-workers 4 --capture "$capture"
+```
+
+#### 100,011 master nodes
+
+With the original 1,024-edit ingest threshold, four workers prepared 15,807 ranges and allocated 390–394 MB more than one worker. The higher threshold, type filtering and reusable caches reduced this to 210 ranges and 55–57 MB. The first populated close accounted for 162 ranges. The nine steady closes qualified for none.
+
+One diagnostic pair applied input through `--until 2026-01-01T10:02:01Z` with per-operator timers on, during another million-node replay. The match operators took 0.865 s of the 4.002 s first close with four workers. With one worker they took 2.156 s of 6.500 s. Both prefix digests were `f8b8f75e…0429`.
+
+The full 816,075-record replay created 198,624 series on its first populated close. Each row is one fresh process on the shared M1 Max with server GC, the 12 GiB heap cap and per-operator timers off. Other team tests paused for the four runs. Starting load averages were 74, 48, 41 and 55. All digests matched `dc2b3192…2598`.
+
+| Worker limit | First populated wall / writer CPU / process CPU, s | Nine steady closes p50 / max, ms | Replay wall, s | Replay writer / process CPU, s | Replay allocated / peak RSS, MB |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 3.844 / 3.625 / 4.581 | 237 / 288 | 24.86 | 23.82 / 29.21 | 5,742 / 1,670 |
+| 4 | 3.431 / 3.111 / 5.140 | 282 / 325 | 26.39 | 24.85 / 31.67 | 5,799 / 1,646 |
+| 4 | 3.561 / 3.092 / 5.186 | 355 / 404 | 31.84 | 27.43 / 35.25 | 5,797 / 1,605 |
+| 1 | 4.319 / 3.970 / 5.016 | 293 / 428 | 27.57 | 25.34 / 30.71 | 5,742 / 1,596 |
+
+Four workers shortened initial population by 10.7% and 17.6% against the adjacent one-worker runs. They completed 103 and 102 first-close ranges off the writer. Each worker run replayed six ranges on the writer across the full capture. Initial population allocated 1,145 MB with four workers and 1,098 MB with one. After compaction, all four processes held 795.3–795.4 MB of managed memory. Both four-worker processes took longer to replay the full capture. A fresh copy of the original engine had taken 8.017 s on initial population and 50.87 s on the whole replay at a starting load of 487.
+
+#### 1,000,006 master nodes
+
+Set `capture=tmp/orchestrator/n1m` for the same commands. This ten-minute capture contains 8,159,533 records and creates 1,985,732 series on the third advance. The original serial row used the working engine frozen before this change. The other two used the same new build.
+
+| Engine / worker limit | First populated wall / writer CPU / process CPU, s | Nine steady closes p50 / max, s | Replay wall, s | Replay writer / process CPU, s | Replay allocated / peak RSS, MB |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original serial | 106.060 / 75.448 / 88.427 | 4.795 / 8.828 | 415.82 | 345.07 / 389.94 | 60,889 / 11,479 |
+| New, 4 | 64.295 / 46.951 / 75.720 | 6.220 / 6.491 | 447.54 | 328.73 / 387.88 | 61,363 / 11,497 |
+| New, 1 | 62.071 / 57.543 / 70.223 | 4.195 / 5.170 | 353.38 | 314.41 / 358.06 | 61,300 / 11,445 |
+
+The starting load averages were 454, 52 and 50, in table order. The two runs on the new build ran consecutively. Engine and durable-store tests overlapped the four-worker replay. The durable-store tests finished partway through the one-worker replay. The original engine had also recorded 69.819 s on the same first close earlier that day at a load of 63. The original-to-new difference includes machine load and changes to the serial match algorithm.
+
+In this full-capture pair, four workers cut writer CPU on the first populated close by 10.592 s. Wall time increased by 2.224 s and process CPU by 5.497 s. The close allocated 11,405 MB with four workers and 11,348 MB with one. GC paused for 2.404 s and 1.307 s respectively. Workers completed 1,075 of the first close's 1,513 ranges off the writer. Four later closes prepared 54 ranges, 17 off the writer. Across the full replay, the engine retried 65 ranges on the writer. All three runs had identical counts and revision heads in all 13 graphs and the same digest, `5b266957…77f5`. After compaction, both new runs held 7.670 GB. The full replay used 43.88 µs of process CPU per record with one worker and 47.54 µs with four, against the 37 µs budget.
+
+After the test suites and other replay checks finished, three fresh processes applied the same million-node capture through `--until 2026-01-01T10:02:01Z`. Each created 1,985,732 series on the close at 10:01 UTC. All three prefix digests were `41984359…eae2`.
+
+| Worker limit, in run order | Starting load | Close wall, s | Writer / process CPU, s | Allocated, MB | GC pause, s | Ranges total / off writer |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 4 | 27.69 | 50.443 | 44.204 / 72.185 | 11,406 | 1.063 | 1,513 / 1,078 |
+| 2 | 35.01 | 98.096 | 53.464 / 79.620 | 11,384 | 2.477 | 1,513 / 725 |
+| 1 | 202.81 | 64.181 | 59.898 / 71.714 | 11,347 | 1.286 | 0 / 0 |
+
+Four workers shortened this close by 21.4% against one worker, with similar process CPU. The full-replay comparison gave the opposite wall-time ordering. During the prefix series the one-minute host load ranged from 21 to 253. Each limit ran once per workload. The size and repeatability of a million-node benefit remain open.
+
+A 110-minute replay at 9,995 nodes had 109 steady closes. With four workers, the first populated close took 264 ms and the steady median, p99 and maximum were 22, 46 and 78 ms. With one worker, those values were 364 ms and 22, 53 and 55 ms. All 88 ranges in the four-worker replay occurred on the first populated close. Both runs matched the recorded `a67711e7…26cd` digest. At one million nodes only nine steady closes were observed per full run, and both new runs exceeded 5 s. The 5 s p99 in #119 remains open.
+
+### Counting stored telemetry windows
+
+The graph summary and draft preview used `Dump(graph).Count`, which sorted the series and materialized every window. `WindowCount` sums the per-series counts under the existing store lock into a 64-bit integer. A .NET 11.0.100 Release measurement populated 100,000 series with ten consecutive 60-second windows per series. Both methods returned 1,000,000. Each was warmed on a separate one-window graph, followed by a forced GC before each measured read. In ABBA order, the two `WindowCount` reads allocated zero bytes on the calling thread and took 1.06 and 0.83 ms. The two `Dump(graph).Count` reads each allocated 89,909,792 bytes and took 172.93 and 69.12 ms. These are timings for the count operation.
+
+### Testing a type index for graph matching
+
+A match scans the upstream patch in canonical edit order for each seed of its pattern. Two prototypes shared work across readers of a patch with at least 128 edits. One built a list of edits per concrete type, including both types of a retyped element. The other kept only the distinct types and skipped seeds that could match none of them. Both deferred building the index until a second scan.
+
+The 100,000-node capture contains 816,075 records. Each pair used the same Release CLI, server GC with a 12 GiB heap cap, and `bench phases --timing-only`. Only the runtime assembly changed. The nine steady closes followed the first populated window of 198,624 series.
+
+| Run | First populated wall / writer CPU, s | Steady wall median / max, ms | Writer CPU, µs/record | Allocated, MB |
+|---|---:|---:|---:|---:|
+| Control for edit lists | 5.637 / 4.605 | 292 / 363 | 34.29 | 5,706 |
+| Edit lists | 5.195 / 4.264 | 362 / 531 | 34.25 | 5,722 |
+| Control for distinct types | 9.459 / 5.078 | 447 / 1,027 | 38.61 | 5,701 |
+| Distinct types | 10.403 / 5.047 | 553 / 851 | 38.79 | 5,705 |
+
+All four runs produced the recorded state digest `dc2b3192…2598`. Starting one-minute load averages were 57, 47, 122 and 161 on the 10-core host. A second comparison reversed the order and stopped applying input at `--until 2026-01-01T10:02:01Z`. The first populated close took 5.498 s writer CPU with distinct types and 5.377 s with the control. Both prefix digests were `f8b8f75e…0429`.
+
+The edit lists saved 0.341 s of writer CPU on the first populated close in one pair, added 16 MB of allocations across the replay and yielded nearly identical CPU per record. The distinct-type filter gave inconsistent results across the two orders. These measurements support retaining the existing ordered scan.
+
 ## H5, H7, H8, H10 (ten runs each unless stated)
 Measured in turn 9 on an Apple M1 Max, 10 cores, 64 GB, macOS 27.2.0, .NET 10.0.14, Release build copied out of the build tree, engine commit of the working tree at that time. The machine was shared with other sessions: load average 14 to 60 during these runs, so latencies are pessimistic. Decision rule of paper 13.6: a latency target is supported only if every run is at or below it. The workload of H5 and H10 is the newest real capture (`sattle replay latest` prints its record count and capture span). Build once: `dotnet build -c Release src/Sattle.Cli && cp -R src/Sattle.Cli/bin/Release/net10.0 out/cli`, then run the commands as `dotnet out/cli/sattle.dll ...`.
 

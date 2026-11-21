@@ -1,10 +1,44 @@
 import { describe, expect, it } from "vitest";
-import { attentionPaths, buildTree, expandBelow, explainNode, hasTreeRows, isWrong, searchMatches, severityCompare, typeAhead, visibleRows, wrongNodes, type TreeView } from "../src/app/tree-model";
+import { attentionPaths, buildTree, expandBelow, explainNode, hasTreeRows, hierarchyChoices, isWrong, searchMatches, severityCompare, typeAhead, visibleRows, wrongNodes, type TreeSpec, type TreeView } from "../src/app/tree-model";
 import { curated, curatedSpec, treeGraph, treeHints, treeSpec } from "./fixtures/tree-graph";
+
+import { Graph } from "../src/core/graph";
+import { ent, ver } from "./helpers";
+
+it("uses workflow labels and the severity scale declared by the deployment", () => {
+  const graph = Graph.fromSnapshot({ version: ver("1", "workflow"), entities: [
+    ent("queue", "Queue", { state: "Accepted", priority: "100", ready: "4", review: "2" }),
+    ent("block", "Queue", { state: "Red", priority: "500" }),
+    ent("new", "Queue", { state: "Review" }),
+  ], relationships: [] });
+  const spec = { ...treeSpec, types: ["Queue"], state: { Queue: {
+    rolledUp: "state", severity: "priority", counts: { Accepted: "ready", Review: "review" },
+  } } };
+  const hints = [{ property: "state", roles: { Accepted: "ok", Review: "warning", Red: "danger" } }] as const;
+  const m = buildTree(graph, spec, hints);
+  expect(m.nodes.get("queue")!.counts).toEqual([{ value: "Review", role: "warning", n: 2 }, { value: "Accepted", role: "ok", n: 4 }]);
+  expect(m.nodes.get("new")!.severity).toBeGreaterThan(100);
+  expect(m.nodes.get("new")!.severity).toBeLessThan(500);
+});
 
 const model = () => buildTree(treeGraph(), treeSpec, treeHints);
 const view = (over: Partial<TreeView> = {}): TreeView => ({ expanded: new Set(), onlyWrong: false, query: "", sort: "severity", ...over });
 const ids = (v: TreeView) => visibleRows(model(), v).rows.map((r) => `${r.level}:${r.node.id}`);
+
+it.each<TreeSpec["state"]>([
+  { HealthGroup: { rolledUp: "state" } },
+  { Component: { rolledUp: "unrecordedState" } },
+])("defaults to the declared hierarchy when its graph has no recorded cause state", (state) => {
+  expect(hierarchyChoices(treeGraph(), { tree: { ...treeSpec, state }, edgeKinds: { Contains: "composition" } })).toEqual(["composition"]);
+});
+
+it("keeps Cause first when the roll-up is healthy", () => {
+  const g = treeGraph();
+  for (const node of g.entities()) if (node.type === "Component") {
+    g.putEntity({ ...node, props: { state: { kind: "text", value: "Healthy" } } });
+  }
+  expect(hierarchyChoices(g, { tree: treeSpec, edgeKinds: { Contains: "composition" } })[0]).toBe("cause");
+});
 
 describe("the tree of a hierarchical graph holds the tree types under one root, with states ordered by severity", () => {
   it("has the nodes of the tree types only, one root, children from the hierarchy relationship", () => {

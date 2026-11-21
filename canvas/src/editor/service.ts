@@ -48,7 +48,7 @@ export function parseOperatorRows(list: unknown): OperatorRows[] {
 }
 export interface Applied {
   /** restore: the patch the engine applied */
-  patch?: Patch; revision: string; ok: boolean; diagnostics: EngineDiagnostic[]; modules: Record<string, { text: string; changed?: boolean }>;
+  patch?: Patch; revision: string; ok: boolean; diagnostics: EngineDiagnostic[]; modules: Record<string, { text: string | null; changed?: boolean }>;
   /** engine 3.21: the columns after each operator, by projection id */
   schemas?: Record<string, OperatorSchema[]> }
 export interface Release { module: string; version: string; digest: string; catalogRevision: string; supersedes: string | null }
@@ -106,7 +106,7 @@ export class EditorService {
   async kqlComplete(projection: string, text: string, offset: number): Promise<Completion> { return (await this.call("POST", "/kql/complete", { projection, text, offset })) as Completion; }
   async kqlHover(projection: string, text: string, offset: number): Promise<Hover> { return (await this.call("POST", "/kql/hover", { projection, text, offset })) as Hover; }
   /** Store a projection file's text in the draft (`file` as `GET /definitions` names it); check, preview and commit include it from then on. */
-  async setDraftText(id: string, file: string, text: string, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
+  async setDraftText(id: string, file: string, text: string | null, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
   async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
 
   async createDraft(base?: string): Promise<Draft> { const d = (await this.call("POST", "/drafts", base ? { base } : {})) as Draft; return { draft: String(d.draft), baseRevision: String(d.baseRevision), revision: String(d.revision) }; }

@@ -42,6 +42,8 @@ export class GraphView {
   dim = 1;
   /** label every visible edge with its type (small graphs such as ontologies) */
   allEdgeLabels = false;
+  /** The leaves of a left-to-right branch layout have room for their names beyond the last edge. */
+  branchLeaves: Set<number> | null = null;
   stats: ViewStats = { frames: 0, lastFrameMs: 0, cpuMs: 0, labelMs: 0, lastInputLatencyMs: 0, visibleLabels: 0 };
   readonly frameTimes: number[] = [];
 
@@ -132,9 +134,14 @@ export class GraphView {
     if (this.host.clientWidth < 20 || this.host.clientHeight < 20) { this.pendingFit = true; return; }
     const w = Math.max(b.maxX - b.minX, 1), h = Math.max(b.maxY - b.minY, 1);
     const sides = Math.min(padX, this.width * 0.18);
-    const zoom = Math.max(Math.min((this.width - sides * 2) / w, (this.height - padding * 2) / h, 4), 1e-4);
+    let right = sides;
+    if (this.branchLeaves) {
+      for (const leaf of this.branchLeaves) right = Math.max(right, this.textWidth(this.hooks.nodeLabel?.(leaf) ?? "") + 16);
+      right = Math.min(right, this.width * 0.35);
+    }
+    const zoom = Math.max(Math.min((this.width - sides - right) / w, (this.height - padding * 2) / h, 4), 1e-4);
     this.fitZoom = zoom;
-    this.goTo({ x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, zoom }, animate);
+    this.goTo({ x: (b.minX + b.maxX) / 2 + (right - sides) / (2 * zoom), y: (b.minY + b.maxY) / 2, zoom }, animate);
     this.computeEdgeLength();
   }
 
@@ -530,7 +537,7 @@ export class GraphView {
       const r = Math.max(s.radius[i] * z, 1.4);
       const st = s.nodeState(i);
       const special = (st & (St.Selected | St.Hover | St.Match | St.Added | St.Changed | St.Removed | St.Identity)) !== 0 || (s.nodeExtra(i) & (Ex.Source | Ex.Blame)) !== 0;
-      if (!force && !special && r < 2.4) return;
+      if (!force && !special && r < 2.4 && !(this.branchLeaves && s.nodeCount <= 60)) return;
       const text = this.hooks.nodeLabel?.(i);
       if (!text) return;
       const w = this.textWidth(text) + 6;
@@ -539,6 +546,10 @@ export class GraphView {
       // there. In a graph small enough to read node by node it tries the other sides of the node before it gives up: a node without its name says nothing.
       const always = (st & (St.Selected | St.Hover)) !== 0;
       const sides: [number, number][] = [[keepInside(x, w, W), ly]];
+      if (this.branchLeaves) {
+        const leaf = this.branchLeaves.has(i);
+        sides.unshift([keepInside(leaf ? x + r + 4 + w / 2 : x + r - w / 2, w, W), leaf ? y : ly]);
+      }
       if (s.nodeCount <= 60) sides.push([keepInside(x, w, W), y - r - 8], [keepInside(x + r + 4 + w / 2, w, W), y], [keepInside(x - r - 4 - w / 2, w, W), y]);
       let at: [number, number] | null = null;
       if (always) { at = sides[0]; placer.take(at[0], at[1], w, 14); } else for (const [px, py] of sides) if (placer.place(px, py, w, 14)) { at = [px, py]; break; }

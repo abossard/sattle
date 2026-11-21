@@ -76,6 +76,13 @@ describe("a workload stacks its hierarchy and stands its dependencies beside it"
     const { vertical, horizontal } = kindAxes(shopInfo);
     expect([[...vertical].sort(), [...horizontal].sort()]).toEqual([["Contains", "HostedOn", "MemberOf"], ["Affects", "BackedBy", "ConnectedThrough", "DependsOn", "Exposes"]]);
   });
+  it("keeps a second declared hierarchy vertical even when its targets also have dependencies", () => {
+    const info = { ...shopInfo, tree: { ...shopTree, hierarchy: { relationship: "Contains", childIsSource: false, also: ["BackedBy"] } } };
+    const axes = kindAxes(info);
+    expect(axes.vertical.has("BackedBy")).toBe(true);
+    expect(axes.horizontal.has("BackedBy")).toBe(false);
+    expect(specForKind(info, "dependency")!.hierarchy.parentRows).toContain("Resource");
+  });
 });
 
 describe("the elements beside the parts stand right of what needs them and left of what they expose", () => {
@@ -94,6 +101,23 @@ describe("the elements beside the parts stand right of what needs them and left 
   ])("%s", (_, id, xy) => expect(pos(id)).toEqual(xy));
   it("the parts and what only communicates or supports are not moved", () => {
     for (const id of ["shop", "web", "api", "database", "webd", "pod", "node", "sig"]) expect(pos(id), id).toBeUndefined();
+  });
+  it("keeps each parent's checks together and reserves space for checks from the following row", () => {
+    const owners = ["web", "api", "webd"];
+    const checks = Array.from({ length: 18 }, (_, i) => ({ id: `check-${i}`, owner: owners[i % owners.length] }));
+    const g = Graph.fromSnapshot({
+      version: ver("1"),
+      entities: [ent("shop", "Workload"), ...owners.map((id) => ent(id, shopTypes[id])), ...checks.map(({ id }) => ent(id, "Resource"))],
+      relationships: [
+        rel("web-flow", "shop", "web", "Contains"), rel("api-flow", "shop", "api", "Contains"), rel("web-part", "web", "webd", "Contains"),
+        ...checks.map(({ id, owner }) => rel(`needs-${id}`, owner, id, "DependsOn")),
+      ],
+    });
+    const moves = besidePositions(g, shopInfo, (s) => at[g.nodes[s]!.id] ?? null, () => true, { column: 100, row: 30 });
+    expect(moves.size).toBe(checks.length);
+    const ys = owners.flatMap((owner) => checks.filter((c) => c.owner === owner).map(({ id }) => moves.get(g.nodeSlot.get(id)!)![1]));
+    expect(ys[0]).toBe(at.web[1]);
+    expect(ys.slice(1).every((y, i) => y - ys[i] >= 30)).toBe(true);
   });
 });
 

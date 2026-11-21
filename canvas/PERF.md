@@ -4,7 +4,7 @@ Target: 100,000 nodes and 300,000 edges, smooth pan and zoom at 60 fps, hover an
 
 ## Data set
 
-- Synthetic cloud estate, preset `100k` in `src/core/synth.ts`, seed 1.
+- Synthetic cloud estate, preset `100k` in `examples/synthetic-estate/synth.ts`, seed 1.
 - 99,495 nodes, 287,703 edges (subscription, cluster, VM node, namespace, workload, service, pod, with `MemberOf`, `HostedOn`, `Routes`, `Calls`).
 - Plus a deterministic stream of patches for the replay test: 120 patches (322 edits) in the structural runs below, 60 patches in the telemetry runs (the source default).
 - Telemetry (section below): per tick 3 metrics on all 287,968 edges and 2 metrics on all 99,485 nodes, 1,062,871 values per tick.

@@ -4,6 +4,24 @@ Sattle turns what a cloud system reports into graphs that explain it, and keeps 
 
 [Explore the narrated shop walkthrough](https://abossard.github.io/sattle/docs/learn/) · [Replay the recorded database outage](https://abossard.github.io/sattle/docs/learn/pg-shop.html#incident)
 
+## Developer tutorial
+
+Open [Getting started in Canvas](http://localhost:5173/#guide=start) after starting both processes.
+
+```bash
+./scripts/tutorial.sh prepare
+./scripts/tutorial.sh serve
+```
+
+```bash
+npm --prefix canvas install
+npm --prefix canvas run dev
+```
+
+Use `./scripts/tutorial.sh prepare /path/to/capture` to choose an Azure lab capture. [Capture the Azure lab data](lab/README.md#capture-and-stream).
+
+`./scripts/tutorial.sh verify` checks the master graph, health transitions, and report.
+
 ```mermaid
 flowchart TB
   subgraph IN["Semi-structured data in"]
@@ -337,22 +355,22 @@ What holds today:
 - The proof inventory has no statement left as a sketch or open. Some proofs rest on named premises about the engine, and most were checked by reading only.
 - The language covers relational algebra with aggregation, graph patterns, bounded recursion, windows with thresholds, and edge lifting.
 - A master graph of about 50,000 nodes was built from a real 17 minute capture of one cluster, and a health model with roll-up was derived from it.
-- **Memory at one million master nodes.** The engine replays 8.2 million records for one million pods, Services and Azure resources within the memory limits of a 16 GB, 8-core machine (measured 2026-11-18):
+- **One million master nodes.** The engine replays 8.2 million records for one million pods, Services and Azure resources. The memory figures below come from the capped run on November 18, 2026. The CPU and window timings come from the November 19 serial baseline with detailed counters off. [Compare serial and parallel graph preparation](engine/PERF.md#parallel-preparation-of-graph-matches).
 
 | At one million master nodes | Measured | Limit | |
 | --- | --- | --- | --- |
 | Memory held, after a full garbage collection | 7.7 KB per node | 8 KB | met |
 | Peak memory, heap capped at 12 GiB | 11.7 GiB | 12 GiB | met |
 | Garbage collection pauses | 1 % of run time | 5 % | met |
-| CPU time per input record, parsing included | 44 µs | 37 µs | not yet |
-| Health after a window closes, typical | 3.75 s | 5 s for 99 % | not yet: one close took 62 s |
+| CPU time per input record, parsing included | 38.61 µs on the writer, 43.72 µs for the process | 37 µs | above limit |
+| Window close to committed health after initial population | 4.08 s median, 4.53 s maximum across 9 closes | 5 s for 99 % | long-run p99 still open |
 
   Memory went from 20 KB per node in the first run to 7.7 KB, by storing codes instead of text, keeping data only where something reads it, and running a join before a tree walk instead of after it. Graph fingerprints are now a sum of one hash per element, so no graph is ever sorted or written out whole ([research note 15](paper/research/15-graph-comparison.md)). Details per change: [PERF.md](engine/PERF.md).
 
   ```mermaid
   xychart-beta
     title "Memory held per master node at one million nodes (KB, limit 8)"
-    x-axis ["First run 17 Nov", "Second run 18 Nov", "Latest run 18 Nov"]
+    x-axis ["First run 17 Nov", "Second run 18 Nov", "Third run 18 Nov"]
     y-axis "KB per node" 0 --> 22
     bar [19.95, 9.04, 7.69]
     line [8, 8, 8]
@@ -360,7 +378,7 @@ What holds today:
 
 What does not hold yet:
 
-- **Speed.** CPU time per record is 44 µs against 37 µs ([#123](https://github.com/abossard/sattle/issues/123), parked). Window closes: the derived graphs are being changed to update side by side, in waves by what they read ([#119](https://github.com/abossard/sattle/issues/119)).
+- **Speed.** The November 18 replay with detailed counters enabled used 44 µs of writer CPU per record. With those counters off, the November 19 replay used 38.61 µs of writer CPU and 43.72 µs of whole-process CPU against a 37 µs budget. The first populated window created 1.99 million series in 69.82 s. The longest of the next nine closes took 4.53 s. A longer representative run is needed to establish p99. [Scale measurements](engine/PERF.md#first-populated-window-and-steady-closes-on-the-scale-ladder-2026-11-19) · [CPU work](https://github.com/abossard/sattle/issues/123) · [Window-close work](https://github.com/abossard/sattle/issues/119)
 - **Expressiveness gaps.** Unbounded reachability, comparison of a window with an earlier one, and "no data for N windows" cannot be expressed. See [research note 05](paper/research/05-expressiveness-and-flexibility.md).
 - **Always live.** The engine follows the lab cluster live through Event Hubs since 2026-11-16 ([#70](https://github.com/abossard/sattle/issues/70): a scaled deployment turned Unhealthy in 34 s and back in 4 s, two hard kills resumed from the store). The source cluster runs again ([`source-cluster.sh`](lab/source-cluster.sh)).
 

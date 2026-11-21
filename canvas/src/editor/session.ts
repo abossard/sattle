@@ -19,6 +19,8 @@ export class EditorSession {
   readonly #redo: Step[] = [];
   #diagnostics: EngineDiagnostic[] = [];
   #texts: Readonly<Record<string, string>> = {};
+  #baseTexts: Readonly<Record<string, string>> = {};
+  readonly #localText = new Map<string, string>();
   #version = 0;
   #schemas: Record<string, import("./service").OperatorSchema[]> = {};
   #graph: Graph;
@@ -38,6 +40,11 @@ export class EditorSession {
   get diagnostics(): readonly EngineDiagnostic[] { return this.#diagnostics; }
   /** canonical text per module, as of the last answer: a new object whenever a text changed, never changed in place */
   get texts(): Readonly<Record<string, string>> { return this.#texts; }
+  noteLocalText(file: string, text: string): void { this.#localText.set(file, text); }
+  clearLocalText(file: string): void { this.#localText.delete(file); }
+  recoveredText(): Readonly<Record<string, string>> {
+    return { ...Object.fromEntries(Object.entries(this.#texts).filter(([file, text]) => text !== this.#baseTexts[file])), ...Object.fromEntries(this.#localText) };
+  }
   /** engine 3.21: the columns after each operator, by projection id, from the last check or patch answer that carried them */
   get schemas(): Readonly<Record<string, readonly import("./service").OperatorSchema[]>> { return this.#schemas; }
   get undoStack(): readonly Step[] { return this.#undo; }
@@ -51,6 +58,7 @@ export class EditorSession {
     const s = new EditorSession(svc, palette, draft, Graph.fromSnapshot(snap), draft.revision, files);
     const checked = await svc.check(draft.draft);
     s.absorb(checked);
+    s.#baseTexts = s.#texts;
     return s;
   }
 
@@ -64,7 +72,14 @@ export class EditorSession {
     this.#diagnostics = a.diagnostics;
     if (a.schemas) this.#schemas = a.schemas;
     const changed = Object.entries(a.modules).filter(([m, v]) => v.text !== undefined && v.text !== this.#texts[m]);
-    if (changed.length) this.#texts = { ...this.#texts, ...Object.fromEntries(changed.map(([m, v]) => [m, v.text!])) };
+    if (changed.length) {
+      const texts = { ...this.#texts };
+      for (const [m, value] of changed) {
+        if (value.text === null) delete texts[m];
+        else texts[m] = value.text;
+      }
+      this.#texts = texts;
+    }
   }
 
   private patchOf(edits: Edit[]): Patch {
@@ -96,7 +111,7 @@ export class EditorSession {
       this.absorb(applied);
       return { ok: true, applied };
     } catch (e) {
-      if (e instanceof EngineError) { if (e.code === "StaleRevision" || e.code === "GuardFailed") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
+      if (e instanceof EngineError) { if (e.code === "UnknownDraft") throw e; if (e.code === "StaleRevision" || e.code === "GuardFailed") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
       return { ok: false, error: (e as Error).message };
     }
   }
@@ -131,17 +146,46 @@ export class EditorSession {
 
   /**
    * A change composed from the draft when the queue reaches it: `compose` reads the graph then, so its edits start from the revision they apply to.
-   * With `file`, the projection file's text is stored first, in the same step (a new projection: its file, then its graph and bindings).
+   * A new projection stores its file, then adds the space binding as structural edits or in the native module.
    */
-  change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: ProjectionFile & { text: string } } | null): Promise<Outcome | null> {
+  change(compose: (graph: Graph) => { edits: Edit[]; label: string; file?: ProjectionFile & { text: string }; module?: { name: string; text: string } } | null): Promise<Outcome | null> {
     return this.serial(async () => {
       const c = compose(this.#graph);
       if (!c) return null;
+      if (c.module && c.file) {
+        const outcome = await this.createNativeProjection(c.file, c.module);
+        if (outcome.ok) {
+          const { projection, file, language } = c.file;
+          this.#files = new Map(this.#files).set(projection, { projection, file, language });
+        }
+        return outcome;
+      }
       const stored = c.file ? await this.storeTextNow(c.file.file, c.file.text) : null;
       if (stored && !stored.ok) return stored;
       if (c.file) { const { projection, file, language } = c.file; this.#files = new Map(this.#files).set(projection, { projection, file, language }); }
       return c.edits.length ? this.applyNow(c.edits, c.label) : stored;
     });
+  }
+
+  private async createNativeProjection(file: ProjectionFile & { text: string }, module: { name: string; text: string }): Promise<Outcome> {
+    const before = this.#texts[module.name];
+    const stored = await this.storeTextNow(file.file, file.text);
+    const bound = stored.ok && stored.applied.ok ? await this.storeTextNow(module.name, module.text) : stored;
+    if (bound.ok && bound.applied.ok) return bound;
+    if (!bound.ok) {
+      try { await this.resyncNow(); } catch { return bound; }
+    }
+
+    // A rejected candidate stays in the engine draft so it can be edited. Restore this attempted creation instead.
+    if (this.#texts[module.name] !== before) {
+      const restored = await this.storeTextNow(module.name, before);
+      if (!restored.ok) return restored;
+    }
+    if (this.#texts[file.file] !== undefined) {
+      const removed = await this.storeTextNow(file.file, null);
+      if (!removed.ok) return removed;
+    }
+    return bound.ok ? { ok: false, error: bound.applied.diagnostics[0]?.message ?? "The engine rejected the new projection." } : bound;
   }
 
   /** Restore a release of a module into the draft: the engine applies it itself and answers the patch, which joins the draft as one undo step (an empty one is none). */
@@ -191,13 +235,13 @@ export class EditorSession {
    * are in the check), so the graph is read again. Not a step of this undo stack: the text editor keeps the text's own history.
    */
   storeText(file: string, text: string): Promise<Outcome> { return this.serial(() => this.storeTextNow(file, text)); }
-  private async storeTextNow(file: string, text: string): Promise<Outcome> {
+  private async storeTextNow(file: string, text: string | null): Promise<Outcome> {
     try {
       const applied = await this.svc.setDraftText(this.draft.draft, file, text, this.#revision);
       await this.resyncNow();
       return { ok: true, applied };
     } catch (e) {
-      if (e instanceof EngineError) { if (e.code === "StaleRevision") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
+      if (e instanceof EngineError) { if (e.code === "UnknownDraft") throw e; if (e.code === "StaleRevision") await this.resyncNow().catch(() => {}); return { ok: false, error: e.message, code: e.code, element: e.element }; }
       return { ok: false, error: (e as Error).message };
     }
   }

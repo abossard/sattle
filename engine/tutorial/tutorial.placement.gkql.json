@@ -1,0 +1,119 @@
+{
+  "graph": "placement",
+  "ontology": "tutorial",
+  "description": "Join Kubernetes scheduling to Azure provider IDs and Resource Graph inventory.",
+  "history": 120,
+  "inputs": [{"name": "workloads", "ontology": "tutorial"}, {"name": "master", "ontology": "tutorial"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "scheduledDeployments",
+      "verb": "graph-match",
+      "graph": "workloads",
+      "pattern": {
+        "nodes": [{"var": "d", "label": "Deployment"}, {"var": "n", "label": "KubernetesNode"}],
+        "edges": [{"var": "s", "label": "ScheduledOn", "from": "d", "to": "n"}]
+      }
+    },
+    {
+      "id": "azureHosts",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "node", "label": "KubernetesNode"}, {"var": "r", "label": "Resource"}],
+        "edges": [{"var": "hosted", "label": "HostedByAzure", "from": "node", "to": "r"}]
+      }
+    },
+    {"id": "scheduledOnAzure", "verb": "join", "kind": "inner", "on": [{"left": "n", "right": "node"}]},
+    {
+      "id": "deployments",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Deployment",
+            "id": {"ref": "d"},
+            "props": {
+              "cluster": {"ref": "d.cluster"},
+              "namespace": {"ref": "d.namespace"},
+              "name": {"ref": "d.name"},
+              "replicas": {"ref": "d.replicas"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "scaleSets",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.resourceType"}, {"lit": "microsoft.compute/virtualmachinescalesets"}]}
+    },
+    {
+      "id": "scaleSetsView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "VmScaleSet",
+            "id": {"ref": "r"},
+            "props": {"armId": {"ref": "r.armId"}, "name": {"ref": "r.name"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "scaleSetsLinks",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Deployment", "id": {"ref": "d"}},
+          {"var": "target", "label": "VmScaleSet", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "RunsOnVmss", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "virtualMachines",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.resourceType"}, {"lit": "microsoft.compute/virtualmachines"}]}
+    },
+    {
+      "id": "virtualMachinesView",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "VirtualMachine",
+            "id": {"ref": "r"},
+            "props": {"armId": {"ref": "r.armId"}, "name": {"ref": "r.name"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "virtualMachinesLinks",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Deployment", "id": {"ref": "d"}},
+          {"var": "target", "label": "VirtualMachine", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "RunsOnVm", "from": "source", "to": "target"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "scheduledDeployments", "to": "scheduledOnAzure", "port": "left"},
+    {"from": "azureHosts", "to": "scheduledOnAzure", "port": "right"},
+    {"from": "scheduledOnAzure", "to": "deployments"},
+    {"from": "scheduledOnAzure", "to": "scaleSets"},
+    {"from": "scaleSets", "to": "scaleSetsView"},
+    {"from": "scaleSets", "to": "scaleSetsLinks"},
+    {"from": "scheduledOnAzure", "to": "virtualMachines"},
+    {"from": "virtualMachines", "to": "virtualMachinesView"},
+    {"from": "virtualMachines", "to": "virtualMachinesLinks"}
+  ]
+}

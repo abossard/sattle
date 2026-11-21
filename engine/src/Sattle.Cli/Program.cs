@@ -25,14 +25,14 @@ public static class Program
         sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
         sattle bench  gen-estate --nodes N [--minutes 10] [--pairs-per-node 0.24] --out DIR
-        sattle bench  phases [--capture DIR] [--census]
+        sattle bench  phases [--capture DIR] [--census] [--timing-only] [--graph-workers N]
         sattle bench  estate | b5 [--store memory|sqlite] | b7 [--cosmos ENDPOINT] | b8 | b10   [--capture DIR|latest] [--runs 10]
         CAPTURE is a capture directory, lab/fixtures, or "latest" (newest under lab/captures).
         --from is where a live run starts when its store has no saved position; with one it continues after it.
         """;
 
-    /// <summary>The projection languages this build reads, the one place they are registered: KQL now (`module.projection.kql`).</summary>
-    public static readonly IProjectionSource Projections = new ProjectionSources(new Sattle.Kql.KqlSource());
+    /// <summary>The definition languages this build reads.</summary>
+    public static readonly IProjectionSource Projections = new ProjectionSources(new Sattle.Kql.KqlSource(), new Sattle.Gkql.GkqlSource());
 
     public static int Main(string[] args) => Run(args, Console.Out);
 
@@ -64,7 +64,7 @@ public static class Program
         public List<string> Positional { get; } = [];
         public Dictionary<string, string> Named { get; } = new(StringComparer.Ordinal);
         public HashSet<string> Flags { get; } = new(StringComparer.Ordinal);
-        static readonly HashSet<string> FlagNames = ["update-pins", "plan", "no-flush", "trace-alloc", "live", "write-definitions", "no-seal", "verify-journal", "no-tree", "census", "export"];
+        static readonly HashSet<string> FlagNames = ["update-pins", "plan", "no-flush", "trace-alloc", "live", "write-definitions", "no-seal", "verify-journal", "no-tree", "census", "export", "timing-only"];
         public static Options Parse(string[] a)
         {
             var o = new Options();
@@ -93,7 +93,7 @@ public static class Program
             for (var dir = new DirectoryInfo(start); dir is not null; dir = dir.Parent)
             {
                 var c = Path.Combine(dir.FullName, "definitions");
-                if (Directory.Exists(c) && Directory.EnumerateFiles(c, "*.sattle").Any()) return c;
+                if (Directory.Exists(c) && Directory.EnumerateFiles(c).Any(f => f.EndsWith(".sattle", StringComparison.Ordinal) || Projections.IsModuleFile(f))) return c;
                 c = Path.Combine(dir.FullName, "engine", "definitions");
                 if (Directory.Exists(c)) return c;
             }
@@ -189,7 +189,7 @@ public static class Program
         var res = cat.Load(files, updatePins: o.Flags.Contains("update-pins"));
         if (o.Flags.Contains("update-pins") && res.PinFixes.Count > 0)
         {
-            foreach (var (path, text) in Catalog.ApplyPinFixes(files, res.PinFixes)) File.WriteAllText(path, text);
+            foreach (var (path, text) in Catalog.ApplyPinFixes(files, res.PinFixes, Projections)) File.WriteAllText(path, text);
             output.WriteLine($"updated {res.PinFixes.Count} import pin(s) in {res.PinFixes.Select(f => f.File).Distinct().Count()} file(s)");
             files = Catalog.ReadDirectory(dir);
             cat = new Catalog(Program.Projections); res = cat.Load(files);
@@ -207,7 +207,7 @@ public static class Program
             foreach (var sp in cat.Spaces.Keys)
             {
                 using var e = new Engine(cat, sp);
-                var bad = AdapterRegistry.Verify(cat, cat.Spaces[sp], AdapterRegistry.Create("c"));
+                var bad = AdapterRegistry.Verify(cat, cat.Spaces[sp], AdapterRegistry.Create("c", cat.Spaces[sp], cat));
                 Print(bad); errors += bad.Count(x => x.IsError);
                 foreach (var g in e.Graphs)
                 {
@@ -269,7 +269,7 @@ public static class Program
         else if (live) { try { cluster = DetectCluster(FindCapture("latest")); } catch (ArgumentException) { cluster = "lab"; } }
         else cluster = DetectCluster(capture);
         if (serve) return Serve(o, capture, cluster, output);
-        var adapters = AdapterRegistry.Create(cluster);
+        var adapters = AdapterRegistry.Create(cluster, cat.Spaces[spaceId], cat);
         var bad = AdapterRegistry.Verify(cat, cat.Spaces[spaceId], adapters);
         if (bad.Count > 0) { Print(bad); return 1; }
         var store = o.Get("store") ?? "memory";

@@ -86,6 +86,17 @@ fixtures/build.sh captures/<timestamp>
 - Without Azure: the public tests and the default canvas view use the synthetic estate (`engine/tests/Sattle.Tests/fixtures/build-estate.py`, owned by the engine). `lab/fixtures` is only for people who captured their own data.
 - Tests (scrubber, hooks with stand-ins for `az` and `azd`, forwarder sink and consumer stop rule; no Azure needed): `cd capture && npm test`.
 
+### Developer guide data
+
+```bash
+bash fixtures/build-tutorial.sh captures/<timestamp>
+```
+
+- Generate and verify the local fixture at `tutorial-fixtures/`.
+- Keep the Azure inventory with scrubbed network evidence, and match the AKS cluster to Azure Monitor CPU readings by ARM ID.
+- Replay Azure Monitor readings for inventoried resources within the AKS sample window, with the original sample and capture times preserved.
+- Keep Kubernetes ownership, service selection, node provider IDs, and a measured Hubble flow for each observed pod pair and verdict in that window.
+
 ## From a fresh clone to fixtures
 Run in `lab/`, with the prerequisites above.
 1. Deploy the lab. About 3 minutes. From then on Event Hubs costs about 0.03 USD per hour, storage cents per day, ACNS per node hour.

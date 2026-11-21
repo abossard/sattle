@@ -44,7 +44,7 @@ function fromModule(c: Catalog, moduleId: string, name: string): Content {
   };
 }
 
-export function OntologyView() {
+export function OntologyView({ initialModule = "" }: { initialModule?: string } = {}) {
   const s = useStyles();
   const ws = useWorkspace();
   const theme = useStore((x) => x.theme);
@@ -53,7 +53,7 @@ export function OntologyView() {
   const cat = useRevision(catalogId);
   const catVersion = cat?.version;
   const [graphId, setGraphId] = useState(active);
-  const [moduleName, setModuleName] = useState("");
+  const [moduleName, setModuleName] = useState(initialModule);
   const [texts, setTexts] = useState(new Map<string, string>());
   const [picked, setPicked] = useState<string | null>(null);
   const stage = useRef<HTMLDivElement>(null);

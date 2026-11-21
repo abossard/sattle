@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { SyntheticSource, dependenciesDefinition, dependenciesOntology, ownershipDefinition, ownershipOntology } from "../src/source/synthetic";
-import { estateOntology } from "../src/core/synth";
+import { SyntheticSource, dependenciesDefinition, dependenciesOntology, ownershipDefinition, ownershipOntology } from "../examples/synthetic-estate/synthetic";
+import { estateOntology } from "../examples/synthetic-estate/synth";
 import { checkDescriptor, checkOntology, checkProjection } from "../src/core/validate";
 import { Graph } from "../src/core/graph";
 

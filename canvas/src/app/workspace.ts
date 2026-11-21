@@ -140,7 +140,7 @@ export class Workspace {
     try {
       const refs = new Map((await this.source.references(graph)).map((r) => [r.id, r]));
       this.references.set(graph, refs);
-      g.stubFor = (id) => stubEntity(id, refs.get(id));
+      g.stubFor = (id) => stubEntity(id, this.reference(graph, id));
       g.relabelStubs();
       this.panes.get(graph)?.refreshAll();
       this.dispatch({ type: "data/touched", graph });
@@ -211,9 +211,30 @@ export class Workspace {
   hub(graph: string): TelemetryHub | undefined { return this.hubs.get(graph); }
   get timeline(): Timeline { return this.shownAt; }
   get selection(): Selection | null { return this.selected; }
-  /** why a dangling endpoint is missing, as the engine says */
-  reference(graph: string, id: string): Reference | undefined { return this.references.get(graph)?.get(id); }
+  /** The same identity can be a meter in the master and a signal in a projection. Follow the input that holds the endpoint type the relationship names. */
+  reference(graph: string, id: string, use?: Pick<Reference["uses"][number], "relationshipType" | "end">): Reference | undefined {
+    const ref = this.references.get(graph)?.get(id);
+    const info = this.graphInfo(graph);
+    if (!ref?.graph || !info?.inputs.length) return ref;
+    const expected = (use ? [use] : ref.uses).flatMap(({ relationshipType, end }) => {
+      const relation = info.ontology.relationshipTypes.find((r) => r.id.value === relationshipType);
+      const types = end === "source" ? relation?.sourceTypes : relation?.targetTypes;
+      return types?.length ? [types] : [];
+    });
+    if (!expected.length) return ref;
+    for (const source of new Set([ref.graph, ...info.inputs])) {
+      const target = this.histories.get(source)?.graph.entity(id);
+      if (target && expected.every((types) => types.some((t) => t.value === target.type))) {
+        return { ...ref, graph: source, entityType: target.type };
+      }
+    }
+    return ref;
+  }
   lineageOf(sel: Selection): import("../source/types").Lineage | undefined { return this.lineageInfo.get(`${sel.graph}|${sel.kind}|${sel.id}`); }
+  lineagePending(sel: Selection): boolean {
+    const id = `${sel.graph}|${sel.kind}|${sel.id}`;
+    return this.lineageLookups.get(id) === "pending" || this.reverseLookups.get(id) === "pending";
+  }
   get hasCorrespondences(): boolean { return this.corr.size > 0; }
 
   /** Count of entities per type in a graph at its cursor. */
@@ -279,7 +300,10 @@ export class Workspace {
     this.selected = sel;
     for (const [id, pane] of this.panes) pane.setSelection(sel && sel.graph === id ? sel : null);
     this.updateCross();
-    if (sel) void this.loadAbstraction(sel);
+    if (sel) {
+      void this.loadReferences(sel.graph);
+      void this.loadAbstraction(sel);
+    }
   }
 
   /** Elements related to the selection: same entity id elsewhere, derived elements, and source elements. */
@@ -344,12 +368,12 @@ export class Workspace {
    * and what it is part of above (the elements that name it, and those in turn). Followed level by level so the highlight grows while it loads;
    * at most `BUDGET` lookups per selection, so a large graph never starts a flood of requests.
    */
-  private lineageDone = new Set<string>();
-  private reverseDone = new Set<string>();
+  private readonly lineageLookups = new Map<string, "pending" | "done">();
+  private readonly reverseLookups = new Map<string, "pending" | "done">();
   async loadAbstraction(sel: Selection): Promise<void> {
     const BUDGET = 400;
     this.cutOff.delete(`${sel.graph}|${sel.kind}|${sel.id}`);
-    const here = () => !!this.selected && this.selected.graph === sel.graph && this.selected.id === sel.id;
+    const here = () => !this.disposed && this.selected?.graph === sel.graph && this.selected.kind === sel.kind && this.selected.id === sel.id;
     const role = (g: string) => this.graphInfo(g)?.role;
     const keyOf = (kind: "entity" | "relationship", id: string) => (kind === "entity" ? "n:" : "e:") + id;
     let budget = BUDGET;
@@ -364,11 +388,12 @@ export class Workspace {
           const id = `${e.graph}|${e.kind}|${e.id}`;
           if (seen.has(id) || role(e.graph) === "catalog" || role(e.graph) === "master" || role(e.graph) === "input") continue;   // an input graph has no graph below it
           seen.add(id);
-          if (!this.lineageDone.has(id)) {
+          if (!this.lineageLookups.has(id)) {
             if (budget-- <= 0) break;
-            this.lineageDone.add(id);
+            this.lineageLookups.set(id, "pending");
             let l;
             try { l = await fn.call(this.source, e.graph, e.id); } catch { continue; }
+            finally { this.lineageLookups.set(id, "done"); }
             if (!l) continue;
             this.lineageInfo.set(id, l);
             for (const s of l.sources) this.link(e.graph, keyOf(e.kind, e.id), { graph: s.graph, key: keyOf(s.kind, s.element) });
@@ -390,11 +415,12 @@ export class Workspace {
           const id = `${e.graph}|${e.kind}|${e.id}`;
           if (seen.has(id) || role(e.graph) === "catalog") continue;
           seen.add(id);
-          if (!this.reverseDone.has(id)) {
+          if (!this.reverseLookups.has(id)) {
             if (budget-- <= 0) break;
-            this.reverseDone.add(id);
+            this.reverseLookups.set(id, "pending");
             let r;
             try { r = await fn.call(this.source, e.graph, e.id); } catch { continue; }
+            finally { this.reverseLookups.set(id, "done"); }
             if (!r) continue;
             this.reverseInfo.set(id, r);
             for (const p of r.partOf) this.link(p.graph, keyOf(p.kind, p.element), { graph: e.graph, key: keyOf(e.kind, e.id) });

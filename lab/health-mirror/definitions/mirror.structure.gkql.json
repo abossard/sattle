@@ -1,0 +1,68 @@
+{
+  "graph": "structure",
+  "ontology": "mirror",
+  "description": "Keep each deployed entity and dependency under its original identity.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "modelEntities",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "e", "label": "ModelEntity"}]}
+    },
+    {
+      "id": "keepEntity",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ModelEntity",
+            "id": {"ref": "e"},
+            "props": {
+              "key": {"ref": "e.key"},
+              "name": {"ref": "e.name"},
+              "configuration": {"ref": "e.configuration"},
+              "impact": {"ref": "e.impact"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "modelDependencies",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "ModelEntity"}, {"var": "b", "label": "ModelEntity"}],
+        "edges": [{"var": "edge", "label": "DependsOn", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "keepDependency",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ModelEntity", "id": {"ref": "a"}},
+          {"var": "b", "label": "ModelEntity", "id": {"ref": "b"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "DependsOn",
+            "from": "a",
+            "to": "b",
+            "props": {
+              "key": {"ref": "edge.key"},
+              "impact": {"ref": "edge.impact"},
+              "configuration": {"ref": "edge.configuration"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [{"from": "modelEntities", "to": "keepEntity"}, {"from": "modelDependencies", "to": "keepDependency"}]
+}

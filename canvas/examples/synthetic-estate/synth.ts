@@ -1,8 +1,8 @@
 // Deterministic synthetic cloud estate for load tests: subscription > cluster > namespace > workload > pod,
 // plus services, VM nodes and service-to-service flows. Same seed and options always give the same data.
-import { Graph } from "./graph";
-import type { Edit, Entity, Patch, Props, Rel, Snapshot, Version } from "./model";
-import type { OntologyDefinition } from "./wire-types";
+import { Graph } from "../../src/core/graph";
+import type { Edit, Entity, Patch, Props, Rel, Snapshot, Version } from "../../src/core/model";
+import type { OntologyDefinition } from "../../src/core/wire-types";
 
 export interface EstateOptions {
   seed: number;

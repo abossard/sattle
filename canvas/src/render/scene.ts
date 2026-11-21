@@ -47,6 +47,7 @@ export class Scene {
   edgeCap = 0;
   nodeCount = 0;  // high-water mark; hidden instances have shape 0
   edgeCount = 0;
+  visibleEdgeCount = 0;
   nodeBuf: ArrayBuffer = new ArrayBuffer(0);
   nodeU32 = new Uint32Array(0);
   nodeF32 = new Float32Array(0);
@@ -134,6 +135,7 @@ export class Scene {
 
   setEdge(slot: number, src: number, dst: number, color: number, style: number, state = 0, extra = 0, kind = 0): void {
     this.ensureEdges(slot + 1);
+    this.visibleEdgeCount += Number(style !== EdgeStyle.Hidden) - Number(this.edgeVisible(slot));
     const o = slot * WORDS_EDGE;
     this.edgeI32[o] = src; this.edgeI32[o + 1] = dst;
     this.edgeU32[o + 2] = color;
@@ -143,6 +145,7 @@ export class Scene {
   }
   hideEdge(slot: number): void {
     if (slot >= this.edgeCount) return;
+    if (this.edgeVisible(slot)) this.visibleEdgeCount--;
     this.edgeU32[slot * WORDS_EDGE + 3] = 0;
     this.markEdge(slot);
   }

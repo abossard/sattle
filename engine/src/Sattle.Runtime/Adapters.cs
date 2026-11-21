@@ -49,8 +49,15 @@ public interface IRedelivery
 
 public static class AdapterRegistry
 {
-    public static IReadOnlyList<ISourceAdapter> Create(string cluster) =>
-        [new KubernetesAdapter(cluster), new HubbleAdapter(cluster), new AzureResourceGraphAdapter(), new PrometheusAdapter(cluster), new ActivityLogAdapter(), new AzureMetricsAdapter(), new VnetFlowLogAdapter(), new DiagnosticActivityAdapter(), new AksAuditAdapter(), new AuthoringAdapter()];
+    public static IReadOnlyList<ISourceAdapter> Create(string cluster, TypedSpace? space = null, Catalog? catalog = null) =>
+        [new KubernetesAdapter(cluster, Reads(space, KubernetesAdapter.AdapterId, KubernetesTopology.RowType)), new HubbleAdapter(cluster),
+            new AzureResourceGraphAdapter(Reads(space, AzureResourceGraphAdapter.AdapterId, AzureNetwork.RowType)),
+            new PrometheusAdapter(cluster), new ActivityLogAdapter(), new AzureMetricsAdapter(),
+            new VnetFlowLogAdapter(), new DiagnosticActivityAdapter(), new AksAuditAdapter(), new AuthoringAdapter(),
+            new RecordAdapter(catalog, space)];
+
+    static bool Reads(TypedSpace? space, string adapter, string rowType) =>
+        space?.Sources.Any(s => s.Adapter == adapter && Ids.Name(s.RowTypeId) == rowType) == true;
 
     /// <summary>Every Source.adapter must be registered and the row contract it declares must equal the contract in the catalog (the digest check of section 3.4, as a shape check so a definition change needs no rebuild).</summary>
     public static List<Diagnostic> Verify(Catalog catalog, TypedSpace space, IEnumerable<ISourceAdapter> adapters)
@@ -127,11 +134,13 @@ public static class RowDef
 }
 
 /// <summary>Kubernetes list and watch records, and Events. Object upserts become signed rows (retract the old row, insert the new one), deletes retract.</summary>
-public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, IRedelivery
+public sealed class KubernetesAdapter(string defaultCluster, bool readTopology = false) : ISourceAdapter, IRedelivery
 {
     /// <summary>The cluster of the record being consumed: the cluster the run was given, or the `cluster` of the envelope meta (a capture of several clusters).</summary>
     string cluster = "";
-    public string Id => "kubernetes.list-watch";
+    public const string AdapterId = "kubernetes.list-watch";
+    public string Id => AdapterId;
+    readonly KubernetesTopology? topology = readTopology ? new() : null;
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
         new("PodRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("namespace", "Text"), RowDef.F("name", "Text"), RowDef.F("phase", "Text", true), RowDef.F("teamLabel", "Text", true), RowDef.F("nodeName", "Text", true), RowDef.F("restarts", "Integer", true), RowDef.F("ready", "Boolean", true), RowDef.F("serviceAccount", "Text", true), RowDef.F("deployment", "Text", true)]),
@@ -143,6 +152,7 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
         new("SelectsRow", [RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("service", "Text"), RowDef.F("deployment", "Text")]),
         new("NodeRow", [RowDef.F("cluster", "Text"), RowDef.F("uid", "Text"), RowDef.F("name", "Text"), RowDef.F("resourceId", "Text", true), RowDef.F("pool", "Text", true)]),
         new("EventRow", [RowDef.F("eventId", "Text"), RowDef.F("time", "Instant"), RowDef.F("cluster", "Text"), RowDef.F("namespace", "Text"), RowDef.F("kind", "Text"), RowDef.F("name", "Text"), RowDef.F("reason", "Text"), RowDef.F("type", "Text"), RowDef.F("count", "Integer"), RowDef.F("message", "Text", true)]),
+        KubernetesTopology.Contract,
     ];
     public bool Handles(string s) => s is "kubernetes-list" or "kubernetes-watch" or "sattle-forwarder";
 
@@ -183,12 +193,14 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
                 List<string> Gone(IEnumerable<string> known) => [.. known.Where(k => k.StartsWith(mine, StringComparison.Ordinal) && !seen.Contains(k))];       // the list is the complete set of this cluster only
                 switch (path[(path.LastIndexOf('/') + 1)..])
                 {
-                    case "pods": foreach (var k in Gone(pods.Keys)) Upsert(pods, k, null, sink, "PodRow", WritePod); break;
+                    case "pods": foreach (var k in Gone(pods.Keys)) { Upsert(pods, k, null, sink, "PodRow", WritePod); topology?.Remove(k, sink); } break;
                     case "services": foreach (var k in Gone(services.Keys)) { Upsert(services, k, null, sink, "ServiceRow", WriteService); Label(true, k, null, sink); } break;
-                    case "nodes": foreach (var k in Gone(nodes.Keys)) Upsert(nodes, k, null, sink, "NodeRow", WriteNode); break;
+                    case "nodes": foreach (var k in Gone(nodes.Keys)) { Upsert(nodes, k, null, sink, "NodeRow", WriteNode); topology?.Remove(k, sink); } break;
                     case "deployments": foreach (var k in Gone(deployments.Keys)) { Upsert(deployments, k, null, sink, "DeploymentRow", WriteDeployment); Label(false, k, null, sink); } break;
                     case "endpointslices": foreach (var k in Gone(slices.Keys)) RemoveSlice(k, sink); break;
                     case "serviceaccounts": foreach (var k in Gone(accounts.Keys)) Upsert(accounts, k, null, sink, "ServiceAccountRow", WriteAccount); break;
+                    case "replicasets" when topology is not null: foreach (var k in Gone(topology.Objects("replicaSet"))) topology.Remove(k, sink); break;
+                    case "namespaces" when topology is not null: foreach (var k in Gone(topology.Objects("namespace"))) topology.Remove(k, sink); break;
                 }
                 break;
             case "dropped": sink.SourceLoss(at, p.P("count") is { ValueKind: JsonValueKind.Number } c ? c.GetInt64() : 0, "forwarderDropped"); break;
@@ -250,6 +262,7 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
             case "EndpointSlice": Slice(key, ns, obj, deleted, sink); break;
             case "Event": Event(uid, ns, obj, sink); break;
         }
+        topology?.Observe(key, cluster, ns, kind, name, obj, deleted, sink);
     }
 
     static void WritePod(RowWriter w, string?[] r) { w.Text("cluster", r[^1]); w.Text("uid", r[0]); w.Text("namespace", r[1]); w.Text("name", r[2]); w.Text("phase", r[3]); w.Text("teamLabel", r[4]); w.Text("nodeName", r[5]); if (r[6] is { } n) w.Int(w.Col("restarts"), long.Parse(n, CultureInfo.InvariantCulture)); else w.Absent(w.Col("restarts")); if (r[7] is { } rd) w.Code(w.Col("ready"), rd == "True" ? 1 : 0); else w.Absent(w.Col("ready")); w.Text("deployment", r[8]); w.Text("serviceAccount", r[9]); }
@@ -317,11 +330,15 @@ public sealed class KubernetesAdapter(string defaultCluster) : ISourceAdapter, I
     /// <summary>The Azure resource id behind a node: the providerID without its azure:// scheme (the identity domain lowercases it).</summary>
     static string? ResourceIdOf(string? providerId) => providerId is not null && providerId.StartsWith("azure://", StringComparison.OrdinalIgnoreCase) ? providerId["azure://".Length..] : null;
 
-    /// <summary>The Ready condition of a pod: "True", "False", or null when the pod has no such condition yet.</summary>
+    /// <summary>The Ready condition of a pod: "True", "False", or null when readiness is unknown.</summary>
     static string? ReadyOf(JsonElement pod)
     {
         if (pod.Path("status", "conditions") is not { ValueKind: JsonValueKind.Array } cs) return null;
-        foreach (var c in cs.EnumerateArray()) if (c.S("type") == "Ready") return c.S("status");
+        foreach (var c in cs.EnumerateArray()) if (c.S("type") == "Ready")
+        {
+            var status = c.S("status");
+            return status is "True" or "False" ? status : null;
+        }
         return null;
     }
 
@@ -486,22 +503,28 @@ public sealed class HubbleAdapter(string cluster) : ISourceAdapter
 }
 
 /// <summary>Azure Resource Graph rows (resources and resource containers), one row per resource id. A row read again replaces the one before (the live stream sends the inventory at every start and each changed resource again); a change record of a delete (query `resourcechanges` or `resourcecontainerchanges`) takes it back.</summary>
-public sealed class AzureResourceGraphAdapter : ISourceAdapter, IRedelivery
+public sealed class AzureResourceGraphAdapter(bool readNetwork = false) : ISourceAdapter, IRedelivery
 {
-    public string Id => "azure.resource-graph";
+    public const string AdapterId = "azure.resource-graph";
+    public string Id => AdapterId;
     static readonly string[] Fields = ["id", "name", "type", "location", "resourceGroup", "subscriptionId", "parentId", "address", "linkedId", "clientId", "principalId", "scope"];
     public IReadOnlyList<RowContract> Contracts { get; } =
     [
         new("ResourceRow", [RowDef.F("id", "Text"), RowDef.F("name", "Text"), RowDef.F("type", "Text"), RowDef.F("location", "Text", true), RowDef.F("resourceGroup", "Text", true), RowDef.F("subscriptionId", "Text", true), RowDef.F("parentId", "Text", true),
             RowDef.F("address", "Text", true), RowDef.F("linkedId", "Text", true), RowDef.F("clientId", "Text", true), RowDef.F("principalId", "Text", true), RowDef.F("scope", "Text", true)]),
+        AzureNetwork.Contract,
     ];
     public bool Handles(string s) => s == "arg";
     public long Resources { get; private set; }
     /// <summary>The row written for each resource, by id (Azure ids compare without case).</summary>
-    readonly Dictionary<string, string?[]> rows = new(StringComparer.OrdinalIgnoreCase);
+    readonly record struct Observation(string?[] Resource, AzureNetworkFact[] Network);
+    readonly Dictionary<string, Observation> rows = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>A row delivered again counts when it differs from the row written for its resource.</summary>
-    public bool Counts(Envelope e) => !IsChange(e) && RowOf(e.Payload) is { } r && !(rows.TryGetValue(r[0]!, out var prev) && prev.SequenceEqual(r));
+    public bool Counts(Envelope e) => !IsChange(e) && RowOf(e.Payload) is { } r
+        && (!rows.TryGetValue(r[0]!, out var prev) || !prev.Resource.SequenceEqual(r) || !prev.Network.SequenceEqual(NetworkOf(e, r)));
+
+    AzureNetworkFact[] NetworkOf(Envelope e, string?[] row) => readNetwork ? AzureNetwork.Read(e.Payload, row[2]!) : [];
 
     static bool IsChange(Envelope e) => e.HasMeta && e.Meta.S("query") is { } q && q.EndsWith("changes", StringComparison.Ordinal);
 
@@ -550,16 +573,51 @@ public sealed class AzureResourceGraphAdapter : ISourceAdapter, IRedelivery
         for (var i = 0; i < Fields.Length; i++) w.Text(Fields[i], r[i]);
     }
 
+    static void WriteNetwork(IRowSink sink, long weight, string resource, IEnumerable<AzureNetworkFact> facts)
+    {
+        resource = resource.ToLowerInvariant();
+        foreach (var fact in facts)
+        {
+            var w = sink.Begin(AzureNetwork.RowType);
+            w.Begin(weight);
+            w.Text("resourceId", resource);
+            w.Text("kind", fact.Kind);
+            w.Text("target", fact.Target);
+            w.Text("resolvedAddress", fact.Address);
+        }
+    }
+
     public void Consume(Envelope e, IRowSink sink)
     {
         if (IsChange(e))
         {
-            if (e.Payload.PathS("properties", "changeType") == "Delete" && e.Payload.PathS("properties", "targetResourceId") is { } gone && rows.Remove(gone, out var removed)) Write(sink, -1, removed);
+            if (e.Payload.PathS("properties", "changeType") == "Delete" && e.Payload.PathS("properties", "targetResourceId") is { } gone && rows.Remove(gone, out var removed))
+            {
+                Write(sink, -1, removed.Resource);
+                if (readNetwork) WriteNetwork(sink, -1, removed.Resource[0]!, removed.Network);
+            }
             return;
         }
         if (RowOf(e.Payload) is not { } r) { sink.Rejected("arg", "row without id, name or type"); return; }
-        if (rows.TryGetValue(r[0]!, out var prev)) { if (prev.SequenceEqual(r)) return; Write(sink, -1, prev); }
-        Write(sink, 1, r); rows[r[0]!] = r;
+        var id = r[0]!;
+        var network = NetworkOf(e, r);
+        if (rows.TryGetValue(id, out var prev))
+        {
+            var changed = !prev.Resource.SequenceEqual(r);
+            if (!changed && prev.Network.SequenceEqual(network)) return;
+            if (changed) { Write(sink, -1, prev.Resource); Write(sink, 1, r); }
+            if (readNetwork)
+            {
+                WriteNetwork(sink, -1, id, prev.Network.Except(network));
+                WriteNetwork(sink, 1, id, network.Except(prev.Network));
+            }
+        }
+        else
+        {
+            Write(sink, 1, r);
+            if (readNetwork) WriteNetwork(sink, 1, id, network);
+        }
+        rows[id] = new(r, network);
         Resources++;
     }
 }

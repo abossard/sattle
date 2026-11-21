@@ -4,7 +4,7 @@ import { emptyEditor, emptyFilter } from "./types";
 import { editorTransition } from "./editor-phase";
 
 export const initialState = (): State => ({
-  sourceId: "", generation: 0, load: { status: "idle", message: "", ms: 0 }, graphs: [], catalog: "", activeGraph: "", view: "data", theme: "light", dialog: null,
+  sourceId: "", guide: null, generation: 0, load: { status: "idle", message: "", ms: 0 }, graphs: [], catalog: "", activeGraph: "", view: "data", theme: "light", dialog: null,
   selection: null, hover: null, time: { now: 0, following: true, first: 0, last: 0 }, connection: null, freshness: "static", rejections: [], rejectedTotal: 0, filters: {}, telemetry: {},
   announcement: "", editor: emptyEditor(),
 });
@@ -13,7 +13,7 @@ const patchGraph = (graphs: GraphSummary[], id: string, f: (g: GraphSummary) => 
 
 export function reduce(s: State, a: Action): State {
   switch (a.type) {
-    case "source/opening": return { ...initialState(), ...(a.resync ? { editor: s.editor } : {}), theme: s.theme, view: s.view, sourceId: a.id, generation: s.generation + 1, load: { status: "loading", message: "", ms: 0 } };
+    case "source/opening": return { ...initialState(), ...(a.resync ? { editor: s.editor } : {}), theme: s.theme, view: s.view, guide: s.guide, sourceId: a.id, generation: s.generation + 1, load: { status: "loading", message: "", ms: 0 } };
     case "source/opened": return {
       ...s, graphs: a.graphs, catalog: a.catalog, activeGraph: a.active, telemetry: a.telemetry, load: { status: "ready", message: "", ms: a.ms },
       filters: Object.fromEntries(a.graphs.map((g) => [g.id, emptyFilter()])),
@@ -28,6 +28,7 @@ export function reduce(s: State, a: Action): State {
     case "feed/resync": return { ...s, freshness: "resyncing", announcement: `Resynchronizing: ${a.reason}` };
     case "feed/rejected": return { ...s, rejections: [...s.rejections.slice(-199), { ...a.rejection, at: a.at }], rejectedTotal: s.rejectedTotal + 1 };
     case "feed/connection": return { ...s, connection: a.status, freshness: a.status.state === "live" ? "live" : a.status.state === "ended" ? "static" : a.status.state === "closed" ? "static" : "stale" };
+    case "ui/guide": return { ...s, guide: a.lesson };
     case "ui/view": return { ...s, view: a.view };
     case "ui/theme": return { ...s, theme: a.theme };
     case "ui/dialog": return { ...s, dialog: a.dialog };
@@ -38,8 +39,15 @@ export function reduce(s: State, a: Action): State {
     case "editor/event": return { ...s, editor: { ...s.editor, phase: editorTransition(s.editor.phase, a.event) } };
     case "editor/projection": return { ...s, editor: { ...s.editor, module: a.module, projection: a.projection, preview: null } };
     case "editor/dismiss": return { ...s, editor: { ...s.editor, ...(a.what === "preview" ? { preview: null } : a.what === "notice" ? { notice: "" } : { releaseDiff: null }) } };
+    case "editor/clearRecoveredText": {
+      if (!(a.file in s.editor.recoveredText)) return s;
+      const recoveredText = { ...s.editor.recoveredText };
+      delete recoveredText[a.file];
+      return { ...s, editor: { ...s.editor, recoveredText } };
+    }
     // the engine and the session answer these; effects report with editor/summary
-    case "editor/open": return { ...s, editor: { ...emptyEditor(), phase: editorTransition(s.editor.phase, { t: "open" }) } };
+    case "editor/open": return { ...s, editor: { ...emptyEditor(), module: s.editor.module, projection: s.editor.projection,
+      recoveredText: a.recovery ? { ...s.editor.recoveredText, ...a.recovery } : s.editor.phase.t === "failed" ? s.editor.recoveredText : {}, phase: editorTransition(s.editor.phase, { t: "open" }) } };
     case "editor/do": case "editor/undo": case "editor/redo": case "editor/commit": case "editor/discard": case "editor/preview": case "editor/releases": case "editor/diffRelease": return s;
     case "pane/command": return s;
     case "hover/element": return { ...s, hover: a.selection };

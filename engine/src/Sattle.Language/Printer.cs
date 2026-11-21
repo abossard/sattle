@@ -104,7 +104,9 @@ public sealed class Printer(Graph g, string module)
             if (d.Text(r.Target, "unit") is { } u) sb.Append(" unit ").Append(Q(u));
             if (d.Text(r.Target, "role") == "telemetry")
                 sb.Append($" telemetry {d.Text(r.Target, "temporality")} {d.Text(r.Target, "combine")} every {Lexer.DurationText(d.Int(r.Target, "period"))}");
-            if (d.Text(r.Target, "treeRole") is { } treeRole) sb.Append(" treerole ").Append(treeRole);
+            if (d.Text(r.Target, "treeRole") is { } treeRole)
+                sb.Append(" treerole ").Append(treeRole.StartsWith(TreeRoles.CountPrefix, StringComparison.Ordinal)
+                    ? "count " + Q(treeRole[TreeRoles.CountPrefix.Length..]) : treeRole);
             if (d.Children(r.Target, "presentation") is { Count: > 0 } roles)
                 sb.Append(" roles { ").Append(string.Join(", ", roles.OrderBy(x => x, StringComparer.Ordinal).Select(x => $"{Lit(d.Prop(x, "value") ?? Value.Null)}: {d.Text(x, "role")}"))).Append(" }");
             sb.Append(";\n");

@@ -1,16 +1,16 @@
 // Synthetic estate source: a master graph plus two derived projections (ownership tree, workload dependencies),
 // with projection definitions, ontologies, correspondences and a deterministic patch stream. Used for load tests.
-import { readPresentation } from "./presentation";
-import type { Patch, Snapshot } from "../core/model";
+import { readPresentation } from "../../src/source/presentation";
+import type { Patch, Snapshot } from "../../src/core/model";
 import {
   ESTATE_SIZES, estateOntology, estatePatches, generateEstate, ownershipTree, workloadDependencies, type EstateOptions,
-} from "../core/synth";
-import type { GraphDescriptorWire, OntologyDefinition, OntologyRef, Operator, ProjectionDefinition } from "../core/wire-types";
-import type { Rejection } from "../core/validate";
-import { ESTATE_DEFAULTS, ESTATE_METERS, allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "../core/synth-telemetry";
-import { RejectionBus } from "./base";
-import type { Correspondence, GraphInfo, GraphSource, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "./types";
-import type { Snapshot as Snap } from "../core/model";
+} from "./synth";
+import type { GraphDescriptorWire, OntologyDefinition, OntologyRef, Operator, ProjectionDefinition } from "../../src/core/wire-types";
+import type { Rejection } from "../../src/core/validate";
+import { ESTATE_DEFAULTS, ESTATE_METERS, allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "./synth-telemetry";
+import { RejectionBus } from "../../src/source/base";
+import type { Correspondence, GraphInfo, GraphSource, SpaceInfo, StreamEvent, TelemetryBatch, TelemetryFeed } from "../../src/source/types";
+import type { Snapshot as Snap } from "../../src/core/model";
 
 const id = (value: string) => ({ value });
 const ref = (o: OntologyDefinition): OntologyRef => o.reference;

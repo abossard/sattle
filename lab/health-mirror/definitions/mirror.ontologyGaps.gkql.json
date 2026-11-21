@@ -1,0 +1,109 @@
+{
+  "graph": "ontologyGaps",
+  "ontology": "mirror",
+  "description": "Show apps with no matching class or competing class declarations.",
+  "history": 240,
+  "inputs": [{"name": "containerApps", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "inventory",
+      "verb": "graph-match",
+      "graph": "containerApps",
+      "pattern": {"nodes": [{"var": "a", "label": "ContainerApp"}]}
+    },
+    {
+      "id": "missingOrAmbiguous",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "a.ontologyStatus"}, {"lit": "Mapped"}]}
+    },
+    {
+      "id": "flaggedApps",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ContainerApp",
+            "id": {"ref": "a"},
+            "props": {
+              "armId": {"ref": "a.armId"},
+              "armKey": {"ref": "a.armKey"},
+              "name": {"ref": "a.name"},
+              "resourceType": {"ref": "a.resourceType"},
+              "location": {"ref": "a.location"},
+              "subscriptionId": {"ref": "a.subscriptionId"},
+              "resourceGroup": {"ref": "a.resourceGroup"},
+              "groupId": {"ref": "a.groupId"},
+              "environmentId": {"ref": "a.environmentId"},
+              "provisioningState": {"ref": "a.provisioningState"},
+              "runningStatus": {"ref": "a.runningStatus"},
+              "ingressHost": {"ref": "a.ingressHost"},
+              "tags": {"ref": "a.tags"},
+              "observedAt": {"ref": "a.observedAt"},
+              "state": {"ref": "a.state"},
+              "assignment": {"ref": "a.assignment"},
+              "ontologyStatus": {"ref": "a.ontologyStatus"},
+              "classCount": {"ref": "a.classCount"},
+              "healthBasis": {"ref": "a.healthBasis"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "ruleEvidence",
+      "verb": "graph-match",
+      "graph": "containerApps",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "ContainerApp"}, {"var": "r", "label": "NameRule"}],
+        "edges": [{"var": "edge", "label": "MatchedRule", "from": "a", "to": "r"}]
+      }
+    },
+    {
+      "id": "competingRules",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "a.ontologyStatus"}, {"lit": "Ambiguous"}]}
+    },
+    {
+      "id": "showCompetingRule",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "NameRule",
+            "id": {"ref": "r"},
+            "props": {
+              "key": {"ref": "r.key"},
+              "name": {"ref": "r.name"},
+              "scopeId": {"ref": "r.scopeId"},
+              "matchKind": {"ref": "r.matchKind"},
+              "pattern": {"ref": "r.pattern"},
+              "className": {"ref": "r.className"},
+              "evidence": {"ref": "r.evidence"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "matchingRule",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "a"}},
+          {"var": "b", "label": "NameRule", "id": {"ref": "r"}}
+        ],
+        "edges": [{"var": "edge", "label": "MatchedRule", "from": "a", "to": "b"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "inventory", "to": "missingOrAmbiguous"},
+    {"from": "missingOrAmbiguous", "to": "flaggedApps"},
+    {"from": "ruleEvidence", "to": "competingRules"},
+    {"from": "competingRules", "to": "showCompetingRule"},
+    {"from": "competingRules", "to": "matchingRule"}
+  ]
+}

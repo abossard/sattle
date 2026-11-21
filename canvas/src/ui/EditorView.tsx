@@ -4,21 +4,24 @@ import {
   Badge, Breadcrumb, BreadcrumbButton, BreadcrumbDivider, BreadcrumbItem, Button, Dialog, DialogActions, DialogBody, DialogContent, DialogSurface, DialogTitle, Field, Input, MessageBar, MessageBarActions, MessageBarBody, Select, Spinner, Tab, TabList, Table, TableBody, TableCell, TableHeader, TableHeaderCell, TableRow, Text, Textarea, Toolbar, ToolbarButton, ToolbarDivider, makeStyles, tokens,
 } from "@fluentui/react-components";
 import { Checkmark12Regular, ArrowRedo20Regular, ArrowUndo20Regular, Eye20Regular, Keyboard20Regular, Save20Regular } from "@fluentui/react-icons";
-import { Suspense, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
 import { Graph } from "../core/graph";
 import { moduleOfId } from "../core/catalog";
+import { printGkql } from "../editor/gkql";
 import { stackOf } from "../editor/stack";
 import type { IdentityEffect, Release } from "../editor/service";
 import { rendererTheme } from "../state/effects";
-import { storeProjectionText } from "../state/editor-effects";
+import { recoverExpiredDraft, storeProjectionText } from "../state/editor-effects";
 import { runtime } from "../state/runtime";
 import { dispatch, useStore } from "../state/store";
 import type { Command, EditorState } from "../state/types";
 import { WORK_LABEL } from "../state/editor-phase";
+import { lessonOf } from "../tutorial/lessons";
+import { exerciseProgram } from "../tutorial/projection-exercises";
 import { webgl2Available } from "./CanvasHost";
-import { DirectionBadge } from "./common";
+import { DirectionBadge, useRevision } from "./common";
 import { Definitions } from "./editor/Definitions";
 import { editorFor } from "./editor/languages";
 import { NewProjectionDialog } from "./editor/NewProjection";
@@ -32,6 +35,10 @@ const useStyles = makeStyles({
   fixed: { flex: "0 0 auto", borderLeft: `1px solid ${tokens.colorNeutralStroke2}`, "@media (max-width: 1000px)": { flexBasis: "100%", borderLeft: "none", borderTop: `1px solid ${tokens.colorNeutralStroke2}`, justifyContent: "flex-end" } },
   bar: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap", padding: `${tokens.spacingVerticalXS} ${tokens.spacingHorizontalM}`, "@media (min-width: 1001px)": { flexWrap: "nowrap", "& > .fui-Badge, & > .fui-TabList": { flexShrink: 0 } } },
   pad: { padding: tokens.spacingHorizontalM, display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS },
+  draftGraphDialog: { width: "min(92vw, 880px)", maxWidth: "880px" },
+  typeCounts: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalXS, marginBottom: tokens.spacingVerticalS },
+  draftRelationship: { display: "grid", gap: tokens.spacingVerticalS, marginBottom: tokens.spacingVerticalM, "& .fui-Select": { minWidth: 0 }, "& button": { justifySelf: "start" } },
+  draftEndpoints: { display: "flex", flexWrap: "wrap", gap: tokens.spacingHorizontalL, margin: 0, "& > div": { flex: "1 1 144px", minWidth: 0, overflowWrap: "anywhere" }, "& dd": { margin: 0 } },
   bottom: { minHeight: 0, overflow: "auto", borderTop: `1px solid ${tokens.colorNeutralStroke2}` },
   grow: { flexGrow: 1 },
   mono: { fontFamily: tokens.fontFamilyMonospace, width: "100%" },
@@ -79,14 +86,48 @@ function TextPanel() {
   );
 }
 
-function Problems() {
+function ModuleGkql({ module, source, recoveredText }: { module: string; source: string; recoveredText?: string }) {
   const s = useStyles();
-  const ed = useStore((x) => x.editor);
-  if (!ed.diagnostics.length) return <div className={s.pad}><Badge color="informative" appearance="outline" shape="square" icon={<Checkmark12Regular />}>no problems</Badge><Text>The engine accepts the draft as it is.</Text></div>;
+  const diagnostics = useStore((x) => x.editor.diagnostics);
+  const [edited, setEdited] = useState<string | null>(recoveredText ?? null);
+  const [saving, setSaving] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [error, setError] = useState("");
+  const text = edited ?? source;
+  const problem = diagnostics.find((d) => d.file === module || d.focus === `d:${module}` || d.focus.startsWith(`d:${module}/`));
+  const storeModule = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const error = await storeProjectionText(module, text, dispatch);
+      if (error) setError(error);
+      else { setEdited(null); setChecked(true); }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
   return (
-    <Table size="small" aria-label="Problems in the draft">
+    <div className={s.pad}>
+      <div className={s.bar}>
+        <Text font="monospace">{module}</Text>
+        <Button size="small" appearance="primary" disabled={text === source || saving} onClick={() => void storeModule()}>{saving ? "Checking…" : "Check & store module"}</Button>
+        <div aria-live="polite">
+          {(error || problem) && <Text>{error || problem?.message}</Text>}
+          {checked && !edited && !error && !problem && <Badge color="success" appearance="tint">Module checked</Badge>}
+        </div>
+      </div>
+      <Textarea className={s.mono} resize="vertical" rows={14} aria-label={`GKQL module ${module}`} value={text} readOnly={saving} onChange={(_, d) => { setEdited(d.value); runtime.session?.noteLocalText(module, d.value); setChecked(false); setError(""); }} textarea={{ style: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre" } }} />
+    </div>
+  );
+}
+
+function ProblemTable({ diagnostics, label }: { diagnostics: EditorState["diagnostics"]; label: string }) {
+  return (
+    <Table size="small" aria-label={label}>
       <TableHeader><TableRow><TableHeaderCell>Severity</TableHeaderCell><TableHeaderCell>Problem</TableHeaderCell><TableHeaderCell>Where</TableHeaderCell></TableRow></TableHeader>
-      <TableBody>{ed.diagnostics.map((d, i) => (
+      <TableBody>{diagnostics.map((d, i) => (
         <TableRow key={i}>
           <TableCell>{d.severity === "error" ? "✖ error" : "⚠ warning"}</TableCell><TableCell>{d.code}: {d.message}</TableCell><TableCell><Text size={200}>{d.focus.replace(/^d:/, "")}{d.line ? ` · line ${d.line}` : ""}</Text></TableCell>
         </TableRow>
@@ -95,21 +136,137 @@ function Problems() {
   );
 }
 
+function Problems({ diagnostics, other }: { diagnostics: EditorState["diagnostics"]; other?: EditorState["diagnostics"] }) {
+  const s = useStyles();
+  if (!other) {
+    return diagnostics.length ? <ProblemTable diagnostics={diagnostics} label="Problems in the draft" />
+      : <div className={s.pad}><Badge color="informative" appearance="outline" shape="square" icon={<Checkmark12Regular />}>no problems</Badge><Text>The engine accepts the draft as it is.</Text></div>;
+  }
+  return <div className={s.pad}>
+    {diagnostics.length > 0 ? <ProblemTable diagnostics={diagnostics} label="Problems in this projection" />
+      : <div><Badge color="informative" appearance="outline" shape="square" icon={<Checkmark12Regular />}>No problems in this projection</Badge></div>}
+    {other.length > 0 && <details open={other.some((d) => d.severity === "error") || undefined}>
+      <summary>Other draft diagnostics ({other.length})</summary>
+      <ProblemTable diagnostics={other} label="Other draft diagnostics" />
+    </details>}
+  </div>;
+}
+
 // ---- versions and previews ----
-function PreviewCanvas({ graph }: { graph: Graph }) {
+function PreviewCanvas({ graph, id, relationshipId, onRelationshipSelect }: { graph: Graph; id: string; relationshipId?: string; onRelationshipSelect?: (id: string) => void }) {
   const host = useRef<HTMLDivElement>(null);
+  const activePane = useRef<DataPane>(null);
   const theme = useStore((x) => x.theme);
+  const pickRelationship = useEffectEvent((edge: string) => onRelationshipSelect?.(edge));
   useEffect(() => {
     const ws = runtime.ws;
     if (!ws || !host.current || !webgl2Available()) return;
-    const info = ws.graphInfo(ws.info.graphs.find((g) => g.role !== "catalog")!.id)!;
+    const info = ws.graphInfo(id) ?? ws.info.graphs.find((g) => g.role !== "catalog");
+    if (!info) return;
     const el = document.createElement("div");
     host.current.replaceChildren(el);
-    const pane = new DataPane({ ...info, id: "preview", inputs: [] }, new History(graph.toSnapshot()), el, rendererTheme(theme), { select: () => {}, hover: () => {}, activate: () => {}, changed: () => {}, announce: () => {}, key: () => false });
+    const pane = new DataPane({ ...info, id, inputs: [] }, new History(graph.toSnapshot()), el, rendererTheme(theme), {
+      select: (selection) => { if (selection?.kind === "relationship") pickRelationship(selection.id); },
+      hover: () => {}, activate: () => {}, changed: () => {}, announce: () => {}, key: () => false,
+    });
+    activePane.current = pane;
     pane.start();
-    return () => pane.dispose();
-  }, [graph, theme]);
-  return webgl2Available() ? <div ref={host} style={{ height: 320 }} /> : <Text>WebGL2 is not available; the counts above describe the preview.</Text>;
+    return () => { activePane.current = null; pane.dispose(); };
+  }, [graph, id, theme]);
+  useEffect(() => {
+    activePane.current?.setSelection(relationshipId ? { graph: id, kind: "relationship", id: relationshipId } : null);
+  }, [graph, id, relationshipId, theme]);
+  return webgl2Available() ? <div ref={host} style={{ height: 320 }} /> : <Text>WebGL2 is not available for the diagram.</Text>;
+}
+
+function GuidedPreview({ graphId, inScope }: { graphId: string; inScope: (diagnostic: EditorState["diagnostics"][number]) => boolean }) {
+  const s = useStyles();
+  const ed = useStore((x) => x.editor);
+  const lesson = lessonOf(useStore((x) => x.guide));
+  const reference = useRevision(lesson?.graph ?? "");
+  const [showGraph, setShowGraph] = useState(false);
+  const [relationshipId, setRelationshipId] = useState("");
+  const preview = ed.preview;
+  const relevant = preview?.diagnostics.filter((d) => inScope(d) || d.severity === "error") ?? [];
+  const other = preview?.diagnostics.filter((d) => !relevant.includes(d)) ?? [];
+  const result = preview?.graphs.find((item) => item.id === graphId);
+  const snapshot = result?.hasSnapshot ? runtime.preview?.graphs.find((item) => item.id === graphId)?.snapshot : undefined;
+  const graph = useMemo(() => snapshot && Graph.fromSnapshot(snapshot), [snapshot]);
+  const types = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const edge of snapshot?.relationships ?? []) counts.set(edge.type, (counts.get(edge.type) ?? 0) + 1);
+    return [...counts].sort(([a], [b]) => a.localeCompare(b));
+  }, [snapshot]);
+  const relationships = snapshot?.relationships ?? [];
+  const relationship = graph?.rel(relationshipId)
+    ?? relationships.find((edge) => edge.type === lesson?.example?.type)
+    ?? relationships[0];
+  const sourceType = relationship && graph?.entity(relationship.source)?.type;
+  const targetType = relationship && graph?.entity(relationship.target)?.type;
+  const nodeLabel = (id: string) => {
+    const entity = graph?.entity(id);
+    return entity ? graph!.label(entity) : id;
+  };
+  const referenceEdge = useMemo(() => {
+    if (!reference || !relationship) return undefined;
+    const source = reference.graph.nodeSlot.get(relationship.source);
+    if (source === undefined) return undefined;
+    const matches = reference.graph.out[source].flatMap((slot) => {
+      const edge = reference.graph.edges[slot];
+      return edge?.type === relationship.type && edge.target === relationship.target ? [edge] : [];
+    });
+    return matches.find((edge) => edge.id === relationship.id) ?? (matches.length === 1 ? matches[0] : undefined);
+  }, [reference, relationship]);
+  const inspectReferenceEdge = () => {
+    if (!reference || !referenceEdge) return;
+    setShowGraph(false);
+    dispatch({ type: "ui/view", view: "data" });
+    dispatch({ type: "ui/activeGraph", graph: reference.id });
+    dispatch({ type: "select/element", selection: { graph: reference.id, kind: "relationship", id: referenceEdge.id } });
+  };
+
+  return <section className={s.pad} aria-label="Draft preview">
+    <div className={s.bar}>
+      <div role="status">
+        {result ? <Text as="h2" weight="semibold"><code>{graphId}</code> · {result.entities} nodes · {result.relationships} relationships</Text>
+          : <Text weight="semibold">{working(ed) === "preview" ? `Evaluating ${graphId}…` : `Preview ${graphId} to see its output.`}</Text>}
+      </div>
+      <span className={s.grow} />
+      {graph && <Button size="small" onClick={() => setShowGraph(true)}>Show draft graph</Button>}
+    </div>
+    {preview && !preview.scope.complete && <Text size={200}>Sampled {preview.scope.rows} of {preview.scope.totalRows} input rows.</Text>}
+    {relevant.length > 0 && <MessageBar intent={relevant.some((d) => d.severity === "error") ? "error" : "warning"}><MessageBarBody>{relevant.map((d) => d.message).join(". ")}</MessageBarBody></MessageBar>}
+    {other.length > 0 && <details>
+      <summary>Other preview diagnostics ({other.length})</summary>
+      <ProblemTable diagnostics={other} label="Other preview diagnostics" />
+    </details>}
+    <Dialog open={showGraph && !!graph} onOpenChange={(_, event) => setShowGraph(event.open)}>
+      <DialogSurface className={s.draftGraphDialog}><DialogBody>
+        <DialogTitle>Draft graph <code>{graphId}</code></DialogTitle>
+        <DialogContent>
+          <div className={s.typeCounts} role="group" aria-label="Relationships by type">
+            {types.map(([type, count]) => <Badge key={type} appearance="outline">{type} · {count}</Badge>)}
+          </div>
+          {result?.truncated && <Text size={200}>The diagram shows a snapshot sample.</Text>}
+          {relationship && <div className={s.draftRelationship}>
+            <Field label="Draft relationship">
+              <Select value={relationship.id} onChange={(_, data) => setRelationshipId(data.value)}>
+                {relationships.map((edge) => <option key={edge.id} value={edge.id}>{edge.type} · {nodeLabel(edge.source)} → {nodeLabel(edge.target)}</option>)}
+              </Select>
+            </Field>
+            <dl className={s.draftEndpoints}>
+              <div><dt><Text size={200} weight="semibold">From</Text></dt><dd>{nodeLabel(relationship.source)}{sourceType && <Text size={200}> · {sourceType}</Text>}</dd></div>
+              <div><dt><Text size={200} weight="semibold">Type</Text></dt><dd>{relationship.type}</dd></div>
+              <div><dt><Text size={200} weight="semibold">To</Text></dt><dd>{nodeLabel(relationship.target)}{targetType && <Text size={200}> · {targetType}</Text>}</dd></div>
+            </dl>
+            {referenceEdge && <Button size="small" onClick={inspectReferenceEdge}>Trace matching edge in reference graph</Button>}
+          </div>}
+          {graph && <PreviewCanvas graph={graph} id={graphId} relationshipId={relationship?.id} onRelationshipSelect={setRelationshipId} />}
+        </DialogContent>
+        <DialogActions><Button appearance="primary" onClick={() => setShowGraph(false)}>Close</Button></DialogActions>
+      </DialogBody></DialogSurface>
+    </Dialog>
+  </section>;
 }
 
 function Projects() {
@@ -160,7 +317,7 @@ function Projects() {
           </Table>
           {pv.identity && <IdentityEffectTable identity={pv.identity} />}
           {pv.diagnostics.length > 0 && <MessageBar intent="warning"><MessageBarBody>{pv.diagnostics.map((d) => d.message).join("; ")}</MessageBarBody></MessageBar>}
-          {snap && <PreviewCanvas graph={Graph.fromSnapshot(snap)} />}
+          {snap && <PreviewCanvas graph={Graph.fromSnapshot(snap)} id={previewGraph} />}
         </>
       )}
       <Dialog open={!!shown} onOpenChange={(_, d) => { if (!d.open) setShown(null); }}>
@@ -186,7 +343,7 @@ export function IdentityEffectTable({ identity }: { identity: IdentityEffect }) 
 
 // ---- dialogs ----
 
-function CommitDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+function CommitDialog({ open, onClose, native }: { open: boolean; onClose: () => void; native: boolean }) {
   const ed = useStore((x) => x.editor);
   const header = /^module\s+\S+\s*@\s*(\S+?)\s*;/m.exec(runtime.session?.texts[ed.module] ?? "")?.[1] ?? "";
   const [version, setVersion] = useState(header);
@@ -197,10 +354,10 @@ function CommitDialog({ open, onClose }: { open: boolean; onClose: () => void })
       <DialogSurface><DialogBody>
         <DialogTitle>Commit the draft</DialogTitle>
         <DialogContent>
-          <Field label={`Version of ${ed.module}`} hint="Changing it before the commit names a new version; the engine checks the result."><Input value={version} onChange={(_, d) => setVersion(d.value)} /></Field>
+          {!native && <Field label={`Version of ${ed.module}`} hint="Changing it before the commit names a new version; the engine checks the result."><Input value={version} onChange={(_, d) => setVersion(d.value)} /></Field>}
           <Text block>Draft base revision {ed.base}, now at {ed.revision}. {errors ? `${errors} problem${errors === 1 ? "" : "s"} must be fixed first.` : "The engine accepts the draft."} Committing activates the definitions: the engine replays the retained inputs and every output graph receives one patch.</Text>
         </DialogContent>
-        <DialogActions><Button onClick={onClose}>Cancel</Button><Button appearance="primary" disabled={errors > 0} onClick={() => { dispatch({ type: "editor/commit", version: version !== header ? version : undefined }); onClose(); }}>Commit</Button></DialogActions>
+        <DialogActions><Button onClick={onClose}>Cancel</Button><Button appearance="primary" disabled={errors > 0} onClick={() => { dispatch({ type: "editor/commit", version: !native && version !== header ? version : undefined }); onClose(); }}>Commit</Button></DialogActions>
       </DialogBody></DialogSurface>
     </Dialog>
   );
@@ -215,6 +372,14 @@ export function EditorView() {
   const [bottom, setBottom] = useState("problems");
   const [dialog, setDialog] = useState<"commit" | "new" | null>(null);
   const picked = useStore((x) => x.selection);
+  const guide = useStore((x) => x.guide);
+  const lesson = lessonOf(guide);
+  const projections = session?.catalog.projections().filter((p) => p.module !== "sattle.kernel") ?? [];
+  const p = projections.find((x) => x.id === ed.projection);
+  const file = p && session?.fileOf(`${p.module}.${p.name}`);
+  const fileName = file?.file;
+  const noteProjectionText = useCallback((text: string) => { if (fileName) session?.noteLocalText(fileName, text); }, [session, fileName]);
+  const onDraftError = useCallback((error: unknown) => { if (session) recoverExpiredDraft(session, error, dispatch); }, [session]);
   useEffect(() => { if (ed.phase.t === "closed") dispatch({ type: "editor/open" }); }, [ed.phase.t]);
   // restoring a release can remove the projection being edited: move to a projection of the module that still exists
   useEffect(() => {
@@ -228,9 +393,15 @@ export function EditorView() {
   const c = session.catalog;
   const stack = stackOf(c, ed.projection);
   const openProjection = (id: string) => { dispatch({ type: "editor/projection", module: moduleOfId(id), projection: id }); dispatch({ type: "editor/releases", module: moduleOfId(id) }); };
-  const projections = c.projections().filter((p) => p.module !== "sattle.kernel");
-  const p = projections.find((x) => x.id === ed.projection);
-  const file = p && session.fileOf(`${p.module}.${p.name}`);
+  const native = file?.language === "gkql";
+  const exercise = native && lesson?.build && file.projection === `${lesson.module}.${lesson.build.name}` ? lesson.build : undefined;
+  const exerciseGraph = exercise?.name;
+  const reference = native && lesson?.build && file.projection === `${lesson.module}.${lesson.projection}`;
+  const targets = [ed.projection, ...stack.outputs];
+  const inScope = (d: EditorState["diagnostics"][number]) => d.file === fileName || targets.some((id) => d.focus === id || d.focus.startsWith(`${id}/`));
+  const problems = exercise ? ed.diagnostics.filter(inScope) : ed.diagnostics;
+  const otherProblems = exercise ? ed.diagnostics.filter((d) => !problems.includes(d)) : undefined;
+  const details = bottom === "draft-preview" && !exerciseGraph ? "problems" : bottom;
   const Editor = file && editorFor(file.language);
   const onKeyDown = (e: React.KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); setDialog("commit"); } };
 
@@ -240,6 +411,8 @@ export function EditorView() {
         <div className={s.bar}>
           <Field label="Projection" orientation="horizontal" className={s.pick}><Select value={ed.projection} onChange={(_, d) => { const q = projections.find((x) => x.id === d.value)!; dispatch({ type: "editor/projection", module: q.module, projection: q.id }); dispatch({ type: "editor/releases", module: q.module }); }}>
             {projections.map((q) => <option key={q.id} value={q.id}>{q.module}: {q.name}</option>)}</Select></Field>
+          {exerciseGraph && <Badge appearance="tint" color="informative">Exercise draft</Badge>}
+          {reference && <Badge appearance="outline">Reference projection</Badge>}
           {p && <DirectionBadge direction={p.direction} />}
           <Badge appearance="outline" shape="square" color="informative">draft {ed.draft} · rev {ed.revision} · base {ed.base}</Badge>
           {ed.phase.work && <Spinner size="tiny" label={WORK_LABEL[ed.phase.work]} labelPosition="after" />}
@@ -260,7 +433,10 @@ export function EditorView() {
           <ToolbarButton aria-label={`Redo${ed.redo[0] ? ` ${ed.redo[0]}` : ""}`} icon={<ArrowRedo20Regular />} disabled={!ed.redo.length} onClick={() => dispatch({ type: "editor/redo" })}>Redo</ToolbarButton>
           <ToolbarDivider />
           <ToolbarButton onClick={() => setDialog("new")}>New projection</ToolbarButton>
-          <ToolbarButton icon={<Eye20Regular />} onClick={() => { setBottom("versions"); dispatch({ type: "editor/preview" }); }}>Preview</ToolbarButton>
+          <ToolbarButton icon={<Eye20Regular />} disabled={!!exerciseGraph && !!working(ed)} onClick={() => {
+            setBottom(exerciseGraph ? "draft-preview" : "versions");
+            dispatch({ type: "editor/preview", graphs: exerciseGraph ? [exerciseGraph] : undefined });
+          }}>{exerciseGraph ? "Preview draft" : "Preview"}</ToolbarButton>
           <ToolbarButton aria-label="Keyboard shortcuts" icon={<Keyboard20Regular />} onClick={() => dispatch({ type: "ui/dialog", dialog: "shortcuts" })} />
         </Toolbar></div>
           <Toolbar size="small" aria-label="Draft" className={s.fixed}>
@@ -269,20 +445,23 @@ export function EditorView() {
           </Toolbar>
         </div>
         <div style={{ position: "relative", minHeight: 0 }}>
-          {file && Editor && <Suspense fallback={<Spinner label="Loading the text editor…" />}><Editor port={session.svc} file={file} draft={ed.draft || undefined} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? [])) : undefined} store={(text) => storeProjectionText(file.file, text, dispatch)}
+          {file && Editor && <Suspense fallback={<Spinner label="Loading the projection editor…" />}><Editor key={`${ed.draft}/${file.file}`} port={session.svc} file={file} draft={ed.draft || undefined} source={session.texts[file.file]} initialTab={exerciseGraph ? "source" : undefined} starter={exercise ? printGkql(exerciseProgram(exercise)) : undefined} recoveredText={ed.recoveredText[file.file]} onEdit={noteProjectionText} onDraftError={onDraftError} diagnostics={ed.diagnostics} rows={ed.draft ? () => session.preview({ include: ["rows"], rowLimit: "1" }).then((pv) => pv.graphs.flatMap((g) => g.operators ?? []), (error) => { onDraftError(error); throw error; }) : undefined} store={(text) => storeProjectionText(file.file, text, dispatch)}
             picked={picked && runtime.ws?.history(picked.graph) ? { graph: picked.graph, data: runtime.ws.history(picked.graph)!.graph, ids: [picked.id] } : null} /></Suspense>}
           {ed.notice && <div style={{ position: "absolute", left: 36, right: 36, top: 36 }}><MessageBar intent="warning"><MessageBarBody>{ed.notice}</MessageBarBody><MessageBarActions><Button size="small" onClick={() => dispatch({ type: "editor/dismiss", what: "notice" })}>Dismiss</Button></MessageBarActions></MessageBar></div>}
           {ed.committed && <div style={{ position: "absolute", left: 8, right: 8, top: 8 }}><MessageBar intent="success"><MessageBarBody>{ed.committed}</MessageBarBody></MessageBar></div>}
         </div>
         <div className={s.bottom}>
-          <TabList size="small" selectedValue={bottom} onTabSelect={(_, d) => setBottom(String(d.value))} aria-label="Draft details">
-            <Tab value="problems">Problems{ed.diagnostics.length ? ` (${ed.diagnostics.length})` : ""}</Tab><Tab value="text">Text</Tab><Tab value="definitions">Definitions</Tab><Tab value="versions">Versions and preview</Tab>
+          <TabList size="small" selectedValue={details} onTabSelect={(_, d) => setBottom(String(d.value))} aria-label="Draft details">
+            <Tab value="problems">Problems{problems.length ? ` (${problems.length})` : ""}</Tab><Tab value="text">{native ? "Module GKQL" : "Text"}</Tab>{!native && <Tab value="definitions">Definitions</Tab>}{exerciseGraph && <Tab value="draft-preview">Draft preview</Tab>}<Tab value="versions">Versions and preview</Tab>
           </TabList>
-          {bottom === "problems" ? <Problems /> : bottom === "text" ? <TextPanel /> : bottom === "definitions" ? <Definitions session={session} module={ed.module} /> : <Projects />}
+          {details === "problems" || (details === "definitions" && native) ? <Problems diagnostics={problems} other={otherProblems} /> : details === "text"
+            ? native ? <ModuleGkql key={`${ed.draft}/${ed.module}`} module={ed.module} source={session.texts[ed.module] ?? ""} recoveredText={ed.recoveredText[ed.module]} /> : <TextPanel />
+            : details === "draft-preview" && exerciseGraph ? <GuidedPreview key={exerciseGraph} graphId={exerciseGraph} inScope={inScope} />
+            : details === "definitions" ? <Definitions session={session} module={ed.module} /> : <Projects />}
         </div>
       </section>
-      <CommitDialog open={dialog === "commit"} onClose={() => setDialog(null)} />
-      <NewProjectionDialog open={dialog === "new"} onClose={() => setDialog(null)} />
+      <CommitDialog open={dialog === "commit"} onClose={() => setDialog(null)} native={native} />
+      <NewProjectionDialog open={dialog === "new"} onClose={() => setDialog(null)} native={native} />
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // Generates synthetic telemetry ticks off the main thread. Buffers are transferred to the page and recycled back.
-import { allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "../core/synth-telemetry";
+import { allocTick, fillTick, type TelemetrySpec, type TelemetryTick } from "./synth-telemetry";
 
 export type TelemetryRequest =
   | { type: "init"; spec: TelemetrySpec }

@@ -10,11 +10,12 @@ const env = (globalThis as unknown as { process: { env: Record<string, string | 
 const engineDir = fileURLToPath(new URL("../../../engine/", import.meta.url));
 const cli = `${engineDir}src/Sattle.Cli`, dll = `${cli}/bin/Release/net11.0/sattle.dll`, fixture = `${engineDir}tests/Sattle.Tests/fixtures/estate`;
 
-/** Serves the fixture; resolves with the address once the replay has finished, so a draft sees the whole space. */
-const serve = (): Promise<{ url: string; stop: () => void }> => new Promise((resolve, reject) => {
-  const child: Proc = spawn("dotnet", [dll, "serve", fixture, "--cluster", "synth", "--port", "0"], { cwd: engineDir, stdio: ["ignore", "pipe", "pipe"] });
+/** Serve a fixture or reopen a store. Wait for replay before tests use the graphs. */
+export const serveEngine = (args: string[], replay = true): Promise<{ url: string; stop: () => Promise<void> }> => new Promise((resolve, reject) => {
+  const child: Proc = spawn("dotnet", [dll, "serve", ...args, "--port", "0"], { cwd: engineDir, stdio: ["ignore", "pipe", "pipe"] });
   let out = "", url = "", settled = false;
-  const stop = () => child.kill();
+  const exited = new Promise<void>((done) => child.once("exit", () => done()));
+  const stop = () => { child.kill(); return exited; };
   // the first outcome counts: ready, a failed input, an exit or the time limit; a failure before ready stops the engine at once
   const settle = (f: () => void) => { if (settled) return; settled = true; clearTimeout(timer); f(); };
   const fail = (why: string) => settle(() => { stop(); reject(new Error(`${why}; its output:\n${out}`)); });
@@ -23,17 +24,17 @@ const serve = (): Promise<{ url: string; stop: () => void }> => new Promise((res
     out += b.toString();
     if (out.includes("input failed")) return fail("the engine's input failed");
     url ||= /serving (http:\/\/\S+)/.exec(out)?.[1] ?? "";
-    if (url && out.includes("replay finished")) settle(() => resolve({ url: url.replace("[::]", "127.0.0.1").replace("0.0.0.0", "127.0.0.1"), stop }));
+    if (url && (!replay || out.includes("replay finished"))) settle(() => resolve({ url: url.replace("[::]", "127.0.0.1").replace("0.0.0.0", "127.0.0.1"), stop }));
   };
   child.stdout.on("data", read);
   child.stderr.on("data", read);
   child.once("exit", (code) => fail(`the engine exited with ${code} before it was ready`));
 });
 
-export default async function setup(): Promise<() => void> {
+export default async function setup(): Promise<() => void | Promise<void>> {
   if (env.ENGINE) return () => {};
   execFileSync("dotnet", ["build", "-c", "Release", cli, "--nologo", "-v", "q"], { stdio: "inherit", timeout: 600_000 });
-  const { url, stop } = await serve();
+  const { url, stop } = await serveEngine([fixture, "--cluster", "synth"]);
   env.ENGINE = url;
   return stop;
 }

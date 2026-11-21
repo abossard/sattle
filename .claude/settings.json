@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(az:*)",
+      "Bash(azd:*)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(gh:*)",
+      "Bash(git -C * apply *)",
+      "Bash(git apply:*)",
+      "Bash(git push origin refs/heads/main:refs/heads/main)",
+      "Bash(kubectl:*)",
+      "SendMessage",
+      "mcp__ccd_session__start_session",
+      "mcp__ccd_session_mgmt__clear_session",
+      "mcp__ccd_session_mgmt__send_message",
+      "mcp__ccd_session_mgmt__set_session_effort",
+      "mcp__ccd_session_mgmt__set_session_model"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git push origin refs/backup/*:*)"
+    ]
+  }
+}

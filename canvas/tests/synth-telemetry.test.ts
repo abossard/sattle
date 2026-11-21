@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ESTATE_METERS, allocTick, fillTick, hash01, incident, type TelemetrySpec } from "../src/core/synth-telemetry";
-import { estateOntology } from "../src/core/synth";
+import { ESTATE_METERS, allocTick, fillTick, hash01, incident, type TelemetrySpec } from "../examples/synthetic-estate/synth-telemetry";
+import { estateOntology } from "../examples/synthetic-estate/synth";
 import { checkOntology } from "../src/core/validate";
 
 const spec = (): TelemetrySpec => ({

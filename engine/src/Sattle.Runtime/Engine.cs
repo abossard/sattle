@@ -9,6 +9,9 @@ namespace Sattle.Runtime;
 public sealed record EngineOptions
 {
     public string Tenant { get; init; } = "lab";
+    int? preparationWorkers;
+    /// <summary>Maximum threads preparing large matches against a committed graph. One runs the serial plan. A host may set SATTLE_PREPARATION_WORKERS to choose its default.</summary>
+    public int PreparationWorkers { get => preparationWorkers ?? MatchPreparation.DefaultWorkers(); init => preparationWorkers = value; }
     /// <summary>The store the engine commits its patches to. The default keeps the head number of each graph only (`HeadOnlyGraphStore`); a durable store keeps the history.</summary>
     public Func<string, IGraphStore> StoreFactory { get; init; } = _ => new HeadOnlyGraphStore();
     public Func<ITelemetryStore> TelemetryFactory { get; init; } = () => new InMemoryTelemetryStore();
@@ -346,6 +349,13 @@ public sealed class Engine : IDisposable, IEngineInput
     public Dictionary<string, double> OperatorMillis { get; } = [];
     /// <summary>Milliseconds, allocated bytes and calls per operator kind (the physical operator type), while TrackAllocations is on.</summary>
     public Dictionary<string, (double Ms, long Bytes, long Calls)> KindStats { get; } = [];
+    readonly MatchPreparation preparation;
+    /// <summary>Completed parallel match ranges, including any run on the writer.</summary>
+    public long PreparedRanges => preparation.Ranges;
+    /// <summary>Completed match ranges run off the engine writer.</summary>
+    public long WorkerPreparedRanges => preparation.WorkerRanges;
+    /// <summary>Ranges replayed directly into final output after reaching their private row buffer limit.</summary>
+    public long ReplayedPreparationRanges => preparation.ReplayedRanges;
     public long InputRows { get; private set; }
     public long Epochs => epochId;
     public long LogicalTime => lambda;
@@ -354,6 +364,7 @@ public sealed class Engine : IDisposable, IEngineInput
     {
         Interner = interner ?? new Interner();
         this.catalog = catalog; this.options = options ?? new EngineOptions();
+        preparation = new(this.options.PreparationWorkers);
         var space = catalog.Spaces.TryGetValue(spaceId, out var s) ? s : throw new ArgumentException($"space {spaceId} is not activated");
         SpaceName = space.Name;
         store = this.options.StoreFactory(space.Name);
@@ -540,6 +551,7 @@ public sealed class Engine : IDisposable, IEngineInput
                     }
                 if (!any) continue;
             }
+            if (preparation.Workers > 1) ep.Preparation = preparation;
             results[g.Name] = Execute(g, ep, seq, cause);
         }
         // retention after every graph stepped: a Series retracts a window that leaves its look-back by reading it from the store of the graph it reads, which stepped before it

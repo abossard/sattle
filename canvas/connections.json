@@ -1,0 +1,4 @@
+[
+  {"id":"health-mirror","label":"CORE · Azure health model","url":"/health-engine","port":5083,"portEnv":"HEALTH_ENGINE_PORT"},
+  {"id":"ontology-exercise","label":"Naming exercise · local example","url":"/exercise-engine","port":5084,"portEnv":"EXERCISE_ENGINE_PORT"}
+]

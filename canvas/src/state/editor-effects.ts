@@ -5,10 +5,12 @@ import type { Edit, Patch } from "../core/model";
 import type { Palette } from "../editor/palette";
 import { removeEdits } from "../editor/patches";
 import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjection, setValueRoleEdits, type Result } from "../editor/structures";
-import { EditorService } from "../editor/service";
+import { EngineError, EditorService } from "../editor/service";
 import { EditorSession, type Outcome } from "../editor/session";
+import { lessonOf } from "../tutorial/lessons";
 import { runtime } from "./runtime";
 import { ENGINE_URL } from "./sources";
+import { EngineSource } from "../source/engine";
 import type { Action, Command, EditorState, ReleaseDiff, State } from "./types";
 import type { Work } from "./editor-phase";
 import type { Dispatch } from "./effects";
@@ -26,11 +28,17 @@ let generation = 0;
 /** End the open session: what it still answers is dropped. */
 export function endSession(): void { generation++; runtime.session = null; runtime.preview = null; }
 
+export function recoverExpiredDraft(s: EditorSession, error: unknown, dispatch: Dispatch, text?: { file: string; value: string }): boolean {
+  if (!(error instanceof EngineError) || error.code !== "UnknownDraft" || runtime.session !== s) return false;
+  dispatch({ type: "editor/open", recovery: { ...s.recoveredText(), ...(text ? { [text.file]: text.value } : {}) } });
+  return true;
+}
+
 /**
  * Work on the session's draft as the author sees it: the phase says what runs, and the summary and the notice follow when it ends, unless the
  * session ended meanwhile. `fn` answers the extra state to report (a preview), or throws the notice.
  */
-async function work(s: EditorSession, w: Work, dispatch: Dispatch, fn: () => Promise<Partial<EditorState> | Outcome | null | void>): Promise<void> {
+async function work(s: EditorSession, w: Work, dispatch: Dispatch, fn: () => Promise<Partial<EditorState> | Outcome | null | void>, text?: { file: string; value: string }): Promise<void> {
   const g = generation;
   dispatch({ type: "editor/event", event: { t: "start", work: w } });
   let extra: Partial<EditorState> = {};
@@ -39,7 +47,10 @@ async function work(s: EditorSession, w: Work, dispatch: Dispatch, fn: () => Pro
     if (r && "ok" in r) extra = { notice: !r.ok && r.error !== "nothing to change" ? r.error : "" };
     else if (r) extra = r;
     else extra = { notice: "" };
-  } catch (e) { extra = { notice: (e as Error).message }; }
+  } catch (e) {
+    if (recoverExpiredDraft(s, e, dispatch, text)) return;
+    extra = { notice: (e as Error).message };
+  }
   if (g !== generation) return;
   dispatch({ type: "editor/summary", patch: { ...summary(s), ...extra } });
   dispatch({ type: "editor/event", event: { t: "done", work: w } });
@@ -50,7 +61,14 @@ export async function storeProjectionText(file: string, text: string, dispatch: 
   const s = runtime.session;
   if (!s) return "no draft is open";
   let error: string | null = null;
-  await work(s, "store", dispatch, async () => { const o = await s.storeText(file, text); error = o.ok ? null : o.error; return o; });
+  await work(s, "store", dispatch, async () => {
+    try {
+      const o = await s.storeText(file, text);
+      error = o.ok ? null : o.error;
+      if (o.ok && runtime.session === s) { s.clearLocalText(file); dispatch({ type: "editor/clearRecoveredText", file }); }
+      return o;
+    } catch (e) { error = (e as Error).message; throw e; }
+  }, { file, value: text });
   return error;
 }
 
@@ -69,22 +87,26 @@ export function summarizePatch(label: string, from: string, to: string, p: Patch
 const headRevision = (): string => { const ws = runtime.ws; const id = ws?.source.catalogGraph; const h = id ? ws!.history(id) : undefined; return h ? h.revisionAt(h.length) : ""; };
 const headGraph = (): Graph | null => { const ws = runtime.ws; const id = ws?.source.catalogGraph; return id ? ws!.history(id)!.graph : null; };
 
-async function open(dispatch: Dispatch): Promise<void> {
+async function open(dispatch: Dispatch, state?: State, recovering = false): Promise<void> {
   // effects run before the reducer: what is dispatched here, before the first await, would be overwritten by `editor/open` ("opening") that is still to be reduced
   const old = runtime.session;
   endSession();
   const g = generation;
-  if (old) void old.discard();
+  if (old && !recovering) void old.discard();
   await Promise.resolve();
   const ws = runtime.ws;
   if (!ws?.source.catalogGraph) { if (g === generation) dispatch({ type: "editor/event", event: { t: "failed", message: "The projection editor needs the engine (it edits the catalog through drafts). Choose the Engine source." } }); return; }
   try {
-    const session = await EditorSession.open(new EditorService(ENGINE_URL));
+    const session = await EditorSession.open(new EditorService(ws.source instanceof EngineSource ? ws.source.base : ENGINE_URL));
     // a newer draft or source took over while this one opened: it is nobody's
     if (g !== generation) { void session.discard(); return; }
     runtime.session = session;
-    const first = session.catalog.projections().find((p) => p.module !== "sattle.kernel");
-    dispatch({ type: "editor/summary", patch: { ...summary(session), headRevision: headRevision(), module: first?.module ?? "", projection: first?.id ?? "" } });
+    const projections = session.catalog.projections();
+    const lesson = lessonOf(state?.guide ?? null);
+    const first = projections.find((p) => p.id === state?.editor.projection)
+      ?? projections.find((p) => p.module === lesson?.module && p.name === lesson?.projection)
+      ?? projections.find((p) => p.module !== "sattle.kernel");
+    dispatch({ type: "editor/summary", patch: { ...summary(session), headRevision: headRevision(), module: first?.module ?? "", projection: first?.id ?? "", ...(recovering ? { notice: "Draft reopened. Review your changes and try again." } : {}) } });
     dispatch({ type: "editor/event", event: { t: "opened" } });
     if (first) void run({ type: "editor/releases", module: first.module }, dispatch);
   } catch (e) { if (g === generation) dispatch({ type: "editor/event", event: { t: "failed", message: (e as Error).message } }); }
@@ -112,8 +134,9 @@ async function perform(cmd: Command, s: EditorSession, dispatch: Dispatch): Prom
     case "restore": return s.restore(cmd.digest);
     case "newProjection": {
       const { spec } = cmd;
-      const o = await s.change((g) => { const p = need(newProjection(g, spec)); return { edits: p.edits, label: `bind ${spec.name}`, file: { ...p.file, text: p.text } }; });
-      if (o?.ok && runtime.session === s) dispatch({ type: "editor/projection", module: spec.module, projection: `d:${spec.module}/projection:${spec.name}` });
+      const o = await s.change((g) => { const p = need(newProjection(g, spec, s.texts[spec.module])); return { edits: p.edits, label: `bind ${spec.name}`, file: { ...p.file, text: p.text }, module: p.module }; });
+      const projection = `d:${spec.module}/projection:${spec.name}`;
+      if (o?.ok && runtime.session === s && s.graph.entity(projection)) dispatch({ type: "editor/projection", module: spec.module, projection });
       return o;
     }
     default: return s.change((g) => plan(cmd, g, s.palette));
@@ -121,14 +144,14 @@ async function perform(cmd: Command, s: EditorSession, dispatch: Dispatch): Prom
 }
 
 export async function run(a: Action, dispatch: Dispatch, st?: State): Promise<void> {
-  if (a.type === "editor/open") return open(dispatch);
+  if (a.type === "editor/open") return open(dispatch, st, a.recovery !== undefined);
   const s = runtime.session;
   if (!s) return;
   const g = generation;
   switch (a.type) {
     case "editor/undo": return work(s, "undo", dispatch, () => s.undo());
     case "editor/redo": return work(s, "redo", dispatch, () => s.redo());
-    case "editor/do": return work(s, "command", dispatch, () => perform(a.cmd, s, dispatch));
+    case "editor/do": return work(s, "command", dispatch, () => perform(a.cmd, s, dispatch), a.cmd.t === "text" ? { file: a.cmd.module, value: a.cmd.text } : undefined);
     case "editor/discard": { dispatch({ type: "editor/open" }); return; }
     // read only: no queue, but an answer of an older generation is dropped
     case "editor/releases": {

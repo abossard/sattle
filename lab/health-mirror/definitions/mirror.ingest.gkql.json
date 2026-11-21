@@ -1,0 +1,1151 @@
+{
+  "graph": "ingest",
+  "ontology": "mirror",
+  "description": "Load the deployed model, its readings and captured VNet traffic.",
+  "history": 240,
+  "inputs": [
+    {"name": "export", "rows": "mirror.CloudHealthRow"},
+    {"name": "traffic", "rows": "mirror.VnetEvidenceRow"},
+    {"name": "appCalls", "rows": "mirror.AppDependencyRow"},
+    {"name": "inventory", "rows": "mirror.ArmInventoryRow"},
+    {"name": "armNetwork", "rows": "mirror.AzureNetworkRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "exportRows", "verb": "rows", "source": "export"},
+    {
+      "id": "entityRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "entity"}]}
+    },
+    {
+      "id": "importModelEntity",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "impact": {"ref": "impact"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "definitionRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "definition"}]}
+    },
+    {
+      "id": "importSignalDefinition",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SignalDefinition",
+            "id": {"identity": "idSignalDefinition", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "signalKind": {"ref": "signalKind"},
+              "degradedOperator": {"ref": "degradedOperator"},
+              "degradedAt": {"ref": "degradedAt"},
+              "unhealthyOperator": {"ref": "unhealthyOperator"},
+              "unhealthyAt": {"ref": "unhealthyAt"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "bindingRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "binding"}]}
+    },
+    {
+      "id": "importSignalBinding",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SignalBinding",
+            "id": {"identity": "idSignalBinding", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "entityKey": {"ref": "sourceKey"},
+              "definitionKey": {"ref": "targetKey"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "attachBinding",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "sourceKey"}]}
+          },
+          {
+            "var": "b",
+            "label": "SignalBinding",
+            "id": {"identity": "idSignalBinding", "args": [{"ref": "key"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "HasSignal", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "bindDefinition",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "SignalBinding",
+            "id": {"identity": "idSignalBinding", "args": [{"ref": "key"}]}
+          },
+          {
+            "var": "b",
+            "label": "SignalDefinition",
+            "id": {"identity": "idSignalDefinition", "args": [{"ref": "targetKey"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "UsesDefinition", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "observationRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "observation"}]}
+    },
+    {
+      "id": "importObservation",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Observation",
+            "id": {"identity": "idObservation", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "status": {"ref": "status"},
+              "availabilityState": {"ref": "availabilityState"},
+              "value": {"ref": "value"},
+              "checkpoint": {"ref": "checkpoint"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "attachReading",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "SignalBinding",
+            "id": {"identity": "idSignalBinding", "args": [{"ref": "key"}]}
+          },
+          {"var": "b", "label": "Observation", "id": {"identity": "idObservation", "args": [{"ref": "key"}]}}
+        ],
+        "edges": [{"var": "edge", "label": "MeasuredBy", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "modelRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "model"}]}
+    },
+    {
+      "id": "importModel",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Model",
+            "id": {"identity": "idModel", "args": [{"ref": "key"}]},
+            "props": {"key": {"ref": "key"}, "name": {"ref": "name"}, "configuration": {"ref": "configuration"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "discoveryRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "discovery"}]}
+    },
+    {
+      "id": "importDiscoveryRule",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DiscoveryRule",
+            "id": {"identity": "idDiscoveryRule", "args": [{"ref": "key"}]},
+            "props": {"key": {"ref": "key"}, "name": {"ref": "name"}, "configuration": {"ref": "configuration"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "authenticationRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "authentication"}]}
+    },
+    {
+      "id": "importAuthenticationSetting",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "AuthenticationSetting",
+            "id": {"identity": "idAuthenticationSetting", "args": [{"ref": "key"}]},
+            "props": {"key": {"ref": "key"}, "name": {"ref": "name"}, "configuration": {"ref": "configuration"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "relationships",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "relationship"}]}
+    },
+    {
+      "id": "dependencies",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "sourceKey"}]}
+          },
+          {
+            "var": "b",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "targetKey"}]}
+          }
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "DependsOn",
+            "from": "a",
+            "to": "b",
+            "props": {"key": {"ref": "key"}, "impact": {"ref": "impact"}, "configuration": {"ref": "configuration"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {"id": "flowTuples", "verb": "rows", "source": "traffic"},
+    {
+      "id": "sourceAddress",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "IpAddress",
+            "id": {"identity": "idIpAddress", "args": [{"ref": "vnetId"}, {"ref": "srcIp"}]},
+            "props": {"vnetId": {"ref": "vnetId"}, "address": {"ref": "srcIp"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "destinationAddress",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "IpAddress",
+            "id": {"identity": "idIpAddress", "args": [{"ref": "vnetId"}, {"ref": "dstIp"}]},
+            "props": {"vnetId": {"ref": "vnetId"}, "address": {"ref": "dstIp"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "recordTuple",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "NetworkFlow",
+            "id": {"identity": "idNetworkFlow", "args": [{"ref": "vnetId"}, {"ref": "series"}, {"ref": "tuple"}]},
+            "props": {
+              "vnetId": {"ref": "vnetId"},
+              "observer": {"ref": "observer"},
+              "acl": {"ref": "acl"},
+              "rule": {"ref": "rule"},
+              "series": {"ref": "series"},
+              "tuple": {"ref": "tuple"},
+              "time": {"ref": "time"},
+              "srcIp": {"ref": "srcIp"},
+              "dstIp": {"ref": "dstIp"},
+              "srcPort": {"ref": "srcPort"},
+              "dstPort": {"ref": "dstPort"},
+              "protocol": {"ref": "protocol"},
+              "direction": {"ref": "direction"},
+              "flowState": {"ref": "flowState"},
+              "encryption": {"ref": "encryption"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "sentFlow",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "IpAddress",
+            "id": {"identity": "idIpAddress", "args": [{"ref": "vnetId"}, {"ref": "srcIp"}]}
+          },
+          {
+            "var": "b",
+            "label": "NetworkFlow",
+            "id": {"identity": "idNetworkFlow", "args": [{"ref": "vnetId"}, {"ref": "series"}, {"ref": "tuple"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "SentFlow", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "receivedBy",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "NetworkFlow",
+            "id": {"identity": "idNetworkFlow", "args": [{"ref": "vnetId"}, {"ref": "series"}, {"ref": "tuple"}]}
+          },
+          {
+            "var": "b",
+            "label": "IpAddress",
+            "id": {"identity": "idIpAddress", "args": [{"ref": "vnetId"}, {"ref": "dstIp"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ReceivedBy", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {"id": "dependencyTelemetry", "verb": "rows", "source": "appCalls"},
+    {
+      "id": "appRole",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ApplicationRole",
+            "id": {"identity": "idApplicationRole", "args": [{"ref": "scopeKey"}, {"ref": "sourceComponent"}]},
+            "props": {"scopeId": {"ref": "scopeId"}, "sourceComponent": {"ref": "sourceComponent"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "targetHost",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DependencyHost",
+            "id": {"identity": "idDependencyHost", "args": [{"ref": "destination"}, {"ref": "endpointScope"}]},
+            "props": {"destination": {"ref": "destination"}, "endpointScope": {"ref": "endpointScope"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "dependencyWindow",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DependencyObservation",
+            "id": {
+              "identity": "idDependencyObservation",
+              "args": [{"ref": "scopeKey"}, {"ref": "series"}, {"ref": "windowStart"}, {"ref": "windowEnd"}]
+            },
+            "props": {
+              "scopeId": {"ref": "scopeId"},
+              "scopeKey": {"ref": "scopeKey"},
+              "sourceComponent": {"ref": "sourceComponent"},
+              "destination": {"ref": "destination"},
+              "dependencyType": {"ref": "dependencyType"},
+              "result": {"ref": "result"},
+              "windowStart": {"ref": "windowStart"},
+              "windowEnd": {"ref": "windowEnd"},
+              "series": {"ref": "series"},
+              "calls": {"ref": "calls"},
+              "spanCount": {"ref": "spanCount"},
+              "targetResourceId": {"ref": "targetResourceId"},
+              "targetScopeKey": {"ref": "targetScopeKey"},
+              "endpointScope": {"ref": "endpointScope"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "reportedCall",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ApplicationRole",
+            "id": {"identity": "idApplicationRole", "args": [{"ref": "scopeKey"}, {"ref": "sourceComponent"}]}
+          },
+          {
+            "var": "b",
+            "label": "DependencyObservation",
+            "id": {
+              "identity": "idDependencyObservation",
+              "args": [{"ref": "scopeKey"}, {"ref": "series"}, {"ref": "windowStart"}, {"ref": "windowEnd"}]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ReportedDependency", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "targetOfCall",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "DependencyObservation",
+            "id": {
+              "identity": "idDependencyObservation",
+              "args": [{"ref": "scopeKey"}, {"ref": "series"}, {"ref": "windowStart"}, {"ref": "windowEnd"}]
+            }
+          },
+          {
+            "var": "b",
+            "label": "DependencyHost",
+            "id": {"identity": "idDependencyHost", "args": [{"ref": "destination"}, {"ref": "endpointScope"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ObservedTarget", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "resourceEntities",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "sourceKey"}, {"lit": ""}]}
+    },
+    {
+      "id": "resourceBindings",
+      "verb": "project",
+      "columns": {"entityKey": {"ref": "key"}, "resourceKey": {"ref": "sourceKey"}}
+    },
+    {
+      "id": "declaredTelemetryScopes",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "scopeKey", "right": "resourceKey"}]
+    },
+    {
+      "id": "reportingResource",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ApplicationRole",
+            "id": {"identity": "idApplicationRole", "args": [{"ref": "scopeKey"}, {"ref": "sourceComponent"}]}
+          },
+          {
+            "var": "b",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "entityKey"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "InstrumentedBy", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "declaredTargetResources",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "targetScopeKey", "right": "resourceKey"}]
+    },
+    {
+      "id": "targetResource",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "DependencyHost",
+            "id": {"identity": "idDependencyHost", "args": [{"ref": "destination"}, {"ref": "endpointScope"}]}
+          },
+          {
+            "var": "b",
+            "label": "ModelEntity",
+            "id": {"identity": "idModelEntity", "args": [{"ref": "entityKey"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "EndpointOf", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {"id": "armInventory", "verb": "rows", "source": "inventory"},
+    {
+      "id": "observedArmResources",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ArmResource",
+            "id": {"identity": "idArmResource", "args": [{"ref": "armKey"}]},
+            "props": {
+              "armId": {"ref": "armId"},
+              "armKey": {"ref": "armKey"},
+              "name": {"ref": "name"},
+              "resourceType": {"ref": "resourceType"},
+              "location": {"ref": "location"},
+              "subscriptionId": {"ref": "subscriptionId"},
+              "resourceGroup": {"ref": "resourceGroup"},
+              "groupId": {"ref": "groupId"},
+              "environmentId": {"ref": "environmentId"},
+              "provisioningState": {"ref": "provisioningState"},
+              "runningStatus": {"ref": "runningStatus"},
+              "ingressHost": {"ref": "ingressHost"},
+              "tags": {"ref": "tags"},
+              "observedAt": {"ref": "observedAt"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "userFlowRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "userFlow"}]}
+    },
+    {
+      "id": "declareUserFlow",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "UserFlow",
+            "id": {"identity": "idUserFlow", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "modelKey": {"ref": "sourceKey"},
+              "provenance": {"ref": "status"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "systemComponentRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "systemComponent"}]}
+    },
+    {
+      "id": "declareSystemComponent",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {"identity": "idSystemComponent", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "modelKey": {"ref": "sourceKey"},
+              "provenance": {"ref": "status"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "curatedFlowSteps",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "flowStep"}]}
+    },
+    {
+      "id": "localStepEvidence",
+      "verb": "project",
+      "columns": {"flowKey": {"ref": "sourceKey"}, "stepKey": {"ref": "targetKey"}, "evidence": {"ref": "configuration"}}
+    },
+    {
+      "id": "curatedAppBindings",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "stepApp"}]}
+    },
+    {
+      "id": "declaredArmIds",
+      "verb": "project",
+      "columns": {"stepKey": {"ref": "sourceKey"}, "declaredId": {"ref": "targetKey"}, "proof": {"ref": "configuration"}}
+    },
+    {
+      "id": "observedContainerApps",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "resourceType"}, {"lit": "microsoft.app/containerapps"}]}
+    },
+    {"id": "observedContainerIds", "verb": "project", "columns": {"armKey": {"ref": "armKey"}}},
+    {
+      "id": "resolveAppBinding",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "declaredId", "right": "armKey"}]
+    },
+    {
+      "id": "localAppEvidence",
+      "verb": "project",
+      "columns": {"stepKey": {"ref": "stepKey"}, "armKey": {"ref": "armKey"}, "evidence": {"ref": "proof"}}
+    },
+    {
+      "id": "officialUserFlow",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "iconName"}, {"lit": "UserFlow"}]}
+    },
+    {
+      "id": "deployedUserFlow",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "UserFlow",
+            "id": {
+              "identity": "idUserFlow",
+              "args": [{"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]}]
+            },
+            "props": {
+              "key": {"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]},
+              "modelKey": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "provenance": {"lit": "CloudHealth"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "UserFlowKeys",
+      "verb": "project",
+      "columns": {
+        "UserFlowId": {"ref": "key"},
+        "UserFlowKey": {"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]}
+      }
+    },
+    {
+      "id": "officialSystemComponent",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "iconName"}, {"lit": "SystemComponent"}]}
+    },
+    {
+      "id": "deployedSystemComponent",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {
+              "identity": "idSystemComponent",
+              "args": [{"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]}]
+            },
+            "props": {
+              "key": {"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]},
+              "modelKey": {"ref": "key"},
+              "name": {"ref": "name"},
+              "configuration": {"ref": "configuration"},
+              "provenance": {"lit": "CloudHealth"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "SystemComponentKeys",
+      "verb": "project",
+      "columns": {
+        "SystemComponentId": {"ref": "key"},
+        "SystemComponentKey": {"fn": "concat", "args": [{"ref": "sourceModelId"}, {"lit": "/entities/"}, {"ref": "key"}]}
+      }
+    },
+    {
+      "id": "officialFlowEdges",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "sourceKey", "right": "UserFlowId"}]
+    },
+    {
+      "id": "officialFlowSystems",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "targetKey", "right": "SystemComponentId"}]
+    },
+    {
+      "id": "nativeFlowEvidence",
+      "verb": "project",
+      "columns": {
+        "flowKey": {"ref": "UserFlowKey"},
+        "stepKey": {"ref": "SystemComponentKey"},
+        "evidence": {"ref": "configuration"}
+      }
+    },
+    {"id": "flowStepEvidence", "verb": "union"},
+    {
+      "id": "declaredFlowHierarchy",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "UserFlow", "id": {"identity": "idUserFlow", "args": [{"ref": "flowKey"}]}},
+          {
+            "var": "b",
+            "label": "SystemComponent",
+            "id": {"identity": "idSystemComponent", "args": [{"ref": "stepKey"}]}
+          }
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "DeclaresStep",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "evidence"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "officialStorageAndAppEdges",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "sourceKey", "right": "SystemComponentId"}]
+    },
+    {
+      "id": "nativeResourceBindings",
+      "verb": "project",
+      "columns": {"bindingKey": {"ref": "key"}, "nativeId": {"ref": "sourceKey"}}
+    },
+    {
+      "id": "officialObservedBindings",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "targetKey", "right": "bindingKey"}]
+    },
+    {
+      "id": "officialContainerBindings",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "nativeId", "right": "armKey"}]
+    },
+    {
+      "id": "nativeAppEvidence",
+      "verb": "project",
+      "columns": {
+        "stepKey": {"ref": "SystemComponentKey"},
+        "armKey": {"ref": "armKey"},
+        "evidence": {"ref": "configuration"}
+      }
+    },
+    {"id": "allBindingEvidence", "verb": "union"},
+    {
+      "id": "sourceModelDeployments",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "SystemComponent",
+            "id": {"identity": "idSystemComponent", "args": [{"ref": "stepKey"}]}
+          },
+          {"var": "b", "label": "ArmResource", "id": {"identity": "idArmResource", "args": [{"ref": "armKey"}]}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "RunsOnResource",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "evidence"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "nameRules",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "nameRule"}]}
+    },
+    {
+      "id": "declareNameRules",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "NameRule",
+            "id": {"identity": "idNameRule", "args": [{"ref": "key"}]},
+            "props": {
+              "key": {"ref": "key"},
+              "name": {"ref": "name"},
+              "scopeId": {"ref": "sourceKey"},
+              "pattern": {"ref": "targetKey"},
+              "matchKind": {"ref": "signalKind"},
+              "className": {"ref": "status"},
+              "evidence": {"ref": "impact"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {"id": "armNetworkRows", "verb": "rows", "source": "armNetwork"},
+    {
+      "id": "nativeNetworkFacts",
+      "verb": "extend",
+      "columns": {"resolved": {"fn": "coalesce", "args": [{"ref": "resolvedAddress"}, {"lit": ""}]}}
+    },
+    {
+      "id": "nativeNetworkReferences",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ArmReference",
+            "id": {
+              "identity": "idArmReference",
+              "args": [{"ref": "resourceId"}, {"ref": "fieldPath"}, {"ref": "target"}, {"ref": "resolved"}]
+            },
+            "props": {
+              "name": {"ref": "target"},
+              "kind": {"ref": "kind"},
+              "sourceId": {"ref": "resourceId"},
+              "target": {"ref": "target"},
+              "resolvedAddress": {"ref": "resolved"},
+              "fieldPath": {"ref": "fieldPath"}
+            }
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "originatingResource",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ArmResource",
+            "id": {"identity": "idArmResource", "args": [{"ref": "resourceId"}]}
+          },
+          {
+            "var": "b",
+            "label": "ArmReference",
+            "id": {
+              "identity": "idArmReference",
+              "args": [{"ref": "resourceId"}, {"ref": "fieldPath"}, {"ref": "target"}, {"ref": "resolved"}]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "HasArmReference", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "resolveObservedResources",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "target", "right": "armKey"}]
+    },
+    {
+      "id": "targetArmResource",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ArmReference",
+            "id": {
+              "identity": "idArmReference",
+              "args": [{"ref": "resourceId"}, {"ref": "fieldPath"}, {"ref": "target"}, {"ref": "resolved"}]
+            }
+          },
+          {"var": "b", "label": "ArmResource", "id": {"identity": "idArmResource", "args": [{"ref": "armKey"}]}}
+        ],
+        "edges": [{"var": "edge", "label": "RefersToResource", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "dnsTargets",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsName"}]}
+    },
+    {
+      "id": "recordDns",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DnsName",
+            "id": {"identity": "idDnsName", "args": [{"ref": "target"}]},
+            "props": {"host": {"ref": "target"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "dnsReference",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ArmReference",
+            "id": {
+              "identity": "idArmReference",
+              "args": [{"ref": "resourceId"}, {"ref": "fieldPath"}, {"ref": "target"}, {"ref": "resolved"}]
+            }
+          },
+          {"var": "b", "label": "DnsName", "id": {"identity": "idDnsName", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "edge", "label": "RefersToName", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    },
+    {"id": "ipTargets", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "ip"}]}},
+    {
+      "id": "resolvedAddresses",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"ref": "resolved"}, {"lit": ""}]}
+    },
+    {
+      "id": "directAddresses",
+      "verb": "project",
+      "columns": {
+        "resourceId": {"ref": "resourceId"},
+        "fieldPath": {"ref": "fieldPath"},
+        "target": {"ref": "target"},
+        "resolved": {"ref": "resolved"},
+        "ip": {"ref": "target"}
+      }
+    },
+    {
+      "id": "resolvedAddressesOfDns",
+      "verb": "project",
+      "columns": {
+        "resourceId": {"ref": "resourceId"},
+        "fieldPath": {"ref": "fieldPath"},
+        "target": {"ref": "target"},
+        "resolved": {"ref": "resolved"},
+        "ip": {"ref": "resolved"}
+      }
+    },
+    {"id": "allReferencedAddresses", "verb": "union"},
+    {
+      "id": "observedIp",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "AzureIp",
+            "id": {"identity": "idAzureIp", "args": [{"ref": "ip"}]},
+            "props": {"address": {"ref": "ip"}}
+          }
+        ]
+      },
+      "rule": "importAzure"
+    },
+    {
+      "id": "ipReference",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ArmReference",
+            "id": {
+              "identity": "idArmReference",
+              "args": [{"ref": "resourceId"}, {"ref": "fieldPath"}, {"ref": "target"}, {"ref": "resolved"}]
+            }
+          },
+          {"var": "b", "label": "AzureIp", "id": {"identity": "idAzureIp", "args": [{"ref": "ip"}]}}
+        ],
+        "edges": [{"var": "edge", "label": "RefersToIp", "from": "a", "to": "b"}]
+      },
+      "rule": "importAzure"
+    }
+  ],
+  "wires": [
+    {"from": "exportRows", "to": "entityRecords"},
+    {"from": "entityRecords", "to": "importModelEntity"},
+    {"from": "exportRows", "to": "definitionRecords"},
+    {"from": "definitionRecords", "to": "importSignalDefinition"},
+    {"from": "exportRows", "to": "bindingRecords"},
+    {"from": "bindingRecords", "to": "importSignalBinding"},
+    {"from": "bindingRecords", "to": "attachBinding"},
+    {"from": "bindingRecords", "to": "bindDefinition"},
+    {"from": "exportRows", "to": "observationRecords"},
+    {"from": "observationRecords", "to": "importObservation"},
+    {"from": "observationRecords", "to": "attachReading"},
+    {"from": "exportRows", "to": "modelRecords"},
+    {"from": "modelRecords", "to": "importModel"},
+    {"from": "exportRows", "to": "discoveryRecords"},
+    {"from": "discoveryRecords", "to": "importDiscoveryRule"},
+    {"from": "exportRows", "to": "authenticationRecords"},
+    {"from": "authenticationRecords", "to": "importAuthenticationSetting"},
+    {"from": "exportRows", "to": "relationships"},
+    {"from": "relationships", "to": "dependencies"},
+    {"from": "flowTuples", "to": "sourceAddress"},
+    {"from": "flowTuples", "to": "destinationAddress"},
+    {"from": "flowTuples", "to": "recordTuple"},
+    {"from": "flowTuples", "to": "sentFlow"},
+    {"from": "flowTuples", "to": "receivedBy"},
+    {"from": "dependencyTelemetry", "to": "appRole"},
+    {"from": "dependencyTelemetry", "to": "targetHost"},
+    {"from": "dependencyTelemetry", "to": "dependencyWindow"},
+    {"from": "dependencyTelemetry", "to": "reportedCall"},
+    {"from": "dependencyTelemetry", "to": "targetOfCall"},
+    {"from": "entityRecords", "to": "resourceEntities"},
+    {"from": "resourceEntities", "to": "resourceBindings"},
+    {"from": "dependencyTelemetry", "to": "declaredTelemetryScopes", "port": "left"},
+    {"from": "resourceBindings", "to": "declaredTelemetryScopes", "port": "right"},
+    {"from": "declaredTelemetryScopes", "to": "reportingResource"},
+    {"from": "dependencyTelemetry", "to": "declaredTargetResources", "port": "left"},
+    {"from": "resourceBindings", "to": "declaredTargetResources", "port": "right"},
+    {"from": "declaredTargetResources", "to": "targetResource"},
+    {"from": "armInventory", "to": "observedArmResources"},
+    {"from": "exportRows", "to": "userFlowRows"},
+    {"from": "userFlowRows", "to": "declareUserFlow"},
+    {"from": "exportRows", "to": "systemComponentRows"},
+    {"from": "systemComponentRows", "to": "declareSystemComponent"},
+    {"from": "exportRows", "to": "curatedFlowSteps"},
+    {"from": "curatedFlowSteps", "to": "localStepEvidence"},
+    {"from": "exportRows", "to": "curatedAppBindings"},
+    {"from": "curatedAppBindings", "to": "declaredArmIds"},
+    {"from": "armInventory", "to": "observedContainerApps"},
+    {"from": "observedContainerApps", "to": "observedContainerIds"},
+    {"from": "declaredArmIds", "to": "resolveAppBinding", "port": "left"},
+    {"from": "observedContainerIds", "to": "resolveAppBinding", "port": "right"},
+    {"from": "resolveAppBinding", "to": "localAppEvidence"},
+    {"from": "entityRecords", "to": "officialUserFlow"},
+    {"from": "officialUserFlow", "to": "deployedUserFlow"},
+    {"from": "officialUserFlow", "to": "UserFlowKeys"},
+    {"from": "entityRecords", "to": "officialSystemComponent"},
+    {"from": "officialSystemComponent", "to": "deployedSystemComponent"},
+    {"from": "officialSystemComponent", "to": "SystemComponentKeys"},
+    {"from": "relationships", "to": "officialFlowEdges", "port": "left"},
+    {"from": "UserFlowKeys", "to": "officialFlowEdges", "port": "right"},
+    {"from": "officialFlowEdges", "to": "officialFlowSystems", "port": "left"},
+    {"from": "SystemComponentKeys", "to": "officialFlowSystems", "port": "right"},
+    {"from": "officialFlowSystems", "to": "nativeFlowEvidence"},
+    {"from": "localStepEvidence", "to": "flowStepEvidence"},
+    {"from": "nativeFlowEvidence", "to": "flowStepEvidence"},
+    {"from": "flowStepEvidence", "to": "declaredFlowHierarchy"},
+    {"from": "relationships", "to": "officialStorageAndAppEdges", "port": "left"},
+    {"from": "SystemComponentKeys", "to": "officialStorageAndAppEdges", "port": "right"},
+    {"from": "entityRecords", "to": "nativeResourceBindings"},
+    {"from": "officialStorageAndAppEdges", "to": "officialObservedBindings", "port": "left"},
+    {"from": "nativeResourceBindings", "to": "officialObservedBindings", "port": "right"},
+    {"from": "officialObservedBindings", "to": "officialContainerBindings", "port": "left"},
+    {"from": "observedContainerIds", "to": "officialContainerBindings", "port": "right"},
+    {"from": "officialContainerBindings", "to": "nativeAppEvidence"},
+    {"from": "nativeAppEvidence", "to": "allBindingEvidence"},
+    {"from": "localAppEvidence", "to": "allBindingEvidence"},
+    {"from": "allBindingEvidence", "to": "sourceModelDeployments"},
+    {"from": "exportRows", "to": "nameRules"},
+    {"from": "nameRules", "to": "declareNameRules"},
+    {"from": "armNetworkRows", "to": "nativeNetworkFacts"},
+    {"from": "nativeNetworkFacts", "to": "nativeNetworkReferences"},
+    {"from": "nativeNetworkFacts", "to": "originatingResource"},
+    {"from": "nativeNetworkFacts", "to": "resolveObservedResources", "port": "left"},
+    {"from": "armInventory", "to": "resolveObservedResources", "port": "right"},
+    {"from": "resolveObservedResources", "to": "targetArmResource"},
+    {"from": "nativeNetworkFacts", "to": "dnsTargets"},
+    {"from": "dnsTargets", "to": "recordDns"},
+    {"from": "dnsTargets", "to": "dnsReference"},
+    {"from": "nativeNetworkFacts", "to": "ipTargets"},
+    {"from": "nativeNetworkFacts", "to": "resolvedAddresses"},
+    {"from": "ipTargets", "to": "directAddresses"},
+    {"from": "resolvedAddresses", "to": "resolvedAddressesOfDns"},
+    {"from": "directAddresses", "to": "allReferencedAddresses"},
+    {"from": "resolvedAddressesOfDns", "to": "allReferencedAddresses"},
+    {"from": "allReferencedAddresses", "to": "observedIp"},
+    {"from": "allReferencedAddresses", "to": "ipReference"}
+  ]
+}

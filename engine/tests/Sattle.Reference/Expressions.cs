@@ -71,6 +71,9 @@ public static class Expressions
             case "Negate": return args[0] is IntegerValue n ? Value.Integer(-n.N) : Value.Decimal(-Canon.Number(args[0]));
             case "ToDecimal": return Value.Decimal(Canon.Number(args[0]));
             case "Rate": return Value.Decimal(Canon.Number(args[0]) / (c.Args[0].Type.Role.Period / 1_000_000_000m));
+            case "StartsWith": return Value.Boolean(((TextValue)args[0]).S.StartsWith(((TextValue)args[1]).S, StringComparison.OrdinalIgnoreCase));
+            case "EndsWith": return Value.Boolean(((TextValue)args[0]).S.EndsWith(((TextValue)args[1]).S, StringComparison.OrdinalIgnoreCase));
+            case "Contains": return Value.Boolean(((TextValue)args[0]).S.Contains(((TextValue)args[1]).S, StringComparison.OrdinalIgnoreCase));
             case "Concat": return Value.Text(string.Concat(args.Select(a => ((TextValue)a).S)));
             case "LowerInvariant": return Value.Text(((TextValue)args[0]).S.ToLowerInvariant());
             case "Trim": return Value.Text(((TextValue)args[0]).S.Trim());

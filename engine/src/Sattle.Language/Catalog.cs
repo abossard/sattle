@@ -17,11 +17,18 @@ public interface IProjectionSource
     ProjectionFacts Lower(Graph catalog, string module, IReadOnlyList<SourceFile> files);
     /// <summary>The language of a definition file of this name when the source reads it (a projection file), else null.</summary>
     string? Language(string fileName);
+    bool IsModuleFile(string fileName) => false;
+    ModuleAst ReadModule(SourceFile file) => throw new NotSupportedException();
+    string? RebindPins(SourceFile file, IReadOnlyDictionary<string, string> pins) => null;
 }
 
 /// <summary>Several projection sources as one: each source gets only the files it alone claims, and their facts are merged. A file that two sources claim is an error before anything is lowered, and so is a projection written in two files.</summary>
 public sealed class ProjectionSources(params IProjectionSource[] sources) : IProjectionSource
 {
+    public bool IsModuleFile(string fileName) => sources.Any(s => s.IsModuleFile(fileName));
+    public ModuleAst ReadModule(SourceFile file) => sources.Single(s => s.IsModuleFile(file.Path)).ReadModule(file);
+    public string? RebindPins(SourceFile file, IReadOnlyDictionary<string, string> pins) =>
+        sources.SingleOrDefault(s => s.IsModuleFile(file.Path))?.RebindPins(file, pins);
     /// <summary>The language of the first source that claims the file: a file two sources claim is still a projection file, and `Lower` reports it.</summary>
     public string? Language(string fileName) => sources.Select(s => s.Language(fileName)).FirstOrDefault(l => l is not null);
 
@@ -127,12 +134,16 @@ public sealed class Catalog
     {
         var diags = new List<Diagnostic>(); var fixes = new List<PinFix>();
         var parsed = new List<(SourceFile File, ModuleAst Ast)>();
-        // a definition file that is not a module text is read by the projection source, if there is one
-        var others = files.Where(f => !f.Path.EndsWith(".sattle", StringComparison.Ordinal)).ToList();
+        var others = new List<SourceFile>();
         var read = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var f in files.Where(f => f.Path.EndsWith(".sattle", StringComparison.Ordinal)))
+        foreach (var f in files)
         {
-            try { parsed.Add((f, Parser.Parse(f.Text))); }
+            try
+            {
+                if (projections?.IsModuleFile(f.Path) == true) parsed.Add((f, projections.ReadModule(f)));
+                else if (f.Path.EndsWith(".sattle", StringComparison.Ordinal)) parsed.Add((f, Parser.Parse(f.Text)));
+                else others.Add(f);
+            }
             catch (SyntaxError e) { diags.Add(new Diagnostic("Syntax", "error", "", e.Message, f.Path, e.Pos.Line, e.Pos.Col)); }
         }
         // K5: the import graph is acyclic; load in dependency order
@@ -307,13 +318,18 @@ public sealed class Catalog
     public OntologyView OntologyOf(string module) => OntologyView.Build(Graph, ProjectionChecker.Closure(Graph, module));
 
     /// <summary>Applies pin fixes to source text. Returns the new text per file.</summary>
-    public static Dictionary<string, string> ApplyPinFixes(IEnumerable<SourceFile> files, IEnumerable<PinFix> fixes)
+    public static Dictionary<string, string> ApplyPinFixes(IEnumerable<SourceFile> files, IEnumerable<PinFix> fixes, IProjectionSource? languages = null)
     {
         var res = new Dictionary<string, string>();
         foreach (var f in files)
         {
             var mine = fixes.Where(x => x.File == f.Path).OrderByDescending(x => x.DigestPos.Line).ThenByDescending(x => x.DigestPos.Col).ToList();
             if (mine.Count == 0) continue;
+            if (languages?.RebindPins(f, mine.DistinctBy(x => x.Module).ToDictionary(x => x.Module, x => x.Expected)) is { } rebound)
+            {
+                res[f.Path] = rebound;
+                continue;
+            }
             var lines = f.Text.Split('\n').ToList();
             foreach (var fx in mine)
             {

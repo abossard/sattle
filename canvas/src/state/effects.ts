@@ -69,7 +69,7 @@ async function openSource(id: string, s: State, dispatch: Dispatch): Promise<voi
 
 export function runEffects(a: Action, s: State, dispatch: Dispatch): void {
   const ws = runtime.ws;
-  if (a.type.startsWith("editor/") && a.type !== "editor/summary" && a.type !== "editor/event" && a.type !== "editor/projection" && a.type !== "editor/dismiss") { void runEditor(a, dispatch, s); return; }
+  if (a.type.startsWith("editor/") && a.type !== "editor/summary" && a.type !== "editor/event" && a.type !== "editor/projection" && a.type !== "editor/dismiss" && a.type !== "editor/clearRecoveredText") { void runEditor(a, dispatch, s); return; }
   switch (a.type) {
     case "source/opening": if (!a.resync) endSession(); void openSource(a.id, s, dispatch); break;
     case "feed/patch":

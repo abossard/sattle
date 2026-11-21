@@ -15,7 +15,7 @@ import {
 } from "./graph-view-model";
 import type { History, StepResult } from "./history";
 import { hasHierarchyEdges, hasTreeRows, inHierarchy } from "./tree-model";
-import { besidePositions, blamePath, kindAxes, restatingTypes } from "./edge-kinds";
+import { besidePositions, blamePath, hasDependencyBranches, kindAxes, restatingTypes } from "./edge-kinds";
 import { tileThinsIsolated } from "./tile";
 import type { GraphInfo } from "../source/types";
 import { EDGE_CHANNELS, NODE_CHANNELS, type TelemetryHub } from "./telemetry-hub";
@@ -85,6 +85,11 @@ export class DataPane {
   #telemetryApplyMs = 0;
   /** the graph at the history's cursor */
   get graph(): Graph { return this.#graph; }
+  get visibleReferenceCount(): number {
+    let count = 0;
+    for (const slot of this.#graph.stubSlot.values()) if (this.scene.nodeVisible(slot)) count++;
+    return count;
+  }
   /** the layout drawn now; the view's `layout` decides it */
   get layoutKind(): LayoutKind { return this.#layoutKind; }
   get layoutRunning(): boolean { return this.#layoutRunning; }
@@ -108,7 +113,7 @@ export class DataPane {
     this.view.setTheme(theme);
     this.view.setScene(this.scene);
     this.view.hooks = {
-      nodeLabel: (slot) => { const n = this.#graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = (this.blame.blamed.has(n.id) ? "⚑ " : "") + shortLabel(this.#graph.label(n)) + this.valueMark("node", n.props); const sup = this.supportCounts.get(slot); if (sup) l += ` (+${sup})`; return g ? `${l} (+${g})` : l; },
+      nodeLabel: (slot) => { const n = this.#graph.nodes[slot]; if (!n) return null; const g = this.groupCounts.get(slot); let l = (this.blame.blamed.has(n.id) ? "⚑ " : "") + shortLabel(this.#graph.label(n)); if (!this.#graph.isStub(slot)) l += this.valueMark("node", n.props); const sup = this.supportCounts.get(slot); if (sup) l += ` (+${sup})`; return g ? `${l} (+${g})` : l; },
       nodeGlyph: (slot) => { const st = this.scene.nodeState(slot); return st & St.Added ? "+" : st & St.Changed ? "Δ" : null; },
       edgeLabel: (slot) => { const r = this.#graph.edges[slot]; return r ? r.type + this.valueMark("edge", r.props) : null; },
       ghosts: () => this.ghostList,
@@ -222,9 +227,10 @@ export class DataPane {
     }
     // a declared hierarchy ranks the layers: parent above child, what explains a row below it; dependencies between rows do not rank
     const tree = kind === "layered" && this.info.tree && hasHierarchyEdges(g, this.info.tree) ? this.info.tree : undefined;
+    const branches = !!(tree && this.info.edgeKinds && hasDependencyBranches(g, tree, this.info.edgeKinds, (e) => sc.edgeVisible(e)));
     if (tree) {
       // what explains an element (a signal, evidence) hangs below it: the end of a support edge that takes part in nothing else is the child
-      const isSupport = (type: string) => this.kindOf(type) === "support" || tree.edgeRoles[type] === "support";
+      const isSupport = (type: string) => (this.kindOf(type) ?? tree.edgeRoles[type]) === "support";
       const structural = new Uint8Array(g.nodes.length);
       for (let e = 0; e < g.edges.length; e++) { const r = g.edges[e]; if (r && !isSupport(r.type)) { if (g.edgeSrc[e] >= 0) structural[g.edgeSrc[e]] = 1; if (g.edgeDst[e] >= 0) structural[g.edgeDst[e]] = 1; } }
       // with declared kinds the parts stack below their wholes along every vertical composition (a pod above its node, a node above its pool);
@@ -234,12 +240,15 @@ export class DataPane {
         const e = edgeAt[k], r = g.edges[e];
         if (src[k] < 0 || !r) continue;
         if (inHierarchy(tree, r.type)) { if (tree.hierarchy.childIsSource) [src[k], dst[k]] = [dst[k], src[k]]; }
+        else if (branches && this.kindOf(r.type) === "dependency") { /* rank each dependency with its parent */ }
         else if (axes?.vertical.has(r.type)) { /* the source (the part) above the target */ }
         else if (isSupport(r.type)) { if (!structural[g.edgeSrc[e]] && structural[g.edgeDst[e]]) [src[k], dst[k]] = [dst[k], src[k]]; }
         else { src[k] = -1; dst[k] = -1; }
       }
     }
     this.#layoutRunning = true; this.#layoutProgress = 0;
+    this.view.branchLeaves = branches ? new Set(slots) : null;
+    if (this.view.branchLeaves) for (const parent of src) if (parent >= 0) this.view.branchLeaves.delete(slots[parent]);
     const scatter = (p: Float32Array) => {
       const pos = this.scene.positions;
       this.scene.ensureNodes(g.nodes.length);
@@ -252,11 +261,14 @@ export class DataPane {
     if (kind === "layered") {
       const w = new Float32Array(n), h = new Float32Array(n);
       for (let i = 0; i < n; i++) { const r = this.styleOf(g.nodes[slots[i]]!.type).radius; w[i] = r * 2; h[i] = r * 2; }
-      const job = this.#layoutClient.run({ kind: "layered", n, src, dst, width: w, height: h, options: { direction: this.#layoutDirection, layerGap: 70, nodeGap: this.info.edgeKinds ? 40 : 14 } });
+      const options = branches
+        ? { direction: "right" as const, roots: "sources" as const, layerGap: 190, nodeGap: 26 }
+        : { direction: this.#layoutDirection, layerGap: 70, nodeGap: this.info.edgeKinds ? 40 : 14 };
+      const job = this.#layoutClient.run({ kind: "layered", n, src, dst, width: w, height: h, options });
       job.done.then((p) => {
         if (this.disposed) return;
         scatter(p);
-        if (tree && this.info.edgeKinds) this.placeBeside();
+        if (tree && this.info.edgeKinds && !branches) this.placeBeside();
         this.#layoutRunning = false; this.#lastLayoutMs = this.#layoutClient.lastMs; this.fit(!first); this.ev.changed();
       });
     } else {
@@ -322,7 +334,7 @@ export class DataPane {
     // with support left out, an element that only supports others (a signal, evidence) is left out too; what it supports counts it
     const supportOnly = this.model.hiddenKinds.has("support") ? this.supportOnlyNodes() : null;
     this.supportCounts = new Map();
-    if (supportOnly) for (const [slot, supported] of supportOnly) for (const t of supported) this.supportCounts.set(t, (this.supportCounts.get(t) ?? 0) + 1);
+    if (supportOnly) for (const supported of supportOnly.values()) for (const t of supported) this.supportCounts.set(t, (this.supportCounts.get(t) ?? 0) + 1);
     for (let i = 0; i < n; i++) {
       const e = g.nodes[i];
       let v = e ? 1 : 0;
@@ -377,13 +389,13 @@ export class DataPane {
   }
 
   /** The nodes whose every edge is a support edge, with the nodes they support. */
-  private supportOnlyNodes(): Map<number, number[]> {
-    const g = this.#graph, out = new Map<number, number[]>();
+  private supportOnlyNodes(): Map<number, Set<number>> {
+    const g = this.#graph, out = new Map<number, Set<number>>();
     for (let i = 0; i < g.nodes.length; i++) {
-      if (!g.nodes[i] || g.isStub(i)) continue;
+      if (!g.nodes[i]) continue;
       const edges = [...g.out[i], ...g.inn[i]];
       if (!edges.length || !edges.every((e) => g.edges[e] && this.kindOf(g.edges[e]!.type) === "support")) continue;
-      out.set(i, edges.map((e) => (g.edgeSrc[e] === i ? g.edgeDst[e] : g.edgeSrc[e])).filter((x) => x >= 0));
+      out.set(i, new Set(edges.map((e) => (g.edgeSrc[e] === i ? g.edgeDst[e] : g.edgeSrc[e])).filter((x) => x >= 0)));
     }
     return out;
   }
@@ -441,6 +453,7 @@ export class DataPane {
 
   setView(change: Partial<PaneView>): void {
     const was = this.shown, next = { ...was, ...change };
+    const supportWasHidden = this.model.hiddenKinds.has("support");
     this.shown = next;
     const same = <K extends keyof PaneView>(k: K) => JSON.stringify(was[k]) === JSON.stringify(next[k]);
     const sameTypes = was.filter.hiddenTypes.size === next.filter.hiddenTypes.size && [...next.filter.hiddenTypes].every((t) => was.filter.hiddenTypes.has(t));
@@ -448,7 +461,11 @@ export class DataPane {
     if (!visible) this.refreshAll();
     else if (was.filter.search !== next.filter.search) { this.updateMatches(); this.view.requestRender(); }
     if (!same("focusDim")) this.setSelection(this.#selection);
-    if (!same("layout")) { const want = this.modelNow().layout; if (want !== this.#layoutKind) this.runLayout(want, true); }
+    const supportToggled = supportWasHidden !== this.model.hiddenKinds.has("support") && (this.kindCounts.get("support") ?? 0) > 0;
+    if (supportToggled || !same("layout")) {
+      const want = this.modelNow().layout;
+      if (supportToggled || want !== this.#layoutKind) this.runLayout(want, true);
+    }
   }
 
   private writeEdges(lo: number, hi: number): void {

@@ -1,0 +1,505 @@
+{
+  "module": "tutorial",
+  "version": "1.0.0",
+  "imports": [
+    {
+      "module": "sattle.doc",
+      "alias": "doc",
+      "version": "1.0.0",
+      "digest": "sha256:85fb5984075d8a28ce4c6b976f3f9f9d8040b58926af1ce16aa9829877acbe36"
+    }
+  ],
+  "entities": [
+    {"name": "Namespace", "properties": [{"name": "cluster", "type": "Text"}, {"name": "name", "type": "Text", "label": true}]},
+    {
+      "name": "Resource",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "resourceType", "type": "Text"},
+        {"name": "resourceGroup", "type": "Text", "optional": true},
+        {"name": "location", "type": "Text", "optional": true},
+        {"name": "subscriptionId", "type": "Text", "optional": true},
+        {"name": "parentId", "type": "Text", "optional": true},
+        {"name": "address", "type": "Text", "optional": true},
+        {"name": "linkedId", "type": "Text", "optional": true},
+        {"name": "clientId", "type": "Text", "optional": true},
+        {"name": "principalId", "type": "Text", "optional": true},
+        {"name": "scope", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "Meter",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "metric", "type": "Text", "label": true},
+        {
+          "name": "reading",
+          "type": "Decimal",
+          "optional": true,
+          "telemetry": {"temporality": "gauge", "combine": "max", "period": "60s"}
+        }
+      ]
+    },
+    {
+      "name": "Cluster",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "policy", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "Group",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "policy", "type": "Text"}
+      ]
+    },
+    {
+      "name": "Signal",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "metric", "type": "Text", "label": true},
+        {
+          "name": "state",
+          "type": "Text",
+          "treeRole": "rolledUp",
+          "roles": {"Healthy": "ok", "Degraded": "warning", "Unknown": "unknown"}
+        }
+      ]
+    },
+    {
+      "name": "HealthCluster",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {
+          "name": "state",
+          "type": "Text",
+          "treeRole": "rolledUp",
+          "roles": {"Healthy": "ok", "Degraded": "warning", "Unknown": "unknown"}
+        },
+        {"name": "metric", "type": "Text"}
+      ]
+    },
+    {
+      "name": "HealthGroup",
+      "properties": [
+        {"name": "armId", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {
+          "name": "state",
+          "type": "Text",
+          "treeRole": "rolledUp",
+          "roles": {"Healthy": "ok", "Degraded": "warning", "Unknown": "unknown"}
+        }
+      ]
+    },
+    {
+      "name": "WorkloadHealthNode",
+      "properties": [
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "role", "type": "Text", "treeRole": "kind"},
+        {"name": "scope", "type": "Text"},
+        {"name": "sourceKey", "type": "Text", "optional": true},
+        {"name": "evidence", "type": "Text", "optional": true},
+        {"name": "state", "type": "Text", "treeRole": "rolledUp",
+         "roles": {"Healthy": "ok", "Unknown": "unknown", "Degraded": "warning", "Unhealthy": "danger"}},
+        {"name": "ownState", "type": "Text", "optional": true, "treeRole": "own",
+         "roles": {"Healthy": "ok", "Unknown": "unknown", "Degraded": "warning", "Unhealthy": "danger"}}
+      ]
+    },
+    {"name": "IpAddress", "properties": [{"name": "address", "type": "Text", "label": true}]},
+    {"name": "DnsName", "properties": [{"name": "dnsName", "type": "Text", "label": true}]},
+    {
+      "name": "Subnet",
+      "properties": [{"name": "armId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}]
+    },
+    {"name": "NetworkPrefix", "properties": [{"name": "cidr", "type": "Text", "label": true}]},
+    {
+      "name": "Pod",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "uid", "type": "Text"},
+        {"name": "phase", "type": "Text", "optional": true},
+        {"name": "ready", "type": "Boolean", "optional": true}
+      ]
+    },
+    {
+      "name": "ReplicaSet",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true}
+      ]
+    },
+    {
+      "name": "Deployment",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "replicas", "type": "Integer", "optional": true}
+      ]
+    },
+    {
+      "name": "Service",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "externalName", "type": "Text", "optional": true},
+        {"name": "address", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "KubernetesNode",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "uid", "type": "Text"},
+        {"name": "resourceId", "type": "Text", "optional": true},
+        {"name": "pool", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "ServiceEndpoint",
+      "properties": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "address", "type": "Text"}
+      ]
+    },
+    {
+      "name": "VmScaleSet",
+      "properties": [{"name": "armId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}]
+    },
+    {
+      "name": "VirtualMachine",
+      "properties": [{"name": "armId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}]
+    }
+  ],
+  "relationships": [
+    {"name": "NamespaceContainsReplicaSet", "from": "Namespace", "to": "ReplicaSet", "kind": "composition"},
+    {"name": "NamespaceContainsPod", "from": "Namespace", "to": "Pod", "kind": "composition"},
+    {"name": "NamespaceContainsService", "from": "Namespace", "to": "Service", "kind": "composition"},
+    {"name": "NamespaceContainsDeployment", "from": "Namespace", "to": "Deployment", "kind": "composition"},
+    {"name": "AzureContains", "from": "Resource", "to": "Resource", "kind": "composition"},
+    {"name": "MeterOf", "from": "Meter", "to": "Resource", "kind": "support"},
+    {"name": "InventoryContains", "from": "Group", "to": "Cluster", "kind": "composition"},
+    {"name": "Contains", "from": "Group", "to": "Cluster", "kind": "composition", "hierarchy": true},
+    {
+      "name": "HealthContains",
+      "from": "HealthGroup",
+      "to": "HealthCluster",
+      "kind": "composition",
+      "hierarchy": true
+    },
+    {"name": "IncludesFlow", "from": "WorkloadHealthNode", "to": "WorkloadHealthNode", "kind": "composition", "hierarchy": true},
+    {"name": "RequiresCheck", "from": "WorkloadHealthNode", "to": "WorkloadHealthNode", "kind": "dependency"},
+    {"name": "ReadinessFromPod", "from": "WorkloadHealthNode", "to": "Pod", "kind": "support"},
+    {"name": "CpuFromSignal", "from": "WorkloadHealthNode", "to": "Signal", "kind": "support"},
+    {"name": "IngressFromMeter", "from": "WorkloadHealthNode", "to": "Meter", "kind": "support"},
+    {"name": "PrivatelyConnectsTo", "from": "Resource", "to": "Resource", "kind": "dependency"},
+    {"name": "AttachedNetworkInterface", "from": "Resource", "to": "Resource", "kind": "composition"},
+    {"name": "LinksVirtualNetwork", "from": "Resource", "to": "Resource", "kind": "dependency"},
+    {"name": "HasDnsZone", "from": "Resource", "to": "Resource", "kind": "dependency"},
+    {"name": "NetworkAttachment", "from": "Resource", "to": "Resource", "kind": "dependency"},
+    {"name": "UsesSubnet", "from": "Resource", "to": "Subnet", "kind": "dependency"},
+    {"name": "ContainsSubnet", "from": "Resource", "to": "Subnet", "kind": "composition"},
+    {"name": "HasIpAddress", "from": "Resource", "to": "IpAddress", "kind": "composition"},
+    {"name": "UsesDnsServer", "from": "Resource", "to": "IpAddress", "kind": "dependency"},
+    {"name": "HasDnsName", "from": "Resource", "to": "DnsName", "kind": "composition"},
+    {"name": "HasNetworkPrefix", "from": "Resource", "to": "NetworkPrefix", "kind": "composition"},
+    {"name": "ConfiguredAddress", "from": "DnsName", "to": "IpAddress", "kind": "dependency"},
+    {"name": "PodOwnedBy", "from": "Pod", "to": "ReplicaSet", "kind": "composition"},
+    {"name": "ReplicaSetOwnedBy", "from": "ReplicaSet", "to": "Deployment", "kind": "composition"},
+    {"name": "RunsOnNode", "from": "Pod", "to": "KubernetesNode", "kind": "composition"},
+    {"name": "HostedByAzure", "from": "KubernetesNode", "to": "Resource", "kind": "composition"},
+    {"name": "SelectsDeployment", "from": "Service", "to": "Deployment", "kind": "composition"},
+    {"name": "HasServiceEndpoint", "from": "Service", "to": "ServiceEndpoint", "kind": "composition"},
+    {"name": "BacksService", "from": "Pod", "to": "Service", "kind": "composition"},
+    {"name": "PodCalls", "from": "Pod", "to": "Pod", "kind": "communication"},
+    {"name": "ObservedAtIp", "from": "Pod", "to": "IpAddress", "kind": "support"},
+    {"name": "DeploymentCalls", "from": "Deployment", "to": "Deployment", "kind": "communication"},
+    {"name": "ServiceCalls", "from": "Service", "to": "Service", "kind": "communication"},
+    {"name": "ScheduledOn", "from": "Deployment", "to": "KubernetesNode", "kind": "composition"},
+    {"name": "RunsOnVmss", "from": "Deployment", "to": "VmScaleSet", "kind": "composition"},
+    {"name": "RunsOnVm", "from": "Deployment", "to": "VirtualMachine", "kind": "composition"},
+    {"name": "SharesVmssWith", "from": "Deployment", "to": "Deployment", "kind": "dependency"}
+  ],
+  "identities": [
+    {"name": "workloadHealthRole", "type": "WorkloadHealthNode", "components": [
+      {"name": "role", "type": "Text", "normalize": "exact"},
+      {"name": "key", "type": "Text", "normalize": "exact"}
+    ]},
+    {"name": "kubeNamespace", "type": "Namespace", "components": [{"name": "cluster", "type": "Text", "normalize": "exact"}, {"name": "name", "type": "Text", "normalize": "exact"}]},
+    {
+      "name": "resource",
+      "type": "Resource",
+      "components": [{"name": "armId", "type": "Text", "normalize": "lowerInvariant"}]
+    },
+    {
+      "name": "meter",
+      "type": "Meter",
+      "components": [
+        {"name": "armId", "type": "Text", "normalize": "lowerInvariant"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "ipAddress",
+      "type": "IpAddress",
+      "components": [{"name": "address", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "dnsName",
+      "type": "DnsName",
+      "components": [{"name": "dnsName", "type": "Text", "normalize": "exact"}]
+    },
+    {"name": "subnet", "type": "Subnet", "components": [{"name": "armId", "type": "Text", "normalize": "exact"}]},
+    {
+      "name": "networkPrefix",
+      "type": "NetworkPrefix",
+      "components": [{"name": "cidr", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "pod",
+      "type": "Pod",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "namespace", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "replicaSet",
+      "type": "ReplicaSet",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "namespace", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "deployment",
+      "type": "Deployment",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "namespace", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "service",
+      "type": "Service",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "namespace", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "kubeNode",
+      "type": "KubernetesNode",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "serviceEndpoint",
+      "type": "ServiceEndpoint",
+      "components": [
+        {"name": "cluster", "type": "Text", "normalize": "exact"},
+        {"name": "namespace", "type": "Text", "normalize": "exact"},
+        {"name": "service", "type": "Text", "normalize": "exact"},
+        {"name": "address", "type": "Text", "normalize": "exact"}
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "name": "ResourceRow",
+      "fields": [
+        {"name": "id", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "type", "type": "Text"},
+        {"name": "location", "type": "Text", "optional": true},
+        {"name": "resourceGroup", "type": "Text", "optional": true},
+        {"name": "subscriptionId", "type": "Text", "optional": true},
+        {"name": "parentId", "type": "Text", "optional": true},
+        {"name": "address", "type": "Text", "optional": true},
+        {"name": "linkedId", "type": "Text", "optional": true},
+        {"name": "clientId", "type": "Text", "optional": true},
+        {"name": "principalId", "type": "Text", "optional": true},
+        {"name": "scope", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "ResourceMetricRow",
+      "fields": [
+        {"name": "time", "type": "Instant"},
+        {"name": "resourceId", "type": "Text"},
+        {"name": "metric", "type": "Text"},
+        {"name": "value", "type": "Decimal"}
+      ]
+    },
+    {
+      "name": "AzureNetworkRow",
+      "fields": [
+        {"name": "resourceId", "type": "Text"},
+        {"name": "kind", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "resolvedAddress", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "PodRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "uid", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "phase", "type": "Text", "optional": true},
+        {"name": "teamLabel", "type": "Text", "optional": true},
+        {"name": "nodeName", "type": "Text", "optional": true},
+        {"name": "restarts", "type": "Integer", "optional": true},
+        {"name": "ready", "type": "Boolean", "optional": true},
+        {"name": "serviceAccount", "type": "Text", "optional": true},
+        {"name": "deployment", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "DeploymentRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "replicas", "type": "Integer", "optional": true}
+      ]
+    },
+    {
+      "name": "ServiceRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "externalName", "type": "Text", "optional": true},
+        {"name": "address", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "NodeRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "uid", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "resourceId", "type": "Text", "optional": true},
+        {"name": "pool", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "KubernetesLinkRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "kind", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "target", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "SelectsRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "service", "type": "Text"},
+        {"name": "deployment", "type": "Text"}
+      ]
+    },
+    {
+      "name": "EndpointRow",
+      "fields": [
+        {"name": "cluster", "type": "Text"},
+        {"name": "namespace", "type": "Text"},
+        {"name": "service", "type": "Text"},
+        {"name": "address", "type": "Text"},
+        {"name": "podUid", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "FlowRow",
+      "fields": [
+        {"name": "time", "type": "Instant"},
+        {"name": "cluster", "type": "Text"},
+        {"name": "verdict", "type": "Text"},
+        {"name": "srcNamespace", "type": "Text", "optional": true},
+        {"name": "srcPod", "type": "Text", "optional": true},
+        {"name": "dstNamespace", "type": "Text", "optional": true},
+        {"name": "dstPod", "type": "Text", "optional": true},
+        {"name": "dstAddress", "type": "Text", "optional": true},
+        {"name": "dstName", "type": "Text", "optional": true}
+      ]
+    }
+  ],
+  "constraints": [
+    {"kind": "cardinality", "type": "Contains", "side": "target", "min": 0, "max": 1},
+    {"kind": "acyclic", "type": "Contains"}
+  ],
+  "space": {
+    "name": "azureTutorial",
+    "sources": [
+      {"name": "resources", "adapter": "azure.resource-graph", "rows": "ResourceRow"},
+      {"name": "metrics", "adapter": "azure.metrics", "rows": "ResourceMetricRow"},
+      {"name": "network", "adapter": "azure.resource-graph", "rows": "AzureNetworkRow"},
+      {"name": "pods", "adapter": "kubernetes.list-watch", "rows": "PodRow"},
+      {"name": "deployments", "adapter": "kubernetes.list-watch", "rows": "DeploymentRow"},
+      {"name": "services", "adapter": "kubernetes.list-watch", "rows": "ServiceRow"},
+      {"name": "kubeNodes", "adapter": "kubernetes.list-watch", "rows": "NodeRow"},
+      {"name": "kubeLinks", "adapter": "kubernetes.list-watch", "rows": "KubernetesLinkRow"},
+      {"name": "selections", "adapter": "kubernetes.list-watch", "rows": "SelectsRow"},
+      {"name": "endpoints", "adapter": "kubernetes.list-watch", "rows": "EndpointRow"},
+      {"name": "flows", "adapter": "hubble.observe", "rows": "FlowRow"}
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "ingest",
+        "master": true,
+        "inputs": {
+          "resources": "resources",
+          "metrics": "metrics",
+          "network": "network",
+          "pods": "pods",
+          "deployments": "deployments",
+          "services": "services",
+          "kubeNodes": "kubeNodes",
+          "kubeLinks": "kubeLinks",
+          "selections": "selections",
+          "endpoints": "endpoints",
+          "flows": "flows"
+        }
+      },
+      {"name": "inventory", "projection": "inventory", "inputs": {"master": "master"}},
+      {"name": "signals", "projection": "signals", "inputs": {"master": "master"}},
+      {"name": "tree", "projection": "tree", "inputs": {"inventory": "inventory"}},
+      {"name": "policy", "projection": "policy", "inputs": {"tree": "tree"}},
+      {
+        "name": "health",
+        "projection": "health",
+        "inputs": {"master": "master", "tree": "tree", "signals": "signals"}
+      },
+      {"name": "workloadHealth", "projection": "workloadHealth", "inputs": {"master": "master", "tree": "tree", "signals": "signals"}},
+      {"name": "report", "projection": "report", "inputs": {"health": "health", "workloadHealth": "workloadHealth"}},
+      {"name": "workloads", "projection": "workloads", "inputs": {"master": "master"}},
+      {"name": "placement", "projection": "placement", "inputs": {"workloads": "workloads", "master": "master"}},
+      {"name": "colocation", "projection": "colocation", "inputs": {"placement": "placement"}}
+    ]
+  }
+}

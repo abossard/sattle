@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ESTATE_SIZES, estateOntology, estatePatches, generateEstate, ownershipTree, workloadDependencies } from "../src/core/synth";
+import { ESTATE_SIZES, estateOntology, estatePatches, generateEstate, ownershipTree, workloadDependencies } from "../examples/synthetic-estate/synth";
 import { Graph } from "../src/core/graph";
 import { checkOntology } from "../src/core/validate";
 

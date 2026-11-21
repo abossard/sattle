@@ -1,0 +1,260 @@
+{
+  "graph": "network",
+  "ontology": "mirror",
+  "description": "Trace IP traffic from flow logs and application calls from dependency telemetry.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "observedAddresses",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "ip", "label": "IpAddress"}]}
+    },
+    {
+      "id": "keepAddress",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "IpAddress",
+            "id": {"ref": "ip"},
+            "props": {"vnetId": {"ref": "ip.vnetId"}, "address": {"ref": "ip.address"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "observedFlows",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "a", "label": "IpAddress"},
+          {"var": "f", "label": "NetworkFlow"},
+          {"var": "b", "label": "IpAddress"}
+        ],
+        "edges": [
+          {"var": "sent", "label": "SentFlow", "from": "a", "to": "f"},
+          {"var": "received", "label": "ReceivedBy", "from": "f", "to": "b"}
+        ]
+      }
+    },
+    {
+      "id": "countTuples",
+      "verb": "summarize",
+      "by": {"a": {"ref": "a"}, "b": {"ref": "b"}},
+      "aggregates": {"tuples": {"fn": "count", "args": []}}
+    },
+    {
+      "id": "observedTraffic",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "IpAddress", "id": {"ref": "a"}},
+          {"var": "b", "label": "IpAddress", "id": {"ref": "b"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "ObservedTraffic",
+            "from": "a",
+            "to": "b",
+            "props": {"tuples": {"ref": "tuples"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "dependencyWindows",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "app", "label": "ApplicationRole"},
+          {"var": "obs", "label": "DependencyObservation"},
+          {"var": "host", "label": "DependencyHost"}
+        ],
+        "edges": [
+          {"var": "reported", "label": "ReportedDependency", "from": "app", "to": "obs"},
+          {"var": "target", "label": "ObservedTarget", "from": "obs", "to": "host"}
+        ]
+      }
+    },
+    {
+      "id": "reportingRole",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ApplicationRole",
+            "id": {"ref": "app"},
+            "props": {"scopeId": {"ref": "app.scopeId"}, "sourceComponent": {"ref": "app.sourceComponent"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "destinationHost",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "DependencyHost",
+            "id": {"ref": "host"},
+            "props": {"destination": {"ref": "host.destination"}, "endpointScope": {"ref": "host.endpointScope"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "countByResult",
+      "verb": "project",
+      "columns": {
+        "app": {"ref": "app"},
+        "host": {"ref": "host"},
+        "calls": {"ref": "obs.calls"},
+        "spanCount": {"ref": "obs.spanCount"},
+        "failedCalls": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "obs.result"}, {"lit": "failure"}]}, {"ref": "obs.calls"}, {"lit": 0}]
+        },
+        "unknownResultCalls": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "obs.result"}, {"lit": "unknown"}]}, {"ref": "obs.calls"}, {"lit": 0}]
+        }
+      }
+    },
+    {
+      "id": "sumObservedCalls",
+      "verb": "summarize",
+      "by": {"app": {"ref": "app"}, "host": {"ref": "host"}},
+      "aggregates": {
+        "calls": {"fn": "sum", "args": [{"ref": "calls"}]},
+        "spanCount": {"fn": "sum", "args": [{"ref": "spanCount"}]},
+        "failedCalls": {"fn": "sum", "args": [{"ref": "failedCalls"}]},
+        "unknownResultCalls": {"fn": "sum", "args": [{"ref": "unknownResultCalls"}]}
+      }
+    },
+    {
+      "id": "callsToHost",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ApplicationRole", "id": {"ref": "app"}},
+          {"var": "b", "label": "DependencyHost", "id": {"ref": "host"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "CalledEndpoint",
+            "from": "a",
+            "to": "b",
+            "props": {
+              "calls": {"ref": "calls"},
+              "spanCount": {"ref": "spanCount"},
+              "failedCalls": {"ref": "failedCalls"},
+              "unknownResultCalls": {"ref": "unknownResultCalls"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "declaredResources",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "app", "label": "ApplicationRole"}, {"var": "e", "label": "ModelEntity"}],
+        "edges": [{"var": "instrumented", "label": "InstrumentedBy", "from": "app", "to": "e"}]
+      }
+    },
+    {
+      "id": "instrumentationResource",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ModelEntity",
+            "id": {"ref": "e"},
+            "props": {
+              "key": {"ref": "e.key"},
+              "name": {"ref": "e.name"},
+              "configuration": {"ref": "e.configuration"},
+              "impact": {"ref": "e.impact"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "keepScope",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ApplicationRole", "id": {"ref": "app"}},
+          {"var": "b", "label": "ModelEntity", "id": {"ref": "e"}}
+        ],
+        "edges": [{"var": "edge", "label": "InstrumentedBy", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "targetResources",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "host", "label": "DependencyHost"}, {"var": "e", "label": "ModelEntity"}],
+        "edges": [{"var": "owned", "label": "EndpointOf", "from": "host", "to": "e"}]
+      }
+    },
+    {
+      "id": "endpointResource",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ModelEntity",
+            "id": {"ref": "e"},
+            "props": {
+              "key": {"ref": "e.key"},
+              "name": {"ref": "e.name"},
+              "configuration": {"ref": "e.configuration"},
+              "impact": {"ref": "e.impact"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "keepTargetResource",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "DependencyHost", "id": {"ref": "host"}},
+          {"var": "b", "label": "ModelEntity", "id": {"ref": "e"}}
+        ],
+        "edges": [{"var": "edge", "label": "EndpointOf", "from": "a", "to": "b"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "observedAddresses", "to": "keepAddress"},
+    {"from": "observedFlows", "to": "countTuples"},
+    {"from": "countTuples", "to": "observedTraffic"},
+    {"from": "dependencyWindows", "to": "reportingRole"},
+    {"from": "dependencyWindows", "to": "destinationHost"},
+    {"from": "dependencyWindows", "to": "countByResult"},
+    {"from": "countByResult", "to": "sumObservedCalls"},
+    {"from": "sumObservedCalls", "to": "callsToHost"},
+    {"from": "declaredResources", "to": "instrumentationResource"},
+    {"from": "declaredResources", "to": "keepScope"},
+    {"from": "targetResources", "to": "endpointResource"},
+    {"from": "targetResources", "to": "keepTargetResource"}
+  ]
+}

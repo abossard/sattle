@@ -1,0 +1,1098 @@
+{
+  "graph": "ingest",
+  "ontology": "tutorial",
+  "description": "Map Azure inventory, Kubernetes objects, Hubble calls and metric readings into the master graph.",
+  "history": 120,
+  "inputs": [
+    {"name": "resources", "rows": "tutorial.ResourceRow"},
+    {"name": "metrics", "rows": "tutorial.ResourceMetricRow"},
+    {"name": "network", "rows": "tutorial.AzureNetworkRow"},
+    {"name": "pods", "rows": "tutorial.PodRow"},
+    {"name": "deployments", "rows": "tutorial.DeploymentRow"},
+    {"name": "services", "rows": "tutorial.ServiceRow"},
+    {"name": "kubeNodes", "rows": "tutorial.NodeRow"},
+    {"name": "kubeLinks", "rows": "tutorial.KubernetesLinkRow"},
+    {"name": "selections", "rows": "tutorial.SelectsRow"},
+    {"name": "endpoints", "rows": "tutorial.EndpointRow"},
+    {"name": "flows", "rows": "tutorial.FlowRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "namespaceRecords",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "namespace"}]}
+    },
+    {
+      "id": "namespaceNodes",
+      "verb": "nodes",
+      "rule": "kubernetes",
+      "target": {
+        "nodes": [
+          {
+            "var": "ns",
+            "label": "Namespace",
+            "id": {"identity": "kubeNamespace", "args": [{"ref": "cluster"}, {"ref": "name"}]},
+            "props": {"cluster": {"ref": "cluster"}, "name": {"ref": "name"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "namespaceDeployments",
+      "verb": "edges",
+      "rule": "kubernetes",
+      "target": {
+        "nodes": [
+          {
+            "var": "ns",
+            "label": "Namespace",
+            "id": {"identity": "kubeNamespace", "args": [{"ref": "cluster"}, {"ref": "namespace"}]}
+          },
+          {
+            "var": "object",
+            "label": "Deployment",
+            "id": {"identity": "deployment", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          }
+        ],
+        "edges": [{"var": "contains", "label": "NamespaceContainsDeployment", "from": "ns", "to": "object"}]
+      }
+    },
+    {
+      "id": "namespaceServices",
+      "verb": "edges",
+      "rule": "kubernetes",
+      "target": {
+        "nodes": [
+          {
+            "var": "ns",
+            "label": "Namespace",
+            "id": {"identity": "kubeNamespace", "args": [{"ref": "cluster"}, {"ref": "namespace"}]}
+          },
+          {
+            "var": "object",
+            "label": "Service",
+            "id": {"identity": "service", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          }
+        ],
+        "edges": [{"var": "contains", "label": "NamespaceContainsService", "from": "ns", "to": "object"}]
+      }
+    },
+    {
+      "id": "namespacePods",
+      "verb": "edges",
+      "rule": "kubernetes",
+      "target": {
+        "nodes": [
+          {
+            "var": "ns",
+            "label": "Namespace",
+            "id": {"identity": "kubeNamespace", "args": [{"ref": "cluster"}, {"ref": "namespace"}]}
+          },
+          {
+            "var": "object",
+            "label": "Pod",
+            "id": {"identity": "pod", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          }
+        ],
+        "edges": [{"var": "contains", "label": "NamespaceContainsPod", "from": "ns", "to": "object"}]
+      }
+    },
+    {
+      "id": "namespaceReplicaSets",
+      "verb": "edges",
+      "rule": "kubernetes",
+      "target": {
+        "nodes": [
+          {
+            "var": "ns",
+            "label": "Namespace",
+            "id": {"identity": "kubeNamespace", "args": [{"ref": "cluster"}, {"ref": "namespace"}]}
+          },
+          {
+            "var": "object",
+            "label": "ReplicaSet",
+            "id": {"identity": "replicaSet", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          }
+        ],
+        "edges": [{"var": "contains", "label": "NamespaceContainsReplicaSet", "from": "ns", "to": "object"}]
+      }
+    },
+    {"id": "resourceRows", "verb": "rows", "source": "resources"},
+    {
+      "id": "resources",
+      "rule": "azureInventory",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Resource",
+            "id": {"identity": "resource", "args": [{"ref": "id"}]},
+            "props": {
+              "armId": {"fn": "lower", "args": [{"ref": "id"}]},
+              "name": {"ref": "name"},
+              "resourceType": {"fn": "lower", "args": [{"ref": "type"}]},
+              "resourceGroup": {"ref": "resourceGroup"},
+              "location": {"ref": "location"},
+              "subscriptionId": {"ref": "subscriptionId"},
+              "parentId": {"ref": "parentId"},
+              "address": {"ref": "address"},
+              "linkedId": {"ref": "linkedId"},
+              "clientId": {"ref": "clientId"},
+              "principalId": {"ref": "principalId"},
+              "scope": {"ref": "scope"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "contained",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "subscriptionId"}, {"lit": ""}]}, {"lit": ""}]},
+          {
+            "fn": "or",
+            "args": [
+              {
+                "fn": "==",
+                "args": [
+                  {"fn": "lower", "args": [{"ref": "type"}]},
+                  {"lit": "microsoft.resources/subscriptions/resourcegroups"}
+                ]
+              },
+              {
+                "fn": "!=",
+                "args": [{"fn": "coalesce", "args": [{"ref": "resourceGroup"}, {"lit": ""}]}, {"lit": ""}]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "ownership",
+      "rule": "azureInventory",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "Resource",
+            "id": {
+              "identity": "resource",
+              "args": [
+                {
+                  "fn": "iff",
+                  "args": [
+                    {
+                      "fn": "==",
+                      "args": [
+                        {"fn": "lower", "args": [{"ref": "type"}]},
+                        {"lit": "microsoft.resources/subscriptions/resourcegroups"}
+                      ]
+                    },
+                    {
+                      "fn": "concat",
+                      "args": [
+                        {"lit": "/subscriptions/"},
+                        {"fn": "coalesce", "args": [{"ref": "subscriptionId"}, {"lit": ""}]}
+                      ]
+                    },
+                    {
+                      "fn": "concat",
+                      "args": [
+                        {
+                          "fn": "concat",
+                          "args": [
+                            {"lit": "/subscriptions/"},
+                            {"fn": "coalesce", "args": [{"ref": "subscriptionId"}, {"lit": ""}]}
+                          ]
+                        },
+                        {"lit": "/resourcegroups/"},
+                        {"fn": "coalesce", "args": [{"ref": "resourceGroup"}, {"lit": ""}]}
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {"var": "child", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "id"}]}}
+        ],
+        "edges": [{"var": "link", "label": "AzureContains", "from": "parent", "to": "child"}]
+      }
+    },
+    {"id": "metricRows", "verb": "rows", "source": "metrics"},
+    {"id": "minute", "verb": "window", "window": {"time": "time", "period": "60s"}},
+    {
+      "id": "perResource",
+      "verb": "summarize",
+      "by": {
+        "resourceId": {"fn": "lower", "args": [{"ref": "resourceId"}]},
+        "metric": {"ref": "metric"},
+        "windowStart": {"ref": "windowStart"}
+      },
+      "aggregates": {"reading": {"fn": "avg", "args": [{"ref": "value"}]}}
+    },
+    {
+      "id": "meters",
+      "rule": "azureMonitor",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Meter",
+            "id": {"identity": "meter", "args": [{"ref": "resourceId"}, {"ref": "metric"}]},
+            "props": {"armId": {"ref": "resourceId"}, "metric": {"ref": "metric"}, "reading": {"ref": "reading"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "measures",
+      "rule": "azureMonitor",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "parent",
+            "label": "Meter",
+            "id": {"identity": "meter", "args": [{"ref": "resourceId"}, {"ref": "metric"}]}
+          },
+          {"var": "child", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}}
+        ],
+        "edges": [{"var": "link", "label": "MeterOf", "from": "parent", "to": "child"}]
+      }
+    },
+    {"id": "networkRows", "verb": "rows", "source": "network"},
+    {
+      "id": "ipAddressRows",
+      "verb": "where",
+      "condition": {
+        "fn": "or",
+        "args": [
+          {"fn": "==", "args": [{"ref": "kind"}, {"lit": "ip"}]},
+          {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsServer"}]}
+        ]
+      }
+    },
+    {
+      "id": "ipAddressNodes",
+      "verb": "nodes",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "IpAddress",
+            "id": {"identity": "ipAddress", "args": [{"ref": "target"}]},
+            "props": {"address": {"ref": "target"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "dnsNameRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsName"}]}
+    },
+    {
+      "id": "dnsNameNodes",
+      "verb": "nodes",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "DnsName",
+            "id": {"identity": "dnsName", "args": [{"ref": "target"}]},
+            "props": {"dnsName": {"ref": "target"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "subnetRows",
+      "verb": "where",
+      "condition": {
+        "fn": "or",
+        "args": [
+          {"fn": "==", "args": [{"ref": "kind"}, {"lit": "subnet"}]},
+          {"fn": "==", "args": [{"ref": "kind"}, {"lit": "containsSubnet"}]}
+        ]
+      }
+    },
+    {
+      "id": "subnetNodes",
+      "verb": "nodes",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Subnet",
+            "id": {"identity": "subnet", "args": [{"ref": "target"}]},
+            "props": {"armId": {"ref": "target"}, "name": {"ref": "target"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "networkPrefixRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "prefix"}]}
+    },
+    {
+      "id": "networkPrefixNodes",
+      "verb": "nodes",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "NetworkPrefix",
+            "id": {"identity": "networkPrefix", "args": [{"ref": "target"}]},
+            "props": {"cidr": {"ref": "target"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "privateLinksRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "privateLink"}]}
+    },
+    {
+      "id": "privateLinks",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "PrivatelyConnectsTo", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "endpointInterfacesRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "networkInterface"}]}
+    },
+    {
+      "id": "endpointInterfaces",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "AttachedNetworkInterface", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "virtualNetworksRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "virtualNetwork"}]}
+    },
+    {
+      "id": "virtualNetworks",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "LinksVirtualNetwork", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "dnsZonesRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsZone"}]}
+    },
+    {
+      "id": "dnsZones",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "HasDnsZone", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "attachedResourcesRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "attachment"}]}
+    },
+    {
+      "id": "attachedResources",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "NetworkAttachment", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "usedSubnetsRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "subnet"}]}
+    },
+    {
+      "id": "usedSubnets",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Subnet", "id": {"identity": "subnet", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "UsesSubnet", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "declaredSubnetsRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "containsSubnet"}]}
+    },
+    {
+      "id": "declaredSubnets",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "Subnet", "id": {"identity": "subnet", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "ContainsSubnet", "from": "source", "to": "target"}]
+      }
+    },
+    {"id": "assignedIpsRows", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "ip"}]}},
+    {
+      "id": "assignedIps",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "IpAddress", "id": {"identity": "ipAddress", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "HasIpAddress", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "nameServersRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsServer"}]}
+    },
+    {
+      "id": "nameServers",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "IpAddress", "id": {"identity": "ipAddress", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "UsesDnsServer", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "configuredNamesRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsName"}]}
+    },
+    {
+      "id": "configuredNames",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {"var": "target", "label": "DnsName", "id": {"identity": "dnsName", "args": [{"ref": "target"}]}}
+        ],
+        "edges": [{"var": "e", "label": "HasDnsName", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "configuredPrefixesRows",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "prefix"}]}
+    },
+    {
+      "id": "configuredPrefixes",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "Resource", "id": {"identity": "resource", "args": [{"ref": "resourceId"}]}},
+          {
+            "var": "target",
+            "label": "NetworkPrefix",
+            "id": {"identity": "networkPrefix", "args": [{"ref": "target"}]}
+          }
+        ],
+        "edges": [{"var": "e", "label": "HasNetworkPrefix", "from": "source", "to": "target"}]
+      }
+    },
+    {
+      "id": "nameAddresses",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": "==", "args": [{"ref": "kind"}, {"lit": "dnsName"}]},
+          {
+            "fn": "!=",
+            "args": [{"fn": "coalesce", "args": [{"ref": "resolvedAddress"}, {"lit": ""}]}, {"lit": ""}]
+          }
+        ]
+      }
+    },
+    {
+      "id": "resolutions",
+      "verb": "edges",
+      "rule": "azureNetwork",
+      "target": {
+        "nodes": [
+          {"var": "source", "label": "DnsName", "id": {"identity": "dnsName", "args": [{"ref": "target"}]}},
+          {
+            "var": "target",
+            "label": "IpAddress",
+            "id": {
+              "identity": "ipAddress",
+              "args": [{"fn": "coalesce", "args": [{"ref": "resolvedAddress"}, {"lit": ""}]}]
+            }
+          }
+        ],
+        "edges": [{"var": "e", "label": "ConfiguredAddress", "from": "source", "to": "target"}]
+      }
+    },
+    {"id": "pods", "verb": "rows", "source": "pods"},
+    {"id": "deployments", "verb": "rows", "source": "deployments"},
+    {"id": "services", "verb": "rows", "source": "services"},
+    {"id": "kubeNodes", "verb": "rows", "source": "kubeNodes"},
+    {"id": "kubeLinks", "verb": "rows", "source": "kubeLinks"},
+    {"id": "selections", "verb": "rows", "source": "selections"},
+    {"id": "endpoints", "verb": "rows", "source": "endpoints"},
+    {"id": "flows", "verb": "rows", "source": "flows"},
+    {
+      "id": "podNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Pod",
+            "id": {"identity": "pod", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]},
+            "props": {
+              "cluster": {"ref": "cluster"},
+              "namespace": {"ref": "namespace"},
+              "name": {"ref": "name"},
+              "uid": {"ref": "uid"},
+              "phase": {"ref": "phase"},
+              "ready": {"ref": "ready"}
+            }
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "deploymentNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Deployment",
+            "id": {"identity": "deployment", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]},
+            "props": {
+              "cluster": {"ref": "cluster"},
+              "namespace": {"ref": "namespace"},
+              "name": {"ref": "name"},
+              "replicas": {"ref": "replicas"}
+            }
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "serviceNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Service",
+            "id": {"identity": "service", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]},
+            "props": {
+              "cluster": {"ref": "cluster"},
+              "namespace": {"ref": "namespace"},
+              "name": {"ref": "name"},
+              "externalName": {"ref": "externalName"},
+              "address": {"ref": "address"}
+            }
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "nodeNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "KubernetesNode",
+            "id": {"identity": "kubeNode", "args": [{"ref": "cluster"}, {"ref": "name"}]},
+            "props": {
+              "cluster": {"ref": "cluster"},
+              "name": {"ref": "name"},
+              "uid": {"ref": "uid"},
+              "resourceId": {"ref": "resourceId"},
+              "pool": {"ref": "pool"}
+            }
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "replicaSets",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "replicaSet"}]}
+    },
+    {
+      "id": "replicaSetNodes",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "ReplicaSet",
+            "id": {"identity": "replicaSet", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]},
+            "props": {"cluster": {"ref": "cluster"}, "namespace": {"ref": "namespace"}, "name": {"ref": "name"}}
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "replicaSetControllers",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "target"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "deploymentOwners",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "ReplicaSet",
+            "id": {"identity": "replicaSet", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          },
+          {
+            "var": "target",
+            "label": "Deployment",
+            "id": {
+              "identity": "deployment",
+              "args": [
+                {"ref": "cluster"},
+                {"ref": "namespace"},
+                {"fn": "coalesce", "args": [{"ref": "target"}, {"lit": ""}]}
+              ]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ReplicaSetOwnedBy", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {"id": "podOwners", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "podOwner"}]}},
+    {
+      "id": "replicaSetOwners",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Pod",
+            "id": {"identity": "pod", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          },
+          {
+            "var": "target",
+            "label": "ReplicaSet",
+            "id": {
+              "identity": "replicaSet",
+              "args": [
+                {"ref": "cluster"},
+                {"ref": "namespace"},
+                {"fn": "coalesce", "args": [{"ref": "target"}, {"lit": ""}]}
+              ]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "PodOwnedBy", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "scheduledPods",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "nodeName"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "nodeAssignments",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Pod",
+            "id": {"identity": "pod", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "name"}]}
+          },
+          {
+            "var": "target",
+            "label": "KubernetesNode",
+            "id": {
+              "identity": "kubeNode",
+              "args": [{"ref": "cluster"}, {"fn": "coalesce", "args": [{"ref": "nodeName"}, {"lit": ""}]}]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "RunsOnNode", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "azureNodeHosts",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "azureHost"}]}
+    },
+    {
+      "id": "providerIds",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "KubernetesNode",
+            "id": {"identity": "kubeNode", "args": [{"ref": "cluster"}, {"ref": "name"}]}
+          },
+          {
+            "var": "target",
+            "label": "Resource",
+            "id": {"identity": "resource", "args": [{"fn": "coalesce", "args": [{"ref": "target"}, {"lit": ""}]}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "HostedByAzure", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "deploymentSelections",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Service",
+            "id": {"identity": "service", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "service"}]}
+          },
+          {
+            "var": "target",
+            "label": "Deployment",
+            "id": {"identity": "deployment", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "deployment"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "SelectsDeployment", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "serviceEndpoints",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "ServiceEndpoint",
+            "id": {
+              "identity": "serviceEndpoint",
+              "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "service"}, {"ref": "address"}]
+            },
+            "props": {
+              "cluster": {"ref": "cluster"},
+              "namespace": {"ref": "namespace"},
+              "address": {"ref": "address"},
+              "name": {"ref": "service"}
+            }
+          }
+        ]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "serviceEndpointLinks",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Service",
+            "id": {"identity": "service", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "service"}]}
+          },
+          {
+            "var": "target",
+            "label": "ServiceEndpoint",
+            "id": {
+              "identity": "serviceEndpoint",
+              "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "service"}, {"ref": "address"}]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "HasServiceEndpoint", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "podEndpoints",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "podUid"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "endpointPodIds",
+      "verb": "project",
+      "columns": {
+        "cluster": {"ref": "cluster"},
+        "namespace": {"ref": "namespace"},
+        "service": {"ref": "service"},
+        "endpointUid": {"fn": "coalesce", "args": [{"ref": "podUid"}, {"lit": ""}]}
+      }
+    },
+    {
+      "id": "podIds",
+      "verb": "project",
+      "columns": {
+        "podCluster": {"ref": "cluster"},
+        "podNamespace": {"ref": "namespace"},
+        "podName": {"ref": "name"},
+        "podUid": {"ref": "uid"}
+      }
+    },
+    {
+      "id": "observedEndpointPods",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "cluster", "right": "podCluster"}, {"left": "endpointUid", "right": "podUid"}]
+    },
+    {
+      "id": "serviceBacking",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Pod",
+            "id": {"identity": "pod", "args": [{"ref": "podCluster"}, {"ref": "podNamespace"}, {"ref": "podName"}]}
+          },
+          {
+            "var": "target",
+            "label": "Service",
+            "id": {"identity": "service", "args": [{"ref": "cluster"}, {"ref": "namespace"}, {"ref": "service"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "BacksService", "from": "source", "to": "target"}]
+      },
+      "rule": "kubernetes"
+    },
+    {
+      "id": "callsBetweenPods",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "srcNamespace"}, {"lit": ""}]}, {"lit": ""}]},
+          {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "srcPod"}, {"lit": ""}]}, {"lit": ""}]},
+          {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "dstNamespace"}, {"lit": ""}]}, {"lit": ""}]},
+          {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "dstPod"}, {"lit": ""}]}, {"lit": ""}]},
+          {"fn": "==", "args": [{"ref": "verdict"}, {"lit": "FORWARDED"}]}
+        ]
+      }
+    },
+    {
+      "id": "hubblePodCalls",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Pod",
+            "id": {
+              "identity": "pod",
+              "args": [
+                {"ref": "cluster"},
+                {"fn": "coalesce", "args": [{"ref": "srcNamespace"}, {"lit": ""}]},
+                {"fn": "coalesce", "args": [{"ref": "srcPod"}, {"lit": ""}]}
+              ]
+            }
+          },
+          {
+            "var": "target",
+            "label": "Pod",
+            "id": {
+              "identity": "pod",
+              "args": [
+                {"ref": "cluster"},
+                {"fn": "coalesce", "args": [{"ref": "dstNamespace"}, {"lit": ""}]},
+                {"fn": "coalesce", "args": [{"ref": "dstPod"}, {"lit": ""}]}
+              ]
+            }
+          }
+        ],
+        "edges": [{"var": "edge", "label": "PodCalls", "from": "source", "to": "target"}]
+      },
+      "rule": "hubble"
+    },
+    {
+      "id": "withObservedIp",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "dstAddress"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "hubbleIps",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "IpAddress",
+            "id": {"identity": "ipAddress", "args": [{"fn": "coalesce", "args": [{"ref": "dstAddress"}, {"lit": ""}]}]},
+            "props": {"address": {"fn": "coalesce", "args": [{"ref": "dstAddress"}, {"lit": ""}]}}
+          }
+        ]
+      },
+      "rule": "hubble"
+    },
+    {
+      "id": "hubblePodIps",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "source",
+            "label": "Pod",
+            "id": {
+              "identity": "pod",
+              "args": [
+                {"ref": "cluster"},
+                {"fn": "coalesce", "args": [{"ref": "dstNamespace"}, {"lit": ""}]},
+                {"fn": "coalesce", "args": [{"ref": "dstPod"}, {"lit": ""}]}
+              ]
+            }
+          },
+          {
+            "var": "target",
+            "label": "IpAddress",
+            "id": {"identity": "ipAddress", "args": [{"fn": "coalesce", "args": [{"ref": "dstAddress"}, {"lit": ""}]}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ObservedAtIp", "from": "source", "to": "target"}]
+      },
+      "rule": "hubble"
+    }
+  ],
+  "wires": [
+    {"from": "kubeLinks", "to": "namespaceRecords"},
+    {"from": "namespaceRecords", "to": "namespaceNodes"},
+    {"from": "deployments", "to": "namespaceDeployments"},
+    {"from": "services", "to": "namespaceServices"},
+    {"from": "pods", "to": "namespacePods"},
+    {"from": "replicaSets", "to": "namespaceReplicaSets"},
+    {"from": "resourceRows", "to": "resources"},
+    {"from": "resourceRows", "to": "contained"},
+    {"from": "contained", "to": "ownership"},
+    {"from": "minute", "to": "perResource"},
+    {"from": "perResource", "to": "meters"},
+    {"from": "perResource", "to": "measures"},
+    {"from": "metricRows", "to": "minute"},
+    {"from": "networkRows", "to": "ipAddressRows"},
+    {"from": "ipAddressRows", "to": "ipAddressNodes"},
+    {"from": "networkRows", "to": "dnsNameRows"},
+    {"from": "dnsNameRows", "to": "dnsNameNodes"},
+    {"from": "networkRows", "to": "subnetRows"},
+    {"from": "subnetRows", "to": "subnetNodes"},
+    {"from": "networkRows", "to": "networkPrefixRows"},
+    {"from": "networkPrefixRows", "to": "networkPrefixNodes"},
+    {"from": "networkRows", "to": "privateLinksRows"},
+    {"from": "privateLinksRows", "to": "privateLinks"},
+    {"from": "networkRows", "to": "endpointInterfacesRows"},
+    {"from": "endpointInterfacesRows", "to": "endpointInterfaces"},
+    {"from": "networkRows", "to": "virtualNetworksRows"},
+    {"from": "virtualNetworksRows", "to": "virtualNetworks"},
+    {"from": "networkRows", "to": "dnsZonesRows"},
+    {"from": "dnsZonesRows", "to": "dnsZones"},
+    {"from": "networkRows", "to": "attachedResourcesRows"},
+    {"from": "attachedResourcesRows", "to": "attachedResources"},
+    {"from": "networkRows", "to": "usedSubnetsRows"},
+    {"from": "usedSubnetsRows", "to": "usedSubnets"},
+    {"from": "networkRows", "to": "declaredSubnetsRows"},
+    {"from": "declaredSubnetsRows", "to": "declaredSubnets"},
+    {"from": "networkRows", "to": "assignedIpsRows"},
+    {"from": "assignedIpsRows", "to": "assignedIps"},
+    {"from": "networkRows", "to": "nameServersRows"},
+    {"from": "nameServersRows", "to": "nameServers"},
+    {"from": "networkRows", "to": "configuredNamesRows"},
+    {"from": "configuredNamesRows", "to": "configuredNames"},
+    {"from": "networkRows", "to": "configuredPrefixesRows"},
+    {"from": "configuredPrefixesRows", "to": "configuredPrefixes"},
+    {"from": "networkRows", "to": "nameAddresses"},
+    {"from": "nameAddresses", "to": "resolutions"},
+    {"from": "pods", "to": "podNodes"},
+    {"from": "deployments", "to": "deploymentNodes"},
+    {"from": "services", "to": "serviceNodes"},
+    {"from": "kubeNodes", "to": "nodeNodes"},
+    {"from": "kubeLinks", "to": "replicaSets"},
+    {"from": "replicaSets", "to": "replicaSetNodes"},
+    {"from": "replicaSets", "to": "replicaSetControllers"},
+    {"from": "replicaSetControllers", "to": "deploymentOwners"},
+    {"from": "kubeLinks", "to": "podOwners"},
+    {"from": "podOwners", "to": "replicaSetOwners"},
+    {"from": "pods", "to": "scheduledPods"},
+    {"from": "scheduledPods", "to": "nodeAssignments"},
+    {"from": "kubeLinks", "to": "azureNodeHosts"},
+    {"from": "azureNodeHosts", "to": "providerIds"},
+    {"from": "selections", "to": "deploymentSelections"},
+    {"from": "endpoints", "to": "serviceEndpoints"},
+    {"from": "endpoints", "to": "serviceEndpointLinks"},
+    {"from": "endpoints", "to": "podEndpoints"},
+    {"from": "podEndpoints", "to": "endpointPodIds"},
+    {"from": "pods", "to": "podIds"},
+    {"from": "endpointPodIds", "to": "observedEndpointPods", "port": "left"},
+    {"from": "podIds", "to": "observedEndpointPods", "port": "right"},
+    {"from": "observedEndpointPods", "to": "serviceBacking"},
+    {"from": "flows", "to": "callsBetweenPods"},
+    {"from": "callsBetweenPods", "to": "hubblePodCalls"},
+    {"from": "callsBetweenPods", "to": "withObservedIp"},
+    {"from": "withObservedIp", "to": "hubbleIps"},
+    {"from": "withObservedIp", "to": "hubblePodIps"}
+  ]
+}

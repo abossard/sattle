@@ -3,6 +3,7 @@
     <Project Path="src/Sattle.Cli/Sattle.Cli.csproj" />
     <Project Path="src/Sattle.Core/Sattle.Core.csproj" />
     <Project Path="src/Sattle.Kql/Sattle.Kql.csproj" />
+    <Project Path="src/Sattle.Gkql/Sattle.Gkql.csproj" />
     <Project Path="src/Sattle.Language/Sattle.Language.csproj" />
     <Project Path="src/Sattle.Runtime/Sattle.Runtime.csproj" />
   </Folder>

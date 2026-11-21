@@ -49,6 +49,7 @@ export function Inspector() {
   const role = ws.graphInfo(sel.graph)?.role ?? "";
   const rel = ws.related(sel);
   const li = ws.lineageOf(sel);
+  const lineagePending = ws.lineagePending(sel);
   const partial = ws.partialOf(sel);
   const g = hist.graph;
   const slot = stubSlot ?? (el && !isRel(el) ? g.nodeSlot.get(el.id) : undefined);
@@ -57,6 +58,16 @@ export function Inspector() {
     for (const es of g.out[slot]) { const r = g.edges[es]!; groups.set(r.type, [...(groups.get(r.type) ?? []), { dir: "→", other: r.target }]); }
     for (const es of g.inn[slot]) { const r = g.edges[es]!; groups.set(r.type, [...(groups.get(r.type) ?? []), { dir: "←", other: r.source }]); }
   }
+  const connectionTarget = (id: string, relationshipType: string, end: "source" | "target") => {
+    const local = g.entity(id);
+    if (local) return { graph: sel.graph, label: g.label(local) };
+    const source = ws.reference(sel.graph, id, { relationshipType, end })?.graph;
+    const sourceData = source ? ws.history(source)?.graph : undefined;
+    const target = sourceData?.entity(id);
+    if (source && sourceData && target) return { graph: source, label: sourceData.label(target) };
+    const stub = g.nodes[g.stubSlot.get(id) ?? -1];
+    return { graph: sel.graph, label: stub ? g.label(stub) : id };
+  };
   return (
     <div className={s.col}>
       <Subtitle2 as="h2">{subject ? <><TypeGlyph {...ws.styleOf(sel.graph, subject.type)} /> {g.label(subject)}</> : sel.id}</Subtitle2>
@@ -86,7 +97,13 @@ export function Inspector() {
             {[...groups].sort().map(([type, list]) => (
               <TreeItem key={type} itemType="branch" value={type}>
                 <TreeItemLayout>{type} ({list.length})</TreeItemLayout>
-                <Tree>{list.slice(0, 50).map((x, i) => <TreeItem key={i} itemType="leaf" value={`${type}${i}`} onClick={() => go(sel.graph, x.other, "entity")}><TreeItemLayout>{x.dir} {g.label(g.entity(x.other) ?? { id: x.other, props: {} })}</TreeItemLayout></TreeItem>)}</Tree>
+                <Tree>{list.slice(0, 50).map((x, i) => {
+                  const target = connectionTarget(x.other, type, x.dir === "→" ? "target" : "source");
+                  return <TreeItem key={i} itemType="leaf" value={`${type}${i}`} onClick={() => {
+                    if (target.graph !== sel.graph) dispatch({ type: "ui/activeGraph", graph: target.graph });
+                    go(target.graph, x.other, "entity");
+                  }}><TreeItemLayout>{x.dir} {target.label}{target.graph !== sel.graph && <> · {target.graph}</>}</TreeItemLayout></TreeItem>;
+                })}</Tree>
               </TreeItem>
             ))}
           </Tree>
@@ -94,6 +111,7 @@ export function Inspector() {
       )}
       {sel.kind === "entity" && ws.graphInfo(sel.graph)?.tree && <WhyState graph={sel.graph} id={sel.id} />}
       <Subtitle2 as="h3">Shared identity and lineage</Subtitle2>
+      {lineagePending && <Text role="status" size={200}>Loading lineage…</Text>}
       {[...rel.identity].map(([graph, keys]) => <Text key={graph}><Badge appearance="outline" color={roleColor(ws.graphInfo(graph)?.role ?? "")}>{graph}</Badge> {[...keys].slice(0, 6).map((k) => <ElementLink key={k} ws={ws} graph={graph} id={k.slice(2)} edge={k.startsWith("e:")} />)}</Text>)}
       {(partial.below.length > 0 || partial.aboveIn.length > 0 || partial.cutOff) && (
         <MessageBar intent="warning"><MessageBarBody>
@@ -107,7 +125,7 @@ export function Inspector() {
       {li && (
         <KV rows={[["projection", li.projection ?? ""], ["emitted by", li.sink ?? ""], ...(li.rule ? [["rule", `${li.rule}${li.direction ? ` (${li.direction})` : ""}`] as [string, string]] : []), ["operators", li.operators.join(" → ")], ["sources", `${li.sources.length} of ${li.sourceCount}${li.complete ? "" : " (not complete)"}`], ...(li.groupKey ? [["group key", JSON.stringify(li.groupKey)] as [string, string]] : [])]} />
       )}
-      {!rel.identity.size && !rel.sourceList.length && <Text>{ws.hasCorrespondences ? "This element has no counterpart in another graph." : "This source provides no correspondence data. Only entities with the same id are linked."}</Text>}
+      {!lineagePending && !rel.identity.size && !rel.sourceList.length && <Text>{ws.hasCorrespondences ? "This element has no counterpart in another graph." : "This source provides no correspondence data. Only entities with the same id are linked."}</Text>}
       <Series ws={ws} sel={sel} />
     </div>
   );

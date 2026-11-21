@@ -1,0 +1,199 @@
+{
+  "graph": "report",
+  "ontology": "sattle.doc",
+  "description": "Render resource evidence and the states of the workload's user flows in one report.",
+  "history": 120,
+  "inputs": [
+    {"name": "health", "ontology": "tutorial"},
+    {"name": "workloadHealth", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "groups",
+      "verb": "graph-match",
+      "graph": "health",
+      "pattern": {
+        "nodes": [
+          {"var": "g", "label": "HealthGroup"}
+        ]
+      }
+    },
+    {
+      "id": "clusters",
+      "verb": "graph-match",
+      "graph": "health",
+      "pattern": {
+        "nodes": [
+          {"var": "c", "label": "HealthCluster"}
+        ]
+      }
+    },
+    {
+      "id": "heading",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Block",
+            "id": {
+              "identity": "block",
+              "args": [
+                {"lit": "heading"},
+                {"lit": "azure"}
+              ]
+            },
+            "props": {
+              "kind": {"lit": "heading"},
+              "order": {"lit": "0"},
+              "level": {"lit": 1},
+              "text": {"lit": "Azure workload health"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "columns",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Block",
+            "id": {
+              "identity": "block",
+              "args": [
+                {"lit": "header"},
+                {"lit": "azure"}
+              ]
+            },
+            "props": {
+              "kind": {"lit": "header"},
+              "order": {"lit": "1"},
+              "a": {"lit": "Resource"},
+              "b": {"lit": "Type"},
+              "c": {"lit": "State"},
+              "d": {"lit": "Evidence"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "group",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Block",
+            "id": {
+              "identity": "block",
+              "args": [
+                {"lit": "group"},
+                {"ref": "g.armId"}
+              ]
+            },
+            "props": {
+              "kind": {"lit": "row"},
+              "order": {
+                "fn": "concat",
+                "args": [
+                  {"lit": "2/"},
+                  {"ref": "g.armId"}
+                ]
+              },
+              "a": {"ref": "g.name"},
+              "b": {"lit": "Resource group"},
+              "c": {"ref": "g.state"},
+              "d": {"lit": "Worst child"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "cluster",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Block",
+            "id": {
+              "identity": "block",
+              "args": [
+                {"lit": "cluster"},
+                {"ref": "c.armId"}
+              ]
+            },
+            "props": {
+              "kind": {"lit": "row"},
+              "order": {
+                "fn": "concat",
+                "args": [
+                  {"lit": "3/"},
+                  {"ref": "c.armId"}
+                ]
+              },
+              "a": {"ref": "c.name"},
+              "b": {"lit": "AKS cluster"},
+              "c": {"ref": "c.state"},
+              "d": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "c.state"}, {"lit": "Unknown"}]},
+                  {"lit": "No captured reading"},
+                  {"ref": "c.metric"}
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "workloadLevels",
+      "verb": "graph-match",
+      "graph": "workloadHealth",
+      "pattern": {"nodes": [{"var": "w", "label": "WorkloadHealthNode"}]}
+    },
+    {
+      "id": "summaries",
+      "verb": "where",
+      "condition": {"fn": "or", "args": [
+        {"fn": "==", "args": [{"ref": "w.role"}, {"lit": "Workload"}]},
+        {"fn": "==", "args": [{"ref": "w.role"}, {"lit": "Flow"}]}
+      ]}
+    },
+    {
+      "id": "workloadRows",
+      "verb": "nodes",
+      "target": {"nodes": [{
+        "var": "out", "label": "Block",
+        "id": {"identity": "block", "args": [{"lit": "workload-health"}, {"ref": "w.scope"}]},
+        "props": {
+          "kind": {"lit": "row"},
+          "order": {"fn": "concat", "args": [
+            {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "w.role"}, {"lit": "Workload"}]}, {"lit": "4/"}, {"lit": "5/"}]},
+            {"ref": "w.scope"}
+          ]},
+          "a": {"ref": "w.name"},
+          "b": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "w.role"}, {"lit": "Workload"}]}, {"lit": "Workload"}, {"lit": "User flow"}]},
+          "c": {"ref": "w.state"},
+          "d": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "w.role"}, {"lit": "Workload"}]}, {"lit": "Worst flow"}, {"lit": "Worst required check"}]}
+        }
+      }]}
+    }
+  ],
+  "wires": [
+    {"from": "groups", "to": "heading"},
+    {"from": "groups", "to": "columns"},
+    {"from": "groups", "to": "group"},
+    {"from": "clusters", "to": "cluster"},
+    {"from": "workloadLevels", "to": "summaries"},
+    {"from": "summaries", "to": "workloadRows"}
+  ]
+}

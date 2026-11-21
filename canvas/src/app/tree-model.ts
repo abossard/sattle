@@ -6,7 +6,7 @@ import type { Entity } from "../core/model";
 import { valueText } from "../core/model";
 import type { EdgeKind, PresentationHint, Role, TreeSpec } from "../source/presentation";
 import type { GraphInfo } from "../source/types";
-import { causeLinks, isOrigin, kindAxes, type CauseLink } from "./edge-kinds";
+import { causeLinks, inHierarchy, isOrigin, kindAxes, type CauseLink } from "./edge-kinds";
 
 export type { TreeSpec };
 
@@ -33,22 +33,36 @@ export interface TreeModel { nodes: Map<string, TreeNode>; roots: string[]; spec
 /** Roles from the worst to the mildest: what a severity falls back to, and the order the counts are shown in. */
 const WORST_FIRST: Role[] = ["danger", "warning", "unknown", "ok", "neutral"];
 export const roleSeverity = (r: Role): number => WORST_FIRST.length - WORST_FIRST.indexOf(r);
-/** The same fallback on the engine's own scale (-1 unknown, 0 healthy, 1 degraded, 2 unhealthy), for a graph whose severity property is declared: one scale per tree. */
-const ENGINE_SEVERITY: Record<Role, number> = { danger: 2, warning: 1, ok: 0, neutral: 0, unknown: -1 };
+/** Place an unranked state among the severity values supplied by this graph. */
+function rankForRole(role: Role, observed: ReadonlyMap<Role, number>): number {
+  const position = WORST_FIRST.indexOf(role);
+  let previous: { index: number; value: number } | undefined;
+  for (const [index, candidate] of WORST_FIRST.entries()) {
+    const value = observed.get(candidate);
+    if (value === undefined) continue;
+    if (index === position) return value;
+    if (index > position) {
+      return previous ? previous.value + (value - previous.value) * (position - previous.index) / (index - previous.index)
+        : value + index - position;
+    }
+    previous = { index, value };
+  }
+  return previous ? previous.value - (position - previous.index) : roleSeverity(role);
+}
 /** A node where something is wrong: its rolled-up state (which includes its own) is a warning or a danger. */
 export const isWrong = (n: TreeNode): boolean => (n.rolled ?? n.own)?.role === "warning" || (n.rolled ?? n.own)?.role === "danger";
 
 
-const cellOf = (e: Entity, property: string | undefined, hints: ReadonlyMap<string, Record<string, Role>>): StateCell | null => {
+const cellOf = (e: Entity, property: string | undefined, hints: ReadonlyMap<string, ReadonlyMap<string, Role>>): StateCell | null => {
   const v = property ? e.props[property] : undefined;
   if (!v) return null;
   const value = valueText(v);
-  return { value, role: hints.get(property!)?.[value] ?? "neutral" };
+  return { value, role: hints.get(property!)?.get(value) ?? "neutral" };
 };
 
 const rowEnd = (g: Graph, id: string, spec: TreeSpec): boolean => !!spec.hierarchy.parentRows?.includes(g.entity(id)?.type ?? "");
 
-export const inHierarchy = (spec: TreeSpec, type: string): boolean => type === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(type);
+export { inHierarchy };
 
 /** Which kind of edge forms the hierarchy of a graph that declares one: what the ontology says of the hierarchy type, composition when it says nothing. */
 export function declaredHierarchyKind(info: Pick<GraphInfo, "tree" | "edgeKinds">): EdgeKind {
@@ -75,7 +89,7 @@ export function specForKind(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontolo
   // dependency: what a part needs, and what that is made of in turn (a server backed by, connected through); a gateway hangs under what it exposes
   const chosen = kind === "dependency" ? [...kindAxes(info).horizontal].sort() : Object.entries(info.edgeKinds ?? {}).filter(([, k]) => k === kind).map(([t]) => t).sort();
   if (!chosen.length) return base;
-  const rows = kind === "dependency" ? [...new Set(info.ontology.relationshipTypes.filter((r) => r.id.value === base.hierarchy.relationship).flatMap((r) => [...r.sourceTypes, ...r.targetTypes].map((t) => t.value)))] : undefined;
+  const rows = kind === "dependency" ? [...new Set(info.ontology.relationshipTypes.filter((r) => inHierarchy(base, r.id.value)).flatMap((r) => [...r.sourceTypes, ...r.targetTypes].map((t) => t.value)))] : undefined;
   const ends = new Set<string>();
   for (const r of info.ontology.relationshipTypes) if (chosen.includes(r.id.value)) for (const t of [...(r.sourceTypes ?? []), ...(r.targetTypes ?? [])]) ends.add(t.value);
   const edgeRoles: TreeSpec["edgeRoles"] = {};
@@ -90,20 +104,24 @@ export function specForKind(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontolo
  * by two paths is under both; the relationships of the links nest, every other one is counted by `spec.edgeRoles`.
  */
 export function buildTree(g: Graph, spec: TreeSpec, hints: readonly PresentationHint[], links?: { types: ReadonlySet<string>; links: readonly CauseLink[] }): TreeModel {
-  const roles = new Map(hints.map((h) => [h.property, h.roles]));
+  const roles = new Map(hints.map((h) => [h.property, new Map(Object.entries(h.roles))]));
   const nodes = new Map<string, TreeNode>();
   const inTree = (e: Entity) => (spec.types ? spec.types.includes(e.type) : true);
-  // a node without the severity property is ranked on the scale the others use: the engine's when any type declares one, else the role scale
-  const declared = Object.values(spec.state).some((s) => s.severity);
+  const observedRanks = new Map<Role, number>();
+  const missingRanks: { id: string; role: Role }[] = [];
   for (const e of g.entities()) {
     if (!inTree(e)) continue;
     const st = spec.state[e.type] ?? {};
     const own = cellOf(e, st.own, roles), rolled = cellOf(e, st.rolledUp, roles);
     const kind = st.kind && e.props[st.kind] ? valueText(e.props[st.kind]) : e.type;
     const sev = st.severity ? e.props[st.severity] : undefined;
+    const rank = sev && /^-?\d+$/.test(valueText(sev)) ? Number(valueText(sev)) : undefined;
+    const role = (rolled ?? own)?.role ?? "neutral";
+    if (rank === undefined) missingRanks.push({ id: e.id, role });
+    else observedRanks.set(role, Math.max(rank, observedRanks.get(role) ?? -Infinity));
     nodes.set(e.id, {
       id: e.id, type: kind, label: g.label(e), parent: null, parents: [], children: [], own, rolled, origin: isOrigin(e, spec, hints), through: [],
-      severity: sev && /^-?\d+$/.test(valueText(sev)) ? Number(valueText(sev)) : declared ? ENGINE_SEVERITY[(rolled ?? own)?.role ?? "neutral"] : roleSeverity((rolled ?? own)?.role ?? "neutral"),
+      severity: rank ?? 0,
       supporting: 0, cross: 0, counts: [],
       curatedBy: st.curatedBy && e.props[st.curatedBy] ? valueText(e.props[st.curatedBy]) || null : null,
       critical: !!st.critical && valueText(e.props[st.critical] ?? { kind: "boolean", value: false }) === "true",
@@ -111,6 +129,7 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
       policy: st.mode && e.props[st.mode] ? { mode: valueText(e.props[st.mode]), share: st.share && e.props[st.share] ? valueText(e.props[st.share]) : null } : null,
     });
   }
+  for (const { id, role } of missingRanks) nodes.get(id)!.severity = rankForRole(role, observedRanks);
   if (links) for (const l of links.links) {
     const c = nodes.get(l.child), p = nodes.get(l.parent);
     if (!c || !p || l.child === l.parent || c.parents.includes(l.parent)) continue;
@@ -146,7 +165,7 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
     const given = spec.state[g.entity(n.id)?.type ?? ""]?.counts;
     if (given) {
       const e = g.entity(n.id)!;
-      n.counts = Object.entries(given).map(([value, property]) => ({ value, role: roles.get(spec.state[e.type]?.rolledUp ?? "")?.[value] ?? "neutral" as Role, n: Number(valueText(e.props[property] ?? { kind: "integer", value: "0" })) || 0 })).filter((c) => c.n > 0).sort((a, b) => ROLES_WORST(a.role) - ROLES_WORST(b.role) || a.value.localeCompare(b.value));
+      n.counts = Object.entries(given).map(([value, property]) => ({ value, role: roles.get(spec.state[e.type]?.rolledUp ?? "")?.get(value) ?? "neutral" as Role, n: Number(valueText(e.props[property] ?? { kind: "integer", value: "0" })) || 0 })).filter((c) => c.n > 0).sort((a, b) => ROLES_WORST(a.role) - ROLES_WORST(b.role) || a.value.localeCompare(b.value));
       continue;
     }
     const by = new Map<string, { value: string; role: Role; n: number }>();
@@ -167,7 +186,7 @@ export function buildTree(g: Graph, spec: TreeSpec, hints: readonly Presentation
 const ROLES_WORST = (r: Role): number => WORST_FIRST.indexOf(r);
 
 export const labelCompare = (a: TreeNode, b: TreeNode): number => a.label.localeCompare(b.label, undefined, { numeric: true }) || a.id.localeCompare(b.id);
-/** Worst first, then by name: what a person reading a health tree wants at the top. */
+/** Higher declared severity first, then by label. */
 export const severityCompare = (a: TreeNode, b: TreeNode): number => b.severity - a.severity || labelCompare(a, b);
 
 export interface TreeView { expanded: ReadonlySet<string>; onlyWrong: boolean; query: string; sort: "severity" | "label"; showHidden?: boolean }
@@ -293,13 +312,23 @@ export type HierarchyChoice = EdgeKind | "cause";
 /**
  * The tree by cause of a graph with a roll-up (its hierarchy declares states): every element under each element whose state takes it in
  * (`causeLinks`), one row for every element of a type with a state; the other relationships are counted, support as support and the rest as links.
- * Undefined for a graph without states.
+ * Available when a cause link connects tree rows and its parent has a recorded state.
  */
 export function causeTree(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" | "presentation" | "restating">): { spec: TreeSpec; links: ReturnType<typeof causeLinks> } | undefined {
   const base = info.tree;
   if (!base || !Object.keys(base.state).length) return undefined;
   const links = causeLinks(g, info);
-  if (!links.links.length) return undefined;
+  const hasCause = links.links.some(({ parent, child }) => {
+    if (parent === child) return false;
+    const p = g.entity(parent), c = g.entity(child);
+    if (!p || !c || !base.state[c.type]) return false;
+    const state = base.state[p.type];
+    return !!state && [state.rolledUp, state.own, state.severity].some((property) => {
+      const value = property ? p.props[property] : undefined;
+      return !!value && value.kind !== "null";
+    });
+  });
+  if (!hasCause) return undefined;
   const edgeRoles: TreeSpec["edgeRoles"] = { ...base.edgeRoles };
   for (const [t, k] of Object.entries(info.edgeKinds ?? {})) if (!links.types.has(t)) edgeRoles[t] = k === "support" ? "support" : "cross";
   // its rows are every element with a state, not only the ends of the declared hierarchy: what a part needs is a cause too

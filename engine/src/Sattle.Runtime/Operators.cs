@@ -8,6 +8,7 @@ namespace Sattle.Runtime;
 public sealed class Epoch
 {
     public long Id;
+    internal MatchPreparation? Preparation;
     public bool HasAdvance;
     public long Lambda;
     public Dictionary<string, Batch> Rows { get; } = [];
@@ -26,6 +27,9 @@ public sealed class GraphDelta(Patch? patch, Graph state, IReadOnlyList<WindowCh
     public Patch? Patch { get; } = patch;
     public Graph State { get; } = state;
     public IReadOnlyList<WindowChange> Telemetry { get; } = telemetry;
+
+    MatchPatch? matchInput;
+    internal MatchPatch MatchInput => matchInput ??= new(Patch!);
 
     /// <summary>The places in `Telemetry` of the changes of one property, in their order. The index is built once per delta, on the first call, so each reader of the graph visits only the changes of the properties it reads.</summary>
     public ArraySegment<int> ChangesOf(int prop) => (byProp ??= ByProp(Telemetry)).TryGetValue(prop, out var s) ? s : ArraySegment<int>.Empty;
@@ -103,6 +107,28 @@ public sealed class BatchBuilder(Layout layout)
         foreach (var c in b.Cols) { if (c.IsDec) c.D[i] = 0; else c.L[i] = 0; if (c.P is { } p) p[i] = true; }
         return i;
     }
+    /// <summary>Append a prepared range, including weights and presence bits, in its original order.</summary>
+    internal void Append(Batch source)
+    {
+        var b = Batch;
+        var end = checked(b.N + source.N);
+        if (end > b.W!.Length) b.Ensure((int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)end));
+        source.W!.AsSpan(0, source.N).CopyTo(b.W.AsSpan(b.N));
+        for (var c = 0; c < b.Cols.Length; c++)
+        {
+            var from = source.Cols[c]; var to = b.Cols[c];
+            if (from.IsDec) from.D.AsSpan(0, source.N).CopyTo(to.D.AsSpan(b.N));
+            else from.L.AsSpan(0, source.N).CopyTo(to.L.AsSpan(b.N));
+            if (from.P is { } present)
+            {
+                if (to.P is null) { to.P = new bool[b.W.Length]; Array.Fill(to.P, true, 0, b.N); }
+                present.AsSpan(0, source.N).CopyTo(to.P.AsSpan(b.N));
+            }
+            else if (to.P is not null) Array.Fill(to.P, true, b.N, source.N);
+        }
+        b.N = end;
+    }
+
     public void Absent(int row, int col) { var b = Batch; b.Cols[col].SetAbsent(row, b.N); }
     public Batch? Build() => made is { N: > 0 } ? made : null;
 

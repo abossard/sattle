@@ -1,0 +1,47 @@
+{
+  "graph": "policy",
+  "ontology": "tutorial",
+  "description": "Copy policy from a resource group to its clusters.",
+  "history": 120,
+  "inputs": [
+    {"name": "tree", "ontology": "tutorial"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "tree",
+      "verb": "graph-match",
+      "graph": "tree",
+      "pattern": {
+        "nodes": [
+          {"var": "g", "label": "Group"},
+          {"var": "c", "label": "Cluster"}
+        ],
+        "edges": [
+          {"var": "link", "label": "Contains", "from": "g", "to": "c"}
+        ]
+      }
+    },
+    {
+      "id": "inherit",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "out",
+            "label": "Cluster",
+            "id": {"ref": "c"},
+            "props": {
+              "armId": {"ref": "c.armId"},
+              "name": {"ref": "c.name"},
+              "policy": {"ref": "g.policy"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "tree", "to": "inherit"}
+  ]
+}

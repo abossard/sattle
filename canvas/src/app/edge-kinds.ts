@@ -13,6 +13,27 @@ type Kinds = Readonly<Record<string, EdgeKind>>;
  */
 export const restatingTypes = (info: Pick<GraphInfo, "restating">): Set<string> => new Set(info.restating ?? []);
 
+export const inHierarchy = (spec: TreeSpec, type: string): boolean => type === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(type);
+
+/** A hierarchy with independent dependencies can rank each check and its evidence in successive columns. */
+export function hasDependencyBranches(g: Graph, tree: TreeSpec, kinds: Kinds, visibleEdge: (slot: number) => boolean): boolean {
+  const rows = new Set<number>();
+  const dependencies = new Map<number, number>();
+  for (let i = 0; i < g.edges.length; i++) {
+    const edge = g.edges[i];
+    if (!edge || !visibleEdge(i)) continue;
+    const from = g.edgeSrc[i], to = g.edgeDst[i];
+    if (inHierarchy(tree, edge.type)) {
+      rows.add(from); rows.add(to);
+    } else if (kinds[edge.type] === "dependency") {
+      if (dependencies.has(to) && dependencies.get(to) !== from) return false;
+      dependencies.set(to, from);
+    } else if (kinds[edge.type] !== "support") return false;
+  }
+  for (const [child, parent] of dependencies) if (rows.has(child) || !rows.has(parent)) return false;
+  return dependencies.size > 0;
+}
+
 /**
  * The two axes of a graph with declared kinds. `vertical`: the hierarchy and every composition whose target is no element something depends on
  * (a pod on its node, a node in its pool, a pool in its cluster): the part is drawn below the whole. `horizontal`: the dependencies and the
@@ -26,7 +47,7 @@ export function kindAxes(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology"
   const vertical = new Set<string>(), horizontal = new Set<string>();
   for (const r of info.ontology.relationshipTypes) {
     const id = r.id.value, kind = kinds[id];
-    if (id === info.tree?.hierarchy.relationship) vertical.add(id);
+    if (info.tree && inHierarchy(info.tree, id)) vertical.add(id);
     else if (kind === "dependency") horizontal.add(id);
     else if (kind === "composition") (r.targetTypes.length && r.targetTypes.every((t) => depended.has(t.value)) ? horizontal : vertical).add(id);
   }
@@ -36,8 +57,9 @@ export function kindAxes(info: Pick<GraphInfo, "tree" | "edgeKinds" | "ontology"
 /** The entity types of the rows of a hierarchy: the ends of its relationship type. */
 const rowTypes = (spec: TreeSpec | undefined, info: Pick<GraphInfo, "ontology">): Set<string> => {
   const out = new Set<string>(spec?.types ?? []);
-  const h = spec ? info.ontology.relationshipTypes.find((r) => r.id.value === spec.hierarchy.relationship) : undefined;
-  for (const t of [...(h?.sourceTypes ?? []), ...(h?.targetTypes ?? [])]) out.add(t.value);
+  for (const r of info.ontology.relationshipTypes) {
+    if (spec && inHierarchy(spec, r.id.value)) for (const t of [...r.sourceTypes, ...r.targetTypes]) out.add(t.value);
+  }
   return out;
 };
 
@@ -58,9 +80,9 @@ export function besidePositions(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKi
   const out = new Map<number, [number, number]>();
   if (!Number.isFinite(minX)) return out;
   // breadth first from the parts over the horizontal edges: side (+1 right, -1 left) and distance in steps
-  const seen = new Map<number, { side: number; hops: number; y: number }>();
+  const seen = new Map<number, { side: number; hops: number; x: number; y: number }>();
   let frontier: number[] = [];
-  for (const s of onVertical) if (visible(s)) { const p = placed(s); if (p) { seen.set(s, { side: 0, hops: 0, y: p[1] }); frontier.push(s); } }
+  for (const s of onVertical) if (visible(s)) { const p = placed(s); if (p) { seen.set(s, { side: 0, hops: 0, x: p[0], y: p[1] }); frontier.push(s); } }
   while (frontier.length) {
     const next: number[] = [];
     for (const v of frontier) {
@@ -73,20 +95,21 @@ export function besidePositions(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKi
         // from a part: what it needs (it is the source) goes right, what points at it (a gateway that exposes it) goes left; further out the side stays
         const outward = g.edgeSrc[e] === v;
         const side = at.side !== 0 ? at.side : rows.has(g.nodes[v]?.type ?? "") && !outward ? -1 : 1;
-        seen.set(other, { side, hops: at.hops + 1, y: at.y });
+        seen.set(other, { side, hops: at.hops + 1, x: at.x, y: at.y });
         next.push(other);
       }
     }
     frontier = next;
   }
-  const stacks = new Map<string, number>();
-  const sorted = [...seen].filter(([s, a]) => a.hops > 0 && !onVertical.has(s)).sort((a, b) => a[1].y - b[1].y || a[1].hops - b[1].hops || a[0] - b[0]);
+  const nextY = new Map<number, number>();
+  const sorted = [...seen].filter(([, a]) => a.hops > 0).sort((a, b) => a[1].y - b[1].y || a[1].x - b[1].x || a[0] - b[0]);
   for (const [s, a] of sorted) {
-    const key = `${a.side}|${a.hops}|${Math.round(a.y)}`;
-    const k = stacks.get(key) ?? 0;
-    stacks.set(key, k + 1);
+    // A large sibling group may extend past the next parent's row. Reserve space down the entire column.
+    const column = a.side * a.hops;
+    const y = Math.max(a.y, nextY.get(column) ?? a.y);
+    nextY.set(column, y + step.row);
     const x = a.side > 0 ? maxX + a.hops * step.column : minX - a.hops * step.column;
-    out.set(s, [x, a.y + k * step.row]);
+    out.set(s, [x, y]);
   }
   return out;
 }
@@ -105,16 +128,15 @@ export function causeLinks(g: Graph, info: Pick<GraphInfo, "tree" | "edgeKinds" 
   if (!spec) return { types: new Set(), links: [] };
   const kinds: Kinds = info.edgeKinds ?? {};
   const structural = (t: string) => kinds[t] === "composition" || kinds[t] === "dependency";
-  const hier = (t: string) => t === spec.hierarchy.relationship || !!spec.hierarchy.also?.includes(t);
   const present = new Set<string>();
   for (const r of g.relationships()) present.add(r.type);
   const rollup = [...restated].filter((t) => structural(t) && present.has(t));
   const types = new Set<string>();
-  for (const r of g.relationships()) if (rollup.length ? rollup.includes(r.type) : !restated.has(r.type) && (hier(r.type) || structural(r.type))) types.add(r.type);
+  for (const r of g.relationships()) if (rollup.length ? rollup.includes(r.type) : !restated.has(r.type) && (inHierarchy(spec, r.type) || structural(r.type))) types.add(r.type);
   const links: CauseLink[] = [];
   for (const r of g.relationships()) {
     if (!types.has(r.type)) continue;
-    const flip = !rollup.length && hier(r.type) && spec.hierarchy.childIsSource;
+    const flip = !rollup.length && inHierarchy(spec, r.type) && spec.hierarchy.childIsSource;
     links.push(flip ? { parent: r.target, child: r.source, edge: r.id } : { parent: r.source, child: r.target, edge: r.id });
   }
   return { types, links };

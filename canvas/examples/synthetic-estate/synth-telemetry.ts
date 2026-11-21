@@ -1,6 +1,6 @@
 // Deterministic synthetic telemetry for the estate: request, error and latency series on edges, cpu and memory on nodes.
 // A pure function of (element index, tick, seed), so any tick can be regenerated and a worker can produce it off the main thread.
-import type { Meter } from "../source/types";
+import type { Meter } from "../../src/source/types";
 
 export const ESTATE_METERS: Meter[] = [
   { id: "requests", target: "edge", label: "Requests", unit: "req/s", min: 0, max: 500, scale: "sqrt" },

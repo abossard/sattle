@@ -9,6 +9,8 @@ import { runtime } from "../state/runtime";
 import { SOURCES } from "../state/sources";
 import { dispatch, useStore } from "../state/store";
 import type { ThemeName, View } from "../state/types";
+import { formatHash } from "../state/url";
+import { LESSONS, lessonOf, sourceForLesson, panelForLesson } from "../tutorial/lessons";
 import { DataView, SpaceView } from "./DataView";
 import { Dialogs } from "./Dialogs";
 
@@ -28,6 +30,10 @@ const useStyles = makeStyles({
   grow: { flexGrow: 1 },
   views: { minWidth: 0, maxWidth: "100%", overflowX: "auto", scrollbarWidth: "thin", "@media (max-width: 700px)": { maskImage: "linear-gradient(to right, #000 calc(100% - 32px), transparent)" } },
   main: { minHeight: 0, overflow: "hidden", "&:focus": { outline: "none" } },
+  guideMain: { display: "grid", gridTemplateColumns: "minmax(250px, 300px) minmax(0, 1fr)", "@media (max-width: 860px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(230px, 42%) minmax(360px, 1fr)", overflow: "auto" } },
+  guideOffline: { display: "grid", gridTemplateColumns: "minmax(0, 600px)", gridTemplateRows: "minmax(0, 1fr)", justifyContent: "center", backgroundColor: tokens.colorNeutralBackground3, "& > aside": { borderLeft: `1px solid ${tokens.colorNeutralStroke2}` } },
+  workspace: { minWidth: 0, minHeight: 0, overflow: "auto" },
+  standardView: { height: "100%" },
   status: { display: "flex", columnGap: tokens.spacingHorizontalL, flexWrap: "wrap", padding: `${tokens.spacingVerticalXXS} ${tokens.spacingHorizontalM}`, borderTop: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground2, "& b": { fontFamily: tokens.fontFamilyMonospace, fontWeight: tokens.fontWeightRegular, color: tokens.colorNeutralForeground1 } },
   skip: { position: "absolute", left: "-999px", ":focus": { left: tokens.spacingHorizontalM, top: tokens.spacingVerticalM, zIndex: 100, backgroundColor: tokens.colorNeutralBackground1, padding: tokens.spacingHorizontalM } },
   hidden: { position: "absolute", width: "1px", height: "1px", overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap" },
@@ -60,7 +66,7 @@ function Status() {
   );
 }
 
-function Banners() {
+function Banners({ guideEngine }: { guideEngine: boolean }) {
   const load = useStore((x) => x.load);
   const fresh = useStore((x) => x.freshness);
   const conn = useStore((x) => x.connection);
@@ -68,7 +74,7 @@ function Banners() {
   return (
     <div role="status">
       {load.status === "loading" && <MessageBar intent="info"><MessageBarBody><Spinner size="tiny" label={`Loading ${SOURCES.find((x) => x.id === source)?.label ?? source}…`} labelPosition="after" /></MessageBarBody></MessageBar>}
-      {load.status === "error" && (
+      {load.status === "error" && !guideEngine && (
         <MessageBar intent="error"><MessageBarBody><MessageBarTitle>Could not load the source</MessageBarTitle>{load.message}</MessageBarBody><MessageBarActions><Button onClick={() => dispatch({ type: "source/opening", id: source })}>Retry</Button></MessageBarActions></MessageBar>
       )}
       {fresh === "stale" && <MessageBar intent="warning"><MessageBarBody><MessageBarTitle>Showing stale data</MessageBarTitle>{conn?.detail}. The view resumes from the last revision it has when the connection returns.</MessageBarBody></MessageBar>}
@@ -82,7 +88,12 @@ export function App() {
   const theme = useStore((x) => x.theme);
   const view = useStore((x) => x.view);
   const source = useStore((x) => x.sourceId);
+  const guide = useStore((x) => x.guide);
+  const lesson = lessonOf(guide);
+  const firstLesson = LESSONS[0];
+  const TutorialPanel = lesson && panelForLesson(lesson.id);
   const status = useStore((x) => x.load.status);
+  const guideLayout = lesson ? status === "ready" ? s.guideMain : s.guideOffline : "";
   const rejected = useStore((x) => x.rejectedTotal);
   const announcement = useStore((x) => x.announcement);
   useEffect(() => { if (status === "ready") whenIdle(() => { void loadEditor(); void loadOntology(); }); }, [status]);
@@ -101,13 +112,14 @@ export function App() {
   return (
     <FluentProvider theme={THEMES[theme]}>
       <div className={s.root}>
-      <a className={s.skip} href="#main">Skip to the main view</a>
+      <a className={s.skip} href="#main" onClick={(event) => { event.preventDefault(); document.getElementById("main")?.focus(); }}>Skip to the main view</a>
       <header className={s.head}>
         <h1 className={s.brand}><Mark />Sattle canvas</h1>
         <TabList className={s.views} selectedValue={view} onTabSelect={(_, d) => dispatch({ type: "ui/view", view: d.value as View })} aria-label="Views">{VIEWS.map((v) => <Tab key={v.id} value={v.id}>{v.label}</Tab>)}</TabList>
         <span className={s.grow} />
         <Select aria-label="Data source" value={source} onChange={(_, d) => dispatch({ type: "source/opening", id: d.value })}>{SOURCES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
         <Toolbar aria-label="Application">
+          {!lesson && firstLesson && <Button as="a" id="open-developer-guide" href={formatHash({ source: sourceForLesson(firstLesson), view: firstLesson.view, guide: firstLesson.id })} appearance="subtle">Developer guide</Button>}
           <ToolbarButton onClick={() => dispatch({ type: "ui/dialog", dialog: "rejections" })}>Rejected: {rejected}</ToolbarButton>
           <ToolbarButton aria-label="Keyboard shortcuts" icon={<Keyboard20Regular />} onClick={() => dispatch({ type: "ui/dialog", dialog: "shortcuts" })} />
           <Menu checkedValues={{ theme: [theme] }} onCheckedValueChange={(_, d) => dispatch({ type: "ui/theme", theme: d.checkedItems[0] as ThemeName })}>
@@ -116,11 +128,14 @@ export function App() {
           </Menu>
         </Toolbar>
       </header>
-      <Banners />
-      <main id="main" tabIndex={-1} className={s.main}>
-        <Suspense fallback={<Spinner label="Loading the view…" />}>
-          {status === "ready" && (view === "data" ? <DataView /> : view === "space" ? <SpaceView /> : view === "editor" ? <EditorView /> : <OntologyView />)}
-        </Suspense>
+      <Banners guideEngine={!!lesson && source === "engine"} />
+      <main id="main" tabIndex={-1} className={`${s.main} ${guideLayout}`}>
+        {lesson && TutorialPanel && <Suspense fallback={<Spinner label="Loading the guide…" />}><TutorialPanel key={lesson.id} lesson={lesson} /></Suspense>}
+        {status === "ready" && <div className={lesson ? s.workspace : s.standardView}>
+          <Suspense fallback={<Spinner label="Loading the view…" />}>
+            {view === "data" ? <DataView /> : view === "space" ? <SpaceView /> : view === "editor" ? <EditorView /> : <OntologyView key={lesson?.module ?? "ontology"} initialModule={lesson?.module} />}
+          </Suspense>
+        </div>}
       </main>
       <Status />
       <Dialogs />

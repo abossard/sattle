@@ -1,13 +1,22 @@
 // The editor a projection opens in, by the language the engine names for its file (GET /definitions, PROTOCOL 3.50). This is the one place the
-// canvas maps a projection language to editor support: KQL is the only entry. Any other language opens as its text, read-only, with a note.
+// canvas maps a projection language to editor support. Unknown languages open as read-only text.
 import { MessageBar, MessageBarBody, Spinner, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { lazy, useEffect, useState, type ComponentType } from "react";
 import type { Graph } from "../../core/graph";
 import type { EditorService, ProjectionFile } from "../../editor/service";
+import type { EngineDiagnostic } from "../../source/types";
 
 /** What every editor of a projection is given. `draft`: read the text as the draft holds it; `store`: keep a changed text in the draft. */
 export interface EditorProps {
   port: EditorService; file: ProjectionFile; draft?: string;
+  /** Authored file contents and diagnostics from the current draft check. */
+  source?: string;
+  initialTab?: "source" | "wires";
+  starter?: string;
+  recoveredText?: string;
+  onEdit?: (text: string) => void;
+  onDraftError?: (error: unknown) => void;
+  diagnostics?: readonly EngineDiagnostic[];
   /** preview the stored text and answer the rows after each engine operator */
   rows?: () => Promise<{ op: string; rows: string }[]>;
   /** the element picked in a data graph (an edge brings its ends) */
@@ -17,7 +26,10 @@ export interface EditorProps {
 }
 
 // the KQL editor brings CodeMirror: it loads when a KQL projection is first opened
-const EDITORS: Readonly<Record<string, ComponentType<EditorProps>>> = { kql: lazy(() => import("./KqlText")) };
+const EDITORS: Readonly<Record<string, ComponentType<EditorProps>>> = {
+  kql: lazy(() => import("./KqlText")),
+  gkql: lazy(() => import("./GkqlEditor")),
+};
 
 /** The editor for a projection file's language; a language without one gets the read-only text. */
 export const editorFor = (language: string): ComponentType<EditorProps> => EDITORS[language] ?? ReadOnlyText;

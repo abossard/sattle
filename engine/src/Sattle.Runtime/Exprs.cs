@@ -66,6 +66,9 @@ public static class ExprCompiler
                         "Coalesce" => new VCoalesce(args, c.Type.Ty.Tag == Tag.Decimal),
                         "IsPresent" => new VIsPresent(args[0]),
                         "Rate" => new VRate(args[0], c.Args[0].Type.Role.Period),
+                        "StartsWith" => new VTextPredicate(args[0], args[1], it, (s, term) => s.StartsWith(term, StringComparison.OrdinalIgnoreCase)),
+                        "EndsWith" => new VTextPredicate(args[0], args[1], it, (s, term) => s.EndsWith(term, StringComparison.OrdinalIgnoreCase)),
+                        "Contains" => new VTextPredicate(args[0], args[1], it, (s, term) => s.Contains(term, StringComparison.OrdinalIgnoreCase)),
                         "LowerInvariant" or "Trim" or "Concat" => new VText(c.Fn, args, it),
                         "EntityId" => args[0],            // an entity column holds the handle of its id text: the same column read as Text
                         _ => throw new NotSupportedException($"function {c.Fn} has no vectorized implementation"),
@@ -264,6 +267,26 @@ sealed class VRate : VExpr
         var x = a.Eval(batch); var o = Scratch(batch.N);
         for (var i = 0; i < batch.N; i++) { if (x.P is not null && !x.P[i]) { Absent(o, i, batch.N); continue; } o.D[i] = (x.IsDec ? x.D[i] : x.L[i]) / seconds; }
         return o;
+    }
+}
+
+sealed class VTextPredicate(VExpr text, VExpr term, Interner interner, Func<string, string, bool> matches) : VExpr
+{
+    public override Column Eval(Batch batch)
+    {
+        var values = text.Eval(batch);
+        var terms = term.Eval(batch);
+        var result = Scratch(batch.N);
+        for (var i = 0; i < batch.N; i++)
+        {
+            if ((values.P is not null && !values.P[i]) || (terms.P is not null && !terms.P[i]))
+            {
+                Absent(result, i, batch.N);
+                continue;
+            }
+            result.L[i] = matches(interner.Get((int)values.L[i]), interner.Get((int)terms.L[i])) ? 1 : 0;
+        }
+        return result;
     }
 }
 

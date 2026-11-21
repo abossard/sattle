@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Deterministic scrubber and verifier for capture fixtures.
 //   scrub.mjs build  <captureDir> <fixturesDir>   sample every source, scrub, write; also space-arguments.json
+//   scrub.mjs tutorial <captureDir> <fixturesDir> scrub the full ARG inventory and its matched Azure Monitor observations
 //   scrub.mjs verify <captureDir> <fixturesDir>   fail if any identifying value of the capture survives in the fixtures
 // Optional extra values to scrub (for example the signed-in user) come in SCRUB_LITERALS, one per line; the capture
 // itself already names its tenant, subscription, resources and people.
@@ -13,9 +14,11 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rea
 import { createInterface } from 'node:readline';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { makeScrubber } from './scrub/core.mjs';
+import { aliases, makeScrubber } from './scrub/core.mjs';
 import { harvestCapture } from './scrub/harvest.mjs';
 import { spaceArguments } from './scrub/space-arguments.mjs';
+import { tutorialInventoryPayload } from './scrub/tutorial-inventory.mjs';
+import { tutorialKubernetes } from './scrub/tutorial-kubernetes.mjs';
 import { checkFixtures, denyList } from './scrub/verify.mjs';
 
 // What to sample per file: group function, records per group, cap.
@@ -92,6 +95,144 @@ async function build(captureDir, fixturesDir) {
   writeFileSync(join(fixturesDir, 'space-arguments.json'), JSON.stringify(spaceArguments(scrubbed), null, 2) + '\n');
 }
 
+const AKS_TYPE = 'microsoft.containerservice/managedclusters';
+const AKS_CPU = 'apiserver_cpu_usage_percentage';
+const MINUTE_MS = 60_000;
+
+async function inventory(file) {
+  const rows = new Map();
+  if (!existsSync(file)) return rows;
+  for await (const line of lines(file)) {
+    const record = JSON.parse(line);
+    const row = record.payload;
+    if (record.source === 'arg' && [row?.id, row?.name, row?.type].every((field) => typeof field === 'string' && field.trim())) {
+      rows.set(row.id.toLowerCase(), record);
+    }
+  }
+  return rows;
+}
+
+// Keep a single measured series in event-time order, with a gap starting a new run.
+function longestRun(data) {
+  const points = new Map();
+  for (const { timeStamp, average } of data) {
+    const time = Date.parse(timeStamp);
+    if (Number.isFinite(time) && Number.isFinite(average)) points.set(time, { time, timeStamp, average });
+  }
+  let run = [];
+  let longest = [];
+  for (const point of [...points.values()].sort((a, b) => a.time - b.time)) {
+    if (run.length && point.time - run.at(-1).time !== MINUTE_MS) run = [];
+    run.push(point);
+    if (run.length > longest.length) longest = run;
+  }
+  return longest;
+}
+
+async function clusterReadings(file, resources) {
+  let selected = { points: [] };
+  if (!existsSync(file)) return selected;
+  for await (const line of lines(file)) {
+    const record = JSON.parse(line);
+    const resourceId = record.meta?.resourceId;
+    if (record.source !== 'azure-metrics' || typeof resourceId !== 'string') continue;
+    const resource = resources.get(resourceId.toLowerCase());
+    if (resource?.payload.type?.toLowerCase() !== AKS_TYPE) continue;
+    for (const metric of record.payload?.value ?? []) {
+      if (metric.name?.value !== AKS_CPU) continue;
+      for (const series of metric.timeseries ?? []) {
+        const points = longestRun(series.data ?? []);
+        if (points.length > selected.points.length) selected = { record, points };
+      }
+    }
+  }
+  return selected;
+}
+
+const aggregations = ['average', 'total', 'minimum', 'maximum', 'count'];
+
+function metricEnvelope(record, metric, sample, time, index, key, resource) {
+  return {
+    v: 1, source: 'azure-metrics', seq: index + 1, key,
+    capturedAt: new Date(time + MINUTE_MS).toISOString(),
+    meta: {
+      resource, resourceId: record.meta.resourceId, interval: 'PT1M',
+      originalCapturedAt: record.capturedAt, tutorialClock: 'sample-time-plus-one-minute',
+    },
+    payload: { value: [{ name: { value: metric }, timeseries: [{ data: [sample] }] }] },
+  };
+}
+
+async function otherMetrics(directory, inventoryIds, primaryId, range) {
+  const { keyFor } = await import('../capture/lib/envelope.mjs');
+  const readings = new Map();
+  for (const file of readdirSync(directory).filter((name) => name.endsWith('.ndjson')).sort()) {
+    for await (const line of lines(join(directory, file))) {
+      const record = JSON.parse(line);
+      const resourceId = record.meta?.resourceId;
+      if (record.source !== 'azure-metrics' || typeof resourceId !== 'string') continue;
+      const scope = resourceId.toLowerCase();
+      if (!inventoryIds.has(scope)) continue;
+      for (const metric of record.payload?.value ?? []) {
+        const name = metric.name?.value;
+        if (typeof name !== 'string' || (scope === primaryId && name === AKS_CPU)) continue;
+        for (const series of metric.timeseries ?? []) {
+          for (const datum of series.data ?? []) {
+            const time = Date.parse(datum.timeStamp);
+            if (!Number.isFinite(time) || time < range[0] || time > range[1]) continue;
+            if (!Number.isFinite(datum.average) && !Number.isFinite(datum.total)) continue;
+            const sample = { timeStamp: datum.timeStamp };
+            for (const field of aggregations) if (Number.isFinite(datum[field])) sample[field] = datum[field];
+            // Use the same resource/metric/dimension/time identity as the live forwarder to discard duplicate pulls.
+            const payload = { value: [{ name: { value: name }, timeseries: [{ metadatavalues: series.metadatavalues, data: [sample] }] }] };
+            const identity = keyFor('azure-metrics', payload, { resourceId: scope });
+            readings.set(identity, { record, name, sample, time });
+          }
+        }
+      }
+    }
+  }
+  return [...readings.values()].sort((left, right) => left.time - right.time)
+    .map(({ record, name, sample, time }, index) => metricEnvelope(record, name, sample, time, index, `tutorial/azure-metrics/other/${index + 1}`));
+}
+
+async function tutorial(captureDir, fixturesDir) {
+  const resources = await inventory(join(captureDir, 'arg/resources.ndjson'));
+  const containers = await inventory(join(captureDir, 'arg/resourcecontainers.ndjson'));
+  const metricDirectory = join(captureDir, 'azure-metrics');
+  const { record, points } = await clusterReadings(join(metricDirectory, 'aks.ndjson'), resources);
+  if (points.length < 5) throw new Error('Need five or more consecutive one-minute AKS CPU readings with a matching Resource Graph resource');
+
+  const capturedAt = new Date(points[0].time).toISOString();
+  const salt = saltFor(captureDir);
+  const alias = aliases(salt);
+  const argRecords = (rows, query) => [...rows.values()].map((row, index) => ({
+    v: 1, source: 'arg', seq: row.seq, key: `tutorial/arg/${query}/${index + 1}`, capturedAt,
+    meta: { query, originalCapturedAt: row.capturedAt, tutorialClock: 'inventory-at-first-sample' },
+    payload: tutorialInventoryPayload(row.payload, alias),
+  }));
+  const metricRows = points.map(({ time, timeStamp, average }, index) => metricEnvelope(
+    record, AKS_CPU, { timeStamp, average }, time, index, `tutorial/azure-metrics/${index + 1}`, 'aks'));
+  const other = await otherMetrics(metricDirectory, new Set([...resources.keys(), ...containers.keys()]),
+    record.meta.resourceId.toLowerCase(), [points[0].time, points.at(-1).time]);
+  const { objects, calls } = await tutorialKubernetes(captureDir, lines, alias, points[0].time, points.at(-1).time);
+  const scrub = makeScrubber({ salt, ...await harvestCapture(captureDir) });
+  const outputs = [
+    ['arg/resources.ndjson', argRecords(resources, 'resources')],
+    ['arg/resourcecontainers.ndjson', argRecords(containers, 'resourcecontainers')],
+    ['azure-metrics/aks.ndjson', metricRows],
+    ['azure-metrics/other.ndjson', other],
+    ['kubernetes/list.ndjson', objects],
+    ['hubble/flows.ndjson', calls],
+  ];
+  for (const [relativePath, rows] of outputs) {
+    const out = join(fixturesDir, relativePath);
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, rows.map((row) => `${JSON.stringify(scrub(row))}\n`).join(''));
+    console.log(`${rows.length}\t${relativePath}`);
+  }
+}
+
 async function verify(captureDir, fixturesDir) {
   const deny = await denyList(captureDir);
   const found = checkFixtures(fixturesDir, deny);
@@ -108,7 +249,7 @@ async function verify(captureDir, fixturesDir) {
 const isMain = () => { try { return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url)); } catch { return resolve(process.argv[1] ?? '') === fileURLToPath(import.meta.url); } };
 if (isMain()) {
   const [cmd, captureDir, fixturesDir] = process.argv.slice(2);
-  const actions = { build, verify };
-  if (!actions[cmd] || !captureDir || !fixturesDir) { console.error('usage: scrub.mjs build|verify <captureDir> <fixturesDir>'); process.exit(2); }
+  const actions = { build, tutorial, verify };
+  if (!actions[cmd] || !captureDir || !fixturesDir) { console.error('usage: scrub.mjs build|tutorial|verify <captureDir> <fixturesDir>'); process.exit(2); }
   await actions[cmd](resolve(captureDir), resolve(fixturesDir));
 }

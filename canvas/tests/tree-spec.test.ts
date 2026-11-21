@@ -27,6 +27,17 @@ describe("the hierarchy marks of an ontology (engine 3.14)", () => {
       types: ["Element"],
     });
   });
+  it("includes each hierarchy and its endpoint types when graphs share an ontology", () => {
+    const extendsOntology = ontology();
+    extendsOntology.relationshipTypes.push(
+      rel("HealthContains", ["HealthGroup"], ["HealthCluster"], { hierarchy: true }),
+      rel("HealthSignal", ["Signal"], ["HealthCluster"], { hierarchy: false }),
+    );
+    const { tree } = readTree(extendsOntology);
+    expect(tree?.hierarchy).toEqual({ relationship: "Contains", childIsSource: false, also: ["HealthContains"] });
+    expect(tree?.types).toEqual(["Element", "HealthGroup", "HealthCluster"]);
+    expect(tree?.edgeRoles).toEqual({ DependsOn: "cross", EvidenceFor: "support", Measures: "support", HealthSignal: "support" });
+  });
   it.each([
     ["no type is marked", () => ontology({ relationshipTypes: [rel("Contains", ["Element"], ["Element"], { hierarchy: false })] })],
     ["the key is absent from every type", () => ontology({ relationshipTypes: [rel("Contains", ["Element"], ["Element"])] })],

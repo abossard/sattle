@@ -1,0 +1,6 @@
+{
+  "projection": "mirror.health.gkql.json",
+  "authoredLevels": 3,
+  "verbs": ["childrenAt{}", "impactAt{}", "rollupAt{}Inputs", "rollupAt{}"],
+  "accumulator": "rollupAt{}"
+}

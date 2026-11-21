@@ -126,7 +126,7 @@ export const subscribeMessage = (graphs: string[], after?: string, drafts = fals
 export function parseDiagnostics(list: unknown): EngineDiagnostic[] {
   return (Array.isArray(list) ? list : []).map((d) => {
     const x = d as Record<string, unknown>;
-    return { code: String(x.code ?? ""), severity: String(x.severity ?? "error"), focus: x.element ? String(x.element) : "", message: String(x.message ?? ""), line: Number(x.line ?? 0), col: Number(x.column ?? 0) };
+    return { code: String(x.code ?? ""), severity: String(x.severity ?? "error"), focus: x.element ? String(x.element) : "", message: String(x.message ?? ""), line: Number(x.line ?? 0), col: Number(x.column ?? 0), ...(typeof x.file === "string" ? { file: x.file } : {}) };
   });
 }
 

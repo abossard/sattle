@@ -7,8 +7,9 @@ import type { DocumentText } from "../source/types";
 import { useWorkspace } from "./common";
 
 const useStyles = makeStyles({
-  root: { overflow: "auto", minHeight: 0, padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalXL}`, display: "grid", alignContent: "start", rowGap: tokens.spacingVerticalM },
-  page: { display: "grid", rowGap: tokens.spacingVerticalM, maxWidth: "960px" },
+  root: { overflow: "auto", minWidth: 0, minHeight: 0, padding: `${tokens.spacingVerticalM} ${tokens.spacingHorizontalXL}`, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", alignContent: "start", rowGap: tokens.spacingVerticalM },
+  page: { display: "grid", gridTemplateColumns: "minmax(0, 1fr)", rowGap: tokens.spacingVerticalM, maxWidth: "960px" },
+  cell: { whiteSpace: "normal", overflowWrap: "anywhere" },
   list: { margin: 0, paddingLeft: tokens.spacingHorizontalXL, display: "grid", rowGap: tokens.spacingVerticalXS },
   meta: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "wrap" },
 });
@@ -27,8 +28,8 @@ function Block({ b, compact }: { b: DocBlock; compact: boolean }) {
       const used = b.header.map((h, c) => !!h || b.rows.some((r) => !!r[c]));
       return (
         <Table aria-label={b.header.filter(Boolean).join(", ")} size={compact ? "extra-small" : "small"}>
-          <TableHeader><TableRow>{b.header.map((h, c) => used[c] && <TableHeaderCell key={c}>{h}</TableHeaderCell>)}</TableRow></TableHeader>
-          <TableBody>{b.rows.map((r, i) => <TableRow key={i}>{r.map((v, c) => used[c] && <TableCell key={c}>{v}</TableCell>)}</TableRow>)}</TableBody>
+          <TableHeader><TableRow>{b.header.map((h, c) => used[c] && <TableHeaderCell key={c} className={s.cell}>{h}</TableHeaderCell>)}</TableRow></TableHeader>
+          <TableBody>{b.rows.map((r, i) => <TableRow key={i}>{r.map((v, c) => used[c] && <TableCell key={c} className={s.cell}>{v}</TableCell>)}</TableRow>)}</TableBody>
         </Table>
       );
     }

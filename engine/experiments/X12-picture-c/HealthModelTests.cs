@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Sattle.Core;
 using Sattle.Kql;
+using Sattle.Gkql;
 using Sattle.Language;
 using Sattle.Runtime;
 using Xunit.Abstractions;
@@ -166,10 +167,10 @@ public class HealthModelTests(ITestOutputHelper output)
             File.AppendAllLines(Path.Combine(dir, "healthmodel", "model.ndjson"), extra);
             var files = Catalog.ReadDirectory(Path.Combine(Root, "engine", "definitions")).ToList();
             files = [.. files.Select(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal) ? f with { Text = WithModel(f.Text, minReady) } : f)];
-            files.AddRange(Directory.EnumerateFiles(Model).Where(f => !f.EndsWith(ProgramSource.Extension, StringComparison.Ordinal) && !(program && Programs.Any(p => f.EndsWith(p + ".kql", StringComparison.Ordinal))))
+            files.AddRange(Directory.EnumerateFiles(Model).Where(f => !f.EndsWith(GkqlSource.Extension, StringComparison.Ordinal) && !(program && Programs.Any(p => f.EndsWith(p + ".kql", StringComparison.Ordinal))))
                 .Select(f => new SourceFile(f, File.ReadAllText(f))));
-            if (program) files.AddRange(Programs.Select(p => Path.Combine(Model, p + ProgramSource.Extension)).Select(f => new SourceFile(f, File.ReadAllText(f))));
-            var cat = new Catalog(program ? new ProgramSource(new KqlSource()) : new KqlSource());
+            if (program) files.AddRange(Programs.Select(p => Path.Combine(Model, p + GkqlSource.Extension)).Select(f => new SourceFile(f, File.ReadAllText(f))));
+            var cat = new Catalog(program ? new ProjectionSources(new KqlSource(), new GkqlSource()) : new KqlSource());
             var res = cat.Load(files, updatePins: true);
             Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
             var space = cat.Spaces.Keys.Single();
