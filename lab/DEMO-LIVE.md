@@ -100,7 +100,7 @@ The intruder: it backs no Service and calls db and api, which the network polici
 KUBECONFIG=lab/.kube/config kubectl -n sattle-demo scale deploy/intruder --replicas=0
 ```
 
-- Healthy when the pod has gone (about 30 s). With `--replicas=1` the new pod is Unhealthy about 80 s after it is ready.
+- In the pod graph the intruder pod is Healthy once it has gone (about 30 s), because its `pod-drops` signal leaves with it. With `--replicas=1` the new pod is Unhealthy about 80 s after it is ready.
 
 A workload with no ready pod:
 
@@ -108,4 +108,4 @@ A workload with no ready pod:
 KUBECONFIG=lab/.kube/config kubectl -n sattle-demo scale deploy/intruder --replicas=0
 ```
 
-- `deploymentHealth`: `intruder` turns Unhealthy when its pod has gone (about 30 s). Back with `--replicas=1`.
+- In the deployment graph (`deploymentHealth`, a different graph from the pod graph above), the `intruder` deployment turns Unhealthy when its pod has gone (about 30 s) because it has no ready pod. Back with `--replicas=1`.

@@ -45,7 +45,7 @@ Two remarks on this definition.
 
 `dig(G) = "sha256:" ‖ hex SHA-256( 0x00 ‖ le32( Σ_{p ∈ G} h(p) mod 2^256 ) )`,
 
-where `le32(x)` is `x` as 32 bytes, least significant first. This is the additive set hash of Bellare and Micciancio (AdHash). It needs no sort and holds one pair at a time, and removing a pair subtracts what adding it added.
+where `le32(x)` is `x` as 32 bytes, least significant first. This is the additive set hash of Bellare and Micciancio (AdHash); its collision resistance is not reduced to that of SHA-256 (Theorem 3.3). It needs no sort and holds one pair at a time, and removing a pair subtracts what adding it added.
 
 ## 3.2 Edits
 
@@ -123,7 +123,7 @@ Names of graphs and of projections are unique in a space. A projection `P_g` is 
 
 **Definition 3.13 (planes).** Every graph has a *structural plane*, the log of Def. 3.8, and a *telemetry plane*, the series of measurements over time attached to its elements (Ch. 0, Def. 0.7), which creates no versions (Ch. 7).
 
-**Definition 3.14 (reference).** A *reference* of `G` is an entity id that is an end of a relationship of `G` and is not a key of `G`. In a graph space a reference is in one of two states: *in another graph*, when at least one other graph of the space holds the entity, and the reader is told which graphs do; or *absent*, when no graph does. A reference carries the identity key by which the entity was named (Ch. 1, Def. 1.8 to 1.10), so a missing end is not an anonymous id: a reader can say what the relationship points at, even though nothing was ever recorded about it.
+**Definition 3.14 (reference).** A *reference* of `G` is an entity id that is an end of a relationship of `G` and is not a key of `G`. In a graph space a reference is in one of two states: *in another graph*, when at least one other graph of the space holds the entity, and the reader is told which graphs do; or *absent*, when no graph does. A reference can be resolved to the identity key by which the entity was named (Ch. 1, Def. 1.8 to 1.10) through the binding set; that key is not in the state or its digest, and the resolution is an assumption on the implementation. So a missing end is not an anonymous id: a reader can say what the relationship points at, even though nothing was ever recorded about it.
 
 A dangling relationship is therefore a statement about coverage, "an observation names something that no source described", and not an error.
 
@@ -133,31 +133,31 @@ A dangling relationship is therefore a statement about coverage, "an observation
 
 ## 3.6 Theorems
 
-**Theorem 3.1 (committed states are well-formed).** If every commit of a graph obeys the commit rule (Def. 3.9), then every state `G_r`, `r ≥ 0`, satisfies WF1 to WF3 (and WF4, given that every state fits its types), and `G_r` is a function of the sequence of edit sets alone.
+**Theorem 3.1 (committed states satisfy WF1 to WF3).** If every commit of a graph obeys the commit rule (Def. 3.9), then every state `G_r`, `r ≥ 0`, satisfies WF1 to WF3, and `G_r` is a function of the sequence of edit sets alone. WF4 is not part of the theorem: the commit rule does not check it, so it holds for a committed state only if conformance (Ch. 2, Def. 2.6) is established separately (Theorem 5.2).
 
-*Proof.* By induction on `r`. `G_0` is empty and well-formed. For `r ≥ 1` the commit rule requires `apply(E_r, G_{r-1})` to be defined and well-formed, and `G_r` is that graph. `apply` is a function of its arguments. ∎
+*Proof.* By induction on `r`. `G_0` is empty and well-formed. For `r ≥ 1` the commit rule requires `apply(E_r, G_{r-1})` to be defined and well-formed, and `G_r` is that graph. `apply` is a function of its arguments. WF4 is never used. This is a manual argument, not machine checked. ∎
 
 **Theorem 3.2 (the past does not change).** For every `r ≤ h(g)`, `G_r` stays the same when further versions are committed.
 
 *Proof.* `G_r` depends only on `E_1, …, E_r` (Theorem 3.1). A commit adds the record `c_{h+1}` and changes no earlier record. A late report is an input that leads to a later set of edits. ∎
 
-**Theorem 3.3 (equality by written form).** For well-formed graphs `G` and `G'`: `G = G'` iff `enc(G) = enc(G')`. So equal graphs have the same set of written pairs and equal digests (Def. 3.5). Graphs with equal digests are equal unless two different sets of pairs give the same sum, which happens by chance with negligible probability; the known attack on AdHash at 256 bits needs inputs chosen by an attacker, and a replay check has none. Once the two written forms exist, equality of graphs can be decided in time proportional to their lengths; producing a written form first sorts the keys.
+**Theorem 3.3 (equality by written form).** For well-formed graphs `G` and `G'`: `G = G'` iff `enc(G) = enc(G')`. So equal graphs have the same set of written pairs and equal digests (Def. 3.5). The converse is a separate caveat and does not follow from the collision assumption on SHA-256 of Ch. 1: two different sets of pairs with the same sum are unlikely by chance, but AdHash at 256 bits is open to generalised-birthday attacks when an attacker chooses the inputs. Where sources are untrusted, equal digests alone are therefore not evidence of equal graphs or of authenticity; this paper makes no claim against such an adversary, and for a replay check on inputs that nobody chose adversarially the chance of a false match is taken to be negligible. Comparing `enc(G)` byte by byte has no such caveat. Once the two written forms exist, equality of graphs can be decided in time proportional to their lengths; producing a written form first sorts the keys.
 
 *Proof.* Sorting by key text fixes the order of the pairs for a given set of keys. Each written state is determined by the state, up to `≈` (Theorem 1.1). Two graphs have the same sorted list of keys and equal written states under each key iff they are equal (Def. 3.4). The rest follows as in Corollaries 1.2 and 1.3. The digest is a function of the set of written pairs, so it is the same for every order of the pairs. ∎
 
-**Theorem 3.4 (checking a change is local).** Among WF1 to WF3, only the uniqueness rule `U` concerns more than one element. For a set of effective edits `E` and a head state `G`, whether `apply(E, G)` is defined and satisfies WF1 to WF3 can be decided with a number of lookups proportional to the size of `E`, in an index from keys to states and an index of relationships by (source, target, type). Whether WF4 is local depends on the types (Ch. 2, Theorem 2.1).
+**Theorem 3.4 (checking a change is local).** Among WF1 to WF3, only the uniqueness rule `U` concerns more than one element. For a set of effective edits `E` and a head state `G`, whether `apply(E, G)` is defined and satisfies WF1 to WF3 can be decided with a number of lookups proportional to the size of `E`, in an index from keys to states and an index of relationships by (source, target, type). Whether WF4 is local depends on the types (Ch. 2, Theorem 2.1): a check of an edit must also cover the incident relationships of a changed entity, whose end checks (C6) change with it, and the constraints that are global, such as the acyclicity of a hierarchy.
 
 *Proof.* The guards read `G(k)` for the keys of `E`. WF1 and WF2 concern one state at a time. For `U`: `apply(E, G)` differs from `G` only at keys of `E`, and `G` satisfies `U`. So a violation must involve a relationship that is the after-state of an edit of `E` and that meets another relationship. Each such after-state is looked up in the index of `G`, with the before-states of `E` taken out and the after-states put in. ∎
 
-**Theorem 3.5 (frontiers only grow).** Assume (F1): a projection reads its inputs one after another in the order in which they were recorded, and reads the versions of an input graph one after another without gaps (Ch. 11, Theorem 11.5). Then `φ_r ≤ φ_{r+1}` for every graph and every `r`.
+**Theorem 3.5 (frontiers only grow).** Assume (F1): a projection reads its inputs one after another in the order in which they were recorded, and reads the versions of an input graph one after another without gaps (Ch. 11, Theorem 11.5). Assume also that the set of inputs of the graph (its streams and input graphs) is the same at `r` and `r + 1`; if a projection stops reading an input, its entry is missing from `φ_{r+1}` and `φ_r ≤ φ_{r+1}` fails as defined. Then `φ_r ≤ φ_{r+1}` for every graph and every `r`.
 
 *Proof.* Commit `r + 1` is caused by inputs that come after those of commit `r` in that order. For each input stream the position does not decrease in that order. The version read from each input graph does not decrease, because versions are read one after another. The version of the definitions is fixed per commit. That it does not go back is used here and is not part of F1 as stated: it holds because the definitions are themselves a graph with a log (Ch. 2, Def. 2.1) whose versions only increase, provided each commit uses the definitions at their head. ∎
 
 F1 is a requirement on the engine. Chapters 6 and 11 say how it is met.
 
-**Theorem 3.6 (identity of scoped graphs).** `scope(g, σ) = scope(g', σ')` iff `g = g'` and `σ ≈ σ'`, unless the hash function has a collision. So two readers that ask for the same scope of the same graph address the same scoped graph.
+**Theorem 3.6 (identity of scoped graphs).** Within one graph space (or where names are unique per customer), `scope(g, σ) = scope(g', σ')` iff the graph names are equal and `σ ≈ σ'`, unless the hash function has a collision. So two readers that ask for the same scope of the same graph address the same scoped graph.
 
-*Limit.* Here `g` is a graph name of one customer. Def. 3.11 makes names unique only within a space. Two spaces of one customer with a graph of the same name therefore get the same scoped ids, unless names are unique per customer or the space enters the hash.
+*Limit.* Here `g` is a graph name, not a graph, of one customer. Def. 3.11 makes names unique only within a space. Two spaces of one customer with a graph of the same name therefore get the same scoped ids, unless names are unique per customer or the space enters the hash.
 
 *Proof.* The scoped id is the hash of the canonical form of `[customer, g, enc(σ)]`. By Theorem 1.1 two such forms are equal iff `g = g'` and `σ ≈ σ'`. Equal forms have equal hashes, and different forms have different hashes unless the hash collides. ∎
 

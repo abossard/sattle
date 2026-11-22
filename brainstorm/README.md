@@ -7,7 +7,7 @@ The site presents the master graph, stacked and combined projections, graph chan
 - `tools/build-atlas.py`: generates lesson and source-reference pages from actual contracts.
 - `contracts/examples/Sattle.Examples/`: compile-checked callers of the public interfaces; excerpts appear in every lesson and on `code-examples.html`.
 - `contracts/`: five .NET contract assemblies, generated schemas, fixtures and test-only reference model.
-- `OPEN-WORK.md`: current site checklist. `contracts/OPEN-WORK.md`: open design work.
+- `dist/evidence/OPEN-WORK.md`: the checklist of completed work, remaining decisions and deferred implementation (the only copy in the repository).
 
 Production engine behavior is not implemented.
 
@@ -21,7 +21,7 @@ python3 -m http.server 8000 --directory dist
 
 ## Regenerate and verify
 
-Python 3, Node.js and .NET 10 are used. Install `contracts/requirements.txt` for schema checks.
+Python 3, Node.js and a .NET 10 SDK (not the engine's .NET 11; `contracts/global.json` pins 10.0.100) are used. Install `contracts/requirements.txt` for schema checks.
 
 ```sh
 python3 tools/package-design.py

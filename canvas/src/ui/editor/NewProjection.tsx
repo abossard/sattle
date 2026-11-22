@@ -56,20 +56,20 @@ export function NewProjectionDialog({ open, onClose, native = false }: { open: b
           <fieldset className={s.group}><legend><Text weight="semibold">Graph inputs</Text></legend>
           {inputs.map((i, n) => (
             <div key={n} className={s.row}>
-              <Field label="Port"><Input value={i.port} onChange={(_, d) => upd(inputs, n, { port: d.value }, setInputs)} /></Field>
-              <Field label="Fed by graph"><Select value={i.graph} onChange={(_, d) => upd(inputs, n, { graph: d.value }, setInputs)}>{spaceGraphs.map((x) => <option key={x}>{x}</option>)}</Select></Field>
-              <Field label="Expects ontology"><Select value={i.ontology} onChange={(_, d) => upd(inputs, n, { ontology: d.value }, setInputs)}><option value="">(choose)</option>{modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Select></Field>
+              <Field label="Input name"><Input value={i.port} onChange={(_, d) => upd(inputs, n, { port: d.value }, setInputs)} /></Field>
+              <Field label="Reads from graph"><Select value={i.graph} onChange={(_, d) => upd(inputs, n, { graph: d.value }, setInputs)}>{spaceGraphs.map((x) => <option key={x}>{x}</option>)}</Select></Field>
+              <Field label="Required ontology"><Select value={i.ontology} onChange={(_, d) => upd(inputs, n, { ontology: d.value }, setInputs)}><option value="">(choose)</option>{modules.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Select></Field>
               <Button type="button" onClick={() => setInputs(inputs.filter((_, k) => k !== n))}>Remove</Button>
             </div>
           ))}
           <Button type="button" onClick={() => setInputs([...inputs, { port: "", graph: spaceGraphs[0] ?? "", ontology: "" }])}>Add graph input</Button>
           </fieldset>
-          <fieldset className={s.group}><legend><Text weight="semibold">Rows inputs (fed by a source of the space)</Text></legend>
+          <fieldset className={s.group}><legend><Text weight="semibold">Row inputs (each reads from a source in this graph space)</Text></legend>
           {rows.map((r, n) => (
             <div key={n} className={s.row}>
-              <Field label="Port"><Input value={r.port} onChange={(_, d) => upd(rows, n, { port: d.value }, setRows)} /></Field>
+              <Field label="Input name"><Input value={r.port} onChange={(_, d) => upd(rows, n, { port: d.value }, setRows)} /></Field>
               <Field label="Row type"><Select value={r.rowType} onChange={(_, d) => upd(rows, n, { rowType: d.value }, setRows)}><option value="">(choose)</option>{rowTypes.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></Field>
-              <Field label="Fed by source"><Select value={r.source} onChange={(_, d) => upd(rows, n, { source: d.value }, setRows)}><option value="">(choose)</option>{sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></Field>
+              <Field label="Reads from source"><Select value={r.source} onChange={(_, d) => upd(rows, n, { source: d.value }, setRows)}><option value="">(choose)</option>{sources.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></Field>
               <Button type="button" onClick={() => setRows(rows.filter((_, k) => k !== n))}>Remove</Button>
             </div>
           ))}

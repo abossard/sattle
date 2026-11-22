@@ -2,7 +2,7 @@
 
 **Question.** What did running the prototype show about the claims of Chapters 1 to 13, on what data, by whom, and what does it not show?
 
-**What you can state at the end.** The whole pipeline runs on two real recordings from a test cluster, from the records of every source to a health model, and gives one state digest per recording whatever the size of the batches. Every numbered statement of the paper has a status: proved, proved relative to a cited result or a named premise, or tested only; tests support a proof and never replace it. Three performance hypotheses are supported, each for one named configuration on a laptop under load. Everything else is met in one run, not met, or not measured, and is listed as open. The evaluation is partial: one machine, two recordings from a cluster that no longer exists, mostly one run per figure.
+**What you can state at the end.** Historical runs built health models from two real recordings and produced matching final digests across the tested batch sizes. Those recordings are unavailable to an independent reader. The original statement inventory and three supported performance statuses describe the draft and its measured configurations, not universal guarantees. The later manual audit found additional proof conditions and gaps; current-code reruns are reported separately in 14.11. Tests do not replace proofs, and readable diagrams do not establish reader comprehension.
 
 This chapter uses all earlier chapters.
 
@@ -12,9 +12,9 @@ This chapter uses all earlier chapters.
 
 | Gate | Where | What the results amount to |
 |---|---|---|
-| 1a theory | 14.5, 14.6 | Every statement has a status and a row of test evidence. Determinism of replay (Theorem 6.3) and batch invariance (Theorem 6.2) hold on both real recordings at five batch sizes, at the states of the software measured in 14.5 |
+| 1a theory | 14.5, 14.6 | Historical classifications and tests exist. The tested real replays agreed across five batch sizes; the manual audit adds missing premises and unresolved gaps (Ch. 15, 15.3) |
 | 1b flexible and expressive | 14.3 | A list of what was built. No result of this chapter is stated or tested as a claim of expressiveness |
-| 1c efficient | 14.7, 14.9 | Three hypotheses are supported for named configurations at the scale of the recordings. The memory of the whole engine and the time to close a window at the size of the estate are above target. Nothing ran at 1 million master nodes, and no budget per element exists to compare with |
+| 1c efficient | 14.7, 14.9, 14.11 | Three historical hypotheses were supported for named configurations. Later million-node measurements exist (Ch. 13, 13.1), but CPU exceeds its budget and long-run p99 remains open. This review did not rerun the million-node workload |
 | 2a health model from real Azure data | 14.2, 14.4 | The pipeline runs end to end on real data and computes a health model. Early evidence: one workload, a cluster that no longer exists, and live examples on a new test cluster in which a failed pod and a pod whose calls are dropped each reach the model and are found as its origin (Ch. 7, 7.4) |
 | 2b understandable by people | 14.4, 14.6, Ch. 12 | Lineage and the views of the viewer exist and are checked by scripts. No person outside the project has read the model |
 | 2c always live | 14.6, 14.7 | Restart and resume are tested against a fake source. One live run on Event Hubs, killed twice and resumed, ended in the digest that processing its recording gives (Ch. 10, 10.6). From a source to the master graph 4 s for a change of replicas, to the health model 77 to 90 s for a failing pod, each measured once |
@@ -31,11 +31,15 @@ This chapter uses all earlier chapters.
 | D | a benchmark |
 | E | a run on a real recording, or another run by the authors |
 
-**Three sets of runs.** Every figure comes from one of three sets of runs, and says which when it is not the first.
-- *The authors' runs*: made by the authors on a clean copy of a recorded state of the software.
-- *Set A*: the full runs of tests and checks that the project makes before it records a state of the software, including the tests of the cloud database on its local emulator. The authors read their output and did not repeat them.
-- *Set B*: runs by the developers of the engine, reported with their code, not repeated by the authors.
-The authors' runs took place at nine successive states of the software; from the tenth state on, the authors read the code and the figures are set A's. The log of the twelve evaluations, with the files of each, is in the appendix (A.9).
+**Provenance of historical runs.** The authors ran experiments at nine successive software states. From the tenth state onward they mainly read code and other contributors' results; appendix A.9 records the exceptions. A later number in that log does not mean every experiment was rerun.
+
+| Set | Who ran it | What the authors checked |
+|---|---|---|
+| Authors' runs | the paper's authors, on a clean recorded state | the experiments themselves |
+| A | the project before recording a software state, including local-emulator checks | output read, not independently rerun |
+| B | engine developers alongside their code | reported results, not independently rerun |
+
+The 22 November review reruns in 14.11 form a separate current-code evaluation. They do not replace or retroactively verify these sets.
 
 **Rule of decision** for hypotheses (Ch. 13, 13.5): a target of time or size is *supported* iff the statistic is at or below the target in every one of at least ten runs, *refuted* iff the median run is above it, and *inconclusive* otherwise; a status holds for one configuration. A figure from fewer than ten runs is reported as met in one run, not met in one run, or not measured.
 
@@ -44,7 +48,7 @@ The authors' runs took place at nine successive states of the software; from the
 - **Cluster.** A managed Kubernetes cluster in Azure (AKS, Kubernetes 1.34), with the network observer and a managed measurement system. It no longer exists: its group of resources was deleted on 2026-11-10, not by this project, as set A reports. Both recordings were taken before that. No further recording can be taken.
 - **Recording.** A script records, per source, the envelopes of Def. 10.2: the Azure resource list, Kubernetes list and watch, flows of the network observer, a measurement system, Azure measurements, Azure's log of management actions, the network logs of Azure, and the copies sent through Event Hubs. A forwarder sends the same envelopes to Event Hubs for the live input (Ch. 10, 10.6). Setting up and removing the environment took 3 min 14 s and 2 min 23 s once, as its developers measured; the authors cannot repeat it.
 - **The two recordings.** The *95-minute recording* (5,679 s): 245,345 records, among them 235,858 flows of the network observer over 725 s and 522 records of network logs with 175,265 tuples. The *17-minute recording* (1,017 s): 160,300 records, from every source. Both hold real names and are kept outside the project's repository. The names of the real workload are given to the definitions by a local file next to the recordings; the shared definitions bind invented names.
-- **Fixtures.** Samples of the recordings with every real name replaced, kept in the repository, which the tests process. And the **synthetic estate**: 548 records from every source the engine reads, written by a program with invented names only, so that every operator has data. It is also the default content of the viewer (Ch. 12).
+- **Fixtures.** Earlier evaluations used scrubbed samples of the recordings. The reviewed checkout contains their builders but not those capture-derived inputs; tests requiring them skip. The bundled **synthetic estate** uses invented names and exercises the supported sources. Its historical 548-record count is not the current fixture size: the review replay consumed 2,266 records. It is the viewer's default example (Ch. 12).
 - **Size.** The test estate is small. After the 95-minute recording the master graph has 15,154 entities, of which 14,622 are events kept as elements for 24 hours of logical time (4,135 of them evidence elements with a subject, the rest audit events) (Ch. 9, 9.6); the other 532 are the estate itself. The reference estate of Ch. 11 has 750,000 entities. The recordings show that the pipeline works end to end, not that it scales.
 
 ## 14.3 What was tested
@@ -95,7 +99,7 @@ An earlier check by the engine's developers, on an earlier state: the `flows` an
 
 ## 14.6 Statements against tests
 
-Every numbered statement of the paper has a status: proved, proved relative to a cited theorem, proved under a named premise, or tested only. The inventory gives each one. Tests can support a proof, never replace it. They are of three kinds.
+The inventory gives the draft's original proof and test classifications. The later manual audit reviewed every numbered proof and found further conditions and gaps; see the revised statements and Ch. 15, 15.3. Do not infer proof validity from a label or a passing test. The tests are of three kinds.
 
 - **Seeded random tests.** A generator produces random cases from fixed seeds, 4,000 cases per property, so a run can be repeated exactly. They cover the algebra of changes and the versions of a graph (Ch. 3, 4), with one caveat: the generator keeps only changes that the prototype itself accepts, so a wrong rejection cannot be seen.
 - **Comparison with an independent implementation.** A second, simple program computes every result from scratch, from the definitions of this paper. The prototype's step-by-step result is compared with it on generated inputs, in 60 small worlds, under every way of cutting the input into batches and with reordering inside a batch. This tests Theorems 6.1 and 6.2 per kind of operator. A `Group` keyed by an identity that merges has no case (Ch. 6, 6.6).
@@ -126,7 +130,7 @@ Each chapter ends with what the prototype does differently. Taken together, the 
 - The synthetic workload has 5,000 pairs; the reference estate about 240,000.
 
 **Internal.**
-- Mostly one run per figure. The ten-run sets report median, minimum, maximum and an interval. **No set of runs had a machine without other load**: the load average was between 14 and 115, and 239 during one set of three restarts. A status is therefore scoped to that load (Ch. 13, 13.5). For an upper bound on time, load can only raise times, so a pass under load holds all the more, and a failure under load is weak evidence; the one failure, H7 on the emulator, is also on a store that is not the target.
+- Mostly one run per figure. The ten-run sets report median, minimum, maximum and an interval. **No set had a machine without other load**: the authors report load averages between 14 and 115, and 239 during one restart set. A status is scoped to that configuration (Ch. 13, 13.5). It cannot be transferred to an idle or different machine merely by assuming load always makes the result slower. The emulator is also not the target store.
 - The random tests are by the same authors as the proofs. Their generators are seeded and test the engine's own types. The independent implementation is a check that does not share the step-by-step strategy.
 - Several statements were checked on fixtures and on real recordings, not on randomly generated projections.
 - How the premise B3 was found rests on comparing exported graphs, not on instrumenting the engine. That the survivor rule removes the dependence on order in general is Proposition 1.8; its tests are one synthetic input, generated orders of arrival on five seeds and two recordings. The causes behind B1 and B2 were found by set B. For a time the suite had no targeted tests of B1 and B2, and only the tests on the recordings guarded them.
@@ -141,11 +145,11 @@ Each chapter ends with what the prototype does differently. Taken together, the 
 
 **Conclusions.**
 - Statuses use the rule of Ch. 13 as written, with its scope. A single run stays a single run, whether far from its target (H9) or far inside it (H2, H6). The three supported statuses are inside their targets by a factor of about 77 for H5 on SQLite (records that make a version), about 2 for H8 on its worst run, and about 5.7 for H10 with a seal on its worst run and 1.5 without, all under load, and each is for one configuration. H8 is the closest to its target. H7 has two labels on the emulator from two sets, which says that the emulator's figure is not a property of the design.
-- Evidence that the engine matches the paper is limited to the listed tests. Where there is no test (`sync` rules, a stack of lenses, provenance semirings, `Delta`, recursion), the claims stand as proofs only. Several statements rest on proofs with example tests or none: Proposition 1.8, Proposition 5.7, Proposition 5.9, Propositions 7.7 and 7.8, Proposition 9.11, Propositions 10.7 and 10.8, Propositions 11.9 and 11.10, Proposition 12.10, and the premises B1 to B3 of Theorem 6.2. The health states on the second recording show the roll-up working; they do not show that the cluster was unhealthy.
+- Evidence that the engine matches the paper is limited to the listed tests. Unbuilt features have no implementation evidence; their model claims still require valid proofs and explicit premises. The manual audit found gaps that example tests cannot discharge (Ch. 15, 15.3). The health states on the second recording show the authored roll-up working, not that the real cluster was unhealthy.
 
 ## 14.10 What is open
 
-Sorted by gate. The two items that define gates 1b and 1c, a stated claim of expressiveness and budgets at 1 million master nodes, are in Ch. 15 (15.2).
+Grouped by gate. The remaining expressiveness and million-node performance obligations are in Ch. 15 (15.2). Later node/record budgets and measurements exist; a complete set of per-edge and per-measurement budgets does not.
 
 | Gate | Open item | Bears on |
 |---|---|---|
@@ -166,3 +170,15 @@ Sorted by gate. The two items that define gates 1b and 1c, a stated claim of exp
 | 2b | truncation of documents; escaping as a property; the digest the viewer shows compared with the engine's at every version; a replica compared end to end on a real recording and on a feed that is still arriving; `rev_of`; editing data views in the viewer; a screen reader; other browsers; a person outside the project reading the model | Ch. 12 |
 | 2b | lineage through windowed aggregates, thresholds and series | Ch. 9, 9.5 |
 | 2c | live runs on a real stream processed again from their recordings with the same horizon, beyond one example; the markers of loss of the forwarder on a real stream; H5 on the live path; more than one partition and more than one throughput unit; the delay from a source to the view as a distribution, not single examples | Ch. 10 |
+
+## 14.11 Independent review reruns, 22 November 2026
+
+The review used revision `54bbb6213d28801f41338061319f47a6b7d4b909` before text edits: Ubuntu x64, .NET 11, two logical cores and about 7.5 GiB total memory, shared with other work. Viewer checks used Node.js 22 from the Canvas directory. The artifact records commands and results in `evidence/review-2026-11-22.txt`.
+
+All default and slow engine suites completed, including the reference comparisons. Capture-dependent tests skipped because the inputs were absent; the two local-emulator conformance tests were rerun and passed. The 60 viewer test files passed across the full run and a targeted rerun after correcting the working directory. Contract, lab and guide checks also passed.
+
+The synthetic estate gave one final digest at batch sizes 1, 50 and 100,000, with 73 entities and 69 relationships in the master graph. This reproduces a current-fixture result, not the unpublished recordings.
+
+Performance was not uniformly within target. The exact hot-graph benchmark held 750,000 entities and approximately 2.5 million relationships in 387 MB. The 30-run element-view benchmark had a 53.0 ms median but a 154.0 ms maximum: under the every-run rule, it is **inconclusive**, not supported. The local-emulator read benchmark exceeded both targets and is **refuted for that bounded emulator configuration**, not for Cosmos in Azure. Sealed synthetic restart was within 60 s in all ten runs; unsealed restart had a 51.1 s median and an 89.2 s maximum and is inconclusive.
+
+The 10,000-node long-run generator produced 109 steady closes, p99 137 ms. The 100,000-node generator produced nine steady closes, maximum 1.128 s; that is not a long-run p99 result. Neither substitutes for a million-node measurement. The latter was not rerun because its documented memory requirements exceed this host's safe capacity. Real-recording, real-account and live Azure experiments remain unverified here.

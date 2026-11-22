@@ -5,7 +5,7 @@ This appendix is the only part of the paper that names programs, files and comma
 ## A.1 The release
 
 - **Repository:** the Sattle repository in which this paper lives (the folder `paper/`).
-- **Release:** *to be named at publication.* The experiments of chapter 14 are to be repeated on that release; its name will be entered here.
+- **Release:** *to be named at publication.* Historical runs use the states listed in A.9. The later review reruns use revision `54bbb6213d28801f41338061319f47a6b7d4b909` before text edits (A.10); they are not exact replications of every historical build.
 - **License:** see the file `LICENSE` at the root of the repository.
 
 ## A.2 What is in the repository
@@ -22,15 +22,16 @@ This appendix is the only part of the paper that names programs, files and comma
 | `engine/tests/Sattle.Reference` | the independent, simple implementation written from the definitions of the paper | 6, 14 |
 | `engine/tests/Sattle.Differential` | the comparison of the engine with that implementation on generated inputs | 6, 14 |
 | `canvas/` | the viewer, a browser application | 12 |
-| `lab/` | the description of the recording environment, the recording tools, and small scrubbed samples of recordings (`lab/fixtures`) | 10, 14 |
+| `lab/` | the recording environment, recording tools and capture-derived fixture builders; their sample outputs are unavailable in this checkout | 10, 14 |
 | `paper/evidence/` | the output of the runs that chapter 14 cites, one text file per run | 14 |
 | `paper/inventory.md` | every numbered statement of the paper with its proof status | all |
 | `paper/research/` | working documents: reviews, investigations, earlier states of the text | none |
 
 ## A.3 What can be repeated, and what cannot
 
-- **Can be repeated from the repository:** every test; every experiment on the samples in `lab/fixtures` and on the synthetic estate in `engine/tests/Sattle.Tests/fixtures/estate`; the comparison with the independent implementation; the synthetic benchmarks; the checks of the viewer.
-- **Cannot be repeated from the repository:** the experiments on the two real recordings. The recordings name real resources and are not published, and the cluster they were taken from no longer exists. For these the paper rests on the output files in `paper/evidence/`, in which real names are removed.
+- **Available inputs:** the synthetic estate in `engine/tests/Sattle.Tests/fixtures/estate`, generated reference cases, synthetic benchmarks and viewer checks. Run the default and slow suites separately; capture-dependent tests may skip.
+- **Unavailable inputs:** the two real recordings, their local-name overlay and the capture-derived samples formerly used in `lab/fixtures`. This checkout contains fixture builders, not those samples. Historical H5/H10 runs use a real recording and cannot be replicated exactly with the synthetic estate.
+- **Environment limits:** million-node and larger estate runs require more memory than a small review host. Real-account and live Azure runs additionally require infrastructure and authorization. A smaller synthetic run is a different experiment, not a substitute pass.
 
 ## A.4 Requirements
 
@@ -74,7 +75,7 @@ dotnet test -c Release --settings tests/capture.runsettings
 dotnet test tests/Sattle.Differential -c Release
 ```
 
-**Replay of a recording** (chapter 14). `DIR` is a recording; `lab/fixtures` and the synthetic estate work without further files. The second form replays in batches of `N` records, which must give the same fingerprint. The third writes the resulting graphs as files.
+**Replay a recording** (chapter 14). `DIR` contains a recording. The synthetic estate works without further inputs; capture-derived fixtures do not. The second form replays in batches of `N` records to compare final fingerprints. The third writes the resulting graphs as files.
 
 ```bash
 sattle replay DIR --cluster NAME
@@ -88,7 +89,7 @@ sattle replay DIR --cluster NAME --chunk N
 sattle replay DIR --cluster NAME --out OUTDIR
 ```
 
-For the synthetic estate: `DIR` is `tests/Sattle.Tests/fixtures/estate` and `NAME` is `synth`.
+For the synthetic estate: `DIR` is `tests/Sattle.Tests/fixtures/estate` and `NAME` is `synth`. `lab/fixtures` is not itself a replay input in the reviewed checkout: build its missing capture-derived data first.
 
 **Serve a recording to the viewer** (chapter 12):
 
@@ -140,9 +141,9 @@ npm run a11y
 
 Each run that chapter 14 cites has an output file in `paper/evidence/`. The first line of a file says what was run. The file names carry a number that orders the runs in time; a later number is a later state of the software. Figures that were measured by others in the project and not repeated by the authors of the paper are marked as such in chapter 14.
 
-## A.7 State of the software when the paper was last revised
+## A.7 Historical pre-review software counts
 
-These figures describe the software, not a result of the paper. They were obtained by the project's own checks before the revision of the text and were not repeated by the authors of the paper.
+These are the counts recorded by the earlier draft, not the review reruns or the current suite totals. They came from the project's own checks and were not repeated by the authors of that draft. A.10 gives the later review record.
 
 - Comparison with the independent implementation: 194 of 194 cases agree.
 - Tests of the engine, every category: 755 passed, 2 skipped.
@@ -150,7 +151,7 @@ These figures describe the software, not a result of the paper. They were obtain
 
 ## A.8 Statements and the tests that exercise them
 
-The table maps each numbered statement to the tests of the engine that exercise it and to what remains open. Evidence classes: A, a proof in the paper; B, seeded random tests (4,000 cases per property); C, example or fixture tests; D, a benchmark; E, a replay of a real recording. Test names are those of the engine's test projects.
+This historical table maps numbered statements to the tests and open items recorded by the earlier draft. Evidence classes: A, a proof in the paper; B, seeded random tests (4,000 cases per property); C, example or fixture tests; D, a benchmark; E, a replay of a real recording. These labels are not a current proof verdict or complete list of premises: read the revised chapter statements and Chapter 15, 15.3. Tests requiring the unavailable recordings were not repeated in A.10.
 
 | Theorem | Paper | Test evidence | Open |
 |---|---|---|---|
@@ -213,3 +214,24 @@ Evaluation 11a is not an evaluation by this paper: it names the engine of evalua
 
 Figures from other contributors, copied unchanged (`turn8` in a file name is set A's own name for its run at evaluation 5): set A's ten-run output at evaluation 4 (`perf-h5-memory-orch.txt`, `perf-h5-sqlite-orch.txt`, `perf-h7-orch.txt`, `perf-h8-orch.txt`, `perf-h10-orch.txt`) and at evaluation 5 (`perf-h8-orch-turn8.txt`, `perf-h10-1h-orch-turn8.txt`, `perf-h10-4h-orch-turn8.txt`, `perf-h10-1h-seal-orch-turn8.txt`, `perf-h10-4h-seal-orch-turn8.txt`, `cosmos-cap-orch-turn8.txt`). Figures of sets A and B at evaluation 6 are cited from `engine/PERF.md`.
 The cluster name is redacted in the evidence files. The captures and the space overlay they need are gitignored.
+
+## A.10 Review reproduction record, 22 November 2026
+
+The review reran the available correctness and benchmark paths at revision
+`54bbb6213d28801f41338061319f47a6b7d4b909`, before editing the text.
+[The reproduction record](evidence/review-2026-11-22.txt) gives commands,
+configuration, counts, digests, measured thresholds and unavailable experiments.
+It is a current-code rerun, not a verification of all historical measurements.
+
+The engine's default and slow suites completed. Tests requiring missing capture
+inputs skipped and are not counted as verified. The local Cosmos emulator was
+limited to one CPU and 1,536 MB; its read targets were exceeded. No Azure account
+was used. Viewer suites ran with Node.js 22; the fixture-dependent suites require
+the `canvas/` working directory. The archived design contracts additionally need
+their pinned .NET 10 SDK and Python `jsonschema`.
+
+The synthetic estate, generated scale workloads and synthetic stores are
+available. The real recordings and capture-derived samples are not. The
+million-node workload was not run on this roughly 7.5 GiB host, and smaller
+workloads do not establish that target. The informal, AI-assisted proof review
+and its remaining obligations are summarized in Chapter 15, 15.3.

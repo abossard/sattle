@@ -4,6 +4,10 @@ Sattle turns what a cloud system reports into graphs that explain it, and keeps 
 
 [Explore the narrated shop walkthrough](https://abossard.github.io/sattle/docs/learn/) · [Replay the recorded database outage](https://abossard.github.io/sattle/docs/learn/pg-shop.html#incident)
 
+**Start with a question.** To see how records become a health model, follow the shop walkthrough. To try the working prototype, use the developer tutorial below. To examine the research claims, start with the [whitepaper's reading paths](paper/README.md#how-to-read) and [limitations](paper/ch15-related-work-and-limitations.md).
+
+The examples distinguish invented data from recorded observations. A health state is the result of authored rules and available evidence, not an independently verified diagnosis. The research review found missing premises in several formal claims; the paper now states those limits rather than treating passing tests as proofs.
+
 ## Developer tutorial
 
 Open [Getting started in Canvas](http://localhost:5173/#guide=start) after starting both processes.
@@ -49,7 +53,7 @@ flowchart TB
 ```
 
 - Identity domains of the ontology modules make one entity of what several sources report about one thing.
-- The same input gives the same graphs, whatever the batching. Envelope format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md).
+- With fixed definitions and the same recorded logical-time advances, the tested replays give the same final graphs across batch sizes. This does not mean their intermediate revisions are identical, or that arbitrary definition edits are batch-independent. Envelope format: [CAPTURE-FORMAT.md](lab/CAPTURE-FORMAT.md).
 
 One change, from the cluster to the screen:
 
@@ -352,7 +356,7 @@ The work follows two phases. Phase 1 proves the theory, shows the language is fl
 What holds today:
 
 - The engine's incremental result equals the independent reference evaluator in every generated case of the differential harness, under every batch split and reordering.
-- The proof inventory has no statement left as a sketch or open. Some proofs rest on named premises about the engine, and most were checked by reading only.
+- The proof inventory records the draft's original classifications. A subsequent manual audit found missing premises and incomplete arguments, including identity aliases, ontology checks, definition edits, and storage retries. The [paper's audit qualifications](paper/ch15-related-work-and-limitations.md#153-research-review-and-reading-quality) explain these limits; neither the inventory nor passing tests certify all proofs.
 - The language covers relational algebra with aggregation, graph patterns, bounded recursion, windows with thresholds, and edge lifting.
 - A master graph of about 50,000 nodes was built from a real 17 minute capture of one cluster, and a health model with roll-up was derived from it.
 - **One million master nodes.** The engine replays 8.2 million records for one million pods, Services and Azure resources. The memory figures below come from the capped run on November 18, 2026. The CPU and window timings come from the November 19 serial baseline with detailed counters off. [Compare serial and parallel graph preparation](engine/PERF.md#parallel-preparation-of-graph-matches).

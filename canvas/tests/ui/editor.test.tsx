@@ -90,7 +90,7 @@ describe("the new projection dialog writes the projection's KQL file and binds i
     await user.type(within(dialog).getByLabelText(/^Name/), "serviceView");
     await user.type(within(dialog).getByLabelText(/^History/), "4");
     await user.selectOptions(within(dialog).getByLabelText(/^Output ontology/), "d:m");
-    await user.selectOptions(within(dialog).getByLabelText("Expects ontology"), "d:m");
+    await user.selectOptions(within(dialog).getByLabelText("Required ontology"), "d:m");
     await user.click(within(dialog).getByRole("button", { name: "Add parameter" }));
     await user.type(within(dialog).getByLabelText("Parameter"), "minReady");
     await user.type(within(dialog).getByLabelText("Default"), "0");
@@ -109,7 +109,7 @@ describe("the new projection dialog writes the projection's KQL file and binds i
     const dialog = await findDialog();
     await user.type(within(dialog).getByLabelText(/^Name/), "master");
     await user.selectOptions(within(dialog).getByLabelText(/^Output ontology/), "d:m");
-    await user.selectOptions(within(dialog).getByLabelText("Expects ontology"), "d:m");
+    await user.selectOptions(within(dialog).getByLabelText("Required ontology"), "d:m");
     await user.click(within(dialog).getByRole("button", { name: "Create projection" }));
     expect(await within(dialog).findByText("graph master already exists in the space")).toBeDefined();
     expect(eng.files.size).toBe(0);

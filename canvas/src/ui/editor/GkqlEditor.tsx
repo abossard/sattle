@@ -279,7 +279,7 @@ export default function GkqlEditor({ file, source, initialTab = "wires", starter
       <div aria-live="polite">
         {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
         {!changed && problems.length > 0 && <MessageBar intent="warning"><MessageBarBody>{problems[0].message}</MessageBarBody></MessageBar>}
-        {!structureEditable && view === "wires" && <MessageBar intent="info"><MessageBarBody>Use the GKQL tab to preserve exact numbers in this browser.</MessageBarBody></MessageBar>}
+        {!structureEditable && view === "wires" && <MessageBar intent="info"><MessageBarBody>This browser cannot keep every number in this file exact in the Wires view. Use the GKQL tab to edit it without changing them.</MessageBarBody></MessageBar>}
       </div>
       {view === "source" || !program ? (
         <div className={s.code}><Textarea resize="vertical" rows={16} aria-label="GKQL source" value={text} readOnly={readOnly} onChange={(_, d) => edit(d.value)} textarea={{ className: s.mono }} /></div>

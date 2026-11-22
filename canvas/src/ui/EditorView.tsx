@@ -354,7 +354,7 @@ function CommitDialog({ open, onClose, native }: { open: boolean; onClose: () =>
       <DialogSurface><DialogBody>
         <DialogTitle>Commit the draft</DialogTitle>
         <DialogContent>
-          {!native && <Field label={`Version of ${ed.module}`} hint="Changing it before the commit names a new version; the engine checks the result."><Input value={version} onChange={(_, d) => setVersion(d.value)} /></Field>}
+          {!native && <Field label={`Version of ${ed.module}`} hint="If you change it before you commit, the result is saved as a new version of this module; the engine checks it."><Input value={version} onChange={(_, d) => setVersion(d.value)} /></Field>}
           <Text block>Draft base revision {ed.base}, now at {ed.revision}. {errors ? `${errors} problem${errors === 1 ? "" : "s"} must be fixed first.` : "The engine accepts the draft."} Committing activates the definitions: the engine replays the retained inputs and every output graph receives one patch.</Text>
         </DialogContent>
         <DialogActions><Button onClick={onClose}>Cancel</Button><Button appearance="primary" disabled={errors > 0} onClick={() => { dispatch({ type: "editor/commit", version: !native && version !== header ? version : undefined }); onClose(); }}>Commit</Button></DialogActions>

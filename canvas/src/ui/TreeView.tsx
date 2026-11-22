@@ -194,7 +194,7 @@ export function TreeView({ graph }: { graph: string }) {
                     style={{ height: ROW_H, backgroundColor: selected === n.id ? tokens.colorSubtleBackgroundSelected : undefined }}>
                     <TreeItemLayout aside={
                       <span className={s.cell}>
-                        {n.origin && <Badge size="small" appearance="filled" color={n.rolled?.role === "warning" ? "warning" : "danger"} title="Where the problem starts: its own state is as bad as its rolled-up state"><span aria-hidden="true">⚑ </span>origin</Badge>}
+                        {n.origin && <Badge size="small" appearance="filled" color={n.rolled?.role === "warning" ? "warning" : "danger"} title="Where the problem starts: its own state is as bad as the state it reports upward (own state combined with its children’s)"><span aria-hidden="true">⚑ </span>origin</Badge>}
                         {through.length > 0 && <Text size={200} title={`${n.rolled?.value ?? "Wrong"} through ${through.join(", ")}`}>through {through.join(", ")}</Text>}
                         {r.shownAbove && <Badge size="small" appearance="outline" title="Its children are shown at its first row above; a click, Enter or Right goes there" onClick={(e) => { e.preventDefault(); e.stopPropagation(); select(n.id); goTo(indexOf(r.shownAbove!)); }}><span aria-hidden="true">↑ </span>shown above</Badge>}
                         {n.parents.length > 1 && <Badge size="small" appearance="outline" title={`The same element, under ${n.parents.length} parents`}><span aria-hidden="true">⧉ </span>same element, under {n.parents.length}</Badge>}

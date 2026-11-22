@@ -3,7 +3,7 @@ const ShopTerms = {
   origins: [
     ["Dependency", "An arrow points from something that needs a service to the service it needs."],
     ["Master graph", "The graph of entities and links that Sattle builds from its sources. Each dot represents one entity."],
-    ["Projection", "A query builds a view for one question. The health model combines the workload map, readings and rules."]
+    ["Projection", "A projection is a rule that builds one graph from other graphs. The health model is built this way from the workload map, readings and rules."]
   ],
   rules: [
     ["Scope", "The cluster and namespace set the shop’s boundary. Its services can depend on resources beyond it."],
@@ -32,7 +32,7 @@ const ShopTerms = {
   ],
   replay: [
     ["Patch", "A list of edits carries the graph from one version to the next."],
-    ["Revision", "A revision identifies a version of one graph. The meter records when each sample was taken."],
+    ["Revision", "A revision identifies a version of one graph."],
     ["Replay", "The same recorded inputs, clock events and rules let Sattle reproduce a past graph."]
   ],
   inspect: [

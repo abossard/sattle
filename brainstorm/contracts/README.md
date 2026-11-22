@@ -2,11 +2,11 @@
 
 Compilable C# contracts and portable schemas for graph and document projections. Production behavior is intentionally unimplemented. A separate finite mathematical reference model tests selected laws and counterexamples.
 
-Start with [the architecture](docs/ARCHITECTURE.md), [the visual](docs/architecture.svg), [verification evidence](docs/VERIFICATION.md), and [open work](OPEN-WORK.md).
+Start with [the architecture](docs/ARCHITECTURE.md), [the visual](docs/architecture.svg), [verification evidence](docs/VERIFICATION.md), and [archived open-work notes](https://github.com/abossard/sattle/blob/main/brainstorm/dist/evidence/OPEN-WORK.md). The notes are hosted in the repository, not included in the downloadable contract package.
 
 ## Verify
 
-Requires .NET 10 SDK, Python 3.11+ and jsonschema 4.x. The C# solution has no NuGet dependencies.
+Requires a .NET 10 SDK, Python 3.11+ and jsonschema 4.x. `global.json` pins SDK 10.0.100 and rolls forward only within 10.x; SDK 11 alone does not satisfy it. The separate engine targets net11.0. The C# contract solution has no NuGet dependencies.
 
 ```sh
 python -m pip install -r requirements.txt
@@ -22,7 +22,6 @@ Set `DOTNET` to an absolute SDK executable path if it is not on PATH. The script
 - examples/: graph/document definitions, ontology, changes, a rendered Markdown example and native source fixtures.
 - tests/: finite mathematical oracle, schema and selected semantic checks, compiler rejection tests.
 - docs/: architecture, decisions, source research, review results and verification limits.
-- OPEN-WORK.md: completed work, remaining decisions and deferred implementation.
 
 ## Deliberate boundaries
 

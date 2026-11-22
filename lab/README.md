@@ -38,7 +38,7 @@ azd down
 
 ## What the lab creates
 - Resource group `rg-sattle-lab` (in the azd location), tagged `project=sattle` and `azd-env-name`
-- Event Hubs namespace (Standard, 1 TU, local auth off, Entra RBAC) with hubs `sattle-activity`, `sattle-aks`, `sattle-hubble`, `sattle-ingest` (1 partition, one ordered stream), consumer groups `sattle-capture` and `sattle-engine`
+- Event Hubs namespace (Standard, 1 TU, local auth off, Entra RBAC) with hubs `sattle-activity`, `sattle-aks`, `sattle-hubble`, `sattle-ingest` (1 partition, one ordered stream; the other three hubs have 2 partitions each), consumer groups `sattle-capture` and `sattle-engine`
 - Storage account for VNet flow logs (3 day lifecycle), private endpoint and private DNS zone for it
 - Role assignments for the signed-in user: Event Hubs Data Sender and Receiver, Storage Blob Data Reader
 - Hooks: Activity Log and AKS (`kube-audit-admin`, `cluster-autoscaler`) diagnostic settings to their hubs, VNet flow log `fl-sattle-aks-vnet` (format v2, 3 day retention), ACNS observability (runs Hubble relay), namespace `sattle-demo` (frontend, api, db, loadgen, and an intruder that network policy denies; db gets `BACKUP_URL` naming the lab's storage account, the workload's dependency on an Azure resource)
