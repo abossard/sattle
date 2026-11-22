@@ -49,7 +49,7 @@ export function CanvasHost({ graph, focus = false, tile = false }: { graph: stri
   const notice = sum && info ? edgelessNotice(info.role, sum.nodes, sum.edges, info.ontology.relationshipTypes.map((t) => t.id.value)) : null;
   return (
     <div className={s.box}>
-      {gl ? <div ref={ref} className={s.stage} /> : <MessageBar intent="warning"><MessageBarBody>WebGL2 is not available in this browser. The Elements and Relationships lists show the same graph.</MessageBarBody></MessageBar>}
+      {gl ? <div ref={ref} className={s.stage} /> : <MessageBar intent="warning"><MessageBarBody>WebGL2 is not available in this browser. The Elements tab in the left panel lists the same graph; choose Nodes or Edges in its List field.</MessageBarBody></MessageBar>}
       {notice && <MessageBar intent="info" className={s.notice}><MessageBarBody>{notice}</MessageBarBody></MessageBar>}
     </div>
   );

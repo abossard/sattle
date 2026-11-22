@@ -2,7 +2,7 @@
 
 **Question.** Why does a company that runs software in a cloud need a graph built from all its sources, and what must that graph guarantee?
 
-**What you can state at the end.** A company that runs software in a cloud needs one model of what it runs: what exists, what depends on what, how it is doing, and what changed. No single source of information gives that model, and the sources disagree. This paper defines a model that is built from all of them, that is a graph, and that is reproducible: the same recorded inputs always give the same graph.
+**What you can state at the end.** A company that runs software in a cloud needs one model of what it runs: what exists, what depends on what, how it is doing, and what changed. No single source gives that model, and the sources disagree. This paper proposes a graph built from their observations. Its reproducibility claims require recorded inputs, definitions and logical-time advances, with additional conditions for batching and definition edits.
 
 This chapter states the problem, the idea, the terms, the research plan and the claims. It needs no earlier chapter and no knowledge of cloud systems. Words from that world are explained in one line where they first appear.
 
@@ -53,7 +53,15 @@ flowchart LR
   class V,R,M,P1,P2 g
 ```
 
-In the prototype the chain from input to screen has these names, the same in the paper, its glossary and the README files of the repository. A *source* emits native records; a forwarder that sends them to a stream, or a recording, wraps each in an *envelope*; an *adapter* turns envelopes into typed *rows*; *ontology modules* name the types and the identity domains that make one entity of what several sources report; *projections*, written as KQL text, compute the *graphs* of a *graph space* from the rows and from one another, working on the changes only; the *canvas* shows the graphs and follows a failure down to its *origin*, the part to blame (Ch. 7, 7.4). The same input gives the same graphs, however it is cut into batches.
+From input to screen, the prototype uses these terms:
+
+- A *source* emits native records. A forwarder or recorder wraps each in an *envelope*.
+- An *adapter* turns envelopes into typed *rows*.
+- *Ontology modules* declare types and identity domains. Identity rules can connect reports about the same entity.
+- *Projections*, written as KQL text, define the *graphs* of a *graph space* from rows and other graphs.
+- The *canvas* shows those graphs. It follows the authored health rules to an *origin*: a component that contributes its own bad state, not an independently confirmed root cause (Ch. 7, 7.4).
+
+The tested replays give the same final graphs across batch sizes. Theorems 6.1 to 6.3 state the conditions; intermediate revisions need not be identical.
 
 Seven terms carry the rest of the paper. Each has a number so that later chapters can point to it.
 
@@ -80,9 +88,9 @@ Seven terms carry the rest of the paper. Each has a number so that later chapter
 
 Four ideas follow from these terms. Each is the subject of later chapters.
 
-- **Observations are evidence, not facts.** Rules decide what the graph holds, and the graph remembers which observations support each element. When the support is withdrawn, the element goes (Ch. 9, 10).
+- **Observations are evidence, not facts.** Rules decide what the graph holds. Withdrawing one source's contribution removes that support, not necessarily the whole element: other support and conflict rules still matter. Lineage is complete only for the cases stated in Ch. 9.
 - **Levels of abstraction.** A projection that summarizes a graph is a higher level of it. It maps several nodes to one and lifts the edges with them: the dependency between two services is the lifted form of the calls between their pods (Ch. 5). The service level and the workload model in the figure are such levels.
-- **Two planes.** Structure and measurements are kept apart. The value of a measurement reaches the structure only through one narrow door, a threshold with memory, so that a noisy number cannot make the graph flicker (Ch. 7). A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
+- **Two planes.** Structure and measurements are kept apart. A threshold can turn a measurement into structural state. It remembers its previous state and requires the declared number of qualifying windows before switching (Ch. 7). A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
 - **Definitions are data.** The types of entities, the rules for names and the projections are themselves graphs. Only a small fixed core is program code. A new kind of entity or a new view needs no new program (Ch. 2, 5).
 
 ## 0.3 Two guiding questions
@@ -119,7 +127,7 @@ Together: no source gives a consistent picture of one moment. The program that r
 
 These six requirements are decisions made before the work, not results.
 
-- **R-det, determinism.** The same inputs in the same order, with the same definitions, give the same sequence of graph versions (Ch. 6).
+- **R-det, determinism.** The same recorded inputs and control events, in the same order and with the same step boundaries and definitions, give the same sequence of graph versions (Ch. 6). Equality of final state across different batch cuts is a separate claim.
 - **R-id, timeless identity.** What an entity is called inside the model does not depend on its state, its type, the version of the definitions, or the time (Ch. 1).
 - **R-data, structure and measurements.** The graph carries measurements as well as structure, on a separate plane that creates no versions (Ch. 7).
 - **R-perf, efficiency.** Cost is stated as budgets that a measurement can refute (Ch. 13).
@@ -135,25 +143,33 @@ The work has two phases. The first must be finished before the second counts as 
 - **1b, flexible and expressive.** What the definition language can express, what it cannot, and what needs a change of the engine, stated as claims with evidence.
 - **1c, efficient.** A budget of memory and work per node, per edge and per measurement, met for a master graph of one million nodes on one machine, with storage that does not depend on one database product.
 
-**Phase 2, the prototype.** Real data from Azure become a health model that a person understands and that is always live.
+**Phase 2, prototype goal.** Turn real data from Azure into a live health model that a person can understand. Reader comprehension and production availability have not been established.
 
-**Where this stands.** For 1a, of the 114 numbered statements 96 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 7 are properties of the prototype that are tested and not proved. Two were found false as first stated and are restated (Theorems 5.3 and 7.1). The proofs were read, not checked by a machine ([inventory.md](inventory.md)). For 1b, the paper describes what was built and does not yet state what the language can and cannot express. For 1c, the budgets are not yet stated, and nothing was measured at one million nodes. Phase 1 is therefore not finished. The prototype results in this paper come from an early prototype and are reported as early evidence.
+**Where this stands.**
 
-The paper makes eleven claims. The table says where each is established and how firmly.
+| Gate | Current qualification |
+|---|---|
+| 1a | The original inventory labels 114 statements: 96 proved, 2 cited, 9 conditional and 7 tested. A subsequent informal, AI-assisted audit found additional missing premises and incomplete arguments. Those labels are not independent certification; see the chapter qualifications and Ch. 15, 15.3. No proof was machine-checked. |
+| 1b | The paper describes the implemented language, but has not established a complete expressiveness classification. |
+| 1c | Later million-node measurements and node/record budgets exist. The CPU budget is exceeded, long-run p99 is open, and the reference hardware and durable-store target remain untested (Ch. 13). Budgets per edge and measurement are incomplete. |
+
+Phase 1 is not finished. Prototype results are early, configuration-specific evidence.
+
+The paper groups its claims into eleven topics. The table gives their scope, not a blanket proof certificate.
 
 | # | Claim | Chapter | How firmly |
 |---|---|---|---|
-| C1 | Values have one canonical written form, and the name of an entity inside the model is stable under replay | 1 | proved; one experiment (replay across a change of the naming rules) is open |
-| C2 | A graph has a totally ordered sequence of versions, and every version can be reconstructed | 3 | proved |
-| C3 | Changes of a graph form an algebra: each change has an inverse, changes compose, and they map into a group of signed differences | 4 | proved; tested on the prototype with random cases, which cover only the changes the prototype itself accepts |
-| C4 | Measurements never create versions. Structure that is derived from measurements is reproducible and changes at a bounded rate | 7 | proved, given determinism (C8). The bound on the rate holds for structure derived through a threshold and for structure derived from which keys have measurements; a projection that writes the times of windows into structure can change it once per window (Theorem 7.1) |
-| C5 | Any store with five stated properties gives atomic versions, one unbranched history and readers that miss nothing | 11 | proved from the five properties; that a store scales to one million nodes is open |
-| C6 | Efficiency is stated as budgets per node, edge and measurement at one million nodes | 13 | the budgets are not yet stated. Fourteen earlier targets exist; three are met for named setups at the scale of the lab (Ch. 14) |
-| C7 | Types, naming rules and projections are typed graphs over a small fixed core. A type system makes accepted definitions deterministic and keeps measurements from changing structure unnoticed | 2, 5 | proved, with the separation of measurements from structure stated for two channels, values through thresholds and existence through supports (Theorem 5.3); type soundness under one named premise about the functions of the fixed core |
-| C8 | Computing step by step gives the same result as computing from scratch. Replay is deterministic. How the input is cut into batches does not matter | 6 | proved, relative to two cited theorems and four stated premises; tested against an independent implementation |
-| C9 | The direction in which a view may be edited is declared per rule, and the laws of well-behaved editing survive stacking of views | 8 | proved on the model. One further kind of rule is proved for a stated fragment and is not built |
-| C10 | Changing a definition and replaying the inputs is well defined, and is not the same as computing from scratch. What supports an element can be traced | 9, 10 | proved |
-| C11 | A projection that summarizes a graph is a level of abstraction: it lifts edges with nodes, and lifting is a quotient that keeps totals and composes across levels | 5, 7 | proved on the model; tested by examples |
+| C1 | Supported values have a canonical written form; allocated ids are stable under fixed naming rules | 1 | conditional on the supported normalization domain and allocation/forwarding rules; arbitrary aliases and naming-rule migration require further conditions |
+| C2 | A graph has an ordered sequence of committed versions; a complete retained log can reconstruct them | 3 | model arguments under the commit and log premises; Theorem 3.1 establishes WF1–WF3, not automatic type conformance (WF4) |
+| C3 | Patches compose, have algebraic inverses, and map into signed differences | 4 | an inverse need not be committable. the algebra tests use compatible chains, and a separate oracle checks admission and rejection |
+| C4 | Measurement updates alone create no structural versions; threshold run lengths bound state toggles on append-only windows | 7 | conditional on determinism (C8), counter ordering and the stated threshold/window model. Theorem 7.1 distinguishes threshold changes, key-presence changes and window-time writes; the revised retention bound is not verified in the prototype |
+| C5 | Stores can provide atomic versions, an unbranched history and replayable reads | 11 | conditional on store, publication, ordered-retry and journal premises; the five store properties alone do not settle every recovery case |
+| C6 | Efficiency has explicit node/record and latency targets at one million nodes | 13 | later measurements exist; CPU exceeds its budget and long-run p99 remains open. Three older hypotheses were supported only for their recorded configurations |
+| C7 | Definitions are typed graphs over a fixed core; typing controls two measurement-to-structure channels | 2, 5 | soundness and compatibility require function and schema premises; closure and incremental-check limits are qualified in the chapters |
+| C8 | Incremental and batch evaluation agree on the stated domain; recorded replay is deterministic | 6 | conditional on the cited results, operator domains, order and control events. Batch invariance concerns final state, not identical revision logs; generated comparisons provide test evidence |
+| C9 | Editing direction is declared; lens laws compose for the stated source and edit domains | 8 | conditional model arguments; the built lens is not automatically covered by every step-composition theorem |
+| C10 | Definition edits have explicit replay policies; bounded replay can differ from full evaluation | 9, 10 | the counterexample is established; complete replay arguments and lineage through all materialization conflicts remain open |
+| C11 | Functional level images lift edges and compose, conserving covered totals | 5, 7 | conditional on functional images and defined aggregation; examples do not prove arbitrary query text implements those conditions |
 
 ## 0.7 Scope
 

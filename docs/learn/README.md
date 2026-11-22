@@ -11,6 +11,8 @@
 
 A listener asks a question in each scene. The guide answers with a record or measurement, then explains the idea behind it. The term buttons let you hold a diagram on screen. Open **Read this part of the narration** to find the dialogue and its edit link.
 
+The four-chapter story uses illustrative records; the pg-shop companion replays the bundled synthetic estate. Health labels follow the available checks and authored rules. They explain the model, not an independently established cause of a live incident.
+
 ## Start locally
 
 Open the [walkthrough](index.html) directly from disk, or serve this checkout from the repository root.

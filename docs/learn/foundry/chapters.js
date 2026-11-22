@@ -2,7 +2,7 @@
 const retailChapters = {
   estate:{figure:"From source records to five views",context:"Order O-104 · refund",
     description:"Source records start as an ungrouped graph. Exact identifiers connect evidence across sources. Two projections group the graph by technology and by capability. Five views show the same shop from different angles.",
-    example:"Two sources use the same storage account ID.",principle:"Projection",meaning:"A projection defines how to build a graph from its inputs.",
+    example:"Two sources use the same storage account ID.",principle:"Projection",meaning:"A projection is a rule that builds one graph from other graphs.",
     section:"0.2",reading:"ch00-introduction.md#02-the-idea-and-the-terms-it-needs"},
   rollup:{figure:"Health Tree",context:"pg-shop · web service",
     description:"Explore the live health model as a tree rooted at the web service. Follow its branches back to the master graph, inspect the database alarm rule, and see how the query finds the worst contributing state.",

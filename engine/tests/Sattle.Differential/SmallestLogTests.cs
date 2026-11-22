@@ -19,6 +19,55 @@ public class SmallestLogTests
     /// <summary>The fact text of a `Reach` from item `a` to item `b`.</summary>
     static string Reach(string a, string b) => $"prop:a=t:{a},d:w.view/prop:b=t:{b},";
 
+    [Fact]
+    public void A_cross_type_link_keeps_the_two_emitted_entities_distinct()
+    {
+        var catalog = EngineRun.Load([
+            new("w.sattle", """
+                module w @ 1.0.0;
+                entity Pod { uid: Text; }
+                entity Service { name: Text; }
+                identity pod for Pod version "1" { uid: Text by exact; }
+                identity service for Service version "1" { name: Text by exact; }
+                equivalence observed between pod, service assert threshold 1.0;
+                rows Pair { uid: Text; name: Text; }
+                """),
+            Worlds.Kql("w", "ingest", """
+                graph ingest : w;
+                input pairs : Pair;
+                nodes Pod on p with (rule = "observed") = pairs | project p = identity("pod", uid), uid;
+                nodes Service on s with (rule = "observed") = pairs | project s = identity("service", name), name;
+                link observed from p to s with (confidence = 1.0, rule = "observed") = pairs | project p = identity("pod", uid), s = identity("service", name);
+                """),
+            Worlds.Space("import w @ 1.0.0 sha256:… as base;", """
+                source pairs adapter "sattle.authoring" rows base.Pair;
+                master graph master = base.ingest(pairs: pairs);
+                """)
+        ]);
+        Input[] log = [new RowInput("pairs", Logs.Row(("uid", Value.Text("p")), ("name", Value.Text("s"))), 1)];
+        var actual = EngineRun.Final(catalog, log, Chunking.OneByOne).Graphs["master"];
+        var expected = ReferenceEvaluator.Evaluate(catalog, catalog.Spaces.Keys.Single(), log).Graphs["master"];
+        Assert.Equal(2, actual.Entities.Count);
+        Assert.Equal(2, expected.Entities.Count);
+        Assert.Equal<string>(expected.Lines(), actual.Lines());
+    }
+
+    [Fact]
+    public void Amending_the_same_closed_window_can_toggle_a_threshold_repeatedly()
+    {
+        // This world enters at 3 after two windows. The late rows adjust the second sum between 3 and 2.
+        Input[] log = [
+            Row("a", 1, "k0", "g0", 1, 0),
+            Row("b", 1, "k0", "g0", 3, 0), Row("b", 1, "k0", "g0", 3, 60), Advance(120),
+            Row("b", 1, "k0", "g0", -1, 60), Row("b", 1, "k0", "g0", 1, 60),
+            Row("b", 1, "k0", "g0", -1, 60)
+        ];
+        var states = EngineRun.States(Worlds.Hysteresis.Catalog, log, Chunking.OneByOne)
+            .Where(step => step.Consumed >= 4)
+            .Select(step => Assert.Single(step.Facts.Graphs["view"].Entities.Values).Props["d:w.view/prop:state"]);
+        Assert.Equal(new[] { "on", "off", "on", "off" }.Select(Value.Text), states);
+    }
+
     /// <summary>The defect, the world it shows in, its smallest log, and a text the reference's result must contain (so a log that no longer reaches the case fails).</summary>
     public static TheoryData<string, string, Input[], string?> Cases => new()
     {

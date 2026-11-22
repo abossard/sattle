@@ -1,0 +1,215 @@
+Current-code reproduction record: 22 November 2026
+
+Scope
+-----
+Base revision: 54bbb6213d28801f41338061319f47a6b7d4b909
+Engine and test sources were unchanged during these runs.
+Environment: Ubuntu 24.04.5 LTS, x64, .NET SDK 11.0.100/runtime 11.0.0,
+two logical cores, about 7.5 GiB total RAM, shared environment.
+Timing runs overlapped other test/reproduction work. They are not controlled
+hardware comparisons or exact replications of the historical laptop runs.
+The latency benchmarks' macOS-specific load-average probe failed on Linux;
+no usable per-run load average was obtained for those benchmarks. The separate
+scale-phase probe reads /proc/loadavg on Linux.
+
+Commands below run from the repository root unless another directory is named.
+CLI means: dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll
+DIR means a fresh, task-owned output directory for generated inputs.
+
+Correctness checks
+------------------
+dotnet test engine/Sattle.slnx -c Release
+  Sattle.Tests: 823 passed, 8 skipped.
+  Sattle.Kql.Tests: 232 passed.
+  X12-picture-c: 16 passed.
+  Sattle.Differential: 404 passed.
+  Missing capture-derived fixtures and optional Cosmos checks caused skips.
+
+dotnet test engine/Sattle.slnx -c Release --no-restore
+  --settings engine/tests/slow.runsettings
+  Sattle.Differential: 62 passed, including 150-seed comparisons.
+  Sattle.Tests: 139 passed, 1 capture-fixture-dependent test skipped.
+  Other test projects have no Category=Slow matches.
+
+CLI check
+  Definitions loaded successfully; no error exit.
+
+CLI replay engine/tests/Sattle.Tests/fixtures/estate --cluster synth --chunk N
+  N = 1, 50, 100000, one run each.
+  2266 records consumed; final master: 73 entities, 69 relationships.
+  Same complete state digest at all three batch sizes:
+  sha256:bd5d5efd67b44ee069e48857fa00c4c6a71c22a0c098683752de2d22057dbb3f
+  Different epoch counts; final-state agreement is not identical revision logs.
+
+Viewer: npm ci in canvas/, then Vitest with Node.js 22.
+  Full run: 54 files and 949 tests passed; 6 fixture-dependent suites failed
+  collection because that invocation used the repository-root working directory.
+  Corrective rerun from canvas/:
+  npm exec --yes --package=node@22 -- node node_modules/vitest/vitest.mjs run
+    --project pure tests/editors/kql-edit.test.ts
+    tests/editors/kql-example.test.ts tests/editors/kql-notations.test.ts
+    tests/editors/kql-steps.test.tsx tests/editors/kql-text.test.tsx
+    tests/editors/kql-views.test.tsx
+  All 6 files and 258 tests passed. Combined coverage: all 60 files, 1207 tests.
+  An earlier Node.js 26 run was stopped after a startup/UI baseline failure;
+  the same tutorial suite passed all 7 tests on Node.js 22.
+
+node --test brainstorm/tests/atlas.test.cjs
+  brainstorm/tests/content-projection.test.cjs docs/learn/tests/graph-journey.test.cjs
+  21 passed.
+node --test lab/tests/*.test.mjs
+  198 passed.
+python3 brainstorm/contracts/tools/verify.py
+  With task-local .NET SDK 10.0.100 and jsonschema restored:
+  14 finite-model groups, 1921 assertions; 47 schema/semantic checks;
+  8 compile cases passed. These test archived design contracts, not the engine.
+
+Synthetic and store benchmarks
+------------------------------
+CLI bench b5 --capture engine/tests/Sattle.Tests/fixtures/estate
+  --store memory --runs 10
+  Median across runs of all-record p99: 0.657 ms.
+  Median of version-making-record p99: 4.878 ms; maximum across runs 60.2 ms.
+CLI bench b5 --capture engine/tests/Sattle.Tests/fixtures/estate
+  --store sqlite --runs 10
+  Median across runs of all-record p99: 3.301 ms.
+  Median of version-making-record p99: 26.1 ms; maximum across runs 55.8 ms.
+  Both were within 2000 ms at the tested statistic in every run.
+  These synthetic inputs do not reproduce historical real-recording H5 figures.
+
+CLI bench b7 --runs 10
+  SQLite point-read p99: median 0.922 ms; largest run 2.695 ms (target 10 ms).
+  SQLite 100-neighbour scan p99: median 4.810 ms; largest run 8.323 ms
+  (target 20 ms). Memory and SQLite were exercised.
+
+CLI bench b7 --cosmos http://127.0.0.1:18081 --runs 10
+  Emulator image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:vnext-preview
+  Image digest: sha256:09dcd04e7149975f0427e6cb09781681f407fc74d01e54fc9d6410c36795cda3
+  Task-owned container: 1 CPU, 1536 MB, HTTP, loopback-only host port.
+  Cosmos point-read p99: median 24.3 ms, range 20.1-31.6 ms (target 10 ms).
+  Cosmos 100-neighbour scan p99: median 34.4 ms, range 25.4-55.2 ms (target 20 ms).
+  Refuted for this emulator configuration, not a conclusion about Azure Cosmos.
+SATTLE_COSMOS_EMULATOR=http://127.0.0.1:18081
+  dotnet test engine/tests/Sattle.Tests -c Release --no-restore
+    --filter FullyQualifiedName~Cosmos
+  2 conformance tests passed, none skipped.
+
+CLI bench b8 --runs 10
+  10000 elements x 4 series x 60 windows: median 36.4 ms, range 19.1-111.8 ms.
+CLI bench b8 --runs 30
+  Same shape: median 53.0 ms, range 24.0-154.0 ms (target 100 ms).
+  Both sets are inconclusive under the paper's every-run support rule.
+  The benchmark's printed "True" compares the median only; it is not the
+  paper's every-run support decision.
+
+DOTNET_GCHeapHardLimit=0x80000000 CLI bench
+  Exact defaults: 10000000 rows, 1000 pods, 100 services, 100 windows.
+  Ingest: 1.34 million rows/s; allocated 9.769 bytes/row.
+  Window close: p50 42.48 ms, p99 300.58 ms, maximum 1120.68 ms.
+  Telemetry append: 1.65 million samples/s.
+  Commit p99: memory 4.303 ms, SQLite 19.228 ms.
+  Hot-graph memory: 750000 entities, 2499996 relationships, 387 MB managed heap
+  (H9 target 400 MB; met in one run, not supported by ten repeats).
+  The 2 GiB heap cap is an environment difference, not the original setup.
+
+CLI bench b10 --capture engine/tests/Sattle.Tests/fixtures/estate
+  --hours 1 --seal-every 200 --runs 10
+  Repeated synthetic recording spans 1.32 logical hours; 904 journal entries.
+  Seal at entry 800; 104 entries replayed, 206 revisions restored, 16 recomputed.
+  Median 11.3 s, range 10.8-32.9 s: every run within 60 s.
+CLI bench b10 --capture engine/tests/Sattle.Tests/fixtures/estate
+  --hours 1 --seal-every 200 --no-seal --runs 10
+  Median 51.1 s, range 41.8-89.2 s: inconclusive, not supported.
+  Same complete digest after all sealed and unsealed restarts:
+  sha256:99fb995ca732972e3c75241acf118ebc9d48bf72e61352ea34d2359c58bf0abf
+  An earlier attempt with --seal-every 2000 created no seal in this small
+  journal; it was stopped and is not counted as a sealed-recovery result.
+CLI bench b10-graphs --capture engine/tests/Sattle.Tests/fixtures/estate --runs 10
+  Full memory replay: median 0.160 s, range 0.103-0.357 s.
+  None of these substitute for historical real-recording 1.2/4.1-hour runs.
+
+Generated scale workloads
+-------------------------
+CLI bench gen-estate --nodes 10000 --minutes 110 --out DIR
+DOTNET_GCHeapHardLimit=0x80000000 CLI bench phases --timing-only --capture DIR
+  109 steady closes: p50 59 ms, p99 137 ms, maximum 187 ms.
+  Peak resident set 689 MB; final master 19242 entities and 22004 relationships.
+  The generator's node target is not the final graph's entity count.
+
+CLI bench gen-estate --nodes 100000 --minutes 10 --out DIR
+DOTNET_GCHeapHardLimit=0x100000000 CLI bench phases --timing-only --capture DIR
+  First populated close 13.058 s.
+  9 steady closes: p50 824 ms, maximum 1128 ms; not a long-run p99 estimate.
+  Peak resident set 1653 MB; final master 181501 entities and 209170 relationships.
+  Live managed bytes after compaction: 796463952.
+  Again the generator target is not the final master count.
+
+Not independently verified
+--------------------------
+The two real recordings, local-name overlay, capture-derived lab fixtures,
+historical real-recording H5/H10 benchmarks, real Azure account/RU behavior,
+live Azure/Event Hubs examples and any tests requiring those inputs.
+Million-node and larger estate runs were not executed: documented memory
+requirements exceed this host's safe capacity. Smaller runs do not verify them.
+No reader/listener comprehension study or formal machine proof check was done.
+
+Post-edit text checks
+---------------------
+Canvas pure project: 56 files, 1190 tests passed with Node.js 22.
+npm --prefix canvas run build
+  Typecheck and production build passed; pre-existing native-Vite-config warning.
+python3 brainstorm/tools/package-design.py
+python3 brainstorm/tools/build-atlas.py
+  72 files packaged; 21 lessons and 7 source pages regenerated.
+  Run the generators from brainstorm/ (tools/package-design.py, tools/build-atlas.py).
+node --test brainstorm/tests/atlas.test.cjs
+  brainstorm/tests/content-projection.test.cjs docs/learn/tests/graph-journey.test.cjs
+  21 passed again after regeneration.
+  14 added local Markdown links and headings resolved.
+  71 manifest entries matched SHA-256 hashes of the packaged files.
+Browser smoke: foundry and pg-shop pages; no console errors.
+  The Source records button displays the revised illustrative-record explanation.
+git diff --check
+  No whitespace errors.
+Spoken scripts, audio, captions and timings were unchanged. MP4s were not
+rerendered and may retain older on-screen explanations; no updated film is
+claimed. FFmpeg, the narrator and Hyperframes were unavailable in this checkout.
+
+
+Follow-up on macOS, 22 November 2026
+-------------------------------------
+Apple M1 Max, 64 GB, .NET SDK 11.0.100, shared host.
+Million-node replay at PR revision dc8270b4b34f64d92c073ffae46feecacbc277d8.
+Inputs: generated n1m workload, one preparation worker, in-memory store.
+DOTNET_GCHeapHardLimit=0x300000000 dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll bench phases --timing-only --capture DIR/n1m
+Starting one-minute load average 16.82. Heap limit 12 GiB. Memory below in decimal MB.
+8,159,533 records; 8,966,511 rows; 444,636 ingests; 12 advances; 333.52 s wall.
+Writer CPU 307.04 s (37.63 us/record); process CPU 341.75 s (41.88 us/record).
+Peak RSS through replay and final digest 12,336 MB; live after forced compaction 7,669,835,648 bytes.
+First populated close 65,235 ms. Nine subsequent closes in order (ms):
+4089, 3897, 4359, 4256, 4190, 4164, 4238, 4552, 3949. Median 4190; maximum 4552.
+Master 1,814,696 entities and 2,091,390 relationships; 13 graphs.
+Final digest sha256:5b266957eeef0dd0b0e14291b30bd01bbbd60105653c7c52375c88ce8f8477f5.
+The prefix and suffix match the abbreviated digest published in engine/PERF.md.
+
+Corrected-engine checks (Release build, same host):
+SATTLE_LAB=/path/to/private/lab dotnet test engine/Sattle.slnx -c Release --settings engine/tests/capture.runsettings
+10 passed, 0 skipped. Two real recordings, private space overlay, chunks 1, 50 and 100000.
+Engine source and tests: Git tree afbb0e93ed438aa7e11c5802c95d0f0b8601581e (git rev-parse HEAD:engine on this revision).
+Tracked engine/definitions tree 157792282170ebf96cfbdcd0ed85a8cee79bf800.
+Private space-overlay.sattle SHA-256 1e28e616e0f752f423c2e169c9ae56817fcea6a6fad058757bc6f070702b7063.
+Recorded state digests from Scenarios.Of(dir, Scenarios.Full), chunk 100000, with the same catalog and controls as the tests:
+20261110T105738Z sha256:ab85f141e0a702aaa09383393d653052a74b8f87015eb28b3168821d3bfe4774 (15,241 master entities, 35 merges, 0 conflicts).
+20261110T140542Z sha256:3bff3e78ce496485fa60de332c8c660532eac2ff509f62e9ed527bff3e0e1b66 (48,287 master entities, 43 merges, 0 conflicts).
+These hashes identify observed results. Independent reproduction requires the private inputs.
+
+dotnet test engine/tests/Sattle.Tests/Sattle.Tests.csproj -c Release --filter 'FullyQualifiedName~AlgebraTests|FullyQualifiedName~GraphEncodingTests'
+92 passed. In separate disposable copies of the engine, the same fixed admission test failed
+after (1) skipping a deletion guard and (2) treating a relationship removed in the same
+patch as an existing uniqueness conflict. The original engine passed that test.
+The generated oracle compares six unfiltered proposals in each of 4,000 seeded histories.
+Before the cross-type link fix, an unbound right key was accepted and an already-bound
+right key was refused. Both cases now return Conflict. A typed KQL case separately caught
+the batch reference evaluator merging those types. Before the backward-edit fix, refusing
+a create with a mismatched id raised the live binding count from 0 to 1.
+A threshold regression observes on, off, on, off while amending a single closed window.

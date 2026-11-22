@@ -1,8 +1,8 @@
 # Sattle: a reproducible graph model of a cloud estate
 
-A white paper. It defines a way to build one graph model of everything a company runs in a cloud, from sources that are incomplete and disagree, such that the same recorded inputs always give the same model. It proves the properties the model rests on, and reports what an early prototype measured on real data.
+A white paper about building a graph model of a cloud estate from sources that are incomplete and disagree. It proposes reproducible evaluation from recorded inputs and definitions, states the conditions needed for that claim, and reports measurements from an early prototype.
 
-The reader is assumed to know mathematics: sets, relations, graphs, algebra, induction. No knowledge of cloud systems is assumed. Chapter 0 introduces every term.
+Start with Chapter 0 for the problem and examples; no cloud background is needed. The formal chapters assume sets, relations, graphs, algebra and induction. You can first follow the practitioner reading path below and return to the proofs when you need their precise conditions.
 
 ## The problem
 
@@ -12,14 +12,14 @@ One model is needed that
 
 - is built from all these sources,
 - holds structure and measurements together,
-- and is **reproducible**: the same recorded inputs give the same model, so that an answer can be checked later.
+- and is **reproducible**: the same recorded inputs, definitions and control sequence give the same model under the stated evaluation conditions, so that an answer can be checked later.
 
 ## The idea
 
 ```mermaid
 flowchart LR
   S["sources<br/>incomplete, late,<br/>inconsistent"] --> O["observations<br/>evidence, not facts"]
-  O --> M["master graph<br/>all that was observed"]
+  O --> M["master graph<br/>combined evidence"]
   M --> L1["level 1<br/>services and<br/>their dependencies"]
   L1 --> L2["level 2<br/>a health model"]
   D["definitions<br/>types, naming rules,<br/>projections"] -.-> M
@@ -31,45 +31,49 @@ flowchart LR
   class M,L1,L2 b
 ```
 
-- **A graph with versions.** The model is a graph of entities and relationships. Every change of its structure makes a new version, and every version can be reconstructed.
-- **Evidence, not facts.** What a source reports is evidence. Rules decide what the graph holds, and the graph remembers what supports each element.
+- **A graph with versions.** The model is a graph of entities and relationships. Structural changes make versions. A complete retained log can reconstruct them.
+- **Evidence, not facts.** What a source reports is evidence. Rules decide what the graph holds. Removing one contribution need not remove an element supported by another. Complete lineage through all materialization conflicts remains open (Ch. 9).
 - **Levels of abstraction.** A *projection* computes a graph from the graph below it. It maps several nodes to one and lifts the edges with them: a dependency between two services is the lifted form of the calls between their running copies. A health model is such a level.
-- **Two planes.** Structure is versioned. Measurements are series over time and create no versions. The value of a measurement can change structure only through a threshold with memory, which bounds how often the graph changes. A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
+- **Two planes.** Structure is versioned. Measurements are series over time and create no versions. The value of a measurement can change structure only through a threshold with memory. Run lengths bound toggles for append-only windows; repeated corrections can change the published state many times. A definition can also make structure depend on whether a measurement exists at all, without a threshold; the separation theorems name that second channel and bound it (Ch. 5, Theorem 5.3; Ch. 7, Theorem 7.1).
 - **Definitions are data.** Types, naming rules and projections are themselves graphs over a small fixed core. A new kind of entity or a new view needs no new program.
-- **Determinism.** The result is a function of the recorded inputs and the definitions. Computing step by step gives the same result as computing from scratch, however the input is cut into batches.
+- **Determinism.** The model requires recorded inputs, definitions and logical-time advances. Final-state batch invariance has additional premises; it does not make intermediate revision logs identical. Definition edits also require their recorded policy and evaluation boundaries (Ch. 6, 9).
 
-## What is established
+## What is claimed, and under which conditions
 
-- **Canonical form and identity** (Ch. 1). Every value has one written form. The name of an entity inside the model depends only on its key, not on time or state. When two names turn out to mean one entity they merge, and the result does not depend on the order of arrival.
-- **Versions and changes** (Ch. 3, 4). Changes have inverses and compose, and they map into a group of signed differences.
-- **A typed definition language** (Ch. 2, 5). Checking is decidable. Measurements cannot influence structure except through the one declared crossing. Lifting edges to a higher level is a quotient that keeps totals and composes across levels.
-- **Step by step equals from scratch** (Ch. 6). Proved for every operator of the language, relative to two theorems from the literature, and with it replay determinism and independence of batching under four stated premises.
-- **Bounded change from measurements** (Ch. 7), **laws for editable views** (Ch. 8), **change of definitions and traceable support** (Ch. 9), **loss is never read as deletion** (Ch. 10), **storage laws from five properties of a store** (Ch. 11).
+- **Canonical form and identity** (Ch. 1). Supported values have one written form. Allocation is a function of a key under a fixed naming rule. The minimum-id merge result is independent of arrival order under the stated allocation-and-forwarding rule, not under arbitrary aliases.
+- **Versions and changes** (Ch. 3, 4). Patches have algebraic inverses, compose, and map into signed differences. An inverse need not be committable.
+- **A typed definition language** (Ch. 2, 5). Checking is decidable on the finite model. Soundness and compatibility require the stated function and schema conditions. Measurements can affect structure through threshold values or the existence of windowed rows. Edge lifting conserves the covered totals when the image is a function and the aggregation is defined.
+- **Step by step and from scratch** (Ch. 6). The argument uses two results from the literature and domain, order and batching premises. Stateful operators use the recorded control sequence. The audit qualifications distinguish these conditions from properties tested on the prototype.
+- **Further conditional laws.** Chapters 7 to 12 cover measurements, editable views, definition changes, support, source coverage, storage and documents. Read their premises with the statements: a coverage promise, a staged lens check or an ordered retry is not an unconditional guarantee about a live system.
 
-Of the 114 numbered statements, 96 are proved in full, 2 relative to a cited theorem, 9 under a named premise about a program or an outside system, and 7 are properties of the prototype that are tested and not proved. Two were found false as first stated and are restated (Theorems 5.3 and 7.1). No proof was checked by a machine. The list is in [inventory.md](inventory.md).
+**Proof status.** The original [inventory](inventory.md) labels 114 statements: 96 proved, 2 relative to a cited theorem, 9 under named premises, and 7 tested only. These are the draft's classifications, not the verdict of the later informal, AI-assisted source review. That review found further missing premises and incomplete arguments; the chapters qualify them and [Chapter 15](ch15-related-work-and-limitations.md#153-research-review-and-reading-quality) summarizes the remaining gaps. No proof was machine-checked.
 
 ## What was measured
 
-All figures are from an early prototype on one laptop-class machine. They are early evidence, not final results (see "What is open").
+The following are **historical prototype measurements**, not the current review's reruns. The two real recordings remain private. The local follow-up reproduced replay on both; independent readers can use the public synthetic estate. [Chapter 14, 14.11](ch14-evaluation.md#1411-review-reruns-22-november-2026) reports current-code tests, synthetic reruns and their limits.
 
-- **Real data, end to end.** Two recordings of one small cluster with a demonstration shop were replayed: one of 95 minutes with 245,345 records, one of 17 minutes with 160,300 records. The second gives a master graph of 48,201 entities and 5,828 relationships. From it the projections compute a health model of 11 components. One of them, a database, crossed a threshold, and the model marks it, the two services that depend on it and the shop as a whole as unhealthy, and the other 7 as healthy. Nothing about health is in the program; it is all definitions.
+- **Real data, end to end.** Two recordings of one small cluster with a demonstration shop were replayed: one of 95 minutes with 245,345 records, one of 17 minutes with 160,300 records. The second gives a master graph of 48,201 entities and 5,828 relationships. The earlier health model classified 4 of 11 components as unhealthy, including the database. Its replacement in Chapter 7 returns `Unknown` on both recordings because neither contains authored signal rules. The classifications describe the rules each model ran.
 - **Reproducibility.** Each recording gives one fingerprint of the whole result, whether it is replayed record by record, in batches of 50, or in batches of 100,000.
-- **Against an independent implementation.** A second, simple implementation was written from the definitions of this paper. On 149 generated cases in 32 scenarios, with every way of cutting the input and with reordering inside a batch, the prototype's step-by-step result equals the simple implementation's from-scratch result. The first run of this test found defects in seven behaviors of the prototype, which were then corrected.
-- **Speed and size, at the scale of the lab.** In ten runs each, on a machine that was busy with other work: a record is reflected in the graph within 1.11 ms in memory and 23.5 ms with a file database, in 99 of 100 cases, against a target of 2 seconds. A view of 10,000 elements with their series is assembled in 29.5 ms against a target of 100 ms. A restart after 4.1 hours of input takes 7.4 s with a saved snapshot of the state and 17.4 s without, against a target of 60 s. The graph structure of 750,000 entities and 2.5 million relationships takes 337 MB.
+- **From-scratch comparison.** A second evaluator recomputes the same checked operator plan. It shares the front end and canonical value encoding with the engine. The historical suite reported 149 passing cases across 32 scenarios, comparing incremental and from-scratch results at the tested batch cuts and within-batch orders. The first run of this test found defects in seven behaviors of the prototype, which were then corrected.
+- **Speed and size, at the scale of the lab.** On a shared machine, the median of ten per-run p99 record-to-graph latencies was 1.11 ms in memory and 23.5 ms with a file database, against a target of 2 seconds. Median view assembly for 10,000 elements and their series was 29.5 ms against a target of 100 ms. After 4.1 hours of repeated input, the median restart was 7.4 s across ten runs with a saved state snapshot and 17.4 s across three runs without, against a target of 60 s. These are summaries, not worst-case bounds. The graph structure of 750,000 entities and 2.5 million relationships took 337 MB.
 - **A viewer.** A browser application shows the graphs, the levels, what each element of a level stands for below it, and the health states, and lets definitions be edited.
 
 ## What is open
 
 Chapter 0 states where each of the three goals of Phase 1 stands, and Chapter 15 lists every limit with its reason. In short:
 
-- **Expressiveness is not yet stated.** The paper does not say which class of transformations the language can express and which it cannot.
-- **Efficiency at the target scale is not shown.** The budgets per node, edge and measurement are not stated, and nothing was measured at one million nodes.
-- **Storage and evidence are narrow.** Two simple stores were tested, a cloud database only on a local emulator, and the health model rests on one workload of one cluster that no longer exists.
+- **Expressiveness.** Chapters 2 and 5 give constructions, tests and refusals for claims E1–E11. The upper complexity bound and full-language reachability limit remain sketches.
+- **The efficiency target is not established.** The local million-node replay used 41.88 µs of process CPU per record and 12.336 GB peak RSS, exceeding both budgets. Live managed memory after compaction was 7.67 GB. Nine steady window closes do not establish p99. Reference hardware and durable stores at this scale remain unmeasured. Per-edge and per-measurement budgets remain incomplete (Ch. 13).
+- **Storage and evidence are narrow.** Two simple stores were tested, a cloud database only on a local emulator, and the historical recordings cover one workload on one cluster. A later redeployment supplied the live-stream example in Chapter 10.
 - **Retention of measurements** is a setting of the running engine and not yet a declaration in the definitions.
 
 ## How to read
 
-Chapter 0 is the entry. The figure at its end shows which chapter needs which.
+Chapter 0 is the entry. The figure at its end shows which chapter needs which. Choose a path by the question you need to answer:
+
+- **Practitioner:** Chapter 0, the [shop walkthrough](../docs/learn/README.md), Chapters 7 and 12, then the experiments and limitations in Chapters 14 and 15.
+- **Researcher:** Chapters 1 to 6 for the foundations; then the chapters relevant to your claim. Keep the premises and audit qualifications beside each proof.
+- **Reproducer:** the [artifact appendix](appendix-artifact.md), followed by Chapter 14. Separate archived measurements from current-code reruns and unavailable recordings.
 
 | Ch. | Title | In one line |
 |---|---|---|
@@ -94,4 +98,4 @@ Chapter 0 is the entry. The figure at its end shows which chapter needs which.
 - Software and how to repeat the experiments: appendix [Artifact](appendix-artifact.md). It is the only place with names of programs, files and commands.
 - Working documents, not part of the paper: [inventory.md](inventory.md) (every numbered statement with its proof status) and the folder [research/](research/).
 
-**State of the text.** This page and chapter 0 are in their final form. Chapters 1 to 15 hold the same content but still carry working labels, status notes and names of files and tests; they are being rewritten to the form of chapter 0, one at a time. Until then the key to their labels is in [research/00-working-status.md](research/00-working-status.md).
+**Reading quality.** The editorial review uses Clark, Martin and Mahowald's preprint [clark2026] to flag unnecessarily compressed phrasing, long dependencies and ambiguous noun stacks. Necessary technical terms and formal detail are retained. This is a source-based review, not evidence that readers or listeners understand the revised content better.

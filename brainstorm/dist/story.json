@@ -407,7 +407,7 @@
     "topic": "ingest",
     "intro": "Each adapter interprets a versioned native format and produces entity candidates, relationship candidates, properties and evidence.",
     "rule": "The first families are Hubble/Cilium, Azure Resource Graph, Kubernetes, Azure Network Watcher and OpenTelemetry.",
-    "limit": "Kubernetes Events provide observations. Removing resources absent from an ARG result requires a declared coverage and reconciliation policy.",
+    "limit": "Kubernetes Events provide observations. Removing resources absent from an Azure Resource Graph (ARG) result requires a declared coverage and reconciliation policy.",
     "refs": [
       "IGraphAdapter",
       "GraphObservation",
@@ -819,8 +819,8 @@
   },
   {
     "number": 5,
-    "title": "Views share timeless entity identity.",
-    "short": "Timeless identity",
+    "title": "An entity keeps its ID across views.",
+    "short": "Stable entity identity",
     "group": "Foundation",
     "topic": "ontology",
     "intro": "A shared identity table binds a tenant-scoped, canonical key to an entity ID. The ID persists across changes to graph type and properties.",
@@ -1396,7 +1396,7 @@
     "short": "Transformation rules",
     "group": "Projection",
     "topic": "transforms",
-    "intro": "Portable operators and typed wires describe how input bindings become an output graph. The definition can include expected structure as a scaffold.",
+    "intro": "Portable operators and typed wires describe how input bindings become an output graph. The definition can include expected structure as a scaffold: placeholder operators and wires that the author fills in.",
     "rule": "Keep selection, identity and emission explicit. The compiler owns type checks and diagnostics; the runtime owns execution and commits.",
     "limit": "The typed authoring API currently covers expressions and a subset of row composition. Portable definitions require field, type and reference validation.",
     "refs": [
@@ -2656,7 +2656,7 @@
             "label": ""
           }
         ],
-        "formula": "P then Q \u2260 Q then P",
+        "formula": "Q then P : undefined (Q needs a degraded base)",
         "active": [
           "p"
         ]
@@ -2943,7 +2943,7 @@
     "topic": "transforms",
     "intro": "A fixed-point operator can derive indirect dependencies by repeatedly adding newly justified facts.",
     "rule": "The proposed initial fragment is positive recursion over a pinned finite domain. Ordinary operator cycles fail validation.",
-    "limit": "Iteration and fact budgets bound the work. Convergence requires a separate argument for the admitted language fragment.",
+    "limit": "Iteration and fact budgets bound the work. Convergence requires a separate argument for the admitted language fragment. This is a design in this archive: the current engine removed its Fixpoint operator (protocol 3.40) and reaches over a graph with Traverse and depth bounds.",
     "refs": [
       "FixpointOperator",
       "RuleProgram"
@@ -3374,7 +3374,7 @@
     "group": "Consistency",
     "topic": "transforms",
     "intro": "A declared bidirectional transformation translates a supported view edit into a proposed upstream change using its rule and versioned complement.",
-    "rule": "GetPut preserves the source after an unchanged view is put back. PutGet returns the accepted view after a supported edit is applied.",
+    "rule": "GetPut: reading a view and putting it back unchanged leaves the source unchanged. PutGet: putting back a supported edit, then reading the view again, returns the edited view.",
     "limit": "Read-only projections reject edits. Each bidirectional rule requires validation of its lens laws and conflict handling.",
     "refs": [
       "IBidirectionalProjection",
@@ -3543,7 +3543,7 @@
     "topic": "replay",
     "intro": "A projection edit starts from the previous graph and replays the deduplicated union of retained inputs in their recorded order.",
     "rule": "Queue new inputs during replay. Publish the final graph difference, and preserve eligible histories for surviving elements.",
-    "limit": "Each element retains its recent N graph-changing inputs. Earlier and unchanged inputs are omitted. Lens complements are stored separately.",
+    "limit": "Each element retains its most recent N graph-changing inputs (N is the configured history length). Earlier and unchanged inputs are omitted. Lens complements are stored separately.",
     "refs": [
       "EditProjection",
       "RetainedInput",

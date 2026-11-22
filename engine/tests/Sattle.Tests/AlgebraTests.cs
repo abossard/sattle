@@ -133,29 +133,118 @@ public class AlgebraTests
         Assert.Equal(x.Digest(), y.Digest());
     });
 
+    // Def. 3.7: every guard reads the same original finite map. The typed inputs use
+    // the property and value constructors (WF2). Structural admission additionally tests
+    // WF3 on the entire resulting map, without consulting the graph's uniqueness index.
+    static ImmutableDictionary<ElementKey, Element>? ApplyEdits(
+        ImmutableDictionary<ElementKey, Element> before, IReadOnlyList<Edit> edits)
+    {
+        if (edits.Select(e => e.Key).Distinct().Count() != edits.Count) return null;
+
+        var after = before;
+        foreach (var edit in edits)
+        {
+            if (!Fits(edit.Key, edit.Before) || !Fits(edit.Key, edit.After)) return null;
+            if (!Equals(before.GetValueOrDefault(edit.Key), edit.Before)) return null;
+            after = edit.After is null ? after.Remove(edit.Key) : after.SetItem(edit.Key, edit.After);
+        }
+        return after;
+
+        static bool Fits(ElementKey key, Element? element) => element switch
+        {
+            null => true,
+            Entity entity => key.Kind == 'e' && key.Id == entity.Id,
+            Rel rel => key.Kind == 'r' && key.Id == rel.Id,
+            OntologyState => key.Kind == 'o' && key.Id == "",
+            _ => false
+        };
+    }
+
+    static bool StructurallyValid(ImmutableDictionary<ElementKey, Element>? result) =>
+        result is not null && result.Values.OfType<Rel>()
+            .GroupBy(r => (r.Source, r.Target, r.Type)).All(group => group.Count() == 1);
+
+    static void AssertMap(ImmutableDictionary<ElementKey, Element> expected, Graph actual)
+    {
+        Assert.Equal(expected.Count, actual.Count);
+        foreach (var (key, element) in expected)
+        {
+            Assert.Equal(element, actual.Get(key));
+            if (element is Rel r) Assert.Equal(r, actual.FindRel(r.Source, r.Target, r.Type));
+        }
+    }
+
+    static (bool Applied, bool Committed) CompareWithOracle(
+        GraphLog log, List<ImmutableDictionary<ElementKey, Element>> history, IReadOnlyList<Edit> edits)
+    {
+        var before = history[^1];
+        var result = ApplyEdits(before, edits);
+        var applicable = StructurallyValid(result);
+        var graph = log.State.Clone();
+        Assert.Equal(applicable, graph.Apply(edits) is null);
+        AssertMap(applicable ? result! : before, graph);
+
+        // GraphLog accepts proposals and strips guard-only edits. Def. 3.9 applies
+        // to the effective set submitted to the log, which must also be nonempty.
+        var effective = edits.Where(e => !Equals(e.Before, e.After)).ToList();
+        var recorded = ApplyEdits(before, effective);
+        var admissible = effective.Count > 0 && StructurallyValid(recorded);
+        var (patch, error) = log.Commit(edits);
+        Assert.Equal(admissible, error is null);
+        Assert.Equal(admissible, patch is not null);
+        if (admissible)
+        {
+            Assert.Equal(history.Count - 1L, patch!.From);
+            Assert.Equal(history.Count, patch.To);
+            Assert.Equal(effective.OrderBy(e => e.Key), patch.Edits.OrderBy(e => e.Key));
+            history.Add(recorded!);
+        }
+
+        Assert.Equal(history.Count - 1L, log.Head);
+        AssertMap(history[^1], log.State);
+        for (var r = 0; r < history.Count; r++) AssertMap(history[r], log.StateAt(r));
+        return (applicable, admissible);
+    }
+
     [Theory, MemberData(nameof(SeedGroups))]
-    public void Ch3_committed_states_are_well_formed_and_history_is_immutable(int group) => ForCases(group, g =>
+    public void Ch3_committed_states_are_well_formed_and_history_is_immutable(int group) => ForCases(group, gen =>
     {
         var log = new GraphLog("g");
-        var digests = new List<string> { log.State.Digest() };
+        var history = new List<ImmutableDictionary<ElementKey, Element>> { ImmutableDictionary<ElementKey, Element>.Empty };
         for (var i = 0; i < 6; i++)
         {
-            var p = g.PatchFor(log.State, log.Head, guardOnly: false);
-            if (p is null) break;
-            var (c, err) = log.Commit(p.Edits);
-            if (c is null) { Assert.Equal("empty edit set creates no revision", err); continue; }
-            Assert.Equal(log.Head, c.To);
-            Assert.True(log.State.UniquenessHolds());                               // WF3
-            foreach (var r in log.State.Rels) Assert.Equal(r, log.State.FindRel(r.Source, r.Target, r.Type));
-            digests.Add(log.State.Digest());
-            for (var r = 0; r <= log.Head; r++) Assert.Equal(digests[(int)r], log.StateAt(r).Digest()); // Theorem 3.2
+            var proposal = gen.PatchFor(log.State, log.Head, @unchecked: true)!;
+            CompareWithOracle(log, history, proposal.Edits);
         }
-        // Def. 3.9: an ineffective set creates no revision
-        var head = log.Head;
-        var existing = log.State.Elements().FirstOrDefault();
-        if (existing is not null) Assert.NotNull(log.Commit([new Edit(existing.Key, existing, existing)]).Error);
-        Assert.Equal(head, log.Head);
     });
+
+    [Fact]
+    public void Ch3_guarded_application_and_commit_admission_at_their_boundaries()
+    {
+        var log = new GraphLog("g");
+        var history = new List<ImmutableDictionary<ElementKey, Element>> { ImmutableDictionary<ElementKey, Element>.Empty };
+        var entity = new Entity("a", "T", Props.Empty);
+        var edge = new Rel("a", "a", "missing", "R", Props.Empty);
+        var other = edge with { Id = "b" };
+        var ontology = new OntologyState("schema", "1", "digest");
+
+        void Check(bool applied, bool committed, params Edit[] edits) =>
+            Assert.Equal((applied, committed), CompareWithOracle(log, history, edits));
+
+        Check(true, false);
+        Check(true, true, Edit.Create(ontology), Edit.Create(entity), Edit.Create(edge));
+        Check(true, false, new Edit(entity.Key, entity, entity));
+        Check(false, false, Edit.Create(other));                         // collides with existing edge
+        Check(false, false, Edit.Remove(edge), Edit.Create(other), Edit.Create(other with { Id = "c" }));
+        Check(false, false, Edit.Remove(edge), Edit.Create(edge));       // repeated key, even if it cancels
+        Check(false, false, Edit.Remove(entity), new Edit(entity.Key, null, edge));
+        Check(false, false, new Edit(ElementKey.Entity("wrong"), null, entity));
+        Check(false, false, new Edit(entity.Key, edge, null));           // entity and edge share the id
+        Check(false, false, Edit.Remove(entity), Edit.Remove(other));   // second guard fails atomically
+        Check(true, true, Edit.Create(other), Edit.Remove(edge));       // uniqueness is on the final graph
+        Check(true, true, Edit.Remove(entity), Edit.Change(ontology, ontology with { Version = "2" }));
+        Check(false, true, new Edit(entity.Key, entity, entity), Edit.Remove(other)); // stale guard-only proposal
+    }
 
     [Fact]
     public void Ch3_uniqueness_rejects_parallel_relationships_but_allows_other_types_and_orientations()

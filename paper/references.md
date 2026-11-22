@@ -1,6 +1,6 @@
 # References
 
-Stable keys, used as `[key]` in the chapters. "Checked" says where the source was verified: **R01** and **R02** are the research files (opened on 10 November 2026), **opened** means opened for this paper on 10 November 2026. A source that neither research file nor this paper opened is not cited.
+Stable keys, used as `[key]` in the chapters. "Checked" records the historical source check: **R01** and **R02** are research files opened on 10 November 2026; **opened** means opened for the original paper on that date. This is not a claim that every imported theorem was independently reverified in the later manual audit. Later additions state their own review scope.
 
 ## Internal documents
 
@@ -29,6 +29,7 @@ Contract and oracle file references (`Model.cs`, `Ports.cs`, `ChangeAlgebra.cs`,
 
 | Key | Reference | Link | Checked |
 |---|---|---|---|
+| clark2026 | T. H. Clark, M. B. Martin, K. Mahowald. *Why is AI-generated language so hard to understand?* arXiv:2610.29162v1, 2026. | <https://arxiv.org/abs/2610.29162v1> | uploaded paper read in full for the editorial review. Corpus analysis and a small training intervention; no reader-comprehension or audiovisual study. Not evidence for Sattle's mathematical claims |
 | rfc8785 | A. Rundgren. *JSON Canonicalization Scheme (JCS)*. RFC 8785, June 2020. | <https://www.rfc-editor.org/rfc/rfc8785> | opened (text read: member sorting section 3.2.3, I-JSON number constraint, recommendation to use strings for longer integers) |
 | angles2018 | R. Angles. *The Property Graph Database Model*. AMW 2018, CEUR-WS vol. 2100, paper 26. | <https://ceur-ws.org/Vol-2100/paper26.pdf> | opened (title and existence). The statement that edge endpoints must be nodes is taken from R01 section 2.1 |
 | budiu2023 | M. Budiu, T. Chajed, F. McSherry, L. Ryzhyk, V. Tannen. *DBSP: Automatic Incremental View Maintenance for Rich Query Languages*. PVLDB 16(7), 2023. DOI 10.14778/3587136.3587137. | <https://www.vldb.org/pvldb/vol16/p1601-budiu.pdf> | R01 (replaces dead link G6), R02 |

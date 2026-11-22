@@ -34,8 +34,8 @@ const chapters: readonly Lesson[] = [
     prompt: "Starting at Run a Task, show the declared dependencies in structure. Find the web app’s Tasks and Apply roles in master. Explain why their model entity IDs must stay distinct.",
   },
   {
-    id: "core-signals", space: "healthMirror", module: "mirror", title: "Read a storage signal", goal: "Find the measurement that sets a storage signal’s state.", action: "Select a blob availability signal. Read its value, checkpoint time in UTC and state.",
-    check: "The binding identifies the entity. Its definition supplies the threshold. Its observation supplies the measurement.",
+    id: "core-signals", space: "healthMirror", module: "mirror", title: "Read a storage signal", goal: "Find the measurement that sets a storage signal’s state.", action: "Select a blob availability signal. Read its value, the time of the Azure checkpoint (a recorded snapshot of the model’s Azure state) in UTC, and its state.",
+    check: "You are done when you can name the entity the binding identifies, the threshold its definition supplies and the measurement its observation supplies.",
     view: "data", graph: "signals", projection: "signals",
     flow: [[["Blob metric", "input"]], [["Bound definition", "identity"], ["Threshold", "rule"]], [["Evaluated signal", "projection"]]],
     files: ["mirror.signals.gkql.json"],
@@ -43,12 +43,12 @@ const chapters: readonly Lesson[] = [
   },
   {
     id: "core-health", space: "healthMirror", module: "mirror", title: "Roll signals up to CORE", goal: "Explain how a storage reading affects Run a Task.", action: "Select Session and Task storage. Follow its parent and inspect the link’s impact.",
-    check: "Compare Sattle with the Azure checkpoint. The verifier lists each differing state or value.",
+    check: "You are done when the verifier shows no difference between Sattle and the Azure checkpoint, or lists each state or value that differs.",
     view: "data", graph: "health", projection: "health",
     flow: [[["Signals", "projection"], ["Structure", "projection"]], [["Child state + impact", "rule"]], [["Run a Task", "projection"]], [["CORE", "projection"]]],
     files: ["mirror.health.gkql.json"],
     commands: [{ label: "Compare every checkpoint", code: "./scripts/health-mirror.sh verify all" }, { label: "Compare the settled checkpoints", code: "./scripts/health-mirror.sh verify steady" }],
-    prompt: "Trace one storage reading to Run a Task and CORE. Read the link impact and ignoreUnknown setting. Check how link impact and ignoreUnknown affect the parent when a child is Unknown. Verify the rule in a draft.",
+    prompt: "Trace one storage reading to Run a Task and CORE. Read the link impact and the ignoreUnknown setting, then work out how they change the parent’s state when a child is Unknown. Verify the rule in a draft.",
   },
   {
     id: "core-network", space: "healthMirror", module: "mirror", title: "Follow observed traffic", goal: "Find a call recorded by Application Insights.", action: "Inspect calls to Blob Storage. Follow the host to the storage role in CORE.",
@@ -72,7 +72,7 @@ const chapters: readonly Lesson[] = [
   },
   {
     id: "core-portable-flows", space: "healthMirror", module: "mirror", title: "Connect apps to user flows", goal: "Find which Container Apps help a user run a task.", action: "Select Run a Task. Follow a component to its app and inspect the evidence for the link.",
-    check: "The ontology names the types. An Azure model declaration or a project mapping tells the rule which app serves each flow.",
+    check: "You are done when you can say where each part comes from: the ontology names the types, and an Azure model declaration or a project mapping tells the rule which app serves each flow.",
     view: "data", graph: "workloadFlows", projection: "workloadFlows",
     flow: [[["Azure declarations", "input"], ["Project mapping", "input"]], [["UserFlow", "identity"], ["SystemComponent", "identity"]], [["Container App", "projection"]]],
     files: ["mirror.workloadFlows.gkql.json"],

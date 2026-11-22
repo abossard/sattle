@@ -149,7 +149,10 @@ public static class ReferenceEvaluator
                     {
                         var rows = In("in");
                         var added = rows.Rows.Minus(p.SeenInput.GetValueOrDefault(slot, ZSet.Empty)).Where(r => r.Weight > 0);
-                        var asserted = link.Mode == "assert" && link.Confidence >= link.Threshold
+                        var leftType = link.Left.Type.Ty.TypeId;
+                        var rightType = link.Right.Type.Ty.TypeId;
+                        var compatible = leftType is null || rightType is null || leftType == rightType;
+                        var asserted = compatible && link.Mode == "assert" && link.Confidence >= link.Threshold
                             ? added.Select(r => (Left: Expressions.KeyOf(link.Left, rows.Reader(r.Row)), Right: Expressions.KeyOf(link.Right, rows.Reader(r.Row)))).Where(k => k.Left is not null && k.Right is not null).Select(k => new LinkFact(k.Left!, k.Right!))
                             : [];
                         p = p with { SeenInput = p.SeenInput.SetItem(slot, rows.Rows), Links = asserted.Aggregate(p.Links, (l, f) => l.SetItem(f.Text, f)) };

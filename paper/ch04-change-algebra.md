@@ -2,9 +2,9 @@
 
 **Question.** How do changes of a graph combine, how is a change undone, and how does a change relate to an arithmetic of differences that can be added in any order?
 
-**What you can state at the end.** There are two kinds of change, and they are kept apart on purpose. A *patch* is ordered, partial and checked against what it expects to find; every patch has an inverse. A *signed delta* is a difference that can be added in any order and always exists, but may not describe a graph. A map from patches to deltas respects composition and inversion. Editing definitions uses the same algebra: an edit is a patch, and undo is the inverse patch.
+**What you can state at the end.** There are two kinds of change, and they are kept apart on purpose. A *patch* is ordered, partial and checked against what it expects to find; every patch has an inverse, as a patch; the inverse need not be committable, since the commit rule (Ch. 3, Def. 3.9) is a separate check. A *signed delta* is a difference that can be added in any order and always exists, but may not describe a graph. A map from patches to deltas respects composition and inversion. Editing definitions uses the same algebra: an edit is a patch, and undo is the inverse patch.
 
-This chapter uses edits, `apply`, versions and well-formed graphs from Ch. 3, and canonical form from Ch. 1.
+This chapter uses edits, `apply`, versions and graphs from Ch. 3 ("graph" means a graph of Def. 3.2; well-formed is said where it is needed), and canonical form from Ch. 1.
 
 **Running example.** In the shop, one key `k` holds the service `db`. Its states are `a` (`db` with no owner), `b` (`db` owned by team `t1`) and `c` (`db` owned by team `t2`). When the graph and the versions are clear, a patch is written by its edits alone: `(k, a, b)` is the patch with the one edit that gives `db` the owner `t1`.
 
@@ -90,7 +90,7 @@ The framing of patches as morphisms follows [mimram2013]. An earlier description
 
 *Proof.* The sum of two maps that are zero almost everywhere is zero almost everywhere. Addition is fact by fact, so it is associative and commutative. The zero map is neutral, and `−z`, the map with every weight negated, is the inverse. ∎
 
-The same group is the basis of [budiu2023], under the name Z-sets, together with two operators on sequences of deltas: integration, the running sum, and differentiation, the difference between neighbours. Their laws are proved there with a machine-checked proof. Chapter 6 uses them.
+All numbered proofs in this chapter are manual arguments, not machine checked. The same group is the basis of [budiu2023], under the name Z-sets, together with two operators on sequences of deltas: integration, the running sum, and differentiation, the difference between neighbours. Their laws are proved there with a machine-checked proof. Chapter 6 uses them.
 
 **Theorem 4.7 (delta respects patches).** Let `apply(p, G)` be defined. Then
 1. `χ(apply(p, G)) = χ(G) + δ(p)`;
@@ -104,9 +104,9 @@ The same group is the basis of [budiu2023], under the name Z-sets, together with
 1. `m_B(δ(p))` is defined and equals `apply(p, B)`;
 2. `toPatch(δ(p), B, from(p), to(p)) = net(p)`;
 3. `δ(net(p)) = δ(p)`;
-4. `δ` is not injective: it forgets guard-only edits, the order and number of intermediate edits, and the cause. These are the losses that `squash` reports (Def. 4.9).
+4. `δ` is not injective on patches: it forgets guard-only edits. `squash` also reports the order, the intermediate states and the cause (Def. 4.9); these are losses of `squash`, not further witnesses of non-injectivity of `δ`, since the cause is not part of patch equality and a composition that joins edits is equal to the single patch.
 
-*Proof.* (1) By Theorem 4.7 (1), `χ(B) + δ(p) = χ(apply(p, B))`, the embedding of a well-formed graph, which is materializable. (2) For an effective edit `(k, b, a)` the facts of `δ(p)` on `k` are `−(k, b)` (if `b ≠ ⊥`) and `+(k, a)` (if `a ≠ ⊥`), so `toPatch` gives `(k, B(k), apply(p, B)(k)) = (k, b, a)`; a key with only guard-only edits has no facts and gives no edit. (3) Guard-only edits contribute `0`. (4) `(k, ⊥, a) then (k, a, b)` and `(k, ⊥, b)` have the same delta but different intermediate states and causes; `ε(p)` and the empty patch have the same delta. ∎
+*Proof.* (1) By Theorem 4.7 (1), `χ(B) + δ(p) = χ(apply(p, B))`, the embedding of a well-formed graph, which is materializable. (2) For an effective edit `(k, b, a)` the facts of `δ(p)` on `k` are `−(k, b)` (if `b ≠ ⊥`) and `+(k, a)` (if `a ≠ ⊥`), so `toPatch` gives `(k, B(k), apply(p, B)(k)) = (k, b, a)`; a key with only guard-only edits has no facts and gives no edit. (3) Guard-only edits contribute `0`. (4) For a patch `p` with an edit, `ε(p)` and the empty patch have the same delta, `0`, and are different patches (the first has edits). The composition `(k, ⊥, a) then (k, a, b)` is the patch `(k, ⊥, b)` itself (Def. 4.2), so it is not a witness. ∎
 
 **Theorem 4.9 (two things that fail).**
 1. *Patches do not commute.* With `p = (k, a, b)` and `q = (k, b, c)` on consecutive versions, `p then q` is defined and `q then p` is not. Deltas always commute: `δ(p) + δ(q) = δ(q) + δ(p)`.
@@ -153,4 +153,4 @@ Four words from Ch. 2 are needed here. The *catalog* of a customer is the graph 
 ## 4.7 What the prototype does differently
 
 - **One stack for undo.** The program in which a person edits definitions keeps at most 99 inverse patches. A new edit clears the list of undos that could be redone. The engine (Ch. 0, 0.4) keeps no undo state beyond the draft itself.
-- **Tests.** Theorems 4.1 to 4.9 are tested as properties on 4,000 random cases each, including retypes, removals and guard-only edits. The cases are drawn only among patches the prototype accepts, so a patch it refuses wrongly would not be seen (Ch. 14, 14.6). The drafts and undo of 4.6 are tested on examples only.
+- **Tests.** Theorems 4.1 to 4.9 are tested as properties on 4,000 random cases each, including retypes, removals and guard-only edits. These algebraic identities use compatible chains. A separate Chapter 3 property generates proposals before admission and checks the result against a finite-map oracle (14.6). The drafts and undo of 4.6 are tested on examples only.

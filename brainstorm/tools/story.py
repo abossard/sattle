@@ -26,7 +26,7 @@ add('Events, batches, files and gRPC use async streams.','Async ingestion','Foun
 add('Adapters map native records to graph observations.','Source adapters','Foundation','ingest',
  'Each adapter interprets a versioned native format and produces entity candidates, relationship candidates, properties and evidence.',
  'The first families are Hubble/Cilium, Azure Resource Graph, Kubernetes, Azure Network Watcher and OpenTelemetry.',
- 'Kubernetes Events provide observations. Removing resources absent from an ARG result requires a declared coverage and reconciliation policy.',
+ 'Kubernetes Events provide observations. Removing resources absent from an Azure Resource Graph (ARG) result requires a declared coverage and reconciliation policy.',
  ['IGraphAdapter','GraphObservation','AdaptedWithdrawal'],[
  frame('A Hubble flow arrives','A native network observation identifies an API endpoint, a database endpoint and the flow verdict.',[node('raw','Hubble flow','src=api · dst=db','amber',0),node('ad','Hubble adapter','format + version','blue',2)],[edge('raw','ad')]),
  frame('Produce a graph observation','The adapter proposes endpoint identities and an observed Calls relationship, with the native record retained as evidence.',[node('api','API endpoint','identity candidate','teal',0),node('db','DB endpoint','identity candidate','purple',2),node('obs','Calls','observed connection','blue',4)],[edge('api','obs'),edge('obs','db')]),
@@ -41,7 +41,7 @@ add('Nodes and edges carry typed data.','Graph structure','Foundation','transfor
  frame('Add a relationship','The directed relationship also has an ID. It describes an observed call.',[node('a','Payment API','entity e17 · Service','teal',0),node('b','Ledger DB','entity e31 · Service','purple',2),node('r','Calls','edge r6 · e17 → e31','blue',4)],[edge('a','r'),edge('r','b')]),
  frame('Attach edge data','A declared property records the call’s health on the relationship itself.',[node('a','Payment API','name = payments','teal',0),node('b','Ledger DB','name = ledger','purple',2),node('r','Calls','health = degraded','coral',4)],[edge('a','r'),edge('r','b')]),
  frame('Represent observed and expected calls','ExpectedCall can coexist with Calls. Intended structure and observed traffic answer different questions.',[node('a','Payment API','e17','teal',0),node('b','Ledger DB','e31','purple',2),node('r','Calls · r6','observed','blue',4),node('x','ExpectedCall · r9','intended','amber',3)],[edge('a','r'),edge('r','b'),edge('a','x'),edge('x','b')])])
-add('Views share timeless entity identity.','Timeless identity','Foundation','ontology',
+add('An entity keeps its ID across views.','Stable entity identity','Foundation','ontology',
  'A shared identity table binds a tenant-scoped, canonical key to an entity ID. The ID persists across changes to graph type and properties.',
  'Projections reuse an identity when they refer to the same entity. An aggregate, such as a deployment containing several pods, receives its own identity.',
  'Renames, aliases, merges and splits require explicit policies and evidence for identity equivalence.',
@@ -69,7 +69,7 @@ add('Patterns produce bindings for later operators.','Pattern matching','Project
  frame('Bind the result','The operator produces a row containing the matched entity identities.',[node('a','p = e17','matched pod','teal',0),node('b','s = e31','matched service','purple',2),node('row','Binding row','p=e17 · s=e31','amber',4)],[edge('a','row'),edge('b','row')]),
  frame('Filter the bound rows','A filter can retain only unhealthy dependencies. A rejected row emits nothing.',[node('row','health = healthy','predicate is false','gray',0),node('out','No output row','master unchanged','blue',2)],[edge('row','out')])])
 add('A projection is a configuration graph.','Transformation rules','Projection','transforms',
- 'Portable operators and typed wires describe how input bindings become an output graph. The definition can include expected structure as a scaffold.',
+ 'Portable operators and typed wires describe how input bindings become an output graph. The definition can include expected structure as a scaffold: placeholder operators and wires that the author fills in.',
  'Keep selection, identity and emission explicit. The compiler owns type checks and diagnostics; the runtime owns execution and commits.',
  'The typed authoring API currently covers expressions and a subset of row composition. Portable definitions require field, type and reference validation.',
  ['ProjectionDefinition','EmitEntityOperator','IProjectionCompiler'],[
@@ -128,7 +128,7 @@ add('Compose patches and add signed deltas.','Diff arithmetic','Change','stream'
  'Signed-delta arithmetic permits negative weights. Materialization validates the resulting graph. Conversion reports any loss of chronology.',
  ['PatchThen','PatchInverse','DeltaAdd','ConvertDeltaToPatch'],[
  frame('Compose ordered patches','Apply healthy→degraded, then degraded→failed.',[node('p','Patch P','healthy → degraded','blue',0),node('q','Patch Q','degraded → failed','purple',2)],[edge('p','q')],'P then Q : healthy → failed'),
- frame('Try the opposite order','Q requires a degraded starting state. Applying it to healthy fails its before-value precondition.',[node('q','Patch Q first','needs degraded','coral',0),node('p','Precondition fails','base is healthy','coral',2)],[edge('q','p')],'P then Q ≠ Q then P'),
+ frame('Try the opposite order','Q requires a degraded starting state. Applying it to healthy fails its before-value precondition.',[node('q','Patch Q first','needs degraded','coral',0),node('p','Precondition fails','base is healthy','coral',2)],[edge('q','p')],'Q then P : undefined (Q needs a degraded base)'),
  frame('Add signed facts','F denotes one exact immutable graph fact, including identity and state. Opposite coefficients for that same fact cancel.',[node('p','+1 × Calls(A,B)','add graph fact','teal',0),node('q','−1 × Calls(A,B)','remove graph fact','coral',2),node('z','Zero delta','no net fact','blue',4)],[edge('p','z'),edge('q','z')],'+F + (−F) = 0'),
  frame('Materialize with validation','Materialization rejects a negative remaining fact multiplicity at the chosen base graph.',[node('p','−1 × Calls(A,B)','base(F) = 0','purple',0),node('q','Materialization rejected','0 − 1 = −1','coral',2)],[edge('p','q')],'Materialization validates fact weights at the base graph')])
 add('Read stored and virtual graphs through one interface.','The infinite graph','Change','runtime',
@@ -143,7 +143,7 @@ add('Read stored and virtual graphs through one interface.','The infinite graph'
 add('Derive indirect dependencies to a fixed point.','Explicit recursion','Change','transforms',
  'A fixed-point operator can derive indirect dependencies by repeatedly adding newly justified facts.',
  'The proposed initial fragment is positive recursion over a pinned finite domain. Ordinary operator cycles fail validation.',
- 'Iteration and fact budgets bound the work. Convergence requires a separate argument for the admitted language fragment.',
+ 'Iteration and fact budgets bound the work. Convergence requires a separate argument for the admitted language fragment. This is a design in this archive: the current engine removed its Fixpoint operator (protocol 3.40) and reaches over a graph with Traverse and depth bounds.',
  ['FixpointOperator','RuleProgram'],[
  frame('Seed the relation','Direct dependencies are A→B and B→C.',[node('a','A','service','teal',0),node('b','B','service','blue',1),node('c','C','service','purple',2)],[edge('a','b'),edge('b','c')],'R₀ = { A→B, B→C }'),
  frame('Derive a new fact','Transitivity adds A→C within the finite domain.',[node('a','A','service','teal',0),node('b','B','service','blue',1),node('c','C','service','purple',2)],[edge('a','b'),edge('b','c'),edge('a','c','derived')],'R₁ = R₀ ∪ { A→C }'),
@@ -160,7 +160,7 @@ add('Relate source and target through correspondence.','Triple graph grammars','
  frame('Inspect the relationship','The linked IDs remain distinct. The correspondence can also retain information omitted from the view.',[node('a','Source set','{ e17, e18 }','teal',0),node('c','Rule + complement','versioned context','amber',1),node('t','Target set','{ e50 }','purple',2)],[edge('a','c'),edge('c','t')])])
 add('Declared lenses translate view edits upstream.','Bidirectional lenses','Consistency','transforms',
  'A declared bidirectional transformation translates a supported view edit into a proposed upstream change using its rule and versioned complement.',
- 'GetPut preserves the source after an unchanged view is put back. PutGet returns the accepted view after a supported edit is applied.',
+ 'GetPut: reading a view and putting it back unchanged leaves the source unchanged. PutGet: putting back a supported edit, then reading the view again, returns the edited view.',
  'Read-only projections reject edits. Each bidirectional rule requires validation of its lens laws and conflict handling.',
  ['IBidirectionalProjection','LensContext','BackwardProposal','LensLaw'],[
  frame('A declared forward view','This example exposes the source label and retains the omitted source data in a complement.',[node('s','Source e17','label = API','teal',0),node('v','Editable view','label = API','purple',2)],[edge('s','v','get')]),
@@ -170,7 +170,7 @@ add('Declared lenses translate view edits upstream.','Bidirectional lenses','Con
 add('Change the rule, then replay retained evidence.','Configuration replay','Consistency','replay',
  'A projection edit starts from the previous graph and replays the deduplicated union of retained inputs in their recorded order.',
  'Queue new inputs during replay. Publish the final graph difference, and preserve eligible histories for surviving elements.',
- 'Each element retains its recent N graph-changing inputs. Earlier and unchanged inputs are omitted. Lens complements are stored separately.',
+ 'Each element retains its most recent N graph-changing inputs (N is the configured history length). Earlier and unchanged inputs are omitted. Lens complements are stored separately.',
  ['EditProjection','RetainedInput','ElementHistory'],[
  frame('Retain relevant evidence','Each element keeps a bounded history of inputs that changed its graph state.',[node('a','Element e17','inputs [4, 7, 9]','teal',0),node('b','Element e31','inputs [7, 8]','purple',2)]),
  frame('Union and order','The replay sequence deduplicates shared input 7 and uses original ingestion order.',[node('a','Replay queue','4 → 7 → 8 → 9','amber',0),node('b','New arrivals','queued separately','blue',2)],[],'deduplicated union = [4, 7, 8, 9]'),
