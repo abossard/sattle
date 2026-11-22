@@ -153,4 +153,4 @@ Four words from Ch. 2 are needed here. The *catalog* of a customer is the graph 
 ## 4.7 What the prototype does differently
 
 - **One stack for undo.** The program in which a person edits definitions keeps at most 99 inverse patches. A new edit clears the list of undos that could be redone. The engine (Ch. 0, 0.4) keeps no undo state beyond the draft itself.
-- **Tests.** Theorems 4.1 to 4.9 are tested as properties on 4,000 random cases each, including retypes, removals and guard-only edits. The cases are drawn only among patches the prototype accepts, so a patch it refuses wrongly would not be seen (Ch. 14, 14.6). The drafts and undo of 4.6 are tested on examples only.
+- **Tests.** Theorems 4.1 to 4.9 are tested as properties on 4,000 random cases each, including retypes, removals and guard-only edits. These algebraic identities use compatible chains. A separate Chapter 3 property generates proposals before admission and checks the result against a finite-map oracle (14.6). The drafts and undo of 4.6 are tested on examples only.

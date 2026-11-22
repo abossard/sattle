@@ -174,3 +174,42 @@ git diff --check
 Spoken scripts, audio, captions and timings were unchanged. MP4s were not
 rerendered and may retain older on-screen explanations; no updated film is
 claimed. FFmpeg, the narrator and Hyperframes were unavailable in this checkout.
+
+
+Follow-up on macOS, 22 November 2026
+-------------------------------------
+Apple M1 Max, 64 GB, .NET SDK 11.0.100, shared host.
+Million-node replay at PR revision dc8270b4b34f64d92c073ffae46feecacbc277d8.
+Inputs: generated n1m workload, one preparation worker, in-memory store.
+DOTNET_GCHeapHardLimit=0x300000000 dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll bench phases --timing-only --capture DIR/n1m
+Starting one-minute load average 16.82. Heap limit 12 GiB. Memory below in decimal MB.
+8,159,533 records; 8,966,511 rows; 444,636 ingests; 12 advances; 333.52 s wall.
+Writer CPU 307.04 s (37.63 us/record); process CPU 341.75 s (41.88 us/record).
+Peak RSS through replay and final digest 12,336 MB; live after forced compaction 7,669,835,648 bytes.
+First populated close 65,235 ms. Nine subsequent closes in order (ms):
+4089, 3897, 4359, 4256, 4190, 4164, 4238, 4552, 3949. Median 4190; maximum 4552.
+Master 1,814,696 entities and 2,091,390 relationships; 13 graphs.
+Final digest sha256:5b266957eeef0dd0b0e14291b30bd01bbbd60105653c7c52375c88ce8f8477f5.
+The prefix and suffix match the abbreviated digest published in engine/PERF.md.
+
+Corrected-engine checks (Release build, same host):
+SATTLE_LAB=/path/to/private/lab dotnet test engine/Sattle.slnx -c Release --settings engine/tests/capture.runsettings
+10 passed, 0 skipped. Two real recordings, private space overlay, chunks 1, 50 and 100000.
+Engine source and tests: Git tree afbb0e93ed438aa7e11c5802c95d0f0b8601581e (git rev-parse HEAD:engine on this revision).
+Tracked engine/definitions tree 157792282170ebf96cfbdcd0ed85a8cee79bf800.
+Private space-overlay.sattle SHA-256 1e28e616e0f752f423c2e169c9ae56817fcea6a6fad058757bc6f070702b7063.
+Recorded state digests from Scenarios.Of(dir, Scenarios.Full), chunk 100000, with the same catalog and controls as the tests:
+20261110T105738Z sha256:ab85f141e0a702aaa09383393d653052a74b8f87015eb28b3168821d3bfe4774 (15,241 master entities, 35 merges, 0 conflicts).
+20261110T140542Z sha256:3bff3e78ce496485fa60de332c8c660532eac2ff509f62e9ed527bff3e0e1b66 (48,287 master entities, 43 merges, 0 conflicts).
+These hashes identify observed results. Independent reproduction requires the private inputs.
+
+dotnet test engine/tests/Sattle.Tests/Sattle.Tests.csproj -c Release --filter 'FullyQualifiedName~AlgebraTests|FullyQualifiedName~GraphEncodingTests'
+92 passed. In separate disposable copies of the engine, the same fixed admission test failed
+after (1) skipping a deletion guard and (2) treating a relationship removed in the same
+patch as an existing uniqueness conflict. The original engine passed that test.
+The generated oracle compares six unfiltered proposals in each of 4,000 seeded histories.
+Before the cross-type link fix, an unbound right key was accepted and an already-bound
+right key was refused. Both cases now return Conflict. A typed KQL case separately caught
+the batch reference evaluator merging those types. Before the backward-edit fix, refusing
+a create with a mismatched id raised the live binding count from 0 to 1.
+A threshold regression observes on, off, on, off while amending a single closed window.

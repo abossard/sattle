@@ -23,7 +23,7 @@ This chapter uses the facts about sources (Ch. 0, 0.4), identity (Ch. 1), the fo
 
 **Definition 10.4 (coverage, authoritative absence).** A *coverage declaration* `Coverage(scope, level, scan)` is made by an adapter: the scan `scan` claims to have listed every record of `scope` at the level of consistency `level`. **Authoritative absence** of an element in the scope is the conclusion, from such a declaration, that what the scan did not list does not exist. Without a declaration, absence from a result means *unknown*, not deletion. A *reconciliation policy* is a rule `reconcile(source, scope)` that withdraws the contribution of every element of `scope` that a scan did not return, provided the scan's declared level is at least the level `ℓ` that the policy requires. The levels have no stated order in this paper; "at least" is used for a declared order that each adapter must supply, and it is not defined here.
 
-*Example:* a Kubernetes list of the pods of namespace `store` declares that it holds every pod of that namespace as of one version. A pod that the engine knows and the list does not hold is deleted. A page of the Azure resource list that was cut short declares nothing, so a resource missing from it stays.
+*Example:* the shipped Kubernetes forwarder lists pods across one cluster. For a completed list at one snapshot version, reconciliation withdraws the Kubernetes contribution for a missing pod in that cluster. The adapter groups these scans by cluster and resource kind; a namespace-filtered list would need a different scope. Other sources can still support the pod. A page of the Azure resource list that was cut short declares nothing, so a resource missing from it stays.
 
 **Definition 10.5 (ingestion pipeline).** There is one pipeline, in this order. The adapter turns native records into rows. The **ingestion projection** (purpose `ingestion`, Def. 5.1) resolves identity (`IdOf` over fields of the row, Def. 5.9; *allocate* or a lookup, Def. 1.9 and 1.10) and emits the facts of the master graph. The ingestion projection is required.
 
@@ -65,7 +65,7 @@ An observation with a new delivery key is processed: it replaces the contributio
 
 *Proof.* Contributions are keyed: replacing the contribution of key `c` by the same fragments leaves the support `σ` of Def. 9.7 unchanged, because `σ` is the sum over keyed contributions, one term per key. A batch of delivery is not a unit of success or failure and carries no meaning (Theorem 6.2(a)). Samples of telemetry are kept once per `(k, p, τ, i)` (Def. 7.2). This argument covers part (ii) only for the immediate repeat; part (i) is the dedupe memory. ∎
 
-**Theorem 10.2 (withdrawal removes one source's support).** A withdrawal by source `s` removes exactly the contribution of `s` for the withdrawn record. The element remains iff its support from the other contributions is positive.
+**Theorem 10.2 (withdrawal removes one source's support).** A withdrawal by source `s` removes exactly the contribution of `s` for the withdrawn record. For a conflict-free key with a compatible create fragment among the remaining contributions, positive remaining support preserves the element (Theorem 9.5).
 
 *Proof.* Def. 9.7 and Theorem 9.5. ∎
 

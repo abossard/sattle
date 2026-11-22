@@ -61,15 +61,15 @@ A graph changes only by edits that say what they expect to find. This makes ever
 
 ## 3.3 Versions
 
-**Definition 3.8 (version, log).** The versions of a graph are the natural numbers `0 < 1 < 2 < …`, and the successor of `r` is `r + 1`. A version is a position in one totally ordered list, the *log*. The *head* `h(g)` is the largest version so far. To *commit* a set of edits is to append it to the log as the next version; Def. 3.9 says when that is allowed, and the entry it creates is a *commit record*. When a version is sent between programs it is written as a string of decimal digits (Ch. 1, Rule 1.2), and that string means nothing more than the number.
+**Definition 3.8 (version, log).** The versions of a graph are the nonnegative integers `0 < 1 < 2 < …`, and the successor of `r` is `r + 1`. A version is a position in one totally ordered list, the *log*. The *head* `h(g)` is the largest version so far. To *commit* a set of edits is to append it to the log as the next version; Def. 3.9 says when that is allowed, and the entry it creates is a *commit record*. When a version is sent between programs it is written as a string of decimal digits (Ch. 1, Rule 1.2), and that string means nothing more than the number.
 
 The commit record `c_r = (E_r, φ_r, cause_r)` holds a non-empty set `E_r` of effective edits, a *frontier* `φ_r` (Def. 3.10), and a *cause*: the inputs that led to it and the version of the definitions in force. The *state at version `r`* is defined by `G_0 = ∅` (the empty graph) and `G_r = apply(E_r, G_{r-1})`.
 
-**Definition 3.9 (commit rule).** A set of edits `E` may be committed at head `h` iff `E` is not empty, all its edits are effective, `apply(E, G_h)` is defined, and `apply(E, G_h)` satisfies WF1 to WF3. Committing it creates the record `c_{h+1}`. A change that would change nothing creates no record and no version.
+**Definition 3.9 (commit rule).** A set of edits `E` may be committed at head `h` iff `E` is not empty, all its edits are effective, `apply(E, G_h)` is defined, and `apply(E, G_h)` satisfies WF1 to WF3. Committing it creates the record `c_{h+1}`. A change that would change nothing creates no record and no version. The prototype’s commit entry point discards guard-only edits before evaluating this rule. A stale guard-only edit can therefore accompany a successful effective edit. The engine’s direct application entry point checks every submitted guard (Def. 3.7) and also requires the resulting graph to satisfy structural uniqueness. The commit record contains only the effective edits.
 
 What the rule enforces, and what not: it refuses a set of edits whose guards fail or whose result breaks WF1 to WF3. It does not refuse a result in which an element lacks a required property because of a counted fault in a computation or a reported conflict between rules (Ch. 5, Def. 5.19; Ch. 6, Def. 6.4). Such an element is committed and reported, because failing the whole change would make the outcome depend on how the inputs were cut into *batches*, the groups of inputs that the engine processes together (Theorem 6.2). How far WF4 holds for committed states is Theorem 5.2.
 
-The empty graph `G_0` has no ontology. The first commit of a graph therefore installs it with the edit `(κ_O, ⊥, o)`. Moving a graph to a new release of its definitions is an edit of `κ_O` together with the edits of the states that the move needs.
+The empty graph `G_0` has no ontology. A graph that pins its ontology from its first revision installs it with the edit `(κ_O, ⊥, o)`. Moving a graph to a new release of its definitions is an edit of `κ_O` together with the edits of the states that the move needs.
 
 ```mermaid
 flowchart LR
@@ -117,7 +117,7 @@ Names of graphs and of projections are unique in a space. A projection `P_g` is 
 
 *Example:* the shop's space has the master graph, a service graph read from the master, and a health model read from the service graph and the master.
 
-**Definition 3.12 (scoped graph).** For a graph `g` and a *scope* `σ`, a value of Ch. 1 that selects a part of `g`, the id of the scoped graph is the base-32 hash of the canonical form of `[customer, g, enc(σ)]`. This chapter uses only the written form of the scope, not how it selects elements. A scoped graph has its own log. Its version advances only on changes inside `σ`. A change outside `σ` only advances the frontier that is reported for it.
+**Definition 3.12 (scoped graph).** For a graph `g` and a *scope* `σ`, a value of Ch. 1 that selects a part of `g`, the id of the scoped graph is the base-32 hash of the canonical form of `[customer, g, enc(σ)]`. Fix a deterministic selection `select_σ` whose result is a structurally valid graph, and start from its selected initial snapshot. For each new parent state, compare `select_σ(G_r)` to the previous selected state. Append their guarded net difference (Theorem 4.8) only when it is nonempty. Otherwise the reported parent frontier can advance at the same scoped revision. Induction over parent commits gives the selected parent state at each frontier, including when an edit changes which elements are selected. This defines the model for any supplied selector; the scope value alone does not specify an implementation.
 
 *Example:* a *namespace* is a named group of objects in a Kubernetes cluster. The scope "namespace `store`" of the master graph gives a graph that changes only when something in that namespace changes.
 
@@ -135,7 +135,7 @@ A dangling relationship is therefore a statement about coverage, "an observation
 
 **Theorem 3.1 (committed states satisfy WF1 to WF3).** If every commit of a graph obeys the commit rule (Def. 3.9), then every state `G_r`, `r ≥ 0`, satisfies WF1 to WF3, and `G_r` is a function of the sequence of edit sets alone. WF4 is not part of the theorem: the commit rule does not check it, so it holds for a committed state only if conformance (Ch. 2, Def. 2.6) is established separately (Theorem 5.2).
 
-*Proof.* By induction on `r`. `G_0` is empty and well-formed. For `r ≥ 1` the commit rule requires `apply(E_r, G_{r-1})` to be defined and well-formed, and `G_r` is that graph. `apply` is a function of its arguments. WF4 is never used. This is a manual argument, not machine checked. ∎
+*Proof.* By induction on `r`. `G_0` is empty and well-formed. For `r ≥ 1` the commit rule requires `apply(E_r, G_{r-1})` to be defined and satisfy WF1–WF3, and `G_r` is that graph. `apply` is a function of its arguments. WF4 is never used. This is a manual argument, not machine checked. ∎
 
 **Theorem 3.2 (the past does not change).** For every `r ≤ h(g)`, `G_r` stays the same when further versions are committed.
 
@@ -149,9 +149,9 @@ A dangling relationship is therefore a statement about coverage, "an observation
 
 *Proof.* The guards read `G(k)` for the keys of `E`. WF1 and WF2 concern one state at a time. For `U`: `apply(E, G)` differs from `G` only at keys of `E`, and `G` satisfies `U`. So a violation must involve a relationship that is the after-state of an edit of `E` and that meets another relationship. Each such after-state is looked up in the index of `G`, with the before-states of `E` taken out and the after-states put in. ∎
 
-**Theorem 3.5 (frontiers only grow).** Assume (F1): a projection reads its inputs one after another in the order in which they were recorded, and reads the versions of an input graph one after another without gaps (Ch. 11, Theorem 11.5). Assume also that the set of inputs of the graph (its streams and input graphs) is the same at `r` and `r + 1`; if a projection stops reading an input, its entry is missing from `φ_{r+1}` and `φ_r ≤ φ_{r+1}` fails as defined. Then `φ_r ≤ φ_{r+1}` for every graph and every `r`.
+**Theorem 3.5 (frontiers only grow).** Assume (F1): a projection reads its inputs one after another in the order in which they were recorded, and reads the versions of an input graph one after another without gaps (Ch. 11, Theorem 11.5). Assume each commit pins the current catalog head and the catalog advances monotonically. Assume also that the set of inputs of the graph (its streams and input graphs) is the same at `r` and `r + 1`; if a projection stops reading an input, its entry is missing from `φ_{r+1}` and `φ_r ≤ φ_{r+1}` fails as defined. Then `φ_r ≤ φ_{r+1}` for every graph and every `r`.
 
-*Proof.* Commit `r + 1` is caused by inputs that come after those of commit `r` in that order. For each input stream the position does not decrease in that order. The version read from each input graph does not decrease, because versions are read one after another. The version of the definitions is fixed per commit. That it does not go back is used here and is not part of F1 as stated: it holds because the definitions are themselves a graph with a log (Ch. 2, Def. 2.1) whose versions only increase, provided each commit uses the definitions at their head. ∎
+*Proof.* Commit `r + 1` is caused by inputs that come after those of commit `r` in that order. For each input stream the position does not decrease in that order. The version read from each input graph does not decrease, because versions are read one after another. The pinned catalog head cannot decrease by the catalog premise. ∎
 
 F1 is a requirement on the engine. Chapters 6 and 11 say how it is met.
 
@@ -169,4 +169,4 @@ F1 is a requirement on the engine. Chapters 6 and 11 say how it is met.
 
 - **Versions on the wire.** Versions are numbers inside the program and decimal strings between programs, as Def. 3.8 says.
 - **Frontiers.** The frontier of the prototype holds the positions, the versions of input graphs and the version of the definitions. It does not hold the telemetry watermark that Ch. 6 (Def. 6.8) adds.
-- **Tests.** Well-formedness, the immutability of the past and equality by digest are tested as properties on 4,000 random cases each. The cases are drawn only among changes the prototype accepts, so a change it refuses wrongly would not be seen (Ch. 14, 14.6). The references of Def. 3.14 are served with every graph and counted per relationship type.
+- **Tests.** Well-formedness, the immutability of the past and equality by digest are tested as properties on 4,000 random cases each. The admission test submits six unfiltered proposals in each history and compares acceptance, rejection and every historical state with a separate finite-map calculation. Three fixed byte vectors check the written form independently of round trips (14.6). The references of Def. 3.14 are served with every graph and counted per relationship type.

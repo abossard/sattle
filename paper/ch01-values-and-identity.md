@@ -2,7 +2,7 @@
 
 **Question.** When are two values equal, and how does an entity get a name that every source agrees on and that never changes?
 
-**What you can state at the end.** Every value has exactly one written form, so two values are equal exactly when their written forms are equal byte for byte. Under one fixed rule set and the rule *allocate*, the name of an entity inside the model is computed from a key and from nothing else, and a name once given is never changed. When two names turn out to mean one entity, they are joined by an added record. If links are processed only by the forwarding rule of Prop. 1.8 (without the rule *alias*), which name survives does not depend on the order in which the keys arrived. All numbered proofs in this chapter are manual arguments; none is machine checked.
+**What you can state at the end.** Every value in the normalization domain has one written form, so two values are equal exactly when their written forms are equal byte for byte. Under one fixed rule set and the rule *allocate*, the name of an entity inside the model is computed from a key and from nothing else, and a name once given is never changed. When two names turn out to mean one entity, they are joined by an added record. If links are processed only by the forwarding rule of Prop. 1.8 (without the rule *alias*), which name survives does not depend on the order in which the keys arrived. All numbered proofs in this chapter are manual arguments; none is machine checked.
 
 Everything later rests on this chapter. A graph is compared with another graph by comparing written forms. A result is called reproducible when its written form is the same in two runs. This needs no earlier chapter except the terms of Ch. 0.
 
@@ -29,12 +29,12 @@ A property of an entity holds a value: a name, a count, a time. Sources write th
 **Definition 1.2 (kind).** The kind of a value is the form it was built with: one of text, integer, decimal, boolean, instant, null, entity, list. Two values of different kinds are never equal.
 *Example:* `integer(1)` and `decimal(1)` are different values. The types of Ch. 2 fix one kind for each property, so this never surprises: a count is always an integer.
 
-**Definition 1.3 (normal form).** The function `norm` rewrites a value into its *normal form* by the rules below. It is defined only for values the rules accept: a value that a rule rejects (a leap second, a broken character code) has no normal form, and the results below are stated for the domain on which `norm` is defined. The rules are written on lexical forms; this paper does not prove that they match the abstract values of Def. 1.1 beyond the stated cases (for example, no Unicode normalisation is applied, and the length of a fraction beyond 9 digits is not specified). A value is *normal* when `norm(v) = v`.
+**Definition 1.3 (normal form).** The function `norm` rewrites a value into its *normal form* by the rules below. It is defined only for values the rules accept: a value that a rule rejects (a leap second, a broken character code) has no normal form, and the results below are stated for the domain on which `norm` is defined. The rules are written on lexical forms; this paper does not prove that they match the abstract values of Def. 1.1 beyond the stated cases (for example, text preserves the supplied Unicode scalar sequence; instant fractions with more than nine digits are outside the specified domain). A value is *normal* when `norm(v) = v`.
 
 | Rule | Kind | Normal form | Example |
 |---|---|---|---|
 | N1 | integer | decimal digits, no `+`, no leading zeros, and `-0` is `0` | `+007` becomes `7` |
-| N2 | decimal | as N1 before the point; after it no trailing zeros; no exponent | `1.50` becomes `1.5`, `2.0` becomes `2` |
+| N2 | decimal | strip leading integer zeros and trailing fractional zeros; keep the minus sign for a negative nonzero value, including `-0.5`; write zero as `0` | `1.50` becomes `1.5`, `2.0` becomes `2` |
 | N3 | instant | `YYYY-MM-DDThh:mm:ss`, then a fraction of 1 to 9 digits without trailing zeros if it is not zero, then `Z`. Other time zones are converted to UTC. A leap second is rejected | `12:00:00+01:00` becomes `11:00:00Z` |
 | N4 | text | the characters as given. No character is replaced by a similar one. A broken character code is rejected | `"Café"` stays `"Café"` |
 | N5 | boolean, null, entity | as given | |
@@ -61,7 +61,7 @@ The writing uses **JSON**, a common text format for nested data: objects with na
 
 ## 1.3 Equality
 
-**Definition 1.6 (equality of values).** `v ≈ w` iff `norm(v) = norm(w)`. By the rules N1 to N8 this is equality of what the values denote: integers as integers, decimals as rational numbers, instants as points in time, texts as sequences of characters, lists item by item.
+**Definition 1.6 (equality of values).** `v ≈ w` iff `norm(v) = norm(w)`. By the rules N1 to N8 this is equality of what the values denote: integers as integers, decimals as rational numbers, instants as points in time, texts as sequences of characters, entity references as the stored ID, and lists item by item. Two distinct stored IDs may later resolve to the same representative. That resolution does not rewrite equality of the stored values.
 
 **Theorem 1.1 (canonical equality).** For all values `v` and `w`: `v ≈ w` iff `enc(v) = enc(w)` as byte strings. For a property map, once a tree for it is fixed, the encoding does not depend on the order in which its members were supplied. The theorem holds on the values for which `norm` is defined.
 
@@ -107,7 +107,7 @@ The rule set `ν` stands for the rules of 1.1 and 1.2; this chapter is rule set 
 
 *Proof.* `alloc_ν` is the composition of `ck_ν`, `H` and the base-32 writing, each a function. By Theorem 1.1 the canonical key is the same for equal keys. Two writers evaluate the same function on the same bytes. ∎
 
-Keys from different domains, or with different components, get different ids unless `H` collides. That is intended: two domains name different things.
+Keys from different domains, or with different components, get different ids unless `H` collides. A link can later identify their two independently allocated names.
 
 **Theorem 1.5 (a binding is timeless).** Let `B` be built by the three rules and let `B'` extend it by further uses of the rules. Then every entry of `B` has the same value in `B'`. This holds when *migrate* is applied only to keys without an entry, as Def. 1.10 requires. The value of `resolve(B, ik)` depends on `B`, `ik` and the current `ν` only: not on the state of any entity, its type, the version of the definitions, a version of a graph, or the clock.
 
@@ -138,7 +138,7 @@ The opposite of a merge, a *split*, is an explicit added record as well and is n
 
 It remains to say which ids are merged, and to show that the outcome does not depend on the order in which the keys and the evidence arrive. That matters for Ch. 6: a result that depended on arrival order would not be reproducible.
 
-**Proposition 1.8 (the survivor does not depend on the order).** Let `K` be a set of identity keys of one domain (the proof does not use that restriction, but the examples of other domains are not covered by the stated hypotheses), and `L` a set of *links*, each naming two keys of `K` that denote one entity of one type. Let `own(k)` be the id that *allocate* gives to `k` alone. Process the keys and links in any order by this rule, with *allocate* and the forwarding rule only, and without *alias* (with *alias*, as in the example of Def. 1.10, the survivor can depend on the order of arrival): a key gets its own id when it is first used or first named by a link; a link between two keys forwards the larger of their two representatives to the smaller. Then for every class `C` of keys that the links connect, the representative is `min { own(k) : k ∈ C }`, whatever the order and however the input is cut into batches, and no binding is modified.
+**Proposition 1.8 (the survivor does not depend on the order).** Let `K` be a finite set of identity keys for one tenant and rule set, with distinct domain names and no allocation collision on distinct canonical keys, and `L` a set of *links*, each naming two keys of `K` that denote one entity of one type. Let `own(k)` be the id that *allocate* gives to `k` alone. Process the keys and links in any order by this rule, with *allocate* and the forwarding rule only, and without *alias* (with *alias*, as in the example of Def. 1.10, the survivor can depend on the order of arrival): a key gets its own id when it is first used or first named by a link; a link between two keys forwards the larger of their two representatives to the smaller. Then for every class `C` of keys that the links connect, the representative is `min { own(k) : k ∈ C }`, whatever the order and however the input is cut into batches, and no binding is modified.
 
 *Example:* three keys with own ids `e:c…`, `e:a…`, `e:k…`, and two links joining the first with the second and the second with the third. In every order of arrival the three end with the representative `e:a…`.
 
@@ -151,8 +151,8 @@ It remains to say which ids are merged, and to show that the outcome does not de
 When everything is processed, the seen keys are the keys used and named, and `~` is the equivalence generated by `L`, in any order. So the right-hand side is the same for every order, and so is `rep`. Cutting the input into batches does not reorder it (Ch. 6, Theorem 6.2), so the same holds after every initial part of the input; the use of Ch. 6 here is only for the batch cut. Only records were added, so no binding is modified (Theorem 1.7 (d)). ∎
 
 *Limits.*
-- The proof is about the rule. That the prototype follows the rule is tested by examples and on two recordings of a real cluster, which gave the same result at every batch size (Ch. 14). It is not yet tested on generated orders of arrival.
-- A link between keys of two different types of entity is a conflict: it is counted and ignored. This filtering depends on the state, so the hypothesis that the set `L` is fixed independently of the order holds only for links that are not filtered this way.
+- The proof is about the rule. That the prototype follows the rule is tested by examples and on two recordings of a real cluster, which gave the same result at the tested batch sizes. Five generated populations each used two compatible domains, 20 arrival orders and three batch cuts (6.3).
+- A link between keys of two different types of entity is a conflict: it is counted and ignored. When both domains declare their types, the check runs before a new right-hand key can be bound. The minimum-ID argument concerns the links admitted for a class of compatible keys.
 - The minimum is over the keys that were seen. A key that never arrives plays no part.
 - Measurements stored under an id that does not survive move to the survivor; how they combine is the subject of Ch. 7.
 
@@ -161,5 +161,5 @@ When everything is processed, the seen keys are the keys used and named, and `~`
 Three points, so that no claim of this chapter is read into the prototype by silence.
 
 - **Bounded numbers.** As said in 1.3: 64-bit integers and instants, 28-digit decimals.
-- **Shorter ids.** The prototype keeps the first 130 bits of the hash, written as 26 symbols after the prefix `e:`. The chance of a collision is larger than with 256 bits and still negligible for any estate.
+- **Shorter ids.** The prototype keeps the first 130 bits of the hash, written as 26 symbols after the prefix `e:`. For this implementation the distinct-allocation premise applies to the retained 130 bits.
 - **Bindings as a table.** The binding set is kept as a table that only grows. Ch. 2 describes a form in which keys, identities and evidence are themselves nodes of a graph; that form is not built.

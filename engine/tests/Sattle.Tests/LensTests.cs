@@ -91,6 +91,25 @@ public class LensTests
     }
 
     [Fact]
+    public void A_rejected_create_leaves_no_identity_binding_for_the_next_commit()
+    {
+        using var host = NewHost();
+        var identities = host.Engine.Identities;
+        var bindings = identities.Bindings().Count();
+        var pending = identities.Pending.Count;
+        var minted = identities.Minted;
+        var edit = Create("unseen", "Unseen");
+        edit["after"]!["id"] = V("e:wrong");
+
+        Assert.Equal("KeyMismatch", Rejected(host, Edit(host, edit)).Code);
+        Assert.Equal(bindings, identities.Bindings().Count());
+        Assert.Equal(pending, identities.Pending.Count);
+        Assert.Equal(minted, identities.Minted);
+        host.ApplyEdits("capabilities", Edit(host, Create("unseen", "Unseen")));
+        Assert.NotNull(Cap(host, "unseen"));
+    }
+
+    [Fact]
     public void The_master_holds_only_observed_rows_and_refuses_edits_NotEditable()
     {
         using var h = NewHost();

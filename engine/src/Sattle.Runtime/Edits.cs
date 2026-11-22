@@ -313,7 +313,6 @@ public sealed partial class SpaceHost
 
     string KeyId(TPolicy policy, JsonNode key, string g)
     {
-        var dom = Catalog.Graph.Entity(policy.CreateDomainId!)!;
         var d = new DefView(Catalog.Graph);
         var comps = d.Children(policy.CreateDomainId!, "component");
         var comp = key["components"]?.AsObject() ?? throw Reject("KeyMismatch", "key.components is required", g);
@@ -324,9 +323,8 @@ public sealed partial class SpaceHost
             var canon = d.Target(comps[i], "canonicalizer") is { } c ? Ids.Name(c)["canon.".Length..] : "Exact";
             codes[i] = interner.Intern(IdentityCatalog.Canonicalize(canon, v) ?? throw Reject("KeyMismatch", "malformed key component", g));
         }
-        _ = dom;
         var domain = Engine.Identities.Domain(policy.CreateDomainId!, policy.CreateDomainName ?? "", [.. comps.Select(Ids.Name)], [.. comps.Select(c => d.Target(c, "canonicalizer") is { } cz ? Ids.Name(cz)["canon.".Length..] : "Exact")], null);
-        return interner.Get(Engine.Identities.Resolve(domain, codes));
+        return Engine.Identities.PreviewId(domain, codes);
     }
 
     static Value DefaultValue(TExpr e, JsonNode? key) => e switch
@@ -342,15 +340,21 @@ public sealed partial class SpaceHost
         var types = owned is not null ? [owned.EntityTypeId, owned.RelTypeId] : tp.Rules.Where(r => r.Class is "lens" or "bijective").SelectMany(r => tp.Ops.Where(o => (o is TEmitEntity { Update: false } ee && ee.Rule == r.Name) || (o is TEmitRel { Update: false } er && er.Rule == r.Name))
             .Select(o => o is TEmitEntity x ? x.TypeId : ((TEmitRel)o).TypeId)).ToList();
         var ownedProps = tp.Ops.OfType<TEmitEntity>().Where(e => e.Rule is not null && tp.Rules.First(r => r.Name == e.Rule).Class is "lens" or "bijective").SelectMany(e => e.Sets.Where(s => !s.Telemetry).Select(s => s.PropId)).ToHashSet();
-        string? Sig(Element e) => e switch
+        Dictionary<ElementKey, Element> OwnedElements(Graph graph)
         {
-            Entity en => en.Id + "|" + string.Join(",", en.Props.Items.Where(kv => ownedProps.Contains(kv.Key)).Select(kv => kv.Key + "=" + Jcs.Encode(kv.Value))),
-            Rel r => r.Id + "|" + r.Source + ">" + r.Target,
-            _ => null,
-        };
-        var a = expected.Elements().Where(e => (e is Entity en && types.Contains(en.Type)) || (e is Rel r && types.Contains(r.Type))).ToDictionary(e => e.Key, Sig);
-        var b = actual.Elements().Where(e => (e is Entity en && types.Contains(en.Type)) || (e is Rel r && types.Contains(r.Type))).ToDictionary(e => e.Key, Sig);
-        foreach (var k in a.Keys.Order()) if (!b.TryGetValue(k, out var s) || s != a[k]) return k.Id;
+            var result = new Dictionary<ElementKey, Element>();
+            foreach (var element in graph.Elements())
+            {
+                if (element is Entity entity && types.Contains(entity.Type))
+                    result.Add(entity.Key, entity with { Props = Props.Of(entity.Props.Items.Where(kv => ownedProps.Contains(kv.Key))) });
+                else if (element is Rel rel && types.Contains(rel.Type))
+                    result.Add(rel.Key, rel with { Props = Props.Empty });
+            }
+            return result;
+        }
+        var a = OwnedElements(expected);
+        var b = OwnedElements(actual);
+        foreach (var k in a.Keys.Order()) if (!b.TryGetValue(k, out var element) || element != a[k]) return k.Id;
         foreach (var k in b.Keys.Order()) if (!a.ContainsKey(k)) return k.Id;
         return null;
     }

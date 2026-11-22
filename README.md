@@ -326,7 +326,7 @@ Definitions in [`engine/definitions`](engine/definitions), all plain text and al
 How it is tested:
 
 - An independent **reference evaluator** that computes every projection from scratch in the simplest possible way and shares no code with the runtime: [`Sattle.Reference`](engine/tests/Sattle.Reference) ([`ReferenceEvaluator.cs`](engine/tests/Sattle.Reference/ReferenceEvaluator.cs), [`ZSet.cs`](engine/tests/Sattle.Reference/ZSet.cs)).
-- A **differential harness** that compares the engine's incremental result with the reference on generated inputs, under every batch split and reordering: [`Sattle.Differential`](engine/tests/Sattle.Differential) ([`Worlds.cs`](engine/tests/Sattle.Differential/Worlds.cs), [`Differential.cs`](engine/tests/Sattle.Differential/Differential.cs)).
+- A **differential harness** that compares the engine's incremental result with the reference on generated inputs, at the batch cuts and within-batch orders exercised by the harness: [`Sattle.Differential`](engine/tests/Sattle.Differential) ([`Worlds.cs`](engine/tests/Sattle.Differential/Worlds.cs), [`Differential.cs`](engine/tests/Sattle.Differential/Differential.cs)).
 - The main suite: [`Sattle.Tests`](engine/tests/Sattle.Tests).
 
 ## The canvas
@@ -355,7 +355,7 @@ The work follows two phases. Phase 1 proves the theory, shows the language is fl
 
 What holds today:
 
-- The engine's incremental result equals the independent reference evaluator in every generated case of the differential harness, under every batch split and reordering.
+- On the generated cases, the incremental engine and a from-scratch evaluator agree at the tested batch cuts and row orderings. Both use the same checked plan.
 - The proof inventory records the draft's original classifications. A subsequent manual audit found missing premises and incomplete arguments, including identity aliases, ontology checks, definition edits, and storage retries. The [paper's audit qualifications](paper/ch15-related-work-and-limitations.md#153-research-review-and-reading-quality) explain these limits; neither the inventory nor passing tests certify all proofs.
 - The language covers relational algebra with aggregation, graph patterns, bounded recursion, windows with thresholds, and edge lifting.
 - A master graph of about 50,000 nodes was built from a real 17 minute capture of one cluster, and a health model with roll-up was derived from it.
@@ -383,7 +383,7 @@ What holds today:
 What does not hold yet:
 
 - **Speed.** The November 18 replay with detailed counters enabled used 44 µs of writer CPU per record. With those counters off, the November 19 replay used 38.61 µs of writer CPU and 43.72 µs of whole-process CPU against a 37 µs budget. The first populated window created 1.99 million series in 69.82 s. The longest of the next nine closes took 4.53 s. A longer representative run is needed to establish p99. [Scale measurements](engine/PERF.md#first-populated-window-and-steady-closes-on-the-scale-ladder-2026-11-19) · [CPU work](https://github.com/abossard/sattle/issues/123) · [Window-close work](https://github.com/abossard/sattle/issues/119)
-- **Expressiveness gaps.** Unbounded reachability, comparison of a window with an earlier one, and "no data for N windows" cannot be expressed. See [research note 05](paper/research/05-expressiveness-and-flexibility.md).
+- **Expressiveness gaps.** Traversal requires a finite bound. The language supports comparing an earlier window and detecting missing data across windows. Session windows and exact counter increments at irregular sample times remain open. [Language profile, claims E6–E9](paper/ch05-projection-language.md#59-what-the-language-can-and-cannot-express)
 - **Always live.** The engine follows the lab cluster live through Event Hubs since 2026-11-16 ([#70](https://github.com/abossard/sattle/issues/70): a scaled deployment turned Unhealthy in 34 s and back in 4 s, two hard kills resumed from the store). The source cluster runs again ([`source-cluster.sh`](lab/source-cluster.sh)).
 
   ![Live cause tree: the intruder deployment and its pod are the origin of Unhealthy, marked as changed in this revision](docs/evidence/96/live-1-tree-intruder.png)

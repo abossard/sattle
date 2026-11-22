@@ -76,6 +76,26 @@ public class IdentityMergeTests
         Assert.Equal(candidates.Min(StringComparer.Ordinal), it.Get(c.Rep(h[0])));        // the same survivor in every order
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Cross_type_link_preserves_both_identities_in_either_arrival_order(bool rightArrivesFirst)
+    {
+        var texts = new Interner();
+        var catalog = new IdentityCatalog("t", texts);
+        var pod = catalog.Domain("d:pod", "pod", ["k"], ["Exact"], "Pod");
+        var service = catalog.Domain("d:service", "service", ["k"], ["Exact"], "Service");
+        var left = R(catalog, pod, texts, "left");
+        if (rightArrivesFirst) R(catalog, service, texts, "right");
+        var pending = catalog.Pending.Count;
+
+        Assert.Equal(BindOutcome.Conflict, B(catalog, service, texts, "right", left, pod));
+        Assert.Equal(pending, catalog.Pending.Count);
+        Assert.Equal(1, catalog.Conflicts);
+        Assert.Empty(catalog.Forwarding);
+        Assert.NotEqual(catalog.Rep(left), R(catalog, service, texts, "right"));
+    }
+
     [Fact]
     public void Identities_of_different_entity_types_are_a_conflict_not_a_merge()
     {

@@ -106,16 +106,30 @@ public sealed class IdentityCatalog(string tenant, Interner it)
 
     public int? TryResolve(IdDomain d, ReadOnlySpan<long> canon) => bound.TryGetValue(K(d, canon), out var e) ? Rep(e.To) : null;
 
+    /// <summary>The current representative or the id this key would receive on first use, without recording a binding.</summary>
+    internal string PreviewId(IdDomain domain, ReadOnlySpan<long> canon)
+    {
+        if (TryResolve(domain, canon) is { } boundId) return it.Get(boundId);
+        Span<char> id = stackalloc char[KeyText.IdLength];
+        Id(domain, canon, id);
+        return new string(id);
+    }
+
     /// <summary>Rule B2 (alias): binds an unbound key to an existing identity. A key already bound to another identity of the same entity type means late evidence that two identities denote one entity: they merge (forwarding record, survivor the smaller id). Identities of different entity types are a conflict and the link is ignored.</summary>
     public BindOutcome Bind(IdDomain d, ReadOnlySpan<long> canon, int entity, IdDomain? left = null)
     {
+        if (left?.IdentifiesType is { } leftType && d.IdentifiesType is { } rightType && leftType != rightType)
+        {
+            Conflicts++;
+            return BindOutcome.Conflict;
+        }
+
         var k = K(d, canon);
         entity = Rep(entity);
         if (bound.TryGetValue(k, out var e))
         {
             var rh = Rep(e.To);
             if (rh == entity) return BindOutcome.AlreadyBound;
-            if (left is not null && left.IdentifiesType != d.IdentifiesType && left.IdentifiesType is not null && d.IdentifiesType is not null) { Conflicts++; return BindOutcome.Conflict; }
             var (survivor, loser) = string.CompareOrdinal(it.Get(entity), it.Get(rh)) <= 0 ? (entity, rh) : (rh, entity);
             forward[loser] = survivor; Merges++;
             Pending.Add(IdentityBinding.Forward(this, loser, survivor));

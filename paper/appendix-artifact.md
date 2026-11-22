@@ -5,7 +5,7 @@ This appendix is the only part of the paper that names programs, files and comma
 ## A.1 The release
 
 - **Repository:** the Sattle repository in which this paper lives (the folder `paper/`).
-- **Release:** *to be named at publication.* Historical runs use the states listed in A.9. The later review reruns use revision `54bbb6213d28801f41338061319f47a6b7d4b909` before text edits (A.10); they are not exact replications of every historical build.
+- **Revisions.** A.9 identifies the historical runs. The Ubuntu audit used `54bbb6213d28801f41338061319f47a6b7d4b909`. The first manuscript revision, `dc8270b4b34f64d92c073ffae46feecacbc277d8`, contains the same engine sources. A.10 distinguishes this baseline from the local follow-up.
 - **License:** see the file `LICENSE` at the root of the repository.
 
 ## A.2 What is in the repository
@@ -19,7 +19,7 @@ This appendix is the only part of the paper that names programs, files and comma
 | `engine/src/Sattle.Cli` | the command line program `sattle` and the server that the viewer talks to | 10, 12 |
 | `engine/definitions` | the definitions used in the experiments: types, naming rules, projections, the levels and the health model | 2, 5, 7 |
 | `engine/tests/Sattle.Tests` | tests of the engine | 14 |
-| `engine/tests/Sattle.Reference` | the independent, simple implementation written from the definitions of the paper | 6, 14 |
+| `engine/tests/Sattle.Reference` | a from-scratch evaluator of the checked operator plan; it shares the front end and core value types | 6, 14 |
 | `engine/tests/Sattle.Differential` | the comparison of the engine with that implementation on generated inputs | 6, 14 |
 | `canvas/` | the viewer, a browser application | 12 |
 | `lab/` | the recording environment, recording tools and capture-derived fixture builders; their sample outputs are unavailable in this checkout | 10, 14 |
@@ -30,7 +30,7 @@ This appendix is the only part of the paper that names programs, files and comma
 ## A.3 What can be repeated, and what cannot
 
 - **Available inputs:** the synthetic estate in `engine/tests/Sattle.Tests/fixtures/estate`, generated reference cases, synthetic benchmarks and viewer checks. Run the default and slow suites separately; capture-dependent tests may skip.
-- **Unavailable inputs:** the two real recordings, their local-name overlay and the capture-derived samples formerly used in `lab/fixtures`. This checkout contains fixture builders, not those samples. Historical H5/H10 runs use a real recording and cannot be replicated exactly with the synthetic estate.
+- **Private inputs:** the two real recordings, their local-name overlay and their capture-derived samples are held outside Git. The public checkout supplies builders. A local copy enabled the follow-up in A.10. Historical H5/H10 runs use a real recording and cannot be replicated exactly with the synthetic estate.
 - **Environment limits:** million-node and larger estate runs require more memory than a small review host. Real-account and live Azure runs additionally require infrastructure and authorization. A smaller synthetic run is a different experiment, not a substitute pass.
 
 ## A.4 Requirements
@@ -151,7 +151,7 @@ These are the counts recorded by the earlier draft, not the review reruns or the
 
 ## A.8 Statements and the tests that exercise them
 
-This historical table maps numbered statements to the tests and open items recorded by the earlier draft. Evidence classes: A, a proof in the paper; B, seeded random tests (4,000 cases per property); C, example or fixture tests; D, a benchmark; E, a replay of a real recording. These labels are not a current proof verdict or complete list of premises: read the revised chapter statements and Chapter 15, 15.3. Tests requiring the unavailable recordings were not repeated in A.10.
+This historical table maps numbered statements to the tests and open items recorded by the earlier draft. Evidence classes: A, a proof in the paper; B, seeded random tests (4,000 cases per property); C, example or fixture tests; D, a benchmark; E, a replay of a real recording. These labels are not a current proof verdict or complete list of premises: read the revised chapter statements and Chapter 15, 15.3. The table preserves the results and gaps as of its original evaluation. Later generated level and refactoring tests, live resume, and the local recording rerun are reported in Chapter 14 and A.10.
 
 | Theorem | Paper | Test evidence | Open |
 |---|---|---|---|
@@ -208,7 +208,7 @@ The paper was evaluated twelve times. In evaluations 1 to 9 the authors ran the 
 | 9 | 2026-11-11. Engine: the references route and file, meter declarations in the static output, lineage of grouped emits, the single image of `Realizes`. Canvas of evaluation 8 | 463 engine tests, 96 slow, 20 capture; `check` (15 modules, 9 projections, 0 errors, 0 warnings); replays and five chunk sizes (the output of evaluation 7 apart from wall times, the same digests); the `estate` with the 94 static files of protocol 3.12; the references files of both captures (451 and 589 lines for the master); canvas: 643 tests and clean `tsc` again, walkthroughs strict on the `estate` (8 of 8, the same previews) and the accessibility script (output identical to evaluation 8) against this engine | `tests-head9.txt`, `check-head9.txt`, `replay-head9-105738.txt`, `replay-head9-140542.txt`, `replay-chunks-head9.txt`, `estate-head9.txt`, `references-head9.txt`, `canvas-head9.txt` | benchmarks; the restart, tag and retention checks of evaluation 6; a recount of the health model (the digests are unchanged); Cosmos; walkthroughs on a real capture; the live document |
 | 10 | 2026-11-11. Engine: the `lift` statement as the operator kind `Lift`. Canvas of evaluation 8 | nothing run by this paper; read: the `lift` statements of the definitions, the tests of the `lift` statement and of the kernel, the kernel table, and the description of the protocol, version 3.13. From set A: 639 of 639 engine tests in the full run with the Cosmos emulator; the state digests of the newest capture and of the estate equal before and after the rewrite with `lift`; `serviceTree` 19 and 29 on the capture and 4 and 5 on the estate, `capabilities` 4 and 4 on the estate | none | everything; the canvas `Lift` card was verified in evaluation 11 |
 | 11 | 2026-11-11. Canvas: the `Lift` card, the references route, telemetry in the default source. Engine of evaluation 10 | nothing run by this paper; read: the canvas README and the committed default source (94 files, with meter declarations and references). From set A: clean `tsc`, 672 canvas tests, the accessibility script with all checks passing, walkthroughs strict on the `estate` 10 of 10, among them `lift-service-tree` (82 commands) and `lift-capabilities` (67 commands), both equal to the originals | none | everything |
-| 12 | 2026-11-11. Engine: the fixes of the defects found by the review and the differential harness, threshold episodes, the conflict rule, one identity per activity event. Canvas of evaluation 11 | one replay of each real capture and one with `--out` for the health model and the references, with the Release build of the working tree (nothing built by this paper). From set A: `Sattle.Differential` 149 of 149 (the engine's incremental result equals the reference evaluator's batch result in all 32 worlds, under every batch cut and under reordering inside a batch); `Sattle.Tests` 670 of 670 with the slow and capture categories; all 21 known-defect tests pass; the served engine answers a foreign origin with 403. Reported by set B and repeated by nobody: the 150-seed run of the harness, and the digests at chunk sizes 1, 50 and 100,000 | `replay-head16-105738.txt`, `replay-head16-140542.txt`, `health-head16.txt` | every test suite; chunk sizes other than the default; the estate and `lab/fixtures` digests; benchmarks; the canvas |
+| 12 | 2026-11-11. Engine: the fixes of the defects found by the review and the differential harness, threshold episodes, the conflict rule, one identity per activity event. Canvas of evaluation 11 | one replay of each real capture and one with `--out` for the health model and the references, with the Release build of the working tree (nothing built by this paper). From set A: `Sattle.Differential` 149 of 149 (the engine's incremental result equals the reference evaluator's batch result in all 32 worlds, at the tested batch cuts and within-batch reversals); `Sattle.Tests` 670 of 670 with the slow and capture categories; all 21 known-defect tests pass; the served engine answers a foreign origin with 403. Reported by set B and repeated by nobody: the 150-seed run of the harness, and the digests at chunk sizes 1, 50 and 100,000 | `replay-head16-105738.txt`, `replay-head16-140542.txt`, `health-head16.txt` | every test suite; chunk sizes other than the default; the estate and `lab/fixtures` digests; benchmarks; the canvas |
 
 Evaluation 11a is not an evaluation by this paper: it names the engine of evaluation 10 with the reference evaluator and the differential harness added and the defects they found not yet fixed (2026-11-11).
 
@@ -230,8 +230,8 @@ was used. Viewer suites ran with Node.js 22; the fixture-dependent suites requir
 the `canvas/` working directory. The archived design contracts additionally need
 their pinned .NET 10 SDK and Python `jsonschema`.
 
-The synthetic estate, generated scale workloads and synthetic stores are
-available. The real recordings and capture-derived samples are not. The
-million-node workload was not run on this roughly 7.5 GiB host, and smaller
-workloads do not establish that target. The informal, AI-assisted proof review
+The synthetic estate, generated scale workloads and synthetic stores are public.
+The real recordings and capture-derived samples are private. A follow-up on
+a 64 GB M1 Max replayed both recordings and the generated million-node input.
+Chapter 14.11 and the evidence file give the conditions and results. The informal, AI-assisted proof review
 and its remaining obligations are summarized in Chapter 15, 15.3.
