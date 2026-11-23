@@ -4,6 +4,29 @@ Sattle turns what a cloud system reports into graphs that explain it, and keeps 
 
 [Explore the narrated shop walkthrough](https://abossard.github.io/sattle/docs/learn/) · [Replay the recorded database outage](https://abossard.github.io/sattle/docs/learn/pg-shop.html#incident)
 
+## Architecture review dashboard
+
+The [architecture review dashboard](architecture-review/README.md) ranks unclear decisions, conflicting direction, naming gaps and leaky boundaries, with source evidence and GitHub-backed feedback. It runs independently of the graph engine.
+
+From the repository root, install once:
+
+```bash
+npm --prefix architecture-review ci
+```
+
+Build and start it on a free HTTP port:
+
+```bash
+npm --prefix architecture-review run build
+npm --prefix architecture-review run pages:dev -- --ip 0.0.0.0 --port 59314 --local-protocol http
+```
+
+Open `http://localhost:59314`, or `http://<this-machine-LAN-IP>:59314` from another device. Choose another unused port if `59314` is occupied.
+
+To submit reviews, configure `GITHUB_TOKEN` (Issues read/write for this repository) and a random `REVIEW_KEY` in the gitignored `architecture-review/.dev.vars`, then restart the server. Enter the review key in the form. Use HTTP only on a trusted LAN; the key is not encrypted in transit.
+
+Answers are saved in GitHub issues, the only durable decision record. The selected issue refreshes every 30 seconds; assistant notifications require an active review-monitor session. See the [dashboard README](architecture-review/README.md) for credentials, adding questions, checks and Cloudflare Pages deployment.
+
 ## Developer tutorial
 
 Open [Getting started in Canvas](http://localhost:5173/#guide=start) after starting both processes.
