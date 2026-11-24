@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readGkql, type GkqlProgram } from "../src/editor/gkql";
+import { readGkql, spanOf, type GkqlProgram } from "../src/editor/gkql";
 import { EditorService } from "../src/editor/service";
 import GkqlEditor from "../src/ui/editor/GkqlEditor";
 
@@ -19,7 +19,7 @@ const base: GkqlProgram = {
   wires: [{ from: "all", to: "choose" }, { from: "choose", to: "cpuState" }],
 };
 const metadata = { projection: "tutorial.health", language: "gkql", file: "tutorial.health.gkql.json" };
-afterEach(cleanup);
+afterEach(() => { cleanup(); Reflect.deleteProperty(document, "elementFromPoint"); });
 
 it("opens a guided projection in the source tab with its recovered text", () => {
   const recovered = JSON.stringify({ ...base, graph: "firstHealth" });
@@ -109,6 +109,43 @@ describe("every action works from the keyboard and every view follows", () => {
     await user.click(card("Check & store"));
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0][0].wires).toContainEqual({ from: "live", to: "choose" });
+  });
+
+  it.each([["onto a card", "where choose", true], ["onto the empty sheet", null, false]] as const)("dragging a handle %s connects or cancels", async (_, onto, wired) => {
+    const { save, user } = editor(unwired);
+    const handle = card("Connect from live");
+    const sheet = screen.getByRole("region", { name: "GKQL operations and wires" });
+    const at = vi.fn(() => (onto ? card(onto) : sheet));
+    document.elementFromPoint = at;
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 60, clientY: 40 });
+    expect(screen.getByText(/Connecting from live/)).toBeTruthy();
+    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 120, clientY: 80 });
+    expect(at).toHaveBeenCalledWith(120, 80);
+    expect(screen.queryByText(/Connecting from live/)).toBeNull();
+    const store = card("Check & store") as HTMLButtonElement;
+    expect(store.disabled).toBe(!wired);
+    if (!wired) return;
+    await user.click(store);
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].wires).toContainEqual({ from: "live", to: "choose" });
+  });
+
+  it.each([["live", "graph-match live"], ["cpuState", "hysteresis cpuState"]])("the caret in the text and the selection of %s follow each other", async (id, name) => {
+    const { user } = editor();
+    await user.click(screen.getByRole("tab", { name: "GKQL" }));
+    const area = screen.getByRole("textbox", { name: "GKQL source" }) as HTMLTextAreaElement;
+    const [start] = spanOf(area.value, id)!;
+    // the caret inside the operation's object selects its card and its step
+    area.setSelectionRange(start + 2, start + 2);
+    fireEvent.select(area);
+    expect(card(name).getAttribute("aria-pressed")).toBe("true");
+    expect(within(screen.getByRole("listbox", { name: "Steps" })).getByRole("option", { selected: true }).textContent).toContain(id);
+    // a card selected on the graph puts the caret at the start of its object
+    await user.click(card("where choose"));
+    expect(area.selectionStart).toBe(spanOf(area.value, "choose")![0]);
+    await user.click(card(name));
+    expect(area.selectionStart).toBe(start);
   });
 
   it.each(["{Delete}", "{Backspace}"])("%s removes the selected card with its wires, and Ctrl+Z brings both back", async (press) => {
