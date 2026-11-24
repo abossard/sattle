@@ -2,7 +2,7 @@
 # Live demo (#96): the engine reads the lab's Event Hub, the forwarder streams the AKS cluster into it, the canvas shows it.
 # usage: scripts/demo-live.sh [--port 5080] [--canvas-port 5173] [--state DIR]
 # Needs az login, the azd env in lab/, lab/.kube/config, the Release build and the canvas packages.
-# The local space binding lab/captures/space-overlay.sattle (gitignored) puts the demo namespace into the workload graphs.
+# The local space binding lab/captures/acme.space.module.gkql.json (gitignored) binds the space to the demo namespace.
 # The state (journal, recording) is kept in DIR (default tmp/live-demo): a second start resumes where the first stopped.
 # Ctrl-C stops the canvas, the forwarder and the engine (which prints its state digest).
 set -euo pipefail
@@ -25,7 +25,7 @@ for tool in jq curl lsof kubectl azd az node dotnet; do
 done
 dll="$root/engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll"
 kubeconfig="$root/lab/.kube/config"
-overlay="$root/lab/captures/space-overlay.sattle"
+overlay="$root/lab/captures/acme.space.module.gkql.json"
 [ -f "$dll" ] || { echo "no engine build at $dll: run dotnet build engine/src/Sattle.Cli -c Release" >&2; exit 1; }
 [ -d "$root/canvas/node_modules" ] || { echo "no canvas packages: run npm --prefix canvas install" >&2; exit 1; }
 [ -d "$root/lab/capture/node_modules" ] || { echo "no forwarder packages: run npm --prefix lab/capture install" >&2; exit 1; }
@@ -38,7 +38,7 @@ for p in "$port" "$canvas_port"; do
   if lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then echo "port $p is in use: pick another with --port or --canvas-port" >&2; exit 1; fi
 done
 overlay_args=()
-if [ -f "$overlay" ]; then overlay_args=(--overlay "$overlay"); else echo "no $overlay: the workload graphs stay empty, deploymentHealth and master still work" >&2; fi
+if [ -f "$overlay" ]; then overlay_args=(--overlay "$overlay"); else echo "no $overlay: the space keeps its tracked binding" >&2; fi
 
 mkdir -p "$state"
 logs="$(mktemp -d "${TMPDIR:-/tmp}/sattle-live.XXXXXX")"
