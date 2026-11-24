@@ -11,14 +11,14 @@ The reference is one deployed Azure Monitor health model (`Microsoft.CloudHealth
 - 28 entities, 26 relationships, a tree of depth 3 under the root. 47 signals: 26 platform metrics and 21 Log Analytics queries. One more signal, Resource Health on the Foundry account, is enabled but is not among the 47.
 - The 47 signals are 28 distinct computations: 12 metric series and 16 query texts. The rest are copies on entities that look more specific than their data (four entities read the same container app, two the same storage account).
 - Azure's evaluation was rebuilt from raw data and matched Azure's own history:
-  - metric signals: 1702 of 1707 checkpoints exact;
-  - log signals: 3113 of 3120 checkpoints exact; the 7 misses are Azure-side gaps;
+  - metric signals: 1701 of 1706 checkpoints exact (6 signals on 4 series); the 5 misses fall in the first 0.4 s of a minute;
+  - log signals: 3113 of 3120 checkpoints exact; at all 7 misses Azure recorded Unknown with no value;
   - rollup: all 81 recorded entity transitions rebuilt, none extra.
 - Two rules decide parity, and neither is in the documentation:
   - a metric signal at time `t` averages the five one-minute buckets before the minute of `t`;
   - a log signal at time `t` sees only rows already ingested at `t`. AzureActivity arrives with a median lag of 5.6 minutes, so this matters.
 - gkql today lacks: a hopping or sliding window, a clock on ingestion time, percentile, division and rounding, a fixpoint (or a declared depth), "no row" as Unknown, and time in state.
-- Observer effect: 15 failed read calls of mine at 12:47 to 12:49 were logged as failed ARM operations. One signal counts those, and the root was Degraded from 12:54:35 to 13:04:38. No alert fired, because the alert is on Unhealthy.
+- Observer effect: 16 failed read calls of mine at 12:47 to 12:49 were logged as failed ARM operations. One signal counts those, and the root was Degraded from 12:54:35 to 13:04:38. No alert fired, because the alert is on Unhealthy.
 
 ## The model as a graph
 
@@ -195,10 +195,10 @@ D: documented, with the link. O: observed here, with the evidence.
 |---|---|---|---|
 | Cadence | Each signal is evaluated on its own every `refreshInterval` (5 min, or 1 min for blob). The phase differs per signal and drifts by about 1 s per run. | D + O | [ARM spec](https://github.com/Azure/azure-rest-api-specs/blob/main/specification/cloudhealth/resource-manager/Microsoft.CloudHealth/CloudHealth/stable/2026-11-01/cloudhealth.json) `refreshInterval`; gaps between `getSignalHistory` entries: median 300 s, p95 301 to 305 s; blob 60 s |
 | Same data, different times | Four entities read the same metric at different times (here three within 2 s, one about 40 s later), so they can show different values at the same moment | O | live pull at 12:45: three show 4.33, one shows 3.0 |
-| Metric window | Mean of the raw samples in the five one-minute buckets before the minute of the evaluation time: `[floor_min(t) − 5 min, floor_min(t))`. Not the 5-minute grid bucket. | O | 1702 of 1707 checkpoints exact over 24 h on six series; `tmp/health-analysis/scripts/match_metric.sh`. The grid bucket matched only 82 to 92 %. |
-| Metric aggregation | Weighted by sample count (sum of totals over sum of counts), not a mean of minute means | O | same check; the mean of minute means does not match |
+| Metric window | Mean of the raw samples in the five one-minute buckets before the minute of the evaluation time: `[floor_min(t) − 5 min, floor_min(t))`. Not the 5-minute grid bucket. | O | 1701 of 1706 checkpoints exact over 24 h, 6 signals on 4 series (web app and MCP app, response time and memory); the 5-minute grid bucket matches 1408 of 1706. `scripts/metric_parity.py`, output `out/metric-parity.txt` |
+| Metric aggregation | Weighted by sample count (sum of totals over sum of counts), not a mean of minute means | O | same script: the mean of minute means matches 1621 of 1706, and fails only on response time (memory is constant within a minute) |
 | Query window | Set by the query text (`ago(15m)` or `ago(5m)`) | D | [signals](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/signals), ARM spec `timeGrain`: "If not specified, the KQL query must define a time range." |
-| Query visibility | A row counts at evaluation `t` only if it was ingested by `t` | O | replay with the cut matches 3113 of 3120 checkpoints, without the cut 3071; `scripts/replay_la.py`, `scripts/compare_la.py` |
+| Query visibility | A row counts at evaluation `t` only if it was ingested by `t` | O | replay with the cut matches 3113 of 3120 checkpoints, without the cut 3071; `scripts/replay_la.py`, `scripts/compare_la.py`, output `out/log-parity.txt` |
 | Query value | First row, column `valueColumnName` | D | signals page: "only the first record is used" |
 | Thresholds | Unhealthy first, then Degraded; Degraded optional | D | signals page |
 | Missing data | Zero rows: signal Unknown, `status.error` = "Log query returned no rows". Metric with no traffic: Unknown. | D + O | [tutorial-signals](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/tutorial-signals); live `status.error` on rows 24, 41, 43, 47 |
@@ -209,7 +209,7 @@ D: documented, with the link. O: observed here, with the evidence.
 | Impact | Limited: Unhealthy to Degraded, Degraded to Healthy. Suppressed: Degraded and Unhealthy to Healthy. Healthy and Unknown unchanged. | D + O | DP spec `EntityImpact`; platform context Unhealthy gives root Degraded, 15 times in 24 h |
 | Propagation | Same instant: a child transition and its parents' transitions share the timestamp | O | entity histories (`getHistory`): web app, Web and API for Tasks and Run a Task all change at 15:59:28 |
 | Health objective | Percent of time Healthy; Unhealthy counts as downtime, Degraded does not; shown over 24 h, 7 d, 30 d; does not change state | D | concepts; [analyze-health](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/analyze-health) |
-| Alerts | Fire on entering the state, resolve on Healthy | D | [alerts](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/alerts) |
+| Alerts | Fire on entering the state, resolve on Healthy | D + O | [alerts](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/alerts); six health-model alerts in 24 h, each starting at a root Healthy-to-Unhealthy transition, all resolved (`out/alerts-summary.json` against `all/ent.<root>.json`) |
 | Discovery | Every 5 minutes | D | [discoveries](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/discoveries) |
 | History | 30 days retained; `getHistory` and `getSignalHistory` return the last 24 h by default, at most 1000 entries | D + O | [FAQ](https://learn.microsoft.com/en-us/azure/azure-monitor/health-models/health-models-faq), [get-history](https://learn.microsoft.com/en-us/rest/api/health-models/entities/get-history?view=rest-health-models-2026-11-01); blob history is cut at 1000 entries (16.7 h) |
 | Azure-side gaps | At 21:19 to 21:20 and 21:56 nine log signals recorded Unknown with no value while the data was there | O | `all/sig.*.json`, Unknown entries of signals that are otherwise known |
@@ -234,10 +234,10 @@ Classes from Ch. 7 (Definition 7.3): **L** linear, **J** join on a key, **K** ke
 
 Notes on the steps:
 
-- The query clock is exactly class T: `s(r) = ingestion time`, `u(r) = TimeGenerated + window`. A row enters when it arrives and leaves when its event time is older than the window. This is the "Query visibility" rule of part 2.
+- The query clock is exactly class T on the arrival time of Ch. 6: `s(r) = arr(r)` (ingestion time), `u(r) = time(r) + window` (`TimeGenerated`). A row enters when it arrives and leaves when its event time is older than the window. This is the "Query visibility" rule of part 2.
 - Floating point: Ch. 7 asks for exact arithmetic in summaries. Metric totals and durations are decimals; a rebuild should carry them as exact decimals (the replay matched to 1e-6, not bit for bit).
 
-### Each query, run read only at 12:58 UTC
+### Each query, run read only at 12:53 to 12:55 UTC
 
 All 21 queries ran without error (`az monitor log-analytics query`, results in `tmp/health-analysis/q/`).
 
@@ -248,7 +248,7 @@ All 21 queries ran without error (`az monitor log-analytics query`, results in `
 | Failed agent Tasks (23) | 1 | 0 |
 | Agent Task p95 (24) | 0 | none, so Unknown |
 | Service Health (30) | 1 | 0 |
-| Failed ARM operations (31) | 1 | 12, my own failed calls (see "Observer effect") |
+| Failed ARM operations (31) | 1 | 12, my own failed calls: 12 of the 16 were ingested by 12:53:48 (see "Observer effect") |
 | Platform alerts (32) | 1 | 0 |
 | Failed route requests (37, 38, 39, 44) | 1 each | 0 |
 | Failed store and model calls (40, 42, 45, 46) | 1 each | 0 |
@@ -263,7 +263,7 @@ The 12 metric series all returned data over 3 h except the two blob series, whic
 | Feed | Rows per hour (all) | Rows per hour used | Ingestion lag p50 / p95 / p99 / max | Signals |
 |---|---|---|---|---|
 | `AppAvailabilityResults` | 72 | 36 per test | 12 s / 25 s / 56 s / 170 s | 1, 6, 11, 16, 25 |
-| `AppDependencies` | 877 | 0.2 to 53 per filter | 7 s / 26 s / 119 s / 366 s | 23, 24, 40-43, 45-47 |
+| `AppDependencies` | 877 | 0 to 53 per filter | 7 s / 26 s / 119 s / 366 s | 23, 24, 40-43, 45-47 |
 | `AppRequests` | 63 | 0 to 4.4 per filter | 7 s / 31 s / 1802 s / 1830 s | 37-39, 44 |
 | `AzureActivity` | 236 | 30 (failed ARM), 0 for the others | 335 s / 550 s / 627 s / 2135 s | 30-32 |
 | Platform metrics | 12 series × 60 minutes | all | a minute appears 7 to 30 s after it closes | 2-5, 7-10, 12-15, 17-22, 26-29, 33-36 |
@@ -299,12 +299,12 @@ Recommendation for the rebuild: pull, not push. Query API with an ingestion-time
 
 | Check | Matched | Misses and cause |
 |---|---|---|
-| Metric values, 6 series | 1702 / 1707 | 5: most likely samples that arrived after Azure read the bucket; 2 of them at second 0 of a minute, where the minute cut is ambiguous |
-| Log values, 11 signals, with ingestion cut | 3113 / 3120 | 7: Azure recorded Unknown with no value (21:19 to 21:20, 21:56) |
+| Metric values, 6 signals on 4 series | 1701 / 1706 | 5: all evaluated in the first 0.4 s of a minute, and Azure's value equals the window one minute earlier. A fixed shift does not fix them: cutting 1 s earlier gives 1691 (`out/metric-misses.txt`, `out/metric-parity-shift.txt`) |
+| Log values, 11 signals, with ingestion cut | 3113 / 3120 | 7: Azure recorded Unknown with no value where the replay has one; 6 in signals known at all other checkpoints (21:19 to 21:20, 21:56), 1 in the model-read p95, which is mostly Unknown but had rows at 21:19 (`out/log-misses.txt`) |
 | Log values, without ingestion cut | 3071 / 3120 | 42 more: 39 on the failed-ARM signal (late Activity log rows), 3 on the agent p95 (late dependency rows) |
 | Entity transitions, 28 entities, from Azure's signal states, 20:22 to 13:10 (blob history limit) | 81 / 81, 0 extra | none |
 
-Evidence: `tmp/health-analysis/scripts/` (`match_metric.sh`, `replay_la.py`, `compare_la.py`, `rollup_check.py`).
+Evidence: `tmp/health-analysis/scripts/` (`metric_parity.py`, `replay_la.py`, `compare_la.py`, `rollup_check.py`), outputs in `tmp/health-analysis/out/`.
 
 ### Tolerance
 
@@ -329,10 +329,15 @@ Evidence: `tmp/health-analysis/scripts/` (`match_metric.sh`, `replay_la.py`, `co
 
 | Gap | Evidence |
 |---|---|
-| Two times per row. Ch. 7 class T selects on a tick, but the paper does not name ingestion time beside event time. The query rule needs `s = ingestion`, `u = event + window`. | Part 2 "Query visibility"; 42 extra mismatches without it |
 | "No value" as a state. A keyed step gives no row on empty input; Azure gives 0 for counts and Unknown for ratios and percentiles. The paper needs the pattern "constant row per key" to tell them apart. | Part 2 "Missing data", "Count on empty input" |
 | Ordered states with a least element. Class F has this; the rollup example should name worst-of with Unknown as ⊥. | DP spec `WorstOf` order; 81/81 transitions |
 | Time in state over a moving window (health objective) is not covered by a summarised K step. | Part 3, Health objective row |
+
+Closed in the paper, checked against `paper/core/` Ch. 5 and 6:
+
+- Events as an input of their own: a signature has graph inputs, event inputs and a clock input (Ch. 5, signatures).
+- Arrival time beside event time, and a lateness per event input: Ch. 6, Def. 6.1 and Thm 6.3. The Azure query rule is a clock selection on arrival time.
+- Output that changes because time passed: the clock is an input, and "downloads in the hour before the clock" is the running example (Ch. 5).
 
 ### In gkql and the engine
 
@@ -340,6 +345,8 @@ Evidence: `tmp/health-analysis/scripts/` (`match_metric.sh`, `replay_la.py`, `co
 |---|---|
 | Hop or slide: the kernel checks a hop, but gkql's `WindowSpec` has only `Time` and `Period` | `engine/src/Sattle.Language/Checker.cs:258-259`, `engine/src/Sattle.Gkql/GkqlSource.cs:24` |
 | Clock on a second time column (ingestion time); lateness is fixed to "revise" | `GkqlSource.cs:216-222` |
+| Events as an input of their own: not a gap. `rows` reads a row input of a declared row type, and `window` takes its timestamp column | `GkqlSource.cs:100-107`, `:216-222` |
+| Output that changes because time passed: partly. Tumbling windows close as the clock moves. "The last 15 minutes before the clock", which every query signal uses, is a sliding selection and needs the missing hop or slide | `GkqlSource.cs:24`, `:216-222` |
 | Percentile: not among the allowed aggregates (count, countDistinct, sum, min, max, mean, last) | `engine/src/Sattle.Language/Checker.cs:515` |
 | Division, multiplication, rounding: in the kernel, not in gkql's function map | `GkqlSource.cs:499-505` |
 | `in` list and case-insensitive equals (`=~`) | `GkqlSource.cs:499-505` |
@@ -373,7 +380,7 @@ Where this analysis differs:
 |---|---|---|---|
 | Inputs | The lab mirror reads one Azure Monitor value per signal (query run by Azure, metric with `interval=FULL`) and applies only thresholds in gkql (`collect-observations.py`, `azure_monitor.py:79-86`). #142 forbids that. | Rebuilt from rows and minute buckets; the value itself is the engine's work | part 3, part 5 |
 | Query timing | Query replayed with `set query_now` and an absolute timespan, lateness 0 (`collect-observations.py:63-68`, `serve_diagnostics.py:75`) | Azure sees only rows ingested by `t`. Without that cut 39 of 286 failed-ARM checkpoints differ. | part 5 |
-| Lateness | #142 and #67 ask for "a lateness rule per source" and defer it to a later chapter | Not a separate rule. It is class T with two times per row: enter at ingestion, leave at event time + window. No new concept. | part 3 notes |
+| Lateness | #142 asks for "a lateness rule per source" | Ch. 6 defines arrival time and lateness per event input (Def. 6.1, Thm 6.3). Parity with Azure needs no lateness at all: the Azure rule is a clock selection on arrival time (class T). | part 3 notes |
 | Missing versus zero | #147: "a missing reading stays missing and a measured zero stays zero" | Azure turns no rows into 0 for counts and into Unknown for ratios and percentiles. A rebuild from rows must produce 0 from absence. | part 2 "Count on empty input" |
 | Hysteresis | #151 plans a keyed fold with entry streaks and a 3-window recovery | The reference has no hysteresis: the web app went Unhealthy for exactly one evaluation six times. Parity needs none; it is a new concept beyond the reference. | entity history, part 2 |
 | Metric aggregation | One value per binding from Azure | Keep Count and Total per minute; the mean of minute means does not match | part 2 |
