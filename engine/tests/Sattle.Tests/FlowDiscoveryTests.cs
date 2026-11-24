@@ -95,7 +95,7 @@ public class FlowDiscoveryTests
         Assert.Equal("unresolved", Child().Prop("parentStatus"));
 
         space.Span("submit-42", "web", "submit", minute: 7);
-        Assert.True(space.Host.Engine.Graph("master").Cx.LateDropped > 0);
+        Assert.True(long.Parse(space.Host.Liveness()["counters"]!["lateRows"]!.GetValue<string>()) > 0);
         Assert.Empty(space.Host.Relationships("flows", "Handoff"));
         Assert.Equal("unresolved", Child().Prop("parentStatus"));
     }

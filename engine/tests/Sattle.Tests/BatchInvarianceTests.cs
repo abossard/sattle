@@ -84,8 +84,12 @@ public class BatchInvarianceTests
         e.Ingest("activity", rw.Build()!, seq);
     }
 
-    static Dictionary<long, decimal> Changes(Engine e) =>
-        ((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key).Where(x => e.Interner.Get(x.Prop) == "d:sattle.cloud/prop:changes").ToDictionary(x => x.Ws, x => x.Value);
+    static Dictionary<long, decimal> Changes(Engine e)
+    {
+        var changes = new Dictionary<long, decimal>();
+        e.Telemetry.ScanGraph(e.Master.Key, (_, p, ws, v) => { if (e.Interner.Get(p) == "d:sattle.cloud/prop:changes") changes.Add(ws, v); });
+        return changes;
+    }
 
     /// <summary>B1: the Activity Log writes one resource under two spellings of its id. The group is keyed by the lowercased id, so every batching gives one aggregate for the element and window; keyed by the raw text it gave two and the telemetry store kept the last one written.</summary>
     [Theory]
@@ -124,7 +128,7 @@ public class BatchInvarianceTests
         Activity(e, 3, Resource, 5_000_000_000L, lateRows);                     // late rows for it
         e.Advance(T0 + (laterMinutes + 2) * Min);
         Assert.Equal(3m, Changes(e).Single().Value);
-        Assert.True(e.Master.Cx.LateDropped >= lateRows);
+        Assert.True(e.Counters().LateRows >= lateRows);
     }
 
     const string Wide = """
@@ -166,7 +170,7 @@ public class BatchInvarianceTests
         rw.Begin(); rw.Text("k", "a"); rw.Instant("t", start + 2);
         e.Ingest("a", rw.Build()!, 1);
         e.Advance(start + w + 1);                                // the window [start, start + w) closes
-        Assert.Equal(0, e.Master.Cx.LateDropped);
+        Assert.Equal(0, e.Counters().LateRows);
         Assert.Single(e.Master.State.Entities);
     }
 
@@ -182,6 +186,6 @@ public class BatchInvarianceTests
         Activity(e, 3, Resource, 5_000_000_000L, lateRows);
         e.Advance(T0 + 4 * Min);
         Assert.Equal(3m + lateRows, Changes(e).Single().Value);
-        Assert.Equal(0, e.Master.Cx.LateDropped);
+        Assert.Equal(0, e.Counters().LateRows);
     }
 }

@@ -22,7 +22,7 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
     { "id": "master", "role": "master", "head": "146", "ontology": "acme.ops", "inputs": [], "direction": "mixed", "editable": true,
       "descriptor": { }, "projection": "ingest" },
     { "id": "serviceTree", "role": "projection", "head": "44", "ontology": "acme.svc", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "serviceDeps",
-      "inputPorts": {"master": "master"}, "projectionFile": "acme.svc.serviceDeps.kql" }
+      "inputPorts": {"master": "master"}, "projectionFile": "acme.svc.serviceDeps.gkql.json" }
   ],
   "input": { "mode": "replay|live", "logicalTime": "2026-11-10T10:41:00Z", "rows": "243457", "dropped": [] } }
 ```
@@ -660,6 +660,11 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Module text.** `GET /definitions/{module}`, a draft's `modules[m].text` and `GET /releases/{digest}/text` are the module's gkql document, never a printed text. The `Unprintable` diagnostic is gone.
 - **Draft patches.** `POST /drafts/{id}/patches` refuses every edit (`ModuleText`, or `ProjectionText` with `file`); restoring a release sets the draft's documents to the release's.
 - **CLI.** `sattle check --print` is removed.
+
+## Version 3.58: the counters of a run and a digest per graph on `GET /health` (#120)
+- **Counters.** `GET /health` has `counters`: `identity` (`minted`, `aliased`, `merged`, `conflicts`, the shape of a preview's `identity.live`), `lateRows` (rows dropped as late, 3.3) and `faults` (`divisionByZero`, `overflow`, `invalidParameter`). `replay` prints the same numbers from the same calculation.
+- **Digest per graph.** Each entry of `GET /health` `graphs` has `digest`: the graph's digest at its head (Def. 3.5, the `digest` of a preview's graphs), from the pass that makes the state digest. The catalog's too.
+- **Telemetry port (no wire change).** `ITelemetryStore.ScanGraph` hands every window of a graph in a range to a visitor, also the windows of an element that left; without a visitor it counts them and allocates nothing. `SeriesCount`, `PartialWindows` and `MergeConflicts` are on the port. `InMemoryTelemetryStore.Dump` and `WindowCount` are gone.
 
 ## After 3.16 (no change of the wire format)
 - **Authoring record `signalRule`.** A rule whose `above` is not greater than its `below`, or whose `enterAfter` or `exitAfter` is below 1, is rejected and counted like a record with a missing field. A `Threshold` that reads its parameters from the row drops a row with such parameters and counts it (`replay` prints the count with the runtime faults); each window is read with the parameters of its own row.

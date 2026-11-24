@@ -106,7 +106,7 @@ public class LineageTests
     public void Every_instance_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id()
     {
         var h = OnEstate.Value;
-        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine
+        Assert.True(long.Parse(h.Liveness()["counters"]!["identity"]!["merged"]!.GetValue<string>()) > 0, "no identity merged on the estate");
         var instances = h.Entities("master", "Instance");
         var without = instances.Count(p => h.Lineage("master", p["id"].Id())["rule"] is null);
         Assert.True(instances.Count > 0 && without == 0, $"{without} of {instances.Count} instances have no lineage");

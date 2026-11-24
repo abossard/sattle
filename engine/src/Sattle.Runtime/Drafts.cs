@@ -289,14 +289,13 @@ public sealed partial class SpaceHost
             using var fresh = activated;
             var exp = new CanvasExport(fresh, cand);
             var limit = int.TryParse(body["limit"]?.GetValue<string>(), out var lm) ? lm : 5000;
-            var mem = (InMemoryTelemetryStore)fresh.Telemetry;
             var graphs = new JsonArray();
             foreach (var g in fresh.Graphs.Where(g => want.Contains(g.Name)))
             {
                 var o = new JsonObject
                 {
                     ["id"] = g.Name, ["digest"] = g.State.Digest(),
-                    ["counts"] = new JsonObject { ["entities"] = Rev(g.State.EntityCount), ["relationships"] = Rev(g.State.RelCount), ["telemetryWindows"] = Rev(mem.WindowCount(g.Key)) },
+                    ["counts"] = new JsonObject { ["entities"] = Rev(g.State.EntityCount), ["relationships"] = Rev(g.State.RelCount), ["telemetryWindows"] = Rev(fresh.Telemetry.ScanGraph(g.Key, null)) },
                 };
                 if (include.Contains("diff"))
                 {

@@ -122,7 +122,7 @@ public static class Server
         app.UseWebSockets();
 
         app.MapGet("/space", (HttpContext c) => Guard(() => Cached(c, host, "space", Cache.Head, () => JsonP(host.SpaceInfo()))));
-        app.MapGet("/health", (HttpContext c) => Guard(() => { c.Response.Headers.CacheControl = "no-store"; return Json(Health(host)); }));
+        app.MapGet("/health", (HttpContext c) => Guard(() => { c.Response.Headers.CacheControl = "no-store"; return Json(host.Liveness()); }));
         app.MapGet("/graphs/{g}/descriptor", (string g) => Guard(() => Json(host.Descriptor(g))));
         app.MapGet("/graphs/{g}/snapshot", (HttpContext c, string g, string? revision, bool? references) => Guard(() =>
         {
@@ -232,18 +232,4 @@ public static class Server
     }
 
     static string Err(string code, string message) => new JsonObject { ["type"] = "error", ["code"] = code, ["message"] = message }.ToJsonString();
-
-    static JsonNode Health(SpaceHost h)
-    {
-        lock (h.Gate)
-        {
-            var info = h.SpaceInfo();
-            return new JsonObject
-            {
-                ["mode"] = h.Mode, ["done"] = h.Done, ["seq"] = h.Seq.ToString(), ["digest"] = h.Engine.StateDigest(), ["catalogRevision"] = info["catalogRevision"]?.DeepClone(),
-                ["graphs"] = new JsonArray([.. info["graphs"]!.AsArray().Select(g => (JsonNode)new JsonObject { ["name"] = g!["id"]!.GetValue<string>(), ["head"] = g["head"]!.GetValue<string>() })]),
-                ["lag"] = info["input"]!["lag"]?.DeepClone(),
-            };
-        }
-    }
 }

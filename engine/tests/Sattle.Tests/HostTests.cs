@@ -421,7 +421,7 @@ public class HostTests
         new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = 50, AdvanceEveryNs = Min, LatenessNs = Min}).Run(EstateTests.EstateDir);
         h.Unsubscribe(sub);
         await reading;
-        Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine
+        Assert.True(long.Parse(h.Liveness()["counters"]!["identity"]!["merged"]!.GetValue<string>()) > 0, "no identity merged on the estate");
         var read = new SortedDictionary<string, double>(StringComparer.Ordinal);
         foreach (var batch in h.Telemetry("master", null, null, null, null, batches: true).AsArray()) Apply(read, batch!);
         Assert.NotEmpty(read);

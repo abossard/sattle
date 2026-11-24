@@ -218,9 +218,10 @@ public class DraftTests
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
         var previewed = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
         var windows = p["graphs"]!.AsArray().Where(g => g!["removed"] is null).ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["counts"]!["telemetryWindows"]!.GetValue<string>());
-        var before = h.Engine.Graphs.ToDictionary(g => g.Name, g => g.State.Digest());          // the protocol serves no digest per graph: read inside the engine
+        Dictionary<string, string> Served() => h.Liveness()["graphs"]!.AsArray().Where(g => g!["name"]!.GetValue<string>() != "catalog").ToDictionary(g => g!["name"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
+        var before = Served();
         h.CommitDraft(d, h.CatalogRevision);
-        var after = h.Engine.Graphs.ToDictionary(g => g.Name, g => g.State.Digest());
+        var after = Served();
         Assert.Equal(after.Keys.Order(), previewed.Keys.Order());
         Assert.All(after, kv => Assert.Equal(kv.Value, previewed[kv.Key]));
         Assert.All(after.Keys, g => Assert.Equal(windows[g], h.Telemetry(g, null, null, null, null, batches: true).AsArray().Sum(b => b!["ids"]!.AsArray().Count).ToString()));          // and as many telemetry windows

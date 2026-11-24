@@ -14,7 +14,7 @@ static partial class Bench
     public static void GraphTable(Engine e, TextWriter w)
     {
         w.WriteLine("graph | entities | relationships | head revision | telemetry windows");
-        foreach (var g in e.Graphs) w.WriteLine($"{g.Name} | {g.State.EntityCount:N0} | {g.State.RelCount:N0} | {g.Head:N0} | {(e.Telemetry is InMemoryTelemetryStore m ? m.WindowCount(g.Key) : 0):N0}");
+        foreach (var g in e.Graphs) w.WriteLine($"{g.Name} | {g.State.EntityCount:N0} | {g.State.RelCount:N0} | {g.Head:N0} | {e.Telemetry.ScanGraph(g.Key, null):N0}");
     }
     public static void GcAndCensus(Engine e, TextWriter w, params (string Label, object? Root)[] extra)
     {
@@ -163,8 +163,7 @@ static partial class Bench
             if (tree) Console.WriteLine($"  tree: treeStructure {e.Graph("treeStructure").State.EntityCount:N0} elements, {e.Graph("treeStructure").State.RelCount:N0} Contains; treeSignals {e.Graph("treeSignals").State.EntityCount:N0} signals; healthTree {e.Graph("healthTree").State.EntityCount:N0} entities, {e.Graph("healthTree").State.RelCount:N0} relationships; heap {GC.GetTotalMemory(false) / 1e6:F0} MB, working set {WorkingSet(proc) / 1e6:F0} MB");
         }
         GC.Collect(); heap = GC.GetTotalMemory(true);
-        var telemetry = (InMemoryTelemetryStore)e.Telemetry;
-        var tel = telemetry.WindowCount(e.Master.Key) + telemetry.WindowCount(e.Graph("serviceTree").Key);
+        var tel = e.Telemetry.ScanGraph(e.Master.Key, null) + e.Telemetry.ScanGraph(e.Graph("serviceTree").Key, null);
         Console.WriteLine($"flows: {rows:N0} rows, generation included: {rows / ingestS / 1e6:F2} M rows/s; window close p50 {Pct(close, .5):F0} ms, max {close.Max():F0} ms");
         Console.WriteLine($"dangling relationships of the master at the end: {e.Master.State.Rels.Count(r => !e.Master.State.HasEntity(r.Source) || !e.Master.State.HasEntity(r.Target)):N0} of {e.Master.State.RelCount:N0}");
         var liveAtEnd = Census.LiveBytes();
@@ -251,7 +250,7 @@ static partial class Bench
         }
         var seconds = ingestTicks / (double)Stopwatch.Frequency;
         Console.WriteLine($"ingest: {ingested:N0} rows in {seconds:F2} s of Ingest calls = {ingested / seconds / 1e6:F2} M rows/s; allocated {alloc / (double)ingested:F3} bytes/row; gen0 collections {GC.CollectionCount(0) - gcBefore}");
-        var storedWindows = ((InMemoryTelemetryStore)e.Telemetry).WindowCount(e.Master.Key);
+        var storedWindows = e.Telemetry.ScanGraph(e.Master.Key, null);
         Console.WriteLine($"after the run: master revision {e.Master.Head}, {e.Master.State.RelCount} Calls/Backs relationships, {storedWindows:N0} master telemetry windows, serviceTree revision {e.Graph("serviceTree").Head}, {e.Graph("serviceTree").State.RelCount} relationships");
         Console.WriteLine($"window close (Advance: group emit, identity lookups, telemetry append, Series, Rollup, Threshold, derived commit): n={closeMs.Count}, p50 {Pct(closeMs, .5):F2} ms, p99 {Pct(closeMs, .99):F2} ms, max {closeMs.Max():F2} ms; allocated per close p50 {Pct(closeAlloc.Select(x => (double)x).ToList(), .5) / 1e6:F2} MB");
 

@@ -27,6 +27,7 @@ input { accent-color:var(--blue); }
 .mono { overflow-wrap:anywhere; }
 
 .mast { background:var(--surface); border-bottom:1px solid var(--line); }
+.record-note { margin:0; padding:6px var(--page-gutter); background:var(--surface); border-bottom:1px solid var(--line); color:var(--muted); font-size:.85rem; }
 .mast-inner { display:flex; align-items:center; gap:clamp(14px,2.4vw,36px); padding:12px var(--page-gutter); }
 .brand { display:inline-flex; align-items:center; gap:9px; text-decoration:none; color:var(--ink); font-size:24px; font-weight:700; letter-spacing:-.04em; }
 .symbol { display:grid; place-items:center; width:31px; height:31px; border-radius:4px; background:var(--raised); color:var(--master); font:700 28px/1 var(--mono); }

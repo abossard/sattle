@@ -70,9 +70,9 @@ public class PreparationTests
         foreach (var e in new[] { serial, prepared })
         {
             Samples(e, Keys, 1, 3, 10, reverse);
-            Assert.Empty(((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key));
+            Assert.Equal(0, e.Telemetry.ScanGraph(e.Master.Key, null));
             e.Advance(Minute, 11);
-            Assert.All(e.Graphs, g => Assert.Equal(Keys, ((InMemoryTelemetryStore)e.Telemetry).WindowCount(g.Key)));
+            Assert.All(e.Graphs, g => Assert.Equal(Keys, e.Telemetry.ScanGraph(g.Key, null)));
         }
         Assert.Equal(new[] { "master", "first", "second" }, before.Select(x => x.Graph));
         Assert.Equal(Keys * 2, before[0].Patch!.Edits.Length);
@@ -102,7 +102,7 @@ public class PreparationTests
         Assert.All(continuing.Graphs, g =>
         {
             Assert.Equal(0, g.State.EntityCount + g.State.RelCount);
-            Assert.Equal(0, ((InMemoryTelemetryStore)continuing.Telemetry).WindowCount(g.Key));
+            Assert.Equal(0, continuing.Telemetry.ScanGraph(g.Key, null));
         });
     }
 
@@ -121,7 +121,7 @@ public class PreparationTests
             var unpublished = e.Graph("second");
             Assert.Equal(0, unpublished.Head);
             Assert.Equal(0, unpublished.State.EntityCount);
-            Assert.Equal(0, ((InMemoryTelemetryStore)e.Telemetry).WindowCount(unpublished.Key));
+            Assert.Equal(0, e.Telemetry.ScanGraph(unpublished.Key, null));
             return (seen, e.StateDigest());
         }
         var serial = UntilFailure(1);

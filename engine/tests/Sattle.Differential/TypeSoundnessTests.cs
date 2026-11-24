@@ -155,8 +155,9 @@ public class TypeSoundnessTests
                     batch.Add((Sattle.Reference.RowInput)log[j]);
                     if (j == log.Length - 1 || log[j + 1] is not Sattle.Reference.RowInput || cut.SplitAfter(j)) { EngineRun.Ingest(e, [.. batch], ++seq); batch.Clear(); }
                 }
-                var faults = e.Faults.DivisionByZero + e.Faults.Overflow + e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.ElementConflicts);
-                if (e.Faults.DivisionByZero + e.Faults.Overflow > 0) withFaults++;
+                var counters = e.Counters();
+                var faults = counters.DivisionByZero + counters.Overflow + e.Graphs.Sum(g => g.Out.Counts.PropertyConflicts + g.Out.Counts.ElementConflicts);
+                if (counters.DivisionByZero + counters.Overflow > 0) withFaults++;
                 var view = catalog.OntologyOf(e.Master.Typed.OutputModule);
                 var bad = Conformance.Check(e.Master.State, view).Where(d => d.IsError).ToList();
                 Assert.DoesNotContain(bad, d => d.Code is "UnknownType" or "AbstractType" or "UnknownProperty" or "ValueKind" or "EndpointType" or "TelemetryInGraph");   // C2, C3, C5
@@ -177,7 +178,7 @@ public class TypeSoundnessTests
         using var e = new Engine(catalog, catalog.Spaces.Keys.Single());
         Sattle.Reference.RowInput Row_(string k, long n) => new("a", Row(("k", Value.Text(k)), ("g", Value.Text("g")), ("n", Value.Integer(n)), ("d", Value.Null), ("t", Value.Instant(Origin))), 1);
         EngineRun.Ingest(e, [Row_("k0", 1), Row_("k1", 3), Row_("k2", 0)], 1);
-        Assert.Equal(1, e.Faults.Overflow);
+        Assert.Equal(1, e.Counters().Overflow);
         var c = e.Master.State.Entities.ToDictionary(x => x.Props.Text("d:w/prop:k")!, x => x.Props.Get("d:w/prop:c"));
         Assert.Equal(["k0", "k1", "k2"], c.Keys.Order());
         Assert.Equal(new IntegerValue(4611686018427387904), c["k0"]); Assert.Null(c["k1"]); Assert.Equal(new IntegerValue(0), c["k2"]);

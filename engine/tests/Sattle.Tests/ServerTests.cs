@@ -69,10 +69,10 @@ public class ServerTests
         if (code is not null) Assert.Equal(code, JsonNode.Parse(body)!["error"]!["code"]!.GetValue<string>());
     }
 
-    /// <summary>#144 C6: `/health` is the liveness of the process and its store, not the health of a model: its operational keys and per graph its name and head, no model state or authored policy.</summary>
+    /// <summary>#144 C6: `/health` is the liveness of the process and its store, not the health of a model: its operational keys, per graph its name, head and digest, and the counters of the run (#120), no model state or authored policy.</summary>
     [Theory]
-    [InlineData("", "mode,done,seq,digest,catalogRevision,graphs,lag")]
-    [InlineData("graphs", "name,head")]
+    [InlineData("", "mode,done,seq,digest,catalogRevision,graphs,lag,counters")]
+    [InlineData("graphs", "name,head,digest")]
     public async Task Health_serves_only_operational_keys(string part, string keys)
     {
         var body = await Serving(async http => JsonNode.Parse(await http.GetStringAsync("/health"))!.AsObject());

@@ -42,7 +42,9 @@ The dependency chapters use local replay experiments with the same definitions a
 
 See the [structure query](https://github.com/abossard/sattle/blob/fcf7725/engine/definitions/acme.workload.workloadStructure.kql), [health query](https://github.com/abossard/sattle/blob/fcf7725/engine/definitions/acme.workload.workloadHealth.kql), [authored thresholds](https://github.com/abossard/sattle/blob/fcf7725/engine/tests/Sattle.Tests/fixtures/estate/authoring/rules.ndjson), and [white paper](../../paper/README.md). To open the real Canvas alongside the guide, follow the [repository’s getting-started steps](../../README.md) and run `scripts/demo-replay.sh`. Choose the static synthetic estate for the exact revision numbers in the guide. Live replay can group events into different revisions.
 
-## Reproduce the guides and films
+## Reproduce the guides and films (record)
+
+These steps ran at commit [`fcf7725`](https://github.com/abossard/sattle/tree/fcf7725). The engine on main reads gkql only, so they do not run there.
 
 Both recordings are available as MP4s with captions and chapter markers. [Four-chapter walkthrough](foundry/shop.mp4) · [Recorded pg-shop replay](sattle.mp4)
 

@@ -1512,6 +1512,8 @@ A 110-minute replay at 9,995 nodes had 109 steady closes. With four workers, the
 
 The graph summary and draft preview used `Dump(graph).Count`, which sorted the series and materialized every window. `WindowCount` sums the per-series counts under the existing store lock into a 64-bit integer. A .NET 11.0.100 Release measurement populated 100,000 series with ten consecutive 60-second windows per series. Both methods returned 1,000,000. Each was warmed on a separate one-window graph, followed by a forced GC before each measured read. In ABBA order, the two `WindowCount` reads allocated zero bytes on the calling thread and took 1.06 and 0.83 ms. The two `Dump(graph).Count` reads each allocated 89,909,792 bytes and took 172.93 and 69.12 ms. These are timings for the count operation.
 
+Repeated after the count became the telemetry port's range read without a visitor (`ScanGraph(g, null)`, #120), with the same population and order on .NET 11.0 Release: the count read 1,000,000 windows in 3.59 and 2.68 ms with zero bytes allocated on the calling thread; reading the windows into a list through the same read took 36.93 and 64.93 ms and allocated 67,109,304 bytes each time. A store test asserts that a count allocates nothing.
+
 ### Testing a type index for graph matching
 
 A match scans the upstream patch in canonical edit order for each seed of its pattern. Two prototypes shared work across readers of a patch with at least 128 edits. One built a list of edits per concrete type, including both types of a retyped element. The other kept only the distinct types and skipped seeds that could match none of them. Both deferred building the index until a second scan.

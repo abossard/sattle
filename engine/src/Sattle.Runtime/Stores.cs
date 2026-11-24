@@ -542,6 +542,14 @@ public interface ITelemetryStore
     IReadOnlyList<SeriesRead> ReadWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs);
     /// <summary>The same windows without allocating: each window of each (element, property) series in `[fromNs, toNs)` is handed to the visitor, in series order and window order. Returns the number of windows visited. A view of 10,000 elements over an hour is 2.4 M windows; reading them into lists allocated 148 MB and the collections that followed were the 300 ms outliers of H8.</summary>
     long ScanWindow(GraphKey g, IReadOnlyList<int> elements, IReadOnlyList<int> props, long fromNs, long toNs, WindowVisitor visit);
+    /// <summary>Every window of a graph in `[fromNs, toNs)`, whatever element it belongs to (one that left the graph too): each is handed to the visitor, the windows of a series in window order, the series in no stated order. Returns the number of windows. Without a visitor it only counts, and allocates nothing.</summary>
+    long ScanGraph(GraphKey g, WindowVisitor? visit, long fromNs = long.MinValue, long toNs = long.MaxValue);
+    /// <summary>The (element, property) series the graph's plane holds.</summary>
+    int SeriesCount(GraphKey g);
+    /// <summary>The windows marked partial (`MarkPartial`), by window start: the reason and the number of lost events.</summary>
+    IReadOnlyDictionary<long, (string Reason, long Count)> PartialWindows(GraphKey g);
+    /// <summary>Windows that a merge left without a value (`MoveElement`), counted once each.</summary>
+    long MergeConflicts(GraphKey g);
     /// <summary>Window changes after a position, in order. Each change is emitted once; this stream is the only telemetry an engine input may carry (L12). A plane has one reader, its graph, which reads right after its step: what is returned is released.</summary>
     IReadOnlyList<WindowChange> ClosedWindows(GraphKey g, long afterPosition, out long newPosition);
     /// <summary>A source reported lost events (a loss mark): the window becomes Partial(sourceLoss) (Def. 7.7). Part of the ingest side of the port.</summary>
@@ -799,18 +807,22 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
         lock (gate) return Get(g).Series.TryGetValue((key.Element, key.Prop), out var ser) && ser.Find(key.WindowStart) is var i and >= 0 ? ser.Value(i) : null;
     }
     public (decimal A, decimal B)? AuxOf(GraphKey g, WindowKey key) { lock (gate) return Get(g).Aux.TryGetValue(key, out var a) ? a : null; }
-    /// <summary>The (element, property) series the plane holds.</summary>
     public int SeriesCount(GraphKey g) { lock (gate) return Get(g).Series.Count; }
 
-    /// <summary>The number of stored windows across all series in a graph.</summary>
-    public long WindowCount(GraphKey g)
+    /// <summary>A count is the windows of each series between two binary searches (every series' count over the whole time line), not a walk over the windows.</summary>
+    public long ScanGraph(GraphKey g, WindowVisitor? visit, long fromNs = long.MinValue, long toNs = long.MaxValue)
     {
         lock (gate)
         {
-            if (!planes.TryGetValue(g, out var plane)) return 0;
-            long count = 0;
-            foreach (var series in plane.Series) count += series.Value.Count;
-            return count;
+            if (!planes.TryGetValue(g, out var p)) return 0;
+            long n = 0;
+            foreach (var ((e, pr), ser) in p.Series)
+            {
+                int lo = fromNs == long.MinValue ? 0 : ser.From(fromNs), end = toNs == long.MaxValue ? ser.Count : Math.Max(lo, ser.From(toNs));
+                if (visit is not null) for (var i = lo; i < end; i++) visit(e, pr, ser.Start(i), ser.Value(i));
+                n += end - lo;
+            }
+            return n;
         }
     }
 
@@ -886,7 +898,6 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     }
 
     public long? RetainedFrom(GraphKey g) { lock (gate) return Get(g).RetainedFrom; }
-    /// <summary>Windows that a merge left without a value (counted once each).</summary>
     public long MergeConflicts(GraphKey g) { lock (gate) return Get(g).MergeConflicts; }
 
     public void MarkPartial(GraphKey g, long windowStart, string reason, long count)
@@ -895,14 +906,4 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     }
 
     public IReadOnlyDictionary<long, (string Reason, long Count)> PartialWindows(GraphKey g) { lock (gate) { return new Dictionary<long, (string, long)>(Get(g).Partials); } }
-
-    /// <summary>All current windows of a graph, ordered by (element, property, window). For snapshots and digests.</summary>
-    public IReadOnlyList<(int Element, int Prop, long Ws, decimal Value)> Dump(GraphKey g)
-    {
-        lock (gate)
-        {
-            var p = Get(g);
-            return [.. p.Series.OrderBy(kv => kv.Key.Item1).ThenBy(kv => kv.Key.Item2).SelectMany(kv => Enumerable.Range(0, kv.Value.Count).Select(i => (kv.Key.Item1, kv.Key.Item2, kv.Value.Start(i), kv.Value.Value(i))))];
-        }
-    }
 }

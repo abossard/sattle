@@ -224,8 +224,9 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     /// <summary>Telemetry as sparse columnar batches, one per (window, property, target). Ticks are window ordinals: the engine's telemetry is indexed by window start, not by revision (a seam mismatch, see README).</summary>
     public IEnumerable<JsonNode> TelemetryBatches(GraphRuntime g)
     {
-        if (engine.Telemetry is not InMemoryTelemetryStore mem) yield break;
-        var dump = mem.Dump(g.Key);
+        var dump = new List<(int Element, int Prop, long Ws, decimal Value)>();
+        engine.Telemetry.ScanGraph(g.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)));
+        dump.Sort();          // by element, property, window: the order of the ids in a batch
         var windows = dump.Select(x => x.Ws).Distinct().Order().ToList();
         if (windows.Count == 0) yield break;
         var tickOf = windows.Select((w, i) => (w, i)).ToDictionary(x => x.w, x => x.i + 1);
@@ -242,16 +243,23 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         }
     }
 
+    /// <summary>The largest value of each telemetry property over every window of a graph, by property id: the scale of a meter.</summary>
+    Dictionary<string, decimal> LargestValues(GraphRuntime g)
+    {
+        var maxOf = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        engine.Telemetry.ScanGraph(g.Key, (_, p, _, v) => { var id = engine.Interner.Get(p); maxOf[id] = maxOf.TryGetValue(id, out var m) ? Math.Max(m, v) : v; });
+        return maxOf;
+    }
+
     public JsonNode Meters(GraphRuntime g)
     {
         var view = catalog.OntologyOf(OutputModule(g));
         var tele = view.Props.Values.Where(p => p.Role == "telemetry" && Ids.ModuleOf(p.Id) != Ids.KernelModule).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
         var edgeProps = view.Types.Values.Where(t => t.IsRel).SelectMany(t => t.OwnProps.Keys).ToHashSet();
-        var dump = engine.Telemetry is InMemoryTelemetryStore mem ? mem.Dump(g.Key) : [];
+        var maxOf = LargestValues(g);
         return new JsonArray([.. tele.Select(p =>
         {
-            var vals = dump.Where(x => engine.Interner.Get(x.Prop) == p.Id).Select(x => (double)x.Value).ToList();
-            var max = vals.Count == 0 ? 1 : Math.Max(vals.Max(), 1e-9);
+            var max = maxOf.TryGetValue(p.Id, out var m) ? Math.Max((double)m, 1e-9) : 1;
             return (JsonNode)new JsonObject { ["id"] = PropName(p.Id), ["target"] = edgeProps.Contains(p.Id) ? "edge" : "node", ["label"] = p.Name, ["unit"] = p.Unit ?? "", ["min"] = 0, ["max"] = Math.Round(max, 6), ["scale"] = "sqrt" };
         })]);
     }
@@ -292,19 +300,17 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     {
         var g = rt.Name;
             var view = catalog.OntologyOf(rt.Typed.OutputModule);
-            var mem = (InMemoryTelemetryStore)engine.Telemetry;
-            var dump = mem.Dump(rt.Key);
+            var maxOf = LargestValues(rt);
             var edgeProps = view.Types.Values.Where(t => t.IsRel).SelectMany(t => t.OwnProps.Keys).ToHashSet();
             var thresholds = rt.Typed.Ops.OfType<TThreshold>().Select(t => (Op: t, Meter: t.Value is TField f ? f.Name : null)).ToList();
             var tele = view.Props.Values.Where(p => p.Role == "telemetry" && Ids.ModuleOf(p.Id) == rt.Typed.OutputModule || p.Role == "telemetry" && Ids.ModuleOf(p.Id) != Ids.KernelModule && rt.Typed.Ops.OfType<TEmitEntity>().Any(e => e.Sets.Any(s => s.PropId == p.Id)) ).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
             var meters = new JsonArray([.. tele.Select(p =>
             {
-                var vals = dump.Where(x => engine.Interner.Get(x.Prop) == p.Id).Select(x => (double)x.Value).ToList();
                 var warn = thresholds.Where(t => t.Meter == p.Name && t.Op.AboveBy is null).Select(t => (double?)(double)t.Op.Above).FirstOrDefault();
                 return (JsonNode)new JsonObject
                 {
                     ["id"] = PropNameOf(p.Id), ["target"] = edgeProps.Contains(p.Id) ? "edge" : "node", ["label"] = p.Name, ["unit"] = p.Unit ?? "", ["temporality"] = p.Temporality, ["combine"] = p.Combine,
-                    ["periodSeconds"] = p.Period / 1_000_000_000, ["min"] = 0, ["max"] = vals.Count == 0 ? 1 : Math.Round(vals.Max(), 6), ["scale"] = "sqrt", ["warn"] = warn,
+                    ["periodSeconds"] = p.Period / 1_000_000_000, ["min"] = 0, ["max"] = maxOf.TryGetValue(p.Id, out var m) ? Math.Round((double)m, 6) : 1, ["scale"] = "sqrt", ["warn"] = warn,
                 };
             })]);
             // a parameter that is read from the row (`above above for enterAfter`) has no one value: it is null, and `byRow` names the column it is read from

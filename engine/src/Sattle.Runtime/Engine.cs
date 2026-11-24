@@ -295,6 +295,9 @@ public sealed class GraphRuntime
     string[]? measureKeys;
 }
 
+/// <summary>The counters of a run (`Engine.Counters`).</summary>
+public readonly record struct RunCounters(long Minted, long Aliased, long Merged, long Conflicts, long LateRows, long DivisionByZero, long Overflow, long InvalidParameter);
+
 /// <summary>The activated graph space: master ingestion, derived graphs in dependency order, ordered deterministic evaluation with explicit logical time, per-graph atomic commit through the port.</summary>
 public sealed class Engine : IDisposable, IEngineInput
 {
@@ -642,23 +645,30 @@ public sealed class Engine : IDisposable, IEngineInput
     /// A digest of the observable output (T7): per graph, a set digest (AdHash) of its written pairs and its telemetry windows, tagged with the
     /// graph's name; the engine's is the AdHash of the graphs' digests. No order of graphs, elements or windows matters.
     /// </summary>
-    public string StateDigest()
+    public string StateDigest() => StateDigests().State;
+
+    /// <summary>The state digest and, from the same pass, per graph dig(G) of Def. 3.5 (its written pairs, no telemetry), the digest a preview gives per graph.</summary>
+    public (string State, IReadOnlyList<(string Graph, string Digest)> Graphs) StateDigests()
     {
-        var all = new Digests.Set(); var sb = new StringBuilder();
+        var all = new Digests.Set(); var sb = new StringBuilder(); var perGraph = new List<(string, string)>(graphs.Count);
         foreach (var g in graphs)
         {
             var set = g.State.PairSet();
-            if (Telemetry is InMemoryTelemetryStore mem)
-                foreach (var (e, p, ws, v) in mem.Dump(g.Key))
-                {
-                    sb.Clear().Append("w|").Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
-                    if (mem.AuxOf(g.Key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
-                    set.Add(sb);
-                }
+            perGraph.Add((g.Name, set.Digest("")));
+            var key = g.Key;
+            Telemetry.ScanGraph(key, (e, p, ws, v) =>
+            {
+                sb.Clear().Append("w|").Append(Interner.Get(e)).Append('|').Append(Interner.Get(p)).Append('|').Append(ws).Append('|').Append(Norm.Decimal(v));
+                if (Telemetry.AuxOf(key, new WindowKey(e, p, ws)) is { } aux) sb.Append('|').Append(Norm.Decimal(aux.A)).Append('|').Append(Norm.Decimal(aux.B));          // only windows of `mean` and `last` with their pair
+                set.Add(sb);
+            });
             all.Add(Encoding.UTF8.GetBytes(set.Digest(g.Name)));
         }
-        return all.Digest("");
+        return (all.Digest(""), perGraph);
     }
+
+    /// <summary>The counters of a run, the one calculation `replay` prints and the liveness route serves: identities minted, aliased through links, merged and refused as conflicts; rows dropped as late (PROTOCOL 3.3); rows dropped by a runtime fault.</summary>
+    public RunCounters Counters() => new(Identities.Minted, Identities.Aliased, Identities.Merges, Identities.Conflicts, graphs.Sum(g => g.Cx.LateDropped), Faults.DivisionByZero, Faults.Overflow, Faults.InvalidParameter);
 
     public void Advance(long lambdaNs) => Advance(lambdaNs, 0);
 

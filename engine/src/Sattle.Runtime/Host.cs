@@ -741,6 +741,33 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         }
     }
 
+    /// <summary>The liveness of the process and its store (the server serves it at its liveness route). The state digest, per graph its head and dig(G) from the same pass, and the counters of the run (`Engine.Counters`).</summary>
+    public JsonNode Liveness()
+    {
+        lock (Gate)
+        {
+            var info = SpaceInfo();
+            var (state, perGraph) = Engine.StateDigests();
+            var digestOf = perGraph.ToDictionary(x => x.Graph, x => x.Digest);
+            var c = Engine.Counters();
+            return new JsonObject
+            {
+                ["mode"] = Mode, ["done"] = Done, ["seq"] = Seq.ToString(CultureInfo.InvariantCulture), ["digest"] = state, ["catalogRevision"] = info["catalogRevision"]?.DeepClone(),
+                ["graphs"] = new JsonArray([.. info["graphs"]!.AsArray().Select(g => g!["id"]!.GetValue<string>()).Select(name => (JsonNode)new JsonObject
+                {
+                    ["name"] = name, ["head"] = Rev(HeadOf(name)), ["digest"] = name == "catalog" ? Catalog.Graph.Digest() : digestOf[name],
+                })]),
+                ["lag"] = info["input"]!["lag"]?.DeepClone(),
+                ["counters"] = new JsonObject
+                {
+                    ["identity"] = new JsonObject { ["minted"] = Rev(c.Minted), ["aliased"] = Rev(c.Aliased), ["merged"] = Rev(c.Merged), ["conflicts"] = Rev(c.Conflicts) },
+                    ["lateRows"] = Rev(c.LateRows),
+                    ["faults"] = new JsonObject { ["divisionByZero"] = Rev(c.DivisionByZero), ["overflow"] = Rev(c.Overflow), ["invalidParameter"] = Rev(c.InvalidParameter) },
+                },
+            };
+        }
+    }
+
     HostError Gap(string g, long first) => new("Gap", $"history of {g} before revision {first} is not available", 410, new JsonObject { ["graph"] = g, ["lastAvailable"] = Rev(first) });
 
     Graph StateAt(string g, long revision)
@@ -867,9 +894,10 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             HeadOf(g);
             var rt = Engine.Graph(g);
             var view = Catalog.OntologyOf(rt.Typed.OutputModule);
-            var mem = (InMemoryTelemetryStore)Engine.Telemetry;
-            var dump = mem.Dump(rt.Key).Where(x => (from is null || x.Ws >= from) && (to is null || x.Ws < to)).ToList();
-            var partial = mem.PartialWindows(rt.Key);
+            var dump = new List<(int Element, int Prop, long Ws, decimal Value)>();
+            Engine.Telemetry.ScanGraph(rt.Key, (e, p, ws, v) => dump.Add((e, p, ws, v)), from ?? long.MinValue, to ?? long.MaxValue);
+            dump.Sort();          // by element, property, window: the order of the ids in a batch
+            var partial = Engine.Telemetry.PartialWindows(rt.Key);
             if (property is not null) dump = [.. dump.Where(x => interner.Get(x.Prop) == property || export.PropNameOf(interner.Get(x.Prop)) == property)];
             if (element is not null) dump = [.. dump.Where(x => interner.Get(x.Element) == element)];
             if (batches)
@@ -893,7 +921,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             {
                 ["graph"] = g, ["from"] = from is null ? null : Norm.Instant(from.Value), ["to"] = to is null ? null : Norm.Instant(to.Value), ["series"] = new JsonArray([.. series]),
                 // Def. 7.13: windows that ended at or before `retainedFrom` are no longer kept; a range that lies wholly before it is not an empty series but one that is not retained
-                ["retainedFrom"] = mem.RetainedFrom(rt.Key) is { } kept ? Norm.Instant(kept) : null, ["notRetained"] = mem.RetainedFrom(rt.Key) is { } edge && to is { } end && end <= edge,
+                ["retainedFrom"] = Engine.Telemetry.RetainedFrom(rt.Key) is { } kept ? Norm.Instant(kept) : null, ["notRetained"] = Engine.Telemetry.RetainedFrom(rt.Key) is { } edge && to is { } end && end <= edge,
                 ["partialWindows"] = new JsonArray([.. partial.Where(kv => (from is null || kv.Key >= from) && (to is null || kv.Key < to)).OrderBy(kv => kv.Key).Select(kv => (JsonNode)new JsonObject { ["windowStart"] = Norm.Instant(kv.Key), ["reason"] = kv.Value.Reason, ["count"] = Rev(kv.Value.Count) })]),
             };
         }

@@ -244,7 +244,7 @@ public class DifferentialTests
                     case Sattle.Reference.AdvanceInput a: e.Advance(a.Frontier, ++seq); break;
                     case Sattle.Reference.RowInput row: EngineRun.Ingest(e, [row], ++seq); break;
                 }
-            dropped += e.Faults.InvalidParameter;
+            dropped += e.Counters().InvalidParameter;
             states += e.Graph("view").State.Entities.Count(x => x.Props.Text("d:w.view/prop:state") is not null);
         }
         Assert.True(dropped > 0, "no row with parameters that are no state machine");
@@ -270,7 +270,7 @@ public class DifferentialTests
         using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
         EngineRun.Ingest(engine, [PlainRow("a", 1, "k0", "g0", 0, 0), PlainRow("a", 1, "k1", "g0", 1, 0), PlainRow("a", 1, "k2", "g0", 5, 0)], 1);
         Assert.Single(engine.Master.State.Entities);
-        Assert.Equal(1, engine.Identities.Minted);
+        Assert.Equal(1, engine.Counters().Minted);
     }
 
     /// <summary>Review: Operators.cs:58, Columnar.cs:59 (Synthetic.cs:22, Bench.cs:75). A column that a row writer never sets is absent. The row builder marks every column present, so it reads as the value with code 0.</summary>

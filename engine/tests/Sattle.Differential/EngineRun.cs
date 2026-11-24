@@ -91,11 +91,16 @@ public static class EngineRun
     public static SpaceFacts FactsOf(Engine engine)
     {
         static ImmutableSortedDictionary<string, Value> Props(Props p) => p.Items.Where(kv => kv.Value is not NullValue).ToImmutableSortedDictionary(kv => kv.Key, kv => kv.Value, StringComparer.Ordinal);
-        var store = (InMemoryTelemetryStore)engine.Telemetry;
+        ImmutableSortedDictionary<WindowId, decimal> Windows(GraphKey key)
+        {
+            var windows = ImmutableSortedDictionary.CreateBuilder<WindowId, decimal>();
+            engine.Telemetry.ScanGraph(key, (e, p, ws, v) => windows.Add(new WindowId(engine.Interner.Get(e), engine.Interner.Get(p), ws), v));
+            return windows.ToImmutable();
+        }
         var graphs = engine.Graphs.ToImmutableSortedDictionary(g => g.Name, g => new GraphFacts(
             g.State.Entities.ToImmutableSortedDictionary(e => e.Id, e => new EntityFact(e.Id, e.Type, Props(e.Props)), StringComparer.Ordinal),
             g.State.Rels.ToImmutableSortedDictionary(r => r.Id, r => new RelFact(r.Id, r.Type, r.Source, r.Target, Props(r.Props)), StringComparer.Ordinal),
-            store.Dump(g.Key).ToImmutableSortedDictionary(w => new WindowId(engine.Interner.Get(w.Element), engine.Interner.Get(w.Prop), w.Ws), w => w.Value),
+            Windows(g.Key),
             [.. g.Out.Conflicts.Select(c => c.Text)]), StringComparer.Ordinal);
         return new SpaceFacts(graphs, engine.LogicalTime == long.MinValue ? null : engine.LogicalTime);
     }

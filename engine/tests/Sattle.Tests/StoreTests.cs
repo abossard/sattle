@@ -319,21 +319,25 @@ public class TelemetryStoreTests
         var first = new Sample(1, 1, 0, W, 10, 1);
         var deleted = new Sample(3, 2, W, W, 30, 1);
         store.AppendNew(other, first);
-        Assert.Equal(0L, store.WindowCount(G));
+        Assert.Equal(0L, store.ScanGraph(G, null));
 
         store.AppendNew(G, first);
         store.Append(G, [first with { WindowStart = W }, first with { Element = 2 }, deleted]);
-        Assert.Equal(4L, store.WindowCount(G));
+        Assert.Equal(4L, store.ScanGraph(G, null));
+        Assert.Equal(2L, store.ScanGraph(G, null, W, 2 * W));          // a range: the windows that start at W
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        store.ScanGraph(G, null);
+        Assert.Equal(0L, GC.GetAllocatedBytesForCurrentThread() - allocated);          // a count allocates nothing (#120 A7)
         store.Append(G, [first with { Value = 11 }, deleted with { Deleted = true }]);
-        Assert.Equal(3L, store.WindowCount(G));
+        Assert.Equal(3L, store.ScanGraph(G, null));
         store.MoveElement(G, 2, 1, _ => "sum");
-        Assert.Equal(2L, store.WindowCount(G));
+        Assert.Equal(2L, store.ScanGraph(G, null));
 
         store.Retain(G, 2 * W, W);
-        Assert.Equal(1L, store.WindowCount(G));
+        Assert.Equal(1L, store.ScanGraph(G, null));
         store.Retain(G, 3 * W, W);
-        Assert.Equal(0L, store.WindowCount(G));
-        Assert.Equal(1L, store.WindowCount(other));
+        Assert.Equal(0L, store.ScanGraph(G, null));
+        Assert.Equal(1L, store.ScanGraph(other, null));
     }
 
     [Fact]
@@ -419,11 +423,12 @@ public class TelemetryStoreTests
         // a second window of flows between the same instances changes telemetry only: the windows grow, the revisions of the master and the stored head do not move
         using var h = HostTests.NewHost();
         HostTests.Drive(h, windows: 2);
-        long Windows() => ((InMemoryTelemetryStore)h.Engine.Telemetry).Dump(h.Engine.Master.Key).Count;
-        var (head, stored, windows, digest) = (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, Windows(), h.Engine.Master.State.Digest());
+        long Windows() => h.Engine.Telemetry.ScanGraph(h.Engine.Master.Key, null);
+        string Digest() => h.Liveness()["graphs"]!.AsArray().Single(g => g!["name"]!.GetValue<string>() == "master")!["digest"]!.GetValue<string>();
+        var (head, stored, windows, digest) = (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, Windows(), Digest());
         HostTests.Flows(h, window: 2);
         Assert.True(Windows() > windows, "the third window wrote no telemetry");
-        Assert.Equal((head, stored, digest), (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, h.Engine.Master.State.Digest()));
+        Assert.Equal((head, stored, digest), (h.Engine.Master.Head, h.Engine.Store.Head(h.Engine.Master.Key).Head, Digest()));
     }
 
     [Fact]

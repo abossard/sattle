@@ -157,8 +157,8 @@ public class EstateTests
     public void A_Link_merges_identities_a_union_has_two_sources_and_the_retained_evidence_is_there()
     {
         var e = Plain.Value;
-        Assert.True(e.Engine.Identities.Merges > 0, "no identity merged: the second api instance's row arrives after the flows that name it");          // the counters of identities are served by no file of a replay: read inside
-        Assert.Equal(0, e.Engine.Identities.Conflicts);
+        Assert.True(e.Engine.Counters().Merged > 0, "no identity merged: the second api instance's row arrives after the flows that name it");
+        Assert.Equal(0, e.Engine.Counters().Conflicts);
         Assert.Equal(18, e.Entities("master", "ActivityEvent").Count);  // 10 from the management API and 8 from the diagnostic setting: the two sources of the Union in observedActivityEvents
         Assert.NotEmpty(e.Entities("master", "WarningEvent"));
     }
@@ -231,7 +231,7 @@ public class EstateTests
         var p = h.Preview(d, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("serviceTree") });
         var merged = long.Parse(p["identity"]!["preview"]!["merged"]!.GetValue<string>());
         Assert.True(merged >= 1, "the second api instance's row arrives after the flows that name it: the Link of the instance identities merges");
-        Assert.Equal(h.Engine.Identities.Merges, merged);
+        Assert.Equal(long.Parse(h.Liveness()["counters"]!["identity"]!["merged"]!.GetValue<string>()), merged);
         Assert.Equal("0", p["identity"]!["difference"]!["merged"]!.GetValue<string>());
     }
 }

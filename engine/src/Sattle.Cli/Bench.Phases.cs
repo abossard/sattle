@@ -77,7 +77,7 @@ static partial class Bench
             e.Committed -= Count;
             closing = false;
             AdvanceTicks += dt; AdvanceAlloc += da; AdvanceCpu += dc; Advances++;
-            var series = e.Telemetry is InMemoryTelemetryStore mem ? e.Graphs.Sum(g => (long)mem.SeriesCount(g.Key)) : 0;
+            var series = e.Graphs.Sum(g => (long)e.Telemetry.SeriesCount(g.Key));
             var top = graphMs is null ? [] : e.Graphs.Select(g => (g.Name, Ms: GraphMillis(e, g.Name) - graphMs[g.Name])).OrderByDescending(x => x.Ms).Take(4).ToList();
             double? matchMs = kinds is null ? null : e.KindStats.GetValueOrDefault("MatchOp").Ms - kinds.GetValueOrDefault("MatchOp").Ms;
             Closes.Add(new(lambdaNs, Ms(dt), dc / 1e6, processCpu.TotalMilliseconds, allocated / 1e6, pause.TotalMilliseconds, changes, series,
