@@ -34,7 +34,7 @@ export const serveEngine = (args: string[], replay = true): Promise<{ url: strin
 export default async function setup(): Promise<() => void | Promise<void>> {
   if (env.ENGINE) return () => {};
   execFileSync("dotnet", ["build", "-c", "Release", cli, "--nologo", "-v", "q"], { stdio: "inherit", timeout: 600_000 });
-  const { url, stop } = await serveEngine([fixture, "--cluster", "synth"]);
+  const { url, stop } = await serveEngine([fixture]);
   env.ENGINE = url;
   return stop;
 }

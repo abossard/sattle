@@ -29,14 +29,14 @@ it("checks, previews, commits and reloads an edited GKQL projection after restar
     { id: group, name: resourceGroup, type: "microsoft.resources/resourcegroups" },
     { id: `${group}/providers/microsoft.containerservice/managedclusters/test-cluster`, name: "test-cluster", type: "microsoft.containerservice/managedclusters" },
   ].map((resource, seq) => JSON.stringify({
-    v: 1, source: "arg", capturedAt: "2026-01-01T10:00:00Z", seq, key: resource.id,
-    meta: { query: "resources" }, payload: { ...resource, subscriptionId, resourceGroup },
+    v: 1, source: "records:ResourceRow", capturedAt: "2026-01-01T10:00:00Z", seq, key: `records:ResourceRow/${seq}`,
+    meta: null, payload: { key: resource.id, values: { ...resource, subscriptionId, resourceGroup } },
   }));
   let host: Awaited<ReturnType<typeof serveEngine>> | undefined;
   try {
-    await mkdir(join(capture, "arg"), { recursive: true });
-    await writeFile(join(capture, "arg", "resources.ndjson"), resources.join("\n") + "\n");
-    host = await serveEngine([capture, "--cluster", "synth", "--lateness", "0s", ...setup]);
+    await mkdir(join(capture, "records"), { recursive: true });
+    await writeFile(join(capture, "records", "resources.ndjson"), resources.join("\n") + "\n");
+    host = await serveEngine([capture, "--lateness", "0s", ...setup]);
     let service = new EditorService(host.url);
     const starter = await EditorSession.open(service);
     const name = "newInventory";
