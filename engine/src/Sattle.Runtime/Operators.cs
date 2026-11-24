@@ -1267,6 +1267,139 @@ sealed class DistinctOp : PhysOp
     }
 }
 
+// ---- fixpoint ----------------------------------------------------------------------------------------------
+
+/// <summary>Fixpoint (Def. 7.3 (F)): per node the least value of its equation, the greatest position of its own values and of the values of its dependencies, each
+/// through the image list of its edge. A value is a position in the order, 0 for no value. State per node: the net weight of its own rows per position, its edges
+/// to dependencies with their net weights (by dependency and image list), the nodes with a positive edge to it, its value, and the value it emitted. A step finds the
+/// nodes its rows name (`Ch`: the key of a node row, the from of an edge row), the nodes that reach them over positive edges (`Aff`, Theorem 7.6), sets those to no
+/// value and evaluates each once, and again when one of its dependencies in `Aff` grows; no other node is read or evaluated. A row without its key, from or to names
+/// no node and counts as missing; a decimal key is its normalized number; a value outside the order counts as no value and as an invalid parameter.</summary>
+public sealed class FixpointOp : PhysOp
+{
+    readonly record struct NodeKey(long A, long B);
+    sealed class Node(int positions)
+    {
+        public readonly long[] Own = new long[positions];
+        /// <summary>Edges to dependencies: (dependency, image list or -1 for none) to net weight; a positive weight makes it a term of the equation.</summary>
+        public readonly Dictionary<(NodeKey To, int Map), long> Out = [];
+        /// <summary>The nodes with a positive edge to this one, with the number of such edges.</summary>
+        public readonly Dictionary<NodeKey, int> In = [];
+        public int Z, Emitted;
+        public bool Present() { foreach (var w in Own) if (w > 0) return true; return false; }
+        public bool Idle() => Z == 0 && Emitted == 0 && Out.Count == 0 && In.Count == 0 && Array.TrueForAll(Own, w => w == 0);
+    }
+
+    readonly int key, value, from, to, by, positions;
+    readonly bool keyDec, valueDec;
+    readonly Dictionary<long, int> codeAt = []; readonly Dictionary<decimal, int> decAt = [];
+    readonly long[] codes; readonly decimal[] decs;
+    readonly Dictionary<long, int> mapOf = []; readonly int[][] images;
+    readonly Dictionary<NodeKey, Node> nodes = [];
+    // working state, empty between calls
+    readonly HashSet<NodeKey> aff = []; readonly Queue<NodeKey> todo = new(); readonly HashSet<NodeKey> queued = [];
+    /// <summary>Evaluations of an equation since the operator was made (the work of Theorem 7.6, item 3).</summary>
+    public long Evaluations { get; private set; }
+
+    public FixpointOp(TFixpoint t, Layout nodesL, Layout edgesL, Interner it) : base(t)
+    {
+        key = nodesL.Index(t.Key); value = nodesL.Index(t.Value); from = edgesL.Index(t.From); to = edgesL.Index(t.To); by = t.By is { } b ? edgesL.Index(b) : -1;
+        keyDec = nodesL.IsDec[key]; valueDec = nodesL.IsDec[value];
+        positions = t.Order.Count + 1; codes = new long[positions]; decs = new decimal[positions];
+        for (var i = 1; i < positions; i++)
+            if (t.Order[i - 1] is DecimalValue d) decAt[decs[i] = d.Q] = i;
+            else codeAt[codes[i] = Codec.ToCode(t.Order[i - 1], it)] = i;
+        images = [.. t.Maps.Values];
+        var n = 0;
+        foreach (var when in t.Maps.Keys) mapOf[Codec.ToCode(Value.Text(when), it)] = n++;
+    }
+
+    Node Get(NodeKey k) => nodes.TryGetValue(k, out var x) ? x : nodes[k] = new Node(positions);
+    NodeKey KeyOf(Column c, int row)
+    {
+        if (!keyDec) return new(c.L[row], 0);
+        var (lo, hi) = DecimalKey.Of(c.D[row]);
+        return new(lo, hi);
+    }
+
+    int Eval(Node n)
+    {
+        Evaluations++;
+        var z = 0;
+        for (var p = positions - 1; p > 0; p--) if (n.Own[p] > 0) { z = p; break; }
+        foreach (var ((dep, map), w) in n.Out)
+        {
+            if (w <= 0 || z == positions - 1) continue;
+            var at = nodes.TryGetValue(dep, out var d) ? d.Z : 0;
+            z = Math.Max(z, map < 0 || at == 0 ? at : images[map][at]);
+        }
+        return z;
+    }
+
+    public override Batch? Run(OpContext cx, Epoch ep, IReadOnlyDictionary<string, Batch?> inputs)
+    {
+        var nb = In(inputs, "in"); var eb = In(inputs, "edges");
+        if ((nb is null || nb.Rows == 0) && (eb is null || eb.Rows == 0)) return null;
+        for (var r = 0; nb is not null && r < nb.Rows; r++)
+        {
+            var row = nb.RowAt(r); var w = nb.Weight(row);
+            if (!nb.Cols[key].Present(row)) { if (w > 0) cx.Faults.MissingRequired++; continue; }
+            var k = KeyOf(nb.Cols[key], row); var n = Get(k);
+            var v = nb.Cols[value]; var p = 0;
+            if (v.Present(row) && !(valueDec ? decAt.TryGetValue(v.D[row], out p) : codeAt.TryGetValue(v.L[row], out p)) && w > 0) cx.Faults.InvalidParameter++;
+            n.Own[p] += w; aff.Add(k);
+        }
+        for (var r = 0; eb is not null && r < eb.Rows; r++)
+        {
+            var row = eb.RowAt(r); var w = eb.Weight(row);
+            if (!eb.Cols[from].Present(row) || !eb.Cols[to].Present(row)) { if (w > 0) cx.Faults.MissingRequired++; continue; }
+            NodeKey f = KeyOf(eb.Cols[from], row), d = KeyOf(eb.Cols[to], row);
+            var map = by >= 0 && eb.Cols[by].Present(row) && mapOf.TryGetValue(eb.Cols[by].L[row], out var m) ? m : -1;
+            var fn = Get(f); var dn = Get(d);
+            var before = fn.Out.GetValueOrDefault((d, map)); var after = before + w;
+            if (after == 0) fn.Out.Remove((d, map)); else fn.Out[(d, map)] = after;
+            if (before <= 0 && after > 0) dn.In[f] = dn.In.GetValueOrDefault(f) + 1;
+            else if (before > 0 && after <= 0 && --dn.In[f] == 0) dn.In.Remove(f);
+            aff.Add(f);
+            if (dn.Idle() && !aff.Contains(d)) nodes.Remove(d);
+        }
+        // Aff: the changed nodes and every node that reaches one over positive edges (a lost edge names its from, so the edges after the step suffice)
+        foreach (var k in aff) todo.Enqueue(k);
+        while (todo.TryDequeue(out var k))
+            foreach (var p in nodes[k].In.Keys) if (aff.Add(p)) todo.Enqueue(p);
+        foreach (var k in aff) { nodes[k].Z = 0; todo.Enqueue(k); queued.Add(k); }
+        while (todo.TryDequeue(out var k))
+        {
+            queued.Remove(k);
+            var n = nodes[k]; var z = Eval(n);
+            if (z <= n.Z) continue;
+            n.Z = z;
+            foreach (var p in n.In.Keys) if (aff.Contains(p) && queued.Add(p)) todo.Enqueue(p);
+        }
+        var bb = EmptyOutput();
+        foreach (var k in aff)
+        {
+            var n = nodes[k]; var now = n.Present() ? n.Z : 0;
+            if (now != n.Emitted)
+            {
+                if (n.Emitted > 0) Write(bb, k, n.Emitted, -1);
+                if (now > 0) Write(bb, k, now, 1);
+                n.Emitted = now;
+            }
+            if (n.Idle()) nodes.Remove(k);
+        }
+        aff.Clear();
+        return bb.Build();
+    }
+
+    void Write(BatchBuilder bb, NodeKey k, int at, long weight)
+    {
+        var row = bb.Add(weight); var cols = bb.Batch.Cols;
+        if (keyDec) cols[0].D[row] = DecimalKey.Number(k.A, k.B); else cols[0].L[row] = k.A;
+        if (valueDec) cols[1].D[row] = decs[at]; else cols[1].L[row] = codes[at];
+    }
+}
+
 // ---- join ------------------------------------------------------------------------------------------------
 
 /// <summary>Equi-join of two data inputs. Each side keeps its input's rows as a Z-set (`Table`): a row is its join key, every column as its code (a decimal as its number in the graph's `DecimalCodes`) and a bit per absent column, all of it the key of the row, with the multiplicity as its weight; an `Arrangement` by the join key gives the rows a probe matches. The joins of a graph that read one input with keys that are its columns keep its rows once (`JoinInputs`). A step joins a left batch with the right rows before the step, a right batch with the left rows before the step, and the two batches with each other; then the last reader of each input in plan order adds the input's batch. Rows with an absent key component never join and are not kept.</summary>

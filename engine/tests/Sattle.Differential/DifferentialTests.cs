@@ -290,6 +290,84 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
+    static Sattle.Reference.RowInput FixpointRow(string change)
+    {
+        var weight = change[0] == '+' ? 1 : -1; var body = change[1..];
+        if (body.Split('>') is [var from, var rest])
+        {
+            var (to, impact) = rest.Split(':') is [var t, var i] ? (t, Value.Text(i)) : (rest, Value.Null);
+            return new("edges", Logs.Row(("src", Value.Text(from)), ("dst", Value.Text(to)), ("impact", impact), ("ds", Value.Decimal(1m)), ("dd", Value.Decimal(1m))), weight);
+        }
+        var (k, n) = body.Split('=') is [var a, var b] ? (a, b) : throw new ArgumentException(change);
+        return new("nodes", Logs.Row(("k", Value.Text(k)), ("rank", n == "null" ? Value.Null : Value.Integer(long.Parse(n, System.Globalization.CultureInfo.InvariantCulture))), ("d", Value.Decimal(1m)), ("s", Value.Null)), weight);
+    }
+
+    /// <summary>The ranks of the items in the final facts, as `k=rank`, in the order of the items.</summary>
+    static string Ranks(Sattle.Reference.SpaceFacts f) => string.Join(" ", f.Graphs["master"].Entities.Values
+        .Select(e => (K: e.Props.SingleOrDefault(kv => kv.Key.EndsWith("prop:k", StringComparison.Ordinal)).Value, N: e.Props.SingleOrDefault(kv => kv.Key.EndsWith("prop:rank", StringComparison.Ordinal)).Value))
+        .Where(x => x.N is IntegerValue).Select(x => $"{((TextValue)x.K).S}={((IntegerValue)x.N).N}").Order(StringComparer.Ordinal));
+
+    /// <summary>#159 A3: the least solution of `ranked` (order 0 to 3, Limited maps 0 1 1 2, None maps to 0) after the changes, equal in the reference and in the engine under every cut.</summary>
+    [Theory]
+    [InlineData("chain", "+k0=0 +k1=0 +k2=3 +k0>k1 +k1>k2", "k0=3 k1=3 k2=3")]
+    [InlineData("chain through Limited", "+k0=0 +k1=0 +k2=3 +k0>k1:Limited +k1>k2", "k0=2 k1=3 k2=3")]
+    [InlineData("diamond", "+k0=0 +k1=0 +k2=1 +k3=3 +k0>k1 +k0>k2 +k1>k3:Limited +k2>k3:None", "k0=2 k1=2 k2=1 k3=3")]
+    [InlineData("cycle", "+k0=0 +k1=2 +k2=0 +k0>k1 +k1>k2 +k2>k0", "k0=2 k1=2 k2=2")]
+    [InlineData("removal of an edge on a cycle", "+k0=0 +k1=2 +k2=0 +k0>k1 +k1>k2 +k2>k0 -k0>k1", "k0=0 k1=2 k2=0")]
+    [InlineData("removal of the own value that holds a cycle up", "+k0=0 +k1=3 +k2=0 +k0>k1 +k1>k2 +k2>k0 -k1=3 +k1=1", "k0=1 k1=1 k2=1")]
+    [InlineData("change of a leaf value", "+k0=0 +k1=0 +k2=3 +k0>k1 +k1>k2 -k2=3 +k2=1", "k0=1 k1=1 k2=1")]
+    [InlineData("self-loop", "+k0=2 +k0>k0:Limited", "k0=2")]
+    [InlineData("a key only in edge rows is no output row", "+k0=0 +k0>k1 +k1>k2 +k2=3", "k0=3 k2=3")]
+    [InlineData("a node row that went", "+k0=0 +k1=3 +k0>k1 -k1=3", "k0=0")]
+    [InlineData("no value and a value outside the order", "+k0=null +k1=4", "")]
+    [InlineData("no value of its own, a value through an edge", "+k0=null +k1=4 +k2=1 +k0>k2 +k1>k2", "k0=1 k1=1 k2=1")]
+    [InlineData("an edge that went twice counts while its weight is positive", "+k0=0 +k1=3 +k0>k1 -k0>k1 -k0>k1 +k0>k1", "k0=0 k1=3")]
+    public void A_fixpoint_is_the_least_solution_of_its_equations(string name, string changes, string expected)
+    {
+        Assert.NotEmpty(name);
+        var w = Worlds.Fixpoint;
+        Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(FixpointRow)];
+        Assert.Equal(expected, Ranks(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log)));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+            Assert.True(Ranks(EngineRun.Final(w.Catalog, log, chunking)) is var engine && engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+    }
+
+    /// <summary>#159 A5 (Theorem 7.6): a change evaluates only the nodes that reach a changed node. Next to a chain k0 to k2 lies a chain of 100 items f0 to f99;
+    /// a change of the leaf k2 evaluates at most |Aff| + ht·P = 3 + 4·2 equations, so no node of the far chain, and a change of the leaf f99 evaluates all 100 of it.</summary>
+    [Theory]
+    [InlineData("k2", 3, 11)]
+    [InlineData("f99", 100, 100 + 4 * 99)]
+    public void A_change_evaluates_only_the_nodes_that_reach_it(string leaf, long least, long most)
+    {
+        var w = Worlds.Fixpoint;
+        using var engine = new Engine(w.Catalog, w.Catalog.Spaces.Keys.Single());
+        var far = Enumerable.Range(0, 100).SelectMany(i => i < 99 ? new[] { $"+f{i}=0", $"+f{i}>f{i + 1}" } : [$"+f{i}=1"]);
+        var seq = 0L;
+        foreach (var source in "+k0=0 +k1=0 +k2=1 +k0>k1 +k1>k2".Split(' ').Concat(far).Select(FixpointRow).GroupBy(r => r.Source)) EngineRun.Ingest(engine, [.. source], ++seq);
+        var op = engine.Master.Plan.Ops.OfType<FixpointOp>().Single(o => o.Name == "ranked_1");
+        var before = op.Evaluations;
+        EngineRun.Ingest(engine, [FixpointRow($"-{leaf}=1"), FixpointRow($"+{leaf}=3")], ++seq);
+        var work = op.Evaluations - before;
+        Assert.InRange(work, least, most);
+    }
+
+    /// <summary>#159 A6: on trees of three levels the fixpoint gives the roll-up the unrolled joins give, for every node, in the reference and in the engine.</summary>
+    [Theory]
+    [InlineData(0)] [InlineData(1)] [InlineData(2)] [InlineData(3)] [InlineData(4)] [InlineData(5)] [InlineData(6)] [InlineData(7)]
+    public void The_fixpoint_rolls_up_as_the_three_unrolled_levels(int seed)
+    {
+        var w = Worlds.RollupOfThreeLevels;
+        var log = w.Log(seed, 30);
+        static string Of(Sattle.Reference.SpaceFacts f, string type) => string.Join(" ", f.Graphs["master"].Entities.Values.Where(e => e.Type.EndsWith("entity:" + type, StringComparison.Ordinal))
+            .Select(e => $"{e.Props.Single(kv => kv.Key.EndsWith("prop:key", StringComparison.Ordinal)).Value}={e.Props.Single(kv => kv.Key.EndsWith("prop:rank", StringComparison.Ordinal)).Value}").Order(StringComparer.Ordinal));
+        foreach (var facts in new[] { Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log), EngineRun.Final(w.Catalog, log, Chunking.OneByOne) })
+        {
+            Assert.Equal(11, facts.Graphs["master"].Entities.Values.Count(e => e.Type.EndsWith("entity:Fixed", StringComparison.Ordinal)));
+            Assert.Equal(Of(facts, "Unrolled"), Of(facts, "Fixed"));
+        }
+    }
+
     /// <summary>Review: Identity.cs:165 with Exprs.cs:107. An identity is allocated for the rows a sink emits (Def. 5.9), not for rows a Filter rejected.</summary>
     [Fact]
     public void A_row_that_a_filter_rejected_mints_no_identity()

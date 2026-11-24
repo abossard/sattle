@@ -27,6 +27,7 @@ public static class Denotation
         TUnion u => new Relation(Names(u), Side(u, input("in0")).Plus(Side(u, input("in1")))),
         TDistinct d => new Relation(Names(d), ZSet.Of(input("in").Rows.Where(r => r.Weight > 0).Select(r => (r.Row, 1L)))),
         TJoin j => Join(j, input("left"), input("right")),
+        TFixpoint f => Fixpoint(f, input("in"), input("edges")),
         TWindow w => Window(w, input("in")),
         TGroup g => Group(g, g.Keys, g.Aggs, input("in"), null, pairs: p.WithPairs?.Contains(g.Name) == true),
         TRollup r => r.NoData ? RollupWithNoData(r, input("in")) : Group(r, WithWindow(r.Keys), r.Aggs, input("in"), r.PeriodNs, pairs: p.WithPairs?.Contains(r.Name) == true),
@@ -170,6 +171,31 @@ public static class Denotation
             let row = l.Row.AddRange(r.Row)
             select (row, l.Weight * r.Weight);
         return new Relation(names, ZSet.Of(pairs));
+    }
+
+    /// <summary>The rounds of Def. 7.3 (F) from no value until they are constant. A value is its position in the order, 0 for no value (absent or outside the
+    /// order). A node's own value counts while the rows of the node with that value weigh more than nothing, an edge while its rows (from, to and image list) do;
+    /// the output is a row per node with a node row of positive weight and a value.</summary>
+    static Relation Fixpoint(TFixpoint f, Relation nodes, Relation edges)
+    {
+        var order = f.Order.ToList();
+        int Pos(Value v) => order.IndexOf(v) + 1;
+        var own = nodes.Rows.Select(r => (Read: nodes.Reader(r.Row), r.Weight)).Where(r => r.Read(f.Key) is not NullValue)
+            .GroupBy(r => (Key: r.Read(f.Key), At: Pos(r.Read(f.Value))), r => r.Weight).Where(g => g.Sum() > 0).Select(g => g.Key).ToList();
+        int Map(Value by) => by is TextValue { S: var s } && f.Maps.ContainsKey(s) ? f.Maps.Keys.ToList().IndexOf(s) : -1;
+        var deps = edges.Rows.Select(r => (Read: edges.Reader(r.Row), r.Weight)).Where(r => r.Read(f.From) is not NullValue && r.Read(f.To) is not NullValue)
+            .GroupBy(r => (From: r.Read(f.From), To: r.Read(f.To), Map: f.By is null ? -1 : Map(r.Read(f.By))), r => r.Weight).Where(g => g.Sum() > 0).Select(g => g.Key).ToList();
+        var maps = f.Maps.Values.ToList();
+        var keys = own.Select(o => o.Key).Concat(deps.Select(e => e.From)).Distinct().ToList();
+        var z = keys.ToDictionary(k => k, _ => 0);
+        for (var changed = true; changed;)
+        {
+            var next = keys.ToDictionary(k => k, k => own.Where(o => o.Key.Equals(k)).Select(o => o.At)
+                .Concat(deps.Where(e => e.From.Equals(k)).Select(e => z.GetValueOrDefault(e.To) is var at && e.Map >= 0 ? maps[e.Map][at] : z.GetValueOrDefault(e.To))).DefaultIfEmpty(0).Max());
+            changed = keys.Any(k => next[k] != z[k]); z = next;
+        }
+        var rows = own.Select(o => o.Key).Distinct().Where(k => z[k] > 0).Select(k => (ImmutableArray.Create(k, f.Order[z[k] - 1]), 1L));
+        return new Relation(Names(f), ZSet.Of(rows));
     }
 
     // ---- per-key functions of the integrated input ----

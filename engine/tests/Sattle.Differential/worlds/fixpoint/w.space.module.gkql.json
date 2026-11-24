@@ -1,0 +1,17 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "w", "alias": "base", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {"name": "nodes", "adapter": "record", "rows": "base.N"},
+      {"name": "edges", "adapter": "record", "rows": "base.E"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"nodes": "nodes", "edges": "edges"}}
+    ]
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "module": "w.space",
+  "version": "1.0.0",
+  "imports": [
+    {
+      "module": "w",
+      "alias": "base",
+      "version": "1.0.0",
+      "digest": null
+    }
+  ],
+  "space": {
+    "name": "s",
+    "sources": [
+      {
+        "name": "own",
+        "adapter": "record",
+        "rows": "base.Own"
+      },
+      {
+        "name": "deps",
+        "adapter": "record",
+        "rows": "base.Dep"
+      }
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "base.ingest",
+        "master": true,
+        "inputs": {
+          "own": "own",
+          "deps": "deps"
+        }
+      }
+    ]
+  }
+}

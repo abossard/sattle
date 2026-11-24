@@ -273,6 +273,7 @@ public sealed class ProjectionChecker(Graph defs)
                     return new TGroup(name, op, inputs, new Schema(cols, closes ? R.Window : 0), keys, aggs, closes);
                 }
             case "Join": return TypeJoin(op, name, inputs, input("left"), input("right"));
+            case "Fixpoint": return R is null || input("edges") is not { } edges ? null : TypeFixpoint(op, name, inputs, R, edges);
             case "Values":
                 {
                     var rows = new List<Dictionary<string, TLit>>();
@@ -382,6 +383,33 @@ public sealed class ProjectionChecker(Graph defs)
             case TCall c: foreach (var a in c.Args) FieldNames(a, into); break;
             case TId i: foreach (var c in i.Comps) FieldNames(c.Value, into); break;
         }
+    }
+
+    /// <summary>A fixpoint (Def. 7.3 (F)) and what R7 asks of it: the order is a list of distinct values of the type of the value column, so its height is its length,
+    /// and every image list maps it into itself without going down, so each equation is monotone.</summary>
+    TOp? TypeFixpoint(string op, string name, Dictionary<string, Src> inputs, Schema nodes, Schema edges)
+    {
+        if (nodes.Window != 0 || edges.Window != 0 || nodes.Cols.Concat(edges.Cols).Any(c => !c.T.Role.IsData)) { Err("Fixpoint", op, "a fixpoint takes data rows"); return null; }
+        string key = d.Text(op, "key") ?? "", value = d.Text(op, "valueField") ?? "", from = d.Text(op, "from") ?? "", to = d.Text(op, "to") ?? "", by = d.Text(op, "by") ?? "";
+        if (nodes.Find(key) is not { } kc || nodes.Find(value) is not { } vc || edges.Find(from) is not { } fc || edges.Find(to) is not { } tc) { Err("Fixpoint", op, "a fixpoint reads the key and the value of its node rows and the from and to of its edge rows"); return null; }
+        if (kc.T.Ty.Tag is Tag.List or Tag.Null or Tag.Rel || fc.T.Ty != kc.T.Ty || tc.T.Ty != kc.T.Ty) { Err("Fixpoint", op, $"the from and to of an edge row hold keys of the type of the key, {kc.T.Ty}"); return null; }
+        var kind = vc.T.Ty.Tag switch { Tag.Text => Kind.Text, Tag.Integer => Kind.Integer, Tag.Decimal => Kind.Decimal, Tag.Boolean => Kind.Boolean, _ => (Kind?)null };
+        if (kind is null) { Err("Fixpoint", op, $"the value of a fixpoint is a Text, an Integer, a Decimal or a Boolean, not {vc.T.Ty}"); return null; }
+        var order = d.Prop(op, "order") is ListValue l ? l.Items : [];
+        if (order.FirstOrDefault(x => x.Kind != kind) is { } other) { Err("Fixpoint", op, $"the order lists values of the type of '{value}', {vc.T.Ty}, not {other.Kind}"); return null; }
+        if (order.Length == 0 || order.Distinct().Count() != order.Length) { Err("Fixpoint", op, "the order lists distinct values, least first"); return null; }
+        var maps = new Dictionary<string, int[]>(StringComparer.Ordinal);
+        foreach (var m in d.Children(op, "map"))
+        {
+            var when = d.Text(m, "when") ?? ""; var image = d.Prop(m, "image") is ListValue il ? il.Items : [];
+            var at = image.Select(x => order.IndexOf(x) + 1).ToArray();
+            if (image.Length != order.Length || at.Any(i => i == 0)) { Err("Fixpoint", op, $"the image list of '{when}' has one value of the order per value of the order"); return null; }
+            if (at.Zip(at.Skip(1)).Any(p => p.Second < p.First)) { Err("Fixpoint", op, $"the image list of '{when}' goes down: a map on the order keeps it, so the least solution exists"); return null; }
+            maps[when] = [0, .. at];
+        }
+        if (by.Length > 0 && edges.Find(by) is not { T.Ty.Tag: Tag.Text }) { Err("Fixpoint", op, $"the image lists are chosen by '{by}', a Text column of the edge rows"); return null; }
+        var outCols = new List<Col> { new(key, kc.T with { Req = true }), new(value, new FType(vc.T.Ty, true, Role.Data)) };
+        return new TFixpoint(name, op, inputs, new Schema(outCols), key, value, order, from, to, by.Length > 0 ? by : null, maps);
     }
 
     TOp? TypeTraverse(string op, string name, Dictionary<string, Src> inputs, Schema R, List<TPort> ports)

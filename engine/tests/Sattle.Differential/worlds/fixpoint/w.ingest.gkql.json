@@ -1,0 +1,37 @@
+{
+  "graph": "ingest",
+  "ontology": "w",
+  "history": 0,
+  "inputs": [{"name": "nodes", "rows": "w.N"}, {"name": "edges", "rows": "w.E"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "nodes", "verb": "rows", "source": "nodes"},
+    {"id": "edges", "verb": "rows", "source": "edges"},
+    {"id": "ranked", "verb": "fixpoint", "fixpoint": {"key": "k", "value": "rank", "order": [0, 1, 2, 3], "edges": {"from": "src", "to": "dst"},
+      "through": {"by": "impact", "maps": {"Limited": [0, 1, 1, 2], "None": [0, 0, 0, 0]}}}},
+    {"id": "own", "verb": "project", "columns": {"d": {"ref": "d"}, "s": {"ref": "s"}}},
+    {"id": "links", "verb": "project", "columns": {"ds": {"ref": "ds"}, "dd": {"ref": "dd"}}},
+    {"id": "worst", "verb": "fixpoint", "fixpoint": {"key": "d", "value": "s", "order": ["ok", "warn", "down"], "edges": {"from": "ds", "to": "dd"}}},
+    {"id": "named", "verb": "extend", "columns": {"name": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "d"}, {"lit": 1.0}]}, {"lit": "1"},
+      {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "d"}, {"lit": 2.5}]}, {"lit": "2.5"},
+      {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "d"}, {"lit": 3.0}]}, {"lit": "3"}, {"lit": "0"}]}]}]}}},
+    {"id": "loaded", "verb": "fixpoint", "fixpoint": {"key": "k", "value": "d", "order": [1.0, 2.5, 3.0], "edges": {"from": "src", "to": "dst"}}},
+    {"id": "ranks", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Rank", "id": {"identity": "rank", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "rank": {"ref": "rank"}}}]}, "rule": "observed"},
+    {"id": "worsts", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Worst", "id": {"identity": "worst", "args": [{"ref": "name"}]}, "props": {"name": {"ref": "name"}, "d": {"ref": "d"}, "state": {"ref": "s"}}}]}, "rule": "observed"},
+    {"id": "loads", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Load", "id": {"identity": "load", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "load": {"ref": "d"}}}]}, "rule": "observed"}
+  ],
+  "wires": [
+    {"from": "nodes", "to": "ranked"},
+    {"from": "edges", "to": "ranked", "port": "edges"},
+    {"from": "nodes", "to": "own"},
+    {"from": "edges", "to": "links"},
+    {"from": "own", "to": "worst"},
+    {"from": "links", "to": "worst", "port": "edges"},
+    {"from": "worst", "to": "named"},
+    {"from": "nodes", "to": "loaded"},
+    {"from": "edges", "to": "loaded", "port": "edges"},
+    {"from": "ranked", "to": "ranks"},
+    {"from": "named", "to": "worsts"},
+    {"from": "loaded", "to": "loads"}
+  ]
+}

@@ -124,6 +124,12 @@ public class CheckerTests
     static SourceFile[] Percentile(string args) => View(Items + ", " + """{"id": "p", "verb": "summarize", "by": {"k": {"ref": "k"}}, "aggregates": {"p": {"fn": "percentile", "args": [""" + args + "]}}}, " + Out,
         string.Join(", ", FromItems, Wire("fields", "p"), Wire("p", "out")));
 
+    /// <summary>A fixpoint of the items by key with the further fields `spec`, over the edges from an item's key to its group (`src`, `dst`, `by`), its wires `wires`.</summary>
+    static SourceFile[] Fixpoint(string spec, string? wires = null) => View(Items + ", "
+        + """{"id": "e", "verb": "project", "columns": {"src": {"ref": "k"}, "dst": {"ref": "g"}, "by": {"ref": "g"}, "at": {"ref": "i"}}}, {"id": "f", "verb": "fixpoint", "fixpoint": {"key": "k", """ + spec + "}}, " + Out,
+        wires ?? string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("e", "f", "edges"), Wire("f", "out")));
+    const string ByG = "\"edges\": {\"from\": \"src\", \"to\": \"dst\"}, \"through\": {\"by\": \"by\", \"maps\": {\"x\": ";
+
     static (Catalog Catalog, List<Diagnostic> Errors) Load(SourceFile[] files)
     {
         var catalog = new Catalog(Repo.Projections);
@@ -231,6 +237,16 @@ public class CheckerTests
         { "a threshold over a series with a time to live that does not say what no data gives", Quiet(", \"freshness\": \"2m\"", ""), "Threshold", "what no data gives" },
         { "a no-data state without a time to live upstream", Quiet("", Said), "Threshold", "needs telemetry with a time to live" },
         { "a telemetry roll-up keyed finer than the element it writes (premise B1)", View(Loaded(ByKey + ", \"g\": {\"ref\": \"g\"}"), LoadedWires, LoadType), "B1", "grouped by 'g'" },
+        { "a fixpoint whose image list goes down: the equation would not be monotone (R7)", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"c\", \"b\"]}}"), "Fixpoint", "the image list of 'x' goes down" },
+        { "a fixpoint whose image list leaves the order", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"b\", \"z\"]}}"), "Fixpoint", "the image list of 'x' has one value of the order per value of the order" },
+        { "a fixpoint whose image list is shorter than the order", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"c\"], " + ByG + "[\"a\", \"b\"]}}"), "Program", "the image list of 'x' has one value per value of the order" },
+        { "a fixpoint whose order repeats a value: its height is not its length", Fixpoint("\"value\": \"g\", \"order\": [\"a\", \"b\", \"a\"], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Fixpoint", "the order lists distinct values" },
+        { "a fixpoint whose order holds numbers for a text value (R3)", Fixpoint("\"value\": \"g\", \"order\": [1, 2], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Fixpoint", "the order lists values of the type of 'g', Text, not Integer" },
+        { "a fixpoint whose value is an element", Fixpoint("\"value\": \"i\", \"order\": [\"a\"], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Fixpoint", "the value of a fixpoint is a Text, an Integer, a Decimal or a Boolean" },
+        { "a fixpoint whose edges hold elements for a text key", Fixpoint("\"value\": \"g\", \"order\": [\"a\"], \"edges\": {\"from\": \"at\", \"to\": \"dst\"}"), "Fixpoint", "the from and to of an edge row hold keys of the type of the key, Text" },
+        { "a fixpoint whose order is empty", Fixpoint("\"value\": \"g\", \"order\": [], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}"), "Program", "the order lists the values, least first" },
+        { "a fixpoint without its edge rows", Fixpoint("\"value\": \"g\", \"order\": [\"a\"], \"edges\": {\"from\": \"src\", \"to\": \"dst\"}", string.Join(", ", FromItems, Wire("fields", "e"), Wire("fields", "f"), Wire("f", "out"))),
+            "Program", "a fixpoint has one wire to in, the node rows, and one to edges, the edge rows" },
         { "a percentile with p above 100", Percentile("""{"lit": 3}, {"lit": 101}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
         { "a percentile with p below 0", Percentile("""{"lit": 3}, {"lit": -0.5}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },
         { "a percentile whose p is no literal", Percentile("""{"lit": 3}, {"ref": "k"}"""), "Program", "the p of a percentile is a literal number from 0 to 100" },

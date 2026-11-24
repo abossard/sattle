@@ -14,7 +14,10 @@ public class PaletteTests
     {
         var p = Built;
         var ops = p["operators"]!.AsArray();
-        Assert.Equal(18, ops.Count);
+        Assert.Equal(19, ops.Count);
+        var fixpoint = ops.First(o => o!["kind"]!.GetValue<string>() == "Fixpoint")!;
+        Assert.Equal(["in", "edges", "out"], fixpoint["ports"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
+        Assert.True(fixpoint["supported"]!.GetValue<bool>());
         var window = ops.First(o => o!["kind"]!.GetValue<string>() == "Window")!;
         Assert.Equal(["in", "out"], window["ports"]!.AsArray().Select(x => x!["name"]!.GetValue<string>()));
         Assert.Equal(["revise"], window["params"]!.AsArray().First(x => x!["name"]!.GetValue<string>() == "late")!["values"]!.AsArray().Select(x => x!.GetValue<string>()));

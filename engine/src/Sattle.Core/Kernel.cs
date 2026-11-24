@@ -85,7 +85,7 @@ public static class KernelTable
         T("Match : Operator |"), T("Filter : Operator |"), T("Map : Operator |"), T("Join : Operator |"),
         T("Union : Operator |"), T("Distinct : Operator |"), T("Group : Operator |"),
         T("Traverse : Operator | direction:T minDepth:I maxDepth:I start:T target:T"), T("Window : Operator | timestampField:T width:I hop:I? late:T"), T("Retain : Operator | timestampField:T age:I"),
-        T("Values : Operator |"),
+        T("Values : Operator |"), T("Fixpoint : Operator | key:T valueField:T order:Any from:T to:T by:T?"), T("FixpointMap | when:T image:Any"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
         T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
         T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B? evidenceWindow:B?"),
@@ -202,7 +202,7 @@ public static class KernelTable
         S("Match", "node", "PatternNode", "+"), S("Match", "edge", "PatternEdge", "*"),
         S("Filter", "predicate", "Expr", "1"), S("Map", "assign", "Assign", "+", true), S("Join", "on", "Expr", "1"),
         S("Group", "key", "Assign", "+"), S("Group", "agg", "Aggregate", "*"),
-        S("Values", "row", "RowValue", "+", true),
+        S("Values", "row", "RowValue", "+", true), S("Fixpoint", "map", "FixpointMap", "*"),
         S("EmitEntity", "id", "Expr", "1"), S("EmitEntity", "set", "SetProperty", "*"),
         S("EmitRelationship", "source", "Expr", "1"), S("EmitRelationship", "target", "Expr", "1"), S("EmitRelationship", "set", "SetProperty", "*"),
         S("Link", "left", "IdOf", "1"), S("Link", "right", "IdOf", "1"), S("Link", "confidence", "Expr", "1"),
@@ -225,6 +225,7 @@ public static class KernelTable
         "EmitEntity" or "EmitRelationship" or "Link" => [("in", "in", "rows")],
         "Series" => [("graph", "in", "graph"), ("in", "in", "rows"), ("out", "out", "rows")],
         "Union" => [("in0", "in", "rows"), ("in1", "in", "rows"), ("out", "out", "rows")],
+        "Fixpoint" => [("in", "in", "rows"), ("edges", "in", "rows"), ("out", "out", "rows")],
         _ => [],
     };
 
@@ -346,5 +347,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:9cd1e4184a7859ea0fb5e568803bb1028c51380a7c38dc001d6ff12a87e134e6";
+    public const string CompiledDigest = "sha256:0923a0d6bcc9927b244da6d2efd6b0f03ed52fb9424e9e4c5428ebfe36e76b03";
 }

@@ -7,9 +7,9 @@ namespace Sattle.Runtime;
 public sealed class RuntimeFaults
 {
     public long DivisionByZero;
-    /// <summary>Rows without a value in a column an operator requires (the time of a `retain`): they are dropped.</summary>
+    /// <summary>Rows without a value in a column an operator requires (the time of a `retain`, the key of a fixpoint's node row, the from or to of its edge row): they are dropped.</summary>
     public long MissingRequired;
-    /// <summary>Rows that give a Threshold parameters that are no state machine (`above` not greater than `below`, a run of less than one window): they are dropped.</summary>
+    /// <summary>Rows that give an operator a value it cannot use: Threshold parameters that are no state machine (`above` not greater than `below`, a run of less than one window), dropped; a fixpoint value outside its order, taken as no value.</summary>
     public long InvalidParameter;
     public long Overflow;
 }

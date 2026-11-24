@@ -22,11 +22,11 @@ public sealed record Parameter(string Name, string Kind, JsonElement? Default);
 public sealed record Wire(string From, string To, string Port = "in");
 public sealed record On(string Left, string Right);
 /// <summary>A verb. Which fields it uses depends on `Verb`: graph-match (GraphId, Pattern), where (Condition), project and extend (Columns), union,
-/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (GraphId, Traverse), link (Link).</summary>
+/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (GraphId, Traverse), fixpoint (Fixpoint), link (Link).</summary>
 public sealed record VerbNode(string Id, string Verb, [property: JsonPropertyName("graph")] string? GraphId, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
     Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
     string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null,
-    RetainSpec? Retain = null, TraverseSpec? Traverse = null, LinkSpec? Link = null);
+    RetainSpec? Retain = null, TraverseSpec? Traverse = null, LinkSpec? Link = null, FixpointSpec? Fixpoint = null);
 public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Dictionary<string, JsonElement>> Rows, string? Key = null);
 /// <summary>Windows of the rows' own time: `period` wide, one every `hop` (the period when not given), so a row is in period / hop windows.</summary>
 public sealed record WindowSpec(string Time, string Period, string? Hop = null);
@@ -45,6 +45,13 @@ public sealed record RetainSpec(string Time, string Age);
 /// <summary>From the element in column `from`, every element reached over `min` to `max` edges of type `edge` (and its sub-types) in `direction` (out, in,
 /// either), one row each, in the new column `to`.</summary>
 public sealed record TraverseSpec(string Edge, string From, string To, string Direction = "out", long Min = 1, long Max = 1);
+/// <summary>The least value of every node: the greatest in `order` (least first) of its own values (column `value` of the rows on `in`, keyed by `key`) and of
+/// the values of the nodes it depends on (the `to` of each row on `edges` whose `from` is the node), each sent through the image list of its edge's `by` value
+/// when `through` lists one. Cycles are allowed. One row per node with a row on `in` and a value.</summary>
+public sealed record FixpointSpec(string Key, string Value, List<JsonElement> Order, FixpointEdges Edges, FixpointThrough? Through = null);
+public sealed record FixpointEdges(string From, string To);
+/// <summary>`Maps`: per value of the edge column `by`, the image of each value of the order, in the order's positions.</summary>
+public sealed record FixpointThrough(string By, Dictionary<string, List<JsonElement>> Maps);
 /// <summary>The two identities of a row name the same element, as the equivalence policy `policy` allows, with this confidence.</summary>
 public sealed record LinkSpec(string Policy, JsonElement Left, JsonElement Right, decimal Confidence);
 /// <summary>A drawn graph: the pattern of a graph-match, or the target of a sink with placeholders (expressions over the rows) for ids and properties.</summary>
@@ -236,7 +243,7 @@ public static class Lowering
             while (order.Count < p.Verbs.Count)
             {
                 var next = p.Verbs.FirstOrDefault(v => !done.Contains(v.Id) && p.Wires.Where(x => x.To == v.Id).All(x => done.Contains(x.From)))
-                    ?? throw new Refused(p.GraphId, "the wires make a loop: a program graph has none, recursion is a bounded path on a pattern edge", null);
+                    ?? throw new Refused(p.GraphId, "the wires make a loop: a program graph has none, recursion is a fixpoint verb", null);
                 order.Add(next); done.Add(next.Id);
             }
             return order;
@@ -263,6 +270,7 @@ public static class Lowering
                 "distinct" => Distinct(v, One()),
                 "retain" => Retain(v, One()),
                 "traverse" => Traverse(v, One()),
+                "fixpoint" => Fixpoint(v, ins),
                 "link" => Link(v, One()),
                 "nodes" => Nodes(v, One()),
                 "edges" => Edges(v, One()),
@@ -355,6 +363,28 @@ public static class Lowering
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
             return new Rows(P(op, "out"), [.. r.Cols, t.To], new(r.Types) { [t.To] = start }, r.Telemetry);
+        }
+
+        Rows Fixpoint(VerbNode v, List<(string Port, Rows Rows)> ins)
+        {
+            if (v.Fixpoint is not { } f) throw new Refused(v.Id, "fixpoint names the key and the value of a node row, the order of the values, and the from and to of an edge row");
+            if (ins.Count != 2 || ins.FirstOrDefault(i => i.Port == "in").Rows is not { } nodes || ins.FirstOrDefault(i => i.Port == "edges").Rows is not { } edges)
+                throw new Refused(v.Id, "a fixpoint has one wire to in, the node rows, and one to edges, the edge rows");
+            foreach (var c in new[] { f.Key, f.Value }) if (!nodes.Cols.Contains(c)) throw new Refused(v.Id, $"the node rows have no column '{c}'");
+            if (f.Key == f.Value) throw new Refused(v.Id, "the key and the value of a node row are two columns");
+            foreach (var c in new[] { f.Edges.From, f.Edges.To, f.Through?.By }) if (c is not null && !edges.Cols.Contains(c)) throw new Refused(v.Id, $"the edge rows have no column '{c}'");
+            if (f.Order.Count == 0) throw new Refused(v.Id, "the order lists the values, least first");
+            List<(string, Value)> props = [("key", T(f.Key)), ("valueField", T(f.Value)), ("order", Value.List(f.Order.Select(Literal))), ("from", T(f.Edges.From)), ("to", T(f.Edges.To))];
+            if (f.Through is { By: var by }) props.Add(("by", T(by)));
+            var op = Op("Fixpoint", v.Id, [.. props]);
+            var n = 0;
+            foreach (var (when, image) in f.Through?.Maps ?? [])
+            {
+                if (image.Count != f.Order.Count) throw new Refused(v.Id, $"the image list of '{when}' has one value per value of the order");
+                B.Contain(op, "map", $"m{n++}", "FixpointMap", null, ("when", T(when)), ("image", Value.List(image.Select(Literal))));
+            }
+            B.Edge(nodes.Port, "wire", P(op, "in")); B.Edge(edges.Port, "wire", P(op, "edges"));
+            return new Rows(P(op, "out"), [f.Key, f.Value], new(nodes.Types.Where(t => t.Key == f.Key), StringComparer.Ordinal));
         }
 
         /// <summary>A link sink: the identities of a row name the same element, as an equivalence policy of the program's ontology allows.</summary>

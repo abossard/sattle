@@ -1,0 +1,612 @@
+{
+ "graph": "ingest",
+ "ontology": "w",
+ "history": 0,
+ "inputs": [
+  {
+   "name": "own",
+   "rows": "w.Own"
+  },
+  {
+   "name": "deps",
+   "rows": "w.Dep"
+  }
+ ],
+ "parameters": [],
+ "verbs": [
+  {
+   "id": "own",
+   "verb": "rows",
+   "source": "own"
+  },
+  {
+   "id": "estate",
+   "verb": "values",
+   "values": {
+    "columns": {
+     "key": "Text",
+     "rank": "Integer"
+    },
+    "rows": [
+     {
+      "key": "a0",
+      "rank": 0
+     },
+     {
+      "key": "b0",
+      "rank": 0
+     },
+     {
+      "key": "b1",
+      "rank": 0
+     },
+     {
+      "key": "c0",
+      "rank": 0
+     },
+     {
+      "key": "c1",
+      "rank": 0
+     },
+     {
+      "key": "c2",
+      "rank": 0
+     },
+     {
+      "key": "c3",
+      "rank": 0
+     },
+     {
+      "key": "d0",
+      "rank": 0
+     },
+     {
+      "key": "d1",
+      "rank": 0
+     },
+     {
+      "key": "d2",
+      "rank": 0
+     },
+     {
+      "key": "d3",
+      "rank": 0
+     }
+    ]
+   }
+  },
+  {
+   "id": "ownStateInputs",
+   "verb": "union"
+  },
+  {
+   "id": "ownState",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "childKeys",
+   "verb": "rows",
+   "source": "deps"
+  },
+  {
+   "id": "childrenAt1",
+   "verb": "join",
+   "kind": "inner",
+   "on": [
+    {
+     "left": "childKey",
+     "right": "key"
+    }
+   ]
+  },
+  {
+   "id": "impactAt1",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "parentKey"
+    },
+    "rank": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "impact"
+        },
+        {
+         "lit": "Limited"
+        }
+       ]
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "rank"
+          },
+          {
+           "lit": 3
+          }
+         ]
+        },
+        {
+         "lit": 2
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "rank"
+            },
+            {
+             "lit": 2
+            }
+           ]
+          },
+          {
+           "lit": 1
+          },
+          {
+           "ref": "rank"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rollupAt1Inputs",
+   "verb": "union"
+  },
+  {
+   "id": "rollupAt1",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "childrenAt2",
+   "verb": "join",
+   "kind": "inner",
+   "on": [
+    {
+     "left": "childKey",
+     "right": "key"
+    }
+   ]
+  },
+  {
+   "id": "impactAt2",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "parentKey"
+    },
+    "rank": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "impact"
+        },
+        {
+         "lit": "Limited"
+        }
+       ]
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "rank"
+          },
+          {
+           "lit": 3
+          }
+         ]
+        },
+        {
+         "lit": 2
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "rank"
+            },
+            {
+             "lit": 2
+            }
+           ]
+          },
+          {
+           "lit": 1
+          },
+          {
+           "ref": "rank"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rollupAt2Inputs",
+   "verb": "union"
+  },
+  {
+   "id": "rollupAt2",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "childrenAt3",
+   "verb": "join",
+   "kind": "inner",
+   "on": [
+    {
+     "left": "childKey",
+     "right": "key"
+    }
+   ]
+  },
+  {
+   "id": "impactAt3",
+   "verb": "project",
+   "columns": {
+    "key": {
+     "ref": "parentKey"
+    },
+    "rank": {
+     "fn": "iff",
+     "args": [
+      {
+       "fn": "==",
+       "args": [
+        {
+         "ref": "impact"
+        },
+        {
+         "lit": "Limited"
+        }
+       ]
+      },
+      {
+       "fn": "iff",
+       "args": [
+        {
+         "fn": "==",
+         "args": [
+          {
+           "ref": "rank"
+          },
+          {
+           "lit": 3
+          }
+         ]
+        },
+        {
+         "lit": 2
+        },
+        {
+         "fn": "iff",
+         "args": [
+          {
+           "fn": "==",
+           "args": [
+            {
+             "ref": "rank"
+            },
+            {
+             "lit": 2
+            }
+           ]
+          },
+          {
+           "lit": 1
+          },
+          {
+           "ref": "rank"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rollupAt3Inputs",
+   "verb": "union"
+  },
+  {
+   "id": "rollupAt3",
+   "verb": "summarize",
+   "by": {
+    "key": {
+     "ref": "key"
+    }
+   },
+   "aggregates": {
+    "rank": {
+     "fn": "max",
+     "args": [
+      {
+       "ref": "rank"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "rollup",
+   "verb": "fixpoint",
+   "fixpoint": {
+    "key": "key",
+    "value": "rank",
+    "order": [
+     0,
+     1,
+     2,
+     3
+    ],
+    "edges": {
+     "from": "parentKey",
+     "to": "childKey"
+    },
+    "through": {
+     "by": "impact",
+     "maps": {
+      "Limited": [
+       0,
+       1,
+       1,
+       2
+      ]
+     }
+    }
+   }
+  },
+  {
+   "id": "unrolled",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Unrolled",
+      "id": {
+       "identity": "unrolled",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "rank": {
+        "ref": "rank"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  },
+  {
+   "id": "fixed",
+   "verb": "nodes",
+   "target": {
+    "nodes": [
+     {
+      "var": "n",
+      "label": "Fixed",
+      "id": {
+       "identity": "fixed",
+       "args": [
+        {
+         "ref": "key"
+        }
+       ]
+      },
+      "props": {
+       "key": {
+        "ref": "key"
+       },
+       "rank": {
+        "ref": "rank"
+       }
+      }
+     }
+    ]
+   },
+   "rule": "observed"
+  }
+ ],
+ "wires": [
+  {
+   "from": "own",
+   "to": "ownStateInputs"
+  },
+  {
+   "from": "estate",
+   "to": "ownStateInputs"
+  },
+  {
+   "from": "ownStateInputs",
+   "to": "ownState"
+  },
+  {
+   "from": "childKeys",
+   "to": "childrenAt1",
+   "port": "left"
+  },
+  {
+   "from": "ownState",
+   "to": "childrenAt1",
+   "port": "right"
+  },
+  {
+   "from": "childrenAt1",
+   "to": "impactAt1"
+  },
+  {
+   "from": "ownState",
+   "to": "rollupAt1Inputs"
+  },
+  {
+   "from": "impactAt1",
+   "to": "rollupAt1Inputs"
+  },
+  {
+   "from": "rollupAt1Inputs",
+   "to": "rollupAt1"
+  },
+  {
+   "from": "childKeys",
+   "to": "childrenAt2",
+   "port": "left"
+  },
+  {
+   "from": "rollupAt1",
+   "to": "childrenAt2",
+   "port": "right"
+  },
+  {
+   "from": "childrenAt2",
+   "to": "impactAt2"
+  },
+  {
+   "from": "ownState",
+   "to": "rollupAt2Inputs"
+  },
+  {
+   "from": "impactAt2",
+   "to": "rollupAt2Inputs"
+  },
+  {
+   "from": "rollupAt2Inputs",
+   "to": "rollupAt2"
+  },
+  {
+   "from": "childKeys",
+   "to": "childrenAt3",
+   "port": "left"
+  },
+  {
+   "from": "rollupAt2",
+   "to": "childrenAt3",
+   "port": "right"
+  },
+  {
+   "from": "childrenAt3",
+   "to": "impactAt3"
+  },
+  {
+   "from": "ownState",
+   "to": "rollupAt3Inputs"
+  },
+  {
+   "from": "impactAt3",
+   "to": "rollupAt3Inputs"
+  },
+  {
+   "from": "rollupAt3Inputs",
+   "to": "rollupAt3"
+  },
+  {
+   "from": "ownState",
+   "to": "rollup"
+  },
+  {
+   "from": "childKeys",
+   "to": "rollup",
+   "port": "edges"
+  },
+  {
+   "from": "rollupAt3",
+   "to": "unrolled"
+  },
+  {
+   "from": "rollup",
+   "to": "fixed"
+  }
+ ]
+}

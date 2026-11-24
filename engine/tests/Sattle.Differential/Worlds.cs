@@ -54,6 +54,30 @@ public static class Worlds
     /// <summary>#159: percentiles of nearest rank of the integers `n` (p 0, 50, 95, 100) and the decimals `d` (p 50, 99.9) of a group.</summary>
     public static readonly World Percentile = Aggregate("percentile") with { Witnesses = ["p95=n:", "high=n:"] };
 
+    /// <summary>#159: two fixpoints over the same rows. `ranked`: the worst rank (0 to 3) of an item k0 to k4 and of what it depends on, an edge marked Limited
+    /// lowering a rank of 2 or 3 by one and an edge marked None passing 0; a rank of 4 is outside the order, a missing one is no value. `worst`: the worst state
+    /// (ok, warn, down) of a decimal key, where 2.5 and 2.50 are one key and gone is outside the order. `loaded`: the greatest decimal (1, 2.5, 3) of an item and
+    /// what it depends on, 2.50 being 2.5 and 0 outside the order. Edges make chains, diamonds, cycles and self-loops.</summary>
+    static readonly SourceSpec FixpointEdges = new("edges", (r, _) => Row(("src", Text(r, "k", 5)), ("dst", Text(r, "k", 5)),
+        ("impact", Pick(r, Value.Text("Limited"), Value.Text("None"), Value.Text("Other"), Value.Null)), ("ds", Decimals(r)), ("dd", Decimals(r))));
+    static Value Decimals(Random r) => Pick(r, Value.Decimal(1m), Value.Decimal(2.5m), Value.Decimal(2.50m), Value.Decimal(3m), Value.Decimal(0m));
+    public static readonly World Fixpoint = Rows("fixpoint", "Fixpoint", 0,
+    [
+        new("nodes", (r, _) => Row(("k", Text(r, "k", 5)), ("rank", Pick(r, Value.Integer(0), Value.Integer(1), Value.Integer(2), Value.Integer(3), Value.Integer(4), Value.Null)),
+            ("d", Decimals(r)), ("s", Pick(r, Value.Text("ok"), Value.Text("warn"), Value.Text("down"), Value.Text("gone"), Value.Null)))),
+        FixpointEdges, FixpointEdges,
+    ]) with { Witnesses = ["Rank", "Worst", "Load"] };
+
+    /// <summary>#159 A6: the roll-up of a dependency tree of three levels (a0, b0 b1, c0 to c3, d0 to d3; edges from one level to the next, a node with
+    /// several parents) written twice: unrolled to three levels by joins and summaries, as the mirror of the lab writes it, and as one fixpoint. Every node
+    /// has a state, 0 unless a row of `own` says more; an edge marked Limited lowers a rank of 2 or 3 by one. `Unrolled` and `Fixed` hold the two results.</summary>
+    static readonly Value[][] Levels = [[Value.Text("a0")], [Value.Text("b0"), Value.Text("b1")], [.. Enumerable.Range(0, 4).Select(i => Value.Text("c" + i))], [.. Enumerable.Range(0, 4).Select(i => Value.Text("d" + i))]];
+    public static readonly World RollupOfThreeLevels = Rows("rollup of three levels", "Join, Map, Union, Group, Fixpoint", 0,
+    [
+        new("own", (r, _) => Row(("key", Pick(r, [.. Levels.SelectMany(l => l)])), ("rank", Value.Integer(r.Next(4))))),
+        new("deps", (r, _) => { var l = r.Next(3); return Row(("parentKey", Pick(r, Levels[l])), ("childKey", Pick(r, Levels[l + 1])), ("impact", Pick(r, Value.Text("Limited"), Value.Text("Full")))); }),
+    ]) with { Witnesses = ["Unrolled", "Fixed"] };
+
     /// <summary>Rows in windows of their own time. A late row revises its window.</summary>
     static readonly World Windowed = Rows("window late revise", "Window, Group over windows", 0.25);
     /// <summary>D3 (#101): sliding windows of 3 minutes that move by 60 s; a row counts in the three windows that hold it.</summary>
@@ -211,6 +235,8 @@ public static class Worlds
         Aggregate("sum"),
         Aggregate("min and max") with { Witnesses = ["hi=n:", "top=n:"] },
         Percentile,
+        Fixpoint,
+        RollupOfThreeLevels,
         Aggregate("mean"),
         Aggregate("last of one row") with { Witnesses = ["v=t:k", "prop:x=n:"] },
         Aggregate("first of one row") with { Witnesses = ["v=t:k", "prop:x=n:"] },

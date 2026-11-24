@@ -1,0 +1,87 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {
+      "name": "Unrolled",
+      "properties": [
+        {
+          "name": "key",
+          "type": "Text"
+        },
+        {
+          "name": "rank",
+          "type": "Integer"
+        }
+      ]
+    },
+    {
+      "name": "Fixed",
+      "properties": [
+        {
+          "name": "key",
+          "type": "Text"
+        },
+        {
+          "name": "rank",
+          "type": "Integer"
+        }
+      ]
+    }
+  ],
+  "identities": [
+    {
+      "name": "unrolled",
+      "type": "Unrolled",
+      "components": [
+        {
+          "name": "key",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "fixed",
+      "type": "Fixed",
+      "components": [
+        {
+          "name": "key",
+          "type": "Text"
+        }
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "name": "Own",
+      "fields": [
+        {
+          "name": "key",
+          "type": "Text"
+        },
+        {
+          "name": "rank",
+          "type": "Integer"
+        }
+      ]
+    },
+    {
+      "name": "Dep",
+      "fields": [
+        {
+          "name": "parentKey",
+          "type": "Text"
+        },
+        {
+          "name": "childKey",
+          "type": "Text"
+        },
+        {
+          "name": "impact",
+          "type": "Text"
+        }
+      ]
+    }
+  ]
+}

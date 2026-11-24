@@ -20,6 +20,7 @@ public static class Support
         ["Values"] = "constant rows, emitted once when the graph first evaluates",
         ["Join"] = "bilinear delta over per-side hash indexes on the equality keys",
         ["Traverse"] = "per start element the depth each element was first reached at; an added edge lowers depths from its far end, a lost edge walks the starts that visited its ends again, an edited entity touches the starts that visited it; emits the difference",
+        ["Fixpoint"] = "per node the net weight of its own values and edges; a change evaluates only the nodes that reach a changed node, each from no value up to its least value",
         ["Union"] = "linear: concatenation of both inputs' signed rows",
         ["Distinct"] = "per-row multiplicity counts, set semantics over signed rows",
         ["EmitEntity"] = "support-counted element layer",

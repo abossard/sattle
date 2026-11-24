@@ -1,0 +1,133 @@
+{
+  "module": "w",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {
+      "name": "Rank",
+      "properties": [
+        {
+          "name": "k",
+          "type": "Text"
+        },
+        {
+          "name": "rank",
+          "type": "Integer"
+        }
+      ]
+    },
+    {
+      "name": "Worst",
+      "properties": [
+        {
+          "name": "name",
+          "type": "Text"
+        },
+        {
+          "name": "d",
+          "type": "Decimal"
+        },
+        {
+          "name": "state",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "Load",
+      "properties": [
+        {
+          "name": "k",
+          "type": "Text"
+        },
+        {
+          "name": "load",
+          "type": "Decimal"
+        }
+      ]
+    }
+  ],
+  "identities": [
+    {
+      "name": "rank",
+      "type": "Rank",
+      "components": [
+        {
+          "name": "k",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "worst",
+      "type": "Worst",
+      "components": [
+        {
+          "name": "name",
+          "type": "Text"
+        }
+      ]
+    },
+    {
+      "name": "load",
+      "type": "Load",
+      "components": [
+        {
+          "name": "k",
+          "type": "Text"
+        }
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "name": "N",
+      "fields": [
+        {
+          "name": "k",
+          "type": "Text"
+        },
+        {
+          "name": "rank",
+          "type": "Integer",
+          "optional": true
+        },
+        {
+          "name": "d",
+          "type": "Decimal"
+        },
+        {
+          "name": "s",
+          "type": "Text",
+          "optional": true
+        }
+      ]
+    },
+    {
+      "name": "E",
+      "fields": [
+        {
+          "name": "src",
+          "type": "Text"
+        },
+        {
+          "name": "dst",
+          "type": "Text"
+        },
+        {
+          "name": "impact",
+          "type": "Text",
+          "optional": true
+        },
+        {
+          "name": "ds",
+          "type": "Decimal"
+        },
+        {
+          "name": "dd",
+          "type": "Decimal"
+        }
+      ]
+    }
+  ]
+}

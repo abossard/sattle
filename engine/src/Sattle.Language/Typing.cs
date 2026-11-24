@@ -90,6 +90,10 @@ public sealed record TMatch(string Name, string Id, IReadOnlyDictionary<string, 
 public sealed record TUnion(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Union", Inputs, Out);
 public sealed record TJoin(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<(TExpr Left, TExpr Right)> Keys) : TOp(Name, Id, "Join", Inputs, Out);
 public sealed record TTraverse(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string GraphPort, string RelTypeId, string Direction, long Min, long Max, string Start, string Target, IReadOnlyList<TRead> Reads) : TOp(Name, Id, "Traverse", Inputs, Out);
+/// <summary>The least solution of the node equations (Def. 7.3 (F)). `Order`: the values, least first; position 0 is no value (⊥) and position `i` is `Order[i - 1]`.
+/// `Maps`: per value of the edge column `By`, the image of each position, `Image[i]` for position `i` (and 0 for 0), non-decreasing.</summary>
+public sealed record TFixpoint(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, string Key, string Value, IReadOnlyList<Value> Order,
+    string From, string To, string? By, IReadOnlyDictionary<string, int[]> Maps) : TOp(Name, Id, "Fixpoint", Inputs, Out);
 public sealed record TValues(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, IReadOnlyList<Value[]> Rows) : TOp(Name, Id, "Values", Inputs, Out);
 public sealed record TDistinct(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out) : TOp(Name, Id, "Distinct", Inputs, Out);
 public sealed record TFilter(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Pred) : TOp(Name, Id, "Filter", Inputs, Out);
