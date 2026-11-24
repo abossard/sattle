@@ -11,6 +11,8 @@
 
 A listener asks a question in each scene. The guide answers with a record or measurement, then explains the idea behind it. The term buttons let you hold a diagram on screen. Open **Read this part of the narration** to find the dialogue and its edit link.
 
+The Canvas developer guide includes two small local exercises. Follow a request, find what the ontology missed and correct the receiver in a draft. Then change a kiln’s health policy and trace a batch to the receipt that proves it finished. [Submission and coverage](../../engine/standard/README.md#try-it-in-canvas) · [Kiln and batch completion](../../engine/standard/README.md#replay-the-kiln-health-policy)
+
 ## Start locally
 
 Open the [walkthrough](index.html) directly from disk, or serve this checkout from the repository root.

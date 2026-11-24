@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import ipaddress
 import json
 
-from mirror_program import ROW
+from mirror_program import ONTOLOGY_ROW, ROW
 
 
 def compact(value):
@@ -24,6 +24,10 @@ def normalize(envelope):
         values["configuration"] = compact(raw["configuration"])
         values["name"] = raw.get("name", raw["key"])
         yield record(at, "CloudHealthRow", [raw["kind"], raw["key"]], values)
+    elif source == "workload-ontology":
+        values = {f["name"]: raw.get(f["name"], "") for f in ONTOLOGY_ROW}
+        values["configuration"] = compact(raw["configuration"])
+        yield record(at, "WorkloadOntologyRow", [raw["kind"], raw["key"]], values)
     elif source == "app-dependencies":
         target = raw.get("targetResourceId", "")
         scope, role = raw["scopeId"], raw["sourceComponent"]

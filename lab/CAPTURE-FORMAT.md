@@ -29,6 +29,12 @@ For adapter authors. A capture is `captures/<UTC timestamp>/<source dir>/*.ndjso
 | `vnet-flow-log` | `vnet-flow-logs/records.ndjson` | one element of `records` of a `PT1H.json` blob | Network Watcher VNet flow log, see the section below. `meta.blob` is the blob path. | hash of the record |
 | `eventhub:<hub>` | `eventhub/<hub>.ndjson` | one Event Hubs event | `payload` is the event body parsed as JSON. See below. | `eventhub:<hub>/<partition>/<sequenceNumber>` |
 
+## Keyed records for local replays
+
+The submission and kiln examples feed the engine through the `record` adapter. Their source names use `records:<RowType>`. A payload supplies a nonempty `key` and a `values` object matching the row contract. A later record with the same source and payload key can correct the row. A payload with that key and `"deleted": true` withdraws it. A row type that declares the Text field `$recordKey` receives the payload key in that column.
+
+In the coverage example, `requests/submit-42/receiver` is the receipt key, `submit-42` is the item, and `trace/42/ingress` cites the original trace. Several receipts can describe the same item. [Example envelopes](../engine/examples/coverage/capture/evidence.ndjson) · [Coverage replay](../engine/standard/README.md#replay-coverage-with-an-empty-policy)
+
 ## Live stream (Event Hubs)
 Run `capture/eh-forward.mjs` (needs `kubectl`, `hubble`, `az` logged in; Entra only). It runs unattended and writes to the hubs below.
 

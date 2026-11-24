@@ -306,7 +306,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>A fresh engine for a candidate catalog, given every input so far, or as many as hold `rowLimit` rows. Used by a definition commit and by a preview.</summary>
     (Engine Engine, long Rows, bool Complete) Reactivate(Catalog candidate, string space, EngineOptions engineOptions, long rowLimit = long.MaxValue)
     {
-        var fresh = new Engine(candidate, space, engineOptions, interner);
+        var fresh = new Engine(candidate, space, engineOptions, interner) { ConfigurationRevision = CatalogRevision + 1 };
         try
         {
             long rows = 0;
@@ -462,8 +462,8 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
 
     static string BuildId => typeof(SpaceHost).Assembly.ManifestModule.ModuleVersionId.ToString();
 
-    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. 7: a join keeps a key part that is a column once, with 4-byte codes. 8: a group stores integers and codes as themselves, and text and decimal keys as 4-byte codes. 9: a served revision keeps its commit time. 10: a Series keeps no windows (it reads them from the store), and the store keeps a series as its starts and values, without input ids. 11: a sink keeps the kinds of its elements and the touched ones as bitmaps. 12: lineage rows keep handles in 4 bytes, -1 for absent, with no absent bits. 13: a sink keeps the endpoints of a relationship only where its graph does not hold it. 14: a sink keeps an element whose one row is a create its graph holds as its sink and weight. 15: the joins of a graph keep an input they share as one table, with one table of decimal codes. 16: a traverse stores a column of codes in 4 bytes, -1 when absent. 17: a column grows in segments of 4,096 entries. 18: a column of 8 bytes and the weight of a row take 4 bytes per entry until a value needs 8. 19: the rows of an `arg_max` or `arg_min` are reached through their key, and a table with no key columns has no index. 20: a key row keeps no emitted flag and no count accumulator. 21: a row for an element of `ones` that leaves its graph unchanged goes to its weight, and the sink keeps the graph the last flush wrote to check it. 22: a telemetry series keeps a window start in 4 bytes and a value in 8 until one needs more. 23: a Series keeps the oldest window start it wrote. 24: a join on the start rows of a traverse below it runs before the walk, as `<join>.starts`. 25: a threshold keeps the windows of a key in a sorted list. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
-    public const int SealFormat = 25;
+    /// <summary>The format of a seal's content. 2: telemetry windows of `mean` and `last` carry their pair, and sinks keep the support of windows written under more than one own id (Law 7.5 item 3). 3: the sink table. 4: tables with one index on the whole key. 5: the text table has free slots. 6: a Series keeps the windows of the elements with a row only, in a sorted list. 7: a join keeps a key part that is a column once, with 4-byte codes. 8: a group stores integers and codes as themselves, and text and decimal keys as 4-byte codes. 9: a served revision keeps its commit time. 10: a Series keeps no windows (it reads them from the store), and the store keeps a series as its starts and values, without input ids. 11: a sink keeps the kinds of its elements and the touched ones as bitmaps. 12: lineage rows keep handles in 4 bytes, -1 for absent, with no absent bits. 13: a sink keeps the endpoints of a relationship only where its graph does not hold it. 14: a sink keeps an element whose one row is a create its graph holds as its sink and weight. 15: the joins of a graph keep an input they share as one table, with one table of decimal codes. 16: a traverse stores a column of codes in 4 bytes, -1 when absent. 17: a column grows in segments of 4,096 entries. 18: a column of 8 bytes and the weight of a row take 4 bytes per entry until a value needs 8. 19: the rows of an `arg_max` or `arg_min` are reached through their key, and a table with no key columns has no index. 20: a key row keeps no emitted flag and no count accumulator. 21: a row for an element of `ones` that leaves its graph unchanged goes to its weight, and the sink keeps the graph the last flush wrote to check it. 22: a telemetry series keeps a window start in 4 bytes and a value in 8 until one needs more. 23: a Series keeps the oldest window start it wrote. 24: a join on the start rows of a traverse below it runs before the walk, as `<join>.starts`. 25: a threshold keeps the windows of a key in a sorted list. 26: it retains the window that established the emitted state. 27: silence and resumption evidence derive from the ordered supported windows. A seal of another format is refused with both versions named, and the journal is replayed.</summary>
+    public const int SealFormat = 27;
     void MaybeSeal() { if (options.SealEvery > 0 && journal is not null && phase != Phase.Replaying && journalPos - lastSealPosition >= options.SealEvery) Seal(); }
 
     /// <summary>Takes a seal now: the state after the journal entries so far, stored with the journal. Called by the host every `SealEvery` entries.</summary>
@@ -509,6 +509,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             StateSnapshot.Load(snapshot, root);
             loadMs += sw.ElapsedMilliseconds;
             host.Engine.AdoptState(root.Engine);
+            host.Engine.ConfigurationRevision = host.CatalogRevision;
             host.Seq = root.Seq; host.lambdaSeen = root.LambdaSeen; host.inputRows = root.InputRows; host.generation = root.Generation;
             if (host.Engine.StateDigest() != m["digest"]!.GetValue<string>()) { rejected = "the restored state digest differs from the sealed one"; host.Dispose(); return null; }
             var sealedRevisions = host.Engine.Graphs.Sum(g => g.Head);
@@ -717,12 +718,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             };
             foreach (var g in Engine.Graphs)
             {
+                var graphInputs = g.Typed.Ports.Where(p => p.Kind == "graph").ToDictionary(p => p.Name, p => g.PortSources[p.Name]);
+                var projectionFile = Catalog.FileOf.TryGetValue(g.Typed.Id, out var path) ? Path.GetFileName(path) : null;
                 var rules = g.Typed.Rules;
                 var dir = rules.Count == 0 ? "forward" : rules.All(r => r.Class == "readonly") ? "readonly" : rules.All(r => r.Class == "lens") ? "lens" : "mixed";
                 graphs.Add(new JsonObject
                 {
                     ["id"] = g.Name, ["role"] = g.IsMaster ? "master" : g.Ingests ? "input" : "projection", ["head"] = Rev(served[g.Name].Head), ["ontology"] = g.Typed.OutputModule,
-                    ["inputs"] = new JsonArray([.. g.PortSources.Values.Where(v => Engine.Graphs.Any(x => x.Name == v)).Distinct().Select(v => (JsonNode)v)]),
+                    ["inputs"] = new JsonArray([.. graphInputs.Values.Distinct().Select(v => (JsonNode)v)]),
+                    ["inputPorts"] = new JsonObject(graphInputs.Select(kv => KeyValuePair.Create(kv.Key, (JsonNode?)kv.Value))),
+                    ["projectionFile"] = projectionFile is not null && IsFileName(projectionFile) ? projectionFile : null,
                     ["direction"] = dir, ["editable"] = rules.Any(r => r.Class is "lens" or "bijective"), ["document"] = g.Typed.OutputModule == Documents.Module, ["description"] = export.DescriptionOf(g), ["dangling"] = Rev(g.State.Rels.Count(r => g.State.Entity(r.Source) is null || g.State.Entity(r.Target) is null)), ["danglingBy"] = DanglingBy(g), ["descriptor"] = export.Descriptor(g, served[g.Name].Head), ["projection"] = g.Typed.Name,
                 });
             }

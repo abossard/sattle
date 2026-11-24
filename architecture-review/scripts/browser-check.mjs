@@ -51,8 +51,18 @@ try {
     throw new Error(`Timed out: ${expression}`);
   };
   const key = async (name) => {
-    await send("Input.dispatchKeyEvent", { type: "keyDown", key: name, code: name, windowsVirtualKeyCode: name === "Enter" ? 13 : 32 });
+    await send("Input.dispatchKeyEvent", { type: "keyDown", key: name, code: name, windowsVirtualKeyCode: name === "Enter" ? 13 : 32, text: name === "Enter" ? "\r" : " " });
     await send("Input.dispatchKeyEvent", { type: "keyUp", key: name, code: name });
+  };
+  const click = async (selector) => {
+    const point = await evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      element.scrollIntoView({block:'center'});
+      const rect = element.getBoundingClientRect();
+      return {x:rect.x + rect.width / 2, y:rect.y + rect.height / 2};
+    })()`);
+    await send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", clickCount: 1 });
+    await send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", clickCount: 1 });
   };
   await send("Page.enable");
   await send("Runtime.enable");
@@ -63,6 +73,28 @@ try {
   assert.equal(await evaluate("document.querySelector('#discussion-status').textContent.includes('unavailable')"), false);
   assert.ok(await evaluate("document.querySelectorAll('.evidence code').length >= 2"));
   console.log("PASS committed evidence, 11 ranked findings and real GitHub discussion");
+
+  assert.equal(await evaluate("document.querySelectorAll('[data-view]').length"), 2, "One global view switch");
+  assert.ok(await evaluate("document.querySelector('[data-finding]').getBoundingClientRect().bottom < innerHeight"), "Queue available without scrolling past a hero");
+  assert.ok(await evaluate("document.querySelector('#feedback-form').getBoundingClientRect().top < document.querySelector('.discussion').getBoundingClientRect().top"), "Response precedes discussion history");
+  console.log("PASS C1 workflow-first hierarchy and single view switch");
+
+  await click(".review-context > summary");
+  assert.ok(await evaluate("document.querySelector('.review-context').open && document.querySelector('.metric').checkVisibility()"));
+  await evaluate("document.querySelector('.review-context > summary').focus()");
+  await key("Enter");
+  assert.equal(await evaluate("document.querySelector('.review-context').open"), false);
+  await click(".evidence-details > summary");
+  assert.ok(await evaluate("document.querySelector('.evidence code').checkVisibility()"));
+  await evaluate("document.querySelector('.evidence-details > summary').focus()");
+  await key("Enter");
+  assert.equal(await evaluate("document.querySelector('.evidence-details').open"), false);
+  await click("[data-finding]:nth-child(2)");
+  const selectedTitle = await evaluate("document.querySelector('[data-finding]').textContent");
+  await evaluate("document.querySelector('[data-finding]').focus()");
+  await key("Enter");
+  assert.ok(selectedTitle.includes(await evaluate("document.querySelector('#detail-title').textContent")));
+  console.log("PASS C2 context and evidence disclosures, native pointer and keyboard queue selection");
 
   await evaluate(`document.querySelector('[name="rationale"]').value = "Preserve this unsaved review while navigating";
     document.querySelector('[name="decision"]').checked = true;
@@ -79,12 +111,28 @@ try {
   assert.equal(await evaluate("document.querySelectorAll('[data-finding]').length"), 0);
   console.log("PASS architecture keyboard selection, filters, search and retained drafts");
 
+  await evaluate(`document.querySelector('#review-filter').value = 'all';
+    document.querySelector('#review-filter').dispatchEvent(new Event('change'));
+    document.querySelector('#review-search').value = '';
+    document.querySelector('#review-search').dispatchEvent(new Event('change'));`);
   for (const width of [1440, 390, 320]) {
     await send("Emulation.setDeviceMetricsOverride", { width, height: 900, deviceScaleFactor: 1, mobile: width < 600 });
-    await evaluate(`document.querySelector('.tabs [data-view="map"]').click()`);
-    const dimensions = await evaluate(`({width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth,
-      overflow: [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1 && !e.closest('.map-wrap')).slice(0,8).map(e => ({tag:e.tagName, class:e.className, width:e.getBoundingClientRect().width, right:e.getBoundingClientRect().right}))})`);
-    assert.ok(dimensions.content <= dimensions.width + 1, `No page overflow at ${width}: ${JSON.stringify(dimensions)}`);
+    for (const view of ["map", "board"]) {
+      await click(`.tabs [data-view="${view}"]`);
+      const dimensions = await evaluate(`({width: document.documentElement.clientWidth, content: document.documentElement.scrollWidth,
+        overflow: [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > document.documentElement.clientWidth + 1 && !e.closest('.map-wrap')).slice(0,8).map(e => ({tag:e.tagName, class:e.className, width:e.getBoundingClientRect().width, right:e.getBoundingClientRect().right}))})`);
+      assert.equal(dimensions.width, width, "Browser viewport matches requested width");
+      assert.ok(dimensions.content <= dimensions.width + 1, `No ${view} page overflow at ${width}: ${JSON.stringify(dimensions)}`);
+      if (width < 600) {
+        const targets = await evaluate(`[...document.querySelectorAll('button, input:not([type="hidden"]):not([type="radio"]), select, summary, .option')].filter(e => e.checkVisibility()).filter(e => e.getBoundingClientRect().height < 44).map(e => ({tag:e.tagName, text:e.textContent.slice(0,40), height:e.getBoundingClientRect().height}))`);
+        assert.deepEqual(targets, [], `C3 mobile control height at ${width}`);
+      }
+      if (process.env.SCREENSHOT) {
+        await evaluate("scrollTo(0, 0)");
+        const screenshot = await send("Page.captureScreenshot", { format: "png" });
+        writeFileSync(`${process.env.SCREENSHOT}.${view}-${width}.png`, Buffer.from(screenshot.result.data, "base64"));
+      }
+    }
   }
   console.log("PASS desktop, 390px and 320px layouts without page overflow");
 
@@ -96,15 +144,27 @@ try {
       if (url !== '/api/feedback') return window.originalReviewFetch(url, init);
       window.reviewRequests.push(JSON.parse(init.body));
       if (window.reviewRequests.length === 1) throw new Error('Simulated lost response');
-      return Response.json({ url: 'https://github.com/abossard/sattle/issues/144', id: 144, action: 'comment' });
+      return new Promise(resolve => {
+        window.finishReviewRequest = () => resolve(Response.json({ url: 'https://github.com/abossard/sattle/issues/144', id: 144, action: 'comment' }));
+      });
     };
+    document.querySelectorAll('[name="decision"]').forEach(input => input.checked = false);
+    document.querySelector('[name="rationale"]').value = '';
+    document.querySelector('#feedback-form').requestSubmit();`);
+  assert.equal(await evaluate("window.reviewRequests.length"), 0, "Invalid form must not send feedback");
+  await evaluate(`
     document.querySelector('[name="decision"]').checked = true;
     document.querySelector('[name="rationale"]').value = 'Browser-only transport check, never posted to GitHub';
     document.querySelector('[name="reviewKey"]').value = 'browser-only-test-key';
     document.querySelector('#feedback-form').requestSubmit();`);
   await waitFor("document.querySelector('#feedback-result').textContent.includes('Simulated lost response')");
+  assert.equal(await evaluate("document.querySelector('#feedback-form').dataset.state"), "error");
   await evaluate("document.querySelector('#feedback-form').requestSubmit()");
+  await waitFor("document.querySelector('#feedback-form').dataset.state === 'loading'");
+  assert.ok(await evaluate("document.querySelector('button[type=\"submit\"]').disabled && document.querySelector('button[type=\"submit\"]').getAttribute('aria-busy') === 'true'"));
+  await evaluate("window.finishReviewRequest()");
   await waitFor("document.querySelector('#feedback-result').textContent.includes('Saved to GitHub')");
+  assert.equal(await evaluate("document.querySelector('#feedback-form').dataset.state"), "success");
   assert.equal(await evaluate("window.reviewRequests[0].submissionId === window.reviewRequests[1].submissionId"), true);
   assert.equal(await evaluate("window.reviewRequests.length"), 2);
   await evaluate("window.fetch = window.originalReviewFetch");
@@ -113,9 +173,19 @@ try {
   if (process.env.AXE_PATH) {
     await evaluate(readFileSync(process.env.AXE_PATH, "utf8"));
     for (const theme of ["dark", "light"]) {
-      await evaluate(`document.documentElement.dataset.theme = ${JSON.stringify(theme)}`);
+      if (await evaluate("document.documentElement.dataset.theme") !== theme) await click("#theme-toggle");
+      assert.equal(await evaluate("document.documentElement.dataset.theme"), theme, "Theme button updates the page");
+      if (process.env.SCREENSHOT) {
+        await evaluate("scrollTo(0, 0)");
+        const screenshot = await send("Page.captureScreenshot", { format: "png" });
+        writeFileSync(`${process.env.SCREENSHOT}.${theme}.png`, Buffer.from(screenshot.result.data, "base64"));
+      }
+      await click(".review-context > summary");
+      await click(".evidence-details > summary");
       const violations = await evaluate("axe.run(document, {runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa']}}).then(r => r.violations.map(v => ({id:v.id, nodes:v.nodes.map(n=>n.target)})))");
       assert.deepEqual(violations, [], `Accessibility violations in ${theme}`);
+      await click(".evidence-details > summary");
+      await click(".review-context > summary");
     }
     for (const theme of ["dark", "light"]) {
       const contrast = await evaluate(`(() => {
@@ -134,7 +204,7 @@ try {
       })()`);
       assert.ok(contrast.every(({ ratio }) => ratio >= 4.5), `${theme} accent text contrast: ${JSON.stringify(contrast)}`);
     }
-    console.log("PASS accent text contrast in both themes, including gradient surfaces axe cannot evaluate");
+    console.log("PASS accent text contrast in both themes");
     console.log("PASS dark and light WCAG accessibility checks");
   }
   assert.deepEqual(errors, [], "No uncaught browser errors");

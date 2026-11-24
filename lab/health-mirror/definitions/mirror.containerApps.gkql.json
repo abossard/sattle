@@ -131,23 +131,6 @@
       "columns": {"appKey": {"ref": "r.armKey"}, "r": {"ref": "r"}, "appRank": {"ref": "rank"}}
     },
     {"id": "everyApp", "verb": "project", "columns": {"key": {"ref": "r.armKey"}, "rank": {"lit": 0}}},
-    {
-      "id": "declaredFlowPath",
-      "verb": "graph-match",
-      "graph": "master",
-      "pattern": {
-        "nodes": [
-          {"var": "f", "label": "UserFlow"},
-          {"var": "s", "label": "SystemComponent"},
-          {"var": "a", "label": "ArmResource"}
-        ],
-        "edges": [
-          {"var": "step", "label": "DeclaresStep", "from": "f", "to": "s"},
-          {"var": "deployment", "label": "RunsOnResource", "from": "s", "to": "a"}
-        ]
-      }
-    },
-    {"id": "flowMembership", "verb": "project", "columns": {"key": {"ref": "a.armKey"}, "rank": {"lit": 1}}},
     {"id": "hasDeclaredFlowInputs", "verb": "union"},
     {
       "id": "hasDeclaredFlow",
@@ -261,7 +244,12 @@
     {
       "id": "distinctClasses",
       "verb": "summarize",
-      "by": {"key": {"ref": "appKey"}, "className": {"ref": "rule.className"}},
+      "by": {
+        "key": {"ref": "appKey"},
+        "className": {"ref": "rule.className"},
+        "app": {"ref": "app"},
+        "scopeId": {"ref": "scope"}
+      },
       "aggregates": {"rules": {"fn": "count", "args": []}}
     },
     {
@@ -643,16 +631,74 @@
         ],
         "edges": [{"var": "edge", "label": "EnvironmentInRegion", "from": "a", "to": "b"}]
       }
-    }
+    },
+    {"id": "oneClassPerApp", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]}},
+    {"id": "singleClassAppKeys", "verb": "project", "columns": {"matchedKey": {"ref": "key"}}},
+    {"id": "unambiguousClass", "verb": "join", "kind": "inner", "on": [{"left": "key", "right": "matchedKey"}]},
+    {
+      "id": "mappedClass",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "AppClass",
+            "id": {"identity": "idAppClass", "args": [{"ref": "scopeId"}, {"ref": "className"}]},
+            "props": {"scopeId": {"ref": "scopeId"}, "className": {"ref": "className"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "classification",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "app"}},
+          {
+            "var": "b",
+            "label": "AppClass",
+            "id": {"identity": "idAppClass", "args": [{"ref": "scopeId"}, {"ref": "className"}]}
+          }
+        ],
+        "edges": [{"var": "edge", "label": "ClassifiedAs", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "curatedStepRequirements",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [
+          {"var": "f", "label": "UserFlow"},
+          {"var": "s", "label": "SystemComponent"},
+          {"var": "c", "label": "AppClass"}
+        ],
+        "edges": [
+          {"var": "step", "label": "DeclaresStep", "from": "f", "to": "s"},
+          {"var": "requires", "label": "RequiresClass", "from": "s", "to": "c"}
+        ]
+      }
+    },
+    {
+      "id": "requiredClasses",
+      "verb": "project",
+      "columns": {"wantedScope": {"ref": "c.scopeId"}, "wantedClass": {"ref": "c.className"}}
+    },
+    {
+      "id": "appsForRequiredClasses",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "scopeId", "right": "wantedScope"}, {"left": "className", "right": "wantedClass"}]
+    },
+    {"id": "flowMembership", "verb": "project", "columns": {"key": {"ref": "key"}, "rank": {"lit": 1}}}
   ],
   "wires": [
     {"from": "resources", "to": "containerAppRows"},
     {"from": "containerAppRows", "to": "deploymentState"},
     {"from": "deploymentState", "to": "appKeys"},
     {"from": "deploymentState", "to": "everyApp"},
-    {"from": "declaredFlowPath", "to": "flowMembership"},
     {"from": "everyApp", "to": "hasDeclaredFlowInputs"},
-    {"from": "flowMembership", "to": "hasDeclaredFlowInputs"},
     {"from": "hasDeclaredFlowInputs", "to": "hasDeclaredFlow"},
     {"from": "appKeys", "to": "attachMembership", "port": "left"},
     {"from": "hasDeclaredFlow", "to": "attachMembership", "port": "right"},
@@ -706,6 +752,17 @@
     {"from": "AzureRegionAssignments", "to": "AzureRegionWorst"},
     {"from": "AzureRegionWorst", "to": "inventoryAzureRegion"},
     {"from": "knownAzureRegion", "to": "AzureRegionApps"},
-    {"from": "knownEnvironmentAzureRegion", "to": "AzureRegionEnvironments"}
+    {"from": "knownEnvironmentAzureRegion", "to": "AzureRegionEnvironments"},
+    {"from": "countDistinctClasses", "to": "oneClassPerApp"},
+    {"from": "oneClassPerApp", "to": "singleClassAppKeys"},
+    {"from": "distinctClasses", "to": "unambiguousClass", "port": "left"},
+    {"from": "singleClassAppKeys", "to": "unambiguousClass", "port": "right"},
+    {"from": "unambiguousClass", "to": "mappedClass"},
+    {"from": "unambiguousClass", "to": "classification"},
+    {"from": "curatedStepRequirements", "to": "requiredClasses"},
+    {"from": "unambiguousClass", "to": "appsForRequiredClasses", "port": "left"},
+    {"from": "requiredClasses", "to": "appsForRequiredClasses", "port": "right"},
+    {"from": "appsForRequiredClasses", "to": "flowMembership"},
+    {"from": "flowMembership", "to": "hasDeclaredFlowInputs"}
   ]
 }

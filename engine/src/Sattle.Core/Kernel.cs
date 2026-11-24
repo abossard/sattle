@@ -88,7 +88,7 @@ public static class KernelTable
         T("Values : Operator |"),
         T("EmitEntity : Operator | mode:T"), T("EmitRelationship : Operator | mode:T key:T retype:T"), T("Link : Operator |"),
         T("Series : Operator | within:I ttl:I?"), T("Rollup : Operator |"), T("Delta : Operator | target:T"),
-        T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B?"),
+        T("Threshold : Operator | target:T above:D enterAfter:I high:T below:D exitAfter:I low:T initial:T nodata:T? nodataIgnore:B? evidenceWindow:B?"),
         T("PatternNode | var:T side:T? create:B?"), T("PatternEdge | var:T? minHops:I? maxHops:I? side:T? create:B?"),
         T("FieldRef : Expr | path:T fill:D?"), T("Literal : Expr | value:Any"), T("Call : Expr |"), T("IdOf : Expr |"),
         T("Assign | target:T"), T("Aggregate | target:T fn:T row:T?"), T("SetProperty |"), T("SetComponent |"), T("RowValue |"),
@@ -346,5 +346,5 @@ public static class Kernel
 
     /// <summary>Digest of the kernel graph. The compiled constant is checked by a test (section 2.8, step 2).</summary>
     public static string ComputeDigest() => Graph.Digest();
-    public const string CompiledDigest = "sha256:540bd981699c732893659296dedd811d5491fc67932f9c625fbf5596106cbd50";
+    public const string CompiledDigest = "sha256:9b8a072dea2ebe362ec9f6e981c59c9d94bb52f3aa744d682f8aead8d1c11d05";
 }

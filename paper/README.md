@@ -71,6 +71,8 @@ Chapter 0 states where each of the three goals of Phase 1 stands, and Chapter 15
 
 Chapter 0 is the entry. The figure at its end shows which chapter needs which.
 
+For a worked example, follow a request through two calls and compare its ingress receipt with the declared receiver. The example uses separate keys for a call and an operation, a retained graph revision for the original finding, and a source report to interpret the coverage count. [Identity](ch01-values-and-identity.md#14-identity) · [Reviewing a receiver](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver) · [Run the example](../engine/standard/README.md)
+
 | Ch. | Title | In one line |
 |---|---|---|
 | 0 | [Introduction](ch00-introduction.md) | the problem, the idea, the terms, the claims |

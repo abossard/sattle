@@ -1,0 +1,56 @@
+{
+  "graph": "rules",
+  "ontology": "sattle.coverage",
+  "description": "Assign observations to roles, declare expected targets and record explicit exclusions.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "sattle.coverage"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "rules",
+      "verb": "values",
+      "values": {
+        "columns": {
+          "ruleId": "Text",
+          "revision": "Text",
+          "source": "Text",
+          "item": "Text",
+          "role": "Text",
+          "target": "Text",
+          "action": "Text",
+          "owner": "Text",
+          "reason": "Text",
+          "many": "Boolean"
+        },
+        "key": "ruleId",
+        "rows": []
+      }
+    },
+    {
+      "id": "declarations",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Rule",
+            "id": {"identity": "RuleKey", "args": [{"ref": "ruleId"}]},
+            "props": {
+              "ruleId": {"ref": "ruleId"},
+              "revision": {"ref": "revision"},
+              "source": {"ref": "source"},
+              "item": {"ref": "item"},
+              "role": {"ref": "role"},
+              "target": {"ref": "target"},
+              "action": {"ref": "action"},
+              "owner": {"ref": "owner"},
+              "reason": {"ref": "reason"},
+              "many": {"ref": "many"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [{"from": "rules", "to": "declarations"}]
+}

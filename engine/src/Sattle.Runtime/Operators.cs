@@ -956,16 +956,17 @@ sealed class ThresholdOp : PhysOp
     /// <summary>Per key with a window in the look-back: those windows, and one carried state: the state machine after the newest window that left the look-back (`State`, `Run`, `Last` its start), so a state never changes because a window grew old (Def. 7.10, D33).</summary>
     sealed class KeyState { public readonly SortedList<long, (decimal V, int P)> Windows = []; public string? Emitted; public string Id = ""; public long[] Key = []; public string State = ""; public long Run; public long Last = long.MinValue;
         /// <summary>The marker records the key has (Def. 7.16): while there is one, the key is in no data.</summary>
-        public long Silent; }
+        public long Silent, MarkerWindow, EmittedWindow, StateWindow; }
     /// <summary>The parameters of one window: the constants of the statement, or what the row of the window gives. Rules are few and windows many, so a window holds an index into `parameters`.</summary>
     readonly record struct Params(decimal Above, decimal Below, long Enter, long Exit);
     readonly List<Params> parameters = []; readonly Dictionary<Params, int> parameterIndex = [];
     int IndexOf(Params p) { if (!parameterIndex.TryGetValue(p, out var i)) { parameterIndex[p] = i = parameters.Count; parameters.Add(p); } return i; }
-    readonly TThreshold t; readonly VExpr[] keys; readonly VExpr value; readonly int inWs; readonly int[] outKey; readonly int outStatus; readonly int inNoData = -1;
+    readonly TThreshold t; readonly VExpr[] keys; readonly VExpr value; readonly int inWs; readonly int[] outKey; readonly int outStatus; readonly int outWindow; readonly int inNoData = -1;
     readonly VExpr? aboveBy, enterBy, belowBy, exitBy;
     readonly Dictionary<string, KeyState> states = [];
     readonly long[] buf;
     readonly long? lookBack; readonly long horizon; long frontier = long.MinValue;
+    readonly long? freshnessWindows; readonly long period;
     readonly DecimalCodes decimals = new();
     /// <summary>Keys without a window in the look-back, by the frontier at which their carried state is dropped: a late window inside the horizon may still continue their episode.</summary>
     readonly SortedSet<(long At, string Id)> idle = [];
@@ -973,6 +974,9 @@ sealed class ThresholdOp : PhysOp
     public ThresholdOp(TThreshold t, Layout inLayout, OpContext cx, TSeries? series = null) : base(t)
     {
         this.t = t; lookBack = series?.WithinNs; horizon = series is null ? 0 : cx.HorizonOf(series.PeriodNs);
+        period = series?.PeriodNs ?? 0;
+        if (t.EvidenceWindow && t.NoData is not null && series?.TtlNs is { } ttl)
+            freshnessWindows = ttl / period;
         keys = [.. t.Keys.Select(k => ExprCompiler.Compile(k.Value, inLayout, cx.It, cx.Faults))];
         value = ExprCompiler.Compile(t.Value, inLayout, cx.It, cx.Faults);
         inWs = inLayout.Index("windowStart");
@@ -980,29 +984,37 @@ sealed class ThresholdOp : PhysOp
         VExpr? P(TExpr? e) => e is null ? null : ExprCompiler.Compile(e, inLayout, cx.It, cx.Faults);
         aboveBy = P(t.AboveBy); enterBy = P(t.EnterBy); belowBy = P(t.BelowBy); exitBy = P(t.ExitBy);
         outKey = [.. t.Keys.Select(k => OutLayout.Index(k.Name))]; outStatus = OutLayout.Index(t.Target);
+        outWindow = t.EvidenceWindow ? OutLayout.Index("windowStart") : -1;
         buf = new long[keys.Length];
     }
 
+    // The last supported window ends one period after its start. The grid window containing
+    // that end plus the freshness limit is the boundary between reporting and silence (Def. 7.16).
+    long SilenceWindow(long last, long windows) => OpContext.Clamp((Int128)last + (1 + (Int128)windows) * period);
+
     /// <summary>One window of the state machine: a run of `Enter` windows at or above `Above` switches to high, a run of `Exit` windows at or below `Below` switches to low; the run restarts at a switch and at a window that does not extend it. A window that starts `within` or more after the one before begins a new episode in `initial`.</summary>
-    void Step(ref string state, ref long run, ref long last, long start, (decimal V, int P) window)
+    void Step(ref string state, ref long run, ref long last, ref long stateWindow, long start, (decimal V, int P) window)
     {
-        if (last != long.MinValue && lookBack is { } within && start - last >= within) { state = t.Initial; run = 0; }
+        if (last == long.MinValue || lookBack is { } within && start - last >= within) { state = t.Initial; run = 0; stateWindow = start; }
+        else if (freshnessWindows is { } windows && start > SilenceWindow(last, windows))
+            stateWindow = start; // the first reading after silence restores the folded state, even when it does not toggle
         last = start;
         var p = parameters[window.P];
         var low = state == t.Low;
         var extends = low ? window.V >= p.Above : window.V <= p.Below;
         run = extends ? run + 1 : 0;
-        if (extends && run >= (low ? p.Enter : p.Exit)) { state = low ? t.High : t.Low; run = 0; }
+        if (extends && run >= (low ? p.Enter : p.Exit)) { state = low ? t.High : t.Low; run = 0; stateWindow = start; }
     }
 
     /// <summary>The frontier from which no accepted window can start less than `within` after the last one of the key.</summary>
     long DropAt(KeyState st) => st.Last == long.MinValue || lookBack is not { } within ? long.MinValue : OpContext.Clamp((Int128)st.Last + within + horizon);
 
-    string Run(KeyState st)
+    string Run(KeyState st, out long stateWindow)
     {
         var state = st.State; var run = st.Run; var last = st.Last;
+        stateWindow = st.StateWindow;
         var (starts, windows) = (st.Windows.Keys, st.Windows.Values);
-        for (var i = 0; i < starts.Count; i++) Step(ref state, ref run, ref last, starts[i], windows[i]);
+        for (var i = 0; i < starts.Count; i++) Step(ref state, ref run, ref last, ref stateWindow, starts[i], windows[i]);
         return state;
     }
 
@@ -1047,6 +1059,7 @@ sealed class ThresholdOp : PhysOp
                 if (t.NoData is null) continue;       // `nodata ignore`
                 var quiet = StateOf(byText, chars);
                 quiet.Silent += b.Weight(row);
+                if (b.Weight(row) > 0) quiet.MarkerWindow = b.Cols[inWs].L[row];
                 if (seen.Add(quiet)) touched.Add(quiet);
                 continue;
             }
@@ -1064,23 +1077,33 @@ sealed class ThresholdOp : PhysOp
         var bb = EmptyOutput();
         foreach (var st in touched)
         {
-            while (st.Windows.Count > 0 && st.Windows.Keys[0] < edge) { Step(ref st.State, ref st.Run, ref st.Last, st.Windows.Keys[0], st.Windows.Values[0]); st.Windows.RemoveAt(0); }
-            var next = st.Windows.Count == 0 ? null : Run(st);
+            while (st.Windows.Count > 0 && st.Windows.Keys[0] < edge) { Step(ref st.State, ref st.Run, ref st.Last, ref st.StateWindow, st.Windows.Keys[0], st.Windows.Values[0]); st.Windows.RemoveAt(0); }
+            long window = 0;
+            var next = st.Windows.Count == 0 ? null : Run(st, out window);
             if (next is null) idle.Add((DropAt(st), st.Id));     // no window in the look-back: the row goes; the carried state stays until no late window can continue the episode
-            if (st.Silent > 0) next = t.NoData;                  // no data is an output over the state machine, which goes on as the episode rule says
-            if (next == st.Emitted) continue;
-            if (st.Emitted is not null) Write(bb, st, st.Emitted, -1, cx);
-            if (next is not null) Write(bb, st, next, 1, cx);
+            if (st.Silent > 0)
+            {
+                next = t.NoData;
+                var newest = st.Windows.Count > 0 ? st.Windows.Keys[^1] : st.Last;
+                window = freshnessWindows is { } windows && newest != long.MinValue
+                    ? SilenceWindow(newest, windows)
+                    : next == st.Emitted ? st.EmittedWindow : st.MarkerWindow;
+            }
+            if (next == st.Emitted && (!t.EvidenceWindow || next is null || window == st.EmittedWindow)) continue;
+            if (st.Emitted is not null) Write(bb, st, st.Emitted, st.EmittedWindow, -1, cx);
+            if (next is not null) Write(bb, st, next, window, 1, cx);
             st.Emitted = next;
+            st.EmittedWindow = window;
         }
         return bb.Build();
     }
 
-    void Write(BatchBuilder bb, KeyState st, string status, long w, OpContext cx)
+    void Write(BatchBuilder bb, KeyState st, string status, long window, long w, OpContext cx)
     {
         var row = bb.Add(w);
         for (var i = 0; i < outKey.Length; i++) { var kc = bb.Batch.Cols[outKey[i]]; if (kc.IsDec) kc.D[row] = decimals.Value(st.Key[i]); else kc.L[row] = st.Key[i]; }
         bb.Batch.Cols[outStatus].L[row] = cx.It.Intern(status);
+        if (outWindow >= 0) bb.Batch.Cols[outWindow].L[row] = window;
     }
 }
 

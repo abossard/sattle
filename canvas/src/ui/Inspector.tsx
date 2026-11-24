@@ -1,4 +1,9 @@
 // Inspector of the selected element: change in this revision, properties, connections, shared identity and lineage, telemetry series.
+import { useMemo } from "react";
+import { CoverageReview } from "./CoverageReview";
+import { coverageModule, isFinding } from "../editor/coverage-review";
+import { EditorService } from "../editor/service";
+import { EngineSource } from "../source/engine";
 import { Badge, Link, MessageBar, MessageBarBody, Subtitle2, Table, TableBody, TableCell, TableRow, Text, Tree, TreeItem, TreeItemLayout, makeStyles, tokens } from "@fluentui/react-components";
 import { propDiff } from "../core/diff";
 import { valueText, type Entity, type Rel } from "../core/model";
@@ -36,6 +41,8 @@ export function Inspector() {
   const sel = useStore((x) => x.selection);
   const ws = useWorkspace(sel?.graph);
   useStore((x) => x.time.now);
+  const base = ws?.source instanceof EngineSource ? ws.source.base : undefined;
+  const service = useMemo(() => base ? new EditorService(base) : undefined, [base]);
   if (!ws) return null;
   if (!sel) return <div className={s.col}><Subtitle2 as="h2">Inspector</Subtitle2><Text>Select a node or edge. The same entity is highlighted in every graph of the space.</Text></div>;
   const hist = ws.history(sel.graph);
@@ -46,7 +53,12 @@ export function Inspector() {
   const reference = stubSlot !== undefined ? ws.reference(sel.graph, sel.id) : undefined;
   const change = pane?.highlight ? (sel.kind === "entity" ? pane.highlight.entities.get(sel.id) : pane.highlight.relationships.get(sel.id)) : undefined;
   const subject = el ?? change?.before ?? null;
-  const role = ws.graphInfo(sel.graph)?.role ?? "";
+  const selectedGraph = ws.graphInfo(sel.graph);
+  const role = selectedGraph?.role ?? "";
+  const coverage = [selectedGraph, ...(selectedGraph?.inputs ?? []).map(id => ws.graphInfo(id))]
+    .find(info => info?.descriptor.ontology.id === coverageModule && info.projectionName === "coverage");
+  const rulesGraph = coverage?.inputPorts?.rules;
+  const rulesFile = rulesGraph ? ws.graphInfo(rulesGraph)?.projectionFile : undefined;
   const rel = ws.related(sel);
   const li = ws.lineageOf(sel);
   const lineagePending = ws.lineagePending(sel);
@@ -89,6 +101,9 @@ export function Inspector() {
           {reference?.state === "inOtherGraph" && reference.graph && <Link as="button" onClick={() => { dispatch({ type: "ui/activeGraph", graph: reference.graph! }); go(reference.graph!, sel.id, "entity"); }}>Open it in {reference.graph}</Link>}
         </>
       )}
+      {service && <CoverageReview key={base} service={service} selected={
+        el && !isRel(el) && isFinding(el) && hist.atHead && coverage && rulesFile?.endsWith(".gkql.json")
+          ? { graph: coverage.id, entity: el, rulesFile } : undefined} />}
       {el && <><Subtitle2 as="h3">Properties</Subtitle2>{Object.keys(el.props).length ? <KV rows={Object.entries(el.props).map(([k, v]) => [k, valueText(v)])} /> : <Text>No properties.</Text>}</>}
       {slot !== undefined && (
         <>

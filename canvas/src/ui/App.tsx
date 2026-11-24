@@ -90,7 +90,8 @@ export function App() {
   const source = useStore((x) => x.sourceId);
   const guide = useStore((x) => x.guide);
   const lesson = lessonOf(guide);
-  const firstLesson = LESSONS[0];
+  const firstLesson = LESSONS.find(item => item.space === runtime.ws?.info?.id && sourceForLesson(item) === source)
+    ?? LESSONS.find(item => !item.space) ?? LESSONS[0];
   const TutorialPanel = lesson && panelForLesson(lesson.id);
   const status = useStore((x) => x.load.status);
   const guideLayout = lesson ? status === "ready" ? s.guideMain : s.guideOffline : "";
@@ -117,7 +118,7 @@ export function App() {
         <h1 className={s.brand}><Mark />Sattle canvas</h1>
         <TabList className={s.views} selectedValue={view} onTabSelect={(_, d) => dispatch({ type: "ui/view", view: d.value as View })} aria-label="Views">{VIEWS.map((v) => <Tab key={v.id} value={v.id}>{v.label}</Tab>)}</TabList>
         <span className={s.grow} />
-        <Select aria-label="Data source" value={source} onChange={(_, d) => dispatch({ type: "source/opening", id: d.value })}>{SOURCES.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
+        <Select aria-label="Data source" value={source} onChange={(_, d) => dispatch({ type: "source/opening", id: d.value })}>{SOURCES.filter(x => !lesson?.space || x.id === sourceForLesson(lesson)).map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select>
         <Toolbar aria-label="Application">
           {!lesson && firstLesson && <Button as="a" id="open-developer-guide" href={formatHash({ source: sourceForLesson(firstLesson), view: firstLesson.view, guide: firstLesson.id })} appearance="subtle">Developer guide</Button>}
           <ToolbarButton onClick={() => dispatch({ type: "ui/dialog", dialog: "rejections" })}>Rejected: {rejected}</ToolbarButton>
@@ -128,7 +129,7 @@ export function App() {
           </Menu>
         </Toolbar>
       </header>
-      <Banners guideEngine={!!lesson && source === "engine"} />
+      <Banners guideEngine={!!lesson && source === sourceForLesson(lesson)} />
       <main id="main" tabIndex={-1} className={`${s.main} ${guideLayout}`}>
         {lesson && TutorialPanel && <Suspense fallback={<Spinner label="Loading the guide…" />}><TutorialPanel key={lesson.id} lesson={lesson} /></Suspense>}
         {status === "ready" && <div className={lesson ? s.workspace : s.standardView}>

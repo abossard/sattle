@@ -48,7 +48,8 @@ The unqualified word "direction" is not used in the paper.
 - **Content tag**: the `ETag` of every cached response, the first 32 hexadecimal digits of SHA-256 over the media type, a newline and the body; equal bytes have equal tags in any run. [Ch. 12, Prop. 12.10]
 - **Contribution**: the fragments one source record causes, identified by a stable contribution key. [Ch. 9, 10]
 - **Cosmos store**: the storage port on Cosmos DB for NoSQL with five containers and hierarchical partition keys. Built against the vNext emulator. [Ch. 11, 11.6]
-- **Coverage**: an adapter's declaration that a scan enumerated every record of a scope at a consistency level. Source of authoritative absence. [Ch. 10]
+- **Coverage (source scan)** records which scope an adapter enumerated at a stated consistency level. A complete scan can establish absence in that scope. [Ch. 10](ch10-sources-and-adapters.md)
+- **Coverage (ontology)** compares eligible items with project rules at a graph revision. It counts an item once per source and role in the selected time interval. Each finding links to its supporting receipts. The scope reports input completeness separately. [Ch. 9](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver)
 - **Crossing operator**: the path `Series`, `Rollup`, `Delta`, `Threshold` that reads closed windows of telemetry and emits graph data. The only way telemetry influences structure. [Ch. 5, 7]
 - **Dangling relationship**: relationship whose source or target entity is not present in the graph (ADR-084). [Ch. 3] Its missing endpoint is a **reference** (see there).
 - **Delivery key**: stable key of a source record. A re-delivery has the same key. [Ch. 10]
@@ -92,7 +93,7 @@ The unqualified word "direction" is not used in the paper.
 - **Hot graph**: in-memory copy of one graph that the engine evaluates against. A cache of the log, not a source of truth. [Ch. 11]
 - **Hub bucket**: one of `B` partitions over which the adjacency list of a high-degree entity is spread. [Ch. 11]
 - **Hypothesis (performance)**: target with a named benchmark and a refutation rule; it gets a status only from measurements (Def. 13.5). [Ch. 13]
-- **Hysteresis**: entry and exit thresholds plus a minimum run length that bound how often a crossing operator toggles. [Ch. 7]
+- **Hysteresis** uses separate thresholds and run lengths for entering and leaving a state. A projection can expose the start of the window that established the current state. [Ch. 7](ch07-telemetry-plane.md)
 - **Identity domain**: namespace that fixes the components and kinds of an identity key, declared in an ontology module. A projection names an entity by `identity("domain", key, ...)`; the same key from any source gives the same entity id, which is how the records of many sources become one entity. [Ch. 1]
 - **Identity key**: tenant, domain and component tuple identifying an entity. [Ch. 1]
 - **Identity merge**: the additive forwarding record from the larger to the smaller identity when late evidence says two keys denote one entity. Bindings are never modified; `Rep` follows the chain. [Ch. 1, Theorem 1.7]

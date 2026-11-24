@@ -27,7 +27,13 @@ This chapter uses the facts about sources (Ch. 0, 0.4), identity (Ch. 1), the fo
 
 **Definition 10.5 (ingestion pipeline).** There is one pipeline, in this order. The adapter turns native records into rows. The **ingestion projection** (purpose `ingestion`, Def. 5.1) resolves identity (`IdOf` over fields of the row, Def. 5.9; *allocate* or a lookup, Def. 1.9 and 1.10) and emits the facts of the master graph. The ingestion projection is required.
 
-**Definition 10.6 (structure rows and telemetry rows).** A field of a row shape is graph data or telemetry according to the property it feeds. Observations about topology and state (resources, objects, events) feed the structural plane. Counters, sums of flows and other measurements feed the telemetry plane as samples `(τ, w, x, i)` (Def. 7.2). A flow is a sample on a relationship, never a relationship (Ch. 11, assumption A1).
+**Definition 10.6 (structure rows and telemetry rows).** A field of a row shape is graph data or telemetry according to the property it feeds. Observations about topology and state (resources, objects, events) feed the structural plane. Counters, sums of flows and other measurements feed the telemetry plane as samples `(τ, w, x, i)` (Def. 7.2). Each network flow contributes a sample to its workload relationship (Ch. 11, assumption A1). A trace span that identifies its parent can also establish a structural handoff between two operation occurrences (Ch. 9, §9.6).
+
+### Reporting intervals in the coverage graph
+
+In the standard coverage module, the keyed-record adapter exposes `payload.key` to row types that declare the Text field `$recordKey`. The ingestion projection uses that key and the reported source to identify a receipt. A later correction or withdrawal with the same key revises that contribution. Two keys can describe the same request and cite the same source reference. Both receipts survive when the coverage projection groups them into one item for the selected role. [Receiver example](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver)
+
+A `SourceScope` record reports availability for one source and role over a half-open event-time interval, in Unix milliseconds. For a query over `[0,20)`, complete reports for `[0,10)` and `[10,20)` together cover the interval. With zero eligible items, that result is known empty. Moving the second start to 11 leaves a gap and yields `partial`. Empty or reversed report intervals contribute nothing. Within the query, an unavailable report yields `unknown`, filtering takes precedence over sampling, and either limit takes precedence over complete reports. A named source and role with no report also yields `unknown`. Reporting an outage changes availability while preserving the source’s receipts. [Coverage projection](../engine/standard/coverage/sattle.coverage.coverage.gkql.json)
 
 ## 10.2 Sources
 

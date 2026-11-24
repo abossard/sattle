@@ -1,0 +1,30 @@
+// curate-flows.py supplies the component, time window, SDK roles and ingress hosts from this resource group.
+let monitoredComponent = __COMPONENT__;
+let since = datetime(__START__);
+let until = datetime(__END__);
+let roles = dynamic(__ROLES__);
+let ingresses = dynamic(__INGRESS__);
+let routeWords = dynamic(["action", "actions", "activity", "adapter", "admin", "agent", "agents", "annotations", "api", "app", "applies", "apply", "apply-approved", "apply-changes", "apply-plan", "approval", "approvals", "approved", "apps", "assets", "assistant", "assistants", "auth", "availability", "backend", "bootstrap", "bridge", "call", "cancel", "capabilities", "catalog", "change", "change-sets", "changes", "changesets", "chat", "chat-completions", "client", "config", "configuration", "confirm", "connection", "connections", "connector", "context", "controller", "coordinator", "copilot", "create", "creation", "creations", "current", "dashboard", "data", "data-annotations", "decisions", "definitions", "dependencies", "deploy", "deployment", "deployments", "details", "details-data", "discovery", "entities", "entity", "event", "events", "execution", "export", "flow", "flows", "foundry", "functions", "gateway", "graph", "handler", "health", "health-model", "health-model-agent", "health-models", "health-report", "health-reports", "healthmodel", "healthmodels", "healthsignals", "healthz", "history", "hosted", "ingest", "input", "insights", "internal", "invoke", "links", "list", "live", "livez", "login", "mcp", "mcp-proxy", "me", "message", "messages", "metadata", "model", "models", "onboarding", "operations", "options", "output", "overview", "ping", "plan", "planned", "plans", "portal", "preview", "prewarm", "probe", "progress", "project", "projects", "proposal", "proposals", "protocol", "proxy", "publish", "read", "ready", "readyz", "relationship", "relationships", "relay", "remote", "report", "report-health", "reporthealth", "reports", "requests", "resource", "resources", "response", "responses", "result", "results", "retry", "run", "runs", "runtime", "select", "send", "server", "service", "session", "sessions", "signal", "signal-history", "signals", "start", "state", "static", "status", "statuses", "storage", "store", "stream", "structure", "submit", "task", "tasks", "test", "timeline", "tool", "tool-call", "tools", "toolset", "topology", "transport", "tree", "update", "user-flows", "v1", "v2", "validate", "validation", "view", "views", "worker", "workflows", "write"]);
+let clean = (part:string) {
+    case(isempty(part), "",
+         part startswith "{" and part endswith "}", "{id}",
+         array_length(set_difference(split(tolower(part),"-"),routeWords))==0, tolower(part),
+         "{redacted}")
+};
+let scopedRequests = AppRequests
+| where _ResourceId =~ monitoredComponent and TimeGenerated >= since and TimeGenerated < until
+| extend verb=toupper(extract(@"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) ", 1, Name)),
+         path=extract(@"^[A-Z]+ (/[^?# ]*)", 1, Name), rawHost=tolower(tostring(parse_url(Url).Host))
+| where isnotempty(verb) and isnotempty(path)
+| extend parts=split(path,"/")
+| extend operation=strcat(verb, " ", iif(array_length(parts)>1, strcat("/", clean(tostring(parts[1]))), ""),
+        iif(array_length(parts)>2, strcat("/", clean(tostring(parts[2]))), ""),
+        iif(array_length(parts)>3, strcat("/", clean(tostring(parts[3]))), ""),
+        iif(array_length(parts)>4, strcat("/", clean(tostring(parts[4]))), ""),
+        iif(array_length(parts)>5, strcat("/", clean(tostring(parts[5]))), ""),
+        iif(array_length(parts)>6, strcat("/", clean(tostring(parts[6]))), ""),
+        iif(array_length(parts)>7, strcat("/", clean(tostring(parts[7]))), ""),
+        iif(array_length(parts)>8, strcat("/", clean(tostring(parts[8]))), ""),
+        iif(array_length(parts)>9, strcat("/", clean(tostring(parts[9]))), ""), iif(array_length(parts)>10,"/{...}","")),
+         role=iif(AppRoleName in~ (roles),AppRoleName,"unattributed"),
+         ingressHost=iif(rawHost in~ (ingresses),rawHost,"unattributed");

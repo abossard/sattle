@@ -1,4 +1,30 @@
 [
-  {"id":"health-mirror","label":"CORE · Azure health model","url":"/health-engine","port":5083,"portEnv":"HEALTH_ENGINE_PORT"},
-  {"id":"ontology-exercise","label":"Naming exercise · local example","url":"/exercise-engine","port":5084,"portEnv":"EXERCISE_ENGINE_PORT"}
+  {
+    "id": "health-mirror",
+    "label": "CORE \u00b7 Azure health model",
+    "url": "/health-engine",
+    "port": 5083,
+    "portEnv": "HEALTH_ENGINE_PORT"
+  },
+  {
+    "id": "demo-project",
+    "label": "Demo deployment · Sattle project",
+    "url": "/project-engine",
+    "port": 5084,
+    "portEnv": "PROJECT_ENGINE_PORT"
+  },
+  {
+    "id": "flow-review",
+    "label": "Submission review",
+    "url": "/flow-engine",
+    "port": 5085,
+    "portEnv": "FLOW_REVIEW_PORT"
+  },
+  {
+    "id": "kiln-example",
+    "label": "Kiln health policy",
+    "url": "/kiln-engine",
+    "port": 5086,
+    "portEnv": "KILN_ENGINE_PORT"
+  }
 ]

@@ -29,6 +29,10 @@ Answers are saved in GitHub issues, the only durable decision record. The select
 
 ## Developer tutorial
 
+Two local Canvas exercises use synthetic records. Trace one submission, inspect what the ontology missed and preview a receiver correction. In the kiln, change the health policy and find the receipt that proves a batch finished. [Submission and coverage](engine/standard/README.md#try-it-in-canvas) · [Kiln health policy](engine/standard/README.md#follow-a-kiln-reading-through-a-health-policy)
+
+[Project the deployed CORE health model](lab/health-mirror/README.md) and compare it with Azure.
+
 Open [Getting started in Canvas](http://localhost:5173/#guide=start) after starting both processes.
 
 ```bash
@@ -352,6 +356,7 @@ How it is tested:
 
 React 19, Fluent UI v9, Zustand, WebGL. Start at [canvas/README.md](canvas/README.md).
 
+- Architecture review and decision feedback: [`architecture-review`](architecture-review/README.md), a generated Cloudflare Pages dashboard that links every concern to GitHub issues and posts accepted responses back through a server-side Pages Function.
 - Graph core and rendering: [`core/graph.ts`](canvas/src/core/graph.ts), [`render/renderer.ts`](canvas/src/render/renderer.ts).
 - State as actions and a reducer: [`state/reducer.ts`](canvas/src/state/reducer.ts).
 - Graph sources: the live engine over one resumable event stream ([`source/engine.ts`](canvas/src/source/engine.ts)) and static files written by the engine ([`source/static.ts`](canvas/src/source/static.ts)).

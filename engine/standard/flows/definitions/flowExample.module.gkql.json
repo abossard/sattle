@@ -1,0 +1,51 @@
+{
+  "module": "flowExample",
+  "version": "1.0.0",
+  "imports": [
+    {
+      "module": "sattle.flow",
+      "version": "1.0.0",
+      "alias": "flow",
+      "digest": "sha256:f35ff8c7a66683e62b1519e89c49d998afc61f03b1b21c60f2d2d4365f1280f7"
+    }
+  ],
+  "space": {
+    "name": "flowDiscovery",
+    "sources": [
+      {
+        "name": "spans",
+        "adapter": "record",
+        "rows": "flow.SpanRow"
+      },
+      {
+        "name": "counts",
+        "adapter": "record",
+        "rows": "flow.OperationCountRow"
+      },
+      {
+        "name": "claims",
+        "adapter": "record",
+        "rows": "flow.FlowClaimRow"
+      }
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "master": true,
+        "projection": "flow.ingest",
+        "inputs": {
+          "spans": "spans",
+          "counts": "counts",
+          "claims": "claims"
+        }
+      },
+      {
+        "name": "flows",
+        "projection": "flow.discover",
+        "inputs": {
+          "master": "master"
+        }
+      }
+    ]
+  }
+}

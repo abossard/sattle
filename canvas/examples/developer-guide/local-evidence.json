@@ -1,0 +1,13 @@
+[
+  {
+    "route": "/example-evidence/core-parity",
+    "root": "../lab/health-mirror",
+    "report": "state/parity.json",
+    "inputs": "parity-inputs.json"
+  },
+  {
+    "route": "/example-evidence/captured-kusto",
+    "root": "../lab/health-mirror",
+    "reader": "captured-kusto.mjs"
+  }
+]

@@ -1,9 +1,12 @@
 import { Badge, Button, Field, Link, Select, Text, makeStyles, tokens } from "@fluentui/react-components";
 import { ArrowLeft16Regular, ArrowRight16Regular, Copy16Regular, Dismiss16Regular } from "@fluentui/react-icons";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { valueText, type Entity } from "../../src/core/model";
+import { labelOf, valueText, type Entity } from "../../src/core/model";
+import { field } from "../../src/editor/coverage-review";
 import { printGkql, readGkql } from "../../src/editor/gkql";
 import { LESSONS, lessonOf, sourceForLesson, type Lesson, type Step } from "../../src/tutorial/lessons";
+import { CheckpointComparison } from "./CheckpointComparison";
+import { useCapturedKusto } from "./useCapturedKusto";
 import { masterLinks } from "./master-links";
 import { projectionSources } from "./projection-sources";
 import { exerciseProgram } from "../../src/tutorial/projection-exercises";
@@ -13,7 +16,9 @@ import { runtime } from "../../src/state/runtime";
 import { dispatch, useStore } from "../../src/state/store";
 import type { View } from "../../src/state/types";
 import { formatHash } from "../../src/state/url";
-import { useRevision } from "../../src/ui/common";
+import { useRevision, type GraphRevision } from "../../src/ui/common";
+import projectFlowOntology from "../../../lab/health-mirror/projects/ahm-model-demo/flows.json?raw";
+import metricCatalog from "../../../lab/health-mirror/projects/ahm-model-demo/metrics.json?raw";
 import adapters from "../../../engine/src/Sattle.Runtime/Adapters.cs?raw";
 import documentModule from "../../../engine/tutorial/sattle.doc.module.gkql.json?raw";
 import health from "../../../engine/tutorial/tutorial.health.gkql.json?raw";
@@ -41,6 +46,11 @@ const sources: Readonly<Record<string, string>> = {
   "tutorial.signals.gkql.json": signals,
   "tutorial.tree.gkql.json": tree,
   "tutorial.workloadHealth.gkql.json": workloadHealth,
+  ...Object.fromEntries(Object.entries(import.meta.glob<string>([
+    "../../../engine/standard/flows/definitions/sattle.flow.discover.gkql.json",
+    "../../../engine/standard/coverage/sattle.coverage.coverage.gkql.json",
+    "../../../engine/standard/health/workshop.{rating,impact,progress}.gkql.json",
+  ], { eager: true, query: "?raw", import: "default" })).map(([path, code]) => [path.split("/").at(-1), code])),
 };
 
 const useStyles = makeStyles({
@@ -68,6 +78,7 @@ const useStyles = makeStyles({
   prompt: { margin: `${tokens.spacingVerticalXS} 0`, padding: tokens.spacingHorizontalS, backgroundColor: tokens.colorNeutralBackground1, border: `1px solid ${tokens.colorNeutralStroke2}` },
   gates: { marginTop: 0, display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: tokens.spacingHorizontalXS, "& > div": { padding: tokens.spacingHorizontalXS, border: `1px solid ${tokens.colorNeutralStroke2}`, backgroundColor: tokens.colorNeutralBackground1 }, "& dd": { marginInlineStart: 0, marginTop: tokens.spacingVerticalXS, fontFamily: tokens.fontFamilyMonospace, fontSize: tokens.fontSizeBase200 } },
   healthSummary: { margin: 0, display: "grid", gap: tokens.spacingVerticalXXS, "& > div": { display: "flex", justifyContent: "space-between", alignItems: "center", gap: tokens.spacingHorizontalXS }, "& dd": { margin: 0 } },
+  evidenceTable: { width: "100%", textAlign: "left", fontSize: tokens.fontSizeBase200, fontVariantNumeric: "tabular-nums", "& th, & td": { paddingBlock: tokens.spacingVerticalXXS } },
   copyState: { marginInlineStart: tokens.spacingHorizontalXS },
   footer: { display: "grid", gridTemplateColumns: "1fr 1fr", justifyItems: "start", padding: tokens.spacingHorizontalM, borderTop: `1px solid ${tokens.colorNeutralStroke2}`, "& > :last-child": { justifySelf: "end" } },
 });
@@ -356,6 +367,37 @@ function inspectElement(graph: string, id: string, kind: "entity" | "relationshi
   dispatch({ type: "select/element", selection: { graph, kind, id } });
 }
 
+function SubmissionEvidence({ graph }: { graph: string }) {
+  const s = useStyles();
+  const revision = useRevision(graph);
+  if (!revision) return null;
+  if (graph === "flows") {
+    const handoffs = [...revision.graph.relationships()].filter(edge => edge.type.split(".").at(-1) === "Handoff");
+    return <div className={s.buttons}>{handoffs.map(edge => {
+      const from = revision.graph.entity(edge.source), to = revision.graph.entity(edge.target);
+      return from && to && <Button key={edge.id} size="small" onClick={() => inspectEdge(graph, edge.id)}>
+        {textProperty(from, "operation") ?? from.id} → {textProperty(to, "operation") ?? to.id}
+      </Button>;
+    })}</div>;
+  }
+  const nodes = [...revision.graph.entities()];
+  const findings = nodes.filter(n => n.type.split(".").at(-1) === "Finding" && field(n, "item") === "submit-42");
+  if (graph === "conflicts") {
+    const conflict = findings.find(n => field(n, "role") === "receiver");
+    return conflict ? <Button size="small" onClick={() => inspectElement(graph, conflict.id, "entity")}>Inspect receiver conflict</Button>
+      : <div><Text block size={200}>This revision has no receiver conflict.</Text><Link href={href(lessonOf("inspect-coverage")!)}>Check the receiver in coverage</Link></div>;
+  }
+  const scope = nodes.find(n => n.type.split(".").at(-1) === "Scope" && field(n, "role") === "receiver");
+  return <div className={s.buttons}>
+    {scope && <Button size="small" onClick={() => inspectElement(graph, scope.id, "entity")}>
+      Receiver scope · {field(scope, "eligible")} eligible · {field(scope, "availability")}
+    </Button>}
+    {findings.map(n => <Button key={n.id} size="small" onClick={() => inspectElement(graph, n.id, "entity")}>
+      {field(n, "direction") === "observation" ? "Observed" : "Declared"} {field(n, "role")} · {field(n, "status")}
+    </Button>)}
+  </div>;
+}
+
 function SharedService() {
   const s = useStyles();
   const master = useRevision("master");
@@ -401,14 +443,160 @@ function PolicyTrace() {
 }
 
 const textProperty = (node: Entity, property: string) => {
-  const value = node.props[property] ?? node.props[`tutorial.${property}`] ?? node.props[`mirror.${property}`];
+  const value = node.props[property] ?? Object.entries(node.props).find(([name]) => name.endsWith("." + property))?.[1];
   return value?.kind === "text" ? value.value : undefined;
 };
+
+function Coverage({ graph }: { graph: string }) {
+  const inventory = useRevision("containerApps");
+  const s = useStyles();
+  if (!inventory) return null;
+  const apps = [...inventory.graph.entities()].filter(node => node.type.split(".").at(-1) === "ContainerApp");
+  if (!apps.length) return <Text size={200}>No apps observed at this checkpoint.</Text>;
+  const matches = [...inventory.graph.relationships()].filter(edge => edge.type.split(".").at(-1) === "MatchedRule");
+  const classified = apps.filter(node => textProperty(node, "ontologyStatus") === "Mapped").length;
+  return <section aria-label="App name coverage">
+    <Badge appearance="outline" color={classified === apps.length ? "success" : "warning"}>{classified} of {apps.length} apps mapped</Badge>
+    <ul className={s.networkLinks}>{apps.map(app => {
+      const status = textProperty(app, "ontologyStatus") ?? "Unknown";
+      const rules = matches.filter(e => e.source === app.id).map(e => inventory.graph.entity(e.target)).filter((r): r is Entity => !!r);
+      return <li key={app.id}><Button size="small" onClick={() => inspectElement(status === "Mapped" ? "containerApps" : graph, app.id, "entity")}>{textProperty(app, "name")}</Button>
+        <Text block size={200}>{rules.length ? "Naming rule · " : ""}{rules.length ? rules.map(rule => [textProperty(rule, "pattern"), textProperty(rule, "className")].join(" → ")).join(" · ") : status}</Text></li>;
+    })}</ul>
+  </section>;
+}
+
+function ProjectFlows({ revision }: { revision: GraphRevision }) {
+  const s = useStyles();
+  const [chosen, setChosen] = useState("");
+  const flows = [...revision.graph.entities()].filter(n => n.type.split(".").at(-1) === "UserFlow")
+    .sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
+  const flow = flows.find(node => node.id === chosen) ?? flows.find(node => labelOf(node) === "Run a Task") ?? flows[0];
+  const edges = [...revision.graph.relationships()];
+  const steps = edges.filter(edge => edge.source === flow?.id && edge.type.split(".").at(-1) === "DeclaresStep");
+  const inspect = (id: string) => inspectElement(revision.id, id, "entity");
+  return <section aria-label="Project flow trace">
+    {flow ? <>
+      <Field label="User flow"><Select value={flow.id} onChange={(_, data) => { setChosen(data.value); inspect(data.value); }}>
+        {flows.map(node => <option key={node.id} value={node.id}>{labelOf(node)}</option>)}
+      </Select></Field>
+      <Text block size={200}>Flow health · {textProperty(flow, "state") ?? "Unknown"}</Text>
+      <Text block size={200}>{textProperty(flow, "healthBasis")}</Text>
+      <Button size="small" appearance="subtle" onClick={() => inspect(flow.id)}>Inspect this flow</Button>
+      <ul className={s.model}>{steps.map(link => {
+        const step = revision.graph.entity(link.target);
+        if (!step) return null;
+        const matches = edges.filter(edge => edge.source === step.id && edge.type.split(".").at(-1) === "RunsOnApp");
+        return <li key={link.id} className={s.modelPart} style={{ borderInlineStartColor: tokens.colorBrandStroke1 }}>
+          <Button appearance="subtle" size="small" onClick={() => inspect(step.id)}>{labelOf(step)}</Button>
+          {matches.map(edge => {
+            const app = revision.graph.entity(edge.target);
+            if (!app) return null;
+            const role = textProperty(edge, "className");
+            return <div key={edge.id}><Text size={200}>{role} → </Text>
+              <Button size="small" onClick={() => inspect(app.id)}>{labelOf(app)}</Button></div>;
+          })}
+          {!matches.length && <Text block size={200}>No deployed app matches this step.</Text>}
+          <Text block size={200}>{textProperty(step, "healthBasis")}</Text>
+        </li>;
+      })}</ul>
+    </> : <Text block size={200}>No user flows are declared at this checkpoint.</Text>}
+    <details className={s.details}><summary>Project flow ontology · flows.json</summary>
+      <Code code={projectFlowOntology.trim()} label="project flow ontology" />
+    </details>
+  </section>;
+}
+
+function AppTelemetry({ revision }: { revision: GraphRevision }) {
+  const s = useStyles();
+  const [chosen, setChosen] = useState("");
+  const nodes = [...revision.graph.entities()];
+  const edges = [...revision.graph.relationships()];
+  const apps = nodes.filter(n => n.type.split(".").at(-1) === "ContainerApp").sort((a, b) => labelOf(a).localeCompare(labelOf(b)));
+  const app = apps.find(n => n.id === chosen) ?? apps.find(n => labelOf(n).endsWith("-web")) ?? apps[0];
+  const linked = (id: string, type: string) => edges.filter(e => e.source === id && e.type.split(".").at(-1) === type)
+    .map(edge => revision.graph.entity(edge.target)).filter((n): n is Entity => !!n);
+  const metrics = app ? linked(app.id, "HasPlatformMetric").sort((a, b) => labelOf(a).localeCompare(labelOf(b))) : [];
+  const scope = app && textProperty(app, "groupId")?.toLowerCase();
+  const receipt = scope && nodes.find(n => n.type.split(".").at(-1) === "OperationWindow"
+    && textProperty(n, "scopeId")?.toLowerCase() === scope);
+  const queries = useCapturedKusto(receipt ? textProperty(receipt, "componentId") : undefined,
+    receipt ? textProperty(receipt, "windowStart") : undefined, receipt ? textProperty(receipt, "windowEnd") : undefined);
+  const steps = app ? edges.filter(e => e.target === app.id && e.type.split(".").at(-1) === "RunsOnApp")
+    .map(e => revision.graph.entity(e.source)).filter((n): n is Entity => !!n) : [];
+  const prop = (n: Entity, key: string) => {
+    const value = n.props[key] ?? n.props[`mirror.${key}`];
+    return value && value.kind !== "null" ? valueText(value) : "—";
+  };
+  const inspect = (n: Entity) => <Button size="small" appearance="subtle" onClick={() => inspectElement(revision.id, n.id, "entity")}>{labelOf(n)}</Button>;
+  return <section aria-label="Measured app telemetry">
+    {app && <Field label="Deployed app"><Select value={app.id} onChange={(_, data) => setChosen(data.value)}>
+      {apps.map(n => <option key={n.id} value={n.id}>{labelOf(n)}</option>)}
+    </Select></Field>}
+    {metrics.length > 0 ? <table className={s.evidenceTable}><caption>Azure Monitor metrics</caption>
+      <thead><tr><th>Metric</th><th>Value</th><th>Unit</th></tr></thead>
+      <tbody>{metrics.map(n => <tr key={n.id}><td>{inspect(n)}</td><td>{prop(n, "value")}</td><td>{prop(n, "unit")}</td></tr>)}</tbody>
+    </table> : <Text block size={200}>No platform readings for this app at this checkpoint.</Text>}
+    <ul className={s.model}>{steps.map(step => {
+      const readings = linked(step.id, "ObservedOperation");
+      return <li key={step.id} className={s.modelPart} style={{ borderInlineStartColor: tokens.colorBrandStroke1 }}>
+        {inspect(step)}
+        {readings.length ? readings.map(row => <div key={row.id}>
+          <Button size="small" appearance="subtle" onClick={() => inspectElement(revision.id, row.id, "entity")}>{textProperty(row, "target") || textProperty(row, "operation")}</Button>
+          <Text block size={200}>{prop(row, "source")} · {prop(row, "calls")} calls · {prop(row, "failed")} failed</Text>
+        </div>) : <Text block size={200}>No matching operation in the captured query results.</Text>}
+      </li>;
+    })}</ul>
+    <details className={s.details}><summary>Metric names and aggregations</summary><Code label="metric catalog" code={metricCatalog.trim()} /></details>
+    {queries ? <>
+      <div className={s.buttons}><Copy code={queries.routes} label="request KQL" buttonText="Copy request KQL" />
+        <Copy code={queries.dependencies} label="dependency KQL" buttonText="Copy dependency KQL" /></div>
+      <details className={s.details}><summary>Kusto · requests by route</summary>
+        <pre className={s.code} tabIndex={0}><code>{queries.routes}</code></pre></details>
+      <details className={s.details}><summary>Kusto · dependencies inside a request</summary>
+        <pre className={s.code} tabIndex={0}><code>{queries.dependencies}</code></pre></details>
+    </> : <details className={s.details}><summary>Print Kusto for a local capture</summary>
+      <Text size={200}>Run these commands in the checkout that holds the captured request and dependency results.</Text>
+      <Code label="request KQL command" code="./scripts/health-mirror.sh curate-flows --print-captured-kql routes" />
+      <Code label="dependency KQL command" code="./scripts/health-mirror.sh curate-flows --print-captured-kql dependencies" />
+    </details>}
+  </section>;
+}
 
 function CoreExample({ lesson }: { lesson: Lesson }) {
   const s = useStyles();
   const rev = useRevision(lesson.graph);
   if (!rev) return null;
+  if (lesson.graph === "ontologyGaps") return <Coverage graph={lesson.graph} />;
+  if (lesson.graph === "workloadFlows") return <ProjectFlows revision={rev} />;
+  if (lesson.graph === "appTelemetry") return <AppTelemetry revision={rev} />;
+  if (lesson.graph === "projectHealth") {
+    const nodes = [...rev.graph.entities()];
+    const metrics = nodes.filter(n => n.type.split(".").at(-1) === "PlatformMetric");
+    const apps = nodes.filter(n => n.type.split(".").at(-1) === "ContainerApp");
+    return <section aria-label="Project health checks">
+      <ul className={s.model}>{apps.map(app => {
+        const targets = new Set([...rev.graph.relationships()].filter(e => e.source === app.id && e.type.endsWith("HasPlatformMetric")).map(e => e.target));
+        const checks = metrics.filter(n => targets.has(n.id));
+        return <li key={app.id} className={s.modelPart} style={{ borderInlineStartColor: tokens.colorBrandStroke1 }}>
+          <Button size="small" onClick={() => inspectElement(lesson.graph, app.id, "entity")}>{labelOf(app)}</Button>
+          <Text block size={200}>Operational health · {textProperty(app, "state")}</Text>
+          {checks.map(check => {
+            const reading = check.props.value ?? check.props["mirror.value"];
+            return <Button key={check.id} appearance="subtle" size="small" onClick={() => inspectElement(lesson.graph, check.id, "entity")}>
+              {labelOf(check)} · {reading && reading.kind !== "null" ? valueText(reading) + "%" : "Unknown"}
+            </Button>;
+          })}
+        </li>;
+      })}</ul>
+    </section>;
+  }
+  if (lesson.graph === "signals") return <SignalReading revision={rev} />;
+  if (lesson.graph === "containerApps") {
+    const nodes = [...rev.graph.entities()];
+    const picks = nodes.filter(n => n.type.split(".").at(-1) === "ContainerApp");
+    return <div className={s.buttons}>{picks.map(n => <Button key={n.id} size="small" onClick={() => inspectElement(lesson.graph, n.id, "entity")}>{textProperty(n, "name") ?? n.id}</Button>)}</div>;
+  }
   if (lesson.graph === "network") {
     const paths = [...rev.graph.relationships()];
     const blob = paths.find(edge => {
@@ -425,8 +613,7 @@ function CoreExample({ lesson }: { lesson: Lesson }) {
       {model && <Button size="small" onClick={() => inspectEdge(lesson.graph, model.id)}>Trace the host to CORE storage</Button>}
     </div> : <Text size={200}>This capture has no network observations for this checkpoint.</Text>;
   }
-  const keys = lesson.graph === "signals" ? ["session-storage/azureResource/availability"]
-    : lesson.graph === "master" ? ["flow-run-agent-tasks"]
+  const keys = lesson.graph === "master" ? ["flow-run-agent-tasks"]
     : ["flow-run-agent-tasks", "system-session-store", "system-agent-runtime"];
   const nodes = [...rev.graph.entities()];
   const task = nodes.find(n => textProperty(n, "key") === "flow-run-agent-tasks");
@@ -437,6 +624,36 @@ function CoreExample({ lesson }: { lesson: Lesson }) {
     const node = nodes.find(n => textProperty(n, "key") === key);
     return node && <Button size="small" key={key} onClick={() => inspectElement(lesson.graph, node.id, "entity")}>{textProperty(node, "name") ?? key}</Button>;
   })}</div>;
+}
+
+function SignalReading({ revision }: { revision: GraphRevision }) {
+  const s = useStyles();
+  const master = useRevision("master");
+  const [chosen, setChosen] = useState("");
+  const signals = [...revision.graph.entities()].filter(n => n.type.split(".").at(-1) === "EvaluatedSignal")
+    .sort((a, b) => (textProperty(a, "key") ?? "").localeCompare(textProperty(b, "key") ?? ""));
+  const signal = signals.find(n => n.id === chosen) ?? signals.find(n => textProperty(n, "key") === "session-storage/azureResource/availability") ?? signals[0];
+  if (!signal || !master) return <Text block size={200}>Select a checkpoint with signal readings.</Text>;
+  function config(type: string, key?: string): Record<string, unknown> {
+    const node = [...master!.graph.entities()].find(n => n.type.split(".").at(-1) === type && textProperty(n, "key") === key);
+    try { return node ? JSON.parse(textProperty(node, "configuration") ?? "{}") : {}; } catch { return {}; }
+  }
+  const reading = config("Observation", textProperty(signal, "key"));
+  const definition = config("SignalDefinition", textProperty(signal, "definitionKey"));
+  return <section aria-label="Configured signal reading">
+    <Field label="Signal binding"><Select value={signal.id} onChange={(_, data) => { setChosen(data.value); inspectElement(revision.id, data.value, "entity"); }}>
+      {signals.map(n => <option key={n.id} value={n.id}>{textProperty(n, "key")}</option>)}
+    </Select></Field>
+    <dl className={s.healthSummary}>
+      <div><dt>Source</dt><dd>{String(reading.source ?? "Unknown")}</dd></div>
+      <div><dt>Reading</dt><dd>{String(reading.value ?? reading.availabilityState ?? reading.status ?? "Unknown")}</dd></div>
+      <div><dt>State</dt><dd>{textProperty(signal, "state")}</dd></div>
+      <div><dt>Window end</dt><dd>{String(reading.windowEnd ?? "Unknown")}</dd></div>
+    </dl>
+    {typeof definition.metricName === "string" && <Text block size={200}>{definition.metricName} · {String(definition.aggregationType)} · {String(definition.timeGrain)}</Text>}
+    {typeof definition.queryText === "string" && <details className={s.details}><summary>Kusto query for this signal</summary><Code label="configured signal KQL" code={definition.queryText} /></details>}
+    <Button size="small" onClick={() => inspectElement(revision.id, signal.id, "entity")}>Inspect evaluated signal</Button>
+  </section>;
 }
 
 function HealthEvidence({ graph }: { graph: string }) {
@@ -487,6 +704,13 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
   const chapters = LESSONS.filter(item => item.space === lesson.space);
   const index = chapters.indexOf(lesson);
   const previous = chapters[index - 1], next = chapters[index + 1];
+  const examples = [
+    { space: undefined, name: "Azure and Kubernetes" }, { space: "healthMirror", name: "CORE deployment" },
+    { space: "flowReview", name: "Submission review" }, { space: "kiln", name: "Kiln health policy" },
+  ];
+  const localExercise = lesson.space === "flowReview" || lesson.space === "kiln";
+  const startup = localExercise && !graph ? chapters[0].commands?.[0] : undefined;
+  const commands = startup && !lesson.commands?.includes(startup) ? [startup, ...(lesson.commands ?? [])] : lesson.commands;
   useEffect(() => { heading.current?.focus(); }, []);
   const go = (id: string) => { const target = lessonOf(id); if (target) location.hash = href(target); };
   const close = () => {
@@ -497,7 +721,9 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
   return <aside className={s.panel} aria-label="Developer guide">
     <div className={s.header}>
       <Field label="Developer guide"><Select className={s.picker} value={lesson.id} onChange={(_, data) => go(data.value)}>
-        {([["CORE deployment", true], ["Azure and Kubernetes", false]] as const).map(([label, core]) => <optgroup key={label} label={label}>{LESSONS.filter(item => Boolean(item.space) === core).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}</optgroup>)}
+        {examples.map(group => <optgroup key={group.name} label={group.name}>
+          {LESSONS.filter(item => item.space === group.space).map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </optgroup>)}
       </Select></Field>
       <Button appearance="subtle" icon={<Dismiss16Regular />} aria-label="Close developer guide" onClick={close} />
     </div>
@@ -505,7 +731,8 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
       <h2 ref={heading} tabIndex={-1} className={s.title}>{lesson.title}</h2>
       <Text as="p" className={s.goal}><strong>Goal</strong> {lesson.goal}</Text>
       {replayReady ? <Button as="a" appearance="primary" size="small" href={href(lessonOf("explore")!)}>Explore the master graph</Button> : <Text>{lesson.action}</Text>}
-      {lesson.space && graph && <CoreExample lesson={lesson} />}
+      {lesson.space === "healthMirror" && graph && <CoreExample lesson={lesson} />}
+      {lesson.space === "flowReview" && graph && <SubmissionEvidence graph={lesson.graph} />}
       {lesson.build && <BuildSteps lesson={lesson} build={lesson.build} available={Boolean(graph)} />}
       {lesson.id === "explore" && graph && <><CapturedNetworkLinks /><SharedService /></>}
       {lesson.id === "explore" && graph && <details className={s.details}>
@@ -516,6 +743,7 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
           <li>Pick a row to see it on the graph and in Inspector.</li>
         </ol>
       </details>}
+      {lesson.id === "core-health" && <CheckpointComparison />}
       {lesson.id === "rollup" && graph && <PolicyTrace />}
       {lesson.id === "azure-health" && graph && <><CpuReplay model={lesson.graph} /><HealthEvidence graph={lesson.graph} /></>}
       {lesson.companionFlow ? <div className={s.flowPair}><Flow levels={lesson.flow} label={lesson.flowLabel ?? "Data flow"} /><Flow levels={lesson.companionFlow.levels} label={lesson.companionFlow.label} /></div> : <Flow levels={lesson.flow} label={lesson.flowLabel ?? "Data flow"} />}
@@ -523,7 +751,7 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
       {lesson.id === "azure-health" && <Thresholds />}
       <Text block size={200}><strong>Check</strong> {lesson.check}</Text>
       {graph ? <Text size={200}><strong>{replayReady ? "Replay ready" : lesson.build ? `Example ${graph.id}` : graph.id}</strong> · {graph.nodes.toLocaleString()} nodes · {graph.edges.toLocaleString()} links</Text>
-        : <Text size={200}>{loaded === "loading" ? "Connecting to the engine…" : lesson.id === "start" ? "Waiting for the tutorial engine." : <Link href={href(chapters[0])}>{lesson.space ? "Open the CORE replay" : "Start the tutorial engine"}</Link>}</Text>}
+        : <Text size={200}>{loaded === "loading" ? "Connecting to the engine…" : startup ? "Start this replay from the repository root." : lesson.id === "start" ? "Waiting for the tutorial engine." : <Link href={href(chapters[0])}>{chapters[0].title}</Link>}</Text>}
       <div className={s.buttons}>
         {loaded === "error" && <Button size="small" onClick={() => dispatch({ type: "source/opening", id: sourceForLesson(lesson) })}>Retry connection</Button>}
         {lesson.id === "explore" && graph && <><Button size="small" onClick={() => {
@@ -538,9 +766,12 @@ export function TutorialPanel({ lesson }: { lesson: Lesson }) {
         {view !== "data" && lesson.view !== "data" && <Button as="a" size="small" href={href(lesson, "data")}>{lesson.build ? "Open example graph" : "Open graph"}</Button>}
       </div>
       {lesson.example && graph && <ExampleConnection graph={lesson.graph} example={lesson.example} />}
-      {lesson.commands?.map(({ label, code }) => <details key={label} className={s.details} open={(lesson.id === "start" && !replayReady) || (lesson.exercise && !graph) || (lesson.id === "core-import" && !graph && label === "Open the local replay") || undefined}><summary>{label}</summary><Code label={label} code={code} /></details>)}
-      {lesson.files?.map((file) => lesson.space ? <MirrorSource key={file} file={file} connected={Boolean(graph)} base={connections.find(item => item.id === lesson.source)!.url} /> : <Source key={file} file={file} />)}
+      {commands?.map(({ label, code }) => <details key={label} className={s.details} open={label === startup?.label || (lesson.id === "start" && !replayReady) || (lesson.id === "core-import" && !graph && label === "Open the local replay") || undefined}><summary>{label}</summary><Code label={label} code={code} /></details>)}
+      {lesson.files?.map((file) => lesson.space === "healthMirror" ? <MirrorSource key={file} file={file} connected={Boolean(graph)} base={connections.find(item => item.id === lesson.source)!.url} /> : <Source key={file} file={file} />)}
       <details className={s.details}><summary>Ask your AI assistant</summary><p className={s.prompt}>{lesson.prompt}</p><Copy label="AI prompt" code={lesson.prompt} /></details>
+      {lesson.id === "core-portable-flows" && <Link href={href(lessonOf("trace-submission")!)}>Follow an individual request in the local trace sample</Link>}
+      {lesson.id === "core-ontology-gaps" && <Link href={href(lessonOf("inspect-coverage")!)}>Inspect role coverage in the local trace sample</Link>}
+      {lesson.id === "core-project-health" && <Link href={href(lessonOf("kiln-policy")!)}>Try a recovery and freshness policy on the local kiln sample</Link>}
     </div>
     <nav className={s.footer} aria-label="Lessons">
       {previous ? <Button as="a" size="small" appearance="subtle" href={href(previous)} icon={<ArrowLeft16Regular />}>Back</Button> : <span />}

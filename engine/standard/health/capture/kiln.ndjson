@@ -1,0 +1,30 @@
+{"source":"records:Dependency","capturedAt":"2026-01-01T10:00:00Z","payload":{"key":"firing line","values":{"consumer":"firing line","probe":"chamber","role":"controls firing","metric":"kiln temperature"}}}
+{"source":"records:Dependency","capturedAt":"2026-01-01T10:00:00Z","payload":{"key":"display","values":{"consumer":"display","probe":"chamber","role":"display only","metric":"kiln temperature"}}}
+{"source":"records:TaskEvent","capturedAt":"2026-01-01T10:00:01Z","payload":{"key":"batch-A-accepted","values":{"id":"batch-A-accepted","batch":"batch-A","stage":"accepted","at":"2026-01-01T10:00:01Z"}}}
+{"source":"records:TaskEvent","capturedAt":"2026-01-01T10:00:02Z","payload":{"key":"batch-B-cooled","values":{"id":"batch-B-cooled","batch":"batch-B","stage":"cooled","at":"2026-01-01T10:00:02Z"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:00:05Z","payload":{"key":"5","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:00:05Z","value":60}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:00:15Z","payload":{"key":"15","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:00:15Z","value":110}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:01:00Z","payload":{"key":"clock","values":{"tick":"1"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:01:05Z","payload":{"key":"65","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:01:05Z","value":60}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:01:15Z","payload":{"key":"75","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:01:15Z","value":110}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:02:00Z","payload":{"key":"clock","values":{"tick":"2"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:02:05Z","payload":{"key":"125","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:02:05Z","value":60}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:02:15Z","payload":{"key":"135","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:02:15Z","value":110}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:03:00Z","payload":{"key":"clock","values":{"tick":"3"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:03:05Z","payload":{"key":"185","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:03:05Z","value":60}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:03:15Z","payload":{"key":"195","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:03:15Z","value":110}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:04:00Z","payload":{"key":"clock","values":{"tick":"4"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:04:05Z","payload":{"key":"245","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:04:05Z","value":40}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:04:15Z","payload":{"key":"255","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:04:15Z","value":60}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:05:00Z","payload":{"key":"clock","values":{"tick":"5"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:05:05Z","payload":{"key":"305","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:05:05Z","value":40}}}
+{"source":"records:TaskEvent","capturedAt":"2026-01-01T10:05:15Z","payload":{"key":"batch-A-cooled","values":{"id":"batch-A-cooled","batch":"batch-A","stage":"cooled","at":"2026-01-01T10:05:15Z"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:05:15Z","payload":{"key":"315","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:05:15Z","value":60}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:06:00Z","payload":{"key":"clock","values":{"tick":"6"}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:06:05Z","payload":{"key":"365","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:06:05Z","value":40}}}
+{"source":"records:Reading","capturedAt":"2026-01-01T10:06:15Z","payload":{"key":"375","values":{"probe":"chamber","metric":"kiln temperature","at":"2026-01-01T10:06:15Z","value":60}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:07:00Z","payload":{"key":"clock","values":{"tick":"7"}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:08:00Z","payload":{"key":"clock","values":{"tick":"8"}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:09:00Z","payload":{"key":"clock","values":{"tick":"9"}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:10:00Z","payload":{"key":"clock","values":{"tick":"10"}}}
+{"source":"records:Clock","capturedAt":"2026-01-01T10:11:00Z","payload":{"key":"clock","values":{"tick":"11"}}}

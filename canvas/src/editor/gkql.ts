@@ -79,7 +79,7 @@ const starters: Readonly<Partial<Record<string, Omit<GkqlVerb, "id">>>> = {
 };
 
 export const authorableVerbs = Object.keys(starters);
-const sourceVerbs = new Set(["graph-match", "rows"]);
+const sourceVerbs = new Set(["graph-match", "rows", "values"]);
 const outputVerbs = new Set(["nodes", "edges"]);
 
 export function verbStyle(verb: string): "input" | "transform" | "aggregate" | "output" {

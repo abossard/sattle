@@ -6,9 +6,12 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 
 - `npm install`
 - `npm run dev` (starts Vite). `ENGINE_PORT=5091 npm run dev` points the `/engine` proxy at another engine port (default 5080).
+- [CORE health model](http://localhost:5173/#guide=core-health). [Start the local replay](../lab/health-mirror/README.md).
 - [Developer guide](http://localhost:5173/#guide=start). Eleven Canvas lessons use GKQL and a local, sanitized Azure replay.
+- [Follow one submission](http://localhost:5173/#guide=trace-submission) on port 5085. Run `python3 scripts/review-flow.py serve` from the repository root. Follow the observed calls, inspect coverage, then correct the receiver in a draft.
+- [Change a kiln policy](http://localhost:5173/#guide=kiln-policy) on port 5086. Run `python3 scripts/kiln-guide.py serve` from the repository root. Edit freshness, inspect two consumers of one probe and follow a batch to its completion receipt.
 - `npm run build` (type check plus production build in `dist/`)
-- `npm test`: 1,174 parametrized unit and component tests in 55 files, as two vitest projects. `npm test -- --project pure` runs the 1,158 tests that need no engine (no `dotnet`, about two minutes); the project `engine` is the folder `tests/engine`, which builds and starts a real engine (see the projection editor's tests below). A test written for a defect stands with the tests of its module, titled by the behaviour.
+- `npm test` runs both Vitest projects. The `pure` project runs unit and component tests. The `engine` project builds and serves a real engine for integration tests. To check the review form and its agreement with CLI replay, run `npm test -- coverage-review.test` from this directory.
 - `npm run a11y` (dev server or `vite preview` running on `http://localhost:5173/` unless a base URL is given, engine on the proxied port; it stops with a clear message when the app does not start): axe-core with color contrast on every view, theme and dialog in real Chrome, plus keyboard-only walkthroughs with real key events. `A11Y_SOURCE` and `A11Y_ENGINE` select the sources. Three checks need the estate engine and skip with a note otherwise: the document view (an engine that serves a document graph) and the value roles of the `workload` graph (`A11Y_ROLES_GRAPH`) in each theme: no coloring is chosen, a real screenshot of the canvas must contain pixels of every role color of the legend, every element of a type that carries a hinted property must have a role, and the legend in the panel must name each role.
 - `npm run document-live` (app and an engine that plays a capture slowly, e.g. `sattle serve lab/fixtures --speed 2`): opens the page once, shows the first document graph and checks that it passed through more than one revision without a reload and ends at the revision and digest `GET /graphs/{g}/document` answers; exit 2 when it could not see a live update. Run it when the document view, the event stream or the engine's document endpoint changed, not on every build: it takes minutes and needs a slow engine; `npm run a11y` covers the document view on a settled engine.
 - `npm run perf` after `npx vite preview --port 4173`: headless Chrome load and frame-rate harness, see `PERF.md`.
@@ -54,6 +57,12 @@ Shows the graphs of a Sattle graph space and edits the projections that write th
 - Value roles (engine 3.2): each property entry of the ontology may carry `presentation: [{ value, role }]` with the roles `ok`, `warning`, `danger`, `unknown`, `neutral`. When a graph's ontology has roles for a property of nodes (or of edges), that property colors them by default, the roles map to Fluent status tokens (`colorStatusSuccessForeground1` and the warning and danger ones; `colorNeutralForeground2` and `3` for neutral and unknown) of the light or dark theme for the canvas and of the active theme for the legend, and the user overrides per graph: another property, or type colors. When a target has roles for several properties (the `workload` graph: `Component.state`, `ComponentSignal.signalState`) the default keeps all of them: an element takes the worst role (danger, warning, unknown, ok, neutral) among the hinted properties it has, its text names the property (`state: Healthy`), and the legend and the element list say so. A value without a role is neutral; in high contrast the glyph (`✓ ⚠ ✖ ? ○`) and word carry the role. `src/source/presentation.ts` reads exactly that shape and removes it from the ontology before schema validation (the contract schema forbids extra fields). Roles are also edited: the Definitions tab, "Value roles", gives a value of a property a role as a `ValueRole` node in the property's `presentation` slot.
 - Ontology: types as a Fluent Tree beside the ontology drawn as a graph; for the engine, the module's catalog ontology and its text.
 
+### Review a coverage finding
+
+Open a finding at the head of the live coverage or conflicts graph. **Review rule** opens its role, target and rule revision. Use **Preview change** to compare the draft with the published graph. The comparison shows which findings would change and the counts for each affected source and role.
+
+From a conflict, follow **Derived from** to the coverage finding. Expand **BasedOn** in the Inspector’s connections to read each receipt. Two receipts for the same item and role count once in the eligible population. The preview stays open as you inspect them. **Publish rule** commits the reviewed change. **Discard draft** closes the preview and drops the edit. [Worked example](../engine/standard/README.md)
+
 ## Projection editor (engine source)
 
 An edit session is a **draft** on the engine (`POST /drafts`); the browser keeps its own copy of the draft's catalog graph. Every projection is a file of its own, written in a language the engine names for it (`GET /definitions`, `projections`: projection, file, language). `src/ui/editor/languages.tsx` maps GKQL and KQL to their editors. Other languages open as read-only source (`GET /definitions/{file}`).
@@ -94,7 +103,7 @@ A graph whose entry in `/space` has `"document": true` shows in the data view as
 
 ## Telemetry
 
-The graph carries data as well as structure. Telemetry is time-indexed, high rate and does not create revisions.
+Telemetry readings are indexed by time. A health projection can turn a change in a measured state into a graph revision. In the kiln example, select an instrument in `rating` to see `changedIn`, the window when the current state began. The timeline shows the inputs and catalog revision for the displayed patch. A late reading can change the evidence window while the state still reads `Ready`. [Kiln policy and replay](../engine/standard/README.md)
 
 - Seam: `TelemetryBatch` (columnar: graph, tick, target `node` or `edge`, property, optional ids, `Float32Array` values). Dense batches (ids omitted) hold one value per element of the initial snapshot in snapshot order, which is how 300k edge values per tick travel; sparse batches carry element ids and update on top of the previous tick (also for elements added after the snapshot).
 - Sources declare `Meter`s (property id, target, label, unit, range, optional warning threshold, `sqrt` scale for heavy-tailed rates) and default channel mappings. A source offers either a pull `TelemetryFeed` (static file, synthetic generator, simulated stream) or pushes `telemetry` stream events (a live engine source). Telemetry files are NDJSON, one sparse batch per line, validated line by line; bad lines are rejected visibly like every other record.
@@ -130,6 +139,7 @@ stateDiagram-v2
 ```
 
 - On reconnect the stream resumes after the last sequence number, a skipped revision filled over HTTP, `gap` and `AheadOfHead` trigger a resync (reload from a snapshot), `SlowConsumer` reconnects, `activation` resets stored telemetry and reads it again.
+- On activation Canvas refreshes graph bindings from `GET /space`. The Inspector follows the coverage graph’s `inputPorts.rules` to the graph that owns the rules, then reads its `projectionFile`. If a project binds a different rules graph under the same graph names, the next review opens the new file. [Binding test](tests/engine-source.test.ts)
 - Lineage: selecting a derived element reads `/graphs/{g}/lineage?element=` and highlights its sources in the other graphs.
 - The `catalog` graph is served like any other, with the kernel as its ontology; the editor reads it through `src/core/catalog.ts` (modules, types, identity domains, projections, operators, ports, wires, rules with direction class).
 

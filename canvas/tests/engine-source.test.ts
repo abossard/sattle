@@ -30,6 +30,17 @@ describe("the engine's documents and stream messages are read into the viewer's 
     expect(r.ok && r.batch.t).toBe(Date.parse("2026-11-10T10:41:00Z") / 1000);
     expect(batchFromWire({ ...tel("nope", 1) }).ok).toBe(false);
   });
+  it("reads named graph bindings and the producing file independently of graph names", () => {
+    const graphs = parseSpace({ protocol: "3", space: "s", graphs: [
+      { id: "review", inputPorts: { rules: "declarations" } },
+      { id: "declarations", projection: "ownerPolicy", projectionFile: "project.ownerPolicy.gkql.json" },
+      { id: "legacy" },
+    ] }).graphs;
+    expect(graphs[0].inputPorts).toEqual({ rules: "declarations" });
+    expect(graphs.find(g => g.id === graphs[0].inputPorts?.rules)?.projectionFile).toBe("project.ownerPolicy.gkql.json");
+    expect(graphs[2].inputPorts).toBeUndefined();
+    expect(graphs[2].projectionFile).toBeUndefined();
+  });
   it.each<[string, unknown, string | undefined]>([["a caption", "Services and what they depend on.", "Services and what they depend on."], ["no description (null)", null, undefined], ["an empty one", "", undefined], ["not text", 3, undefined]])("the description of a graph in /space: %s", (_, description, want) => {
     const doc = parseSpace({ protocol: "3", space: "s", graphs: [{ id: "g", role: "projection", description }] });
     expect(doc.graphs[0].description).toBe(want);
@@ -257,12 +268,23 @@ describe("the engine source opens a space, delivers its history and stream in or
     src.dispose();
   });
 
-  it("an activation makes the source read the ontology and the value roles again", async () => {
-    const { src, ws, log } = await open({ "GET /graphs/master/patches?after=1": () => ({ body: "" }) });
+  it("an activation refreshes both the ontology and the rule bindings for existing graphs", async () => {
+    let binding = "first";
+    const { src, ws, log, events } = await open({
+      "GET /graphs/master/patches?after=1": () => ({ body: "" }),
+      "GET /space": () => ({ body: space({ graphs: space().graphs.map(g => g.id === "master"
+        ? { ...g, inputs: [binding], inputPorts: { rules: binding }, projectionFile: binding + ".gkql.json" } : g) }) }),
+    });
     const before = log.filter((l) => l.includes("/graphs/master/ontology")).length;
+    expect((await src.open()).graphs.find(g => g.id === "master")?.inputPorts).toEqual({ rules: "first" });
+    binding = "second";
     ws.push({ type: "activation", catalogRevision: "11", graphs: [{ id: "master" }] });
     await settle(40);
     expect(log.filter((l) => l.includes("/graphs/master/ontology")).length, "a definition edit can change the ontology and its roles").toBeGreaterThan(before);
+    expect(events).toContainEqual(expect.objectContaining({ type: "meta", meta: expect.objectContaining({
+      inputs: ["second"], inputPorts: { rules: "second" }, projectionFile: "second.gkql.json",
+    }) }));
+    expect((await src.open()).graphs.find(g => g.id === "master")?.inputPorts).toEqual({ rules: "second" });
     src.dispose();
   });
 

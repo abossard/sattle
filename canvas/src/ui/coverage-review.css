@@ -1,0 +1,7 @@
+.coverage-review { overflow-wrap: anywhere; }
+.coverage-review :is(h3, h4, p) { margin-block: .4rem; }
+.coverage-review fieldset { min-inline-size: 0; padding: .65rem; border: 1px solid var(--colorNeutralStroke2); }
+.coverage-review :is(label, summary) { display: block; margin-block-start: .5rem; }
+.coverage-review summary { display: list-item; cursor: pointer; }
+.coverage-review :is(input, select, textarea) { box-sizing: border-box; width: 100%; font: inherit; }
+.coverage-review button { margin: .5rem .4rem 0 0; font: inherit; }

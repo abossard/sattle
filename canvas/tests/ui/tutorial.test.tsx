@@ -26,6 +26,29 @@ describe("developer guide", () => {
     expect(await violations(rail)).toEqual([]);
   });
 
+  it("starts the submission replay and links to its coverage graph", async () => {
+    const guide = within(await openWithoutEngine("trace-submission"));
+    expect(guide.getByLabelText("Start the local submission replay").textContent).toContain("scripts/review-flow.py serve");
+    expect(guide.getByRole("link", { name: "Next" }).getAttribute("href")).toContain("guide=inspect-coverage");
+    expect(guide.getByRole("combobox", { name: "Developer guide" }).querySelectorAll('optgroup[label="Submission review"] option')).toHaveLength(3);
+  });
+
+  it.each([
+    ["inspect-coverage", "sattle.coverage.coverage.gkql.json", "coverage", "scripts/review-flow.py serve"],
+    ["kiln-policy", "workshop.rating.gkql.json", "rating", "scripts/kiln-guide.py serve"],
+    ["kiln-impact", "workshop.impact.gkql.json", "impact", "scripts/kiln-guide.py serve"],
+    ["kiln-completion", "workshop.progress.gkql.json", "progress", "scripts/kiln-guide.py serve"],
+  ])("opens %s from a short link with copyable GKQL and its server command", async (id, file, graph, command) => {
+    const user = userEvent.setup();
+    const rail = await openWithoutEngine(id);
+    const guide = within(rail);
+    expect([...rail.querySelectorAll("details[open] pre")].some(pre => pre.textContent?.includes(command))).toBe(true);
+    expect(guide.getByRole("option", { name: "Follow one submission" })).toBeTruthy();
+    await user.click(guide.getByText(file, { selector: "summary" }));
+    await user.click(guide.getByRole("button", { name: "Copy " + file }));
+    expect(JSON.parse(await navigator.clipboard.readText()).graph).toBe(graph);
+  });
+
   it("opens the local CORE case and keeps its chapters on the mirror engine", async () => {
     const guide = within(await openWithoutEngine("core-import"));
     expect(guide.getByLabelText("Open the local replay").textContent).toContain("health-mirror.sh serve");

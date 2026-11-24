@@ -2,6 +2,8 @@
 """Compare Sattle's emitted snapshots and patches to held-out Azure model evaluations."""
 import argparse
 import copy
+import hashlib
+import tempfile
 import ipaddress
 import json
 import math
@@ -13,6 +15,17 @@ from pathlib import Path
 
 def read(path):
     return json.loads(path.read_text())
+
+
+def source_fingerprint(fixture, work):
+    locations = {"fixture": fixture, "state": work}
+    declaration = read(Path(__file__).with_name("parity-inputs.json"))
+    hashes = {}
+    for base, names in declaration.items():
+        for name in names:
+            path = locations[base] / name
+            hashes[base + "/" + name] = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+    return hashes
 
 
 def instant(value):
@@ -401,6 +414,7 @@ if __name__ == "__main__":
     parser.add_argument("--negative-controls", action="store_true", help="Check deliberately corrupted copies of the capture")
     args = parser.parse_args()
     try:
+        inputs = source_fingerprint(args.fixture, args.work) if args.report else None
         result = verify(args.fixture, args.work, args.scope)
         if args.negative_controls:
             controls = negative_controls(args.fixture, args.work)
@@ -409,7 +423,14 @@ if __name__ == "__main__":
             for name, detected in controls.items():
                 print(f"Negative control {name}: {'detected' if detected else 'MISSED'}")
         if args.report:
-            args.report.write_text(json.dumps(result, indent=2, default=str) + "\n")
+            if inputs != source_fingerprint(args.fixture, args.work):
+                raise ValueError("The capture changed during verification. Run the comparison again.")
+            result["inputs"] = inputs
+            result["model"] = read(args.fixture / "model.json")["model"]["name"]
+            with tempfile.NamedTemporaryFile(mode="w", dir=args.report.parent, delete=False) as temporary:
+                json.dump(result, temporary, indent=2, default=str)
+                temporary.write("\n")
+            Path(temporary.name).replace(args.report)
         print(f'Configuration, topology, bindings, network and checkpoint coverage: {sum(result["structureChecks"].values())} checks, '
               f'{len(result["structureFailures"])} failures')
         for failure in result["structureFailures"]:

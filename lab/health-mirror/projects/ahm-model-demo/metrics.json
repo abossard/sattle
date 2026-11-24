@@ -1,0 +1,9 @@
+{
+  "metricNamespace": "Microsoft.App/containerApps",
+  "metrics": [
+    {"name": "CpuPercentage", "aggregation": "Average", "unit": "Percent"},
+    {"name": "MemoryPercentage", "aggregation": "Average", "unit": "Percent"},
+    {"name": "ResponseTime", "aggregation": "Average", "unit": "MilliSeconds"},
+    {"name": "RestartCount", "aggregation": "Total", "unit": "Count"}
+  ]
+}

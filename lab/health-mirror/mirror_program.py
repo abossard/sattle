@@ -1,4 +1,5 @@
 """Load the authored GKQL documents and extend their repeatable stage for deeper source DAGs."""
+
 import json
 from pathlib import Path
 from shutil import copyfile
@@ -13,6 +14,7 @@ def read(path):
 
 module = read(DEFINITIONS / "mirror.module.gkql.json")
 ROW = next(row["fields"] for row in module["rows"] if row["name"] == "CloudHealthRow")
+ONTOLOGY_ROW = next(row["fields"] for row in module["rows"] if row["name"] == "WorkloadOntologyRow")
 
 
 def materialize(output, depth):
@@ -29,12 +31,19 @@ def materialize(output, depth):
         original = {v["id"]: v for v in doc["verbs"]}
         incoming = [wire for wire in doc["wires"] if wire["to"] in names]
         accumulator = repeat["accumulator"]
-        outgoing = [wire for wire in doc["wires"] if wire["from"] == accumulator.format(last) and wire["to"] not in names]
+        outgoing = [
+            wire
+            for wire in doc["wires"]
+            if wire["from"] == accumulator.format(last) and wire["to"] not in names
+        ]
         for level in range(last + 1, depth + 1):
-            ids = {pattern.format(last):pattern.format(level) for pattern in repeat["verbs"]}
-            previous = {accumulator.format(last - 1):accumulator.format(level - 1)}
-            doc["verbs"].extend({**original[k], "id":ids[k]} for k in names)
-            doc["wires"].extend({**w, "from":ids.get(w["from"], previous.get(w["from"], w["from"])), "to":ids[w["to"]]} for w in incoming)
+            ids = {pattern.format(last): pattern.format(level) for pattern in repeat["verbs"]}
+            previous = {accumulator.format(last - 1): accumulator.format(level - 1)}
+            doc["verbs"].extend({**original[k], "id": ids[k]} for k in names)
+            doc["wires"].extend(
+                {**w, "from": ids.get(w["from"], previous.get(w["from"], w["from"])), "to": ids[w["to"]]}
+                for w in incoming
+            )
         for w in outgoing:
             w["from"] = accumulator.format(depth)
         target.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")

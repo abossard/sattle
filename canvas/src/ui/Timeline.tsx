@@ -71,7 +71,7 @@ export function Timeline({ graph, compact = false }: { graph: string; compact?: 
       {!compact && (
         <div className={s.row}>
           <Badge appearance="outline" color="success">+ {k.added} added</Badge><Badge appearance="outline" color="danger">− {k.removed} removed</Badge><Badge appearance="outline" color="warning">Δ {k.changed} changed</Badge>
-          {hist.cursor > 0 && <Text size={200}>cause {hist.patches[hist.cursor - 1].cause.inputs.join(", ")}</Text>}
+          {hist.cursor > 0 && <Text size={200}>cause {hist.patches[hist.cursor - 1].cause.inputs.join(", ")} · catalog revision {hist.patches[hist.cursor - 1].cause.configurationVersion}</Text>}
           <span style={{ flexGrow: 1 }} />
           <Field label="Highlight" orientation="horizontal"><Select size="small" value={fs.hlMode} onChange={(_, d) => dispatch({ type: "filter/set", graph, filter: { hlMode: d.value as typeof fs.hlMode } })}><option value="step">This revision</option><option value="since">Since revision…</option><option value="off">Off</option></Select></Field>
           {fs.hlMode === "since" && <Select size="small" aria-label="Compare against revision" value={String(fs.hlSince)} onChange={(_, d) => dispatch({ type: "filter/set", graph, filter: { hlSince: Number(d.value) } })}>{Array.from({ length: hist.length + 1 }, (_, i) => <option key={i} value={i}>rev {hist.revisionAt(i)}</option>)}</Select>}

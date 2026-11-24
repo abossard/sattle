@@ -1,0 +1,857 @@
+{
+  "graph": "coverage",
+  "ontology": "sattle.coverage",
+  "description": "Review which role observations have bindings and which declarations have evidence.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "sattle.coverage"}, {"name": "rules", "ontology": "sattle.coverage"}],
+  "parameters": [
+    {"name": "scopeSource", "kind": "Text", "default": ""},
+    {"name": "scopeRole", "kind": "Text", "default": ""},
+    {"name": "fromTime", "kind": "Integer", "default": 0},
+    {"name": "untilTime", "kind": "Integer", "default": 253402300800000},
+    {"name": "policyRevision", "kind": "Text", "default": "1"}
+  ],
+  "verbs": [
+    {"id": "observations", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "o", "label": "Observation"}]}},
+    {
+      "id": "eligible",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeSource"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "o.source"}, {"param": "scopeSource"}]}]},
+                  {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeRole"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "o.role"}, {"param": "scopeRole"}]}]}
+                ]
+              },
+              {"fn": "<=", "args": [{"param": "fromTime"}, {"ref": "o.at"}]}
+            ]
+          },
+          {"fn": "<", "args": [{"ref": "o.at"}, {"param": "untilTime"}]}
+        ]
+      }
+    },
+    {
+      "id": "receipts",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "receipt",
+            "label": "Observation",
+            "id": {"ref": "o"},
+            "props": {
+              "source": {"ref": "o.source"},
+              "item": {"ref": "o.item"},
+              "role": {"ref": "o.role"},
+              "kind": {"ref": "o.kind"},
+              "observedTarget": {"ref": "o.observedTarget"},
+              "sourceRef": {"ref": "o.sourceRef"},
+              "at": {"ref": "o.at"},
+              "receiptKey": {"ref": "o.receiptKey"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "evidence",
+      "verb": "project",
+      "columns": {
+        "obsSource": {"ref": "o.source"},
+        "obsItem": {"ref": "o.item"},
+        "obsRole": {"ref": "o.role"},
+        "kind": {"ref": "o.kind"},
+        "at": {"ref": "o.at"},
+        "observedTarget": {"fn": "coalesce", "args": [{"ref": "o.observedTarget"}, {"lit": ""}]},
+        "sourceRef": {"fn": "coalesce", "args": [{"ref": "o.sourceRef"}, {"lit": ""}]},
+        "receipt": {"ref": "o"}
+      }
+    },
+    {"id": "policy", "verb": "graph-match", "graph": "rules", "pattern": {"nodes": [{"var": "r", "label": "Rule"}]}},
+    {
+      "id": "rules",
+      "verb": "project",
+      "columns": {
+        "ruleId": {"ref": "r.ruleId"},
+        "revision": {"ref": "r.revision"},
+        "source": {"ref": "r.source"},
+        "item": {"ref": "r.item"},
+        "role": {"ref": "r.role"},
+        "target": {"ref": "r.target"},
+        "action": {"ref": "r.action"},
+        "owner": {"ref": "r.owner"},
+        "reason": {"ref": "r.reason"},
+        "many": {"ref": "r.many"}
+      }
+    },
+    {
+      "id": "scopedRules",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeSource"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "source"}, {"param": "scopeSource"}]}]},
+          {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeRole"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "role"}, {"param": "scopeRole"}]}]}
+        ]
+      }
+    },
+    {
+      "id": "checkedRules",
+      "verb": "extend",
+      "columns": {
+        "validRule": {
+          "fn": "and",
+          "args": [
+            {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "and",
+                  "args": [
+                    {
+                      "fn": "and",
+                      "args": [
+                        {
+                          "fn": "and",
+                          "args": [
+                            {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "ruleId"}]}, {"lit": ""}]},
+                            {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "revision"}]}, {"lit": ""}]}
+                          ]
+                        },
+                        {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "source"}]}, {"lit": ""}]}
+                      ]
+                    },
+                    {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "role"}]}, {"lit": ""}]}
+                  ]
+                },
+                {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "item"}]}, {"lit": ""}]}
+              ]
+            },
+            {
+              "fn": "or",
+              "args": [
+                {
+                  "fn": "and",
+                  "args": [
+                    {"fn": "or", "args": [{"fn": "==", "args": [{"ref": "action"}, {"lit": "bind"}]}, {"fn": "==", "args": [{"ref": "action"}, {"lit": "declare"}]}]},
+                    {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "target"}]}, {"lit": ""}]}
+                  ]
+                },
+                {
+                  "fn": "and",
+                  "args": [
+                    {
+                      "fn": "and",
+                      "args": [{"fn": "==", "args": [{"ref": "action"}, {"lit": "exclude"}]}, {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "owner"}]}, {"lit": ""}]}]
+                    },
+                    {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "reason"}]}, {"lit": ""}]}
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "candidates",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "obsSource", "right": "source"}, {"left": "obsItem", "right": "item"}, {"left": "obsRole", "right": "role"}]
+    },
+    {
+      "id": "qualified",
+      "verb": "extend",
+      "columns": {
+        "supports": {
+          "fn": "and",
+          "args": [
+            {"ref": "validRule"},
+            {
+              "fn": "or",
+              "args": [
+                {"fn": "==", "args": [{"ref": "action"}, {"lit": "bind"}]},
+                {"fn": "and", "args": [{"fn": "==", "args": [{"ref": "action"}, {"lit": "declare"}]}, {"fn": "==", "args": [{"ref": "target"}, {"ref": "observedTarget"}]}]}
+              ]
+            }
+          ]
+        },
+        "isExcluded": {"fn": "and", "args": [{"ref": "validRule"}, {"fn": "==", "args": [{"ref": "action"}, {"lit": "exclude"}]}]},
+        "inConflict": {
+          "fn": "and",
+          "args": [
+            {"fn": "and", "args": [{"ref": "validRule"}, {"fn": "==", "args": [{"ref": "action"}, {"lit": "declare"}]}]},
+            {
+              "fn": "and",
+              "args": [
+                {"fn": "!=", "args": [{"fn": "trim", "args": [{"ref": "observedTarget"}]}, {"lit": ""}]},
+                {"fn": "and", "args": [{"fn": "==", "args": [{"ref": "many"}, {"lit": false}]}, {"fn": "!=", "args": [{"ref": "target"}, {"ref": "observedTarget"}]}]}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "population",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "obsSource"},
+        "item": {"ref": "obsItem"},
+        "role": {"ref": "obsRole"},
+        "candidate": {"lit": ""},
+        "supported": {"lit": 0},
+        "excludedItem": {"lit": 0},
+        "exclusive": {"lit": 0}
+      }
+    },
+    {
+      "id": "matches",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "obsSource"},
+        "item": {"ref": "obsItem"},
+        "role": {"ref": "obsRole"},
+        "candidate": {"fn": "iff", "args": [{"ref": "supports"}, {"ref": "target"}, {"lit": ""}]},
+        "supported": {"fn": "iff", "args": [{"ref": "supports"}, {"lit": 1}, {"lit": 0}]},
+        "excludedItem": {"fn": "iff", "args": [{"ref": "isExcluded"}, {"lit": 1}, {"lit": 0}]},
+        "exclusive": {"fn": "iff", "args": [{"fn": "and", "args": [{"ref": "supports"}, {"fn": "==", "args": [{"ref": "many"}, {"lit": false}]}]}, {"lit": 1}, {"lit": 0}]}
+      }
+    },
+    {"id": "observationsAndMatches", "verb": "union"},
+    {
+      "id": "distinctTargets",
+      "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "item": {"ref": "item"}, "role": {"ref": "role"}, "candidate": {"ref": "candidate"}},
+      "aggregates": {
+        "supported": {"fn": "max", "args": [{"ref": "supported"}]},
+        "excludedItem": {"fn": "max", "args": [{"ref": "excludedItem"}]},
+        "exclusive": {"fn": "max", "args": [{"ref": "exclusive"}]}
+      }
+    },
+    {
+      "id": "countsByItem",
+      "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "item": {"ref": "item"}, "role": {"ref": "role"}},
+      "aggregates": {
+        "targetCount": {"fn": "sum", "args": [{"ref": "supported"}]},
+        "excludedItem": {"fn": "max", "args": [{"ref": "excludedItem"}]},
+        "exclusive": {"fn": "max", "args": [{"ref": "exclusive"}]}
+      }
+    },
+    {
+      "id": "classify",
+      "verb": "extend",
+      "columns": {
+        "status": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "excludedItem"}, {"lit": 1}]},
+            {"lit": "excluded"},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": "and", "args": [{"fn": ">", "args": [{"ref": "targetCount"}, {"lit": 1}]}, {"fn": "==", "args": [{"ref": "exclusive"}, {"lit": 1}]}]},
+                {"lit": "ambiguous"},
+                {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "targetCount"}, {"lit": 0}]}, {"lit": "mapped"}, {"lit": "unmapped"}]}
+              ]
+            }
+          ]
+        },
+        "supportedBindings": {
+          "fn": "iff",
+          "args": [
+            {"fn": "and", "args": [{"fn": ">", "args": [{"ref": "targetCount"}, {"lit": 1}]}, {"fn": "==", "args": [{"ref": "exclusive"}, {"lit": 1}]}]},
+            {"lit": 0},
+            {"ref": "targetCount"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "observationFindings",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Finding",
+            "id": {"identity": "ObservationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "item": {"ref": "item"},
+              "role": {"ref": "role"},
+              "direction": {"lit": "observation"},
+              "status": {"ref": "status"},
+              "policyRevision": {"param": "policyRevision"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "declared",
+      "verb": "project",
+      "columns": {
+        "ruleId": {"ref": "ruleId"},
+        "revision": {"ref": "revision"},
+        "source": {"ref": "source"},
+        "item": {"ref": "item"},
+        "role": {"ref": "role"},
+        "target": {"ref": "target"},
+        "action": {"ref": "action"},
+        "owner": {"ref": "owner"},
+        "reason": {"ref": "reason"},
+        "many": {"ref": "many"},
+        "validRule": {"ref": "validRule"},
+        "hasMatch": {"lit": 0},
+        "hasConflict": {"lit": 0},
+        "hasExclusion": {"lit": 0}
+      }
+    },
+    {
+      "id": "seen",
+      "verb": "project",
+      "columns": {
+        "ruleId": {"ref": "ruleId"},
+        "revision": {"ref": "revision"},
+        "source": {"ref": "source"},
+        "item": {"ref": "item"},
+        "role": {"ref": "role"},
+        "target": {"ref": "target"},
+        "action": {"ref": "action"},
+        "owner": {"ref": "owner"},
+        "reason": {"ref": "reason"},
+        "many": {"ref": "many"},
+        "validRule": {"ref": "validRule"},
+        "hasMatch": {"fn": "iff", "args": [{"ref": "supports"}, {"lit": 1}, {"lit": 0}]},
+        "hasConflict": {"fn": "iff", "args": [{"ref": "inConflict"}, {"lit": 1}, {"lit": 0}]},
+        "hasExclusion": {"fn": "iff", "args": [{"ref": "isExcluded"}, {"lit": 1}, {"lit": 0}]}
+      }
+    },
+    {"id": "rulePopulation", "verb": "union"},
+    {
+      "id": "ruleEvidence",
+      "verb": "summarize",
+      "by": {
+        "ruleId": {"ref": "ruleId"},
+        "revision": {"ref": "revision"},
+        "source": {"ref": "source"},
+        "item": {"ref": "item"},
+        "role": {"ref": "role"},
+        "target": {"ref": "target"},
+        "action": {"ref": "action"},
+        "owner": {"ref": "owner"},
+        "reason": {"ref": "reason"},
+        "many": {"ref": "many"},
+        "validRule": {"ref": "validRule"}
+      },
+      "aggregates": {
+        "hasMatch": {"fn": "max", "args": [{"ref": "hasMatch"}]},
+        "hasConflict": {"fn": "max", "args": [{"ref": "hasConflict"}]},
+        "hasExclusion": {"fn": "max", "args": [{"ref": "hasExclusion"}]}
+      }
+    },
+    {
+      "id": "declarationFindings",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Finding",
+            "id": {"identity": "DeclarationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}, {"ref": "ruleId"}]},
+            "props": {
+              "ruleId": {"ref": "ruleId"},
+              "revision": {"ref": "revision"},
+              "source": {"ref": "source"},
+              "item": {"ref": "item"},
+              "role": {"ref": "role"},
+              "target": {"ref": "target"},
+              "action": {"ref": "action"},
+              "owner": {"ref": "owner"},
+              "reason": {"ref": "reason"},
+              "many": {"ref": "many"},
+              "direction": {"lit": "declaration"},
+              "status": {
+                "fn": "iff",
+                "args": [
+                  {"ref": "validRule"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "hasConflict"}, {"lit": 1}]},
+                      {"lit": "conflict"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "hasMatch"}, {"lit": 1}]},
+                          {"lit": "mapped"},
+                          {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "hasExclusion"}, {"lit": 1}]}, {"lit": "excluded"}, {"lit": "unverified"}]}
+                        ]
+                      }
+                    ]
+                  },
+                  {"lit": "invalid"}
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "candidateEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "e", "label": "Finding", "id": {"identity": "ObservationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}]}},
+          {"var": "r", "label": "Finding", "id": {"identity": "DeclarationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}, {"ref": "ruleId"}]}}
+        ],
+        "edges": [{"var": "review", "label": "ReviewedBy", "from": "e", "to": "r"}]
+      }
+    },
+    {
+      "id": "observedReceipts",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "obsSource"},
+        "item": {"ref": "obsItem"},
+        "role": {"ref": "obsRole"},
+        "receipt": {"ref": "receipt"},
+        "kind": {"ref": "kind"},
+        "observedTarget": {"ref": "observedTarget"},
+        "sourceRef": {"ref": "sourceRef"},
+        "at": {"ref": "at"},
+        "ruleId": {"lit": ""},
+        "assessment": {"lit": "observed"}
+      }
+    },
+    {
+      "id": "reviewedReceipts",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "source"},
+        "item": {"ref": "item"},
+        "role": {"ref": "role"},
+        "receipt": {"ref": "receipt"},
+        "kind": {"ref": "kind"},
+        "observedTarget": {"ref": "observedTarget"},
+        "sourceRef": {"ref": "sourceRef"},
+        "at": {"ref": "at"},
+        "ruleId": {"ref": "ruleId"},
+        "assessment": {
+          "fn": "iff",
+          "args": [
+            {"ref": "validRule"},
+            {
+              "fn": "iff",
+              "args": [
+                {"ref": "isExcluded"},
+                {"lit": "excluded"},
+                {"fn": "iff", "args": [{"ref": "supports"}, {"lit": "mapped"}, {"fn": "iff", "args": [{"ref": "inConflict"}, {"lit": "conflict"}, {"lit": "unverified"}]}]}
+              ]
+            },
+            {"lit": "invalid"}
+          ]
+        }
+      }
+    },
+    {"id": "findingReceipts", "verb": "union"},
+    {
+      "id": "receiptEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "finding",
+            "label": "Finding",
+            "id": {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "ruleId"}, {"lit": ""}]},
+                {"identity": "ObservationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}]},
+                {"identity": "DeclarationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}, {"ref": "ruleId"}]}
+              ]
+            }
+          },
+          {"var": "receipt", "label": "Observation", "id": {"ref": "receipt"}}
+        ],
+        "edges": [{"var": "evidence", "label": "BasedOn", "from": "finding", "to": "receipt", "props": {"assessment": {"ref": "assessment"}}}]
+      }
+    },
+    {
+      "id": "receiptCounts",
+      "verb": "summarize",
+      "by": {"countSource": {"ref": "obsSource"}, "countItem": {"ref": "obsItem"}, "countRole": {"ref": "obsRole"}},
+      "aggregates": {"receiptCount": {"fn": "count", "args": []}}
+    },
+    {"id": "singleReceiptItems", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "receiptCount"}, {"lit": 1}]}},
+    {
+      "id": "singleReceiptFindings",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "source", "right": "countSource"}, {"left": "item", "right": "countItem"}, {"left": "role", "right": "countRole"}]
+    },
+    {
+      "id": "singleReceiptDetails",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "finding",
+            "label": "Finding",
+            "id": {
+              "fn": "iff",
+              "args": [
+                {"fn": "==", "args": [{"ref": "ruleId"}, {"lit": ""}]},
+                {"identity": "ObservationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}]},
+                {"identity": "DeclarationFinding", "args": [{"ref": "source"}, {"ref": "item"}, {"ref": "role"}, {"ref": "ruleId"}]}
+              ]
+            },
+            "props": {"kind": {"ref": "kind"}, "observedTarget": {"ref": "observedTarget"}, "sourceRef": {"ref": "sourceRef"}, "at": {"ref": "at"}},
+            "extend": true
+          }
+        ]
+      }
+    },
+    {"id": "reports", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "r", "label": "SourceReport"}]}},
+    {
+      "id": "positiveIntervals",
+      "verb": "where",
+      "condition": {"fn": "and", "args": [
+        {"fn": "<", "args": [{"ref": "r.fromTime"}, {"ref": "r.untilTime"}]},
+        {"fn": "<", "args": [{"param": "fromTime"}, {"param": "untilTime"}]}
+      ]}
+    },
+    {
+      "id": "selectedReports",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeSource"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "r.source"}, {"param": "scopeSource"}]}]},
+                  {"fn": "or", "args": [{"fn": "==", "args": [{"param": "scopeRole"}, {"lit": ""}]}, {"fn": "==", "args": [{"ref": "r.role"}, {"param": "scopeRole"}]}]}
+                ]
+              },
+              {"fn": "<", "args": [{"ref": "r.fromTime"}, {"param": "untilTime"}]}
+            ]
+          },
+          {"fn": ">", "args": [{"ref": "r.untilTime"}, {"param": "fromTime"}]}
+        ]
+      }
+    },
+    {
+      "id": "sourceReports",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SourceReport",
+            "id": {"ref": "r"},
+            "props": {
+              "source": {"ref": "r.source"},
+              "role": {"ref": "r.role"},
+              "reportId": {"ref": "r.reportId"},
+              "availability": {"ref": "r.availability"},
+              "limits": {"ref": "r.limits"},
+              "sourceRef": {"ref": "r.sourceRef"},
+              "fromTime": {"ref": "r.fromTime"},
+              "untilTime": {"ref": "r.untilTime"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "completeIntervals", "verb": "where",
+      "condition": {"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "complete"}]}
+    },
+    {
+      "id": "intervalBounds", "verb": "project",
+      "columns": {
+        "rangeSource": {"ref": "r.source"}, "rangeRole": {"ref": "r.role"},
+        "start": {"ref": "r.fromTime"}, "end": {"ref": "r.untilTime"}
+      }
+    },
+    {
+      "id": "leftBoundary", "verb": "project",
+      "columns": {"source": {"ref": "r.source"}, "role": {"ref": "r.role"}, "boundary": {"param": "fromTime"}}
+    },
+    {
+      "id": "endsInsideQuery", "verb": "where",
+      "condition": {"fn": "<", "args": [{"ref": "r.untilTime"}, {"param": "untilTime"}]}
+    },
+    {
+      "id": "interiorBoundary", "verb": "project",
+      "columns": {"source": {"ref": "r.source"}, "role": {"ref": "r.role"}, "boundary": {"ref": "r.untilTime"}}
+    },
+    {"id": "allBoundaries", "verb": "union"},
+    {
+      "id": "distinctBoundaries", "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "role": {"ref": "role"}, "boundary": {"ref": "boundary"}}, "aggregates": {}
+    },
+    {
+      "id": "intervalsAtBoundaries", "verb": "join", "kind": "inner",
+      "on": [{"left": "source", "right": "rangeSource"}, {"left": "role", "right": "rangeRole"}]
+    },
+    {
+      "id": "coveredBoundary", "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "role": {"ref": "role"}, "boundary": {"ref": "boundary"}},
+      "aggregates": {"covered": {"fn": "max", "args": [
+        {"fn": "iff", "args": [
+          {"fn": "and", "args": [
+            {"fn": "<=", "args": [{"ref": "start"}, {"ref": "boundary"}]},
+            {"fn": "<", "args": [{"ref": "boundary"}, {"ref": "end"}]}
+          ]}, {"lit": 1}, {"lit": 0}
+        ]}
+      ]}}
+    },
+    {
+      "id": "intervalUnion", "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "role": {"ref": "role"}},
+      "aggregates": {"covered": {"fn": "min", "args": [{"ref": "covered"}]}}
+    },
+    {
+      "id": "unionCoverage", "verb": "project",
+      "columns": {
+        "source": {"ref": "source"}, "role": {"ref": "role"},
+        "eligible": {"lit": 0}, "mapped": {"lit": 0}, "ambiguous": {"lit": 0}, "excluded": {"lit": 0},
+        "unmapped": {"lit": 0}, "supportedBindings": {"lit": 0},
+        "hasComplete": {"ref": "covered"}, "hasPartial": {"lit": 1},
+        "hasSample": {"lit": 0}, "hasFilter": {"lit": 0}, "hasUnknown": {"lit": 0}
+      }
+    },
+    {
+      "id": "reportedScopes",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "r.source"},
+        "role": {"ref": "r.role"},
+        "eligible": {"lit": 0},
+        "mapped": {"lit": 0},
+        "ambiguous": {"lit": 0},
+        "excluded": {"lit": 0},
+        "unmapped": {"lit": 0},
+        "supportedBindings": {"lit": 0},
+        "hasComplete": {"lit": 0},
+        "hasSample": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "sampled"}]}, {"lit": 1}, {"lit": 0}]},
+        "hasFilter": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "filtered"}]}, {"lit": 1}, {"lit": 0}]},
+        "hasUnknown": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "or",
+              "args": [
+                {
+                  "fn": "or",
+                  "args": [{"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "complete"}]}, {"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "filtered"}]}]
+                },
+                {"fn": "==", "args": [{"ref": "r.availability"}, {"lit": "sampled"}]}
+              ]
+            },
+            {"lit": 0},
+            {"lit": 1}
+          ]
+        },
+        "hasPartial": {"lit": 0}
+      }
+    },
+    {
+      "id": "itemCounts",
+      "verb": "project",
+      "columns": {
+        "source": {"ref": "source"},
+        "role": {"ref": "role"},
+        "eligible": {"lit": 1},
+        "mapped": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "status"}, {"lit": "mapped"}]}, {"lit": 1}, {"lit": 0}]},
+        "ambiguous": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "status"}, {"lit": "ambiguous"}]}, {"lit": 1}, {"lit": 0}]},
+        "excluded": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "status"}, {"lit": "excluded"}]}, {"lit": 1}, {"lit": 0}]},
+        "unmapped": {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "status"}, {"lit": "unmapped"}]}, {"lit": 1}, {"lit": 0}]},
+        "supportedBindings": {"ref": "supportedBindings"},
+        "hasComplete": {"lit": 0},
+        "hasSample": {"lit": 0},
+        "hasFilter": {"lit": 0},
+        "hasUnknown": {"lit": 0},
+        "hasPartial": {"lit": 0}
+      }
+    },
+    {"id": "requested", "verb": "values", "values": {"columns": {"selected": "Boolean"}, "rows": [{"selected": true}]}},
+    {
+      "id": "namedScope",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": "!=", "args": [{"fn": "trim", "args": [{"param": "scopeSource"}]}, {"lit": ""}]},
+          {"fn": "!=", "args": [{"fn": "trim", "args": [{"param": "scopeRole"}]}, {"lit": ""}]}
+        ]
+      }
+    },
+    {
+      "id": "requestedScope",
+      "verb": "project",
+      "columns": {
+        "source": {"param": "scopeSource"},
+        "role": {"param": "scopeRole"},
+        "eligible": {"lit": 0},
+        "mapped": {"lit": 0},
+        "ambiguous": {"lit": 0},
+        "excluded": {"lit": 0},
+        "unmapped": {"lit": 0},
+        "supportedBindings": {"lit": 0},
+        "hasComplete": {"lit": 0},
+        "hasSample": {"lit": 0},
+        "hasFilter": {"lit": 0},
+        "hasUnknown": {"lit": 0},
+        "hasPartial": {"lit": 0}
+      }
+    },
+    {"id": "scopes", "verb": "union"},
+    {
+      "id": "reconcile",
+      "verb": "summarize",
+      "by": {"source": {"ref": "source"}, "role": {"ref": "role"}},
+      "aggregates": {
+        "eligible": {"fn": "sum", "args": [{"ref": "eligible"}]},
+        "mapped": {"fn": "sum", "args": [{"ref": "mapped"}]},
+        "ambiguous": {"fn": "sum", "args": [{"ref": "ambiguous"}]},
+        "excluded": {"fn": "sum", "args": [{"ref": "excluded"}]},
+        "unmapped": {"fn": "sum", "args": [{"ref": "unmapped"}]},
+        "supportedBindings": {"fn": "sum", "args": [{"ref": "supportedBindings"}]},
+        "hasComplete": {"fn": "max", "args": [{"ref": "hasComplete"}]},
+        "hasSample": {"fn": "max", "args": [{"ref": "hasSample"}]},
+        "hasFilter": {"fn": "max", "args": [{"ref": "hasFilter"}]},
+        "hasUnknown": {"fn": "max", "args": [{"ref": "hasUnknown"}]},
+        "hasPartial": {"fn": "max", "args": [{"ref": "hasPartial"}]}
+      }
+    },
+    {
+      "id": "scopeFindings",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Scope",
+            "id": {"identity": "ScopeKey", "args": [{"ref": "source"}, {"ref": "role"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "role": {"ref": "role"},
+              "eligible": {"ref": "eligible"},
+              "mapped": {"ref": "mapped"},
+              "ambiguous": {"ref": "ambiguous"},
+              "excluded": {"ref": "excluded"},
+              "unmapped": {"ref": "unmapped"},
+              "supportedBindings": {"ref": "supportedBindings"},
+              "availability": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "hasUnknown"}, {"lit": 1}]},
+                  {"lit": "unknown"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "hasFilter"}, {"lit": 1}]},
+                      {"lit": "filtered"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "hasSample"}, {"lit": 1}]},
+                          {"lit": "sampled"},
+                          {
+                            "fn": "iff",
+                            "args": [
+                              {"fn": "==", "args": [{"ref": "hasComplete"}, {"lit": 1}]},
+                              {"lit": "complete"},
+                              {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "hasPartial"}, {"lit": 1}]}, {"lit": "partial"}, {"lit": "unknown"}]}
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "observations", "to": "eligible"},
+    {"from": "eligible", "to": "evidence"},
+    {"from": "policy", "to": "rules"},
+    {"from": "rules", "to": "scopedRules"},
+    {"from": "scopedRules", "to": "checkedRules"},
+    {"from": "evidence", "to": "candidates", "port": "left"},
+    {"from": "checkedRules", "to": "candidates", "port": "right"},
+    {"from": "candidates", "to": "qualified"},
+    {"from": "evidence", "to": "population"},
+    {"from": "qualified", "to": "matches"},
+    {"from": "population", "to": "observationsAndMatches"},
+    {"from": "matches", "to": "observationsAndMatches"},
+    {"from": "observationsAndMatches", "to": "distinctTargets"},
+    {"from": "distinctTargets", "to": "countsByItem"},
+    {"from": "countsByItem", "to": "classify"},
+    {"from": "classify", "to": "observationFindings"},
+    {"from": "checkedRules", "to": "declared"},
+    {"from": "qualified", "to": "seen"},
+    {"from": "declared", "to": "rulePopulation"},
+    {"from": "seen", "to": "rulePopulation"},
+    {"from": "rulePopulation", "to": "ruleEvidence"},
+    {"from": "candidates", "to": "candidateEvidence"},
+    {"from": "reports", "to": "positiveIntervals"},
+    {"from": "positiveIntervals", "to": "selectedReports"},
+    {"from": "selectedReports", "to": "completeIntervals"},
+    {"from": "completeIntervals", "to": "intervalBounds"},
+    {"from": "completeIntervals", "to": "leftBoundary"},
+    {"from": "completeIntervals", "to": "endsInsideQuery"},
+    {"from": "endsInsideQuery", "to": "interiorBoundary"},
+    {"from": "leftBoundary", "to": "allBoundaries"},
+    {"from": "interiorBoundary", "to": "allBoundaries"},
+    {"from": "allBoundaries", "to": "distinctBoundaries"},
+    {"from": "distinctBoundaries", "to": "intervalsAtBoundaries", "port": "left"},
+    {"from": "intervalBounds", "to": "intervalsAtBoundaries", "port": "right"},
+    {"from": "intervalsAtBoundaries", "to": "coveredBoundary"},
+    {"from": "coveredBoundary", "to": "intervalUnion"},
+    {"from": "intervalUnion", "to": "unionCoverage"},
+    {"from": "unionCoverage", "to": "scopes"},
+    {"from": "selectedReports", "to": "sourceReports"},
+    {"from": "selectedReports", "to": "reportedScopes"},
+    {"from": "classify", "to": "itemCounts"},
+    {"from": "requested", "to": "namedScope"},
+    {"from": "namedScope", "to": "requestedScope"},
+    {"from": "reportedScopes", "to": "scopes"},
+    {"from": "itemCounts", "to": "scopes"},
+    {"from": "requestedScope", "to": "scopes"},
+    {"from": "scopes", "to": "reconcile"},
+    {"from": "reconcile", "to": "scopeFindings"},
+    {"from": "eligible", "to": "receipts"},
+    {"from": "ruleEvidence", "to": "declarationFindings"},
+    {"from": "evidence", "to": "observedReceipts"},
+    {"from": "qualified", "to": "reviewedReceipts"},
+    {"from": "observedReceipts", "to": "findingReceipts"},
+    {"from": "reviewedReceipts", "to": "findingReceipts"},
+    {"from": "findingReceipts", "to": "receiptEvidence"},
+    {"from": "evidence", "to": "receiptCounts"},
+    {"from": "receiptCounts", "to": "singleReceiptItems"},
+    {"from": "findingReceipts", "to": "singleReceiptFindings", "port": "left"},
+    {"from": "singleReceiptItems", "to": "singleReceiptFindings", "port": "right"},
+    {"from": "singleReceiptFindings", "to": "singleReceiptDetails"}
+  ]
+}

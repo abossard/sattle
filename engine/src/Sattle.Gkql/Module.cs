@@ -36,7 +36,7 @@ public sealed partial class GkqlSource
                 declarations.Add(new SpaceDecl(s.Name,
                     s.Sources.Select(x => new SpaceSource(x.Name, x.Adapter, Reference(x.Rows), At)).ToList(),
                     s.Graphs.Select(x => new SpaceGraph(x.Name, x.Master, Reference(x.Projection),
-                        x.Inputs.Select(kv => (kv.Key, kv.Value, (Value?)null)).ToList(), At)).ToList(),
+                        x.Inputs.Select(Binding).ToList(), At)).ToList(),
                     null, At));
             return new ModuleAst(m.Module, m.Version, null, imports, declarations, At);
         }
@@ -57,6 +57,16 @@ public sealed partial class GkqlSource
         foreach (var import in root["imports"]!.AsArray())
             if (pins.TryGetValue(import!["module"]!.GetValue<string>(), out var digest)) import["digest"] = digest;
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n";
+    }
+
+    // A string connects a source or graph. A literal supplies a typed projection parameter,
+    // including Text values that could otherwise be mistaken for names.
+    static (string Port, string From, Value? Literal) Binding(KeyValuePair<string, JsonElement> input)
+    {
+        if (input.Value.ValueKind == JsonValueKind.String) return (input.Key, input.Value.GetString()!, null);
+        if (input.Value.ValueKind == JsonValueKind.Object && input.Value.EnumerateObject().ToList() is [{ Name: "lit", Value: var literal }])
+            return (input.Key, "", Lowering.Literal(literal));
+        throw new JsonException($"binding {input.Key} names a graph or source, or supplies a literal with {{\"lit\": value}}");
     }
 
     static TypeRef Reference(string name)
@@ -96,5 +106,5 @@ public sealed partial class GkqlSource
     sealed record ConstraintDocument(string Kind, string Type, string? Side, long Min, long? Max);
     sealed record SpaceDocument(string Name, List<SourceDocument> Sources, List<GraphDocument> Graphs);
     sealed record SourceDocument(string Name, string Adapter, string Rows);
-    sealed record GraphDocument(string Name, string Projection, bool Master, Dictionary<string, string> Inputs);
+    sealed record GraphDocument(string Name, string Projection, bool Master, Dictionary<string, JsonElement> Inputs);
 }

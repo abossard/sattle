@@ -121,21 +121,14 @@ function mapMarkup() {
 
 function findingMarkup(finding: Finding) {
   return `
-    <article class="finding" tabindex="0" role="button" data-finding="${escape(finding.id)}" aria-current="${finding.id === selectedFinding()?.id}">
-      <div class="finding-top">
-        <div>
-          <h3>${escape(finding.title)}</h3>
-          <p>${escape(finding.summary)}</p>
-        </div>
+    <button class="finding" type="button" data-finding="${escape(finding.id)}" aria-current="${finding.id === selectedFinding()?.id}">
+      <span class="finding-top">
+        <span class="finding-title">${escape(finding.title)}</span>
         <span class="score ${finding.risk}" aria-label="Priority ${finding.score}">${finding.score}</span>
-      </div>
-      <div class="tags">
-        <span class="tag">${escape(finding.risk)}</span>
-        ${finding.kinds.map((kind) => `<span class="tag">${escape(kind)}</span>`).join("")}
-        <span class="tag">${finding.history.commits} commits</span>
-        ${finding.issueNumbers.map((number) => `<span class="tag">#${number}</span>`).join("")}
-      </div>
-    </article>
+      </span>
+      <span class="finding-summary">${escape(finding.summary)}</span>
+      <span class="finding-meta">${escape(finding.risk)} · ${finding.kinds.map(escape).join(", ")} · #${finding.issueNumbers[0]}</span>
+    </button>
   `;
 }
 
@@ -161,7 +154,7 @@ function signalMarkup(label: string, value: number) {
 function detailMarkup() {
   const finding = selectedFinding();
   if (!finding) return `<aside class="detail-panel"><div class="detail-content"><p>No findings.</p></div></aside>`;
-  const linkedIssues = finding.issueNumbers.map((number) => issueMarkup(number)).join("<br>");
+  const linkedIssues = finding.issueNumbers.slice(1).map((number) => issueMarkup(number)).join("<br>");
   const draft = drafts.get(finding.id);
   const options = [...finding.options, { id: "needs-discussion", title: "Question or different direction", detail: "Challenge the framing, request evidence, or propose another choice." }].map((option, index) => `
     <label class="option">
@@ -173,11 +166,17 @@ function detailMarkup() {
   return `
     <aside class="detail-panel" aria-labelledby="detail-title">
       <div class="detail-content">
-        <p class="eyebrow">${escape(finding.risk)} · ${finding.score}/100 · last changed ${readableDate(finding.history.lastChangedAt)}</p>
+        <p class="detail-meta"><span class="${finding.risk}">${escape(finding.risk)} priority · ${finding.score}/100</span> · changed ${readableDate(finding.history.lastChangedAt)}</p>
         <h2 id="detail-title" tabindex="-1">${escape(finding.title)}</h2>
         <p>${escape(finding.summary)}</p>
-        <div class="tags">${finding.kinds.map((kind) => `<span class="tag">${escape(kind)}</span>`).join("")}</div>
-        <div class="signal-grid">
+        <section class="review-question" aria-labelledby="question-title">
+          <h3 id="question-title">Decision to make</h3>
+          <p>${escape(finding.question)}</p>
+          <p class="recommendation"><strong>Recommended:</strong> ${escape(finding.recommendation)}</p>
+        </section>
+        <details class="evidence-details">
+          <summary>Evidence and priority <span>${finding.evidence.length} sources · ${finding.history.commits} commits</span></summary>
+          <div class="signal-grid">
           ${signalMarkup("impact", finding.signals.impact)}
           ${signalMarkup("ambiguity", finding.signals.ambiguity)}
           ${signalMarkup("conflict", finding.signals.conflict)}
@@ -190,23 +189,14 @@ function detailMarkup() {
           <h3 id="evidence-title">Evidence</h3>
           <ul class="evidence">${finding.evidence.map((evidence) => `<li><a href="${repositoryFileUrl(evidence.path, evidence.line)}" target="_blank" rel="noreferrer"><code>${escape(evidence.path)}:${evidence.line}</code></a><p>${escape(evidence.detail)}</p><p><code>${escape(evidence.anchor)}</code></p></li>`).join("")}</ul>
         </section>
-        <section aria-labelledby="question-title">
-          <h3 id="question-title">Decision to make</h3>
-          <p>${escape(finding.question)}</p>
-          <div class="notice"><strong>Recommended:</strong> ${escape(finding.recommendation)}</div>
-        </section>
         <details class="verification"><summary>How to settle this concern</summary><ul>${finding.verification.map((check) => `<li>${escape(check)}</li>`).join("")}</ul></details>
-        <section class="discussion" aria-labelledby="discussion-title">
-          <div class="discussion-heading"><h3 id="discussion-title">Live GitHub record</h3><button class="button" type="button" id="refresh-discussion">Refresh</button></div>
-          <p class="discussion-status" id="discussion-status" role="status">Loading the owning issue. Refreshes every 30 seconds.</p>
-          <div id="discussion-content"></div>
-        </section>
-        <form class="feedback" id="feedback-form">
-          <h3>Feed the answer into GitHub</h3>
-          <p>${linkedIssues || "No issue exists yet. The server will create an architecture decision issue."}</p>
-          <div class="option-list">${options}</div>
+        </details>
+        <form class="feedback" id="feedback-form" data-state="idle">
+          <h3>Your response</h3>
+          <p>${target ? `Posts to ${issueMarkup(target)}` : "Creates a new architecture issue."}</p>
+          <fieldset class="option-list"><legend>Choose a direction</legend>${options}</fieldset>
           <label class="field">Rationale<textarea name="rationale" required minlength="8" maxlength="8000" placeholder="Why this choice? What evidence settles it?">${escape(draft?.rationale ?? "")}</textarea></label>
-          <label class="field">Review key<input name="reviewKey" type="password" autocomplete="off" spellcheck="false" value="${escape(state.reviewKey)}" required placeholder="Configured on Cloudflare Pages"></label>
+          <details class="access-settings" ${state.reviewKey ? "" : "open"}><summary>Posting access${state.reviewKey ? " · key provided" : ""}</summary><label class="field">Review key<input name="reviewKey" type="password" autocomplete="off" spellcheck="false" value="${escape(state.reviewKey)}" required placeholder="Configured on the review server"></label></details>
           <input type="hidden" name="findingId" value="${escape(finding.id)}">
           ${target ? `<input type="hidden" name="issueNumber" value="${target}">` : ""}
           <div class="feedback-actions">
@@ -215,6 +205,12 @@ function detailMarkup() {
           </div>
           <div id="feedback-result" class="notice" role="status" aria-live="polite">${config.feedbackEnabled ? "Posting is enabled. The key is kept only in this tab. Answers become GitHub comments, not automatically accepted decisions." : "Posting is disabled on this deployment. Copy the draft or configure GITHUB_TOKEN and REVIEW_KEY on Cloudflare Pages."}</div>
         </form>
+        ${linkedIssues ? `<details class="related-issues"><summary>Related work (${finding.issueNumbers.length - 1})</summary><p>${linkedIssues}</p></details>` : ""}
+        <section class="discussion" aria-labelledby="discussion-title">
+          <div class="discussion-heading"><h3 id="discussion-title">Live GitHub record</h3><button class="button" type="button" id="refresh-discussion">Refresh</button></div>
+          <p class="discussion-status" id="discussion-status" role="status">Loading the owning issue. Refreshes every 30 seconds.</p>
+          <div id="discussion-content"></div>
+        </section>
       </div>
     </aside>
   `;
@@ -240,31 +236,23 @@ function render() {
     <div class="shell">
       <header class="topbar">
         <div class="mark" aria-hidden="true">S</div>
-        <div class="brand"><h1>Sattle architecture review</h1><p>Generated evidence. Durable decisions live in GitHub issues.</p></div>
-        <div class="spacer"></div>
-        <span class="status-chip">${issueCount} linked issues · ${escape(review.revision.slice(0, 7))}</span>
+        <div class="brand"><h1>Sattle architecture review</h1><p>Evidence ${escape(review.revision.slice(0, 7))} · ${generated.toLocaleDateString()} · ${issueCount} linked issues</p></div>
+        <div class="header-actions">
         <a class="button" href="${config.repositoryUrl}/issues" target="_blank" rel="noreferrer">Open issues</a>
-        <button class="icon-button" type="button" id="theme-toggle" aria-label="Toggle light or dark theme">◐</button>
+        <button class="button" type="button" id="theme-toggle">Use ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme</button>
+        </div>
       </header>
       <main class="main" id="review-main">
-        <section class="hero">
-          <div class="hero-copy">
-            <p class="eyebrow">Evidence baseline ${generated.toLocaleDateString()} · ${escape(review.revision.slice(0, 7))}</p>
-            <h2>Changes flow. <span>Decisions stay traceable.</span></h2>
-            <p>This board ranks ambiguity, conflicting direction, churn, leaks, and unmeasured scale risk. GitHub is the only place a choice is accepted.</p>
-            <p class="baseline-note">Code evidence is pinned to the committed revision. Uncommitted working-tree changes are not represented. Recommendations are proposals, not decisions.</p>
-            <div class="hero-actions">
-              <button class="button primary" type="button" data-view="board">Review queue</button>
-              <button class="button" type="button" data-view="map">Architecture map</button>
-            </div>
-          </div>
-          <aside class="principles">
-            <h3>Architecture north stars</h3>
+        <details class="review-context">
+          <summary>Architecture context <span>Principles, measurements and decision history</span></summary>
+          <p class="baseline-note">Code evidence is pinned to the committed revision. Uncommitted working-tree changes are not represented. Recommendations are proposals, not decisions.</p>
+          <section class="principles">
+            <h2>Architecture principles</h2>
             <ol>${review.principles.map((principle) => `<li>${escape(principle)}</li>`).join("")}</ol>
-          </aside>
-        </section>
+          </section>
+        <h2>Recorded measurements</h2>
         <section class="metrics" aria-label="Architecture measurements">${metricMarkup()}</section>
-        <details class="direction-history panel">
+        <details class="direction-history">
           <summary>Decisions that changed direction</summary>
           <p>These changes are recorded in GitHub, not inferred from code churn. Open the issue for the authoritative rationale and current status.</p>
           <ul>
@@ -272,6 +260,7 @@ function render() {
             <li><a href="${issueUrl(122)}" target="_blank" rel="noreferrer">#122 · Orchestrator state</a>. On November 18, the engine gate was revised to 8 GB live, 12 GB peak and 37 microseconds per record. These are the current recorded limits, not the earlier budgets.</li>
             <li><a href="${issueUrl(119)}" target="_blank" rel="noreferrer">#119 · Window-close latency at one million nodes</a>. The earlier whole-graph waves prototype exposed unpublished results. Its replacement prepares matches privately and publishes in writer order; the longer steady p99 measurement remains open.</li>
           </ul>
+        </details>
         </details>
         <div class="toolbar">
           <div class="tabs" role="group" aria-label="Review view">
@@ -285,7 +274,7 @@ function render() {
         </div>
         ${mainView()}
       </main>
-      <footer class="footer"><span>${escape(review.repository)} · evidence generated from ${escape(review.revision)}</span><span>Client contains no durable decisions. GitHub comments and issues are the record.</span></footer>
+      <footer class="footer"><span>${escape(review.repository)} · evidence generated from ${escape(review.revision)}</span><span>GitHub issues and comments are the decision record.</span></footer>
     </div>
   `;
   bind();
@@ -340,8 +329,9 @@ function draftFor(finding: Finding) {
 }
 
 function bind() {
-  document.querySelector<HTMLButtonElement>("#theme-toggle")?.addEventListener("click", () => {
+  document.querySelector<HTMLButtonElement>("#theme-toggle")?.addEventListener("click", (event) => {
     document.documentElement.dataset.theme = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+    (event.currentTarget as HTMLButtonElement).textContent = `Use ${document.documentElement.dataset.theme === "light" ? "dark" : "light"} theme`;
   });
   document.querySelectorAll<HTMLButtonElement>("[data-view]").forEach((button) => button.addEventListener("click", () => {
     state.view = button.dataset.view === "map" ? "map" : "board";
@@ -366,11 +356,10 @@ function bind() {
     const choose = () => {
       state.selectedId = finding.dataset.finding ?? "";
       render();
-      document.querySelector("#detail-title")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.querySelector("#detail-title")?.scrollIntoView({ behavior: "instant", block: "nearest" });
       document.querySelector<HTMLElement>("#detail-title")?.focus({ preventScroll: true });
     };
     finding.addEventListener("click", choose);
-    finding.addEventListener("keydown", (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); } });
   });
   document.querySelectorAll<SVGGElement>(".map-node").forEach((module) => {
     const choose = () => {
@@ -405,7 +394,9 @@ function bind() {
     state.reviewKey = reviewKey;
     const result = document.querySelector<HTMLElement>("#feedback-result");
     const submit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-    if (submit) submit.disabled = true;
+    form.dataset.state = "loading";
+    const submitLabel = submit?.textContent ?? "";
+    if (submit) { submit.disabled = true; submit.textContent = "Posting..."; submit.setAttribute("aria-busy", "true"); }
     if (result) { result.className = "notice"; result.textContent = "Posting the decision to GitHub…"; }
     const issueNumber = Number(data.get("issueNumber"));
     try {
@@ -421,12 +412,14 @@ function bind() {
         evidence: finding.evidence,
         title: `[Architecture] ${finding.title}`,
       });
+      form.dataset.state = "success";
       if (result) result.innerHTML = `Saved to GitHub: <a href="${escape(response.url)}" target="_blank" rel="noreferrer">Open the ${escape(response.action)}</a>. The live record below refreshes automatically.`;
       await refreshDiscussion();
     } catch (error) {
+      form.dataset.state = "error";
       if (result) { result.className = "notice error"; result.textContent = error instanceof Error ? error.message : "Could not post feedback."; }
     } finally {
-      if (submit) submit.disabled = false;
+      if (submit) { submit.disabled = false; submit.textContent = submitLabel; submit.removeAttribute("aria-busy"); }
     }
   });
 }

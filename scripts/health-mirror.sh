@@ -22,12 +22,27 @@ case "${1:-help}" in
     mkdir -p "$fixture"
     exec python3 -B "$mirror/collect-inventory.py" "$2" --output "$fixture/container-apps.ndjson"
     ;;
+  curate-flows)
+    shift
+    exec python3 -B "$mirror/curate-flows.py" --fixture "$fixture" --template "$mirror/projects/ahm-model-demo/flows.json" "$@"
+    ;;
   watch)
     shift
     exec python3 -B "$mirror/watch.py" --fixture "$fixture" --work "$work" "$@"
     ;;
+  compare-discovery)
+    shift
+    exec python3 -B "$mirror/compare-discovery.py" --fixture "$fixture" --work "$work" --cli "$dll" "$@"
+    ;;
   verify-rules)
-    exec python3 -B "$mirror/verify_workloads.py" --fixture "$fixture" --work "$work" --portable
+    shift
+    exec python3 -B "$mirror/verify_workloads.py" --fixture "$fixture" --work "$work" "$@"
+    ;;
+  verify-telemetry)
+    exec python3 -B "$mirror/verify_telemetry.py" --fixture "$fixture" --replay "$work/project/replay"
+    ;;
+  verify-diagnostics)
+    exec python3 -B "$mirror/verify_native.py" --fixture "$fixture" --port "${PROJECT_ENGINE_PORT:-5084}" --out "$work/project/native-proof.json"
     ;;
   capture-network)
     : "${2:?Pass a private raw checkpoint directory from capture}"
@@ -37,18 +52,37 @@ case "${1:-help}" in
     : "${2:?Pass the VNet ARM resource ID}" "${3:?Pass one or more downloaded flow-log blobs}"
     vnet="$2"
     shift 2
-    exec node "$mirror/collect-flow-blobs.mjs" --vnet "$vnet" --output "$fixture/network.ndjson" "$@"
+    mkdir -p "$work" "$fixture"
+    # Use the same local alias key each time so addresses remain joinable between captures.
+    key="$work/flow-alias.key"
+    python3 -c 'import pathlib,secrets,sys
+try:
+ with pathlib.Path(sys.argv[1]).open("x") as file: file.write(secrets.token_hex(32))
+except FileExistsError: pass' "$key"
+    exec node "$mirror/collect-flow-blobs.mjs" --vnet "$vnet" --output "$fixture/network.ndjson" --scrub-key-file "$key" "$@"
     ;;
-  prepare)
+  prepare|prepare-project)
+    flags=()
+    if [[ "$1" = prepare-project ]]; then work="$work/project"; flags+=(--deployment-only); fi
     mkdir -p "$work"
-    python3 -B "$mirror/build-space.py" --fixture "$fixture" --out "$work"
+    python3 -B "$mirror/build-space.py" --fixture "$fixture" --out "$work" ${flags[@]+"${flags[@]}"}
     dotnet build "$root/engine/src/Sattle.Cli/Sattle.Cli.csproj" -c Release --nologo --disable-build-servers -m:1 -nr:false -p:NuGetAudit=false
     dotnet "$dll" replay "$work/capture" --defs "$work/definitions" --space healthMirror --lateness 0s --out "$work/replay"
     ;;
   verify)
     exec python3 -B "$mirror/verify.py" --fixture "$fixture" --work "$work" --scope "${2:-all}" --negative-controls --report "$work/parity.json"
     ;;
-  serve|listen)
+  listen-diagnostics)
+    shift
+    dest=()
+    if [[ "$#" != 0 ]]; then
+      [[ "$#" = 2 ]] || { echo 'Pass both the namespace and the metric hub.' >&2; exit 2; }
+      dest=(--namespace "$1" --hub "$2")
+    fi
+    exec python3 -B "$mirror/serve_diagnostics.py" --fixture "$fixture" --work "$work/project" --dll "$dll" --port "${PROJECT_ENGINE_PORT:-5084}" ${dest[@]+"${dest[@]}"}
+    ;;
+  serve|serve-project|listen)
+    if [[ "$1" = serve-project ]]; then work="$work/project"; port="${PROJECT_ENGINE_PORT:-5084}"; fi
     [[ -s "$work/definitions/mirror.module.gkql.json" ]] || { echo 'Run ./scripts/health-mirror.sh prepare first.' >&2; exit 1; }
     # Reuse a user's edited draft when the generated starter is unchanged.
     version="$(cd "$work/definitions" && shasum -a 256 ./*.gkql.json | shasum -a 256 | cut -c1-24)"
@@ -77,8 +111,15 @@ case "${1:-help}" in
 ./scripts/health-mirror.sh capture-network <raw-checkpoint-dir> [hours]
 ./scripts/health-mirror.sh import-flows <vnet-resource-id> <PT1H.json>...
 ./scripts/health-mirror.sh inventory <resource-group-id>
+./scripts/health-mirror.sh curate-flows [--hours 72] [--offline | --print-kql routes|dependencies]
+./scripts/health-mirror.sh prepare-project
+./scripts/health-mirror.sh listen-diagnostics [<namespace> <metric-hub>]
+./scripts/health-mirror.sh serve-project
 ./scripts/health-mirror.sh prepare
 ./scripts/health-mirror.sh verify-rules
+./scripts/health-mirror.sh verify-telemetry
+./scripts/health-mirror.sh verify-diagnostics
+./scripts/health-mirror.sh compare-discovery
 ./scripts/health-mirror.sh verify [all|steady]
 ./scripts/health-mirror.sh serve
 ./scripts/health-mirror.sh listen <namespace> <hub>

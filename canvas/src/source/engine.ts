@@ -7,7 +7,7 @@ import { checkOntology, type Rejection } from "../core/validate";
 import { RejectionBus } from "./base";
 import {
   ENGINE_ENDPOINTS, batchFromWire, instantSeconds, parseLineage, parseReferencePage, parseReverseLineage, parseMeters, parseModules, parseSpace, parseWsMessage, revisionTimes, subscribeMessage,
-  type SpaceDoc,
+  type SpaceDoc, type SpaceGraph,
 } from "./engine-protocol";
 import { initialStream, transition, type Effect, type Event as StreamInput, type StreamState, type Why } from "./engine-stream";
 import { readPresentation } from "./presentation";
@@ -25,6 +25,9 @@ export interface EngineOptions {
 
 type Sink = (e: StreamEvent) => void;
 const num = (r: string): number => Number(r);
+function bindings(g: SpaceGraph) {
+  return { inputs: g.inputs, inputPorts: g.inputPorts, projectionName: g.projection ?? undefined, projectionFile: g.projectionFile };
+}
 
 export class EngineSource implements GraphSource {
   readonly name: string;
@@ -94,8 +97,8 @@ export class EngineSource implements GraphSource {
       const snap = await this.genesis(g.id);
       if (!snap) continue;
       graphs.push({
-        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined, description: g.description, inputs: g.inputs, direction: g.direction, editable: g.editable, document: g.document || undefined,
-        projectionName: g.projection ?? undefined,
+        id: g.id, role: g.role, descriptor: snap.descriptor, ontology: (ont.ok ? ont.value : rawOntology) as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined, description: g.description, direction: g.direction, editable: g.editable, document: g.document || undefined,
+        ...bindings(g),
       });
       seed.push({ id: g.id, revision: snap.snapshot.version.revision, telemetry: g.role !== "catalog" });
     }
@@ -144,10 +147,16 @@ export class EngineSource implements GraphSource {
   private step(e: StreamInput): void {
     const r = transition(this.stream, e);
     this.stream = r.state;
-    for (const f of r.effects) this.run(f);
+    let space: Promise<SpaceDoc> | undefined;
+    for (const f of r.effects) {
+      if (f.k === "readMeta") {
+        space ??= this.text(ENGINE_ENDPOINTS.space).then(text => parseSpace(JSON.parse(text)));
+        void this.readMeta(f.graph, f.gen, space);
+      } else this.run(f);
+    }
   }
 
-  private run(f: Effect): void {
+  private run(f: Exclude<Effect, { k: "readMeta" }>): void {
     switch (f.k) {
       case "emit": this.emit(f.graph, f.event); return;
       case "status": if (f.gapFilled) this.status.gapsFilled++; this.setStatus(f.state ?? this.status.state, f.detail); return;
@@ -158,7 +167,6 @@ export class EngineSource implements GraphSource {
       case "reconnect": this.status.reconnects++; this.after(f.attempt, { t: "reconnectDue" }); return;
       case "readPatches": void this.readPatches(f.graph, f.gen, f.why, f.after); return;
       case "readTelemetry": void this.readTelemetry(f.graph, f.gen, f.why, f.from); return;
-      case "readMeta": void this.readMeta(f.graph, f.gen); return;
     }
   }
 
@@ -195,13 +203,21 @@ export class EngineSource implements GraphSource {
     } catch (e) { this.step({ t: "readFailed", graph, gen, why, error: (e as Error).message }); }
   }
 
-  /** An activation can change the ontology of a graph and the roles of its values: read them again and tell the workspace. */
-  private async readMeta(graph: string, gen: number): Promise<void> {
+  /** An activation can change graph bindings and presentation while keeping the graph ID. */
+  private async readMeta(graph: string, gen: number, space: Promise<SpaceDoc>): Promise<void> {
     try {
-      const { hints, tree, kinds, labels, restating, ontology: raw } = readPresentation(JSON.parse(await this.text(ENGINE_ENDPOINTS.ontology(graph))));
+      const [doc, text] = await Promise.all([space, this.text(ENGINE_ENDPOINTS.ontology(graph))]);
+      if (this.stream.graphs[graph]?.gen !== gen) return;
+      this.doc = doc;
+      const g = doc.graphs.find(item => item.id === graph);
+      if (!g) throw new Error(`Graph ${graph} is missing from the activated space.`);
+      const { hints, tree, kinds, labels, restating, ontology: raw } = readPresentation(JSON.parse(text));
       const ont = checkOntology(raw);
       if (!ont.ok) { this.reject({ source: ENGINE_ENDPOINTS.ontology(graph), where: `ontology of ${graph}`, errors: ont.errors }); return; }
-      this.step({ t: "meta", graph, gen, meta: { ontology: ont.value as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined } });
+      const meta = { ...bindings(g), ontology: ont.value as GraphInfo["ontology"], presentation: hints.length ? hints : undefined, tree: tree ?? undefined, edgeKinds: Object.keys(kinds).length ? kinds : undefined, labels: Object.keys(labels).length ? labels : undefined, restating: restating.length ? restating : undefined };
+      const info = this.info?.graphs.find(item => item.id === graph);
+      if (info) Object.assign(info, meta);
+      this.step({ t: "meta", graph, gen, meta });
     } catch (e) { this.reject({ source: this.base, where: `ontology of ${graph}`, errors: [(e as Error).message] }); }
   }
 

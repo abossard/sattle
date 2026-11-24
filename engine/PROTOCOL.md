@@ -21,10 +21,13 @@ The contract between `sattle serve` and the canvas. Everything is JSON over HTTP
     { "id": "catalog", "role": "catalog", "head": "10", "ontology": "sattle.kernel", "inputs": [], "direction": "readonly", "editable": false },
     { "id": "master", "role": "master", "head": "146", "ontology": "acme.ops", "inputs": [], "direction": "mixed", "editable": true,
       "descriptor": { }, "projection": "ingest" },
-    { "id": "serviceTree", "role": "projection", "head": "44", "ontology": "acme.svc", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "serviceDeps" }
+    { "id": "serviceTree", "role": "projection", "head": "44", "ontology": "acme.svc", "inputs": ["master"], "direction": "forward", "editable": false, "projection": "serviceDeps",
+      "inputPorts": {"master": "master"}, "projectionFile": "acme.svc.serviceDeps.kql" }
   ],
   "input": { "mode": "replay|live", "logicalTime": "2026-11-10T10:41:00Z", "rows": "243457", "dropped": [] } }
 ```
+- `inputPorts` maps each graph input port of a projection to the graph ID bound to it. A graph may bind several ports to one upstream graph. `inputs` lists those upstream IDs once.
+- `projectionFile` is the basename accepted by `PUT /drafts/{id}/text/{file}`. Graphs without a projection file and older servers may omit it or return null. To edit the policy bound to the coverage projection, look up the graph ID in `inputPorts.rules` and use that graph’s `projectionFile`. Both graphs can have project-specific names. For GKQL rules, read the file from `POST /drafts/{id}/check` under `modules[file].text`, then submit its revised text with `expectedRevision`.
 - `direction` is `forward`, `lens`, `mixed` (a projection with `readonly` and `bijective` or `lens` rules) or `readonly`. `editable` is true when some rule accepts edits.
 - `GET /graphs/{g}/descriptor` returns the `GraphDescriptor` at the head.
 
@@ -149,7 +152,7 @@ One connection, many subscriptions. Client messages:
   - `{ "type": "patch", "graph", "patch" }` one per revision, strictly consecutive per graph per subscription
   - `{ "type": "gap", "graph", "lastAvailable" }`
   - `{ "type": "telemetry", "graph", "batch": { sparse TelemetryBatch with windowStart } }` unless `telemetry:false`
-  - `{ "type": "activation", "catalogRevision", "graphs": [ { "id", "from", "to" } ] }` after a definition commit; patches of that activation precede it. Clients refetch telemetry after it.
+  - `{ "type": "activation", "catalogRevision", "graphs": [ { "id", "from", "to" } ] }` after a definition commit. Its patches precede it. Clients refresh telemetry, ontology and `GET /space` bindings on activation. The graph IDs can stay the same while a port or producing file changes.
   - `{ "type": "time", "logicalTime": "<instant>", "rows": "<count>" }` at most once per second: the engine's logical frontier and input row count.
   - `{ "type": "end" }` when a replay input ends (live inputs never end).
   - `{ "type": "error", "code", "message" }`
@@ -650,3 +653,13 @@ The text editor of a projection reads and checks its `.kql` text through these c
 - **Diagnostics of a draft or a load.** Two new codes: `Duplicate` (an element is declared twice: two constraints of one name, two assignments to one column) and `DuplicateColumn` (an operator would give two columns one name). Both were an exception before, or a silent merge. `null` is an optional value, the result of `if` is telemetry when its condition is, steps after the `max` of a fixpoint are refused, a `Ref<T>` property takes only an entity of type `T`, and one projection may produce several graphs of a space.
 - **Row contract `sattle.source.prometheus.MetricRow`.** New column `series` (the label set of the series), `instance` is optional. The digests of the modules that import it changed.
 - **Digests of graphs and of the state (#115).** A graph's digest (`digest` of `GET /space` graphs, of a draft's graphs, of a store's seal) is the set digest of its written pairs (key text and canonical JSON of the state, Def. 3.5 of the paper): `sha256:` of a zero byte and the sum of their SHA-256 values mod 2^256. The state digest (`GET /health`, `replay`, a state seal) sums the graphs' digests the same way, each graph with its pairs and telemetry windows under its name. Equal graphs still give equal digests and the form is unchanged; every value differs from before. The kernel digest is `sha256:540bd981699c732893659296dedd811d5491fc67932f9c625fbf5596106cbd50` (`GET /palette`, `kernelDigest`), so a state seal of an earlier build is refused and the journal is replayed.
+
+## Health policy evidence windows (#151)
+
+A GKQL `series` can set `freshness` to a duration from one measurement period through `lookback` minus one period, inclusive. Its downstream `hysteresis` then supplies a `noData` label distinct from `high` and `low`. For example, the kiln policy uses one-minute windows, a 15-minute lookback and two-minute freshness. [Kiln rating policy](standard/health/workshop.rating.gkql.json)
+
+With `hysteresis.evidenceWindow` set to `true`, the threshold also emits `windowStart` as an Instant. The kiln projection writes it to the instrument’s `changedIn` property. A crossing cites the window that completed the entry or recovery streak. Silence after readings cites the grid window containing the last supported window’s end plus `freshness`. A subject that has never reported cites its first reported silent window. On resumption, the first supported window after the gap establishes the state.
+
+An admissible late reading or withdrawal can revise this evidence while the label stays the same. Consumers can read the patch’s `cause.configurationVersion` for the active catalog revision and the instrument’s `changedIn` for the evidence in event time. [Replay and correction tests](tests/Sattle.Tests/HealthPolicyTests.cs)
+
+The optional kernel property `Threshold.evidenceWindow` changes the kernel digest to `sha256:9b8a072dea2ebe362ec9f6e981c59c9d94bb52f3aa744d682f8aead8d1c11d05`. Seal format 27 retains the window that established the carried state after it leaves the lookback. On restart, the host skips an older seal, including format 26, and rebuilds from the journal.

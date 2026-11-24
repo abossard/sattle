@@ -1,0 +1,298 @@
+{
+  "schemaVersion": 1,
+  "deployment": {
+    "workload": "azure-health-model-demo",
+    "requiredServices": [
+      "web",
+      "mcp"
+    ]
+  },
+  "nameRules": [
+    {
+      "id": "web",
+      "match": "suffix",
+      "pattern": "-web",
+      "class": "WebFrontend",
+      "evidence": "The web service tag identifies the app that serves the project UI and HTTP API.",
+      "serviceTag": "web"
+    },
+    {
+      "id": "mcp",
+      "match": "suffix",
+      "pattern": "-mcp",
+      "class": "McpServer",
+      "evidence": "The mcp service tag identifies the project's tool server.",
+      "serviceTag": "mcp"
+    }
+  ],
+  "flows": [
+    {
+      "id": "view-a-health-model",
+      "name": "View a health model",
+      "evidence": "Project goal: choose a model, load its graph and open live updates.",
+      "systems": [
+        {
+          "id": "list-models",
+          "name": "List available models",
+          "evidence": "The model picker reads the catalog.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web API serves the model catalog."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "GET /api/health-models",
+              "evidence": "HTTP outcome of the catalog request."
+            }
+          ]
+        },
+        {
+          "id": "read-model",
+          "name": "Load the model graph",
+          "evidence": "The graph needs the selected model, its entities and their relationships.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The graph request enters through the web service."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "GET /api/health-model",
+              "evidence": "HTTP outcome of the graph request."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "GET /api/health-model",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "entitiesoperations.list_by_health_model",
+              "evidence": "List the entities in the selected model."
+            },
+            {
+              "service": "web",
+              "operation": "GET /api/health-model",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "relationshipsoperations.list_by_health_model",
+              "evidence": "List the relationships in the selected model."
+            }
+          ]
+        },
+        {
+          "id": "open-updates",
+          "name": "Open live updates",
+          "evidence": "The UI opens a stream for model changes.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web service exposes the stream."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "GET /api/health-model/stream",
+              "evidence": "HTTP outcome when opening the stream."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "run-a-task",
+      "name": "Run a Task",
+      "evidence": "Project goal: submit work in a session, run the agent and inspect task events.",
+      "systems": [
+        {
+          "id": "submit-task",
+          "name": "Submit a task",
+          "evidence": "A session accepts a new unit of work.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web service receives the task submission."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "POST /api/sessions/{id}/tasks",
+              "evidence": "HTTP outcome when submitting a task."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "POST /api/sessions/{id}/tasks",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "sessions.store.create_task",
+              "evidence": "The task handler creates a task record."
+            }
+          ]
+        },
+        {
+          "id": "run-agent",
+          "name": "Run the agent",
+          "evidence": "The task handler invokes the agent.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web service owns the instrumented task handler."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "POST /api/sessions/{id}/tasks",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "foundry.agent.respond",
+              "evidence": "The agent invocation is a direct child of a task request."
+            }
+          ]
+        },
+        {
+          "id": "read-task-events",
+          "name": "Read task events",
+          "evidence": "Users follow task progress from the event stream.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web service exposes task events."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "GET /api/sessions/{id}/tasks/{id}/events",
+              "evidence": "HTTP outcome when reading the task event stream."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "send-a-health-report",
+      "name": "Send a health report",
+      "evidence": "Project goal: submit a state report for one entity and have Azure apply it.",
+      "systems": [
+        {
+          "id": "receive-report",
+          "name": "Receive the entity report",
+          "evidence": "A report enters through the entity endpoint.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The web service receives the report."
+            }
+          ],
+          "requests": [
+            {
+              "service": "web",
+              "operation": "POST /api/entities/{id}/health-reports",
+              "evidence": "HTTP outcome of an entity report submission."
+            }
+          ]
+        },
+        {
+          "id": "read-report-context",
+          "name": "Read the reporting context",
+          "evidence": "The report handler looks up the model that contains the target entity.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The lookup runs inside the web report handler."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "POST /api/entities/{id}/health-reports",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "healthmodelsoperations.get",
+              "evidence": "The handler reads the target health model."
+            }
+          ]
+        },
+        {
+          "id": "confirm-reported-state",
+          "name": "Confirm the reported state",
+          "evidence": "The business outcome requires a receipt that the target applied the reported state. No such receipt is bound.",
+          "requires": []
+        }
+      ]
+    },
+    {
+      "id": "apply-approved-changes",
+      "name": "Apply approved changes",
+      "evidence": "Project goal: authorize a change, write the graph and record the result.",
+      "systems": [
+        {
+          "id": "verify-approval",
+          "name": "Verify the approval",
+          "evidence": "The workflow requires approval. The captured route and SDK metrics do not identify an approval decision.",
+          "requires": []
+        },
+        {
+          "id": "write-approved-changes",
+          "name": "Write model entities and relationships",
+          "evidence": "The tool request writes the two kinds of model data. Other commands share this route.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The instrumented tool request enters through the web service."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "POST /api/{redacted}/mcp",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "entitiesoperations.begin_create_or_update",
+              "evidence": "An entity create-or-update operation started."
+            },
+            {
+              "service": "web",
+              "operation": "POST /api/{redacted}/mcp",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "relationshipsoperations.begin_create_or_update",
+              "evidence": "A relationship create-or-update operation started."
+            }
+          ]
+        },
+        {
+          "id": "append-apply-record",
+          "name": "Append the apply record",
+          "evidence": "The workflow records each apply operation in its session history.",
+          "requires": [
+            {
+              "class": "WebFrontend",
+              "evidence": "The instrumented tool request enters through the web service."
+            }
+          ],
+          "spans": [
+            {
+              "service": "web",
+              "operation": "POST /api/{redacted}/mcp",
+              "relationship": "direct-child-span",
+              "evidenceType": "instrumented-operation",
+              "target": "sessions.store.append_apply",
+              "evidence": "The session store appends an apply record."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

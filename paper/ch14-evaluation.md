@@ -55,6 +55,8 @@ The authors' runs took place at nine successive states of the software; from the
 
 What is not built is listed in Ch. 15 (15.2).
 
+**Trace, coverage and kiln fixtures (kind C).** The submission fixture has a parent span with two children. The discovery check verifies both directed handoffs. Coverage checks use distinct receipts for the same item and role, including two receipts with different event times. Each stays inspectable and the item counts once. A viewer test publishes a corrected receiver, reads the original revision and compares the published graph with a fresh command-line replay. In the kiln test, the clock reaches 10:10 before readings for 10:08 and 10:09 arrive. Both delivery orders identify 10:08 as the return to `Ready`. These synthetic cases test semantics. Measuring discovery accuracy on an unseen workload requires independently labelled transitions. [Fixtures and reproduction commands](appendix-artifact.md#a5-commands)
+
 ## 14.4 End to end on the real recordings
 
 One run of each recording by the authors, at the last state of the engine, with the defaults and the local names. Times are single runs on a shared laptop, not performance figures.

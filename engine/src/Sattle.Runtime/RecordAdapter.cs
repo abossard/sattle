@@ -60,7 +60,10 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
             for (var i = 0; i < row.Fields.Length; i++)
             {
                 var field = row.Fields[i];
-                if (!Read(field, values.P(field.Name), out next[i]))
+                // An opting-in row can preserve the source record identity independently of
+                // the payload's grouping columns or its human-facing evidence reference.
+                if (field is { Name: "$recordKey", Kind: "Text" }) next[i] = key;
+                else if (!Read(field, values.P(field.Name), out next[i]))
                 {
                     sink.Rejected(Id, $"Expected {field.Kind} at {type}.{field.Name}");
                     return;

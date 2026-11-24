@@ -1,0 +1,125 @@
+{
+  "graph": "impact",
+  "ontology": "workshop",
+  "description": "A required instrument changes its consumer's state. Each dependency records the instrument's observation.",
+  "history": 100,
+  "inputs": [{"name": "master", "ontology": "workshop"}, {"name": "rating", "ontology": "workshop"}],
+  "parameters": [
+    {"name": "requiredRole", "kind": "Text", "default": "controls firing"},
+    {"name": "optionalRole", "kind": "Text", "default": "display only"}
+  ],
+  "verbs": [
+    {
+      "id": "links",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "c", "label": "Consumer"}, {"var": "p", "label": "Instrument"}],
+        "edges": [{"var": "use", "label": "Uses", "from": "c", "to": "p"}]
+      }
+    },
+    {
+      "id": "selectedRoles",
+      "verb": "where",
+      "condition": {
+        "fn": "or",
+        "args": [{"fn": "==", "args": [{"ref": "use.role"}, {"param": "requiredRole"}]}, {"fn": "==", "args": [{"ref": "use.role"}, {"param": "optionalRole"}]}]
+      }
+    },
+    {
+      "id": "ratings",
+      "verb": "graph-match",
+      "graph": "rating",
+      "pattern": {"nodes": [{"var": "sensor", "label": "Instrument"}]}
+    },
+    {"id": "evaluated", "verb": "join", "kind": "inner", "on": [{"left": "p", "right": "sensor"}]},
+    {
+      "id": "trace",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "c", "label": "Consumer", "id": {"ref": "c"}},
+          {"var": "p", "label": "Instrument", "id": {"ref": "p"}}
+        ],
+        "edges": [
+          {
+            "var": "use",
+            "label": "Uses",
+            "from": "c",
+            "to": "p",
+            "props": {
+              "role": {"ref": "use.role"},
+              "observed": {"ref": "sensor.state"},
+              "changedIn": {"ref": "sensor.changedIn"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sharedInstrument",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "p",
+            "label": "Instrument",
+            "id": {"ref": "sensor"},
+            "props": {
+              "name": {"ref": "sensor.name"},
+              "state": {"ref": "sensor.state"},
+              "changedIn": {"ref": "sensor.changedIn"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "impactOfEach",
+      "verb": "extend",
+      "columns": {
+        "consumerName": {"ref": "c.name"},
+        "rank": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "use.role"}, {"param": "optionalRole"}]}, {"lit": 0}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "sensor.state"}, {"lit": ""}]}, {"lit": "Hot"}]}, {"lit": 2}, {"fn": "iff", "args": [{"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "sensor.state"}, {"lit": ""}]}, {"lit": "Ready"}]}, {"lit": 0}, {"lit": 1}]}]}]
+        }
+      }
+    },
+    {
+      "id": "perConsumer",
+      "verb": "summarize",
+      "by": {"c": {"ref": "c"}, "consumerName": {"ref": "consumerName"}},
+      "aggregates": {"worst": {"fn": "max", "args": [{"ref": "rank"}]}}
+    },
+    {
+      "id": "consumers",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "c",
+            "label": "Consumer",
+            "id": {"ref": "c"},
+            "props": {
+              "name": {"ref": "consumerName"},
+              "state": {
+                "fn": "iff",
+                "args": [{"fn": "==", "args": [{"ref": "worst"}, {"lit": 2}]}, {"lit": "Hot"}, {"fn": "iff", "args": [{"fn": "==", "args": [{"ref": "worst"}, {"lit": 1}]}, {"lit": "No reading"}, {"lit": "Ready"}]}]
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "links", "to": "selectedRoles"},
+    {"from": "selectedRoles", "to": "evaluated", "port": "left"},
+    {"from": "ratings", "to": "evaluated", "port": "right"},
+    {"from": "evaluated", "to": "trace"},
+    {"from": "ratings", "to": "sharedInstrument"},
+    {"from": "evaluated", "to": "impactOfEach"},
+    {"from": "impactOfEach", "to": "perConsumer"},
+    {"from": "perConsumer", "to": "consumers"}
+  ]
+}

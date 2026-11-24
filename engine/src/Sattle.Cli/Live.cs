@@ -63,22 +63,23 @@ static class Live
         if (seconds > 0) deadline.CancelAfter(TimeSpan.FromSeconds(seconds));
         var (counts, reason) = LiveInput.RunUntilStopped(lifetime, deadline.Token, ct =>
         {
-            var ns = o.Get("eh-namespace") ?? Discover(o.Get("eh-resource-group") ?? throw new ArgumentException("pass --eh-namespace NS or --eh-resource-group GROUP (the group the namespace is found in)"));
-            var fqns = ns.Contains('.') ? ns : ns + ".servicebus.windows.net";
+            var inputPath = o.Get("follow");
+            var ns = inputPath is null ? o.Get("eh-namespace") ?? Discover(o.Get("eh-resource-group") ?? throw new ArgumentException("pass --eh-namespace NS, --eh-resource-group GROUP, or --follow FILE")) : null;
             Directory.CreateDirectory(Path.Combine(outDir, "live"));
             var recordPath = Path.Combine(outDir, "live", "stream.ndjson");
             using var record = new FileRecording(recordPath);
-            var source = new EventHubsSource(o.Get("group") ?? "$Default", fqns, hub, new AzureCliCredential(), o.Get("from") == "earliest");
+            var bus = ns is null ? null : new EventHubsSource(o.Get("group") ?? "$Default", ns.Contains('.') ? ns : ns + ".servicebus.windows.net", hub, new AzureCliCredential(), o.Get("from") == "earliest");
+            ILiveSource source = (ILiveSource?)bus ?? new AppendFileSource(inputPath!);
             string? retrying = null;
             host.LiveStatus = () => new JsonObject
             {
-                ["hubs"] = new JsonArray(hub), ["namespace"] = ns, ["position"] = host.SourcePosition(source.Id) is { } p ? JsonNode.Parse(p) : null, ["record"] = recordPath, ["events"] = record.Count.ToString(),
+                ["hubs"] = bus is null ? new JsonArray() : new JsonArray(hub), ["namespace"] = ns, ["file"] = inputPath, ["position"] = host.SourcePosition(source.Id) is { } p ? JsonNode.Parse(p) : null, ["record"] = recordPath, ["events"] = record.Count.ToString(),
                 ["retrying"] = retrying,
-                ["lag"] = source.Lag is { } lag ? new JsonObject { ["events"] = lag.Events.ToString(System.Globalization.CultureInfo.InvariantCulture), ["seconds"] = lag.Seconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) } : null,
+                ["lag"] = bus?.Lag is { } lag ? new JsonObject { ["events"] = lag.Events.ToString(System.Globalization.CultureInfo.InvariantCulture), ["seconds"] = lag.Seconds.ToString("F0", System.Globalization.CultureInfo.InvariantCulture) } : null,
             };
             // the ready line comes after the first read, when the link to the hub is open: a forwarder started on it is not missed
             return LiveInput.Run(host, source, Program.ReplayOptionsOf(o, cluster), ct, record,
-                ready: () => { retrying = null; Console.WriteLine("live: " + source.Start); },
+                ready: () => { retrying = null; Console.WriteLine("live: " + (bus?.Start ?? "following " + inputPath)); },
                 retry: (e, n) =>
                 {
                     var wait = TimeSpan.FromSeconds(Math.Min(30, 1 << Math.Min(n - 1, 5)));

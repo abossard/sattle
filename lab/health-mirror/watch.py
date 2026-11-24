@@ -1,44 +1,21 @@
 #!/usr/bin/env python3
 """Poll a deployment, deliver pending native records, and resume after an interrupted send."""
 import argparse
-from datetime import datetime, timezone
 import fcntl
 import hashlib
 import json
-import os
 from pathlib import Path
-import shutil
 import subprocess
 import sys
-import tempfile
 import time
+
+from container_inputs import arm_records, inventory_events
 
 HERE = Path(__file__).resolve().parent
 
 
 def run_python(script, *args):
     subprocess.run([sys.executable, "-B", str(HERE / script), *map(str, args)], check=True)
-
-
-def sample_signals(fixture, pending, scope):
-    # A resource group can be watched without a CloudHealth model. For a model,
-    # read its bound Azure sources with the current clock and the captured definitions.
-    if "/providers/microsoft.cloudhealth/healthmodels/" not in scope.lower():
-        return
-    model = json.loads((fixture / "model.json").read_text())
-    if model["model"]["sourceId"].casefold() != scope.casefold():
-        raise ValueError("Capture this model into MIRROR_FIXTURE before watching its signals.")
-    checkpoints = [p for p in (fixture / "raw").iterdir() if (p / "bindings.json").is_file()]
-    raw = max(checkpoints, key=lambda p: datetime.fromisoformat((p / "readAt.txt").read_text().strip()))
-    if not model["bindings"]:
-        return
-    with tempfile.TemporaryDirectory(dir=pending.parent) as tmp:
-        local = Path(tmp)
-        shutil.copyfile(fixture / "model.json", local / "model.json")
-        at = datetime.now(timezone.utc).isoformat()
-        run_python("collect-observations.py", raw, "--at", at, "--output", local / "observations.ndjson")
-        run_python("build-space.py", "--fixture", local, "--out", local / "build")
-        os.replace(local / "build/capture/observations.ndjson", pending)
 
 
 def main():
@@ -57,7 +34,7 @@ def main():
     state = args.work / "watch" / key
     state.mkdir(parents=True, exist_ok=True)
     pending = state / "inventory-pending.ndjson"
-    signals = state / "signals-pending.ndjson"
+    history = state / "inventory.ndjson"
 
     def send(file):
         if file.exists() and file.stat().st_size:
@@ -70,11 +47,16 @@ def main():
             try:
                 # The collector reconciles an existing outbox with the local inventory
                 # history before it fetches a new snapshot or advances its cursor.
-                run_python("collect-inventory.py", args.scope, "--output", state / "inventory.ndjson", "--delta", pending)
-                send(pending)
-                if not signals.exists():
-                    sample_signals(args.fixture, signals, args.scope)
-                send(signals)
+                run_python("collect-inventory.py", args.scope, "--output", history, "--delta", pending)
+                if pending.exists() and pending.stat().st_size:
+                    normalized = state / "inventory-records.ndjson"
+                    keys = {event["key"] for event in inventory_events(pending)}
+                    rows = arm_records(inventory_events(history), pending_keys=keys)
+                    with normalized.open("w") as output:
+                        for row in rows:
+                            output.write(json.dumps(row, separators=(",", ":")) + "\n")
+                    send(normalized)
+                pending.unlink(missing_ok=True)
             except (subprocess.CalledProcessError, OSError, ValueError) as exc:
                 if args.once:
                     raise

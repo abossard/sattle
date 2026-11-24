@@ -1,0 +1,21 @@
+{
+  "fixture": [
+    "model.json", "reference.json", "observations.ndjson", "dependencies.ndjson",
+    "network.ndjson", "container-apps.ndjson", "flow-ontology.json", "request-observations.ndjson",
+    "request-dependencies.ndjson"
+  ],
+  "state": [
+    "capture/platform-metrics.ndjson", "definitions/mirror.module.gkql.json", "definitions/mirror.ingest.gkql.json",
+    "definitions/mirror.structure.gkql.json", "definitions/mirror.signals.gkql.json",
+    "definitions/mirror.health.gkql.json", "definitions/mirror.network.gkql.json",
+    "definitions/mirror.containerApps.gkql.json", "definitions/mirror.workloadFlows.gkql.json",
+    "definitions/mirror.ontologyGaps.gkql.json", "definitions/mirror.appTelemetry.gkql.json",
+    "definitions/mirror.projectHealth.gkql.json",
+    "replay/master.final.snapshot.json", "replay/structure.final.snapshot.json",
+    "replay/signals.snapshot.json", "replay/signals.patches.json", "replay/signals.final.snapshot.json",
+    "replay/health.snapshot.json", "replay/health.patches.json", "replay/health.final.snapshot.json",
+    "replay/network.final.snapshot.json", "replay/containerApps.final.snapshot.json",
+    "replay/workloadFlows.final.snapshot.json", "replay/ontologyGaps.final.snapshot.json",
+    "replay/appTelemetry.final.snapshot.json", "replay/projectHealth.final.snapshot.json"
+  ]
+}

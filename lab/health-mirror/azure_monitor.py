@@ -2,10 +2,11 @@
 from datetime import datetime, timezone
 from functools import lru_cache
 import json
+import math
 import re
 import subprocess
 import time
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 ARM = "https://management.azure.com"
 LOGS = "https://api.loganalytics.io"
@@ -61,3 +62,41 @@ def read(path):
 def workspace_id(resource, subscription):
     doc = azure(ARM + resource + "?api-version=2023-09-01", subscription)
     return doc["properties"]["customerId"]
+
+
+def missing(code):
+    return {"status": "noData", "errorCode": code, "value": None}
+
+
+def numeric(value):
+    if value is None:
+        return missing("NullValue")
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ReadError("NonNumericValue")
+    return {"status": "value", "value": value}
+
+
+def resource_metric(resource_id, signal, start, end, subscription):
+    aggregation = signal["aggregationType"]
+    params = {"api-version": "2023-10-01", "metricnamespace": signal["metricNamespace"],
+              "metricnames": signal["metricName"], "aggregation": aggregation,
+              "timespan": iso(start) + "/" + iso(end), "interval": "FULL"}
+    if signal.get("dimensionFilter"):
+        params["$filter"] = signal["dimensionFilter"]
+    url = ARM + resource_id + "/providers/Microsoft.Insights/metrics?" + urlencode(params)
+    answer = azure(url, subscription)
+    records = answer["value"]
+    if len(records) != 1 or records[0]["name"]["value"].lower() != signal["metricName"].lower():
+        raise ReadError("UnexpectedMetricResponse")
+    record = records[0]
+    if record.get("errorCode", "Success") != "Success":
+        raise ReadError(record["errorCode"])
+    series = record["timeseries"]
+    if len(series) > 1:
+        raise ReadError("AmbiguousMetricDimensions")
+    points = series[0]["data"] if series else []
+    if len(points) > 1:
+        raise ReadError("AmbiguousMetricWindow")
+    if not points:
+        return {**missing("NoMetricPoints"), "unit": record["unit"]}
+    return {**numeric(points[0].get(aggregation.lower())), "sampleAt": points[0]["timeStamp"], "unit": record["unit"]}

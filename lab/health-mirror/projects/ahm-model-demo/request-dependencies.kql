@@ -1,0 +1,28 @@
+// Append to request-scope.kql. A direct child has the request span ID as its parent.
+let allowedHosts=dynamic(__TARGETS__);
+let sdkOperations=dynamic(["healthmodelsoperations.get", "entitiesoperations.list_by_health_model", "relationshipsoperations.list_by_health_model", "healthmodelsoperations.begin_create", "entitiesoperations.begin_create_or_update", "relationshipsoperations.begin_create_or_update", "authenticationsettingsoperations.begin_create_or_update", "sessions.store.create_task", "sessions.store.save_task", "sessions.store.list_tasks", "sessions.store.append_event", "sessions.store.get_task", "sessions.store.get_session", "sessions.store.get_creation", "sessions.store.claim_creation", "sessions.store.append_apply", "sessions.store.read_applies", "foundry.agent.respond"]);
+let distinctRequests=scopedRequests
+| where isnotempty(OperationId) and isnotempty(Id)
+| summarize requestIds=make_set(Id,2), capturedRoute=take_any(operation), capturedRole=take_any(role),
+            capturedHost=take_any(ingressHost) by OperationId
+| where array_length(requestIds)==1
+| project OperationId, requestId=tostring(requestIds[0]), capturedRoute, capturedRole, capturedHost;
+AppDependencies
+| where _ResourceId =~ monitoredComponent and TimeGenerated >= since and TimeGenerated < until
+| extend tracker=tolower(tostring(Target)), sdkType=tolower(DependencyType)
+| extend address=trim(" ",tostring(split(Target," | ")[0]))
+| extend host=tolower(tostring(parse_url(iif(address contains "://",address,strcat("https://",address))).Host))
+| extend evidenceType=case(sdkType in ("http","https","azure blob") and host in~ (allowedHosts),"remote-host",
+                           sdkType in ("inproc","n/a") and tracker in~ (sdkOperations),"instrumented-operation","")
+| where isnotempty(evidenceType)
+| extend observedTarget=iif(evidenceType=="remote-host",host,tracker)
+| join kind=leftouter (distinctRequests) on OperationId
+| extend relationship=case(isempty(requestId),"no-unique-request",ParentId==requestId,"direct-child-span","same-trace"),
+         attributed=isnotempty(capturedHost) and capturedHost!="unattributed"
+| summarize calls=sum(coalesce(ItemCount,1)), spanCount=count(), failed=sumif(coalesce(ItemCount,1),Success==false),
+            unknown=sumif(coalesce(ItemCount,1),isnull(Success)),
+            attributedCalls=sumif(coalesce(ItemCount,1),attributed),
+            attributedFailed=sumif(coalesce(ItemCount,1),attributed and Success==false),
+            attributedUnknown=sumif(coalesce(ItemCount,1),attributed and isnull(Success)),
+            ingressHosts=make_set_if(capturedHost,attributed), lastSeen=max(TimeGenerated)
+    by role=capturedRole, operation=capturedRoute, relationship, evidenceType, target=observedTarget

@@ -356,12 +356,14 @@ public sealed class ProjectionChecker(Graph defs)
                     if (init != high && init != low) Err("Threshold", op, "initial must be one of the two states");
                     var (noData, ignore) = (d.Text(op, "nodata"), d.Bool(op, "nodataIgnore"));
                     var marked = R.Find(TThreshold.NoDataColumn) is { } nd && nd.T.Ty.Tag == Tag.Boolean && !nd.T.Role.IsData;
-                    if (marked && noData is null && !ignore) Err("Threshold", op, "the telemetry has a time to live (telemetry_filled): hysteresis must say what no data gives, as its fourth argument");
-                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state of hysteresis needs telemetry with a time to live (telemetry_filled) upstream, and its noData column in the row");
+                    if (marked && noData is null && !ignore) Err("Threshold", op, "a series with a freshness limit needs hysteresis to specify what no data gives (noData in GKQL, the fourth argument in KQL)");
+                    if (!marked && (noData is not null || ignore)) Err("Threshold", op, "a no-data state needs telemetry with a time to live upstream (series.freshness in GKQL, telemetry_filled in KQL) and the noData column in the row");
                     if (noData is not null && (noData == high || noData == low)) Err("Threshold", op, "the value for no data must differ from the two states");
                     var target = d.Text(op, "target") ?? "status";
                     var cols = kcols.Concat(carry).Append(new Col(target, new FType(Ty.Text, true, Role.Data))).ToList();
-                    return new TThreshold(name, op, inputs, new Schema(cols, 0), v, keys, target, above, d.Int(op, "enterAfter"), high, below, d.Int(op, "exitAfter"), low, init, aboveBy, enterBy, belowBy, exitBy, noData, ignore);
+                    var evidenceWindow = d.Bool(op, "evidenceWindow");
+                    if (evidenceWindow) cols.Add(new Col("windowStart", new FType(Ty.Instant, true, Role.Data)));
+                    return new TThreshold(name, op, inputs, new Schema(cols, 0), v, keys, target, above, d.Int(op, "enterAfter"), high, below, d.Int(op, "exitAfter"), low, init, aboveBy, enterBy, belowBy, exitBy, noData, ignore, evidenceWindow);
                 }
             case "EmitEntity": return R is null ? null : TypeEmitEntity(op, name, inputs, R, rule);
             case "EmitRelationship": return R is null ? null : TypeEmitRel(op, name, inputs, R, rule);
@@ -631,7 +633,7 @@ public sealed class ProjectionChecker(Graph defs)
         var ttl = d.Prop(op, "ttl") is IntegerValue tv ? (long)tv.N : (long?)null;
         if (ttl is null && reads.Any(r => r.Fill is not null)) Err("Series", op, "a fill needs a time to live, as telemetry_filled(graph, lookback, ttl, fill) gives: silence must have a declared outcome");
         // at most `within` less one window: a record that ends within the time to live is then a window of the look-back
-        if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the time to live of telemetry_filled must be at least one window and at most the look-back less one window");
+        if (ttl is { } life && period > 0 && (life < period || life > within - period)) Err("Series", op, "the series freshness limit must be at least one window and at most the look-back less one window");
         if (ttl is not null && R.Has(TThreshold.NoDataColumn)) Err("Series", op, $"name '{TThreshold.NoDataColumn}' already exists in the row");
         if (reads.Count == 0 || target is null) return null;
         var inst = new FType(Ty.Instant, true, Role.Data);

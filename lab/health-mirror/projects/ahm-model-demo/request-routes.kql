@@ -1,0 +1,11 @@
+// Append to request-scope.kql. AppRequests reports the HTTP response to each call.
+scopedRequests
+| summarize calls=sum(coalesce(ItemCount,1)), spanCount=count(),
+            failed=sumif(coalesce(ItemCount,1),Success==false),
+            unknown=sumif(coalesce(ItemCount,1),isnull(Success)),
+            attributedCalls=sumif(coalesce(ItemCount,1),ingressHost!="unattributed"),
+            attributedFailed=sumif(coalesce(ItemCount,1),ingressHost!="unattributed" and Success==false),
+            attributedUnknown=sumif(coalesce(ItemCount,1),ingressHost!="unattributed" and isnull(Success)),
+            ingressHosts=make_set_if(ingressHost,ingressHost!="unattributed"),
+            distinctTemplates=dcount(Name), lastSeen=max(TimeGenerated)
+    by role, operation

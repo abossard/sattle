@@ -1,0 +1,146 @@
+{
+  "module": "sattle.coverage",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {
+      "name": "Observation",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "item", "type": "Text", "label": true},
+        {"name": "role", "type": "Text"},
+        {"name": "kind", "type": "Text"},
+        {"name": "observedTarget", "type": "Text", "optional": true},
+        {"name": "sourceRef", "type": "Text", "optional": true},
+        {"name": "at", "type": "Integer"},
+        {"name": "receiptKey", "type": "Text"}
+      ]
+    },
+    {
+      "name": "SourceReport",
+      "properties": [
+        {"name": "source", "type": "Text", "label": true},
+        {"name": "role", "type": "Text"},
+        {"name": "reportId", "type": "Text"},
+        {"name": "availability", "type": "Text"},
+        {"name": "limits", "type": "Text", "optional": true},
+        {"name": "sourceRef", "type": "Text", "optional": true},
+        {"name": "fromTime", "type": "Integer"},
+        {"name": "untilTime", "type": "Integer"}
+      ]
+    },
+    {
+      "name": "Rule",
+      "properties": [
+        {"name": "ruleId", "type": "Text", "label": true},
+        {"name": "revision", "type": "Text"},
+        {"name": "source", "type": "Text"},
+        {"name": "item", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "action", "type": "Text"},
+        {"name": "owner", "type": "Text"},
+        {"name": "reason", "type": "Text"},
+        {"name": "many", "type": "Boolean"}
+      ]
+    },
+    {
+      "name": "Finding",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "item", "type": "Text", "label": true},
+        {"name": "role", "type": "Text"},
+        {"name": "kind", "type": "Text", "optional": true},
+        {"name": "observedTarget", "type": "Text", "optional": true},
+        {"name": "sourceRef", "type": "Text", "optional": true},
+        {"name": "at", "type": "Integer", "optional": true},
+        {"name": "ruleId", "type": "Text", "optional": true},
+        {"name": "revision", "type": "Text", "optional": true},
+        {"name": "target", "type": "Text", "optional": true},
+        {"name": "action", "type": "Text", "optional": true},
+        {"name": "owner", "type": "Text", "optional": true},
+        {"name": "reason", "type": "Text", "optional": true},
+        {"name": "many", "type": "Boolean", "optional": true},
+        {"name": "direction", "type": "Text"},
+        {"name": "status", "type": "Text"},
+        {"name": "policyRevision", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "Scope",
+      "properties": [
+        {"name": "source", "type": "Text", "label": true},
+        {"name": "role", "type": "Text"},
+        {"name": "availability", "type": "Text"},
+        {"name": "eligible", "type": "Integer"},
+        {"name": "mapped", "type": "Integer"},
+        {"name": "unmapped", "type": "Integer"},
+        {"name": "excluded", "type": "Integer"},
+        {"name": "ambiguous", "type": "Integer"},
+        {"name": "supportedBindings", "type": "Integer"}
+      ]
+    }
+  ],
+  "relationships": [
+    {"name": "ReviewedBy", "from": "Finding", "to": "Finding", "kind": "support"},
+    {"name": "BasedOn", "from": "Finding", "to": "Observation", "kind": "support", "properties": [{"name": "assessment", "type": "Text"}]}
+  ],
+  "identities": [
+    {"name": "ObservationKey", "type": "Observation", "components": [{"name": "source", "type": "Text"}, {"name": "receiptKey", "type": "Text"}]},
+    {
+      "name": "ReportKey",
+      "type": "SourceReport",
+      "components": [{"name": "source", "type": "Text"}, {"name": "role", "type": "Text"}, {"name": "reportId", "type": "Text"}]
+    },
+    {"name": "RuleKey", "type": "Rule", "components": [{"name": "ruleId", "type": "Text"}]},
+    {
+      "name": "ObservationFinding",
+      "type": "Finding",
+      "components": [{"name": "source", "type": "Text"}, {"name": "item", "type": "Text"}, {"name": "role", "type": "Text"}]
+    },
+    {
+      "name": "DeclarationFinding",
+      "type": "Finding",
+      "components": [{"name": "source", "type": "Text"}, {"name": "item", "type": "Text"}, {"name": "role", "type": "Text"}, {"name": "ruleId", "type": "Text"}]
+    },
+    {"name": "ScopeKey", "type": "Scope", "components": [{"name": "source", "type": "Text"}, {"name": "role", "type": "Text"}]}
+  ],
+  "rows": [
+    {
+      "name": "RoleObservation",
+      "fields": [
+        {"name": "source", "type": "Text"},
+        {"name": "item", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "kind", "type": "Text"},
+        {"name": "observedTarget", "type": "Text", "optional": true},
+        {"name": "sourceRef", "type": "Text", "optional": true},
+        {"name": "at", "type": "Integer"},
+        {"name": "$recordKey", "type": "Text"}
+      ]
+    },
+    {
+      "name": "SourceScope",
+      "fields": [
+        {"name": "source", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "reportId", "type": "Text"},
+        {"name": "availability", "type": "Text"},
+        {"name": "limits", "type": "Text", "optional": true},
+        {"name": "sourceRef", "type": "Text", "optional": true},
+        {"name": "fromTime", "type": "Integer"},
+        {"name": "untilTime", "type": "Integer"}
+      ]
+    }
+  ],
+  "space": {
+    "name": "coverageReview",
+    "sources": [{"name": "observations", "adapter": "record", "rows": "RoleObservation"}, {"name": "reports", "adapter": "record", "rows": "SourceScope"}],
+    "graphs": [
+      {"name": "master", "master": true, "projection": "ingest", "inputs": {"observations": "observations", "reports": "reports"}},
+      {"name": "rules", "projection": "rules", "inputs": {"master": "master"}},
+      {"name": "coverage", "projection": "coverage", "inputs": {"master": "master", "rules": "rules"}},
+      {"name": "conflicts", "projection": "conflicts", "inputs": {"coverage": "coverage"}}
+    ]
+  }
+}

@@ -10,10 +10,10 @@ web
 Three audiences, served equally (confirmed):
 - Operators (platform and site reliability engineers) who open a workload graph to see whether it is healthy and which part is to blame, on the synthetic estate today and on real Azure data in Phase 2.
 - Researchers and reviewers, math-literate readers of the white paper, who inspect graphs, their projections, revisions, lineage and change sets as worked examples of the theory.
-- Projection authors who build and edit projections in the editor (four notations and text) and check what their output graphs hold.
+- Projection authors who build and edit projections in the editor (four notations and text) and check what their output graphs hold. A project owner can also review a single rule in the Inspector, follow its finding to the source receipts, and preview a correction before publishing.
 
 ## Product Purpose
-The canvas is the client of the Sattle engine: it shows the graphs of a graph space (the master graph and the graphs its projections derive), how they change revision by revision, and the telemetry on them, and it lets an author edit the projections, the KQL files of rules that write them. Success: a person answers their question (is it healthy, what changed, why does this element have this state, does my projection produce what I meant) from what is on screen, without reading engine internals.
+Canvas shows the master graph, its derived graphs, their revision histories and their telemetry. An author can edit the KQL or GKQL projection that produced a result. A reviewer should be able to find what changed, trace a state to its evidence and check how a proposed rule would affect the graph.
 
 ## Positioning
 Every view is a function of an engine output at a revision: incremental graphs with lineage, a timeline over revisions, a roll-up whose cause relation and origins are shown, and an editor whose commands are the engine's own edit protocol. Nothing is hand-drawn or mocked.
@@ -32,6 +32,7 @@ Every view is a function of an engine output at a revision: incremental graphs w
 
 ## Evidence on Hand
 - The synthetic estate demo (thirteen graphs, workload model with scenarios A to E) and the reference projections built in each notation (`tests/engine/kql-references.test.tsx`).
+- The local submission review links a trace and an ingress receipt to a receiver declaration. The real-engine test publishes the corrected rule, reads the earlier conflict by revision and compares the published graph with a fresh CLI replay. [Walkthrough](../engine/standard/README.md) · [Integration test](tests/engine/coverage-review.test.ts)
 - Two real captures exist outside the repository; their names and ids must not appear in tracked files.
 - No user studies, testimonials or benchmarks against other tools exist; none may be invented.
 

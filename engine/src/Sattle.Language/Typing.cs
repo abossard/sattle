@@ -108,7 +108,7 @@ public sealed record TRollup(string Name, string Id, IReadOnlyDictionary<string,
     : TOp(Name, Id, "Rollup", Inputs, Out);
 public sealed record TThreshold(string Name, string Id, IReadOnlyDictionary<string, Src> Inputs, Schema Out, TExpr Value, IReadOnlyList<(string Name, TExpr Value)> Keys, string Target,
     decimal Above, long EnterAfter, string High, decimal Below, long ExitAfter, string Low, string Initial,
-    TExpr? AboveBy = null, TExpr? EnterBy = null, TExpr? BelowBy = null, TExpr? ExitBy = null, string? NoData = null, bool NoDataIgnore = false) : TOp(Name, Id, "Threshold", Inputs, Out)
+    TExpr? AboveBy = null, TExpr? EnterBy = null, TExpr? BelowBy = null, TExpr? ExitBy = null, string? NoData = null, bool NoDataIgnore = false, bool EvidenceWindow = false) : TOp(Name, Id, "Threshold", Inputs, Out)
 {
     /// <summary>The column a Series with a time to live adds and a Rollup passes on.</summary>
     public const string NoDataColumn = "noData";

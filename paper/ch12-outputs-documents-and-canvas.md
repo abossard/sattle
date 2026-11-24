@@ -42,7 +42,7 @@ A version of a graph and a window of measurements are indexed differently: versi
 
 *Proof.* The commit record of Def. 3.8 does not hold the logical time of a version, so it is read from the input log, or from a field that a store would have to add to the record. It does not decrease along the versions: causes follow the recorded order (F1 of Theorem 3.5), and `λ` only increases within a projection (Ch. 3, 3.4). So the largest version with `λ ≤ τ` exists, and a larger `τ` gives a version at least as large. The view is a function of its arguments (Theorem 7.6). ∎
 
-The prototype does not have `rev_of`. Its versions carry no time, so the viewer keeps one time axis for the whole space, puts measurements at the start of their windows, places versions by their order on the windows, and says so on the timeline.
+The engine supplies logical commit times in the graph’s revision history and in live patch events. Canvas places measurements at their window starts and shows the latest revision at or before the selected time. The timeline names the inputs and catalog revision that caused the displayed patch. For a health transition, the instrument’s `changedIn` property identifies the window when that state began (Ch. 7). If two revisions share a commit time, the slider selects the later one. A reader can request either retained snapshot by revision. Canvas labels revisions placed by order when the source omits a commit time. [Time-axis calculation](../canvas/src/core/time-axis.ts) · [Engine protocol](../engine/PROTOCOL.md)
 
 ## 12.3 Definitions in the viewer
 
@@ -51,6 +51,10 @@ The prototype does not have `rev_of`. Its versions carry no time, so the viewer 
 *Proof.* Def. 2.1 and Theorem 12.1. ∎
 
 The engine serves the catalog like any data graph, with the kernel as its ontology, with path ids as element ids (Def. 2.3) and relationship ids `<source id>|<edge type>|<target id>`. The viewer reads modules, types, identity domains, projections, operators, ports, wires and rules with their class, and edits them through drafts.
+
+**Worked example. Reviewing a receiver.** In the submission example, the project names `worker` as the receiver. The receipt names `web`. The engine emits a conflict between the declaration and the observation. Canvas follows the coverage graph’s named rules input to find the GKQL file to edit. Each activation refreshes that binding, so the project can move its rules to another file.
+
+The owner previews a change to the receiver rule. While the preview is open, the owner can follow the finding to its receipts and inspect the source of the disagreement. Publication commits the rule against the catalog revision used for the draft. The corrected graph maps the receiver, while the downstream call still lacks evidence. A reader can still inspect the earlier conflict while the engine keeps its original graph revision. [Receiver example in Chapter 9](ch09-evolution-evidence-provenance.md#worked-example--reviewing-a-receiver) · [Canvas and CLI replay test](../canvas/tests/engine/coverage-review.test.ts)
 
 **The editor of a projection.** A projection is written as text (Ch. 5), and the editor edits that text in a draft. The engine checks the text as it is typed, places each finding on the part of the text it concerns, and offers completions and descriptions from the ontologies the projection reads. Beside the text the editor shows three pictures of it, all drawn from the engine's outline of the text: *Steps*, each statement as a card with one row per operator and the number of rows it gives; *Outline*, a tree of the inputs, parameters and statements, with the operators of each and their parts; and *Wires*, the statements as cards wired by what each reads. Each picture is a pure view: an edit made in it, such as adding a statement or an operator, becomes a list of changes of the text, so typing and editing in a picture share one history of undo. A statement can also be added by example: an element picked in a graph the projection reads becomes a statement that finds elements like it. Storing the text in the draft and committing the draft follow Ch. 4 (4.6); a projection's rules are written in its statements, and the bindings of its graph in the space are edited as the text of the space's module. Other declarations (row types, constraints, equivalence policies, value roles) are edited as definition data, through patches on the draft.
 
@@ -138,7 +142,7 @@ That rendering is a function holds by definition and is tested. Escaping is test
 
 ## 12.6 What the prototype does differently
 
-- **No `rev_of`.** Versions carry no time (12.2).
+- **Time alignment depends on the source.** The timeline uses commit time when available and marks revisions it places by order (12.2).
 - **No edits of data in the viewer.** The engine accepts edits of views (Ch. 8); the viewer has no way to make them.
 - **A replica is compared with the engine on one input only.** On the synthetic estate its state equals the engine's after every patch (Theorem 12.1). Digests are not compared, and neither a real recording nor a feed that is still arriving is checked.
 - **Documents** have no truncation; a document over a large graph renders in full.

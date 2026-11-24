@@ -19,11 +19,12 @@ public sealed record On(string Left, string Right);
 /// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target).</summary>
 public sealed record VerbNode(string Id, string Verb, string? Graph, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
     Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
-    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null);
+    string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null);
+public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Dictionary<string, JsonElement>> Rows, string? Key = null);
 public sealed record WindowSpec(string Time, string Period);
-public sealed record SeriesSpec(string Element, string Property, string Lookback);
+public sealed record SeriesSpec(string Element, string Property, string Lookback, string? Freshness = null);
 public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
-    string High, string Low, string Initial);
+    string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false);
 /// <summary>A drawn graph: the pattern of a graph-match, or the target of a sink with placeholders (expressions over the rows) for ids and properties.</summary>
 public sealed record Drawing(List<DrawnNode>? Nodes, List<DrawnEdge>? Edges);
 /// <summary>`Extend`: a sink's node that adds properties to a node another sink makes.</summary>
@@ -56,8 +57,18 @@ public static class Lowering
     {
         var w = new Writer(catalog, module, program);
         try { w.Run(); return (w.Pid, [.. w.B.Elements()], null); }
-        catch (Refused r) { return (w.Pid, [], r.Message); }
+        catch (Exception e) when (e is Refused or JsonException) { return (w.Pid, [], e.Message); }
     }
+
+    internal static Value Literal(JsonElement v) => v.ValueKind switch
+    {
+        JsonValueKind.True => Value.Boolean(true),
+        JsonValueKind.False => Value.Boolean(false),
+        JsonValueKind.String => Value.Text(v.GetString()!),
+        JsonValueKind.Number when v.TryGetInt64(out var l) => Value.Integer(l),
+        JsonValueKind.Number when v.TryGetDecimal(out var number) => Value.Decimal(number),
+        _ => throw new JsonException($"{v} is not a scalar literal"),
+    };
 
     sealed class Writer(Graph catalog, string module, ProgramGraph p)
     {
@@ -136,6 +147,7 @@ public static class Lowering
             Rows One() => ins is [("in", var r)] ? r : throw new Refused(v.Id, $"{v.Verb} has one wire in, to its port in");
             return v.Verb switch
             {
+                "values" => ins.Count == 0 ? Values(v) : throw new Refused(v.Id, "values has no input wires"),
                 "rows" => ins.Count == 0 ? SourceRows(v) : throw new Refused(v.Id, "rows reads a source directly"),
                 "graph-match" => ins.Count == 0 ? Match(v) : throw new Refused(v.Id, "graph-match reads its graph, no wire goes in"),
                 "where" => Filter(v.Id, One(), Read(v.Id, v.Condition ?? throw new Refused(v.Id, "where has a condition"))),
@@ -151,6 +163,48 @@ public static class Lowering
                 "edges" => Edges(v, One()),
                 var other => throw new Refused(v.Id, $"unknown verb '{other}'"),
             };
+        }
+
+        // A typed empty table is an empty relation of the same schema. The kernel's Values
+        // requires one row, so lower the empty case to a typed witness filtered by false.
+        Rows Values(VerbNode v)
+        {
+            if (v.Values is not { Columns.Count: > 0, Rows: not null } table)
+                throw new Refused(v.Id, "values needs column types and an array of rows");
+            if (table.Key is { } key)
+            {
+                if (table.Columns.GetValueOrDefault(key) != "Text") throw new Refused(v.Id, $"key {key} must name a Text column");
+                var keys = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var cells in table.Rows)
+                    if (cells is null || !cells.TryGetValue(key, out var cell) || cell.ValueKind != JsonValueKind.String ||
+                        string.IsNullOrWhiteSpace(cell.GetString()) || !keys.Add(cell.GetString()!))
+                        throw new Refused(v.Id, $"every row needs a distinct nonempty {key}");
+            }
+            Value Cell(string column, string type, JsonElement? json) => (type, json?.ValueKind) switch
+            {
+                ("Text", null or JsonValueKind.String) => T(json?.GetString() ?? ""),
+                ("Integer", null) => Value.Integer(0),
+                ("Integer", JsonValueKind.Number) when json.Value.TryGetInt64(out var n) => Value.Integer(n),
+                ("Decimal", null) => Value.Decimal(0),
+                ("Decimal", JsonValueKind.Number) when json.Value.TryGetDecimal(out var n) => Value.Decimal(n),
+                ("Boolean", null or JsonValueKind.False or JsonValueKind.True) => Value.Boolean(json?.GetBoolean() ?? false),
+                _ => throw new Refused(v.Id, $"column {column} needs a Text, Integer, Decimal or Boolean value of its declared type {type}"),
+            };
+            var op = Op("Values", v.Id);
+            var rows = new Rows(P(op, "out"), [.. table.Columns.Keys.Select(c => Column(v.Id, c))], new(StringComparer.Ordinal));
+            for (var index = 0; index < Math.Max(1, table.Rows.Count); index++)
+            {
+                var cells = table.Rows.Count == 0 ? null : table.Rows[index] ?? throw new Refused(v.Id, $"row {index + 1} needs the declared columns");
+                if (cells is not null && !table.Columns.Keys.ToHashSet().SetEquals(cells.Keys))
+                    throw new Refused(v.Id, $"row {index + 1} needs the declared columns");
+                var row = B.Contain(op, "row", "#" + index, "RowValue", index);
+                foreach (var (column, type) in table.Columns)
+                {
+                    var assign = B.Contain(row, "assign", column, "Assign", null, ("target", T(column)));
+                    Write(v.Id, rows, new Lit(Cell(column, type, cells?[column])), assign, "value", 0);
+                }
+            }
+            return table.Rows.Count == 0 ? Filter(v.Id, rows, new Lit(Value.Boolean(false))) : rows;
         }
 
         Rows SourceRows(VerbNode v)
@@ -171,23 +225,26 @@ public static class Lowering
         {
             if (v.Series is not { } s || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)
                 || !r.Types.ContainsKey(s.Element)) throw new Refused(v.Id, "series names a graph, an element column, a metric property and a lookback");
-            var op = Op("Series", v.Id, ("within", Value.Integer(Duration(v.Id, s.Lookback))));
+            var op = Op("Series", v.Id, [("within", Value.Integer(Duration(v.Id, s.Lookback))),
+                .. s.Freshness is { } ttl ? new[] { ("ttl", Value.Integer(Duration(v.Id, ttl))) } : []]);
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
             B.Contain(op, "read", "#0", "FieldRef", 0, ("path", T($"{s.Element}.{s.Property}")));
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property] };
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]] };
         }
 
         Rows Threshold(VerbNode v, Rows r)
         {
             if (v.Hysteresis is not { By.Length: > 0 } h) throw new Refused(v.Id, "hysteresis names the reading, its keys, thresholds, dwell times and states");
-            var op = Op("Threshold", v.Id, ("target", T("state")), ("above", Value.Decimal(h.Above)), ("below", Value.Decimal(h.Below)),
-                ("enterAfter", Value.Integer(h.EnterAfter)), ("exitAfter", Value.Integer(h.ExitAfter)), ("initial", T(h.Initial)), ("high", T(h.High)), ("low", T(h.Low)));
+            var op = Op("Threshold", v.Id, [("target", T("state")), ("above", Value.Decimal(h.Above)), ("below", Value.Decimal(h.Below)),
+                ("enterAfter", Value.Integer(h.EnterAfter)), ("exitAfter", Value.Integer(h.ExitAfter)), ("initial", T(h.Initial)), ("high", T(h.High)), ("low", T(h.Low)),
+                .. h.NoData is { } missing ? new[] { ("nodata", T(missing)) } : [],
+                .. h.EvidenceWindow ? new[] { ("evidenceWindow", Value.Boolean(true)) } : []]);
             B.Edge(r.Port, "wire", P(op, "in"));
             Write(v.Id, r, new Ref(h.Value), op, "value", 0);
             foreach (var name in h.By)
                 Write(v.Id, r, new Ref(name), B.Contain(op, "key", name, "Assign", null, ("target", T(name))), "value", 0);
-            return new Rows(P(op, "out"), [.. h.By, "state"], r.Types.Where(kv => h.By.Contains(kv.Key)).ToDictionary());
+            return new Rows(P(op, "out"), [.. h.By, "state", .. h.EvidenceWindow ? new[] { "windowStart" } : []], r.Types.Where(kv => h.By.Contains(kv.Key)).ToDictionary());
         }
 
         static long Duration(string at, string duration)
@@ -438,23 +495,13 @@ public static class Lowering
             };
         }
 
-        static Value Literal(JsonElement v) => v.ValueKind switch
-        {
-            JsonValueKind.True => Value.Boolean(true),
-            JsonValueKind.False => Value.Boolean(false),
-            JsonValueKind.String => Value.Text(v.GetString()!),
-            JsonValueKind.Number when v.TryGetInt64(out var l) => Value.Integer(l),
-            JsonValueKind.Number => Value.Decimal(v.GetDecimal()),
-            _ => throw new Refused("lit", $"{v} is not a value"),
-        };
-
         // KQL's names for the scalar functions, and the engine's
         static readonly Dictionary<string, string> Functions = new()
         {
             ["=="] = "Equal", ["!="] = "NotEqual", ["<"] = "LessThan", ["<="] = "LessOrEqual", [">"] = "GreaterThan", [">="] = "GreaterOrEqual",
             ["and"] = "And", ["or"] = "Or", ["not"] = "Not", ["iff"] = "If", ["coalesce"] = "Coalesce",
             ["startswith"] = "StartsWith", ["endswith"] = "EndsWith", ["contains"] = "Contains",
-            ["concat"] = "Concat", ["lower"] = "LowerInvariant",
+            ["concat"] = "Concat", ["lower"] = "LowerInvariant", ["trim"] = "Trim",
         };
 
         void Write(string at, Rows r, Expr x, string parent, string slot, int ordinal, bool ordered = false)

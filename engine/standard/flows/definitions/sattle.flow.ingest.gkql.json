@@ -1,0 +1,273 @@
+{
+  "graph": "ingest",
+  "ontology": "sattle.flow",
+  "description": "Keep source-identified spans and counts in closed event-time minutes. A parent reference may point outside the graph.",
+  "history": 120,
+  "inputs": [
+    {"name": "spans", "rows": "sattle.flow.SpanRow"},
+    {"name": "counts", "rows": "sattle.flow.OperationCountRow"},
+    {"name": "claims", "rows": "sattle.flow.FlowClaimRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "spans", "verb": "rows", "source": "spans"},
+    {
+      "id": "identifiedSpans",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {
+                    "fn": "and",
+                    "args": [
+                      {"fn": "!=", "args": [{"ref": "source"}, {"lit": ""}]},
+                      {"fn": "!=", "args": [{"ref": "trace"}, {"lit": ""}]}
+                    ]
+                  },
+                  {"fn": "!=", "args": [{"ref": "span"}, {"lit": ""}]}
+                ]
+              },
+              {"fn": "!=", "args": [{"ref": "operation"}, {"lit": ""}]}
+            ]
+          },
+          {"fn": "!=", "args": [{"ref": "reference"}, {"lit": ""}]}
+        ]
+      }
+    },
+    {"id": "identifiedSpansMinute", "verb": "window", "window": {"time": "time", "period": "60s"}},
+    {
+      "id": "identifiedSpansClosed",
+      "verb": "summarize",
+      "by": {
+        "source": {"ref": "source"},
+        "trace": {"ref": "trace"},
+        "span": {"ref": "span"},
+        "operation": {"ref": "operation"},
+        "parent": {"fn": "coalesce", "args": [{"ref": "parent"}, {"lit": ""}]},
+        "time": {"ref": "time"},
+        "reference": {"ref": "reference"},
+        "windowStart": {"ref": "windowStart"}
+      },
+      "aggregates": {}
+    },
+    {
+      "id": "rememberSpan",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "Occurrence",
+            "id": {"identity": "occurrence", "args": [{"ref": "source"}, {"ref": "trace"}, {"ref": "span"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "trace": {"ref": "trace"},
+              "span": {"ref": "span"},
+              "operation": {"ref": "operation"},
+              "parent": {"ref": "parent"},
+              "time": {"ref": "time"},
+              "reference": {"ref": "reference"},
+              "window": {"ref": "windowStart"}
+            }
+          }
+        ]
+      },
+      "rule": "sourceEvidence"
+    },
+    {
+      "id": "explicitParent",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [{"fn": "!=", "args": [{"ref": "parent"}, {"lit": ""}]}, {"fn": "!=", "args": [{"ref": "parent"}, {"ref": "span"}]}]
+      }
+    },
+    {
+      "id": "rememberParent",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "Occurrence",
+            "id": {"identity": "occurrence", "args": [{"ref": "source"}, {"ref": "trace"}, {"ref": "span"}]}
+          },
+          {
+            "var": "b",
+            "label": "Occurrence",
+            "id": {"identity": "occurrence", "args": [{"ref": "source"}, {"ref": "trace"}, {"ref": "parent"}]}
+          }
+        ],
+        "edges": [
+          {
+            "var": "e",
+            "label": "NamesParent",
+            "from": "a",
+            "to": "b",
+            "props": {"basis": {"lit": "observed"}, "reference": {"ref": "reference"}}
+          }
+        ]
+      },
+      "rule": "sourceEvidence"
+    },
+    {"id": "counts", "verb": "rows", "source": "counts"},
+    {
+      "id": "validCounts",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {"fn": "!=", "args": [{"ref": "source"}, {"lit": ""}]},
+                  {"fn": "!=", "args": [{"ref": "operation"}, {"lit": ""}]}
+                ]
+              },
+              {"fn": "!=", "args": [{"ref": "reference"}, {"lit": ""}]}
+            ]
+          },
+          {"fn": ">", "args": [{"ref": "count"}, {"lit": 0}]}
+        ]
+      }
+    },
+    {"id": "validCountsMinute", "verb": "window", "window": {"time": "time", "period": "60s"}},
+    {
+      "id": "validCountsClosed",
+      "verb": "summarize",
+      "by": {
+        "source": {"ref": "source"},
+        "operation": {"ref": "operation"},
+        "parentOperation": {"fn": "coalesce", "args": [{"ref": "parentOperation"}, {"lit": ""}]},
+        "count": {"ref": "count"},
+        "time": {"ref": "time"},
+        "reference": {"ref": "reference"},
+        "windowStart": {"ref": "windowStart"}
+      },
+      "aggregates": {}
+    },
+    {
+      "id": "rememberCount",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "CountObservation",
+            "id": {"identity": "countObservation", "args": [{"ref": "source"}, {"ref": "reference"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "operation": {"ref": "operation"},
+              "parentOperation": {"ref": "parentOperation"},
+              "count": {"ref": "count"},
+              "time": {"ref": "time"},
+              "reference": {"ref": "reference"},
+              "window": {"ref": "windowStart"}
+            }
+          }
+        ]
+      },
+      "rule": "sourceEvidence"
+    },
+    {"id": "claims", "verb": "rows", "source": "claims"},
+    {
+      "id": "identifiedClaims",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {
+                    "fn": "and",
+                    "args": [
+                      {
+                        "fn": "and",
+                        "args": [
+                          {
+                            "fn": "and",
+                            "args": [
+                              {
+                                "fn": "and",
+                                "args": [
+                                  {"fn": "!=", "args": [{"ref": "source"}, {"lit": ""}]},
+                                  {"fn": "!=", "args": [{"ref": "fromOperation"}, {"lit": ""}]}
+                                ]
+                              },
+                              {"fn": "!=", "args": [{"ref": "toOperation"}, {"lit": ""}]}
+                            ]
+                          },
+                          {"fn": "!=", "args": [{"ref": "basis"}, {"lit": ""}]}
+                        ]
+                      },
+                      {"fn": "!=", "args": [{"ref": "revision"}, {"lit": ""}]}
+                    ]
+                  },
+                  {"fn": "!=", "args": [{"ref": "reference"}, {"lit": ""}]}
+                ]
+              },
+              {"fn": "!=", "args": [{"ref": "evidence"}, {"lit": ""}]}
+            ]
+          },
+          {
+            "fn": "or",
+            "args": [
+              {"fn": "==", "args": [{"ref": "basis"}, {"lit": "inferred"}]},
+              {"fn": "==", "args": [{"ref": "basis"}, {"lit": "authored"}]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "rememberClaim",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "FlowClaim",
+            "id": {"identity": "flowClaim", "args": [{"ref": "source"}, {"ref": "reference"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "fromOperation": {"ref": "fromOperation"},
+              "toOperation": {"ref": "toOperation"},
+              "basis": {"ref": "basis"},
+              "revision": {"ref": "revision"},
+              "reference": {"ref": "reference"},
+              "evidence": {"ref": "evidence"}
+            }
+          }
+        ]
+      },
+      "rule": "sourceEvidence"
+    }
+  ],
+  "wires": [
+    {"from": "spans", "to": "identifiedSpans"},
+    {"from": "identifiedSpans", "to": "identifiedSpansMinute"},
+    {"from": "identifiedSpansMinute", "to": "identifiedSpansClosed"},
+    {"from": "identifiedSpansClosed", "to": "rememberSpan"},
+    {"from": "identifiedSpansClosed", "to": "explicitParent"},
+    {"from": "explicitParent", "to": "rememberParent"},
+    {"from": "counts", "to": "validCounts"},
+    {"from": "validCounts", "to": "validCountsMinute"},
+    {"from": "validCountsMinute", "to": "validCountsClosed"},
+    {"from": "validCountsClosed", "to": "rememberCount"},
+    {"from": "claims", "to": "identifiedClaims"},
+    {"from": "identifiedClaims", "to": "rememberClaim"}
+  ]
+}

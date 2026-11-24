@@ -30,6 +30,8 @@ export const ENGINE_ENDPOINTS = {
 
 export interface SpaceGraph {
   id: string; role: "master" | "input" | "projection" | "catalog"; head: string; ontology: string; inputs: string[]; direction: string; editable: boolean; projection: string | null; document: boolean;
+  inputPorts?: Record<string, string>;
+  projectionFile?: string;
   /** engine 3.17: the first sentence of the projection's `///` comment stands alone as a caption */
   description?: string;
 }
@@ -45,7 +47,11 @@ export function parseSpace(raw: unknown): SpaceDoc {
     graphs: gs.map((g) => {
       const x = g as Record<string, unknown>;
       const role = x.role === "catalog" ? "catalog" : x.role === "master" ? "master" : x.role === "input" ? "input" : "projection";
-      return { id: String(x.id), role, head: String(x.head ?? "0"), ontology: String(x.ontology ?? ""), inputs: Array.isArray(x.inputs) ? x.inputs.map(String) : [], direction: String(x.direction ?? ""), editable: x.editable === true, document: x.document === true, projection: x.projection ? String(x.projection) : null, description: typeof x.description === "string" && x.description ? x.description : undefined };
+      const ports = x.inputPorts;
+      const inputPorts = ports && typeof ports === "object" && !Array.isArray(ports)
+        ? Object.fromEntries(Object.entries(ports).filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+        : undefined;
+      return { id: String(x.id), role, inputPorts, projectionFile: typeof x.projectionFile === "string" ? x.projectionFile : undefined, head: String(x.head ?? "0"), ontology: String(x.ontology ?? ""), inputs: Array.isArray(x.inputs) ? x.inputs.map(String) : [], direction: String(x.direction ?? ""), editable: x.editable === true, document: x.document === true, projection: x.projection ? String(x.projection) : null, description: typeof x.description === "string" && x.description ? x.description : undefined };
     }),
     input: o.input ? { mode: String((o.input as Record<string, unknown>).mode), logicalTime: String((o.input as Record<string, unknown>).logicalTime ?? ""), rows: String((o.input as Record<string, unknown>).rows ?? "") } : null,
   };

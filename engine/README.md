@@ -1,6 +1,8 @@
 # Sattle engine
 
-A deterministic graph transformation engine. Compiled kernel in C# (.NET 11) that loads ontology modules, row types, identity domains and the graph space from `.sattle` text and projections from `.kql` files as typed definition graphs, replays recorded data (or reads it live) into the master graph, computes every graph of the space incrementally, and serves them to the canvas. The terms are those of the [glossary](../paper/glossary.md).
+Sattle loads typed definitions, replays recorded inputs or receives live rows, and maintains the graphs of an active space. The C# kernel runs on .NET 11. Module definitions can use `.sattle` or `.module.gkql.json`. The CLI also reads projections written in KQL (`.kql`) or GKQL (`.gkql.json`). [Glossary](../paper/glossary.md)
+
+For a small capture you can replay locally, follow one submission from its parent span to its two children. The walkthrough then uses the ingress receipt to correct a receiver rule in Canvas. The kiln example uses the same CLI to replay a health policy with entry, recovery and freshness thresholds. [Standard projections and walkthrough](standard/README.md)
 
 ## Build, test, run
 ```bash
@@ -29,7 +31,8 @@ dotnet build -c Release src/Sattle.Cli
 ```bash
 sattle check [--defs DIR] [--update-pins] [--print MODULE] [--plan]
 ```
-- Parses and checks every file in `definitions/`: a `.sattle` module text, or a projection in a file of its own that a projection source reads (`.kql` now; `Program.Projections` is the one place the languages are registered, behind `IProjectionSource`, and nothing below that seam names a language). `definitions/` holds only definition files: any other file there is an error at load. Checked: syntax with positions, K1 to K11, the typing judgments, release digests and import pins. Errors print as `file:line:col: error Code: message`. Exit 1 on errors.
+- Checks the non-hidden files directly in the selected definition directory. The CLI registers the KQL and GKQL readers in `Program.Projections`. An unrecognized file in that directory causes a load error. Checked: syntax with positions, K1 to K11, the typing judgments, release digests and import pins. Errors print as `file:line:col: error Code: message`. Exit 1 on errors.
+- A GKQL `values` verb can hold a project’s rules. It declares column types and a `rows` array. An empty array yields an empty relation with those columns. The optional `key` names a Text column whose value must be nonblank and unique within the table. A space binds a graph or source by name and a scalar parameter with `{"lit": value}`. [Coverage rules table](standard/coverage/sattle.coverage.rules.gkql.json)
 - `--update-pins` rewrites import digests in place (digests are computed, never typed). `--print` shows the canonical printed form. `--plan` shows the compiled plan: strategy per operator, fused chains, adapter contract check.
 ```bash
 sattle replay CAPTURE [--space NAME] [--cluster NAME] [--speed N] [--advance-every 60s] [--lateness 60s] [--chunk N] [--late-horizon WINDOWS] [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
@@ -54,6 +57,12 @@ sattle serve --live [--eh-namespace NS | --eh-resource-group GROUP] [--hub sattl
 - `serve --store X` keeps a journal in the store (SQLite file or Cosmos database) next to the commit log, and a store that has one is restarted from it alone: `sattle serve --store sqlite=PATH` with no capture and no definitions directory replays the journal, recomputes every commit and compares it with the stored one, and serves the same sequence numbers, revisions, state digest and `/space` as before the stop ([PROTOCOL.md](PROTOCOL.md), "Version 3.5"). Restart cost is a replay of the journal, measured in `PERF.md` (H10). Not stored: drafts. A capture is not resumed.
 - `sattle bench` runs the benchmarks of `PERF.md`; `sattle bench estate` the large-estate run.
 
+## Keyed input records
+
+A space can bind a row type to the `record` adapter. Send a capture envelope with `source` set to `records:<row type>`, a stable `payload.key`, and the row’s fields in `payload.values`. At a later `capturedAt`, new values replace the previous row for that source and key. Set `payload.deleted` to `true` to withdraw it. The row type can declare a Text field named `$recordKey` to read `payload.key` directly.
+
+For coverage, give each distinct receipt its own key. Two receipts may refer to one task and role, even when they cite the same source reference. The graph preserves both receipts and counts the task once for that role. [Coverage input contract](standard/coverage/sattle.coverage.module.gkql.json)
+
 ## Canvas files and the seam
 `replay --out DIR` and `serve --out DIR` still write static files in the layout of the canvas `StaticSource` (`manifest.json`, `space.json`, per graph ontology, snapshot, patches, telemetry). The records validate against `brainstorm/contracts/schemas` with the canvas' own ajv setup (the canvas repository's validation script is the command).
 
@@ -64,6 +73,8 @@ What the protocol changes against the first slice (details in PROTOCOL.md):
 - The kernel ontology exports its `Any` value kind as `text` (the old `OntologyDefinition` has no `any`).
 - Remaining mismatches: revisions are decimal strings in `{value}`; meter min and max come from replayed data; no correspondences file (lineage is its own endpoint); type and property ids are names, qualified when two modules share a name.
 - Served history: the host keeps the last 2,000 patches per graph and the last 20,000 events (`--retain-patches`, `--retain-events`); an older request answers `410 Gap`, a subscriber resuming before them gets `gap`.
+
+The Canvas coverage-review integration test previews and publishes a correction against a running engine. It reads the earlier graph revision and compares the published graph with an independent CLI replay. [Live coverage-review test](../canvas/tests/engine/coverage-review.test.ts)
 
 ## The host
 `SpaceHost` (`Host.cs`, `Edits.cs`) holds the catalog and the engine under one lock and implements the protocol: served history per graph, re-activation, subscriptions, telemetry and lineage queries, edits.
@@ -89,6 +100,7 @@ Graph matches run serially by default (`SATTLE_PREPARATION_WORKERS=1`). A higher
 | | `Lowering.cs`, `Printer.cs` | Text to definition graph with deterministic ids, and the canonical printer |
 | | `Typing.cs`, `Checker.cs` | Types, roles, temporality algebra, expression and operator judgments, wires, projection and direction rules, space checks, the typed model |
 | | `Catalog.cs` | The catalog graph: loading in dependency order, K4, K5, pins, release digests, one commit per module |
+| `Sattle.Gkql` | `GkqlSource.cs`, `Module.cs` | Reads GKQL modules, graph bindings, and projections, including typed rule tables and measurement policies |
 | `Sattle.Runtime` | `Host.cs`, `Edits.cs` | The space as a service: catalog and engine under one lock, re-activation, ordered event stream with resume, queries, backward edits |
 | | `Drafts.cs`, `Support.cs` | Definition drafts (structural patches, inverse-patch undo, check, commit), releases (list, diff, restore), bounded preview; what the engine supports and the kernel-derived palette |
 | | `Columnar.cs`, `Exprs.cs` | Interned ids, columnar signed batches, vectorized expressions |
@@ -191,4 +203,3 @@ Graph matches run serially by default (`SATTLE_PREPARATION_WORKERS=1`). A higher
 - Q5 (pod name reuse) was not evaluated; a flow that names a pod before the pod row arrives mints a provisional identity and the pod row then merges it.
 - Whole-engine memory at the 240,000-pair estate is far over the hot graph's (`sattle bench estate` prints both: heap after structure and at the end, against the hot graph's `sattle bench` memory line); H5, H7, H8, H10 are measured in `PERF.md` with what each still needs on real hardware.
 - Event time of Hubble flows is not monotone (the capture starts with history); late rows revise their windows, covered by a test, and the real capture produced no dropped rows.
-- The canvas was not run against the exported files or the protocol; both were validated against the schemas the canvas uses. The WebSocket and HTTP endpoints were exercised with curl and Node's WebSocket client, not with the canvas.

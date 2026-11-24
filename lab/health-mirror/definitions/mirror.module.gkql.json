@@ -4,6 +4,34 @@
   "imports": [],
   "entities": [
     {
+      "name": "PlatformMetric",
+      "properties": [
+        {"name": "armKey", "type": "Text"},
+        {"name": "metricNamespace", "type": "Text"},
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "source", "type": "Text"},
+        {"name": "aggregation", "type": "Text"},
+        {"name": "unit", "type": "Text"},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "sampleAt", "type": "Text"},
+        {"name": "status", "type": "Text"},
+        {"name": "value", "type": "Decimal", "optional": true},
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
+        },
+        {"name": "warningAt", "type": "Decimal", "optional": true},
+        {"name": "criticalAt", "type": "Decimal", "optional": true},
+        {"name": "eventHub", "type": "Text", "optional": true},
+        {"name": "partitionId", "type": "Text", "optional": true},
+        {"name": "sequenceNumber", "type": "Text", "optional": true},
+        {"name": "enqueuedAt", "type": "Text", "optional": true}
+      ]
+    },
+    {
       "name": "ModelEntity",
       "properties": [
         {"name": "key", "type": "Text"},
@@ -261,7 +289,13 @@
           "optional": true,
           "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
         },
-        {"name": "healthBasis", "type": "Text", "optional": true}
+        {"name": "healthBasis", "type": "Text", "optional": true},
+        {"name": "deploymentState", "type": "Text", "optional": true},
+        {"name": "evidenceKind", "type": "Text", "optional": true},
+        {"name": "expectedChecks", "type": "Integer", "optional": true},
+        {"name": "measuredChecks", "type": "Integer", "optional": true},
+        {"name": "inferredState", "type": "Text", "optional": true},
+        {"name": "scopeId", "type": "Text"}
       ]
     },
     {
@@ -278,7 +312,13 @@
           "optional": true,
           "roles": {"Unknown": "unknown", "Healthy": "ok", "Degraded": "warning", "Unhealthy": "danger"}
         },
-        {"name": "healthBasis", "type": "Text", "optional": true}
+        {"name": "healthBasis", "type": "Text", "optional": true},
+        {"name": "deploymentState", "type": "Text", "optional": true},
+        {"name": "evidenceKind", "type": "Text", "optional": true},
+        {"name": "expectedChecks", "type": "Integer", "optional": true},
+        {"name": "measuredChecks", "type": "Integer", "optional": true},
+        {"name": "requestState", "type": "Text", "optional": true},
+        {"name": "platformState", "type": "Text", "optional": true}
       ]
     },
     {
@@ -305,9 +345,49 @@
       ]
     },
     {"name": "AzureIp", "properties": [{"name": "address", "type": "Text", "label": true}]},
-    {"name": "DnsName", "properties": [{"name": "host", "type": "Text", "label": true}]}
+    {"name": "DnsName", "properties": [{"name": "host", "type": "Text", "label": true}]},
+    {
+      "name": "AppClass",
+      "properties": [{"name": "scopeId", "type": "Text"}, {"name": "className", "type": "Text", "label": true}]
+    },
+    {
+      "name": "OperationSelector",
+      "properties": [
+        {"name": "selector", "type": "Text"},
+        {"name": "scopeId", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "operation", "type": "Text", "label": true}
+      ]
+    },
+    {
+      "name": "OperationWindow",
+      "properties": [
+        {"name": "scopeId", "type": "Text"},
+        {"name": "componentId", "type": "Text"},
+        {"name": "source", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "operation", "type": "Text", "label": true},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "lastSeen", "type": "Text"},
+        {"name": "selector", "type": "Text"},
+        {"name": "relationship", "type": "Text"},
+        {"name": "evidenceType", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "ingressHosts", "type": "Text"},
+        {"name": "calls", "type": "Integer"},
+        {"name": "spanCount", "type": "Integer"},
+        {"name": "failed", "type": "Integer"},
+        {"name": "unknown", "type": "Integer"},
+        {"name": "attributedCalls", "type": "Integer"},
+        {"name": "attributedFailed", "type": "Integer"},
+        {"name": "attributedUnknown", "type": "Integer"}
+      ]
+    }
   ],
   "relationships": [
+    {"name": "ResourceMetric", "from": "ArmResource", "to": "PlatformMetric", "kind": "support"},
+    {"name": "HasPlatformMetric", "from": "ContainerApp", "to": "PlatformMetric", "kind": "support"},
     {
       "name": "DependsOn",
       "from": "ModelEntity",
@@ -353,21 +433,18 @@
       "from": "UserFlow",
       "to": "SystemComponent",
       "kind": "support",
-      "properties": [{"name": "provenance", "type": "Text"}]
-    },
-    {
-      "name": "RunsOnResource",
-      "from": "SystemComponent",
-      "to": "ArmResource",
-      "kind": "support",
-      "properties": [{"name": "provenance", "type": "Text"}]
+      "properties": [{"name": "provenance", "type": "Text"}, {"name": "evidence", "type": "Text"}]
     },
     {
       "name": "RunsOnApp",
       "from": "SystemComponent",
       "to": "ContainerApp",
       "kind": "support",
-      "properties": [{"name": "provenance", "type": "Text"}]
+      "properties": [
+        {"name": "provenance", "type": "Text"},
+        {"name": "evidence", "type": "Text"},
+        {"name": "className", "type": "Text"}
+      ]
     },
     {"name": "MatchedRule", "from": "ContainerApp", "to": "NameRule", "kind": "support"},
     {"name": "HasObservedEndpoint", "from": "ContainerApp", "to": "DependencyHost", "kind": "support"},
@@ -379,9 +456,42 @@
     {"name": "HasArmReference", "from": "ArmResource", "to": "ArmReference", "kind": "support"},
     {"name": "RefersToResource", "from": "ArmReference", "to": "ArmResource", "kind": "support"},
     {"name": "RefersToIp", "from": "ArmReference", "to": "AzureIp", "kind": "support"},
-    {"name": "RefersToName", "from": "ArmReference", "to": "DnsName", "kind": "support"}
+    {"name": "RefersToName", "from": "ArmReference", "to": "DnsName", "kind": "support"},
+    {
+      "name": "RequiresClass",
+      "from": "SystemComponent",
+      "to": "AppClass",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}, {"name": "evidence", "type": "Text"}]
+    },
+    {"name": "ClassifiedAs", "from": "ContainerApp", "to": "AppClass", "kind": "support"},
+    {
+      "name": "ExpectsOperation",
+      "from": "SystemComponent",
+      "to": "OperationSelector",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}, {"name": "evidence", "type": "Text"}]
+    },
+    {
+      "name": "ObservedOperation",
+      "from": "SystemComponent",
+      "to": "OperationWindow",
+      "kind": "support",
+      "properties": [{"name": "provenance", "type": "Text"}, {"name": "evidence", "type": "Text"}]
+    },
+    {"name": "TracksJourney", "from": "ResourceGroup", "to": "UserFlow", "kind": "support"}
   ],
   "identities": [
+    {
+      "name": "idPlatformMetric",
+      "type": "PlatformMetric",
+      "components": [
+        {"name": "armKey", "type": "Text", "normalize": "exact"},
+        {"name": "metricNamespace", "type": "Text", "normalize": "exact"},
+        {"name": "name", "type": "Text", "normalize": "exact"},
+        {"name": "aggregation", "type": "Text", "normalize": "exact"}
+      ]
+    },
     {
       "name": "idModelEntity",
       "type": "ModelEntity",
@@ -505,9 +615,47 @@
       "name": "idDnsName",
       "type": "DnsName",
       "components": [{"name": "host", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idAppClass",
+      "type": "AppClass",
+      "components": [
+        {"name": "scopeId", "type": "Text", "normalize": "exact"},
+        {"name": "className", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "idOperationSelector",
+      "type": "OperationSelector",
+      "components": [{"name": "selector", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "idOperationWindow",
+      "type": "OperationWindow",
+      "components": [{"name": "selector", "type": "Text", "normalize": "exact"}]
     }
   ],
   "rows": [
+    {
+      "name": "PlatformMetricRow",
+      "fields": [
+        {"name": "armKey", "type": "Text"},
+        {"name": "metricNamespace", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "source", "type": "Text"},
+        {"name": "aggregation", "type": "Text"},
+        {"name": "unit", "type": "Text"},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "sampleAt", "type": "Text"},
+        {"name": "status", "type": "Text"},
+        {"name": "value", "type": "Decimal", "optional": true},
+        {"name": "eventHub", "type": "Text", "optional": true},
+        {"name": "partitionId", "type": "Text", "optional": true},
+        {"name": "sequenceNumber", "type": "Text", "optional": true},
+        {"name": "enqueuedAt", "type": "Text", "optional": true}
+      ]
+    },
     {
       "name": "CloudHealthRow",
       "fields": [
@@ -598,41 +746,100 @@
         {"name": "resolvedAddress", "type": "Text", "optional": true},
         {"name": "fieldPath", "type": "Text"}
       ]
+    },
+    {
+      "name": "OperationObservationRow",
+      "fields": [
+        {"name": "scopeId", "type": "Text"},
+        {"name": "componentId", "type": "Text"},
+        {"name": "source", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "operation", "type": "Text"},
+        {"name": "windowStart", "type": "Text"},
+        {"name": "windowEnd", "type": "Text"},
+        {"name": "lastSeen", "type": "Text"},
+        {"name": "selector", "type": "Text"},
+        {"name": "relationship", "type": "Text"},
+        {"name": "evidenceType", "type": "Text"},
+        {"name": "target", "type": "Text"},
+        {"name": "ingressHosts", "type": "Text"},
+        {"name": "calls", "type": "Integer"},
+        {"name": "spanCount", "type": "Integer"},
+        {"name": "failed", "type": "Integer"},
+        {"name": "unknown", "type": "Integer"},
+        {"name": "attributedCalls", "type": "Integer"},
+        {"name": "attributedFailed", "type": "Integer"},
+        {"name": "attributedUnknown", "type": "Integer"}
+      ]
+    },
+    {
+      "name": "WorkloadOntologyRow",
+      "fields": [
+        {"name": "kind", "type": "Text"},
+        {"name": "key", "type": "Text"},
+        {"name": "name", "type": "Text"},
+        {"name": "sourceKey", "type": "Text"},
+        {"name": "targetKey", "type": "Text"},
+        {"name": "scopeId", "type": "Text"},
+        {"name": "localId", "type": "Text"},
+        {"name": "provenance", "type": "Text"},
+        {"name": "configuration", "type": "Text"},
+        {"name": "matchKind", "type": "Text"},
+        {"name": "className", "type": "Text"},
+        {"name": "evidence", "type": "Text"},
+        {"name": "role", "type": "Text"}
+      ]
     }
   ],
   "space": {
     "name": "healthMirror",
     "sources": [
+      {"name": "platformMetrics", "adapter": "record", "rows": "PlatformMetricRow"},
       {"name": "export", "adapter": "record", "rows": "CloudHealthRow"},
       {"name": "traffic", "adapter": "record", "rows": "VnetEvidenceRow"},
       {"name": "appCalls", "adapter": "record", "rows": "AppDependencyRow"},
       {"name": "inventory", "adapter": "record", "rows": "ArmInventoryRow"},
-      {"name": "armNetwork", "adapter": "record", "rows": "AzureNetworkRow"}
+      {"name": "armNetwork", "adapter": "record", "rows": "AzureNetworkRow"},
+      {"name": "operations", "adapter": "record", "rows": "OperationObservationRow"},
+      {"name": "ontology", "adapter": "record", "rows": "WorkloadOntologyRow"}
     ],
     "graphs": [
+      {
+        "name": "appTelemetry",
+        "projection": "appTelemetry",
+        "inputs": {"master": "master", "workloadFlows": "workloadFlows"}
+      },
       {
         "name": "master",
         "projection": "ingest",
         "master": true,
         "inputs": {
+          "platformMetrics": "platformMetrics",
           "export": "export",
           "traffic": "traffic",
           "appCalls": "appCalls",
           "inventory": "inventory",
-          "armNetwork": "armNetwork"
+          "armNetwork": "armNetwork",
+          "operations": "operations",
+          "ontology": "ontology"
         }
       },
       {"name": "containerApps", "projection": "containerApps", "inputs": {"master": "master"}},
       {
         "name": "workloadFlows",
         "projection": "workloadFlows",
-        "inputs": {"master": "master", "containerApps": "containerApps", "health": "health", "network": "network"}
+        "inputs": {"master": "master", "containerApps": "containerApps", "network": "network"}
       },
       {"name": "ontologyGaps", "projection": "ontologyGaps", "inputs": {"containerApps": "containerApps"}},
       {"name": "network", "projection": "network", "inputs": {"master": "master"}},
       {"name": "structure", "projection": "structure", "inputs": {"master": "master"}},
       {"name": "signals", "projection": "signals", "inputs": {"master": "master"}},
-      {"name": "health", "projection": "health", "inputs": {"structure": "structure", "signals": "signals"}}
+      {"name": "health", "projection": "health", "inputs": {"structure": "structure", "signals": "signals"}},
+      {
+        "name": "projectHealth",
+        "projection": "projectHealth",
+        "inputs": {"appTelemetry": "appTelemetry", "workloadFlows": "workloadFlows"}
+      }
     ]
   }
 }

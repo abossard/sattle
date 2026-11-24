@@ -1,0 +1,44 @@
+{
+  "graph": "conflicts",
+  "ontology": "sattle.coverage",
+  "description": "Find the declarations whose exclusive target conflicts with the observed role.",
+  "history": 240,
+  "inputs": [{"name": "coverage", "ontology": "sattle.coverage"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "conflicts", "verb": "graph-match", "graph": "coverage", "pattern": {"nodes": [{"var": "f", "label": "Finding", "props": {"status": {"lit": "conflict"}}}]}},
+    {
+      "id": "findings",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Finding",
+            "id": {"ref": "f"},
+            "props": {
+              "source": {"ref": "f.source"},
+              "item": {"ref": "f.item"},
+              "role": {"ref": "f.role"},
+              "kind": {"ref": "f.kind"},
+              "observedTarget": {"ref": "f.observedTarget"},
+              "sourceRef": {"ref": "f.sourceRef"},
+              "at": {"ref": "f.at"},
+              "ruleId": {"ref": "f.ruleId"},
+              "revision": {"ref": "f.revision"},
+              "target": {"ref": "f.target"},
+              "action": {"ref": "f.action"},
+              "owner": {"ref": "f.owner"},
+              "reason": {"ref": "f.reason"},
+              "many": {"ref": "f.many"},
+              "direction": {"ref": "f.direction"},
+              "status": {"ref": "f.status"},
+              "policyRevision": {"ref": "f.policyRevision"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [{"from": "conflicts", "to": "findings"}]
+}

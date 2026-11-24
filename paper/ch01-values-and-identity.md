@@ -87,6 +87,8 @@ Sources name things in their own ways. Kubernetes knows a pod by its *uid*, a un
 The rule set `ν` stands for the rules of 1.1 and 1.2; this chapter is rule set `ν₁`. If the rules ever change, there is a new `ν`. The rule set is not a part of the key.
 *Example:* the key `(shop, pod, ("c1", "store", "api-7c9"))` names one pod of the shop of Ch. 0.
 
+A trace uses different keys for a call and its recurring operation. The occurrence key contains the source, trace ID and span ID. The pattern key contains the source and operation name. A retry with a new span ID gives a second occurrence of the same pattern. To recover who called whom, resolve the child’s parent span in the same source and trace. Two siblings can share a parent and a timestamp without supplying evidence of a call between them.
+
 **Definition 1.9 (name of an entity).** `alloc_ν(ik) = base32(H(ck_ν(ik)))`: the hash of the canonical key, written with 32 symbols (lowercase letters and the digits 2 to 7). An *entity id* is such a value, or an id that a binding introduces (Def. 1.10).
 *Example:* the pod above gets an id that begins `mz4q2a7k…` (invented here for illustration). Anyone who knows the key can compute it, and nobody has to hand it out.
 

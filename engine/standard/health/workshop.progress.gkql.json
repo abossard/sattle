@@ -1,0 +1,104 @@
+{
+  "graph": "progress",
+  "ontology": "workshop",
+  "description": "Keep a submission and terminal evidence separate, grouped by their shared task ID.",
+  "history": 100,
+  "inputs": [{"name": "master", "ontology": "workshop"}],
+  "parameters": [
+    {"name": "submittedStage", "kind": "Text", "default": "accepted"},
+    {"name": "terminalStage", "kind": "Text", "default": "cooled"}
+  ],
+  "verbs": [
+    {"id": "events", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "e", "label": "Event"}]}},
+    {
+      "id": "qualifying",
+      "verb": "where",
+      "condition": {
+        "fn": "or",
+        "args": [{"fn": "==", "args": [{"ref": "e.stage"}, {"param": "submittedStage"}]}, {"fn": "==", "args": [{"ref": "e.stage"}, {"param": "terminalStage"}]}]
+      }
+    },
+    {
+      "id": "classify",
+      "verb": "project",
+      "columns": {
+        "task": {"ref": "e.batch"},
+        "at": {"ref": "e.at"},
+        "submit": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "e.stage"}, {"param": "submittedStage"}]}, {"lit": 1}, {"lit": 0}]
+        },
+        "finish": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "e.stage"}, {"param": "terminalStage"}]}, {"lit": 1}, {"lit": 0}]
+        }
+      }
+    },
+    {
+      "id": "byTask",
+      "verb": "summarize",
+      "by": {"task": {"ref": "task"}},
+      "aggregates": {
+        "submitted": {"fn": "max", "args": [{"ref": "submit"}]},
+        "completed": {"fn": "max", "args": [{"ref": "finish"}]}
+      }
+    },
+    {
+      "id": "batches",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "b",
+            "label": "Batch",
+            "id": {"identity": "batch", "args": [{"ref": "task"}]},
+            "props": {
+              "name": {"ref": "task"},
+              "submission": {
+                "fn": "iff",
+                "args": [{"fn": "==", "args": [{"ref": "submitted"}, {"lit": 1}]}, {"lit": "Accepted"}, {"lit": "Unknown"}]
+              },
+              "completion": {
+                "fn": "iff",
+                "args": [{"fn": "==", "args": [{"ref": "completed"}, {"lit": 1}]}, {"lit": "Finished"}, {"lit": "Unknown"}]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "sourceEvents",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "event",
+            "label": "Event",
+            "id": {"ref": "e"},
+            "props": {"batch": {"ref": "e.batch"}, "stage": {"ref": "e.stage"}, "at": {"ref": "e.at"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "taskEvidence",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "b", "label": "Batch", "id": {"identity": "batch", "args": [{"ref": "e.batch"}]}},
+          {"var": "e", "label": "Event", "id": {"ref": "e"}}
+        ],
+        "edges": [{"var": "support", "label": "SupportedBy", "from": "b", "to": "e"}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "events", "to": "qualifying"},
+    {"from": "qualifying", "to": "classify"},
+    {"from": "classify", "to": "byTask"},
+    {"from": "byTask", "to": "batches"},
+    {"from": "qualifying", "to": "sourceEvents"},
+    {"from": "qualifying", "to": "taskEvidence"}
+  ]
+}

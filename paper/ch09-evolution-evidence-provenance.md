@@ -162,6 +162,16 @@ At 24 hours the rule removes 958 and 54 `ActivityEvent` elements and nothing els
 
 What retention does not remove: the binding set of identities (it only grows, Theorem 1.5, about 100 bytes per key of an evidence element), the table of interned strings, the journal of inputs (Ch. 11, 11.3) and the input rows a host retains. So the saving is measured here in entities of the master graph, not in bytes; the saving in bytes is not measured.
 
+### Worked example — reviewing a receiver
+
+A source records two spans that name the same parent. Joining each child to that parent yields two directed handoffs. The shared operation pattern has the same key wherever it appears. An aggregate with the same operation names can support a counted pattern transition only if the source grouped by a correlated pair. It supplies no span identities.
+
+At a fixed revision, select receipts by source, role and event time. Suppose two receipts at times 10 and 11 both name `web` as the receiver of `submit-42`. In the interval `[0,20)`, an empty rule table yields one eligible request and one unmapped finding. The finding has a `BasedOn` edge to each receipt. Withdrawing either receipt leaves the other as evidence. Two receipts naming different participants can support two declared memberships for one eligible item. [Coverage examples](../engine/tests/Sattle.Tests/CoverageTests.cs)
+
+Now the owner declares `worker` the sole receiver. That declaration conflicts with the observed `web` ingress. A separate declaration that `worker` participates downstream stays unverified until a receipt supports that role. Each declaration's `BasedOn` edges record how the individual receipts compare with it. The source's reporting interval determines what can be concluded when a receipt is absent. [Source reporting intervals](ch10-sources-and-adapters.md#reporting-intervals-in-the-coverage-graph)
+
+Changing the receiver to the web app is a definition edit (§9.2). A draft replays the evidence and shows the resulting difference. On publication the receipts keep their identities, the conflict resolves, and the earlier finding remains readable at its retained revision. The viewer and downstream projections consume the same graph (Ch. 12). A metric crossing its threshold can change operational health (Ch. 7). Completion of this request still requires terminal evidence with its task key.
+
 ## 9.7 Changing types and identity
 
 - A change of types is a release with a class of compatibility (Def. 2.9). An incompatible change of the output ontology of a projection needs a migration projection in the same release of the space, which commits the edit of the ontology together with the edits of the states (Def. 2.10, Theorem 2.6). The past is not read again under the new types.

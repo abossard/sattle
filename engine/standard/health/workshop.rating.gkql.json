@@ -1,0 +1,66 @@
+{
+  "graph": "rating",
+  "ontology": "workshop",
+  "description": "Rate one instrument from closed windows. Each rating identifies the window that established its state.",
+  "history": 100,
+  "inputs": [{"name": "master", "ontology": "workshop"}],
+  "parameters": [{"name": "metricName", "kind": "Text", "default": "kiln temperature"}],
+  "verbs": [
+    {
+      "id": "meters",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "p", "label": "Instrument"}]}
+    },
+    {
+      "id": "boundMetric",
+      "verb": "where",
+      "condition": {"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "p.metric"}, {"lit": ""}]}, {"param": "metricName"}]}
+    },
+    {"id": "label", "verb": "extend", "columns": {"name": {"ref": "p.name"}}},
+    {
+      "id": "temperatures",
+      "verb": "series",
+      "graph": "master",
+      "series": {"element": "p", "property": "temperature", "lookback": "15m", "freshness": "2m"}
+    },
+    {
+      "id": "crossing",
+      "verb": "hysteresis",
+      "hysteresis": {
+        "by": ["p", "name"],
+        "value": "temperature",
+        "above": 80,
+        "enterAfter": 2,
+        "below": 65,
+        "exitAfter": 3,
+        "high": "Hot",
+        "low": "Ready",
+        "initial": "Ready",
+        "noData": "No reading",
+        "evidenceWindow": true
+      }
+    },
+    {
+      "id": "rating",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "p",
+            "label": "Instrument",
+            "id": {"ref": "p"},
+            "props": {"name": {"ref": "name"}, "state": {"ref": "state"}, "changedIn": {"ref": "windowStart"}}
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "meters", "to": "boundMetric"},
+    {"from": "boundMetric", "to": "label"},
+    {"from": "label", "to": "temperatures"},
+    {"from": "temperatures", "to": "crossing"},
+    {"from": "crossing", "to": "rating"}
+  ]
+}

@@ -15,9 +15,11 @@ This appendix is the only part of the paper that names programs, files and comma
 | `engine/src/Sattle.Core` | values and their canonical form, names of entities, the fixed core of types | 1, 2 |
 | `engine/src/Sattle.Language` | the text form of modules, its parser, printer and checker | 2, 5 |
 | `engine/src/Sattle.Kql` | the KQL front end: reading a projection file, checking its names and types, the library of functions, and the lowering of each statement to the operators | 5, 12 |
+| `engine/src/Sattle.Gkql` | lowers wired GKQL operations, typed rule tables and module bindings to the definition graph | 2, 5 |
 | `engine/src/Sattle.Runtime` | graphs and versions, changes, step-by-step evaluation of projections, measurements, editable views, change of definitions, readers of sources, stores, restart | 3, 4, 6, 7, 8, 9, 10, 11 |
 | `engine/src/Sattle.Cli` | the command line program `sattle` and the server that the viewer talks to | 10, 12 |
 | `engine/definitions` | the definitions used in the experiments: types, naming rules, projections, the levels and the health model | 2, 5, 7 |
+| [`engine/standard`](../engine/standard/README.md) | trace discovery, coverage rules and the kiln health policy, with a local replay for each | 1, 5, 7, 9, 10, 12 |
 | `engine/tests/Sattle.Tests` | tests of the engine | 14 |
 | `engine/tests/Sattle.Reference` | the independent, simple implementation written from the definitions of the paper | 6, 14 |
 | `engine/tests/Sattle.Differential` | the comparison of the engine with that implementation on generated inputs | 6, 14 |
@@ -73,6 +75,8 @@ dotnet test -c Release --settings tests/capture.runsettings
 ```bash
 dotnet test tests/Sattle.Differential -c Release
 ```
+
+**Submission review and kiln replay.** The [worked examples and acceptance commands](../engine/standard/README.md#design-and-verification-plan) run from the repository root. The trace test closes the same inputs in different arrival orders. The coverage tests count each item once per role and retain its receipts. The Canvas integration test publishes a receiver correction, reads the old revision and compares the result with a separate CLI replay. The kiln test repeats a recovery with the late readings delivered in reverse order.
 
 **Replay of a recording** (chapter 14). `DIR` is a recording; `lab/fixtures` and the synthetic estate work without further files. The second form replays in batches of `N` records, which must give the same fingerprint. The third writes the resulting graphs as files.
 

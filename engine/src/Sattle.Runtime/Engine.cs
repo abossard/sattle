@@ -298,7 +298,7 @@ public sealed class GraphRuntime
 /// <summary>The activated graph space: master ingestion, derived graphs in dependency order, ordered deterministic evaluation with explicit logical time, per-graph atomic commit through the port.</summary>
 public sealed class Engine : IDisposable, IEngineInput
 {
-    readonly Catalog catalog;
+    internal long ConfigurationRevision { get; set; }
     readonly EngineOptions options;
     readonly IGraphStore store;
     readonly Dictionary<string, GraphRuntime> byName = [];
@@ -363,7 +363,7 @@ public sealed class Engine : IDisposable, IEngineInput
     public Engine(Catalog catalog, string spaceId, EngineOptions? options = null, Interner? interner = null)
     {
         Interner = interner ?? new Interner();
-        this.catalog = catalog; this.options = options ?? new EngineOptions();
+        ConfigurationRevision = catalog.Log.Head; this.options = options ?? new EngineOptions();
         preparation = new(this.options.PreparationWorkers);
         var space = catalog.Spaces.TryGetValue(spaceId, out var s) ? s : throw new ArgumentException($"space {spaceId} is not activated");
         SpaceName = space.Name;
@@ -606,14 +606,14 @@ public sealed class Engine : IDisposable, IEngineInput
         Patch? patch = null;
         if (edits.Count > 0)
         {
-            patch = new Patch(g.Name, g.Head, g.Head + 1, edits, new Cause([cause + "#" + seq], catalog.Log.Head.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            patch = new Patch(g.Name, g.Head, g.Head + 1, edits, new Cause([cause + "#" + seq], ConfigurationRevision.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             var err = g.State.Apply(patch.Edits);
             if (err is not null) throw new InvalidOperationException($"graph {g.Name}: engine produced an inapplicable patch: {err}");
             Charge("(patch and apply)", ref a, ref t);
             var gin = ImmutableSortedDictionary.CreateBuilder<string, long>(StringComparer.Ordinal);
             foreach (var (_, from) in g.PortSources) if (byName.TryGetValue(from, out var up)) gin[from] = up.Head;
             var pos = ImmutableSortedDictionary<string, long>.Empty.Add(cause, seq);
-            var fr = new Frontier(pos, gin.ToImmutable(), catalog.Log.Head);
+            var fr = new Frontier(pos, gin.ToImmutable(), ConfigurationRevision);
             var res = store.Commit(new CommitBatch(g.Key, g.Head, [patch], [fr], g.IsMaster ? Identities.Pending : []));
             if (g.IsMaster) Identities.Committed();
             if (res is not CommitResult.Committed c) throw new InvalidOperationException($"graph {g.Name}: store did not commit: {res}");

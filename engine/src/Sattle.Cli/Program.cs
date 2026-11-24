@@ -22,7 +22,7 @@ public static class Program
                               [--store memory|sqlite=PATH|cosmos=ENDPOINT[,db=NAME][,drop]] [--until RFC3339] [--out DIR]
         sattle serve  CAPTURE [replay options] [--port 5080] [--write-definitions] [--store sqlite=PATH|cosmos=ENDPOINT[,db=NAME]] [--seal-every ENTRIES] [--no-seal] [--verify-journal] [--retain-patches N] [--retain-events N]
         sattle serve  --store sqlite=PATH|cosmos=ENDPOINT[,db=NAME] [--port 5080]       (restart from the journal of the store, no capture needed)
-        sattle serve  --live [--eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
+        sattle serve  --live [--follow NDJSON | --eh-namespace NS] [--hub sattle-ingest] [--group $Default] [--from latest|earliest] [--seconds 300] [--live-out DIR] [--cluster NAME]
         sattle bench  [--rows N] [--pods N] [--services N] [--windows N]
         sattle bench  gen-estate --nodes N [--minutes 10] [--pairs-per-node 0.24] --out DIR
         sattle bench  phases [--capture DIR] [--census] [--timing-only] [--graph-workers N]

@@ -1,0 +1,348 @@
+{
+  "graph": "discover",
+  "ontology": "sattle.flow",
+  "description": "Follow observed parent–child handoffs. Inspect the source of a counted, inferred or authored pattern link through its lineage.",
+  "history": 120,
+  "inputs": [{"name": "master", "ontology": "sattle.flow"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "occurrences", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "o", "label": "Occurrence"}]}},
+    {
+      "id": "spanPattern",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "o.source"}, {"ref": "o.operation"}]},
+            "props": {"source": {"ref": "o.source"}, "operation": {"ref": "o.operation"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "instanceOf",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "Occurrence", "id": {"ref": "o"}},
+          {
+            "var": "b",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "o.source"}, {"ref": "o.operation"}]}
+          }
+        ],
+        "edges": [
+          {
+            "var": "e",
+            "label": "InstanceOf",
+            "from": "a",
+            "to": "b",
+            "props": {"basis": {"lit": "observed"}, "reference": {"ref": "o.reference"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "parentAndChild",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "o", "label": "Occurrence"}, {"var": "p", "label": "Occurrence"}],
+        "edges": [{"var": "parentRef", "label": "NamesParent", "from": "o", "to": "p"}]
+      }
+    },
+    {
+      "id": "observedHandoff",
+      "verb": "edges",
+      "target": {
+        "nodes": [{"var": "a", "label": "Occurrence", "id": {"ref": "p"}}, {"var": "b", "label": "Occurrence", "id": {"ref": "o"}}],
+        "edges": [
+          {
+            "var": "e",
+            "label": "Handoff",
+            "from": "a",
+            "to": "b",
+            "props": {"basis": {"lit": "observed"}, "reference": {"ref": "o.reference"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "showOccurrence",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "Occurrence",
+            "id": {"ref": "o"},
+            "props": {
+              "source": {"ref": "o.source"},
+              "trace": {"ref": "o.trace"},
+              "span": {"ref": "o.span"},
+              "operation": {"ref": "o.operation"},
+              "parent": {"ref": "o.parent"},
+              "time": {"ref": "o.time"},
+              "reference": {"ref": "o.reference"},
+              "window": {"ref": "o.window"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expectedParent",
+      "verb": "project",
+      "columns": {
+        "o": {"ref": "o"},
+        "found": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "o.parent"}, {"lit": ""}]}, {"lit": ""}]},
+            {"lit": -1},
+            {"lit": 0}
+          ]
+        }
+      }
+    },
+    {"id": "foundParent", "verb": "project", "columns": {"o": {"ref": "o"}, "found": {"lit": 1}}},
+    {"id": "parentEvidence", "verb": "union"},
+    {
+      "id": "parentStatus",
+      "verb": "summarize",
+      "by": {"o": {"ref": "o"}},
+      "aggregates": {"found": {"fn": "max", "args": [{"ref": "found"}]}}
+    },
+    {
+      "id": "showParentStatus",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "Occurrence",
+            "id": {"ref": "o"},
+            "extend": true,
+            "props": {
+              "parentStatus": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "found"}, {"lit": -1}]},
+                  {"lit": "root"},
+                  {
+                    "fn": "iff",
+                    "args": [{"fn": "==", "args": [{"ref": "found"}, {"lit": 1}]}, {"lit": "resolved"}, {"lit": "unresolved"}]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "countObservations",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "c", "label": "CountObservation"}]}
+    },
+    {
+      "id": "countedPattern",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.operation"}]},
+            "props": {"source": {"ref": "c.source"}, "operation": {"ref": "c.operation"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "operationCounts",
+      "verb": "where",
+      "condition": {
+        "fn": "not",
+        "args": [{"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "c.parentOperation"}, {"lit": ""}]}, {"lit": ""}]}]
+      }
+    },
+    {
+      "id": "operationTotal",
+      "verb": "summarize",
+      "by": {"source": {"ref": "c.source"}, "operation": {"ref": "c.operation"}},
+      "aggregates": {"reportedCount": {"fn": "sum", "args": [{"ref": "c.count"}]}}
+    },
+    {
+      "id": "showReportedCount",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "source"}, {"ref": "operation"}]},
+            "extend": true,
+            "props": {"reportedCount": {"ref": "reportedCount"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "correlatedPairs",
+      "verb": "where",
+      "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "c.parentOperation"}, {"lit": ""}]}, {"lit": ""}]}
+    },
+    {
+      "id": "pairEndpoints",
+      "verb": "extend",
+      "columns": {"parentOperation": {"fn": "coalesce", "args": [{"ref": "c.parentOperation"}, {"lit": ""}]}}
+    },
+    {
+      "id": "countedParentPattern",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "parentOperation"}]},
+            "props": {"source": {"ref": "c.source"}, "operation": {"ref": "parentOperation"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "pairTotal",
+      "verb": "summarize",
+      "by": {"source": {"ref": "c.source"}, "operation": {"ref": "c.operation"}, "parentOperation": {"ref": "parentOperation"}},
+      "aggregates": {"count": {"fn": "sum", "args": [{"ref": "c.count"}]}}
+    },
+    {
+      "id": "countedHandoff",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "source"}, {"ref": "parentOperation"}]}
+          },
+          {
+            "var": "b",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "source"}, {"ref": "operation"}]}
+          }
+        ],
+        "edges": [
+          {
+            "var": "e",
+            "label": "CountedHandoff",
+            "from": "a",
+            "to": "b",
+            "props": {"basis": {"lit": "observed"}, "count": {"ref": "count"}}
+          }
+        ]
+      }
+    },
+    {"id": "claimEvidence", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "c", "label": "FlowClaim"}]}},
+    {
+      "id": "claimedFromPattern",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.fromOperation"}]},
+            "props": {"source": {"ref": "c.source"}, "operation": {"ref": "c.fromOperation"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "claimedToPattern",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "n",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.toOperation"}]},
+            "props": {"source": {"ref": "c.source"}, "operation": {"ref": "c.toOperation"}}
+          }
+        ]
+      }
+    },
+    {"id": "inferredClaims", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "c.basis"}, {"lit": "inferred"}]}},
+    {
+      "id": "inferredHandoff",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.fromOperation"}]}
+          },
+          {
+            "var": "b",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.toOperation"}]}
+          }
+        ],
+        "edges": [{"var": "e", "label": "InferredHandoff", "from": "a", "to": "b", "props": {"basis": {"lit": "inferred"}}}]
+      }
+    },
+    {"id": "authoredClaims", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "c.basis"}, {"lit": "authored"}]}},
+    {
+      "id": "authoredHandoff",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.fromOperation"}]}
+          },
+          {
+            "var": "b",
+            "label": "OperationPattern",
+            "id": {"identity": "operationPattern", "args": [{"ref": "c.source"}, {"ref": "c.toOperation"}]}
+          }
+        ],
+        "edges": [{"var": "e", "label": "AuthoredHandoff", "from": "a", "to": "b", "props": {"basis": {"lit": "authored"}}}]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "occurrences", "to": "spanPattern"},
+    {"from": "occurrences", "to": "instanceOf"},
+    {"from": "parentAndChild", "to": "observedHandoff"},
+    {"from": "occurrences", "to": "showOccurrence"},
+    {"from": "occurrences", "to": "expectedParent"},
+    {"from": "parentAndChild", "to": "foundParent"},
+    {"from": "expectedParent", "to": "parentEvidence"},
+    {"from": "foundParent", "to": "parentEvidence"},
+    {"from": "parentEvidence", "to": "parentStatus"},
+    {"from": "parentStatus", "to": "showParentStatus"},
+    {"from": "countObservations", "to": "countedPattern"},
+    {"from": "countObservations", "to": "operationCounts"},
+    {"from": "operationCounts", "to": "operationTotal"},
+    {"from": "operationTotal", "to": "showReportedCount"},
+    {"from": "countObservations", "to": "correlatedPairs"},
+    {"from": "correlatedPairs", "to": "pairEndpoints"},
+    {"from": "pairEndpoints", "to": "countedParentPattern"},
+    {"from": "pairEndpoints", "to": "pairTotal"},
+    {"from": "pairTotal", "to": "countedHandoff"},
+    {"from": "claimEvidence", "to": "claimedFromPattern"},
+    {"from": "claimEvidence", "to": "claimedToPattern"},
+    {"from": "claimEvidence", "to": "inferredClaims"},
+    {"from": "inferredClaims", "to": "inferredHandoff"},
+    {"from": "claimEvidence", "to": "authoredClaims"},
+    {"from": "authoredClaims", "to": "authoredHandoff"}
+  ]
+}

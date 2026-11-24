@@ -1,0 +1,801 @@
+{
+  "graph": "projectHealth",
+  "ontology": "mirror",
+  "description": "Assess operating health from CPU, memory and operation checks using illustrative project thresholds.",
+  "history": 240,
+  "inputs": [{"name": "appTelemetry", "ontology": "mirror"}, {"name": "workloadFlows", "ontology": "mirror"}],
+  "parameters": [
+    {"name": "cpuWarningPercent", "kind": "Decimal", "default": 70.0},
+    {"name": "cpuCriticalPercent", "kind": "Decimal", "default": 90.0},
+    {"name": "memoryWarningPercent", "kind": "Decimal", "default": 75.0},
+    {"name": "memoryCriticalPercent", "kind": "Decimal", "default": 90.0}
+  ],
+  "verbs": [
+    {
+      "id": "deployedApps",
+      "verb": "graph-match",
+      "graph": "appTelemetry",
+      "pattern": {"nodes": [{"var": "a", "label": "ContainerApp"}]}
+    },
+    {
+      "id": "availableMetrics",
+      "verb": "graph-match",
+      "graph": "appTelemetry",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "ContainerApp"}, {"var": "m", "label": "PlatformMetric"}],
+        "edges": [{"var": "link", "label": "HasPlatformMetric", "from": "a", "to": "m"}]
+      }
+    },
+    {
+      "id": "metricDimensions",
+      "verb": "project",
+      "columns": {
+        "a": {"ref": "a"},
+        "m": {"ref": "m"},
+        "metricName": {"fn": "lower", "args": [{"ref": "m.name"}]},
+        "namespace": {"fn": "lower", "args": [{"ref": "m.metricNamespace"}]},
+        "aggregation": {"fn": "lower", "args": [{"ref": "m.aggregation"}]},
+        "unit": {"fn": "lower", "args": [{"ref": "m.unit"}]}
+      }
+    },
+    {
+      "id": "cpuAndMemoryPercentages",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {
+            "fn": "and",
+            "args": [
+              {
+                "fn": "and",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "namespace"}, {"lit": "microsoft.app/containerapps"}]},
+                  {"fn": "==", "args": [{"ref": "aggregation"}, {"lit": "average"}]}
+                ]
+              },
+              {"fn": "==", "args": [{"ref": "unit"}, {"lit": "percent"}]}
+            ]
+          },
+          {
+            "fn": "or",
+            "args": [
+              {"fn": "==", "args": [{"ref": "metricName"}, {"lit": "cpupercentage"}]},
+              {"fn": "==", "args": [{"ref": "metricName"}, {"lit": "memorypercentage"}]}
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "projectThresholds",
+      "verb": "extend",
+      "columns": {
+        "value": {"fn": "coalesce", "args": [{"ref": "m.value"}, {"lit": -1.0}]},
+        "warn": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "metricName"}, {"lit": "cpupercentage"}]},
+            {"param": "cpuWarningPercent"},
+            {"param": "memoryWarningPercent"}
+          ]
+        },
+        "critical": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "metricName"}, {"lit": "cpupercentage"}]},
+            {"param": "cpuCriticalPercent"},
+            {"param": "memoryCriticalPercent"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "classifyMetric",
+      "verb": "extend",
+      "columns": {
+        "severity": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "and",
+              "args": [
+                {
+                  "fn": "and",
+                  "args": [
+                    {
+                      "fn": "and",
+                      "args": [
+                        {
+                          "fn": "and",
+                          "args": [
+                            {"fn": "==", "args": [{"ref": "m.status"}, {"lit": "value"}]},
+                            {"fn": ">=", "args": [{"ref": "value"}, {"lit": 0.0}]}
+                          ]
+                        },
+                        {"fn": ">=", "args": [{"ref": "warn"}, {"lit": 0.0}]}
+                      ]
+                    },
+                    {"fn": ">", "args": [{"ref": "critical"}, {"ref": "warn"}]}
+                  ]
+                },
+                {"fn": "<=", "args": [{"ref": "critical"}, {"lit": 100.0}]}
+              ]
+            },
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": ">=", "args": [{"ref": "value"}, {"ref": "critical"}]},
+                {"lit": 4},
+                {
+                  "fn": "iff",
+                  "args": [{"fn": ">=", "args": [{"ref": "value"}, {"ref": "warn"}]}, {"lit": 3}, {"lit": 1}]
+                }
+              ]
+            },
+            {"lit": 2}
+          ]
+        }
+      }
+    },
+    {
+      "id": "showThresholdEvaluations",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "PlatformMetric",
+            "id": {"ref": "m"},
+            "props": {
+              "armKey": {"ref": "m.armKey"},
+              "metricNamespace": {"ref": "m.metricNamespace"},
+              "name": {"ref": "m.name"},
+              "source": {"ref": "m.source"},
+              "aggregation": {"ref": "m.aggregation"},
+              "unit": {"ref": "m.unit"},
+              "windowStart": {"ref": "m.windowStart"},
+              "windowEnd": {"ref": "m.windowEnd"},
+              "sampleAt": {"ref": "m.sampleAt"},
+              "status": {"ref": "m.status"},
+              "value": {"ref": "m.value"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "warningAt": {"ref": "warn"},
+              "criticalAt": {"ref": "critical"},
+              "eventHub": {"ref": "m.eventHub"},
+              "partitionId": {"ref": "m.partitionId"},
+              "sequenceNumber": {"ref": "m.sequenceNumber"},
+              "enqueuedAt": {"ref": "m.enqueuedAt"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "metricOfApp",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "a"}},
+          {"var": "b", "label": "PlatformMetric", "id": {"ref": "m"}}
+        ],
+        "edges": [{"var": "edge", "label": "HasPlatformMetric", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "availableScores",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "metric": {"ref": "metricName"}, "severity": {"ref": "severity"}}
+    },
+    {
+      "id": "expectCpu",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "metric": {"lit": "cpupercentage"}, "severity": {"lit": 0}}
+    },
+    {
+      "id": "expectMemory",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "metric": {"lit": "memorypercentage"}, "severity": {"lit": 0}}
+    },
+    {"id": "requiredAndAvailableMetrics", "verb": "union"},
+    {
+      "id": "oneScorePerRequiredMetric",
+      "verb": "summarize",
+      "by": {"app": {"ref": "app"}, "metric": {"ref": "metric"}},
+      "aggregates": {"severity": {"fn": "max", "args": [{"ref": "severity"}]}}
+    },
+    {
+      "id": "missingMetricIsUnknown",
+      "verb": "project",
+      "columns": {
+        "app": {"ref": "app"},
+        "severity": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "severity"}, {"lit": 0}]}, {"lit": 2}, {"ref": "severity"}]
+        }
+      }
+    },
+    {
+      "id": "appPressure",
+      "verb": "summarize",
+      "by": {"app": {"ref": "app"}},
+      "aggregates": {"severity": {"fn": "max", "args": [{"ref": "severity"}]}}
+    },
+    {
+      "id": "appPressureKeys",
+      "verb": "project",
+      "columns": {"ratedApp": {"ref": "app"}, "severity": {"ref": "severity"}}
+    },
+    {"id": "appWithScore", "verb": "join", "kind": "inner", "on": [{"left": "a", "right": "ratedApp"}]},
+    {
+      "id": "appAssessmentInputs",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "severity": {"ref": "severity"}}
+    },
+    {
+      "id": "scoredApps",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ContainerApp",
+            "id": {"ref": "app"},
+            "props": {
+              "armId": {"ref": "app.armId"},
+              "armKey": {"ref": "app.armKey"},
+              "name": {"ref": "app.name"},
+              "resourceType": {"ref": "app.resourceType"},
+              "location": {"ref": "app.location"},
+              "subscriptionId": {"ref": "app.subscriptionId"},
+              "resourceGroup": {"ref": "app.resourceGroup"},
+              "groupId": {"ref": "app.groupId"},
+              "environmentId": {"ref": "app.environmentId"},
+              "provisioningState": {"ref": "app.provisioningState"},
+              "runningStatus": {"ref": "app.runningStatus"},
+              "ingressHost": {"ref": "app.ingressHost"},
+              "tags": {"ref": "app.tags"},
+              "observedAt": {"ref": "app.observedAt"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "assignment": {"ref": "app.assignment"},
+              "ontologyStatus": {"ref": "app.ontologyStatus"},
+              "classCount": {"ref": "app.classCount"},
+              "healthBasis": {"lit": "Worst CPU or memory percentage against the project thresholds"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "appsInProject",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "app.groupId"}]}
+          },
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "app"}}
+        ],
+        "edges": [{"var": "edge", "label": "ContainsApp", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "groupLabels",
+      "verb": "project",
+      "columns": {"scope": {"ref": "app.groupId"}, "label": {"ref": "app.resourceGroup"}}
+    },
+    {
+      "id": "appStateByGroup",
+      "verb": "project",
+      "columns": {"scopeId": {"ref": "app.groupId"}, "severity": {"ref": "severity"}}
+    },
+    {
+      "id": "curatedSteps",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {"nodes": [{"var": "s", "label": "SystemComponent"}]}
+    },
+    {
+      "id": "appsForEachStep",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "SystemComponent"}, {"var": "a", "label": "ContainerApp"}],
+        "edges": [{"var": "binding", "label": "RunsOnApp", "from": "s", "to": "a"}]
+      }
+    },
+    {
+      "id": "showClassBindings",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "SystemComponent", "id": {"ref": "s"}},
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "a"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "RunsOnApp",
+            "from": "a",
+            "to": "b",
+            "props": {
+              "provenance": {"ref": "binding.provenance"},
+              "className": {"ref": "binding.className"},
+              "evidence": {"ref": "binding.evidence"}
+            }
+          }
+        ]
+      }
+    },
+    {"id": "linkedDeployments", "verb": "project", "columns": {"step": {"ref": "s"}, "appId": {"ref": "a"}}},
+    {"id": "attachPressure", "verb": "join", "kind": "inner", "on": [{"left": "appId", "right": "app"}]},
+    {
+      "id": "stepHostPressure",
+      "verb": "project",
+      "columns": {"step": {"ref": "step"}, "severity": {"ref": "severity"}}
+    },
+    {"id": "includeUnlinkedSteps", "verb": "project", "columns": {"step": {"ref": "s"}, "severity": {"lit": 0}}},
+    {"id": "hostScoreInputs", "verb": "union"},
+    {
+      "id": "hostScorePerStep",
+      "verb": "summarize",
+      "by": {"step": {"ref": "step"}},
+      "aggregates": {"severity": {"fn": "max", "args": [{"ref": "severity"}]}}
+    },
+    {
+      "id": "hostScoreKeys",
+      "verb": "project",
+      "columns": {"ratedStep": {"ref": "step"}, "severity": {"ref": "severity"}}
+    },
+    {"id": "stepWithHostScore", "verb": "join", "kind": "inner", "on": [{"left": "s", "right": "ratedStep"}]},
+    {
+      "id": "stepAssessmentInputs",
+      "verb": "project",
+      "columns": {"step": {"ref": "s"}, "severity": {"ref": "severity"}}
+    },
+    {
+      "id": "stepInputs",
+      "verb": "project",
+      "columns": {
+        "step": {"ref": "step"},
+        "requestRank": {
+          "fn": "iff",
+          "args": [
+            {
+              "fn": "==",
+              "args": [{"fn": "coalesce", "args": [{"ref": "step.state"}, {"lit": "Unknown"}]}, {"lit": "Unhealthy"}]
+            },
+            {"lit": 4},
+            {
+              "fn": "iff",
+              "args": [
+                {
+                  "fn": "==",
+                  "args": [{"fn": "coalesce", "args": [{"ref": "step.state"}, {"lit": "Unknown"}]}, {"lit": "Degraded"}]
+                },
+                {"lit": 3},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {
+                      "fn": "==",
+                      "args": [
+                        {"fn": "coalesce", "args": [{"ref": "step.state"}, {"lit": "Unknown"}]},
+                        {"lit": "Healthy"}
+                      ]
+                    },
+                    {"lit": 1},
+                    {"lit": 2}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "platformRank": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "severity"}, {"lit": 0}]}, {"lit": 2}, {"ref": "severity"}]
+        }
+      }
+    },
+    {
+      "id": "combineRequestsAndPressure",
+      "verb": "extend",
+      "columns": {
+        "score": {
+          "fn": "iff",
+          "args": [
+            {"fn": ">", "args": [{"ref": "requestRank"}, {"ref": "platformRank"}]},
+            {"ref": "requestRank"},
+            {"ref": "platformRank"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "stepAssessment",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {"ref": "step"},
+            "props": {
+              "key": {"ref": "step.key"},
+              "name": {"ref": "step.name"},
+              "modelKey": {"ref": "step.modelKey"},
+              "provenance": {"ref": "step.provenance"},
+              "configuration": {"ref": "step.configuration"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "score"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "score"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "score"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "Worst of the observed operations and the required apps"},
+              "deploymentState": {"ref": "step.deploymentState"},
+              "evidenceKind": {"ref": "step.evidenceKind"},
+              "expectedChecks": {"ref": "step.expectedChecks"},
+              "measuredChecks": {"ref": "step.measuredChecks"},
+              "requestState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "requestRank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "requestRank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "requestRank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "platformState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "platformRank"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "platformRank"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "platformRank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "curatedJourneys",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {"nodes": [{"var": "f", "label": "UserFlow"}]}
+    },
+    {
+      "id": "stepsForEachJourney",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {
+        "nodes": [{"var": "f", "label": "UserFlow"}, {"var": "s", "label": "SystemComponent"}],
+        "edges": [{"var": "rel", "label": "DeclaresStep", "from": "f", "to": "s"}]
+      }
+    },
+    {
+      "id": "journeySteps",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "UserFlow", "id": {"ref": "f"}},
+          {"var": "b", "label": "SystemComponent", "id": {"ref": "s"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "DeclaresStep",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "rel.provenance"}, "evidence": {"ref": "rel.evidence"}}
+          }
+        ]
+      }
+    },
+    {"id": "stepIdentities", "verb": "project", "columns": {"journey": {"ref": "f"}, "stepId": {"ref": "s"}}},
+    {"id": "scoreJourneySteps", "verb": "join", "kind": "inner", "on": [{"left": "stepId", "right": "step"}]},
+    {
+      "id": "knownJourneySteps",
+      "verb": "project",
+      "columns": {"journey": {"ref": "journey"}, "severity": {"ref": "score"}}
+    },
+    {
+      "id": "includeEmptyJourneys",
+      "verb": "project",
+      "columns": {"journey": {"ref": "f"}, "severity": {"lit": 0}}
+    },
+    {"id": "journeyScoreInputs", "verb": "union"},
+    {
+      "id": "inferJourneyFromSteps",
+      "verb": "summarize",
+      "by": {"journey": {"ref": "journey"}},
+      "aggregates": {"severity": {"fn": "max", "args": [{"ref": "severity"}]}}
+    },
+    {
+      "id": "journeyScoreKeys",
+      "verb": "project",
+      "columns": {"ratedFlow": {"ref": "journey"}, "severity": {"ref": "severity"}}
+    },
+    {"id": "journeyWithScores", "verb": "join", "kind": "inner", "on": [{"left": "f", "right": "ratedFlow"}]},
+    {
+      "id": "journeyAssessmentInputs",
+      "verb": "project",
+      "columns": {"journey": {"ref": "f"}, "severity": {"ref": "severity"}}
+    },
+    {
+      "id": "journeyAssessment",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "UserFlow",
+            "id": {"ref": "journey"},
+            "props": {
+              "key": {"ref": "journey.key"},
+              "name": {"ref": "journey.name"},
+              "modelKey": {"ref": "journey.modelKey"},
+              "provenance": {"ref": "journey.provenance"},
+              "configuration": {"ref": "journey.configuration"},
+              "state": {"lit": "Unknown"},
+              "healthBasis": {"lit": "Inferred from scoped steps. End-to-end completion is unmeasured."},
+              "deploymentState": {"ref": "journey.deploymentState"},
+              "evidenceKind": {"ref": "journey.evidenceKind"},
+              "expectedChecks": {"ref": "journey.expectedChecks"},
+              "measuredChecks": {"ref": "journey.measuredChecks"},
+              "inferredState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "scopeId": {"ref": "journey.scopeId"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "journeysInProject",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {
+            "var": "a",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "journey.scopeId"}]}
+          },
+          {"var": "b", "label": "UserFlow", "id": {"ref": "journey"}}
+        ],
+        "edges": [{"var": "edge", "label": "TracksJourney", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "journeyStateByGroup",
+      "verb": "project",
+      "columns": {
+        "scopeId": {"ref": "journey.scopeId"},
+        "severity": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "severity"}, {"lit": 0}]}, {"lit": 2}, {"ref": "severity"}]
+        }
+      }
+    },
+    {"id": "projectScoreInputs", "verb": "union"},
+    {
+      "id": "operationalStateByGroup",
+      "verb": "summarize",
+      "by": {"scopeId": {"ref": "scopeId"}},
+      "aggregates": {"severity": {"fn": "max", "args": [{"ref": "severity"}]}}
+    },
+    {"id": "namedProject", "verb": "join", "kind": "inner", "on": [{"left": "scopeId", "right": "scope"}]},
+    {
+      "id": "projectAssessment",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ResourceGroup",
+            "id": {"identity": "idResourceGroup", "args": [{"ref": "scopeId"}]},
+            "props": {
+              "key": {"ref": "scopeId"},
+              "name": {"ref": "label"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {"lit": "Worst of app pressure and inferred journey states"}
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "availableMetrics", "to": "metricDimensions"},
+    {"from": "metricDimensions", "to": "cpuAndMemoryPercentages"},
+    {"from": "cpuAndMemoryPercentages", "to": "projectThresholds"},
+    {"from": "projectThresholds", "to": "classifyMetric"},
+    {"from": "classifyMetric", "to": "showThresholdEvaluations"},
+    {"from": "classifyMetric", "to": "metricOfApp"},
+    {"from": "classifyMetric", "to": "availableScores"},
+    {"from": "deployedApps", "to": "expectCpu"},
+    {"from": "deployedApps", "to": "expectMemory"},
+    {"from": "expectCpu", "to": "requiredAndAvailableMetrics"},
+    {"from": "expectMemory", "to": "requiredAndAvailableMetrics"},
+    {"from": "availableScores", "to": "requiredAndAvailableMetrics"},
+    {"from": "requiredAndAvailableMetrics", "to": "oneScorePerRequiredMetric"},
+    {"from": "oneScorePerRequiredMetric", "to": "missingMetricIsUnknown"},
+    {"from": "missingMetricIsUnknown", "to": "appPressure"},
+    {"from": "appPressure", "to": "appPressureKeys"},
+    {"from": "deployedApps", "to": "appWithScore", "port": "left"},
+    {"from": "appPressureKeys", "to": "appWithScore", "port": "right"},
+    {"from": "appWithScore", "to": "appAssessmentInputs"},
+    {"from": "appAssessmentInputs", "to": "scoredApps"},
+    {"from": "appAssessmentInputs", "to": "appsInProject"},
+    {"from": "appAssessmentInputs", "to": "groupLabels"},
+    {"from": "appAssessmentInputs", "to": "appStateByGroup"},
+    {"from": "appsForEachStep", "to": "showClassBindings"},
+    {"from": "appsForEachStep", "to": "linkedDeployments"},
+    {"from": "linkedDeployments", "to": "attachPressure", "port": "left"},
+    {"from": "appAssessmentInputs", "to": "attachPressure", "port": "right"},
+    {"from": "attachPressure", "to": "stepHostPressure"},
+    {"from": "curatedSteps", "to": "includeUnlinkedSteps"},
+    {"from": "stepHostPressure", "to": "hostScoreInputs"},
+    {"from": "includeUnlinkedSteps", "to": "hostScoreInputs"},
+    {"from": "hostScoreInputs", "to": "hostScorePerStep"},
+    {"from": "hostScorePerStep", "to": "hostScoreKeys"},
+    {"from": "curatedSteps", "to": "stepWithHostScore", "port": "left"},
+    {"from": "hostScoreKeys", "to": "stepWithHostScore", "port": "right"},
+    {"from": "stepWithHostScore", "to": "stepAssessmentInputs"},
+    {"from": "stepAssessmentInputs", "to": "stepInputs"},
+    {"from": "stepInputs", "to": "combineRequestsAndPressure"},
+    {"from": "combineRequestsAndPressure", "to": "stepAssessment"},
+    {"from": "stepsForEachJourney", "to": "journeySteps"},
+    {"from": "stepsForEachJourney", "to": "stepIdentities"},
+    {"from": "stepIdentities", "to": "scoreJourneySteps", "port": "left"},
+    {"from": "combineRequestsAndPressure", "to": "scoreJourneySteps", "port": "right"},
+    {"from": "scoreJourneySteps", "to": "knownJourneySteps"},
+    {"from": "curatedJourneys", "to": "includeEmptyJourneys"},
+    {"from": "knownJourneySteps", "to": "journeyScoreInputs"},
+    {"from": "includeEmptyJourneys", "to": "journeyScoreInputs"},
+    {"from": "journeyScoreInputs", "to": "inferJourneyFromSteps"},
+    {"from": "inferJourneyFromSteps", "to": "journeyScoreKeys"},
+    {"from": "curatedJourneys", "to": "journeyWithScores", "port": "left"},
+    {"from": "journeyScoreKeys", "to": "journeyWithScores", "port": "right"},
+    {"from": "journeyWithScores", "to": "journeyAssessmentInputs"},
+    {"from": "journeyAssessmentInputs", "to": "journeyAssessment"},
+    {"from": "journeyAssessmentInputs", "to": "journeysInProject"},
+    {"from": "journeyAssessmentInputs", "to": "journeyStateByGroup"},
+    {"from": "appStateByGroup", "to": "projectScoreInputs"},
+    {"from": "journeyStateByGroup", "to": "projectScoreInputs"},
+    {"from": "projectScoreInputs", "to": "operationalStateByGroup"},
+    {"from": "operationalStateByGroup", "to": "namedProject", "port": "left"},
+    {"from": "groupLabels", "to": "namedProject", "port": "right"},
+    {"from": "namedProject", "to": "projectAssessment"}
+  ]
+}

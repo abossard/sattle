@@ -10,7 +10,9 @@ export interface Route { source: string; view: View; guide?: string | null }
 export function parseHash(hash: string, current: Route = { source: DEFAULT_SOURCE, view: "data" }): Route {
   const p = new URLSearchParams(hash.replace(/^#/, ""));
   const lesson = lessonOf(p.get("guide"));
-  const source = SOURCES.some((s) => s.id === p.get("source")) ? p.get("source")! : lesson ? sourceForLesson(lesson) : current.source;
+  const specified = p.get("source");
+  const source = lesson?.space ? sourceForLesson(lesson)
+    : specified && SOURCES.some(s => s.id === specified) ? specified : lesson ? sourceForLesson(lesson) : current.source;
   const view = VIEW_IDS.includes(p.get("view") as View) ? (p.get("view") as View) : lesson?.view ?? current.view;
   return { source, view, ...(lesson ? { guide: lesson.id } : {}) };
 }

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import mirror_program as gkql
 import container_inputs
+import platform_metrics
 import record_adapter
 
 
@@ -270,18 +271,21 @@ def dependency_envelopes(path):
     return [(key[0], row) for key, row in sorted(windows.items())]
 
 
-def build(fixture, output, captured_at=None):
+def build(fixture, output, captured_at=None, deployment_only=False):
     inventory = container_inputs.inventory_events(fixture / "container-apps.ndjson")
-    model = json.loads((fixture / "model.json").read_text()) if (fixture / "model.json").exists() else None
+    if deployment_only:
+        inventory = [row for row in inventory if "/providers/microsoft.cloudhealth/" not in
+                     (row["payload"].get("id") or row["payload"].get("properties", {}).get("targetResourceId", "")).casefold()]
+    model = json.loads((fixture / "model.json").read_text()) if not deployment_only and (fixture / "model.json").exists() else None
     if model is None and not inventory:
         raise ValueError("Supply a model export or a Container Apps inventory")
     facts, bindings, depth = build_model(model) if model else ([], {}, 0)
     sidecar = fixture / "flow-ontology.json"
-    facts.extend(container_inputs.ontology_facts(model, json.loads(sidecar.read_text()) if sidecar.exists() else None))
+    ontology = container_inputs.ontology_facts(json.loads(sidecar.read_text()) if sidecar.exists() else None)
     definitions = {f["key"]: f["signalKind"] for f in facts if f["kind"] == "definition"}
     events = defaultdict(dict)
     observations = fixture / "observations.ndjson"
-    for line in observations.read_text().splitlines() if observations.exists() or bindings else []:
+    for line in observations.read_text().splitlines() if not deployment_only and (observations.exists() or bindings) else []:
         if not line.strip():
             continue
         row = json.loads(line)
@@ -321,6 +325,9 @@ def build(fixture, output, captured_at=None):
     with (capture / "model.ndjson").open("w") as stream:
         for fact in facts:
             stream.write(envelope(base, fact))
+    with (capture / "ontology.ndjson").open("w") as stream:
+        for fact in ontology:
+            stream.write(envelope(base, fact, "workload-ontology"))
     with (capture / "observations.ndjson").open("w") as stream:
         for at, rows in sorted(events.items()):
             for key, reading in sorted(rows.items()):
@@ -336,6 +343,14 @@ def build(fixture, output, captured_at=None):
     with (capture / "inventory.ndjson").open("w") as stream:
         for row in container_inputs.arm_records(inventory):
             stream.write(lines(row))
+    with (capture / "platform-metrics.ndjson").open("w") as stream:
+        for row in platform_metrics.records(fixture):
+            stream.write(lines(row))
+    with (capture / "requests.ndjson").open("w") as stream:
+        operations = [*container_inputs.request_records(fixture / "request-observations.ndjson", "AppRequests"),
+                      *container_inputs.request_records(fixture / "request-dependencies.ndjson", "AppDependencies")]
+        for row in sorted(operations, key=lambda r: stamp(r["capturedAt"])):
+            stream.write(lines(row))
     print(f"healthMirror · {len((model or {}).get('entities',[]))} model entities · {len(bindings)} bindings · {len(events)} health checkpoints · {len(inventory)} inventory records")
 
 
@@ -343,9 +358,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--deployment-only", action="store_true", help="Use only deployment inventory, project ontology and telemetry")
     parser.add_argument("--captured-at", help="Configuration export time for a model with no signals")
     args = parser.parse_args()
     try:
-        build(args.fixture, args.out, args.captured_at)
+        build(args.fixture, args.out, args.captured_at, args.deployment_only)
     except (ValueError, KeyError, OSError) as error:
         parser.exit(1, f"Cannot build mirror: {error}\n")

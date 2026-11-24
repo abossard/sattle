@@ -1,0 +1,26 @@
+[
+  {
+    "ruleId": "submission-receiver",
+    "revision": "1",
+    "source": "requests",
+    "item": "submit-42",
+    "role": "receiver",
+    "target": "worker",
+    "action": "declare",
+    "owner": "workflow-team",
+    "reason": "",
+    "many": false
+  },
+  {
+    "ruleId": "worker-call",
+    "revision": "1",
+    "source": "requests",
+    "item": "submit-42",
+    "role": "downstream",
+    "target": "worker",
+    "action": "declare",
+    "owner": "workflow-team",
+    "reason": "",
+    "many": false
+  }
+]

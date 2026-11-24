@@ -1,4 +1,5 @@
 import type { Lesson, Step } from "../../src/tutorial/lessons";
+import { kilnLessons } from "./kiln-lessons";
 
 const master: Step = ["Master graph", "master"];
 const inventory: Step = ["Inventory", "projection"];
@@ -34,7 +35,7 @@ const chapters: readonly Lesson[] = [
     prompt: "Starting at Run a Task, show the declared dependencies in structure. Find the web app’s Tasks and Apply roles in master. Explain why their model entity IDs must stay distinct.",
   },
   {
-    id: "core-signals", space: "healthMirror", module: "mirror", title: "Read a storage signal", goal: "Find the measurement that sets a storage signal’s state.", action: "Select a blob availability signal. Read its value, checkpoint time in UTC and state.",
+    id: "core-signals", space: "healthMirror", module: "mirror", title: "Read a configured health signal", goal: "Trace a signal’s health back to the reading Azure supplied.", action: "Pick a signal binding. Read the source, value and UTC window. A Log Analytics binding also shows its Kusto query.",
     check: "The binding identifies the entity. Its definition supplies the threshold. Its observation supplies the measurement.",
     view: "data", graph: "signals", projection: "signals",
     flow: [[["Blob metric", "input"]], [["Bound definition", "identity"], ["Threshold", "rule"]], [["Evaluated signal", "projection"]]],
@@ -67,35 +68,75 @@ const chapters: readonly Lesson[] = [
     files: ["mirror.containerApps.gkql.json"],
     commands: [{ label: "Refresh this resource group", code: './scripts/health-mirror.sh inventory "$RESOURCE_GROUP_ID"' },
       { label: "Keep the running graph current", code: './scripts/health-mirror.sh watch "$RESOURCE_GROUP_ID" "$EH_NAMESPACE" "$EH_HUB"' },
-      { label: "Test discovery on a second project", code: './scripts/health-mirror.sh verify-rules' }],
-    prompt: "Find the ARM IDs of the app and its environment. How does GKQL join them? Run the second-project check and trace what a later app inventory record adds.",
+      { label: "Verify deployed apps and flow links", code: './scripts/health-mirror.sh verify-rules' }],
+    prompt: "Find the ARM IDs of the app and its environment. How does GKQL join them? Check whether both deployed apps have a declared environment.",
   },
   {
-    id: "core-portable-flows", space: "healthMirror", module: "mirror", title: "Connect apps to user flows", goal: "Find which Container Apps help a user run a task.", action: "Select Run a Task. Follow a component to its app and inspect the evidence for the link.",
-    check: "The ontology names the types. An Azure model declaration or a project mapping tells the rule which app serves each flow.",
+    id: "core-portable-flows", space: "healthMirror", module: "mirror", title: "Model user flows in the ontology", goal: "Find the deployed apps that match each step’s declared requirements.", action: "Pick a flow. Select a step or its app to inspect it in the graph.",
+    check: "The ontology names the journey. GKQL links steps to matching apps. A class match alone leaves the caller and receiver unproven.",
     view: "data", graph: "workloadFlows", projection: "workloadFlows",
-    flow: [[["Azure declarations", "input"], ["Project mapping", "input"]], [["UserFlow", "identity"], ["SystemComponent", "identity"]], [["Container App", "projection"]]],
+    flow: [[["User flow", "identity"]], [["Declared step", "identity"]], [["Required app class", "rule"], ["Classified apps", "projection"]], [["Matching deployed apps", "projection"]]],
     files: ["mirror.workloadFlows.gkql.json"],
-    commands: [{ label: "Test an unmapped app", code: "./scripts/health-mirror.sh verify-rules" }],
-    prompt: "Explain which parts of this flow came from the ontology, the Azure model, the inventory and the projection. Predict what becomes visible if a second app shares its environment but has no flow mapping.",
+    commands: [{ label: "Apply the project ontology to local data", code: "./scripts/health-mirror.sh curate-flows --offline\n./scripts/health-mirror.sh prepare-project" }, { label: "Compare flows with the Azure model held out", code: "./scripts/health-mirror.sh compare-discovery" }],
+    prompt: "Trace Run a Task from flows.json to each deployed app. Which links express project intent? Which facts came from Azure? Does the captured telemetry show that the whole task finished?",
   },
   {
-    id: "core-ontology-gaps", space: "healthMirror", module: "mirror", title: "Find apps the ontology missed", goal: "See which app names need a rule or match conflicting classes.", action: "Compare the app names with their naming rules, then open the naming exercise.",
+    id: "core-app-telemetry", space: "healthMirror", module: "mirror", title: "Read Azure metrics and Kusto results", goal: "Find what Azure measured while an app was serving requests.", action: "Select a metric to see its UTC window. Open a step’s operation to see what Kusto counted.",
+    check: "The Event Hub receipt identifies the app and metric window. Kusto counted matching operations across the window. An individual request needs its own trace.",
+    view: "data", graph: "appTelemetry", projection: "appTelemetry",
+    flow: [[["Azure Monitor metric", "input"], ["Kusto result", "input"]], [["Deployed app", "identity"], ["Measured operation", "identity"]], [["Step evidence", "projection"]]],
+    files: ["mirror.appTelemetry.gkql.json"],
+    commands: [{ label: "Trace a metric to its Event Hub receipt", code: "./scripts/health-mirror.sh verify-diagnostics" }, { label: "Listen on the captured metric hub", code: "./scripts/health-mirror.sh listen-diagnostics" }, { label: "Refresh Kusto results", code: "./scripts/health-mirror.sh curate-flows --hours 72\n./scripts/health-mirror.sh prepare-project" }],
+    prompt: "Read one metric and one operation from this app. Compare their UTC windows, units and identities. Which part of the flow does each reading cover?",
+  },
+  {
+    id: "core-project-health", space: "healthMirror", module: "mirror", source: "demo-project", title: "Set a health rule in Sattle", goal: "See how an app’s memory reading affects its steps and flows.", action: "Inspect a memory reading, then open the projection editor and change memoryWarningPercent in a draft.",
+    check: "The projection rolls measured and missing evidence into operational health. Each flow also records whether completion was observed.",
+    view: "data", graph: "projectHealth", projection: "projectHealth",
+    flow: [[["Diagnostic metric", "input"], ["Observed request", "input"]], [["App and step", "projection"]], [["Flow", "projection"]], [["Resource group", "projection"]]],
+    files: ["mirror.projectHealth.gkql.json"],
+    commands: [{ label: "Build from deployment evidence alone", code: "./scripts/health-mirror.sh prepare-project" }],
+    prompt: "Trace a memory metric through a step and flow. Predict what changes when you lower the warning threshold below its measured value. Which flow outcomes are still unobserved?",
+  },
+  {
+    id: "core-ontology-gaps", space: "healthMirror", module: "mirror", title: "Find apps the ontology missed", goal: "See which app names need a rule or match conflicting classes.", action: "Inspect the two app names and the rules that classified them.",
     check: "Only Unmapped and Ambiguous apps appear in the gaps graph.",
     view: "data", graph: "ontologyGaps", projection: "ontologyGaps",
     flow: [[["Container App names", "input"], ["Naming rules", "identity"]], [["Matched classes", "projection"]], [["Unmapped", "rule"], ["Ambiguous", "rule"]]],
     files: ["mirror.ontologyGaps.gkql.json"],
+    commands: [{ label: "Preview rule gaps on the two deployed apps", code: "./scripts/health-mirror.sh verify-rules --draft" }],
     prompt: "Which rule classifies each app? Compare a name ending in -web with one ending in -webhook. Show why a naming match alone cannot prove that the app serves a user flow.",
   },
   {
-    id: "core-gap-lab", space: "healthMirror", exercise: true, module: "mirror", title: "Resolve a naming gap", goal: "Watch the same projection react to a new app and a rule change.", action: "Step through the three checkpoints in this local example project.",
-    check: "The two gaps disappear after the curator changes the rules. Both apps remain in inventory.",
-    view: "data", graph: "ontologyGaps", projection: "ontologyGaps",
-    flow: [[["New app", "input"]], [["Name matches", "projection"]], [["Curator changes a rule", "rule"]], [["Gaps update", "projection"]]],
-    files: ["mirror.ontologyGaps.gkql.json"],
-    commands: [{ label: "Start the naming exercise", code: "./scripts/health-mirror.sh serve-exercise" }],
-    prompt: "Compare the new app, conflicting rules and corrected rules checkpoints. Predict whether naming an app can change its measured health or its membership in Run a Task.",
+    id: "trace-submission", space: "flowReview", source: "flow-review", module: "sattle.flow", title: "Follow one submission", goal: "Find which calls belong to one request before writing any ontology rules.",
+    action: "Select a handoff from the local sample. Inspect the parent and child for submit-42.",
+    check: "web.submit called queue.enqueue and audit.write. Both children name the same parent. A separate report counts four web-to-queue calls.",
+    view: "data", graph: "flows", projection: "discover",
+    flow: [[["Three spans", "input"]], [["Parent references", "rule"]], [["Two handoffs", "projection"]]],
+    files: ["sattle.flow.discover.gkql.json"],
+    commands: [{ label: "Start the local submission replay", code: "python3 scripts/review-flow.py serve" }],
+    prompt: "Use submit-42 to explain the two handoffs. Cite the parent and child references and distinguish them from the counted pattern.",
   },
+  {
+    id: "inspect-coverage", space: "flowReview", source: "flow-review", module: "sattle.coverage", title: "Find what the rules missed", goal: "See which observations lack a match and which declarations lack evidence.",
+    action: "Inspect the receiver scope, then compare the observed receiver with the declared downstream participant.",
+    check: "One sampled request has a receiver receipt. The worker’s downstream role stays unverified until a linked call arrives.",
+    view: "data", graph: "coverage", projection: "coverage",
+    flow: [[["Ingress receipt", "input"], ["Project rules", "rule"]], [["Coverage", "projection"]], [["Observed item", "identity"], ["Declared role", "identity"]]],
+    files: ["sattle.coverage.coverage.gkql.json"],
+    commands: [{ label: "Replay with an empty ontology", code: "python3 scripts/review-flow.py empty" }],
+    prompt: "For submit-42, show me the observed receiver, the receiver named by the rule, and the downstream declaration. Which has a receipt? How does sampling limit the claim?",
+  },
+  {
+    id: "review-receiver", space: "flowReview", source: "flow-review", module: "sattle.coverage", title: "Correct the receiver", goal: "Make the submission rule agree with the ingress receipt.",
+    action: "Inspect the receiver conflict. Choose Review rule, set Target to web and choose Preview change.",
+    check: "Preview shows conflict → mapped. Publish rule applies the change. Discard draft keeps the original. Either way, the downstream worker call still needs evidence.",
+    view: "data", graph: "conflicts", projection: "rules",
+    flow: [[["Ingress receipt", "input"], ["Receiver rule", "rule"]], [["Conflict", "projection"]], [["Draft comparison", "projection"]]],
+    commands: [{ label: "Paste into Use an assistant suggestion", code: '{"role":"receiver","target":"web","sourceRef":"trace/42/ingress"}' }],
+    prompt: "Read the receiver finding for submit-42. Suggest a role and target as JSON, and copy the exact sourceRef from the evidence. I will review and publish the change.",
+  },
+  ...kilnLessons,
   {
     id: "start", title: "Start the engine and master graph", goal: "Replay captured Azure and Kubernetes data into one graph.", action: "Run the engine and Canvas in separate terminals.",
     check: "The master graph shows the captured objects and their relationships.",
@@ -193,5 +234,6 @@ const chapters: readonly Lesson[] = [
 
 export const LESSONS = chapters.map(lesson => ({
   ...lesson, module: lesson.module ?? "tutorial",
-  source: lesson.exercise ? "ontology-exercise" : lesson.space ? "health-mirror" : "engine",
+  source: lesson.source ?? (["workloadFlows", "appTelemetry", "containerApps", "ontologyGaps"].includes(lesson.graph) && lesson.space
+    ? "demo-project" : lesson.space ? "health-mirror" : "engine"),
 }));

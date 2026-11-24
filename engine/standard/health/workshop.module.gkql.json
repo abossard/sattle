@@ -1,0 +1,126 @@
+{
+  "module": "workshop",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {
+      "name": "Instrument",
+      "properties": [
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "metric", "type": "Text", "optional": true},
+        {
+          "name": "temperature",
+          "type": "Decimal",
+          "optional": true,
+          "telemetry": {"temporality": "gauge", "combine": "mean", "period": "60s"}
+        },
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "treeRole": "rolledUp",
+          "roles": {"Ready": "ok", "Hot": "warning", "No reading": "unknown"}
+        },
+        {"name": "changedIn", "type": "Instant", "optional": true}
+      ]
+    },
+    {
+      "name": "Consumer",
+      "properties": [
+        {"name": "name", "type": "Text", "label": true},
+        {
+          "name": "state",
+          "type": "Text",
+          "optional": true,
+          "treeRole": "rolledUp",
+          "roles": {"Ready": "ok", "Hot": "warning", "No reading": "unknown"}
+        }
+      ]
+    },
+    {
+      "name": "Event",
+      "properties": [{"name": "batch", "type": "Text"}, {"name": "stage", "type": "Text"}, {"name": "at", "type": "Instant"}]
+    },
+    {
+      "name": "Batch",
+      "properties": [
+        {"name": "name", "type": "Text", "label": true},
+        {"name": "submission", "type": "Text"},
+        {"name": "completion", "type": "Text"}
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "name": "Uses",
+      "from": "Consumer",
+      "to": "Instrument",
+      "properties": [
+        {"name": "role", "type": "Text"},
+        {"name": "observed", "type": "Text", "optional": true},
+        {"name": "changedIn", "type": "Instant", "optional": true}
+      ]
+    },
+    {"name": "SupportedBy", "from": "Batch", "to": "Event"}
+  ],
+  "identities": [
+    {
+      "name": "probe",
+      "type": "Instrument",
+      "components": [{"name": "name", "type": "Text"}, {"name": "metric", "type": "Text"}]
+    },
+    {"name": "station", "type": "Consumer", "components": [{"name": "name", "type": "Text"}]},
+    {"name": "event", "type": "Event", "components": [{"name": "name", "type": "Text"}]},
+    {"name": "batch", "type": "Batch", "components": [{"name": "name", "type": "Text"}]}
+  ],
+  "rows": [
+    {
+      "name": "Reading",
+      "fields": [
+        {"name": "probe", "type": "Text"},
+        {"name": "metric", "type": "Text"},
+        {"name": "at", "type": "Instant"},
+        {"name": "value", "type": "Decimal"}
+      ]
+    },
+    {
+      "name": "Dependency",
+      "fields": [
+        {"name": "consumer", "type": "Text"},
+        {"name": "probe", "type": "Text"},
+        {"name": "role", "type": "Text"},
+        {"name": "metric", "type": "Text"}
+      ]
+    },
+    {
+      "name": "TaskEvent",
+      "fields": [
+        {"name": "id", "type": "Text"},
+        {"name": "batch", "type": "Text"},
+        {"name": "stage", "type": "Text"},
+        {"name": "at", "type": "Instant"}
+      ]
+    },
+    {"name": "Clock", "fields": [{"name": "tick", "type": "Text"}]}
+  ],
+  "space": {
+    "name": "kiln",
+    "sources": [
+      {"name": "readings", "adapter": "record", "rows": "Reading"},
+      {"name": "requirements", "adapter": "record", "rows": "Dependency"},
+      {"name": "jobs", "adapter": "record", "rows": "TaskEvent"},
+      {"name": "clock", "adapter": "record", "rows": "Clock"}
+    ],
+    "graphs": [
+      {
+        "name": "master",
+        "projection": "ingest",
+        "master": true,
+        "inputs": {"readings": "readings", "requirements": "requirements", "jobs": "jobs", "clock": "clock"}
+      },
+      {"name": "rating", "projection": "rating", "inputs": {"master": "master"}},
+      {"name": "impact", "projection": "impact", "inputs": {"master": "master", "rating": "rating"}},
+      {"name": "progress", "projection": "progress", "inputs": {"master": "master"}}
+    ]
+  }
+}

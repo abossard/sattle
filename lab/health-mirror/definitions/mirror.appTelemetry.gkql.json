@@ -1,0 +1,255 @@
+{
+  "graph": "appTelemetry",
+  "ontology": "mirror",
+  "description": "Inspect the deployed app behind each step and compare its platform metrics with measured operations.",
+  "history": 240,
+  "inputs": [{"name": "master", "ontology": "mirror"}, {"name": "workloadFlows", "ontology": "mirror"}],
+  "parameters": [],
+  "verbs": [
+    {
+      "id": "deployedApps",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {"nodes": [{"var": "a", "label": "ContainerApp"}]}
+    },
+    {
+      "id": "metricReadings",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "m", "label": "PlatformMetric"}]}
+    },
+    {"id": "appKeys", "verb": "project", "columns": {"app": {"ref": "a"}, "appKey": {"ref": "a.armKey"}}},
+    {
+      "id": "readingKeys",
+      "verb": "project",
+      "columns": {"metric": {"ref": "m"}, "observedKey": {"ref": "m.armKey"}}
+    },
+    {
+      "id": "matchedReadings",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "appKey", "right": "observedKey"}]
+    },
+    {
+      "id": "appMetricLink",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "ContainerApp", "id": {"ref": "app"}},
+          {"var": "m", "label": "PlatformMetric", "id": {"ref": "metric"}}
+        ],
+        "edges": [{"var": "edge", "label": "HasPlatformMetric", "from": "a", "to": "m"}]
+      }
+    },
+    {
+      "id": "showMetric",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "PlatformMetric",
+            "id": {"ref": "metric"},
+            "props": {
+              "armKey": {"ref": "metric.armKey"},
+              "metricNamespace": {"ref": "metric.metricNamespace"},
+              "name": {"ref": "metric.name"},
+              "source": {"ref": "metric.source"},
+              "aggregation": {"ref": "metric.aggregation"},
+              "unit": {"ref": "metric.unit"},
+              "windowStart": {"ref": "metric.windowStart"},
+              "windowEnd": {"ref": "metric.windowEnd"},
+              "sampleAt": {"ref": "metric.sampleAt"},
+              "status": {"ref": "metric.status"},
+              "value": {"ref": "metric.value"},
+              "eventHub": {"ref": "metric.eventHub"},
+              "partitionId": {"ref": "metric.partitionId"},
+              "sequenceNumber": {"ref": "metric.sequenceNumber"},
+              "enqueuedAt": {"ref": "metric.enqueuedAt"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "showContainerApp",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "ContainerApp",
+            "id": {"ref": "a"},
+            "props": {
+              "armId": {"ref": "a.armId"},
+              "armKey": {"ref": "a.armKey"},
+              "name": {"ref": "a.name"},
+              "resourceType": {"ref": "a.resourceType"},
+              "location": {"ref": "a.location"},
+              "subscriptionId": {"ref": "a.subscriptionId"},
+              "resourceGroup": {"ref": "a.resourceGroup"},
+              "groupId": {"ref": "a.groupId"},
+              "environmentId": {"ref": "a.environmentId"},
+              "provisioningState": {"ref": "a.provisioningState"},
+              "runningStatus": {"ref": "a.runningStatus"},
+              "ingressHost": {"ref": "a.ingressHost"},
+              "tags": {"ref": "a.tags"},
+              "observedAt": {"ref": "a.observedAt"},
+              "state": {"ref": "a.state"},
+              "assignment": {"ref": "a.assignment"},
+              "ontologyStatus": {"ref": "a.ontologyStatus"},
+              "classCount": {"ref": "a.classCount"},
+              "healthBasis": {"ref": "a.healthBasis"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "declaredSteps",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {"nodes": [{"var": "row", "label": "SystemComponent"}]}
+    },
+    {
+      "id": "showSystemComponent",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {"ref": "row"},
+            "props": {
+              "key": {"ref": "row.key"},
+              "name": {"ref": "row.name"},
+              "modelKey": {"ref": "row.modelKey"},
+              "provenance": {"ref": "row.provenance"},
+              "configuration": {"ref": "row.configuration"},
+              "state": {"ref": "row.state"},
+              "healthBasis": {"ref": "row.healthBasis"},
+              "deploymentState": {"ref": "row.deploymentState"},
+              "evidenceKind": {"ref": "row.evidenceKind"},
+              "expectedChecks": {"ref": "row.expectedChecks"},
+              "measuredChecks": {"ref": "row.measuredChecks"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "queryResults",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {"nodes": [{"var": "row", "label": "OperationWindow"}]}
+    },
+    {
+      "id": "showOperationWindow",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "OperationWindow",
+            "id": {"ref": "row"},
+            "props": {
+              "scopeId": {"ref": "row.scopeId"},
+              "componentId": {"ref": "row.componentId"},
+              "source": {"ref": "row.source"},
+              "role": {"ref": "row.role"},
+              "operation": {"ref": "row.operation"},
+              "target": {"ref": "row.target"},
+              "relationship": {"ref": "row.relationship"},
+              "evidenceType": {"ref": "row.evidenceType"},
+              "calls": {"ref": "row.calls"},
+              "failed": {"ref": "row.failed"},
+              "unknown": {"ref": "row.unknown"},
+              "attributedCalls": {"ref": "row.attributedCalls"},
+              "attributedFailed": {"ref": "row.attributedFailed"},
+              "attributedUnknown": {"ref": "row.attributedUnknown"},
+              "spanCount": {"ref": "row.spanCount"},
+              "windowStart": {"ref": "row.windowStart"},
+              "windowEnd": {"ref": "row.windowEnd"},
+              "lastSeen": {"ref": "row.lastSeen"},
+              "ingressHosts": {"ref": "row.ingressHosts"},
+              "selector": {"ref": "row.selector"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "matchedRunsOnApp",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "SystemComponent"}, {"var": "b", "label": "ContainerApp"}],
+        "edges": [{"var": "edge", "label": "RunsOnApp", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "showRunsOnApp",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "SystemComponent", "id": {"ref": "a"}},
+          {"var": "b", "label": "ContainerApp", "id": {"ref": "b"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "RunsOnApp",
+            "from": "a",
+            "to": "b",
+            "props": {
+              "provenance": {"ref": "edge.provenance"},
+              "evidence": {"ref": "edge.evidence"},
+              "className": {"ref": "edge.className"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "matchedObservedOperation",
+      "verb": "graph-match",
+      "graph": "workloadFlows",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "SystemComponent"}, {"var": "b", "label": "OperationWindow"}],
+        "edges": [{"var": "edge", "label": "ObservedOperation", "from": "a", "to": "b"}]
+      }
+    },
+    {
+      "id": "showObservedOperation",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "SystemComponent", "id": {"ref": "a"}},
+          {"var": "b", "label": "OperationWindow", "id": {"ref": "b"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "ObservedOperation",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "edge.provenance"}, "evidence": {"ref": "edge.evidence"}}
+          }
+        ]
+      }
+    }
+  ],
+  "wires": [
+    {"from": "deployedApps", "to": "appKeys"},
+    {"from": "metricReadings", "to": "readingKeys"},
+    {"from": "appKeys", "to": "matchedReadings", "port": "left"},
+    {"from": "readingKeys", "to": "matchedReadings", "port": "right"},
+    {"from": "matchedReadings", "to": "appMetricLink"},
+    {"from": "matchedReadings", "to": "showMetric"},
+    {"from": "deployedApps", "to": "showContainerApp"},
+    {"from": "declaredSteps", "to": "showSystemComponent"},
+    {"from": "queryResults", "to": "showOperationWindow"},
+    {"from": "matchedRunsOnApp", "to": "showRunsOnApp"},
+    {"from": "matchedObservedOperation", "to": "showObservedOperation"}
+  ]
+}

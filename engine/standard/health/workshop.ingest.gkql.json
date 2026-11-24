@@ -1,0 +1,110 @@
+{
+  "graph": "ingest",
+  "ontology": "workshop",
+  "description": "Record temperature samples, dependencies and task evidence on the master graph.",
+  "history": 100,
+  "inputs": [
+    {"name": "readings", "rows": "workshop.Reading"},
+    {"name": "requirements", "rows": "workshop.Dependency"},
+    {"name": "jobs", "rows": "workshop.TaskEvent"},
+    {"name": "clock", "rows": "workshop.Clock"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "samples", "verb": "rows", "source": "readings"},
+    {"id": "minutes", "verb": "window", "window": {"time": "at", "period": "60s"}},
+    {
+      "id": "perInstrument",
+      "verb": "summarize",
+      "by": {"probe": {"ref": "probe"}, "metric": {"ref": "metric"}, "windowStart": {"ref": "windowStart"}},
+      "aggregates": {"measured": {"fn": "avg", "args": [{"ref": "value"}]}}
+    },
+    {
+      "id": "instruments",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "p",
+            "label": "Instrument",
+            "id": {"identity": "probe", "args": [{"ref": "probe"}, {"ref": "metric"}]},
+            "props": {"name": {"ref": "probe"}, "metric": {"ref": "metric"}, "temperature": {"ref": "measured"}}
+          }
+        ]
+      },
+      "rule": "instruments"
+    },
+    {"id": "links", "verb": "rows", "source": "requirements"},
+    {
+      "id": "boundInstruments",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "p",
+            "label": "Instrument",
+            "id": {"identity": "probe", "args": [{"ref": "probe"}, {"ref": "metric"}]},
+            "props": {"name": {"ref": "probe"}, "metric": {"ref": "metric"}}
+          }
+        ]
+      },
+      "rule": "boundInstruments"
+    },
+    {
+      "id": "consumers",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "c",
+            "label": "Consumer",
+            "id": {"identity": "station", "args": [{"ref": "consumer"}]},
+            "props": {"name": {"ref": "consumer"}}
+          }
+        ]
+      },
+      "rule": "consumers"
+    },
+    {
+      "id": "uses",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "c", "label": "Consumer", "id": {"identity": "station", "args": [{"ref": "consumer"}]}},
+          {
+            "var": "p",
+            "label": "Instrument",
+            "id": {"identity": "probe", "args": [{"ref": "probe"}, {"ref": "metric"}]}
+          }
+        ],
+        "edges": [{"var": "use", "label": "Uses", "from": "c", "to": "p", "props": {"role": {"ref": "role"}}}]
+      },
+      "rule": "uses"
+    },
+    {"id": "events", "verb": "rows", "source": "jobs"},
+    {
+      "id": "taskEvents",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "e",
+            "label": "Event",
+            "id": {"identity": "event", "args": [{"ref": "id"}]},
+            "props": {"batch": {"ref": "batch"}, "stage": {"ref": "stage"}, "at": {"ref": "at"}}
+          }
+        ]
+      },
+      "rule": "taskEvents"
+    }
+  ],
+  "wires": [
+    {"from": "samples", "to": "minutes"},
+    {"from": "minutes", "to": "perInstrument"},
+    {"from": "perInstrument", "to": "instruments"},
+    {"from": "links", "to": "boundInstruments"},
+    {"from": "links", "to": "consumers"},
+    {"from": "links", "to": "uses"},
+    {"from": "events", "to": "taskEvents"}
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "graph": "ingest",
+  "ontology": "sattle.coverage",
+  "description": "Keep role observations and source reports with their original identifiers.",
+  "history": 240,
+  "inputs": [{"name": "observations", "rows": "sattle.coverage.RoleObservation"}, {"name": "reports", "rows": "sattle.coverage.SourceScope"}],
+  "parameters": [],
+  "verbs": [
+    {"id": "observations", "verb": "rows", "source": "observations"},
+    {
+      "id": "keepObservation",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "Observation",
+            "id": {"identity": "ObservationKey", "args": [{"ref": "source"}, {"ref": "$recordKey"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "item": {"ref": "item"},
+              "role": {"ref": "role"},
+              "kind": {"ref": "kind"},
+              "observedTarget": {"ref": "observedTarget"},
+              "sourceRef": {"ref": "sourceRef"},
+              "at": {"ref": "at"},
+              "receiptKey": {"ref": "$recordKey"}
+            }
+          }
+        ]
+      },
+      "rule": "recordObservation"
+    },
+    {"id": "reports", "verb": "rows", "source": "reports"},
+    {
+      "id": "keepSourceReport",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SourceReport",
+            "id": {"identity": "ReportKey", "args": [{"ref": "source"}, {"ref": "role"}, {"ref": "reportId"}]},
+            "props": {
+              "source": {"ref": "source"},
+              "role": {"ref": "role"},
+              "reportId": {"ref": "reportId"},
+              "availability": {"ref": "availability"},
+              "limits": {"ref": "limits"},
+              "sourceRef": {"ref": "sourceRef"},
+              "fromTime": {"ref": "fromTime"},
+              "untilTime": {"ref": "untilTime"}
+            }
+          }
+        ]
+      },
+      "rule": "recordSourceReport"
+    }
+  ],
+  "wires": [{"from": "observations", "to": "keepObservation"}, {"from": "reports", "to": "keepSourceReport"}]
+}

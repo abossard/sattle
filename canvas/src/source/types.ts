@@ -32,6 +32,8 @@ export interface GraphInfo {
   editable?: boolean;
   /** engine: name of the projection that produces this graph */
   projectionName?: string;
+  /** Basename accepted by the engine draft editor for the producing projection. */
+  projectionFile?: string;
   /** one line on what the graph is, when the source knows (the projection's purpose) */
   description?: string;
   /** engine 3.4: the graph is a document (output ontology sattle.doc); the engine renders it to Markdown */
@@ -39,7 +41,7 @@ export interface GraphInfo {
 }
 
 /** What a graph says about itself that an activation can change. */
-export type GraphMeta = Pick<GraphInfo, "ontology" | "presentation" | "tree" | "edgeKinds" | "labels" | "restating">;
+export type GraphMeta = Pick<GraphInfo, "ontology" | "presentation" | "tree" | "edgeKinds" | "labels" | "restating" | "inputPorts" | "projectionName" | "projectionFile"> & { inputs?: string[] };
 
 export interface SpaceInfo { id: string; graphs: GraphInfo[] }
 

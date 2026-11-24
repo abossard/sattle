@@ -1,0 +1,153 @@
+{
+  "module": "sattle.flow",
+  "version": "1.0.0",
+  "entities": [
+    {
+      "name": "Occurrence",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "trace", "type": "Text"},
+        {"name": "span", "type": "Text"},
+        {"name": "operation", "type": "Text", "label": true},
+        {"name": "parent", "type": "Text", "optional": true},
+        {"name": "time", "type": "Instant"},
+        {"name": "reference", "type": "Text"},
+        {"name": "window", "type": "Instant"},
+        {"name": "parentStatus", "type": "Text", "optional": true}
+      ]
+    },
+    {
+      "name": "CountObservation",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "operation", "type": "Text", "label": true},
+        {"name": "parentOperation", "type": "Text", "optional": true},
+        {"name": "count", "type": "Integer"},
+        {"name": "time", "type": "Instant"},
+        {"name": "reference", "type": "Text"},
+        {"name": "window", "type": "Instant"}
+      ]
+    },
+    {
+      "name": "FlowClaim",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "fromOperation", "type": "Text"},
+        {"name": "toOperation", "type": "Text"},
+        {"name": "basis", "type": "Text"},
+        {"name": "revision", "type": "Text"},
+        {"name": "reference", "type": "Text", "label": true},
+        {"name": "evidence", "type": "Text"}
+      ]
+    },
+    {
+      "name": "OperationPattern",
+      "properties": [
+        {"name": "source", "type": "Text"},
+        {"name": "operation", "type": "Text", "label": true},
+        {"name": "reportedCount", "type": "Integer", "optional": true}
+      ]
+    }
+  ],
+  "relationships": [
+    {
+      "name": "NamesParent",
+      "from": "Occurrence",
+      "to": "Occurrence",
+      "properties": [{"name": "basis", "type": "Text"}, {"name": "reference", "type": "Text"}]
+    },
+    {
+      "name": "Handoff",
+      "from": "Occurrence",
+      "to": "Occurrence",
+      "properties": [{"name": "basis", "type": "Text"}, {"name": "reference", "type": "Text"}]
+    },
+    {
+      "name": "InstanceOf",
+      "from": "Occurrence",
+      "to": "OperationPattern",
+      "properties": [{"name": "basis", "type": "Text"}, {"name": "reference", "type": "Text"}]
+    },
+    {
+      "name": "CountedHandoff",
+      "from": "OperationPattern",
+      "to": "OperationPattern",
+      "properties": [{"name": "basis", "type": "Text"}, {"name": "count", "type": "Integer"}]
+    },
+    {
+      "name": "InferredHandoff",
+      "from": "OperationPattern",
+      "to": "OperationPattern",
+      "properties": [{"name": "basis", "type": "Text"}]
+    },
+    {
+      "name": "AuthoredHandoff",
+      "from": "OperationPattern",
+      "to": "OperationPattern",
+      "properties": [{"name": "basis", "type": "Text"}]
+    }
+  ],
+  "identities": [
+    {
+      "name": "occurrence",
+      "type": "Occurrence",
+      "components": [
+        {"name": "source", "type": "Text", "normalize": "exact"},
+        {"name": "trace", "type": "Text", "normalize": "exact"},
+        {"name": "span", "type": "Text", "normalize": "exact"}
+      ]
+    },
+    {
+      "name": "operationPattern",
+      "type": "OperationPattern",
+      "components": [{"name": "source", "type": "Text", "normalize": "exact"}, {"name": "operation", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "countObservation",
+      "type": "CountObservation",
+      "components": [{"name": "source", "type": "Text", "normalize": "exact"}, {"name": "reference", "type": "Text", "normalize": "exact"}]
+    },
+    {
+      "name": "flowClaim",
+      "type": "FlowClaim",
+      "components": [{"name": "source", "type": "Text", "normalize": "exact"}, {"name": "reference", "type": "Text", "normalize": "exact"}]
+    }
+  ],
+  "rows": [
+    {
+      "name": "SpanRow",
+      "fields": [
+        {"name": "source", "type": "Text"},
+        {"name": "trace", "type": "Text"},
+        {"name": "span", "type": "Text"},
+        {"name": "operation", "type": "Text"},
+        {"name": "parent", "type": "Text", "optional": true},
+        {"name": "time", "type": "Instant"},
+        {"name": "reference", "type": "Text"}
+      ]
+    },
+    {
+      "name": "OperationCountRow",
+      "fields": [
+        {"name": "source", "type": "Text"},
+        {"name": "operation", "type": "Text"},
+        {"name": "parentOperation", "type": "Text", "optional": true},
+        {"name": "count", "type": "Integer"},
+        {"name": "time", "type": "Instant"},
+        {"name": "reference", "type": "Text"}
+      ]
+    },
+    {
+      "name": "FlowClaimRow",
+      "fields": [
+        {"name": "source", "type": "Text"},
+        {"name": "fromOperation", "type": "Text"},
+        {"name": "toOperation", "type": "Text"},
+        {"name": "basis", "type": "Text"},
+        {"name": "revision", "type": "Text"},
+        {"name": "reference", "type": "Text"},
+        {"name": "evidence", "type": "Text"}
+      ]
+    }
+  ]
+}

@@ -119,10 +119,44 @@ def baseline(properties):
     return "Unknown"
 
 
-def verify_project(output, model, rows, reference=None):
+def matched_classes(app, policy):
+    name = app["name"].casefold()
+    group = arm_id(app["id"]).split("/providers/", 1)[0]
+    matches = set()
+    if group == arm_id(policy["scopeId"]):
+        for rule in policy.get("nameRules", []):
+            text = rule["pattern"].casefold()
+            if {"prefix": name.startswith(text), "suffix": name.endswith(text), "contains": text in name}[rule["match"]]:
+                matches.add(rule["class"])
+    return matches
+
+
+def business_evidence(graph):
+    flows = {row["key"]:row for row in graph.typed("UserFlow")}
+    systems = {row["key"]:row for row in graph.typed("SystemComponent")}
+    steps = {(a["key"],b["key"]) for k,(_,a),(_,b) in graph.edges if k == "DeclaresStep"}
+    apps = {(a["key"],arm_id(b["armId"])) for k,(_,a),(_,b) in graph.edges if k == "RunsOnApp"}
+    pairs = {(flows[f]["name"],a) for f,s in steps for c,a in apps if s==c}
+    return flows, systems, steps, apps, pairs
+
+
+def verify_project(output, policy, rows):
     source = inventory(rows)
     apps = {key: row for key, row in source.items() if row["type"].casefold() == APP}
-    flow_ids, system_ids, bound, expected_pairs = flow_evidence(model, source)
+    scope = arm_id(policy["scopeId"])
+    local_flows, local_systems, expected_steps, expected_bindings = {}, {}, set(), set()
+    for flow in policy.get("flows", []):
+        fid = scope + "/flows/" + flow["id"]
+        local_flows[fid] = flow["name"]
+        for system in flow.get("systems", []):
+            sid = scope + "/systems/" + system["id"]
+            local_systems[sid] = system["name"]
+            expected_steps.add((fid, sid))
+            wanted = {r["class"] for r in system.get("requires", [])}
+            for aid, resource in apps.items():
+                classes = matched_classes(resource, policy)
+                if len(classes) == 1 and classes & wanted:
+                    expected_bindings.add((sid, aid))
     deployed = Graph(output, "containerApps")
     flows = Graph(output, "workloadFlows")
     observed = {arm_id(p["armId"]): p for p in deployed.typed("ContainerApp")}
@@ -134,29 +168,35 @@ def verify_project(output, model, rows, reference=None):
         expect(key + " region", app["location"].casefold(), row["location"].casefold())
         expect(key + " resource group", app["resourceGroup"].casefold(), row["resourceGroup"].casefold())
         expect(key + " ARM assessment", app["state"], baseline(row["properties"]))
-        assigned = any(app_id == key for _, app_id in expected_pairs)
+        assigned = any(app_id == key for _, app_id in expected_bindings)
         expect(key + " flow assignment", app["assignment"], "Assigned" if assigned else "Unassigned")
 
-    modeled = {p["modelKey"]: p for p in flows.typed("UserFlow")}
-    expect("user flows", sorted(modeled), sorted(flow_ids))
-    if reference:
-        latest = max(reference["checkpoints"], key=lambda cp: cp["capturedAt"])
-        states = {r["entityId"]: r["state"] for r in latest["entities"]}
-        for key in sorted(flow_ids):
-            expect(key + " authoritative health", modeled[key]["state"], states[key])
-    steps = defaultdict(set)
-    runs_on = defaultdict(set)
-    for kind, (left_type, left), (right_type, right) in flows.edges:
-        if kind == "DeclaresStep":
-            expect("DeclaresStep endpoint types", (left_type, right_type), ("UserFlow", "SystemComponent"))
-            steps[left["modelKey"]].add(right["modelKey"])
-        if kind == "RunsOnApp":
-            expect("RunsOnApp endpoint types", (left_type, right_type), ("SystemComponent", "ContainerApp"))
-            runs_on[left["modelKey"]].add(arm_id(right["armId"]))
-    pairs = {(flow, app) for flow, components in steps.items() for component in components for app in runs_on[component]}
-    expect("flow-to-app reachability", sorted(pairs), sorted(expected_pairs))
-    return {"apps": len(apps), "officialFlowStates": len(flow_ids), "flowAppPairs": len(pairs),
-            "modelBindingsToApps": len(bound)}
+    platform_edges = {"HostsApp", "ContainsApp", "AppInRegion", "ContainsEnvironment", "EnvironmentInRegion"}
+    actual_platform = [(kind, arm_id(left["key"]), arm_id(right.get("armId") or right["key"]))
+                       for kind, (_, left), (_, right) in deployed.edges if kind in platform_edges]
+    expected_platform = []
+    for key, item in source.items():
+        app = item["type"].casefold() == APP
+        group = arm_id(f"/subscriptions/{item['subscriptionId']}/resourceGroups/{item['resourceGroup']}")
+        region = arm_id(f"{item['subscriptionId']}/{item['location']}")
+        expected_platform.extend([("ContainsApp" if app else "ContainsEnvironment", group, key),
+                                  ("AppInRegion" if app else "EnvironmentInRegion", region, key)])
+        environment = item["properties"].get("environmentId") or item["properties"].get("managedEnvironmentId")
+        if app and environment and arm_id(environment) in source:
+            expected_platform.append(("HostsApp", arm_id(environment), key))
+    expect("ARM platform edges", sorted(actual_platform), sorted(expected_platform))
+    local, systems, steps, resolved, pairs = business_evidence(flows)
+    expect("declared flow IDs and names", {k:v["name"] for k,v in local.items()}, local_flows)
+    expect("declared system IDs and names", {k:v["name"] for k,v in systems.items()}, local_systems)
+    expect("unique flow nodes", len(flows.typed("UserFlow")), len(local_flows))
+    expect("unique system nodes", len(flows.typed("SystemComponent")), len(local_systems))
+    for row in [*local.values(), *systems.values()]:
+        expect("curated provenance", row["provenance"], "LocalOntology")
+    expect("explicit flow to component", steps, expected_steps)
+    expect("unambiguous class to deployed app", resolved, expected_bindings)
+    return {"apps": len(apps), "curatedFlows":len(local), "curatedSystems":len(systems), "platformLinks":len(actual_platform),
+            "stepAppLinks":len(resolved), "flowAppPairs":len(pairs), "measuredSteps":sum(int(r["measuredChecks"])>0 for r in systems.values())}
+
 
 
 def verify_name_rules(output, resources, sidecar):
@@ -191,31 +231,43 @@ def verify_name_rules(output, resources, sidecar):
     return {"matchedRules": len(found), "gaps": len(expected_gaps)}
 
 
-def draft_check(work, model, rows, reference, policy):
+def draft_check(work, rows, policy):
     """Change two existing local rule declarations. Keep the Azure observations and memberships byte-identical."""
     from container_inputs import ontology_facts
     from record_adapter import normalize
     all_events = [row for path in sorted((work / "capture").glob("*.ndjson")) for row in ndjson(path)]
-    inputs = [r for r in all_events if r["source"] == "records:CloudHealthRow" and r["payload"]["values"].get("kind") == "nameRule"]
+    inputs = [r for r in all_events if r["source"] == "records:WorkloadOntologyRow" and r["payload"]["values"].get("kind") == "nameRule"]
     if len(policy.get("nameRules", [])) != 2 or len(inputs) != 2:
         raise ValueError("The CORE rule draft expects both existing app-name declarations")
+    # Hold back one genuine inventory record. The unchanged official model still refers to this app.
+    # The full replay verified above includes it as soon as its ARM record joins the input.
+    observed_apps = sorted(k for k,v in inventory(rows).items() if v["type"].casefold() == APP)
+    held_out_id = observed_apps[-1]
+    subset = [e for e in rows if arm_id(e["payload"].get("id", "")) != held_out_id]
+    before = [e for e in all_events if not (
+        e["source"] == "records:ArmInventoryRow" and arm_id(e["payload"].get("values", {}).get("armId", "")) == held_out_id)]
+    with tempfile.TemporaryDirectory() as tmp:
+        output = replay(work / "definitions", before, Path(tmp))
+        verify_project(output, policy, subset)
+    print("Inventory replay PASS", "restoring one captured ARM record adds its app and projected relationships")
     for shared_class in (False, True):
         edited = copy.deepcopy(policy)
         left, right = edited["nameRules"]
         left["pattern"], left["match"] = right["pattern"], right["match"]
         if shared_class:
             left["class"] = right["class"]
-        local_rules = {fact["key"]: fact for fact in ontology_facts(None, edited) if fact["kind"] == "nameRule"}
+        local_rules = {fact["key"]: fact for fact in ontology_facts(edited) if fact["kind"] == "nameRule"}
         stream = []
         for row in all_events:
             if row in inputs:
                 fact = local_rules[row["payload"]["values"]["key"]]
-                stream.extend(normalize({"source": "azure-cloud-health", "capturedAt": row["capturedAt"], "payload": fact}))
+                stream.extend(normalize({"source": "workload-ontology", "capturedAt": row["capturedAt"], "payload": fact}))
             else:
                 stream.append(row)
         with tempfile.TemporaryDirectory() as tmp:
             output = replay(work / "definitions", stream, Path(tmp))
-            verify_project(output, model, rows, reference)
+            verify_project(output, edited, rows)
+            expect("official health independent of name rules", read(output/"health.final.snapshot.json")["extent"], read(work/"replay/health.final.snapshot.json")["extent"])
             result = verify_name_rules(output, inventory(rows), edited)
             expect("local draft gap count", result["gaps"], 1 if shared_class else 2)
         print("Local draft PASS", "two rules agree on one class" if shared_class else "one ambiguous app and one unmapped app")
@@ -228,17 +280,13 @@ def main():
     args = parser.parse_args()
     try:
         rows = ndjson(args.fixture / "container-apps.ndjson")
-        path = args.fixture / "model.json"
-        model = read(path) if path.exists() else {}
-        path = args.fixture / "reference.json"
-        reference = read(path) if path.exists() else None
         path = args.fixture / "flow-ontology.json"
         sidecar = read(path) if path.exists() else {"nameRules": []}
-        project = verify_project(args.work / "replay", model, rows, reference)
+        project = verify_project(args.work / "replay", sidecar, rows)
         rules = verify_name_rules(args.work / "replay", inventory(rows), sidecar)
         print("Source comparison PASS", json.dumps({**project, **rules}, sort_keys=True))
         if args.draft:
-            draft_check(args.work, model, rows, reference, sidecar)
+            draft_check(args.work, rows, sidecar)
     except (KeyError, ValueError, OSError) as exc:
         parser.exit(1, f"Workload verification failed: {exc}\n")
 

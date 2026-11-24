@@ -1,5 +1,6 @@
 import { lazy, type ComponentType } from "react";
 import type { View } from "../state/types";
+import { guidePacks as packs } from "virtual:canvas-examples";
 type Role = "input" | "master" | "projection" | "rule" | "identity" | "document";
 export type Step = readonly [label: string, role: Role];
 
@@ -7,7 +8,6 @@ export interface Lesson {
   id: string;
   space?: string;
   source?: string;
-  exercise?: boolean;
   title: string;
   goal: string;
   action: string;
@@ -31,9 +31,6 @@ export interface GuidePack {
   sources: Readonly<Record<string, string>>;
   panel: () => Promise<{ default: ComponentType<{ lesson: Lesson }> }>;
 }
-const modules = import.meta.env.VITE_CANVAS_EXAMPLES === "off" ? {} :
-  import.meta.glob<{ default: GuidePack }>("../../examples/*/guide-pack.ts", { eager: true });
-const packs = Object.values(modules).map(item => item.default);
 export const LESSONS = packs.flatMap(pack => pack.lessons);
 export const lessonOf = (id: string | null) => LESSONS.find(lesson => lesson.id === id);
 export const sourceForLesson = (lesson: Lesson) => lesson.source ?? "engine";

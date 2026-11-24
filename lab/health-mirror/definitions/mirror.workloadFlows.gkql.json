@@ -1,12 +1,11 @@
 {
   "graph": "workloadFlows",
   "ontology": "mirror",
-  "description": "Connect declared user journeys to the applications that run each step.",
+  "description": "Resolve each project step against the unambiguous classes of deployed apps.",
   "history": 240,
   "inputs": [
     {"name": "master", "ontology": "mirror"},
     {"name": "containerApps", "ontology": "mirror"},
-    {"name": "health", "ontology": "mirror"},
     {"name": "network", "ontology": "mirror"}
   ],
   "parameters": [],
@@ -52,37 +51,47 @@
       }
     },
     {
-      "id": "boundResources",
+      "id": "stepRequirements",
       "verb": "graph-match",
       "graph": "master",
       "pattern": {
-        "nodes": [{"var": "s", "label": "SystemComponent"}, {"var": "r", "label": "ArmResource"}],
-        "edges": [{"var": "b", "label": "RunsOnResource", "from": "s", "to": "r"}]
+        "nodes": [{"var": "s", "label": "SystemComponent"}, {"var": "c", "label": "AppClass"}],
+        "edges": [{"var": "req", "label": "RequiresClass", "from": "s", "to": "c"}]
       }
     },
     {
-      "id": "boundIds",
+      "id": "requiredClasses",
       "verb": "project",
       "columns": {
         "step": {"ref": "s"},
         "stepKey": {"ref": "s.key"},
-        "armKey": {"ref": "r.armKey"},
-        "evidence": {"ref": "b.provenance"}
+        "classId": {"ref": "c"},
+        "className": {"ref": "c.className"},
+        "evidence": {"ref": "req.evidence"}
       }
     },
     {
-      "id": "appDeployments",
-      "verb": "project",
-      "columns": {"app": {"ref": "a"}, "deployedKey": {"ref": "a.armKey"}, "appState": {"ref": "a.state"}}
+      "id": "classifiedApps",
+      "verb": "graph-match",
+      "graph": "containerApps",
+      "pattern": {
+        "nodes": [{"var": "a", "label": "ContainerApp"}, {"var": "c", "label": "AppClass"}],
+        "edges": [{"var": "classified", "label": "ClassifiedAs", "from": "a", "to": "c"}]
+      }
     },
     {
-      "id": "deployedSystems",
+      "id": "actualClasses",
+      "verb": "project",
+      "columns": {"app": {"ref": "a"}, "mappedId": {"ref": "c"}, "appState": {"ref": "a.state"}}
+    },
+    {
+      "id": "resolveRequiredClass",
       "verb": "join",
       "kind": "inner",
-      "on": [{"left": "armKey", "right": "deployedKey"}]
+      "on": [{"left": "classId", "right": "mappedId"}]
     },
     {
-      "id": "systemDeployments",
+      "id": "runsOnApp",
       "verb": "edges",
       "target": {
         "nodes": [
@@ -95,7 +104,11 @@
             "label": "RunsOnApp",
             "from": "a",
             "to": "b",
-            "props": {"provenance": {"ref": "evidence"}}
+            "props": {
+              "provenance": {"lit": "LocalOntology"},
+              "className": {"ref": "className"},
+              "evidence": {"ref": "evidence"}
+            }
           }
         ]
       }
@@ -110,7 +123,7 @@
       }
     },
     {
-      "id": "flowSystemPath",
+      "id": "declaredSteps",
       "verb": "edges",
       "target": {
         "nodes": [
@@ -123,27 +136,13 @@
             "label": "DeclaresStep",
             "from": "a",
             "to": "b",
-            "props": {"provenance": {"ref": "path.provenance"}}
+            "props": {"provenance": {"ref": "path.provenance"}, "evidence": {"ref": "path.evidence"}}
           }
         ]
       }
     },
     {
-      "id": "evaluatedModel",
-      "verb": "graph-match",
-      "graph": "health",
-      "pattern": {"nodes": [{"var": "e", "label": "ModelEntity"}]}
-    },
-    {
-      "id": "sourceHealth",
-      "verb": "project",
-      "columns": {
-        "sourceId": {"ref": "e.key"},
-        "modelState": {"fn": "coalesce", "args": [{"ref": "e.state"}, {"lit": "Unknown"}]}
-      }
-    },
-    {
-      "id": "operationalRanks",
+      "id": "appDeploymentRanks",
       "verb": "project",
       "columns": {
         "key": {"ref": "stepKey"},
@@ -184,406 +183,35 @@
       "graph": "master",
       "pattern": {"nodes": [{"var": "s", "label": "SystemComponent"}]}
     },
+    {
+      "id": "SystemComponentKeys",
+      "verb": "project",
+      "columns": {"role": {"ref": "s"}, "roleKey": {"ref": "s.key"}}
+    },
     {"id": "allSystemComponent", "verb": "project", "columns": {"key": {"ref": "s.key"}, "rank": {"lit": 0}}},
+    {"id": "SystemComponentDeploymentInputs", "verb": "union"},
     {
-      "id": "SystemComponentIdentity",
-      "verb": "project",
-      "columns": {"role": {"ref": "s"}, "roleKey": {"ref": "s.key"}, "modelKey": {"ref": "s.modelKey"}}
-    },
-    {
-      "id": "SystemComponentModelState",
-      "verb": "join",
-      "kind": "inner",
-      "on": [{"left": "modelKey", "right": "sourceId"}]
-    },
-    {
-      "id": "SystemComponentMeasured",
-      "verb": "project",
-      "columns": {
-        "key": {"ref": "roleKey"},
-        "rank": {
-          "fn": "iff",
-          "args": [
-            {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unknown"}]},
-            {"lit": 10},
-            {
-              "fn": "iff",
-              "args": [
-                {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Healthy"}]},
-                {"lit": 11},
-                {
-                  "fn": "iff",
-                  "args": [
-                    {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Degraded"}]},
-                    {"lit": 12},
-                    {
-                      "fn": "iff",
-                      "args": [
-                        {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unhealthy"}]},
-                        {"lit": 13},
-                        {"lit": 10}
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      }
-    },
-    {"id": "SystemComponentSelectedInputs", "verb": "union"},
-    {
-      "id": "SystemComponentSelected",
+      "id": "SystemComponentDeployment",
       "verb": "summarize",
       "by": {"key": {"ref": "key"}},
       "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
     },
     {
-      "id": "SystemComponentResults",
+      "id": "SystemComponentOperationalContext",
       "verb": "join",
       "kind": "inner",
       "on": [{"left": "roleKey", "right": "key"}]
     },
     {
-      "id": "SystemComponentHealth",
-      "verb": "nodes",
-      "target": {
-        "nodes": [
-          {
-            "var": "result",
-            "label": "SystemComponent",
-            "id": {"ref": "role"},
-            "props": {
-              "key": {"ref": "role.key"},
-              "name": {"ref": "role.name"},
-              "modelKey": {"ref": "role.modelKey"},
-              "provenance": {"ref": "role.provenance"},
-              "configuration": {"ref": "role.configuration"},
-              "state": {
-                "fn": "iff",
-                "args": [
-                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                  {"lit": "Unknown"},
-                  {
-                    "fn": "iff",
-                    "args": [
-                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                      {"lit": "Healthy"},
-                      {
-                        "fn": "iff",
-                        "args": [
-                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                          {"lit": "Degraded"},
-                          {
-                            "fn": "iff",
-                            "args": [
-                              {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                              {"lit": "Unhealthy"},
-                              {
-                                "fn": "iff",
-                                "args": [
-                                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                  {"lit": "Unhealthy"},
-                                  {
-                                    "fn": "iff",
-                                    "args": [
-                                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                      {"lit": "Degraded"},
-                                      {
-                                        "fn": "iff",
-                                        "args": [
-                                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                          {"lit": "Healthy"},
-                                          {"lit": "Unknown"}
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              },
-              "healthBasis": {
-                "fn": "iff",
-                "args": [
-                  {"fn": ">=", "args": [{"ref": "rank"}, {"lit": 10}]},
-                  {"lit": "Evaluated source model"},
-                  {"lit": "Worst observed Container App deployment state"}
-                ]
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "id": "stepsForFlows",
+      "id": "curatedSteps",
       "verb": "project",
       "columns": {"flowKey": {"ref": "f.key"}, "componentKey": {"ref": "s.key"}}
     },
-    {"id": "healthOfSteps", "verb": "join", "kind": "inner", "on": [{"left": "componentKey", "right": "key"}]},
+    {"id": "deployedSteps", "verb": "join", "kind": "inner", "on": [{"left": "componentKey", "right": "key"}]},
     {
-      "id": "systemRanks",
+      "id": "stepDeploymentRanks",
       "verb": "project",
-      "columns": {
-        "key": {"ref": "flowKey"},
-        "rank": {
-          "fn": "iff",
-          "args": [
-            {
-              "fn": "==",
-              "args": [
-                {
-                  "fn": "iff",
-                  "args": [
-                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                    {"lit": "Unknown"},
-                    {
-                      "fn": "iff",
-                      "args": [
-                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                        {"lit": "Healthy"},
-                        {
-                          "fn": "iff",
-                          "args": [
-                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                            {"lit": "Degraded"},
-                            {
-                              "fn": "iff",
-                              "args": [
-                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                                {"lit": "Unhealthy"},
-                                {
-                                  "fn": "iff",
-                                  "args": [
-                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                    {"lit": "Unhealthy"},
-                                    {
-                                      "fn": "iff",
-                                      "args": [
-                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                        {"lit": "Degraded"},
-                                        {
-                                          "fn": "iff",
-                                          "args": [
-                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                            {"lit": "Healthy"},
-                                            {"lit": "Unknown"}
-                                          ]
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
-                },
-                {"lit": "Unknown"}
-              ]
-            },
-            {"lit": 0},
-            {
-              "fn": "iff",
-              "args": [
-                {
-                  "fn": "==",
-                  "args": [
-                    {
-                      "fn": "iff",
-                      "args": [
-                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                        {"lit": "Unknown"},
-                        {
-                          "fn": "iff",
-                          "args": [
-                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                            {"lit": "Healthy"},
-                            {
-                              "fn": "iff",
-                              "args": [
-                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                                {"lit": "Degraded"},
-                                {
-                                  "fn": "iff",
-                                  "args": [
-                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                                    {"lit": "Unhealthy"},
-                                    {
-                                      "fn": "iff",
-                                      "args": [
-                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                        {"lit": "Unhealthy"},
-                                        {
-                                          "fn": "iff",
-                                          "args": [
-                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                            {"lit": "Degraded"},
-                                            {
-                                              "fn": "iff",
-                                              "args": [
-                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                                {"lit": "Healthy"},
-                                                {"lit": "Unknown"}
-                                              ]
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        }
-                      ]
-                    },
-                    {"lit": "Healthy"}
-                  ]
-                },
-                {"lit": 1},
-                {
-                  "fn": "iff",
-                  "args": [
-                    {
-                      "fn": "==",
-                      "args": [
-                        {
-                          "fn": "iff",
-                          "args": [
-                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                            {"lit": "Unknown"},
-                            {
-                              "fn": "iff",
-                              "args": [
-                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                                {"lit": "Healthy"},
-                                {
-                                  "fn": "iff",
-                                  "args": [
-                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                                    {"lit": "Degraded"},
-                                    {
-                                      "fn": "iff",
-                                      "args": [
-                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                                        {"lit": "Unhealthy"},
-                                        {
-                                          "fn": "iff",
-                                          "args": [
-                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                            {"lit": "Unhealthy"},
-                                            {
-                                              "fn": "iff",
-                                              "args": [
-                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                                {"lit": "Degraded"},
-                                                {
-                                                  "fn": "iff",
-                                                  "args": [
-                                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                                    {"lit": "Healthy"},
-                                                    {"lit": "Unknown"}
-                                                  ]
-                                                }
-                                              ]
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            }
-                          ]
-                        },
-                        {"lit": "Degraded"}
-                      ]
-                    },
-                    {"lit": 2},
-                    {
-                      "fn": "iff",
-                      "args": [
-                        {
-                          "fn": "==",
-                          "args": [
-                            {
-                              "fn": "iff",
-                              "args": [
-                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                                {"lit": "Unknown"},
-                                {
-                                  "fn": "iff",
-                                  "args": [
-                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                                    {"lit": "Healthy"},
-                                    {
-                                      "fn": "iff",
-                                      "args": [
-                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                                        {"lit": "Degraded"},
-                                        {
-                                          "fn": "iff",
-                                          "args": [
-                                            {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                                            {"lit": "Unhealthy"},
-                                            {
-                                              "fn": "iff",
-                                              "args": [
-                                                {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                                {"lit": "Unhealthy"},
-                                                {
-                                                  "fn": "iff",
-                                                  "args": [
-                                                    {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                                    {"lit": "Degraded"},
-                                                    {
-                                                      "fn": "iff",
-                                                      "args": [
-                                                        {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                                        {"lit": "Healthy"},
-                                                        {"lit": "Unknown"}
-                                                      ]
-                                                    }
-                                                  ]
-                                                }
-                                              ]
-                                            }
-                                          ]
-                                        }
-                                      ]
-                                    }
-                                  ]
-                                }
-                              ]
-                            },
-                            {"lit": "Unhealthy"}
-                          ]
-                        },
-                        {"lit": 3},
-                        {"lit": 0}
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      }
+      "columns": {"key": {"ref": "flowKey"}, "rank": {"ref": "rank"}}
     },
     {
       "id": "declaredUserFlow",
@@ -591,139 +219,20 @@
       "graph": "master",
       "pattern": {"nodes": [{"var": "f", "label": "UserFlow"}]}
     },
+    {"id": "UserFlowKeys", "verb": "project", "columns": {"role": {"ref": "f"}, "roleKey": {"ref": "f.key"}}},
     {"id": "allUserFlow", "verb": "project", "columns": {"key": {"ref": "f.key"}, "rank": {"lit": 0}}},
+    {"id": "UserFlowDeploymentInputs", "verb": "union"},
     {
-      "id": "UserFlowIdentity",
-      "verb": "project",
-      "columns": {"role": {"ref": "f"}, "roleKey": {"ref": "f.key"}, "modelKey": {"ref": "f.modelKey"}}
-    },
-    {
-      "id": "UserFlowModelState",
-      "verb": "join",
-      "kind": "inner",
-      "on": [{"left": "modelKey", "right": "sourceId"}]
-    },
-    {
-      "id": "UserFlowMeasured",
-      "verb": "project",
-      "columns": {
-        "key": {"ref": "roleKey"},
-        "rank": {
-          "fn": "iff",
-          "args": [
-            {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unknown"}]},
-            {"lit": 10},
-            {
-              "fn": "iff",
-              "args": [
-                {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Healthy"}]},
-                {"lit": 11},
-                {
-                  "fn": "iff",
-                  "args": [
-                    {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Degraded"}]},
-                    {"lit": 12},
-                    {
-                      "fn": "iff",
-                      "args": [
-                        {"fn": "==", "args": [{"ref": "modelState"}, {"lit": "Unhealthy"}]},
-                        {"lit": 13},
-                        {"lit": 10}
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        }
-      }
-    },
-    {"id": "UserFlowSelectedInputs", "verb": "union"},
-    {
-      "id": "UserFlowSelected",
+      "id": "UserFlowDeployment",
       "verb": "summarize",
       "by": {"key": {"ref": "key"}},
       "aggregates": {"rank": {"fn": "max", "args": [{"ref": "rank"}]}}
     },
-    {"id": "UserFlowResults", "verb": "join", "kind": "inner", "on": [{"left": "roleKey", "right": "key"}]},
     {
-      "id": "UserFlowHealth",
-      "verb": "nodes",
-      "target": {
-        "nodes": [
-          {
-            "var": "result",
-            "label": "UserFlow",
-            "id": {"ref": "role"},
-            "props": {
-              "key": {"ref": "role.key"},
-              "name": {"ref": "role.name"},
-              "modelKey": {"ref": "role.modelKey"},
-              "provenance": {"ref": "role.provenance"},
-              "configuration": {"ref": "role.configuration"},
-              "state": {
-                "fn": "iff",
-                "args": [
-                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 10}]},
-                  {"lit": "Unknown"},
-                  {
-                    "fn": "iff",
-                    "args": [
-                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 11}]},
-                      {"lit": "Healthy"},
-                      {
-                        "fn": "iff",
-                        "args": [
-                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 12}]},
-                          {"lit": "Degraded"},
-                          {
-                            "fn": "iff",
-                            "args": [
-                              {"fn": "==", "args": [{"ref": "rank"}, {"lit": 13}]},
-                              {"lit": "Unhealthy"},
-                              {
-                                "fn": "iff",
-                                "args": [
-                                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
-                                  {"lit": "Unhealthy"},
-                                  {
-                                    "fn": "iff",
-                                    "args": [
-                                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
-                                      {"lit": "Degraded"},
-                                      {
-                                        "fn": "iff",
-                                        "args": [
-                                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
-                                          {"lit": "Healthy"},
-                                          {"lit": "Unknown"}
-                                        ]
-                                      }
-                                    ]
-                                  }
-                                ]
-                              }
-                            ]
-                          }
-                        ]
-                      }
-                    ]
-                  }
-                ]
-              },
-              "healthBasis": {
-                "fn": "iff",
-                "args": [
-                  {"fn": ">=", "args": [{"ref": "rank"}, {"lit": 10}]},
-                  {"lit": "Evaluated source model"},
-                  {"lit": "Worst observed Container App deployment state"}
-                ]
-              }
-            }
-          }
-        ]
-      }
+      "id": "UserFlowOperationalContext",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "roleKey", "right": "key"}]
     },
     {
       "id": "requestTargets",
@@ -817,46 +326,482 @@
         ],
         "edges": [{"var": "edge", "label": "HasObservedEndpoint", "from": "a", "to": "b"}]
       }
+    },
+    {
+      "id": "requestedObservations",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {
+        "nodes": [{"var": "s", "label": "SystemComponent"}, {"var": "b", "label": "OperationSelector"}],
+        "edges": [{"var": "binding", "label": "ExpectsOperation", "from": "s", "to": "b"}]
+      }
+    },
+    {
+      "id": "stepChecks",
+      "verb": "project",
+      "columns": {
+        "step": {"ref": "s"},
+        "stepKey": {"ref": "s.key"},
+        "selector": {"ref": "b.selector"},
+        "evidence": {"ref": "binding.evidence"}
+      }
+    },
+    {
+      "id": "observedWindows",
+      "verb": "graph-match",
+      "graph": "master",
+      "pattern": {"nodes": [{"var": "w", "label": "OperationWindow"}]}
+    },
+    {
+      "id": "scopedIngressEvidence",
+      "verb": "where",
+      "condition": {
+        "fn": "and",
+        "args": [
+          {"fn": ">", "args": [{"ref": "w.attributedCalls"}, {"lit": 0}]},
+          {"fn": "!=", "args": [{"ref": "w.role"}, {"lit": ""}]}
+        ]
+      }
+    },
+    {
+      "id": "observedSelectors",
+      "verb": "project",
+      "columns": {"observedSelector": {"ref": "w.selector"}, "window": {"ref": "w"}}
+    },
+    {
+      "id": "matchedOperation",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "selector", "right": "observedSelector"}]
+    },
+    {
+      "id": "operationEvidence",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "OperationWindow",
+            "id": {"ref": "window"},
+            "props": {
+              "scopeId": {"ref": "window.scopeId"},
+              "componentId": {"ref": "window.componentId"},
+              "source": {"ref": "window.source"},
+              "role": {"ref": "window.role"},
+              "operation": {"ref": "window.operation"},
+              "windowStart": {"ref": "window.windowStart"},
+              "windowEnd": {"ref": "window.windowEnd"},
+              "lastSeen": {"ref": "window.lastSeen"},
+              "selector": {"ref": "window.selector"},
+              "relationship": {"ref": "window.relationship"},
+              "evidenceType": {"ref": "window.evidenceType"},
+              "target": {"ref": "window.target"},
+              "ingressHosts": {"ref": "window.ingressHosts"},
+              "calls": {"ref": "window.calls"},
+              "spanCount": {"ref": "window.spanCount"},
+              "failed": {"ref": "window.failed"},
+              "unknown": {"ref": "window.unknown"},
+              "attributedCalls": {"ref": "window.attributedCalls"},
+              "attributedFailed": {"ref": "window.attributedFailed"},
+              "attributedUnknown": {"ref": "window.attributedUnknown"}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "evidenceForStep",
+      "verb": "edges",
+      "target": {
+        "nodes": [
+          {"var": "a", "label": "SystemComponent", "id": {"ref": "step"}},
+          {"var": "b", "label": "OperationWindow", "id": {"ref": "window"}}
+        ],
+        "edges": [
+          {
+            "var": "edge",
+            "label": "ObservedOperation",
+            "from": "a",
+            "to": "b",
+            "props": {"provenance": {"ref": "window.source"}, "evidence": {"ref": "evidence"}}
+          }
+        ]
+      }
+    },
+    {
+      "id": "expectedOperations",
+      "verb": "project",
+      "columns": {
+        "stepKey": {"ref": "stepKey"},
+        "selector": {"ref": "selector"},
+        "severity": {"lit": 0},
+        "sourceRank": {"lit": 0}
+      }
+    },
+    {
+      "id": "observedOperations",
+      "verb": "project",
+      "columns": {
+        "stepKey": {"ref": "stepKey"},
+        "selector": {"ref": "selector"},
+        "severity": {
+          "fn": "iff",
+          "args": [
+            {"fn": "==", "args": [{"ref": "window.attributedFailed"}, {"ref": "window.attributedCalls"}]},
+            {"lit": 4},
+            {
+              "fn": "iff",
+              "args": [
+                {"fn": ">", "args": [{"ref": "window.attributedFailed"}, {"lit": 0}]},
+                {"lit": 3},
+                {
+                  "fn": "iff",
+                  "args": [
+                    {"fn": ">", "args": [{"ref": "window.attributedUnknown"}, {"lit": 0}]},
+                    {"lit": 2},
+                    {"lit": 1}
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        "sourceRank": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "window.source"}, {"lit": "AppDependencies"}]}, {"lit": 2}, {"lit": 1}]
+        }
+      }
+    },
+    {"id": "pendingAndObserved", "verb": "union"},
+    {
+      "id": "oneScorePerSelector",
+      "verb": "summarize",
+      "by": {"stepKey": {"ref": "stepKey"}, "selector": {"ref": "selector"}},
+      "aggregates": {
+        "severity": {"fn": "max", "args": [{"ref": "severity"}]},
+        "sourceRank": {"fn": "max", "args": [{"ref": "sourceRank"}]}
+      }
+    },
+    {
+      "id": "checkCoverage",
+      "verb": "project",
+      "columns": {
+        "systemKey": {"ref": "stepKey"},
+        "severity": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "severity"}, {"lit": 0}]}, {"lit": 2}, {"ref": "severity"}]
+        },
+        "expected": {"lit": 1},
+        "measured": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "sourceRank"}, {"lit": 0}]}, {"lit": 0}, {"lit": 1}]
+        },
+        "sourceRank": {"ref": "sourceRank"}
+      }
+    },
+    {
+      "id": "allDeclaredSteps",
+      "verb": "project",
+      "columns": {
+        "systemKey": {"ref": "s.key"},
+        "severity": {"lit": 0},
+        "expected": {"lit": 0},
+        "measured": {"lit": 0},
+        "sourceRank": {"lit": 0}
+      }
+    },
+    {"id": "stepScoreInputs", "verb": "union"},
+    {
+      "id": "stepScores",
+      "verb": "summarize",
+      "by": {"systemKey": {"ref": "systemKey"}},
+      "aggregates": {
+        "severity": {"fn": "max", "args": [{"ref": "severity"}]},
+        "sourceRank": {"fn": "max", "args": [{"ref": "sourceRank"}]},
+        "measured": {"fn": "sum", "args": [{"ref": "measured"}]},
+        "expected": {"fn": "sum", "args": [{"ref": "expected"}]}
+      }
+    },
+    {"id": "evaluatedSteps", "verb": "join", "kind": "inner", "on": [{"left": "roleKey", "right": "systemKey"}]},
+    {
+      "id": "SystemComponentHealth",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "SystemComponent",
+            "id": {"ref": "role"},
+            "props": {
+              "key": {"ref": "role.key"},
+              "name": {"ref": "role.name"},
+              "modelKey": {"ref": "role.modelKey"},
+              "provenance": {"ref": "role.provenance"},
+              "configuration": {"ref": "role.configuration"},
+              "deploymentState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "measuredChecks": {"ref": "measured"},
+              "expectedChecks": {"ref": "expected"},
+              "state": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "evidenceKind": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "sourceRank"}, {"lit": 2}]},
+                  {"lit": "MeasuredOperations"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "sourceRank"}, {"lit": 1}]},
+                      {"lit": "MeasuredRequests"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 0}]},
+                          {"lit": "Unknown"},
+                          {"lit": "DeploymentOnly"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {
+                "fn": "iff",
+                "args": [
+                  {"fn": ">", "args": [{"ref": "measured"}, {"lit": 0}]},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "<", "args": [{"ref": "measured"}, {"ref": "expected"}]},
+                      {"lit": "Some configured operations lack observations"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "sourceRank"}, {"lit": 2}]},
+                          {"lit": "Direct child operations at the measured ingress"},
+                          {"lit": "HTTP response outcomes at the measured ingress"}
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 0}]},
+                      {"lit": "No deployment or operation observation"},
+                      {"lit": "ARM deployment state only"}
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "flowStepScores",
+      "verb": "join",
+      "kind": "inner",
+      "on": [{"left": "componentKey", "right": "systemKey"}]
+    },
+    {
+      "id": "rollUpMeasurements",
+      "verb": "project",
+      "columns": {
+        "userFlowKey": {"ref": "flowKey"},
+        "severity": {
+          "fn": "iff",
+          "args": [{"fn": "==", "args": [{"ref": "severity"}, {"lit": 0}]}, {"lit": 2}, {"ref": "severity"}]
+        },
+        "expected": {"ref": "expected"},
+        "measured": {"ref": "measured"}
+      }
+    },
+    {
+      "id": "allDeclaredFlows",
+      "verb": "project",
+      "columns": {"userFlowKey": {"ref": "f.key"}, "severity": {"lit": 0}, "measured": {"lit": 0}, "expected": {"lit": 0}}
+    },
+    {"id": "flowScoreInputs", "verb": "union"},
+    {
+      "id": "inferredFlowStates",
+      "verb": "summarize",
+      "by": {"userFlowKey": {"ref": "userFlowKey"}},
+      "aggregates": {
+        "severity": {"fn": "max", "args": [{"ref": "severity"}]},
+        "measured": {"fn": "sum", "args": [{"ref": "measured"}]},
+        "expected": {"fn": "sum", "args": [{"ref": "expected"}]}
+      }
+    },
+    {"id": "flowEvidence", "verb": "join", "kind": "inner", "on": [{"left": "roleKey", "right": "userFlowKey"}]},
+    {
+      "id": "UserFlowHealth",
+      "verb": "nodes",
+      "target": {
+        "nodes": [
+          {
+            "var": "result",
+            "label": "UserFlow",
+            "id": {"ref": "role"},
+            "props": {
+              "key": {"ref": "role.key"},
+              "name": {"ref": "role.name"},
+              "modelKey": {"ref": "role.modelKey"},
+              "provenance": {"ref": "role.provenance"},
+              "configuration": {"ref": "role.configuration"},
+              "deploymentState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "rank"}, {"lit": 3}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 2}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "rank"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "measuredChecks": {"ref": "measured"},
+              "expectedChecks": {"ref": "expected"},
+              "state": {"lit": "Unknown"},
+              "inferredState": {
+                "fn": "iff",
+                "args": [
+                  {"fn": "==", "args": [{"ref": "severity"}, {"lit": 4}]},
+                  {"lit": "Unhealthy"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "severity"}, {"lit": 3}]},
+                      {"lit": "Degraded"},
+                      {
+                        "fn": "iff",
+                        "args": [
+                          {"fn": "==", "args": [{"ref": "severity"}, {"lit": 1}]},
+                          {"lit": "Healthy"},
+                          {"lit": "Unknown"}
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              "evidenceKind": {
+                "fn": "iff",
+                "args": [
+                  {"fn": ">", "args": [{"ref": "measured"}, {"lit": 0}]},
+                  {"lit": "InferredFromSteps"},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 0}]},
+                      {"lit": "Unknown"},
+                      {"lit": "DeploymentOnly"}
+                    ]
+                  }
+                ]
+              },
+              "healthBasis": {
+                "fn": "iff",
+                "args": [
+                  {"fn": ">", "args": [{"ref": "measured"}, {"lit": 0}]},
+                  {"lit": "Step observations only. End-to-end completion is unmeasured."},
+                  {
+                    "fn": "iff",
+                    "args": [
+                      {"fn": "==", "args": [{"ref": "rank"}, {"lit": 0}]},
+                      {"lit": "No deployment or operation observation"},
+                      {"lit": "ARM deployment state only"}
+                    ]
+                  }
+                ]
+              },
+              "scopeId": {"ref": "role.scopeId"}
+            }
+          }
+        ]
+      }
     }
   ],
   "wires": [
     {"from": "deployedApps", "to": "showApps"},
-    {"from": "boundResources", "to": "boundIds"},
-    {"from": "deployedApps", "to": "appDeployments"},
-    {"from": "boundIds", "to": "deployedSystems", "port": "left"},
-    {"from": "appDeployments", "to": "deployedSystems", "port": "right"},
-    {"from": "deployedSystems", "to": "systemDeployments"},
-    {"from": "flowSteps", "to": "flowSystemPath"},
-    {"from": "evaluatedModel", "to": "sourceHealth"},
-    {"from": "deployedSystems", "to": "operationalRanks"},
+    {"from": "stepRequirements", "to": "requiredClasses"},
+    {"from": "classifiedApps", "to": "actualClasses"},
+    {"from": "requiredClasses", "to": "resolveRequiredClass", "port": "left"},
+    {"from": "actualClasses", "to": "resolveRequiredClass", "port": "right"},
+    {"from": "resolveRequiredClass", "to": "runsOnApp"},
+    {"from": "flowSteps", "to": "declaredSteps"},
+    {"from": "resolveRequiredClass", "to": "appDeploymentRanks"},
+    {"from": "declaredSystemComponent", "to": "SystemComponentKeys"},
     {"from": "declaredSystemComponent", "to": "allSystemComponent"},
-    {"from": "declaredSystemComponent", "to": "SystemComponentIdentity"},
-    {"from": "SystemComponentIdentity", "to": "SystemComponentModelState", "port": "left"},
-    {"from": "sourceHealth", "to": "SystemComponentModelState", "port": "right"},
-    {"from": "SystemComponentModelState", "to": "SystemComponentMeasured"},
-    {"from": "allSystemComponent", "to": "SystemComponentSelectedInputs"},
-    {"from": "operationalRanks", "to": "SystemComponentSelectedInputs"},
-    {"from": "SystemComponentMeasured", "to": "SystemComponentSelectedInputs"},
-    {"from": "SystemComponentSelectedInputs", "to": "SystemComponentSelected"},
-    {"from": "SystemComponentIdentity", "to": "SystemComponentResults", "port": "left"},
-    {"from": "SystemComponentSelected", "to": "SystemComponentResults", "port": "right"},
-    {"from": "SystemComponentResults", "to": "SystemComponentHealth"},
-    {"from": "flowSteps", "to": "stepsForFlows"},
-    {"from": "stepsForFlows", "to": "healthOfSteps", "port": "left"},
-    {"from": "SystemComponentSelected", "to": "healthOfSteps", "port": "right"},
-    {"from": "healthOfSteps", "to": "systemRanks"},
+    {"from": "allSystemComponent", "to": "SystemComponentDeploymentInputs"},
+    {"from": "appDeploymentRanks", "to": "SystemComponentDeploymentInputs"},
+    {"from": "SystemComponentDeploymentInputs", "to": "SystemComponentDeployment"},
+    {"from": "SystemComponentKeys", "to": "SystemComponentOperationalContext", "port": "left"},
+    {"from": "SystemComponentDeployment", "to": "SystemComponentOperationalContext", "port": "right"},
+    {"from": "flowSteps", "to": "curatedSteps"},
+    {"from": "curatedSteps", "to": "deployedSteps", "port": "left"},
+    {"from": "SystemComponentDeployment", "to": "deployedSteps", "port": "right"},
+    {"from": "deployedSteps", "to": "stepDeploymentRanks"},
+    {"from": "declaredUserFlow", "to": "UserFlowKeys"},
     {"from": "declaredUserFlow", "to": "allUserFlow"},
-    {"from": "declaredUserFlow", "to": "UserFlowIdentity"},
-    {"from": "UserFlowIdentity", "to": "UserFlowModelState", "port": "left"},
-    {"from": "sourceHealth", "to": "UserFlowModelState", "port": "right"},
-    {"from": "UserFlowModelState", "to": "UserFlowMeasured"},
-    {"from": "allUserFlow", "to": "UserFlowSelectedInputs"},
-    {"from": "systemRanks", "to": "UserFlowSelectedInputs"},
-    {"from": "UserFlowMeasured", "to": "UserFlowSelectedInputs"},
-    {"from": "UserFlowSelectedInputs", "to": "UserFlowSelected"},
-    {"from": "UserFlowIdentity", "to": "UserFlowResults", "port": "left"},
-    {"from": "UserFlowSelected", "to": "UserFlowResults", "port": "right"},
-    {"from": "UserFlowResults", "to": "UserFlowHealth"},
+    {"from": "allUserFlow", "to": "UserFlowDeploymentInputs"},
+    {"from": "stepDeploymentRanks", "to": "UserFlowDeploymentInputs"},
+    {"from": "UserFlowDeploymentInputs", "to": "UserFlowDeployment"},
+    {"from": "UserFlowKeys", "to": "UserFlowOperationalContext", "port": "left"},
+    {"from": "UserFlowDeployment", "to": "UserFlowOperationalContext", "port": "right"},
     {"from": "requestTargets", "to": "measuredHosts"},
     {"from": "deployedApps", "to": "ingressHosts"},
     {"from": "measuredHosts", "to": "callsToExactIngress", "port": "left"},
@@ -864,6 +809,36 @@
     {"from": "callsToExactIngress", "to": "measuredTarget"},
     {"from": "callsToExactIngress", "to": "measuredSource"},
     {"from": "callsToExactIngress", "to": "observedRequests"},
-    {"from": "callsToExactIngress", "to": "appIngress"}
+    {"from": "callsToExactIngress", "to": "appIngress"},
+    {"from": "requestedObservations", "to": "stepChecks"},
+    {"from": "observedWindows", "to": "scopedIngressEvidence"},
+    {"from": "scopedIngressEvidence", "to": "observedSelectors"},
+    {"from": "stepChecks", "to": "matchedOperation", "port": "left"},
+    {"from": "observedSelectors", "to": "matchedOperation", "port": "right"},
+    {"from": "matchedOperation", "to": "operationEvidence"},
+    {"from": "matchedOperation", "to": "evidenceForStep"},
+    {"from": "stepChecks", "to": "expectedOperations"},
+    {"from": "matchedOperation", "to": "observedOperations"},
+    {"from": "expectedOperations", "to": "pendingAndObserved"},
+    {"from": "observedOperations", "to": "pendingAndObserved"},
+    {"from": "pendingAndObserved", "to": "oneScorePerSelector"},
+    {"from": "oneScorePerSelector", "to": "checkCoverage"},
+    {"from": "declaredSystemComponent", "to": "allDeclaredSteps"},
+    {"from": "allDeclaredSteps", "to": "stepScoreInputs"},
+    {"from": "checkCoverage", "to": "stepScoreInputs"},
+    {"from": "stepScoreInputs", "to": "stepScores"},
+    {"from": "SystemComponentOperationalContext", "to": "evaluatedSteps", "port": "left"},
+    {"from": "stepScores", "to": "evaluatedSteps", "port": "right"},
+    {"from": "evaluatedSteps", "to": "SystemComponentHealth"},
+    {"from": "curatedSteps", "to": "flowStepScores", "port": "left"},
+    {"from": "stepScores", "to": "flowStepScores", "port": "right"},
+    {"from": "flowStepScores", "to": "rollUpMeasurements"},
+    {"from": "declaredUserFlow", "to": "allDeclaredFlows"},
+    {"from": "rollUpMeasurements", "to": "flowScoreInputs"},
+    {"from": "allDeclaredFlows", "to": "flowScoreInputs"},
+    {"from": "flowScoreInputs", "to": "inferredFlowStates"},
+    {"from": "UserFlowOperationalContext", "to": "flowEvidence", "port": "left"},
+    {"from": "inferredFlowStates", "to": "flowEvidence", "port": "right"},
+    {"from": "flowEvidence", "to": "UserFlowHealth"}
   ]
 }
