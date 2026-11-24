@@ -13,7 +13,7 @@
 
 This chapter does not define a language. Whether a concrete language meets R1 to R8 is shown in a *conformance note* outside this paper (Section 7.6).
 
-This chapter uses weighted sets from Ch. 4, graphs and type graphs from Ch. 3, values and ids from Ch. 2, runs from Ch. 5 and the clock from Ch. 6. Section 7.1 restates what is used.
+This chapter uses values and ids from Ch. 2, graphs and type graphs from Ch. 3, weighted sets from Ch. 4, runs and the clock from Ch. 5, and lateness and selection by the clock from Ch. 6. Section 7.1 recalls what is used.
 
 **Running example.** A registry of software packages. The graph `Registry` has a node per package and an edge `DependsOn` from a package to each package it needs. Each download of a package is an event. A projection produces the graph `Report`, with one node per package, that answers two questions: how often was the package downloaded in the last hour, and which packages does it need, directly or through others?
 
@@ -31,22 +31,15 @@ flowchart LR
 
 ## 7.1 Setting
 
-**Values, ids, keys.** `Val` is the set of values and `Id ⊆ Val` the set of ids (Ch. 2). A *key function* maps rows to values. Where a value is used to group rows it is called a *key*, and `Key` is written for `Val`.
+This section recalls what the chapter uses. Each item is defined, and its properties proved, in the place named.
 
-**Weighted sets.** For a set `R` of rows, `ℤ^(R)` is the set of maps `z : R → ℤ` that are zero on all but finitely many rows. Such a map is a *weighted set* and `z(r)` is the *weight* of `r`. Weighted sets over `R` are added row by row and form an abelian group with the zero map `0` (Ch. 4). [budiu2023] calls them Z-sets.
-
-- `supp z = {r | z(r) ≠ 0}` is the finite set of rows that `z` mentions.
-- `1·r` has weight 1 on `r` and 0 elsewhere, so `z = Σ_r z(r)·(1·r)`, a finite sum.
-- A finite set of rows is read as the weighted set that gives its rows weight 1.
-- For a key function `κ : R → Key` and a key `k`, `z|k` is `z` on the rows with `κ(r) = k` and 0 elsewhere. `κ(z) = {κ(r) | r ∈ supp z}` is the finite set of keys that `z` *touches*. Restriction is additive: `(z + z')|k = z|k + z'|k`.
-
-**Graphs.** A graph is a finite set of facts `(k, s)`, the id `k ∈ Id` of an element and its state `s`, with at most one fact per id (Ch. 3). `Fact` is the set of facts, `𝒢 ⊆ ℤ^(Fact)` the set of graphs, and `𝒢(Σ)` the set of graphs that conform to a type graph `Σ`. When an element changes its state from `s` to `s'`, the change is `−1·(k, s) + 1·(k, s')`.
-
-**Events.** An event row `e` carries an event time `time(e)` and an arrival time `arr(e)`, both in `Tick = ℕ`. The source sets the event time. Ingestion sets the arrival time (Ch. 6). An *event collection* is a finite set of event rows of one row type.
-
-**Clock.** A clock state is a set with exactly one row `τ ∈ Tick`.
-
-**Input states and runs.** A *signature* is `(S₁, …, Sₙ) → Σ`. Each *sort* `Sᵢ` is a type graph (a graph input), an event row type (an event input) or `clock` (at most once). `Σ` is the type graph of the output. A *legal input state* is a tuple `x = (x₁, …, xₙ)` in which `xᵢ` is a graph that conforms to `Sᵢ`, an event collection of type `Sᵢ`, or a clock state. `𝒳` is the set of legal input states and `X = ℤ^(R₁) × … × ℤ^(Rₙ)` the group they live in, where `Rᵢ` is the set of rows of sort `Sᵢ`. A *run* is a finite sequence `x⁰, x¹, …, xᵗ` of legal input states in which the clock never decreases, and in which an event row that is in `xⁱ` and not in `xⁱ⁻¹` has `arr(e)` equal to the clock of `xⁱ`, if the signature has a clock. Its *changes* are `Δⁱ = xⁱ − xⁱ⁻¹ ∈ X` for `i ≥ 1`. One change may add and remove facts and events and move the clock.
+- **Values, ids, keys** (Ch. 2, Defs. 2.1 and 2.4; Ch. 4, Def. 4.2). `Val` is the set of values, `Id ⊆ Val` the set of ids, and `ι : Val* → Id` the id function, which is injective (Proposition 2.2). A *key function* maps rows to values. Where a value is used to group rows it is called a *key*, and `Key` is written for `Val`.
+- **Weighted sets** (Ch. 4, Def. 4.1, Theorem 4.1). For a set `R` of rows, `ℤ^(R)` is the set of maps `z : R → ℤ` that are zero on all but finitely many rows, the *weighted sets*; `z(r)` is the *weight* of `r`. They are added row by row and form an abelian group with the zero map `0`. [budiu2023] calls them Z-sets. `supp z` is the finite set of rows that `z` mentions, `1·r` has weight 1 on `r` and 0 elsewhere, so `z = Σ_r z(r)·(1·r)`, and a finite set of rows is read as the weighted set that gives its rows weight 1.
+- **Restriction** (Ch. 4, Def. 4.2, Proposition 4.2). For a key function `κ : R → Key` and a key `k`, `z|k` is `z` on the rows with `κ(r) = k` and 0 elsewhere, and `κ(z) = {κ(r) | r ∈ supp z}` is the finite set of keys that `z` *touches*. Restriction, also to any set of rows, is additive: `(z + z')|k = z|k + z'|k`.
+- **Graphs** (Ch. 3, Defs. 3.1, 3.2 and 3.4; Ch. 4, Def. 4.3 and Proposition 4.3). A graph is a finite set of facts `(k, s)`, the id `k ∈ Id` of an element and its state `s`, with at most one fact per id. `Fact` is the set of facts, `𝒢 ⊆ ℤ^(Fact)` the set of graphs, and `𝒢(Σ)` the set of graphs that conform to a type graph `Σ`. When an element changes its state from `s` to `s'`, the change is `−1·(k, s) + 1·(k, s')`.
+- **Events and the clock** (Ch. 5, Defs. 5.1 and 5.2; Ch. 6, Def. 6.1). An event row `e` carries an event time `time(e)` and an arrival time `arr(e)`, both in `Tick = ℕ`. An *event collection* is a finite set of event rows of one row type. A clock state is a set with exactly one row `τ ∈ Tick`. A row is late for a lateness `λ` if `arr(e) > time(e) + λ`.
+- **Input states and runs** (Ch. 5, Defs. 5.1 to 5.3). A *signature* is `(S₁, …, Sₙ) → Σ`, where each sort `Sᵢ` is a type graph, an event row type or `clock` (at most once), and `Σ` is the type graph of the output. A *legal input state* is a tuple `x = (x₁, …, xₙ)` in which `xᵢ` is a graph in `𝒢(Sᵢ)`, an event collection of type `Sᵢ` or a clock state, after the sort of `Sᵢ`; the `i`-th input is then a *graph input*, an *event input* or the *clock input*. `𝒳` is the set of legal input states, `Rᵢ` the set of rows of `Sᵢ`, and `X = ℤ^(R₁) × … × ℤ^(Rₙ)` the group they live in. A *run* is a finite sequence `x⁰, x¹, …, xᵗ` of legal input states in which the clock never decreases, and in which an event row that is in `xⁱ` and not in `xⁱ⁻¹` has `arr(e)` equal to the clock of `xⁱ`, if the signature has a clock. Its *changes* are `Δⁱ = xⁱ − xⁱ⁻¹ ∈ X` for `i ≥ 1`. One change may add and remove facts and events and move the clock.
+- **Meaning** (Ch. 5, Def. 5.4, Proposition 5.2). A function `m : 𝒳 → ℤ^(Fact)` is a *meaning* of a projection `out` if `out(x⁰, …, xᵗ) = m(xᵗ)` for every run. A projection has at most one meaning.
 
 ## 7.2 Languages, steps and circuits
 
@@ -65,7 +58,7 @@ Nothing is assumed about how programs are written. `out` is the whole observable
   A keyed step has a value on every weighted set, also on one with negative weights. For a minimum, a maximum or a percentile the usual choice is to take the rows of positive weight, each as often as its weight says, and to give no row if there is none.
 
   A keyed step is *summarised* if there are a number `d`, a linear `φ : ℤ^(R) → ℚ^d` and a function `g : Key × ℚ^d → ℤ^(R')` with `f(a|k) = g(k, φ(a|k))` for all `a` and `k`. Count and sum are summarised with `d = 2`: `φ` is the pair (sum of weights, sum of weight times value), and the mean is `g` of that pair, where `g` gives no row at `(0, 0)` and a chosen result at `(0, x)` with `x ≠ 0`. No summary is assumed for minimum, maximum and percentiles. The arithmetic must be exact: addition of floating point numbers is not associative, so a floating point sum is not a summary.
-- **(T) Clock selection.** `f : ℤ^(R) × ℤ^(Tick) → ℤ^(R)` is given by two functions `s, u : R → Tick ∪ {∞}` with `s(r) ≤ u(r)`: `f(a, c) = Σ_{r, τ : s(r) ≤ τ < u(r)} a(r)·c(τ)·(1·r)`. It is linear in each argument. With a clock state `{τ}` as second argument it keeps exactly the rows with `s(r) ≤ τ < u(r)`: a row is *selected* from tick `s(r)` up to, not including, tick `u(r)`. *Example:* "the last hour" is `s = time(e)` and `u = time(e) + 1 hour`. "The totals of the hours that ended at least a lateness ago" is, on rows that carry the end `b` of their hour, `s = b + lateness` and `u = ∞`.
+- **(T) Clock selection.** `f : ℤ^(R) × ℤ^(Tick) → ℤ^(R)` is given by two functions `s, u : R → Tick ∪ {∞}` with `s(r) ≤ u(r)`: `f(a, c) = Σ_{r, τ : s(r) ≤ τ < u(r)} a(r)·c(τ)·(1·r)`. It is linear in each argument. With a clock state `{τ}` as second argument it keeps exactly the rows with `s(r) ≤ τ < u(r)`: a row is *selected* from tick `s(r)` up to, not including, tick `u(r)` (Ch. 6, Def. 6.2). *Example:* "the last hour" is `s = time(e)` and `u = time(e) + 1 hour`. "The totals of the hours that ended at least a lateness ago" is, on rows that carry the end `b` of their hour, `s = b + lateness` and `u = ∞`.
 - **(F) Fixpoint.** `f : ℤ^(R) → ℤ^(Key × V)` is given by
   1. a partially ordered set `(V, ≤)` with a least element `⊥`;
   2. for every `a` and every `k ∈ Key`, an *equation* `(dep_a(k), h_{a,k})`: a finite set `dep_a(k) ⊆ Key` and a function `h_{a,k} : V^{dep_a(k)} → V`. For all but finitely many keys the equation is *trivial*: `dep_a(k) = ∅` and `h_{a,k} = ⊥`. `N_a` is the finite set of keys with a non-trivial equation;
@@ -73,7 +66,7 @@ Nothing is assumed about how programs are written. `out` is the whole observable
 
   For `Z : Key → V`, `Z↾D` is `Z` on the keys of `D`. The *rounds* are `Z⁰(k) = ⊥` and `Zⁱ⁺¹(k) = h_{a,k}(Zⁱ↾dep_a(k))` for all `k`. If `Zⁱ⁺¹ = Zⁱ` for some `i`, then `Z_a = Zⁱ` and `f(a) = Σ_{k : Z_a(k) ≠ ⊥} 1·(k, Z_a(k))`. Otherwise `f(a)` is undefined. *Example:* everything a package needs, directly or through others. The keys are packages, `V` is the finite sets of packages ordered by inclusion with `⊥ = ∅`, and the equation of `p` is `Z(p) = ⋃ {{m} ∪ Z(m) | a has an edge row from p to m with positive weight}`. An edge row from `p` to `m` names the key `p` only.
 
-**Definition 7.4 (construction, merge).** Let `ι : Val* → Id` be the id function of Ch. 2. A *construction step* is a linear step `c : ℤ^(R) → ℤ^(Fact)` of the form `c(1·r) = Σ_{j=1..q} 1·(id_j(r), s_j(r))`: each row gives `q` facts, and the state of fact `j` is `s_j(r)`. Its id `id_j(r)` is either a field of `r` that is an id, which lets an element of the input keep its id, or a *new id* `ι(c_j, v_j(r))`: `ι` of a constant `c_j` of the program and of values `v_j(r)` taken from the row. A *merge step* is a keyed step `M : ℤ^(Fact) → ℤ^(Fact)` with key function `(k, s) ↦ k`, for which `M(z|k)`
+**Definition 7.4 (construction, merge).** Let `ι : Val* → Id` be the id function of Ch. 2 (Def. 2.4). A *construction step* is a linear step `c : ℤ^(R) → ℤ^(Fact)` of the form `c(1·r) = Σ_{j=1..q} 1·(id_j(r), s_j(r))`: each row gives `q` facts, and the state of fact `j` is `s_j(r)`. Its id `id_j(r)` is either a field of `r` that is an id, which lets an element of the input keep its id, or a *new id* `ι(c_j, v_j(r))`: `ι` of a constant `c_j` of the program and of values `v_j(r)` taken from the row. A *merge step* is a keyed step `M : ℤ^(Fact) → ℤ^(Fact)` with key function `(k, s) ↦ k`, for which `M(z|k)`
 
 1. depends only on the set `St = {s | z(k, s) > 0}`,
 2. is `0` if `St` is empty and `1·(k, s)` if `St = {s}`,
@@ -139,7 +132,7 @@ R5 and R6 alone exclude almost nothing. Any meaning that can be computed from `p
 - *To show.* The list of constructs that mention time; each is a function of `time(e)` and `arr(e)` on one row, or a clock selection with its `s` and `u`.
 - *Without it.* A value such as "age = now − time" changes on every row at every tick.
 
-By R1 and Def. 7.2 a program has no other time: besides the clock, time appears only as `time(e)` and `arr(e)` in event rows. When a total over a time range stops changing is shown in Ch. 6.
+By R1 and Def. 7.2 a program has no other time: besides the clock, time appears only as `time(e)` and `arr(e)` in event rows. When a total over a time range stops changing is shown in Ch. 6 (Theorem 6.3).
 
 ## 7.4 What follows
 

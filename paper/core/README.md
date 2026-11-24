@@ -1,6 +1,6 @@
 # Core paper
 
-The reset of the paper (#2). Eight chapters on a domain-neutral engine that projects graphs to graphs, change by change. Chapter 7 is written. The other chapters are outlined below. The old chapters in the parent folder stay until each is replaced.
+The reset of the paper (#2). Eight chapters on a domain-neutral engine that projects graphs to graphs, change by change. All eight are written. The old chapters in the parent folder stay until their removal is decided.
 
 ## Aim
 
@@ -20,16 +20,16 @@ flowchart LR
 
 ## Chapters
 
-| # | Chapter | Must contain | Reuse from the old text |
+| # | Chapter | Contains | Replaces in the old text |
 |---|---|---|---|
-| 1 | Problem and model | The question. Graph in, graph out, changes in, changes out. The claims as a list that points to theorems. | Old Ch. 0, rewritten without the domain facts and phases. |
-| 2 | Values and identity | Values and canonical form. The id function `ι` of a name and key values, injective. Merging of ids. | Old Ch. 1: Defs 1.1 to 1.10, Thms 1.1, 1.4 to 1.7 nearly as they are. Prop 1.8 without its use of batch invariance. |
-| 3 | Graphs, type graphs, revisions | A graph as a finite set of facts. Type graph and conformance. Log and revisions. Acyclic arrangements of graphs. | Old Ch. 3: Defs 3.1 to 3.11, 3.14, Thms 3.1 to 3.4, 3.7. Old Ch. 2: Defs 2.4 to 2.6, Thms 2.1, 2.3. Reordered so nothing is used before it is defined. |
-| 4 | One change algebra | Weighted sets over rows, with facts as rows. The group. When a weighted set is a graph. Patches as the ordered, checked form, and the map from patches to weighted sets. | Old Ch. 4 as it is. The row sets and fragments of old Ch. 6 become the same weighted sets. |
-| 5 | Projections as functions on runs | Input state, run, change. Meaning and from-scratch output. Output as a stream of changes that a reader adds up, and how a reader resumes. | Old Ch. 6: Defs 6.2, 6.4, 6.5, rewritten without operators. |
-| 6 | Time | Event time, arrival time, the clock as an input. Lateness as a property of a row. Selection by the clock. When a total over a time range stops changing, proved. | Old Ch. 3 Def 3.10, Ch. 6 Defs 6.6, 6.8, Ch. 7 Defs 7.5, 7.6, rewritten. |
-| 7 | [Requirements on a projection language](ch07-requirements-on-a-projection-language.md) | R1 to R8, the theorems they give, the conformance note. | New. Written. |
-| 8 | Derived results, limits, related work | Support and lineage. What the requirements exclude. Relation to incremental view maintenance, Datalog, graph transformation and XSLT. | Old Props 5.10 to 5.12, Thms 9.1 to 9.6 condensed, old 15.1 trimmed. |
+| 1 | [Problem and model](ch01-problem-and-model.md) | The question. Graph in, graph out, changes in, changes out. The claims, each with the result that proves it. | Old Ch. 0. |
+| 2 | [Values and identity](ch02-values-and-identity.md) | Values, canonical form, a total order of values. The injective id function `ι`. Links and representatives. | Old Ch. 1. |
+| 3 | [Graphs, type graphs and revisions](ch03-graphs-type-graphs-revisions.md) | A graph as a finite set of facts. Type graph and conformance, checked at the change. Log and revisions. Acyclic arrangements. | Old Ch. 3; old Ch. 2, Defs. 2.4 to 2.6 and Theorem 2.1. |
+| 4 | [One change algebra](ch04-one-change-algebra.md) | Weighted sets and restriction. When a weighted set is a graph. Patches, and the map from patches to weighted sets. | Old Ch. 4. |
+| 5 | [Projections as functions on runs](ch05-projections-as-functions-on-runs.md) | Input state, run, change. Meaning and from-scratch output. Output as changes, readers and how they resume. | Old Ch. 6, Defs. 6.1 to 6.5. |
+| 6 | [Time](ch06-time.md) | Event time, arrival time, the clock as an input. Lateness per event input. Selection by the clock. When a total over a time range stops changing. | Old Ch. 6, Defs. 6.6 to 6.8; old Ch. 7, Defs. 7.5 and 7.6. |
+| 7 | [Requirements on a projection language](ch07-requirements-on-a-projection-language.md) | R1 to R8, the theorems they give, the conformance note. | Old Ch. 5 and Ch. 6 as far as they define the language and its evaluation. |
+| 8 | [Derived results, limits, related work](ch08-derived-results-limits-related-work.md) | Lineage and support. Lifting along a map of nodes. Replacing a program. Limits. Relation to incremental view maintenance, Datalog, graph transformation and XSLT. | Old Ch. 5, Props. 5.10 to 5.12; old Ch. 9, Theorems 9.1 to 9.7; old Ch. 15.1. |
 
 ## Rules for the text
 
