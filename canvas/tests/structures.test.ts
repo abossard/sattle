@@ -3,6 +3,7 @@ import { Graph } from "../src/core/graph";
 import type { Edit } from "../src/core/model";
 import { parsePalette } from "../src/editor/palette";
 import { ent, rel, text } from "../src/editor/patches";
+import { readGkql } from "../src/editor/gkql";
 import { addConstraintEdits, addEquivalenceEdits, addFieldEdits, addRowTypeEdits, addValueRoleEdits, newProjection, setValueRoleEdits, valueSegment } from "../src/editor/structures";
 
 const M = "d:m";
@@ -120,44 +121,39 @@ describe("the relationships that connect a declaration's parts come from the pal
   });
 });
 
-describe("a new projection: its KQL file and its place in the space", () => {
+describe("a new projection: its GKQL program and its binding in the module's space", () => {
   const S = "d:sp/space:s";
   const base = mk(ent(M, "Module"), ent("d:out", "Module"), ent("d:ops", "Module"), ent(S, "GraphSpace"), ent(`${S}/graph:master`, "Graph"),
     ent("d:src/rows:PodRow", "RowType"), ent(`${M}/rows:CapRow`, "RowType"), ent(`${S}/source:pods`, "Source"));
-  const spec = { module: "m", name: "podReady", description: "", outputModule: "d:out", graphName: "podReady", inputs: [{ port: "master", graph: "master", ontology: "d:ops" }], params: [{ port: "minReady", kind: "long", value: "1" }] };
-  const rels = (edits: Edit[]) => edits.filter((e) => e.kind === "relationship").map((e) => (e as { id: string }).id.replace(/d:m\/projection:podReady/g, "P").replace(new RegExp(S.replace(/[/]/g, "\\/"), "g"), "S"));
-  it("writes the graph line, the inputs and the parameters, and binds each port in the space", () => {
-    const r = newProjection(base, spec);
+  const moduleText = JSON.stringify({ module: "m", space: { graphs: [] } });
+  const spec = { module: "m", name: "podReady", description: "", outputModule: "d:out", graphName: "podReady", inputs: [{ port: "master", graph: "master", ontology: "d:ops" }], params: [{ port: "minReady", kind: "long", default: "1" }] };
+  it("writes the program with its inputs and parameters, and binds each port in the module's space", () => {
+    const r = newProjection(base, spec, moduleText);
     if (!r.ok) throw new Error(r.reason);
-    expect(r.value.file).toEqual({ projection: "m.podReady", file: "m.podReady.kql", language: "kql" });
-    expect(r.value.text).toBe("graph podReady : out;\ninput master : ops;\ndeclare query_parameters(minReady:long);\n");
-    expect(rels(r.value.edits)).toEqual([
-      "S|contains|S/graph:podReady", "S/graph:podReady|producedBy|P",
-      "S|contains|S/binding:podReady.master", "S/binding:podReady.master|bindsPort|P/port:master", "S/binding:podReady.master|boundFrom|S/graph:master",
-      "S|contains|S/binding:podReady.minReady", "S/binding:podReady.minReady|bindsPort|P/port:minReady",
-    ]);
-    const b = r.value.edits.find((e) => e.kind === "entity" && e.id.endsWith("binding:podReady.minReady")) as Extract<Edit, { kind: "entity" }>;
-    expect(b.after!.props.value).toEqual({ kind: "integer", value: "1" });
+    expect(r.value.file).toEqual({ projection: "m.podReady", file: "m.podReady.gkql.json", language: "gkql" });
+    expect(readGkql(r.value.text)).toMatchObject({ graph: "podReady", ontology: "out", history: 0, inputs: [{ name: "master", ontology: "ops" }], parameters: [{ name: "minReady", kind: "Integer", default: 1 }], verbs: [], wires: [] });
+    expect(r.value.module.name).toBe("m");
+    expect(JSON.parse(r.value.module.text).space.graphs).toEqual([{ name: "podReady", projection: "podReady", inputs: { master: "master" } }]);
   });
   it.each([
-    ["settings", { description: "Pods \"ready\"", history: "4" }, 'graph podReady : out with (description = "Pods \\"ready\\"", history = 4);'],
-    ["a rows input of another module", { inputs: [], rows: [{ port: "pods", rowType: "d:src/rows:PodRow", source: `${S}/source:pods` }] }, "input pods : src.PodRow;"],
-    ["a rows input of its own module", { inputs: [], rows: [{ port: "caps", rowType: `${M}/rows:CapRow`, source: `${S}/source:pods` }] }, "input caps : CapRow;"],
-    ["defaults", { params: [{ port: "ns", kind: "string", value: "", default: "shop" }, { port: "min", kind: "long", value: "", default: "0" }] }, 'declare query_parameters(ns:string = "shop", min:long = 0);'],
-  ])("writes %s", (_, patch, line) => {
-    const r = newProjection(base, { ...spec, ...patch });
+    ["settings", { description: "Pods \"ready\"", history: "4" }, { description: "Pods \"ready\"", history: 4 }],
+    ["a rows input of another module", { inputs: [], rows: [{ port: "pods", rowType: "d:src/rows:PodRow", source: `${S}/source:pods` }] }, { inputs: [{ name: "pods", rows: "src.PodRow" }] }],
+    ["a rows input of its own module", { inputs: [], rows: [{ port: "caps", rowType: `${M}/rows:CapRow`, source: `${S}/source:pods` }] }, { inputs: [{ name: "caps", rows: "m.CapRow" }] }],
+    ["defaults", { params: [{ port: "ns", kind: "string", default: "shop" }, { port: "min", kind: "long", default: "0" }] }, { parameters: [{ name: "ns", kind: "Text", default: "shop" }, { name: "min", kind: "Integer", default: 0 }] }],
+  ])("writes %s", (_, patch, program) => {
+    const r = newProjection(base, { ...spec, ...patch }, moduleText);
     if (!r.ok) throw new Error(r.reason);
-    expect(r.value.text.split("\n")).toContain(line);
+    expect(readGkql(r.value.text)).toMatchObject(program);
   });
   it.each([
     ["a graph name that exists", { ...spec, graphName: "master" }],
     ["a bad name", { ...spec, name: "bad name" }],
     ["no output ontology", { ...spec, outputModule: "d:nope" }],
     ["a graph the space does not have", { ...spec, inputs: [{ port: "master", graph: "nope", ontology: "d:ops" }] }],
-    ["a port name used twice", { ...spec, params: [{ port: "master", kind: "long", value: "1" }] }],
-    ["a parameter that is not a number", { ...spec, params: [{ port: "t", kind: "long", value: "x" }] }],
-    ["a parameter type KQL does not declare", { ...spec, params: [{ port: "t", kind: "Integer", value: "1" }] }],
-    ["a parameter with neither value nor default", { ...spec, params: [{ port: "t", kind: "long", value: "" }] }],
+    ["a port name used twice", { ...spec, params: [{ port: "master", kind: "long", default: "1" }] }],
+    ["a parameter that is not a number", { ...spec, params: [{ port: "t", kind: "long", default: "x" }] }],
+    ["a parameter type the dialog does not offer", { ...spec, params: [{ port: "t", kind: "Integer", default: "1" }] }],
+    ["a parameter without a default", { ...spec, params: [{ port: "t", kind: "long" }] }],
     ["a history that is not a whole number", { ...spec, history: "four" }],
-  ])("refuses %s", (_, s) => expect(newProjection(base, s).ok).toBe(false));
+  ])("refuses %s", (_, s) => expect(newProjection(base, s, moduleText).ok).toBe(false));
 });

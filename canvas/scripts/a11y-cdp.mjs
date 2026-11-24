@@ -287,23 +287,18 @@ const onCanvas = await evaluate(`document.activeElement.classList.contains('grap
 results.keyboard.push({ name: "canvas focusable", ok: onCanvas });
 if (!onCanvas) fail.push("canvas host is not focusable");
 
-// the editor: the KQL text of the projection (note 11) with CodeMirror and the engine's answers, in each theme, the notations beside it,
-// the definitions tab, and Ctrl+S opening the commit dialog with focus inside
+// the editor: the projection's GKQL graph and its text, in each theme, the definitions tab, and Ctrl+S opening the commit dialog with focus inside
 await open(ENGINE, "editor", "light");
-for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector(".cm-editor")`)); i++) await sleep(250);
-if (!(await evaluate(`!!document.querySelector(".cm-editor")`))) fail.push("editor: the KQL text did not open");
+const GRAPH = "[aria-label='GKQL operations and wires']";
+for (let i = 0; i < 40 && !(await evaluate(`!!document.querySelector("${GRAPH}")`)); i++) await sleep(250);
+if (!(await evaluate(`!!document.querySelector("${GRAPH}")`))) fail.push("editor: the GKQL graph did not open");
 else {
   await sleep(1500);
-  for (const theme of ["light", "dark", "contrast"]) { await dispatch({ type: "ui/theme", theme }); await sleep(300); await runAxe(`editor KQL text (${theme})`); }
+  for (const theme of ["light", "dark", "contrast"]) { await dispatch({ type: "ui/theme", theme }); await sleep(300); await runAxe(`editor GKQL graph (${theme})`); }
   await dispatch({ type: "ui/theme", theme: "light" });
-  // the other notations beside the text: Outline (a tree) and Wires (cards and the reads of the statement at the cursor)
-  for (const notation of ["Outline", "Wires"]) {
-    if (!(await clickText("[aria-label='Notation beside the text'] [role=tab]", notation))) { fail.push(`editor: no ${notation} tab beside the KQL text`); continue; }
-    await sleep(800);
-    if (notation === "Wires") { await clickText("[aria-label^='Inputs, lets and steps'] button", "let"); await sleep(300); }
-    await runAxe(`editor KQL ${notation}`);
-  }
-  await clickText("[aria-label='Notation beside the text'] [role=tab]", "Steps");
+  if (!(await clickText("[aria-label='GKQL views'] [role=tab]", "GKQL"))) fail.push("editor: no GKQL text tab");
+  else { await sleep(500); await runAxe("editor GKQL text"); }
+  await clickText("[aria-label='GKQL views'] [role=tab]", "Graph");
 }
 if (!(await clickText("[role=tab]", "Definitions"))) fail.push("editor: no Definitions tab");
 await sleep(500);

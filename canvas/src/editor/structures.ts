@@ -1,5 +1,5 @@
 // Module-level declarations as catalog edits: row types with fields, constraints, equivalence policies, value roles, and a new projection's
-// KQL file and place in the graph space. Pure: graph and palette in, edits (or a reason) out. The slots, types, parameters, constraint kinds, modes
+// GKQL program and its binding in the module's graph space. Pure: graph and palette in, edits (or a reason) out. The slots, types, parameters, constraint kinds, modes
 // and value kinds all come from `GET /palette` (engine 3.2: declarations, rowTypes, equivalencePolicies, valueRoles), and so do the
 // relationships that connect the parts (engine 3.55: `references` of Constraint, EquivalencePolicy, Field and PropertyType); an engine
 // that does not describe them gets a message, not a guess.
@@ -163,47 +163,27 @@ export function addValueRoleEdits(g: Graph, property: string, raw: string, role:
 }
 export const setValueRoleEdits = (g: Graph, id: string, role: string): Edit[] => [setPropEdit(g, id, "role", text(role))];
 
-// ---- a new projection: its KQL file and its place in the graph space ----
-/** The parameter types of `declare query_parameters` and the value kind of each. */
+// ---- a new projection: its GKQL program and its binding in the module's graph space ----
+/** The parameter types the dialog offers and the value kind of each. */
 export const PARAM_KINDS: Record<string, string> = { string: "Text", long: "Integer", real: "Decimal", bool: "Boolean" };
 
 export interface ProjectionSpec {
   module: string; name: string; description: string; outputModule: string; graphName: string;
-  language?: "kql" | "gkql";
-  /** inputs the graph keeps per element (`history` of the graph line); left out when empty */
+  /** inputs the graph keeps per element; left out when empty */
   history?: string;
   /** rows inputs: the port, the row type it reads and the source of the space that feeds it */
   rows?: { port: string; rowType: string; source: string }[];
   /** graph inputs: the port name, the space graph that feeds it and the ontology module the port expects */
   inputs: { port: string; graph: string; ontology: string }[];
-  /** parameters: the name, its type (a key of PARAM_KINDS), the literal the space binds (may be empty when there is a default) and the default */
-  params: { port: string; kind: string; value: string; default?: string }[];
+  /** parameters: the name, its type (a key of PARAM_KINDS) and its default */
+  params: { port: string; kind: string; default?: string }[];
 }
 
 /**
- * The graph of the space that projection `name` of `module` produces, with one binding per port: `from` gives the space graph or source
- * that feeds a graph or rows port, `values` the literal bound to a parameter. No edits when the space has that graph already.
+ * A new projection: its GKQL program (inputs and parameters, no verbs yet) and the module text with the graph's binding added to its space.
+ * The program is stored first, then the module. Verbs come afterwards.
  */
-export function bindingEdits(g: Graph, module: string, name: string, graphName: string, from: Record<string, string>, values: Record<string, GraphValue>): Edit[] {
-  const space = [...g.entities()].find((e) => e.type === "GraphSpace")?.id;
-  if (!space) return [];
-  const graph = `${space}/graph:${graphName}`, proj = `d:${module}/projection:${name}`;
-  if (g.entity(graph)) return [];
-  const edits: Edit[] = [ent(graph, "Graph", { name: text(graphName) }), contains(space, graph, "graph"), rel(graph, "producedBy", proj)];
-  const bind = (port: string, props: Record<string, GraphValue>, extra: (b: string) => Edit[]) => {
-    const b = `${space}/binding:${graphName}.${port}`;
-    edits.push(ent(b, "Binding", props), contains(space, b, "binding"), rel(b, "bindsPort", `${proj}/port:${port}`), ...extra(b));
-  };
-  for (const [port, f] of Object.entries(from)) bind(port, {}, (b) => [rel(b, "boundFrom", f)]);
-  for (const [port, v] of Object.entries(values)) bind(port, { value: v }, () => []);
-  return edits;
-}
-
-/**
- * A new projection the KQL way: the text of its file (the graph line with its settings, one `input` line per input and the parameters'
- * declaration) and the edits that place its graph in the space. The text is stored first, then the edits applied. Operators come afterwards.
- */
-export function newProjection(g: Graph, spec: ProjectionSpec, moduleText?: string): Result<{ file: ProjectionFile; text: string; edits: Edit[]; module?: { name: string; text: string } }> {
+export function newProjection(g: Graph, spec: ProjectionSpec, moduleText?: string): Result<{ file: ProjectionFile; text: string; module: { name: string; text: string } }> {
   const space = [...g.entities()].find((e) => e.type === "GraphSpace")?.id;
   if (!space) return no("the catalog has no graph space");
   if (!nameOk(spec.name) || !nameOk(spec.graphName)) return no("names are letters, digits and _");
@@ -216,64 +196,46 @@ export function newProjection(g: Graph, spec: ProjectionSpec, moduleText?: strin
   const ports = [...spec.inputs.map((i) => i.port), ...rows.map((r) => r.port), ...spec.params.map((p) => p.port)];
   if (ports.some((p) => !nameOk(p)) || new Set(ports).size !== ports.length) return no("input and parameter names are distinct names of letters, digits and _");
   const mod = (id: string) => id.slice(2, id.indexOf("/") < 0 ? undefined : id.indexOf("/"));
-  const native = spec.language === "gkql";
   const parameters: GkqlProgram["parameters"] = [];
-  const lines: string[] = [], from: Record<string, string> = {}, values: Record<string, GraphValue> = {}, declared: string[] = [];
+  const from: Record<string, string> = {};
   for (const i of spec.inputs) {
     const f = `${space}/graph:${i.graph}`;
     if (!g.entity(f)) return no(`unknown graph ${i.graph}`);
     if (g.entity(i.ontology)?.type !== "Module") return no(`choose the ontology that ${i.port} expects`);
-    lines.push(`input ${i.port} : ${mod(i.ontology)};`);
     from[i.port] = f;
   }
   for (const r of rows) {
     if (g.entity(r.rowType)?.type !== "RowType") return no(`choose the row type of ${r.port}`);
     if (g.entity(r.source)?.type !== "Source") return no(`choose the source that feeds ${r.port}`);
-    const m = mod(r.rowType);
-    lines.push(`input ${r.port} : ${m === spec.module ? "" : `${m}.`}${last(r.rowType)};`);
     from[r.port] = r.source;
   }
   for (const p of spec.params) {
     const kind = PARAM_KINDS[p.kind];
     if (!kind) return no(`a parameter is ${Object.keys(PARAM_KINDS).join(", ")}`);
-    const check = (raw: string, what: string): Result<GraphValue> => typedValue({ name: what, kind, required: true }, raw);
-    const def = p.default?.trim() ? check(p.default, `${p.port} default`) : null;
-    if (def && !def.ok) return def;
-    const val = p.value.trim() ? check(p.value, p.port) : null;
-    if (val && !val.ok) return val;
-    if (!val && !def) return no(`${p.port} needs a value bound in the space or a default`);
-    if (native) {
-      if (!def || val) return no(`${p.port} needs a default in the GKQL program`);
-      const raw = p.default!.trim().replace(/^(-?)0+(?=\d)/, "$1");
-      const literal = kind === "Decimal" && !raw.includes(".") ? raw + ".0" : raw;
-      if ((kind === "Integer" || kind === "Decimal") && !canEditGkqlStructure(literal)) return no(`${p.port} needs exact numeric support in the browser`);
-      parameters.push({ name: p.port, kind, default: kind === "Text" ? p.default!.trim() : readGkqlJson(literal) });
-    }
-    declared.push(`${p.port}:${p.kind}${def ? ` = ${p.kind === "string" ? JSON.stringify(p.default!.trim()) : p.default!.trim()}` : ""}`);
-    if (val) values[p.port] = val.value;
+    if (!p.default?.trim()) return no(`${p.port} needs a default in the GKQL program`);
+    const def = typedValue({ name: `${p.port} default`, kind, required: true }, p.default);
+    if (!def.ok) return def;
+    const raw = p.default.trim().replace(/^(-?)0+(?=\d)/, "$1");
+    const literal = kind === "Decimal" && !raw.includes(".") ? raw + ".0" : raw;
+    if ((kind === "Integer" || kind === "Decimal") && !canEditGkqlStructure(literal)) return no(`${p.port} needs exact numeric support in the browser`);
+    parameters.push({ name: p.port, kind, default: kind === "Text" ? p.default.trim() : readGkqlJson(literal) });
   }
-  if (native) {
-    const retention = Number(history);
-    if (!Number.isSafeInteger(retention)) return no("history must be a safe whole number");
-    let document: { module?: string; space?: { graphs?: unknown[] } };
-    try { document = readGkqlJson(moduleText ?? "") as typeof document; } catch { return no("check the GKQL module before adding a projection"); }
-    if (document?.module !== spec.module || !Array.isArray(document.space?.graphs)) return no("the GKQL module must declare this graph space");
-    if (!canEditGkqlStructure(moduleText ?? "")) return no("edit the graph binding in Module GKQL to preserve exact numbers");
-    const binding = { name: spec.graphName, projection: spec.name, inputs: Object.fromEntries(Object.entries(from).map(([port, id]) => [port, last(id)])) };
-    const program: GkqlProgram = {
-      graph: spec.name, ontology: mod(spec.outputModule), history: retention,
-      ...(spec.description.trim() ? { description: spec.description.trim() } : {}),
-      inputs: [...spec.inputs.map((i) => ({ name: i.port, ontology: mod(i.ontology) })), ...rows.map((r) => ({ name: r.port, rows: `${mod(r.rowType)}.${last(r.rowType)}` }))],
-      parameters, verbs: [], wires: [],
-    };
-    return ok({
-      file: { projection: `${spec.module}.${spec.name}`, file: `${spec.module}.${spec.name}.gkql.json`, language: "gkql" },
-      text: printGkql(program), edits: [],
-      module: { name: spec.module, text: JSON.stringify({ ...document, space: { ...document.space, graphs: [...document.space.graphs, binding] } }, null, 2) + "\n" },
-    });
-  }
-  const settings = [...(spec.description.trim() ? [`description = ${JSON.stringify(spec.description.trim())}`] : []), ...(history ? [`history = ${history}`] : [])];
-  const text = [`graph ${spec.name} : ${mod(spec.outputModule)}${settings.length ? ` with (${settings.join(", ")})` : ""};`, ...lines,
-    ...(declared.length ? [`declare query_parameters(${declared.join(", ")});`] : [])].join("\n") + "\n";
-  return ok({ file: { projection: `${spec.module}.${spec.name}`, file: `${spec.module}.${spec.name}.kql`, language: "kql" }, text, edits: bindingEdits(g, spec.module, spec.name, spec.graphName, from, values) });
+  const retention = Number(history);
+  if (!Number.isSafeInteger(retention)) return no("history must be a safe whole number");
+  let document: { module?: string; space?: { graphs?: unknown[] } };
+  try { document = readGkqlJson(moduleText ?? "") as typeof document; } catch { return no("check the GKQL module before adding a projection"); }
+  if (document?.module !== spec.module || !Array.isArray(document.space?.graphs)) return no("the GKQL module must declare this graph space");
+  if (!canEditGkqlStructure(moduleText ?? "")) return no("edit the graph binding in Module GKQL to preserve exact numbers");
+  const binding = { name: spec.graphName, projection: spec.name, inputs: Object.fromEntries(Object.entries(from).map(([port, id]) => [port, last(id)])) };
+  const program: GkqlProgram = {
+    graph: spec.name, ontology: mod(spec.outputModule), history: retention,
+    ...(spec.description.trim() ? { description: spec.description.trim() } : {}),
+    inputs: [...spec.inputs.map((i) => ({ name: i.port, ontology: mod(i.ontology) })), ...rows.map((r) => ({ name: r.port, rows: `${mod(r.rowType)}.${last(r.rowType)}` }))],
+    parameters, verbs: [], wires: [],
+  };
+  return ok({
+    file: { projection: `${spec.module}.${spec.name}`, file: `${spec.module}.${spec.name}.gkql.json`, language: "gkql" },
+    text: printGkql(program),
+    module: { name: spec.module, text: JSON.stringify({ ...document, space: { ...document.space, graphs: [...document.space.graphs, binding] } }, null, 2) + "\n" },
+  });
 }

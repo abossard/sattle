@@ -1,4 +1,4 @@
-// The editor side of the engine protocol (v3): palette, projection files, drafts, releases, preview and the KQL editor calls. HTTP only.
+// The editor side of the engine protocol (v3): palette, projection files, drafts, releases and preview. HTTP only.
 // Responses are parsed here, so the rest of the editor sees typed values; engine errors become EngineError with the code and element.
 import type { Patch, Snapshot } from "../core/model";
 import { patchToWire } from "../core/wire";
@@ -6,7 +6,6 @@ import { parseDiagnostics } from "../source/engine-protocol";
 import { parsePatch, parseRecords, parseSnapshot } from "../source/snapshot-file";
 import type { EngineDiagnostic } from "../source/types";
 import { parsePalette, type Palette } from "./palette";
-import type { Analysis, Completion, Depth, Hover, KqlText, Related } from "./kql";
 
 export class EngineError extends Error {
   constructor(readonly code: string, message: string, readonly status: number, readonly element?: string, readonly diagnostics: EngineDiagnostic[] = []) { super(`${code}: ${message}`); }
@@ -99,15 +98,8 @@ export class EditorService {
   /** A definition file's text as the space holds it, whatever its language. */
   async definitionText(file: string): Promise<string> { return String(await this.call("GET", `/definitions/${encodeURIComponent(file)}`, undefined, true)); }
 
-  // ---- a projection's KQL text (PROTOCOL 3.41, 3.42): `projection` is `module.name`, e.g. acme.svc.serviceDeps ----
-  /** The text as the space holds it, or as a draft holds it when given; never printed from the catalog. */
-  async kqlText(projection: string, draft?: string): Promise<KqlText> { return (await this.call("GET", draft ? `/drafts/${draft}/kql/${projection}` : `/kql/${projection}`)) as KqlText; }
-  async kqlAnalyse(projection: string, text: string, depth: Depth): Promise<Analysis> { return (await this.call("POST", "/kql/analyse", { projection, text, depth })) as Analysis; }
-  async kqlComplete(projection: string, text: string, offset: number): Promise<Completion> { return (await this.call("POST", "/kql/complete", { projection, text, offset })) as Completion; }
-  async kqlHover(projection: string, text: string, offset: number): Promise<Hover> { return (await this.call("POST", "/kql/hover", { projection, text, offset })) as Hover; }
   /** Store a projection file's text in the draft (`file` as `GET /definitions` names it); check, preview and commit include it from then on. */
   async setDraftText(id: string, file: string, text: string | null, expectedRevision: string): Promise<Applied> { return this.applied(await this.call("PUT", `/drafts/${id}/text/${encodeURIComponent(file)}`, { text, expectedRevision })); }
-  async kqlRelated(projection: string, text: string, offset: number): Promise<Related> { return (await this.call("POST", "/kql/related", { projection, text, offset })) as Related; }
 
   async createDraft(base?: string): Promise<Draft> { const d = (await this.call("POST", "/drafts", base ? { base } : {})) as Draft; return { draft: String(d.draft), baseRevision: String(d.baseRevision), revision: String(d.revision) }; }
   async discard(id: string): Promise<void> { await this.call("DELETE", `/drafts/${id}`); }

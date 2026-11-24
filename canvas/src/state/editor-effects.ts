@@ -134,7 +134,7 @@ async function perform(cmd: Command, s: EditorSession, dispatch: Dispatch): Prom
     case "restore": return s.restore(cmd.digest);
     case "newProjection": {
       const { spec } = cmd;
-      const o = await s.change((g) => { const p = need(newProjection(g, spec, s.texts[spec.module])); return { edits: p.edits, label: `bind ${spec.name}`, file: { ...p.file, text: p.text }, module: p.module }; });
+      const o = await s.change((g) => { const p = need(newProjection(g, spec, s.texts[spec.module])); return { edits: [], label: `bind ${spec.name}`, file: { ...p.file, text: p.text }, module: p.module }; });
       const projection = `d:${spec.module}/projection:${spec.name}`;
       if (o?.ok && runtime.session === s && s.graph.entity(projection)) dispatch({ type: "editor/projection", module: spec.module, projection });
       return o;

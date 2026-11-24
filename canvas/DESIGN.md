@@ -45,11 +45,6 @@ rounded:
   lg: "3px"
   xl: "4px"
 components:
-  wires-card:
-    backgroundColor: "{colors.paper}"
-    textColor: "{colors.ink}"
-    rounded: "0px"
-    width: "210px"
   badge:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink-2}"
@@ -62,7 +57,7 @@ components:
 
 **Creative North Star: "The Drawing Sheet"**
 
-The canvas reads like an engineering drawing: paper, ink, a ruled frame and one drafting blue. A projection is a sheet: its KQL text, numbered by line, with its steps, outline and wires beside it, and the engine's verdict on the draft below. Operators, reviewers and authors all read the same sheet, so the surface is quiet, dense and exact, built for long sessions in light and dark.
+The canvas reads like an engineering drawing: paper, ink, a ruled frame and one drafting blue. A projection is a sheet: its GKQL program drawn as verbs and wires or read as text, and the engine's verdict on the draft below. Operators, reviewers and authors all read the same sheet, so the surface is quiet, dense and exact, built for long sessions in light and dark.
 
 Everything is built on Fluent UI v9 components and tokens. The look lives in one theme file that overrides Fluent's palette, corners, shadows and fonts, so the shell inherits the sheet without per-component styling. High contrast is Fluent's own Teams high contrast theme, untouched.
 
@@ -72,8 +67,8 @@ Color carries meaning only where something is selected, focused or wrong. Ink do
 - Paper and ink neutrals, near square corners (1 to 4px), hairline rules.
 - One hue: drafting blue, for selection, focus, caret and live wires.
 - Amber and red stay with diagnostics and errors.
-- Tabular figures everywhere; monospace for ids, KQL and statement names.
-- Technical drawing furniture: a framed sheet, line numbers, square cards and hairline wires.
+- Tabular figures everywhere; monospace for ids, GKQL and verb names.
+- Technical drawing furniture: a framed sheet, square cards and hairline wires.
 
 ## Colors
 
@@ -115,22 +110,18 @@ A cool-neutral paper and ink scale with a single blue accent. Light and dark are
 **Body Font:** Segoe UI Variable Text (with Segoe UI, system-ui, -apple-system, sans-serif)
 **Mono Font:** Cascadia Mono (with SF Mono, ui-monospace, Menlo, Consolas)
 
-**Character:** A plain system face for words, a monospace for everything that is a reference: ids, KQL text, statement names, change steps. Figures are tabular across the whole provider.
+**Character:** A plain system face for words, a monospace for everything that is a reference: ids, GKQL text, verb names, change steps. Figures are tabular across the whole provider.
 
 ### Hierarchy
 - **Brand** (600, 14px): the product name in the header.
-- **Card title** (600, 13px): statement names in the Steps notation.
 - **Body** (400, 14px, 20px line): panels, forms, tables.
-- **Card line** (mono, 11px): the KQL of a step.
 
 ### Named Rules
-**The Reference Is Mono Rule.** Anything that names a place or an id (a line, a statement, a projection id, a change step) is set in the monospace.
+**The Reference Is Mono Rule.** Anything that names a place or an id (a line, a verb, a projection id, a change step) is set in the monospace.
 
 ## Layout
 
-The editor is one column: the projection bar and the toolbar, the KQL text with its notation beside it (Steps, Outline or Wires), and the draft details below (at least 140px, 28% of the height). The shell is a four row grid at 100dvh: header, view tabs, content, status bar.
-
-The Wires notation places the inputs, the `let`s and the steps as cards of 210 by 40px in columns 56px apart, wired by what each statement reads; steps of one type share a dashed frame.
+The editor is one column: the projection bar and the toolbar, the projection's GKQL graph or its text (tabs Graph and GKQL), and the draft details below (at least 140px, 28% of the height). The shell is a four row grid at 100dvh: header, view tabs, content, status bar.
 
 Toolbars and tab lists that overflow scroll horizontally and fade their last 32px, so a cut label reads as scrollable. The header wraps; the view tabs scroll under the same fade below 700px.
 
@@ -144,18 +135,13 @@ Flat by default. Depth is drawn with rule weights, not shadow: card outline 1.5p
 - **shadow2** (`0 1px 2px rgba(0,0,0,.10)`), **shadow4** (`0 1px 3px rgba(0,0,0,.12)`), **shadow8** (`0 2px 6px rgba(0,0,0,.14)`), **shadow16** (`0 4px 12px rgba(0,0,0,.16)`): Fluent's soft shadow slots, flattened and tightened. They serve menus, popovers and dialogs only.
 
 ### Named Rules
-**The Rule Weight Rule.** On the sheet, importance is stroke width and dash pattern. Selected is thicker and blue; an input card and the frame of steps of one type are dashed.
+**The Rule Weight Rule.** On the sheet, importance is stroke width and dash pattern. Selected is thicker and blue.
 
 ## Shapes
 
 Near square. Corners are 1px (small), 2px (medium), 3px (large), 4px (extra large). Cards are fully square. Badges have medium (2px) corners and an outline.
 
-Dash vocabulary on the sheet: 4 3 for the frame around steps of one type; an input card has a dashed outline.
-
 ## Components
-
-### Wires card
-Square, paper fill, 1.5px ink outline, 210 by 40px, the statement's title in semibold (Fluent size 200) over what it reads in the smallest size, ink 3. An input card has a dashed outline; the selected card takes the brand tint and the drafting blue stroke. Wires are 1px ink curves from what a statement reads to the statement, 2px drafting blue for the selected card. A card selects its statement in the text.
 
 ### Badges
 Outline, 2px corners (the pill shape is overridden once in `canvas.css`), informative (neutral) color. A badge names a role, a count or a reference: `projection`, `8 supporting`, `ontology acme.ops@1.0.0`. Only a state or a diagnostic takes a status color (Healthy, Unhealthy, origin, a meter over its threshold). Fluent's default badge color is brand, so every badge states its color. It never stretches: badges are capped to their content width.
@@ -178,7 +164,7 @@ Paper strip with a 1px top rule, small text, wrapping. It says what the user loo
 - **Do** draw the sheet in ink, with stroke weight and dash pattern carrying meaning.
 - **Do** use drafting blue only for selection, focus, caret and live wires.
 - **Do** keep corners at 4px or less; keep cards square.
-- **Do** set KQL, statement names and ids in the monospace.
+- **Do** set GKQL, verb names and ids in the monospace.
 - **Do** keep high contrast as Fluent's own theme; test every new surface in light, dark and contrast.
 - **Do** let long toolbars scroll with the 32px fade instead of clipping silently.
 

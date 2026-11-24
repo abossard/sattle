@@ -8,7 +8,7 @@ import { dispatch, useStore } from "../../state/store";
 const useStyles = makeStyles({ row: { display: "flex", columnGap: tokens.spacingHorizontalS, alignItems: "end", flexWrap: "wrap" }, col: { display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS },
   group: { display: "flex", flexDirection: "column", alignItems: "start", rowGap: tokens.spacingVerticalS, border: "none", margin: 0, padding: 0 } });
 
-export function NewProjectionDialog({ open, onClose, native = false }: { open: boolean; onClose: () => void; native?: boolean }) {
+export function NewProjectionDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const s = useStyles();
   const ed = useStore((x) => x.editor);
   const session = runtime.session;
@@ -34,8 +34,7 @@ export function NewProjectionDialog({ open, onClose, native = false }: { open: b
   const upd = <T,>(list: T[], i: number, patch: Partial<T>, set: (l: T[]) => void) => set(list.map((x, n) => (n === i ? { ...x, ...patch } : x)));
   const create = (e: FormEvent) => {
     e.preventDefault();
-    const parameters = native ? params.map((p) => ({ ...p, value: "" })) : params;
-    const spec: ProjectionSpec = { module: ed.module, name, description, outputModule: output, graphName, inputs, params: parameters, rows, history, language: native ? "gkql" : "kql" };
+    const spec: ProjectionSpec = { module: ed.module, name, description, outputModule: output, graphName, inputs, params, rows, history };
     const r = newProjection(g, spec, session.texts[ed.module]);
     if (!r.ok) { setReason(r.reason); return; }
     dispatch({ type: "editor/do", cmd: { t: "newProjection", spec } });
@@ -75,17 +74,16 @@ export function NewProjectionDialog({ open, onClose, native = false }: { open: b
           ))}
           <Button type="button" onClick={() => setRows([...rows, { port: "", rowType: "", source: "" }])}>Add rows input</Button>
           </fieldset>
-          <fieldset className={s.group}><legend><Text weight="semibold">{native ? "Parameters" : "Parameters (a default, a value bound in the space, or both; usable by name in expressions)"}</Text></legend>
+          <fieldset className={s.group}><legend><Text weight="semibold">Parameters</Text></legend>
           {params.map((p, n) => (
             <div key={n} className={s.row}>
               <Field label="Parameter"><Input value={p.port} onChange={(_, d) => upd(params, n, { port: d.value }, setParams)} /></Field>
-              <Field label="Type"><Select value={p.kind} onChange={(_, d) => upd(params, n, { kind: d.value }, setParams)}>{kinds.map((k) => <option key={k} value={k}>{native ? PARAM_KINDS[k] : k}</option>)}</Select></Field>
+              <Field label="Type"><Select value={p.kind} onChange={(_, d) => upd(params, n, { kind: d.value }, setParams)}>{kinds.map((k) => <option key={k} value={k}>{PARAM_KINDS[k]}</option>)}</Select></Field>
               <Field label="Default"><Input value={p.default ?? ""} onChange={(_, d) => upd(params, n, { default: d.value }, setParams)} /></Field>
-              {!native && <Field label="Value bound in the space"><Input value={p.value} onChange={(_, d) => upd(params, n, { value: d.value }, setParams)} /></Field>}
               <Button type="button" onClick={() => setParams(params.filter((_, k) => k !== n))}>Remove</Button>
             </div>
           ))}
-          <Button type="button" onClick={() => setParams([...params, { port: "", kind: "long", value: "" }])}>Add parameter</Button>
+          <Button type="button" onClick={() => setParams([...params, { port: "", kind: "long" }])}>Add parameter</Button>
           </fieldset>
           <div aria-live="polite">{reason && <MessageBar intent="error"><MessageBarBody>{reason}</MessageBarBody></MessageBar>}</div>
         </DialogContent>

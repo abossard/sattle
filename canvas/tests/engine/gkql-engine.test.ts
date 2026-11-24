@@ -41,10 +41,10 @@ it("checks, previews, commits and reloads an edited GKQL projection after restar
     const starter = await EditorSession.open(service);
     const name = "newInventory";
     const created = newProjection(starter.graph, {
-      language: "gkql", module: "tutorial", name, graphName: name, description: "", outputModule: "d:tutorial", params: [],
+      module: "tutorial", name, graphName: name, description: "", outputModule: "d:tutorial", params: [],
       inputs: [{ port: "master", graph: "master", ontology: "d:tutorial" }],
     }, starter.texts.tutorial);
-    if (!created.ok || !created.value.module) throw new Error(created.ok ? "missing module binding" : created.reason);
+    if (!created.ok) throw new Error(created.reason);
     const native = { file: { ...created.value.file, text: created.value.text }, module: created.value.module, edits: [], label: "Create inventory" };
     const reverted = await starter.change(() => ({
       ...native, module: { ...native.module, text: native.module.text.replace('"master": "master"', '"master": "unknownGraph"') },

@@ -25,9 +25,7 @@ export interface EditorProps {
   store?: (text: string) => Promise<string | null>;
 }
 
-// the KQL editor brings CodeMirror: it loads when a KQL projection is first opened
 const EDITORS: Readonly<Record<string, ComponentType<EditorProps>>> = {
-  kql: lazy(() => import("./KqlText")),
   gkql: lazy(() => import("./GkqlEditor")),
 };
 

@@ -120,14 +120,14 @@ describe("text applied or stored over a draft keeps the draft's other edits and 
   it.each([
     ["at the draft's revision, the text is kept and the session follows the new revision", 0, true],
     ["at a revision the draft has left, it is refused and the session reads the draft again", 5, false],
-  ])("storing a projection's KQL text %s", async (_what, moved, ok) => {
+  ])("storing a projection's text %s", async (_what, moved, ok) => {
     const eng = fakeEngine();
     const s = await EditorSession.open(eng.svc);
     await s.apply(add(1), "add 1");
     eng.rev += moved; // another writer moved the draft on
-    const o = await s.storeText("m.p.kql", "graph p : m;");
+    const o = await s.storeText("m.p.gkql.json", "{\"graph\": \"p\"}");
     expect(o.ok).toBe(ok);
-    expect(eng.files.get("m.p.kql")).toBe(ok ? "graph p : m;" : undefined);
+    expect(eng.files.get("m.p.gkql.json")).toBe(ok ? "{\"graph\": \"p\"}" : undefined);
     expect(s.revision).toBe(String(eng.rev));
     expect(s.undoStack.map((x) => x.label)).toEqual(["add 1"]);
   });

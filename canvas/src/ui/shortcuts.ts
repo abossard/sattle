@@ -10,6 +10,5 @@ export const SHORTCUTS: Shortcut[] = [
   { keys: "Space", does: "Select the row", where: "Tree" },
   { keys: "F", does: "Fit the graph", where: "Canvas" },
   { keys: "+ and -", does: "Zoom", where: "Canvas" },
-  { keys: "Ctrl+Z, Ctrl+Shift+Z", does: "Undo and redo in the KQL text (typing and the notations' edits share one history)", where: "Projection editor" },
   { keys: "Ctrl+S", does: "Name and commit the draft", where: "Projection editor" },
 ];

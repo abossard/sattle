@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeAll, describe, expect, it } from "vitest";
 import { History } from "../../src/app/history";
 import type { Patch } from "../../src/core/model";
+import { readGkql } from "../../src/editor/gkql";
 import { EditorSession } from "../../src/editor/session";
 import { ent, text, contains } from "../../src/editor/patches";
 import { runtime } from "../../src/state/runtime";
@@ -65,7 +66,7 @@ describe("the Text tab sends what is typed to the engine", () => {
   }, 30000);
 });
 
-describe("the new projection dialog writes the projection's KQL file and binds its graph in the space, or says why it cannot", () => {
+describe("the new projection dialog writes the projection's GKQL program and binds its graph in the module's space, or says why it cannot", () => {
   it("the graph it produces is named like the projection, not by its first letter", async () => {
     const user = userEvent.setup();
     await openEditor();
@@ -75,16 +76,20 @@ describe("the new projection dialog writes the projection's KQL file and binds i
     expect((within(dialog).getByLabelText(/^Graph it produces in the space/) as HTMLInputElement).value).toBe("serviceView");
   }, 30000);
 
-  it("stores the projection's file in the draft, then binds its graph in the space", async () => {
+  it("stores the projection's program in the draft, then binds its graph in the module's space", async () => {
     const user = userEvent.setup();
     const eng = await openEditor();
-    // this engine keeps a text as sent; the projection and the ports a real engine lowers from it are added here at the text's revision, so the bindings find them
+    // this engine keeps a text as sent and answers a module's text as stored; the projection a real engine lowers from the program is added here
     const keep = eng.svc.setDraftText.bind(eng.svc), pr = "d:m/projection:serviceView";
     eng.svc.setDraftText = async (...a) => {
       const done = await keep(...a);
-      eng.g.apply({ from: eng.g.version, to: { ...eng.g.version!, revision: String(eng.rev) }, edits: [ent(pr, "Projection"), ...["master", "minReady"].map((p) => ent(`${pr}/port:${p}`, "Port"))] } as Patch);
+      if (a[1] === "m") return { ...done, modules: { m: { text: a[2] } } };
+      eng.g.apply({ from: eng.g.version, to: { ...eng.g.version!, revision: String(eng.rev) }, edits: [ent(pr, "Projection")] } as Patch);
       return done;
     };
+    const check = eng.svc.check.bind(eng.svc);
+    eng.svc.check = async (...a) => ({ ...(await check(...a)), modules: { m: { text: eng.files.get("m") ?? null } } });
+    await runtime.session!.storeText("m", JSON.stringify({ module: "m", space: { graphs: [] } }));
     await user.click(await screen.findByRole("button", { name: /New projection/ }));
     const dialog = await findDialog();
     await user.type(within(dialog).getByLabelText(/^Name/), "serviceView");
@@ -95,10 +100,8 @@ describe("the new projection dialog writes the projection's KQL file and binds i
     await user.type(within(dialog).getByLabelText("Parameter"), "minReady");
     await user.type(within(dialog).getByLabelText("Default"), "0");
     await user.click(within(dialog).getByRole("button", { name: "Create projection" }));
-    await waitFor(() => expect(eng.g.entity(`${SPACE}/binding:serviceView.master`)).toBeDefined());
-    expect(eng.files.get("m.serviceView.kql")).toBe("graph serviceView : m with (history = 4);\ninput master : m;\ndeclare query_parameters(minReady:long = 0);\n");
-    expect(eng.g.entity(`${SPACE}/graph:serviceView`)?.type).toBe("Graph");
-    expect(eng.g.entity(`${SPACE}/binding:serviceView.minReady`), "a parameter with only a default is not bound").toBeUndefined();
+    await waitFor(() => expect(JSON.parse(eng.files.get("m")!).space.graphs).toEqual([{ name: "serviceView", projection: "serviceView", inputs: { master: "master" } }]));
+    expect(readGkql(eng.files.get("m.serviceView.gkql.json")!)).toMatchObject({ graph: "serviceView", ontology: "m", history: 4, inputs: [{ name: "master", ontology: "m" }], parameters: [{ name: "minReady", kind: "Integer", default: 0 }] });
     expect(useStore.getState().editor.projection).toBe("d:m/projection:serviceView");
   }, 30000);
 

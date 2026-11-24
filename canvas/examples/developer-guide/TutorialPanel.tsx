@@ -315,7 +315,7 @@ function BuildSteps({ lesson, build, available }: { lesson: Lesson; build: NonNu
     }
     dispatch({ type: "editor/do", cmd: { t: "newProjection", spec: {
       module: "tutorial", name: build.name, description: "", outputModule: `d:${program.ontology}`, graphName: build.name,
-      language: "gkql", params: [], inputs: inputs.map((input) => ({ ...input, ontology: `d:${program.inputs.find(({ name }) => name === input.port)?.ontology ?? "tutorial"}` })),
+      params: [], inputs: inputs.map((input) => ({ ...input, ontology: `d:${program.inputs.find(({ name }) => name === input.port)?.ontology ?? "tutorial"}` })),
     } } });
   };
   return <section className={s.exercise} aria-label="Build the draft projection">

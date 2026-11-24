@@ -461,7 +461,7 @@ export function EditorView() {
         </div>
       </section>
       <CommitDialog open={dialog === "commit"} onClose={() => setDialog(null)} native={native} />
-      <NewProjectionDialog open={dialog === "new"} onClose={() => setDialog(null)} native={native} />
+      <NewProjectionDialog open={dialog === "new"} onClose={() => setDialog(null)} />
     </div>
   );
 }
