@@ -65,6 +65,8 @@ This is a strict total order on `Val`. Let `Val_n` be the values nested at most 
 
 *Proof.* (1) By Def. 2.1, `id(u) = id(u')` iff `u` and `u'` have equal items. (2) `ι` is a function. (3) is (1). ∎
 
+Later chapters use of `ι` only that it is injective and the same for all computations.
+
 ## 2.3 Ids that name one thing
 
 Two sources can give one thing two ids, as in the example. A *link* says so: it is a set `{a, b}` of two ids. Links are data. A source or a computation provides them, and a link may be withdrawn.

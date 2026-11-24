@@ -22,7 +22,7 @@ flowchart LR
 
 This chapter uses values and their equality, ids, the id function `ι` and links from Ch. 2.
 
-**Running example.** The graph `Registry` has a node per package, of type `Package`, with the properties `name` and `latest`, the latest version. It has an edge of type `DependsOn` from a package to each package it needs: `app` needs `http`, and `http` needs `json`. The graph `Report` is computed from `Registry` and from the downloads of packages.
+**Running example.** The graph `Registry` has a node per package, of type `Package`, with the properties `name`, `latest`, the latest version, and optionally `maintainer`, the id of the organisation that maintains it. It has an edge of type `DependsOn` from a package to each package it needs: `app` needs `http`, and `http` needs `json`. The graph `Report` is computed from `Registry` and from the downloads of packages.
 
 ## 3.1 Graphs
 
@@ -53,7 +53,7 @@ The source or the target of an edge need not be a node of the graph. Such an edg
 
 `G` *conforms* to `Σ` if each of its facts passes `Σ`. `𝒢(Σ)` is the set of graphs that conform to `Σ`.
 
-Item 4 does not check a dangling end. In the example, `prop_Package` maps `name` and `latest` to `text`, both required, and `src_DependsOn = tgt_DependsOn = {Package}`.
+Item 4 does not check a dangling end. In the example, `prop_Package` maps `name` and `latest` to `text`, both required, and `maintainer` to `id`, not required, and `src_DependsOn = tgt_DependsOn = {Package}`.
 
 **Theorem 3.1 (conformance is decided fact by fact).** Let `Σ` be a type graph.
 

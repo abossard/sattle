@@ -161,6 +161,9 @@ The store evaluation of Ch. 11 section 11.4 summarizes verdicts. The documentati
 | fagin2005 | R. Fagin, P. Kolaitis, R. Miller, L. Popa. *Data exchange: semantics and query answering*. Theoretical Computer Science, 2005. DOI 10.1016/j.tcs.2004.10.033. | <https://doi.org/10.1016/j.tcs.2004.10.033> | Crossref |
 | green2007 | T. Green, G. Karvounarakis, V. Tannen. *Provenance semirings*. PODS 2007. DOI 10.1145/1265530.1265535. | <https://doi.org/10.1145/1265530.1265535> | Crossref |
 | gupta1993 | A. Gupta, I. Mumick, V. Subrahmanian. *Maintaining views incrementally*. SIGMOD 1993. DOI 10.1145/170035.170066. | <https://doi.org/10.1145/170035.170066> | Crossref |
+| ross1992 | K. Ross, Y. Sagiv. *Monotonic aggregation in deductive databases*. PODS 1992. | | not checked (core Ch. 8) |
+| bergmann2010 | G. Bergmann, Á. Horváth, I. Ráth, D. Varró, A. Balogh, Z. Balogh, A. Ökrös. *Incremental evaluation of model queries over EMF models*. MODELS 2010. | | not checked (core Ch. 8) |
+| xslt3 | M. Kay (ed.). *XSL Transformations (XSLT) Version 3.0*. W3C Recommendation, 8 June 2017. | <https://www.w3.org/TR/xslt-30/> | not checked (core Ch. 8) |
 | murray2013 | D. Murray et al. *Naiad: a timely dataflow system*. SOSP 2013. DOI 10.1145/2517349.2522738. | <https://doi.org/10.1145/2517349.2522738> | Crossref |
 | chandy1985 | K. M. Chandy, L. Lamport. *Distributed snapshots*. ACM TOCS, 1985. DOI 10.1145/214451.214456. | <https://doi.org/10.1145/214451.214456> | Crossref |
 | akidau2015 | T. Akidau et al. *The Dataflow Model*. PVLDB, 2015. | | R01 (dataflow) |
