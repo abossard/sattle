@@ -290,6 +290,40 @@ public class DifferentialTests
         }
     }
 
+    /// <summary>#159 G4: a sum and a mean are exact over the rows of one group, each `+v` or `-v` (an integer `n` for `v`, a decimal `d` for `w`); a sum the output type
+    /// cannot hold is no value. Under every cut, equal to the reference: a row that goes after a sum left the range, digits beyond 28 that a decimal sum used to round away.</summary>
+    [Theory]
+    [InlineData("group sum", "+9223372036854775807 +1", "v", null)]
+    [InlineData("group sum", "+9223372036854775807 +1 -1", "v", "9223372036854775807")]
+    [InlineData("group sum", "+9223372036854775807 +9223372036854775807 -9223372036854775807", "v", "9223372036854775807")]
+    [InlineData("group sum", "+-9223372036854775808 +-1 -+-1", "v", "-9223372036854775808")]
+    [InlineData("group sum", "+100000000000000000000 +0.0000000001", "w", null)]
+    [InlineData("group sum", "+100000000000000000000 +0.0000000001 -100000000000000000000", "w", "0.0000000001")]
+    [InlineData("group sum", "+79228162514264337593543950335 +1", "w", null)]
+    [InlineData("group sum", "+79228162514264337593543950335 +1 -1", "w", "79228162514264337593543950335")]
+    [InlineData("group sum", "+1.50 +2.50", "w", "4")]
+    [InlineData("group mean", "+100000000000000000000 +0.0000000001 -100000000000000000000", "w", "0.0000000001")]
+    [InlineData("group mean", "+79228162514264337593543950335 +79228162514264337593543950335", "w", null)]
+    [InlineData("group mean", "+9223372036854775807 +9223372036854775807", "v", "9223372036854775807")]
+    public void A_sum_is_exact_or_no_value(string world, string changes, string property, string? expected)
+    {
+        var w = Worlds.All.Single(x => x.Name == world);
+        var dec = property == "w";
+        static (long Weight, string Value) Change(string c) => c.StartsWith("-+", StringComparison.Ordinal) ? (-1, c[2..]) : (c[0] == '+' ? 1 : -1, c[1..]);
+        Sattle.Reference.Input[] log = [.. changes.Split(' ').Select(Change).Select(c => (Sattle.Reference.Input)(dec
+            ? PlainRow("a", c.Weight, "k0", "g0", 0, 0, decimal.Parse(c.Value, System.Globalization.CultureInfo.InvariantCulture))
+            : PlainRow("a", c.Weight, "k0", "g0", long.Parse(c.Value, System.Globalization.CultureInfo.InvariantCulture), 0)))];
+        static Value? Of(Sattle.Reference.SpaceFacts f, string name) => f.Graphs["master"].Entities.Values.SelectMany(e => e.Props).Where(kv => kv.Key.EndsWith("prop:" + name, StringComparison.Ordinal)).Select(kv => kv.Value).SingleOrDefault();
+        static string? Text(Value? v) => v switch { DecimalValue d => d.Q.ToString(System.Globalization.CultureInfo.InvariantCulture), IntegerValue i => i.N.ToString(System.Globalization.CultureInfo.InvariantCulture), _ => null };
+        var reference = Of(Sattle.Reference.ReferenceEvaluator.Evaluate(w.Catalog, w.Catalog.Spaces.Keys.Single(), log), property);
+        Assert.Equal(expected, Text(reference));
+        foreach (var chunking in new[] { Chunking.OneByOne, Chunking.Largest, Chunking.Reversed })
+        {
+            var engine = Text(Of(EngineRun.Final(w.Catalog, log, chunking), property));
+            Assert.True(engine == expected, $"{chunking.Name}: engine {engine}, expected {expected}");
+        }
+    }
+
     /// <summary>A node row of `ranked` (item `k`, rank `n`, none for null) or an edge row `from>to` with its impact after a colon, signed.</summary>
     static Sattle.Reference.RowInput FixpointRow(string change)
     {

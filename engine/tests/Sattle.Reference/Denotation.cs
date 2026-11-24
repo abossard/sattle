@@ -242,7 +242,7 @@ public static class Denotation
         if (a.Fn == "mean")
         {
             var n = valued.Sum(r => r.Weight);
-            yield return (a.Target + "#sum", n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value))));
+            yield return (a.Target + "#sum", n == 0 ? Value.Null : ExactSum(valued.Select(r => (r.Value, r.Weight))) is { } sum ? Value.Decimal(sum) : Value.Null);
             yield return (a.Target + "#count", n == 0 ? Value.Null : Value.Integer(n));
         }
         else if (PairNames(a).Length > 0)
@@ -287,6 +287,21 @@ public static class Denotation
         return entries.Aggregate((x, y) => Compare(y, x) > 0 ? y : x).Read;
     }
 
+    /// <summary>#159 G4: the sum of the rows' numbers, exact, as a decimal when one decimal is that number exactly, else null.</summary>
+    static decimal? ExactSum(IEnumerable<(Value Value, long Weight)> rows)
+    {
+        static BigInteger Scaled(decimal d)
+        {
+            var bits = decimal.GetBits(d);
+            var m = (new BigInteger((uint)bits[2]) << 64) + (new BigInteger((uint)bits[1]) << 32) + (uint)bits[0];
+            return (d < 0 ? -m : m) * BigInteger.Pow(10, 28 - (bits[3] >> 16 & 0xFF));
+        }
+        var sum = rows.Aggregate(BigInteger.Zero, (s, r) => s + r.Weight * Scaled(Canon.Number(r.Value)));
+        var digits = BigInteger.Abs(sum).ToString(System.Globalization.CultureInfo.InvariantCulture).PadLeft(29, '0');
+        var text = ((sum < 0 ? "-" : "") + digits[..^28] + "." + digits[^28..]).TrimEnd('0').TrimEnd('.');
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var d) && Scaled(d) == sum ? d : null;
+    }
+
     public static Value Aggregate(TAgg a, ImmutableArray<(Func<string, Value> Read, long Weight)> rows, IReadOnlyList<TAgg>? aggs = null)
     {
         var valued = a.Value is null ? [] : rows.Select(r => (Value: Expressions.Eval(a.Value, r.Read), r.Read, r.Weight)).Where(r => r.Value is not NullValue).ToImmutableArray();
@@ -297,9 +312,12 @@ public static class Denotation
             case "count": return Value.Integer(rows.Sum(r => r.Weight));
             case "countDistinct": return Value.Integer(Present().Count());
             case "sum":
-                return decimalOut
-                    ? Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value)))
-                    : Value.Integer(valued.Aggregate(BigInteger.Zero, (s, r) => s + r.Weight * Canon.Integer(r.Value)));
+                {
+                    // #159 G4: the exact sum, no value when the output type does not hold it
+                    if (decimalOut) return ExactSum(valued.Select(r => (r.Value, r.Weight))) is { } d ? Value.Decimal(d) : Value.Null;
+                    var n = valued.Aggregate(BigInteger.Zero, (s, r) => s + r.Weight * Canon.Integer(r.Value));
+                    return n < long.MinValue || n > long.MaxValue ? Value.Null : Value.Integer(n);
+                }
             case "percentile":
                 {
                     // nearest rank: per distinct number its net weight, counted when positive; the r-th smallest, r = max(1, ceil(p n / 100))
@@ -315,7 +333,7 @@ public static class Denotation
             case "mean":
                 {
                     var n = valued.Sum(r => r.Weight);
-                    return n == 0 ? Value.Null : Value.Decimal(valued.Sum(r => r.Weight * Canon.Number(r.Value)) / n);
+                    return n == 0 || ExactSum(valued.Select(r => (r.Value, r.Weight))) is not { } sum ? Value.Null : Value.Decimal(sum / n);
                 }
             case "last":
                 {

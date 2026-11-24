@@ -352,6 +352,23 @@ sealed class KeyTable
     public void AddL(int slot, int i, long v) => rows.Set(slot, accL + i, rows.Get(slot, accL + i) + v);
     public decimal D(int slot, int i) => Unpack(rows.Get(slot, accD + 2 * i), rows.Get(slot, accD + 2 * i + 1));
     public void AddD(int slot, int i, decimal v) => SetD(slot, i, D(slot, i) + v);
+    /// <summary>An integer sum, exact: a 128-bit integer in the accumulators `i` and `i + 1` (#159 G4).</summary>
+    public Int128 Sum(int slot, int i) => new((ulong)L(slot, i + 1), (ulong)L(slot, i));
+    public void AddSum(int slot, int i, Int128 v) { var s = Sum(slot, i) + v; rows.Set(slot, accL + i, (long)(ulong)s); rows.Set(slot, accL + i + 1, (long)(ulong)(s >> 64)); }
+    /// <summary>A decimal sum, exact: the accumulators `i` to `i + 3` (`ExactSum`).</summary>
+    public void AddSum(int slot, int i, decimal v, long w)
+    {
+        Span<ulong> acc = stackalloc ulong[4];
+        for (var j = 0; j < 4; j++) acc[j] = (ulong)L(slot, i + j);
+        ExactSum.Add(acc, v, w);
+        for (var j = 0; j < 4; j++) rows.Set(slot, accL + i + j, (long)acc[j]);
+    }
+    public bool DecimalSum(int slot, int i, out decimal d)
+    {
+        Span<ulong> acc = stackalloc ulong[4];
+        for (var j = 0; j < 4; j++) acc[j] = (ulong)L(slot, i + j);
+        return ExactSum.ToDecimal(acc, out d);
+    }
 
     /// <summary>The digits of a decimal in two 64-bit halves, and back.</summary>
     static (long A, long B) Pack(decimal d) { Span<int> bits = stackalloc int[4]; decimal.GetBits(d, bits); return ((uint)bits[0] | (long)bits[1] << 32, (uint)bits[2] | (long)bits[3] << 32); }
@@ -518,6 +535,56 @@ sealed class KeyTable
     public void ReleaseIfDead(int slot) { if (Dead(slot)) rows.Add(KeyAt(slot), -1); }
 }
 
+/// <summary>An exact sum of decimals (#159 G4, Def. 7.3): a signed 256-bit integer in four words, least first, that is the sum times 10^28. A decimal has at most
+/// 96 bits of digits and scale 28, so a row is below 2^190 and a weight below 2^63 times that: no sum of rows leaves the 256 bits, and the sum is the same in any
+/// order of the rows. It is a decimal again only when it is one exactly.</summary>
+static class ExactSum
+{
+    static readonly ulong[] Tens = [.. Enumerable.Range(0, 20).Select(Pow10)];
+    static ulong Pow10(int k) { ulong p = 1; for (var i = 0; i < k; i++) p *= 10; return p; }
+
+    /// <summary>`acc += w · v`.</summary>
+    public static void Add(Span<ulong> acc, decimal v, long w)
+    {
+        if (v == 0 || w == 0) return;
+        Span<int> bits = stackalloc int[4]; decimal.GetBits(v, bits);
+        Span<ulong> x = [(uint)bits[0] | (ulong)(uint)bits[1] << 32, (uint)bits[2], 0, 0];
+        var up = 28 - (bits[3] >> 16 & 0xFF);
+        Mul(x, Tens[Math.Min(up, 19)]); if (up > 19) Mul(x, Tens[up - 19]);
+        Mul(x, w < 0 ? (ulong)-(w + 1) + 1 : (ulong)w);
+        if ((v < 0) != (w < 0)) Negate(x);
+        ulong carry = 0;
+        for (var i = 0; i < 4; i++) { var s = acc[i] + x[i]; var c1 = s < acc[i] ? 1UL : 0; acc[i] = s + carry; carry = c1 | (acc[i] < s ? 1UL : 0); }
+    }
+
+    /// <summary>The sum as a decimal, false when no decimal is it exactly (more than 96 bits of digits at the least scale that holds it).</summary>
+    public static bool ToDecimal(ReadOnlySpan<ulong> acc, out decimal d)
+    {
+        Span<ulong> x = stackalloc ulong[4]; acc.CopyTo(x);
+        var neg = (long)x[3] < 0; if (neg) Negate(x);
+        if ((x[0] | x[1] | x[2] | x[3]) == 0) { d = 0; return true; }
+        var scale = 28;
+        Span<ulong> q = stackalloc ulong[4];
+        while (scale > 0) { x.CopyTo(q); if (DivRem10(q) != 0) break; q.CopyTo(x); scale--; }
+        if (x[3] != 0 || x[2] != 0 || x[1] > uint.MaxValue) { d = 0; return false; }
+        d = new decimal((int)x[0], (int)(x[0] >> 32), (int)x[1], neg, (byte)scale);
+        return true;
+    }
+
+    static void Mul(Span<ulong> x, ulong f)
+    {
+        ulong carry = 0;
+        for (var i = 0; i < 4; i++) { var hi = Math.BigMul(x[i], f, out var lo); lo += carry; x[i] = lo; carry = hi + (lo < carry ? 1UL : 0); }
+    }
+    static void Negate(Span<ulong> x) { var carry = 1UL; for (var i = 0; i < 4; i++) { x[i] = ~x[i] + carry; carry = x[i] == 0 && carry == 1 ? 1UL : 0; } }
+    static ulong DivRem10(Span<ulong> x)
+    {
+        UInt128 rem = 0;
+        for (var i = 3; i >= 0; i--) { var cur = rem << 64 | x[i]; x[i] = (ulong)(cur / 10); rem = cur % 10; }
+        return (ulong)rem;
+    }
+}
+
 enum AggKind { Count, SumL, SumD, Distinct, ExtL, ExtD, Mean, Last, PctL, PctD }
 sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bool Desc = false, int Index2 = -1, VExpr? Order = null, bool OutDec = false, bool ValueIsText = false)
 {
@@ -532,6 +599,7 @@ sealed record AggSpec(AggKind Kind, int Index, VExpr? Value, bool ValueIsDec, bo
 abstract class AggregatingOp : PhysOp
 {
     protected readonly VExpr[] keyExprs; protected readonly AggSpec[] aggs; protected readonly int nL, nD; readonly bool hasLongs, hasDecimals; protected Column?[] orderCols = [];
+    readonly RuntimeFaults faults;
     /// <summary>The key and value columns of the batch in hand (with `orderCols`): working arrays that the next call overwrites (`Evaluate`).</summary>
     protected Column[] keyCols = []; protected Column?[] valueCols = [];
     protected readonly int[] outKeyCol, outAggCol;
@@ -605,9 +673,9 @@ abstract class AggregatingOp : PhysOp
             {
                 case "count": list.Add(new AggSpec(AggKind.Count, -1, null, false)); break;       // the key's count of rows
                 case "countDistinct": list.Add(new AggSpec(AggKind.Distinct, l, v, false, false, l++)); hasLongs = true; break;       // its values are filed under the accumulator that holds their number
-                case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, d++, v, true)); break;
-                case "sum": list.Add(new AggSpec(AggKind.SumL, l++, v, false)); break;
-                case "mean": list.Add(new AggSpec(AggKind.Mean, d++, v, false, false, l++)); break;
+                case "sum" when dec: list.Add(new AggSpec(AggKind.SumD, l, v, true)); l += 4; break;       // exact sums (#159 G4): a decimal sum in four accumulators, an integer sum in two
+                case "sum": list.Add(new AggSpec(AggKind.SumL, l, v, false)); l += 2; break;
+                case "mean": list.Add(new AggSpec(AggKind.Mean, l, v, false, false, l + 4)); l += 5; break;
                 case "last":
                     {
                         var order = ExprCompiler.Compile(a.Order!, inLayout, cx.It, cx.Faults);
@@ -624,7 +692,7 @@ abstract class AggregatingOp : PhysOp
                 default: throw new NotSupportedException($"aggregate {a.Fn}");
             }
         }
-        _ = telemetryInput; it = cx.It;
+        _ = telemetryInput; it = cx.It; faults = cx.Faults;
         aggs = [.. list]; nL = l; nD = d; rowSets = [.. sets.Select(x => x.Members.ToArray())]; rowSetWidths = [.. sets.Select(x => x.Widths.ToArray())];
         keyWidths = [.. keys.Select(k => WidthOf(k.Value) is 8 ? 8 : 4)];      // a decimal key is its number's code
         outKeyCol = [.. outKeyNames.Select(n => OutLayout.Index(n))];
@@ -651,8 +719,8 @@ abstract class AggregatingOp : PhysOp
             var s = aggs[a];
             switch (s.Kind)
             {
-                case AggKind.SumL: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddL(slot, s.Index, w * c.L[row]); break; }
-                case AggKind.SumD: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row])); break; }
+                case AggKind.SumL: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddSum(slot, s.Index, (Int128)w * c.L[row]); break; }
+                case AggKind.SumD: { var c = valueCols[a]!; if (c.P is null || c.P[row]) t.AddSum(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w); break; }
                 case AggKind.ExtL:
                     {
                         var c = valueCols[a]!;
@@ -678,7 +746,7 @@ abstract class AggregatingOp : PhysOp
                     {
                         var c = valueCols[a]!;
                         if (c.P is not null && !c.P[row]) break;
-                        t.AddD(slot, s.Index, w * (c.IsDec ? c.D[row] : c.L[row]));
+                        t.AddSum(slot, s.Index, c.IsDec ? c.D[row] : c.L[row], w);
                         t.AddL(slot, s.Index2, w);
                         break;
                     }
@@ -714,7 +782,7 @@ abstract class AggregatingOp : PhysOp
     protected long AggL(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
         AggKind.Count => t.Cnt(slot),
-        AggKind.SumL => t.L(slot, aggs[a].Index),
+        AggKind.SumL => (long)t.Sum(slot, aggs[a].Index),
         AggKind.ExtL => t.ExtremeL(slot, aggs[a].Index, out var v) ? v : 0,
         AggKind.Distinct => t.L(slot, aggs[a].Index2),
         AggKind.Last when !aggs[a].OutDec => LastOf(t, slot, aggs[a]) is { } l ? (long)l.Val : 0,
@@ -723,17 +791,26 @@ abstract class AggregatingOp : PhysOp
     protected decimal AggD(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
         AggKind.ExtD => t.ExtremeD(slot, aggs[a].Index, out var v) ? v : 0,
-        AggKind.Mean => t.L(slot, aggs[a].Index2) is var n && n != 0 ? t.D(slot, aggs[a].Index) / n : 0,
+        AggKind.Mean => t.L(slot, aggs[a].Index2) is var n && n != 0 && t.DecimalSum(slot, aggs[a].Index, out var s) ? s / n : 0,
         AggKind.Last => LastOf(t, slot, aggs[a]) is { } l ? l.Val : 0,
+        AggKind.SumD => t.DecimalSum(slot, aggs[a].Index, out var s) ? s : 0,
         _ => t.D(slot, aggs[a].Index),
+    };
+    /// <summary>A sum, or the sum of a mean, that the output type cannot hold exactly (#159 G4): absent, and counted under overflow.</summary>
+    protected bool OutOfRange(KeyTable t, int slot, int a) => aggs[a].Kind switch
+    {
+        AggKind.SumL => t.Sum(slot, aggs[a].Index) is var s && (s < long.MinValue || s > long.MaxValue),
+        AggKind.SumD or AggKind.Mean => !t.DecimalSum(slot, aggs[a].Index, out _),
+        _ => false,
     };
     /// <summary>A min or max over no non-null value is null.</summary>
     protected bool AggAbsent(KeyTable t, int slot, int a) => aggs[a].Kind switch
     {
         AggKind.ExtL => !t.ExtremeL(slot, aggs[a].Index, out _),
         AggKind.ExtD => !t.ExtremeD(slot, aggs[a].Index, out _),
-        AggKind.Mean => t.L(slot, aggs[a].Index2) == 0,
+        AggKind.Mean => t.L(slot, aggs[a].Index2) == 0 || OutOfRange(t, slot, a),
         AggKind.Last => LastOf(t, slot, aggs[a]) is null,
+        AggKind.SumL or AggKind.SumD => OutOfRange(t, slot, a),
         _ => false,
     };
 
@@ -762,7 +839,11 @@ abstract class AggregatingOp : PhysOp
                 else if (col.IsDec) col.D[row] = p; else col.L[row] = (long)p;
                 continue;
             }
-            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.Last && AggAbsent(t, slot, a)) { col.SetAbsent(row, bt.N); continue; }
+            if (aggs[a].Kind is AggKind.ExtL or AggKind.ExtD or AggKind.Mean or AggKind.Last or AggKind.SumL or AggKind.SumD && AggAbsent(t, slot, a))
+            {
+                if (weight > 0 && OutOfRange(t, slot, a)) faults.Overflow++;
+                col.SetAbsent(row, bt.N); continue;
+            }
             if (aggs[a].Kind is AggKind.SumD or AggKind.ExtD or AggKind.Mean || aggs[a].Kind == AggKind.Last && aggs[a].OutDec) col.D[row] = AggD(t, slot, a);
             else col.L[row] = AggL(t, slot, a);
         }
@@ -770,7 +851,7 @@ abstract class AggregatingOp : PhysOp
 
     /// <summary>The pair of a `mean` (sum, count) or a `last` (order, unused) of one slot now.</summary>
     (decimal A, decimal B) AuxOf(KeyTable t, int slot, int a) => aggs[a].Kind == AggKind.Mean
-        ? (t.D(slot, aggs[a].Index), t.L(slot, aggs[a].Index2))
+        ? (t.DecimalSum(slot, aggs[a].Index, out var s) ? s : 0, t.L(slot, aggs[a].Index2))
         : (LastOf(t, slot, aggs[a])!.Value.Ord, 0);
 }
 
