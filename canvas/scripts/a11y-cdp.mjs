@@ -298,7 +298,7 @@ else {
   await dispatch({ type: "ui/theme", theme: "light" });
   if (!(await clickText("[aria-label='GKQL views'] [role=tab]", "GKQL"))) fail.push("editor: no GKQL text tab");
   else { await sleep(500); await runAxe("editor GKQL text"); }
-  await clickText("[aria-label='GKQL views'] [role=tab]", "Graph");
+  await clickText("[aria-label='GKQL views'] [role=tab]", "Operation");
 }
 if (!(await clickText("[role=tab]", "Definitions"))) fail.push("editor: no Definitions tab");
 await sleep(500);

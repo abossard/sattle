@@ -1,73 +1,37 @@
-import { Badge, Button, Field, Input, MessageBar, MessageBarBody, Select, Tab, TabList, Text, Textarea, makeStyles, mergeClasses, tokens } from "@fluentui/react-components";
-import { useId, useMemo, useState } from "react";
+import { Badge, Button, Field, Input, Menu, MenuGroup, MenuGroupHeader, MenuItem, MenuList, MenuPopover, MenuTrigger, MessageBar, MessageBarBody, Select, Tab, TabList, Text, Textarea, makeStyles, tokens } from "@fluentui/react-components";
+import { Add20Regular, ArrowRedo20Regular, ArrowUndo20Regular } from "@fluentui/react-icons";
+import { useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent } from "react";
 import {
-  appendVerb, authorableVerbs, canEditGkqlStructure, layoutGkql, portsFor, printGkql, readGkql, readGkqlJson, removeVerb, rewire, sourcesFor, verbStyle, VERB_WIDTH, wirePort,
+  appendVerb, authorableVerbs, canEditGkqlStructure, checkGkql, connect, focusOf, layoutGkql, portsFor, readGkqlJson, rewire, sourcesFor, spanOf, verbAt, verbFocus, verbStyle, wirePort,
   type GkqlDrawing, type GkqlProgram, type GkqlVerb, type GkqlWire,
 } from "../../editor/gkql";
+import { openModel, step } from "../../editor/gkql-editing";
+import { GkqlGraph } from "./GkqlGraph";
+import { GkqlOutline } from "./GkqlOutline";
 import type { EditorProps } from "./languages";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateRows: "auto auto minmax(0, 1fr)", height: "100%", minHeight: 0 },
-  toolbar: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", padding: "6px 12px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
-  name: { color: tokens.colorNeutralForeground2, overflowWrap: "anywhere" },
-  workspace: { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(220px, 30%)", minHeight: 0, "@media (max-width: 840px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(130px, .8fr) minmax(120px, 1fr)" } },
-  stage: { overflow: "auto", minHeight: 0, backgroundColor: tokens.colorNeutralBackground2, backgroundImage: `radial-gradient(${tokens.colorNeutralStroke2} 1px, transparent 1px)`, backgroundSize: "16px 16px" },
-  stageContents: { position: "relative" },
-  empty: { margin: "18px", display: "block" },
-  svg: { position: "absolute", inset: 0, pointerEvents: "none" },
-  wire: { fill: "none", stroke: tokens.colorNeutralForeground3, strokeWidth: 1.5 },
-  wireActive: { stroke: tokens.colorBrandForeground1, strokeWidth: 2.5 },
-  cards: { listStyle: "none", margin: 0, padding: 0 },
-  card: {
-    position: "absolute", height: "58px", boxSizing: "border-box", textAlign: "start", display: "flex", flexDirection: "column",
-    justifyContent: "center", gap: "2px", padding: "0 9px", border: `1px solid ${tokens.colorNeutralStroke1}`, borderRadius: "7px",
-    backgroundColor: tokens.colorNeutralBackground1, color: tokens.colorNeutralForeground1, cursor: "pointer",
-    "&:focus-visible": { outline: `2px solid ${tokens.colorStrokeFocus2}`, outlineOffset: "2px" },
+  toolbar: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", padding: "4px 12px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  name: { color: tokens.colorNeutralForeground2, overflowWrap: "anywhere", marginRight: "8px" },
+  grow: { flexGrow: 1 },
+  messages: { display: "flex", flexDirection: "column", gap: "4px", "&:not(:empty)": { padding: "4px 12px" } },
+  workspace: {
+    display: "grid", gridTemplateColumns: "minmax(160px, 200px) minmax(0, 1fr) minmax(260px, 32%)", minHeight: 0,
+    "@media (max-width: 840px)": { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(160px, 1fr) minmax(96px, auto) minmax(160px, 1fr)", overflow: "auto" },
   },
-  active: { boxShadow: `0 0 0 2px ${tokens.colorBrandStroke1}` },
-  clip: { maxWidth: "100%", textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" },
-  sidebar: { display: "flex", flexDirection: "column", gap: "10px", overflow: "auto", padding: "12px", borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
+  sidebar: { display: "flex", flexDirection: "column", gap: "8px", overflow: "auto", minHeight: 0, padding: "8px 12px", borderLeft: `1px solid ${tokens.colorNeutralStroke2}` },
+  problems: { display: "flex", flexDirection: "column", gap: "4px", paddingBottom: "8px", borderBottom: `1px solid ${tokens.colorNeutralStroke2}` },
+  problemList: { listStyle: "none", margin: 0, padding: 0 },
+  problem: { justifyContent: "start", textAlign: "start", color: tokens.colorPaletteRedForeground1, minWidth: 0, fontWeight: tokens.fontWeightRegular },
   row: { display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" },
   wireRow: { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", alignItems: "center", gap: "6px" },
   patternItem: { display: "grid", gridTemplateColumns: "minmax(60px, .85fr) minmax(85px, 1fr) auto", alignItems: "center", gap: "6px" },
-  code: { overflow: "auto", minHeight: 0, padding: "12px", display: "flex", flexDirection: "column", gap: "8px" },
-  mono: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre", fontSize: tokens.fontSizeBase200 },
+  code: { display: "flex", flexDirection: "column", minHeight: "240px", flexGrow: 1 },
+  text: { flexGrow: 1, display: "flex" },
+  mono: { fontFamily: tokens.fontFamilyMonospace, whiteSpace: "pre", fontSize: tokens.fontSizeBase200, overflowWrap: "normal", overflowX: "auto", maxHeight: "none", flexGrow: 1 },
   divider: { border: "none", borderTop: `1px solid ${tokens.colorNeutralStroke2}`, width: "100%", margin: 0 },
 });
-
-const badgeColor = { input: "informative", transform: "brand", aggregate: "warning", output: "success" } as const;
-
-function Wires({ program, selected, select }: { program: GkqlProgram; selected?: string; select: (id: string) => void }) {
-  const s = useStyles();
-  const layout = useMemo(() => layoutGkql(program), [program]);
-  const arrowId = useId();
-  return (
-    <div className={s.stage} role="region" aria-label="GKQL operations and wires" tabIndex={0}>
-      {!layout.cards.length ? <Text className={s.empty}>Add a graph match to start.</Text> : (
-        <div className={s.stageContents} style={{ width: layout.width, height: layout.height }}>
-          <svg className={s.svg} width={layout.width} height={layout.height} aria-hidden="true">
-            <defs>
-              <marker id={arrowId} orient="auto" markerWidth="6" markerHeight="6" refX="5" refY="3">
-                <path d="M0 0 6 3 0 6Z" fill={tokens.colorNeutralForeground3} />
-              </marker>
-            </defs>
-            {layout.wires.map(({ wire, d }, index) => <path key={index} d={d} markerEnd={`url(#${arrowId})`} className={mergeClasses(s.wire, (wire.from === selected || wire.to === selected) && s.wireActive)} />)}
-          </svg>
-          <ul className={s.cards}>
-            {layout.cards.map(({ verb, x, y }, index) => (
-              <li key={`${verb.id}/${index}`}>
-                <button type="button" className={mergeClasses(s.card, verb.id === selected && s.active)} style={{ left: x, top: y, width: VERB_WIDTH }} aria-pressed={verb.id === selected} onClick={() => select(verb.id)}>
-                  <Badge size="small" appearance="tint" color={badgeColor[verbStyle(verb.verb)]}>{verb.verb}</Badge>
-                  <Text weight="semibold" className={s.clip} title={verb.id}>{verb.id}</Text>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function Drawing({ value, target, disabled, update }: { value: GkqlDrawing; target: boolean; disabled: boolean; update: (value: GkqlDrawing) => void }) {
   const s = useStyles();
@@ -172,7 +136,7 @@ function ThresholdControls({ node, readOnly, update }: { node: GkqlVerb; readOnl
   );
 }
 
-function Operation({ program, node, readOnly, change }: { program: GkqlProgram; node: GkqlVerb; readOnly: boolean; change: (program: GkqlProgram) => void }) {
+function Operation({ program, node, readOnly, change, remove }: { program: GkqlProgram; node: GkqlVerb; readOnly: boolean; change: (program: GkqlProgram) => void; remove: () => void }) {
   const s = useStyles();
   const update = (next: GkqlVerb) => change({ ...program, verbs: program.verbs.map((verb) => verb.id === node.id ? next : verb) });
   const available = sourcesFor(program, node.id);
@@ -192,8 +156,8 @@ function Operation({ program, node, readOnly, change }: { program: GkqlProgram; 
   const [reference, value] = Array.isArray(condition?.args) && condition.args.length === 2 ? condition.args : [];
   return (
     <>
-      <Text as="h3" weight="semibold" size={400}>{node.id}</Text>
-      <Badge size="small" appearance="tint" color={badgeColor[verbStyle(node.verb)]}>{node.verb}</Badge>
+      <Text as="h2" weight="semibold" size={400}>{node.id}</Text>
+      <Badge size="small" appearance="outline" color="informative">{node.verb}</Badge>
       {typeof node.graph === "string" && (
         <Field label="Source graph" size="small"><Select disabled={readOnly} value={node.graph} onChange={(_, d) => update({ ...node, graph: d.value })}>
           <option value="">Choose an input</option>{program.inputs.filter((input) => input.ontology).map((input) => <option key={input.name} value={input.name}>{input.name}</option>)}
@@ -223,72 +187,216 @@ function Operation({ program, node, readOnly, change }: { program: GkqlProgram; 
       )}
       {node.verb === "hysteresis" && <ThresholdControls key={JSON.stringify(node.hysteresis)} node={node} readOnly={readOnly} update={update} />}
       <Settings key={JSON.stringify(node)} node={node} disabled={readOnly} update={update} />
-      <Button appearance="subtle" size="small" disabled={readOnly} onClick={() => change(removeVerb(program, node.id))}>Remove operation</Button>
+      <Button appearance="subtle" size="small" disabled={readOnly} onClick={remove}>Remove operation</Button>
     </>
   );
 }
 
+/** The first offset where two texts differ. */
+const firstDifference = (a: string, b: string) => { let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; };
+
+const ADD_GROUPS = [["input", "Read"], ["transform", "Transform"], ["aggregate", "Combine"], ["output", "Write"]] as const;
+const ARROWS: Record<string, [number, number]> = { ArrowLeft: [-16, 0], ArrowRight: [16, 0], ArrowUp: [0, -16], ArrowDown: [0, 16] };
+
+/** A selected wire: where it runs, and its removal. */
+function WirePanel({ focus, readOnly, remove }: { focus: string; readOnly: boolean; remove: () => void }) {
+  const [, from, to, port] = /^wire:(.+)>(.+)\.([^.]+)$/.exec(focus) ?? [];
+  return (
+    <>
+      <Text as="h2" weight="semibold" size={400}>Wire</Text>
+      <Text>{from} feeds {port === "in" ? to : `the ${port} input of ${to}`}.</Text>
+      <Button appearance="subtle" size="small" disabled={readOnly} onClick={remove}>Remove wire</Button>
+    </>
+  );
+}
+
+/**
+ * The editor of a GKQL projection: the outline (steps), the graph and a side panel with the selected element and the program text, all
+ * showing one model (`gkql-editing.ts`). Problems from the editor's own check and from the engine's last check sit on the element they name.
+ */
 export default function GkqlEditor({ file, source, initialTab = "wires", starter, recoveredText, diagnostics, store, onEdit }: EditorProps) {
   const s = useStyles();
-  const [edited, setEdited] = useState<string | null>(recoveredText ?? null);
-  const [selected, select] = useState<string>();
-  const [view, setView] = useState<string>(initialTab);
-  const [newVerb, chooseVerb] = useState("graph-match");
+  const [model, dispatch] = useReducer(step, recoveredText ?? source ?? "", openModel);
+  const [side, setSide] = useState<string>(initialTab === "source" ? "source" : "operation");
   const [status, setStatus] = useState<{ phase: "idle" | "checking" | "checked" } | { phase: "error"; message: string }>({ phase: "idle" });
-  const text = edited ?? source ?? "";
-  const parsed = useMemo(() => {
-    if (!text) return null;
-    try { return { program: readGkql(text) }; }
-    catch (error) { return { error: (error as Error).message }; }
-  }, [text]);
-  const program = parsed?.program;
-  const node = program?.verbs.find((v) => v.id === selected) ?? program?.verbs[0];
-  const changed = edited !== null && text !== source;
-  const structureEditable = canEditGkqlStructure(text);
+  const textArea = useRef<HTMLTextAreaElement>(null);
+  const fromText = useRef(false);
+  const loading = useRef(false);
+  const noted = useRef(model.text);
+  const seen = useRef(source);
+  const root = useRef<HTMLDivElement>(null);
+  const caretAt = useRef<number | null>(null);
+  // a removal unmounts the control that had focus: focus moves to the graph
+  const removeAndFocus = (focus: string) => { dispatch({ t: "remove", focus }); root.current?.querySelector<HTMLElement>("[aria-label='GKQL operations and wires']")?.focus(); };
+  const { text, program } = model;
+  const changed = text !== (source ?? "");
   const checking = status.phase === "checking";
   const readOnly = !store || checking;
+  const structureEditable = canEditGkqlStructure(text);
+  const frozen = readOnly || !structureEditable || model.error !== null;
   const projectionId = `d:${file.projection.slice(0, file.projection.lastIndexOf("."))}/projection:${file.projection.split(".").at(-1)}`;
-  const problems = diagnostics?.filter((d) => d.file === file.file || d.focus === projectionId || d.focus.startsWith(projectionId + "/")) ?? [];
-  const edit = (value: string) => { setEdited(value); onEdit?.(value); setStatus({ phase: "idle" }); };
-  const change = (next: GkqlProgram) => edit(printGkql(next));
+
+  // a source that arrives while nothing was edited becomes the text; every other change of the text is the author's
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = source;
+    if (source !== undefined && source !== before && model.text === (before ?? "")) { loading.current = true; dispatch({ t: "load", text: source }); }
+  }, [source]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (model.text === noted.current) return;
+    noted.current = model.text;
+    if (loading.current) loading.current = false;
+    else { onEdit?.(model.text); setStatus({ phase: "idle" }); }
+  }, [model.text, onEdit]);
+
+  const problems = useMemo(() => {
+    if (!program) return [];
+    const engine = changed ? [] : (diagnostics ?? []).filter((d) => d.file === file.file || d.focus === projectionId || d.focus.startsWith(projectionId + "/"));
+    return [...checkGkql(program), ...engine.map((d) => ({ focus: focusOf(program, projectionId, d.focus), message: d.message }))];
+  }, [program, changed, diagnostics, file.file, projectionId]);
+  const byFocus = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const p of problems) if (p.focus) map.set(p.focus, [...(map.get(p.focus) ?? []), p.message]);
+    return map;
+  }, [problems]);
+
+  // undo and redo in the text keep the caret where the text changed
+  useEffect(() => {
+    if (caretAt.current === null || !textArea.current) return;
+    textArea.current.setSelectionRange(caretAt.current, caretAt.current);
+    caretAt.current = null;
+  }, [model.text]);
+  // the verb selected elsewhere shows in the text: the caret moves to its object, scrolled into view
+  useEffect(() => {
+    if (fromText.current) { fromText.current = false; return; }
+    const area = textArea.current;
+    if (side !== "source" || !area || !model.selected?.startsWith("verb:")) return;
+    const span = spanOf(text, model.selected.slice(5));
+    if (!span) return;
+    area.setSelectionRange(span[0], span[0]);
+    area.scrollTop = Math.max(0, (text.slice(0, span[0]).split("\n").length - 2) * (parseFloat(getComputedStyle(area).lineHeight) || 16));
+  }, [model.selected, side]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function checkAndStore() {
     if (!store) return;
     setStatus({ phase: "checking" });
     try {
       const error = await store(text);
-      if (error) { setStatus({ phase: "error", message: error }); return; }
-      setEdited(null);
-      setStatus({ phase: "checked" });
+      setStatus(error ? { phase: "error", message: error } : { phase: "checked" });
     } catch (error) { setStatus({ phase: "error", message: (error as Error).message }); }
   }
-  const error = (status.phase === "error" ? status.message : "") || parsed?.error;
+  const add = (verb: string) => {
+    if (!program) return;
+    let next = appendVerb(program, verb);
+    const made = next.verbs.at(-1)!.id;
+    const feeding = model.selected?.startsWith("verb:") ? model.selected.slice(5) : null;
+    const wired = feeding ? connect(next, feeding, made) : null;
+    if (wired && typeof wired !== "string") next = wired;
+    dispatch({ t: "change", program: next, select: verbFocus(made) });
+  };
+  const caret = () => {
+    const area = textArea.current;
+    if (!program || !area) return;
+    const id = verbAt(text, program, area.selectionStart);
+    if (id && verbFocus(id) !== model.selected) { fromText.current = true; dispatch({ t: "select", focus: verbFocus(id) }); }
+  };
+  const key = (e: KeyboardEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    const field = target.closest("input, textarea, select, [contenteditable], [role=menu]");
+    const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
+    if (mod && (k === "z" || k === "y") && (!field || target === textArea.current)) {
+      e.preventDefault();
+      if (readOnly) return;
+      const redo = k === "y" || e.shiftKey;
+      const next = redo ? model.future[0] : model.past.at(-1);
+      if (next !== undefined && target === textArea.current) caretAt.current = firstDifference(text, next);
+      dispatch({ t: redo ? "redo" : "undo" });
+      return;
+    }
+    // Delete and Alt+arrows act on the focused card or step (or the selection when the graph itself has focus), never from other controls
+    const view = target.closest("[aria-label='GKQL operations and wires'], [role=listbox]");
+    if (field || mod || !view) return;
+    const owner = target.closest<HTMLElement>("[data-verb], [data-step]");
+    const focused = owner ? verbFocus(owner.dataset.verb ?? owner.dataset.step!) : model.selected;
+    if (e.key === "Escape" && model.gesture.t === "connecting") { e.preventDefault(); dispatch({ t: "connect-cancel" }); }
+    else if ((e.key === "Delete" || e.key === "Backspace") && focused && !frozen) {
+      e.preventDefault();
+      dispatch({ t: "remove", focus: focused });
+      // the removed element had focus: keep it in the view it was removed from
+      (view as HTMLElement).focus();
+    }
+    else if (e.altKey && ARROWS[e.key] && program && focused?.startsWith("verb:")) {
+      const card = layoutGkql(program, model.moved).cards.find((c) => verbFocus(c.verb.id) === focused);
+      if (!card) return;
+      e.preventDefault();
+      dispatch({ t: "move", id: card.verb.id, to: { x: card.x + ARROWS[e.key][0], y: card.y + ARROWS[e.key][1] } });
+    }
+  };
 
+  const selectedVerb = model.selected?.startsWith("verb:") ? program?.verbs.find((v) => verbFocus(v.id) === model.selected) : undefined;
+  const error = status.phase === "error" ? status.message : null;
+  const sourceView = (
+    <div className={s.code}>
+      <Textarea resize="none" aria-label="GKQL source" value={text} readOnly={readOnly} className={s.text}
+        textarea={{ ref: textArea, className: s.mono, spellCheck: false }} onChange={(_, d) => dispatch({ t: "type", text: d.value })} onSelect={caret} />
+    </div>
+  );
   return (
-    <div className={s.root}>
+    <div ref={root} className={s.root} onKeyDown={key}>
       <div className={s.toolbar}>
-        <TabList size="small" aria-label="GKQL views" selectedValue={view} onTabSelect={(_, { value }) => setView(String(value))}><Tab value="wires">Graph</Tab><Tab value="source">GKQL</Tab></TabList>
         <Text font="monospace" size={200} className={s.name}>{program?.graph ?? file.projection}</Text>
-        {program && view === "wires" && <><Field label="Operation" size="small" orientation="horizontal"><Select disabled={readOnly || !structureEditable} value={newVerb} onChange={(_, d) => chooseVerb(d.value)}>{authorableVerbs.map((verb) => <option key={verb}>{verb}</option>)}</Select></Field>
-          <Button size="small" disabled={readOnly || !structureEditable} onClick={() => { const next = appendVerb(program, newVerb); change(next); select(next.verbs.at(-1)?.id); }}>Add operation</Button></>}
-        {starter && !readOnly && !changed && program?.verbs.length === 0 && <Button size="small" onClick={() => { edit(starter); setView("source"); }}>Load starter GKQL</Button>}
-        {store && <Button size="small" appearance="primary" disabled={!program || !changed || checking} onClick={() => void checkAndStore()}>{checking ? "Checking…" : "Check & store"}</Button>}
+        <Button size="small" appearance="subtle" icon={<ArrowUndo20Regular />} disabled={readOnly || !model.past.length} onClick={() => dispatch({ t: "undo" })} aria-label="Undo edit" title="Undo the last edit of this projection (Ctrl+Z)" />
+        <Button size="small" appearance="subtle" icon={<ArrowRedo20Regular />} disabled={readOnly || !model.future.length} onClick={() => dispatch({ t: "redo" })} aria-label="Redo edit" title="Redo (Ctrl+Shift+Z)" />
+        {program && <Menu>
+          <MenuTrigger disableButtonEnhancement><Button size="small" icon={<Add20Regular />} disabled={frozen}>Add operation</Button></MenuTrigger>
+          <MenuPopover><MenuList>
+            {ADD_GROUPS.map(([style, label]) => <MenuGroup key={style}><MenuGroupHeader>{label}</MenuGroupHeader>
+              {authorableVerbs.filter((v) => verbStyle(v) === style).map((v) => <MenuItem key={v} onClick={() => add(v)}>{v}</MenuItem>)}
+            </MenuGroup>)}
+          </MenuList></MenuPopover>
+        </Menu>}
+        {starter && !readOnly && !changed && program?.verbs.length === 0 && <Button size="small" onClick={() => { dispatch({ t: "replace", text: starter }); setSide("source"); }}>Load starter GKQL</Button>}
+        <span className={s.grow} />
         {changed && <Text size={200}>Local changes</Text>}
-        {status.phase === "checked" && problems.length === 0 && <Badge color="success" appearance="tint">Projection checked</Badge>}
+        {status.phase === "checked" && !problems.length && <Badge color="success" appearance="tint">Projection checked</Badge>}
+        {store && <Button size="small" appearance="primary" disabled={!program || !changed || checking || model.error !== null} onClick={() => void checkAndStore()}>{checking ? "Checking…" : "Check & store"}</Button>}
       </div>
-      <div aria-live="polite">
+      <div aria-live="polite" className={s.messages}>
         {error && <MessageBar intent="error"><MessageBarBody>{error}</MessageBarBody></MessageBar>}
-        {!changed && problems.length > 0 && <MessageBar intent="warning"><MessageBarBody>{problems[0].message}</MessageBarBody></MessageBar>}
-        {!structureEditable && view === "wires" && <MessageBar intent="info"><MessageBarBody>Use the GKQL tab to preserve exact numbers in this browser.</MessageBarBody></MessageBar>}
+        {model.error && <MessageBar intent="error"><MessageBarBody>The text is not a GKQL program: {model.error}{program ? " The graph shows the last good program; it can be edited again once the text is a program." : ""}</MessageBarBody></MessageBar>}
+        {model.notice && <MessageBar intent="warning"><MessageBarBody>{model.notice}</MessageBarBody></MessageBar>}
+        {model.gesture.t === "connecting" && <MessageBar intent="info"><MessageBarBody>Connecting from {model.gesture.from}: choose the operation it feeds. Escape cancels.</MessageBarBody></MessageBar>}
+        {!structureEditable && <MessageBar intent="info"><MessageBarBody>Use the GKQL text to preserve exact numbers in this browser.</MessageBarBody></MessageBar>}
       </div>
-      {view === "source" || !program ? (
-        <div className={s.code}><Textarea resize="vertical" rows={16} aria-label="GKQL source" value={text} readOnly={readOnly} onChange={(_, d) => edit(d.value)} textarea={{ className: s.mono }} /></div>
-      ) : (
+      {!program ? sourceView : (
         <div className={s.workspace}>
-          <Wires program={program} selected={node?.id} select={select} />
-          <section className={s.sidebar} aria-label={node ? `Edit ${node.id}` : "Projection inputs"}>
-            {node ? <Operation program={program} node={node} change={change} readOnly={readOnly || !structureEditable} /> : <Text weight="semibold">Graph inputs</Text>}
-            {program.inputs.length > 0 && <div className={s.row}>{program.inputs.map((input) => <Badge key={input.name} color="informative" appearance="outline">{input.name}</Badge>)}</div>}
+          <GkqlOutline model={model} problems={byFocus} dispatch={dispatch} />
+          <GkqlGraph model={model} problems={byFocus} readOnly={frozen} dispatch={dispatch} />
+          <section className={s.sidebar} aria-label="Selection and text">
+            {problems.length > 0 && (
+              <div className={s.problems}>
+                <Text as="h2" weight="semibold" size={300}>Problems ({problems.length})</Text>
+                <ul className={s.problemList}>
+                  {problems.map((p, i) => <li key={i}>
+                    <Button size="small" appearance="transparent" className={s.problem} disabled={!p.focus || p.focus.startsWith("port:")} onClick={() => { dispatch({ t: "select", focus: p.focus }); setSide("operation"); }}>
+                      {p.focus?.startsWith("verb:") ? `${p.focus.slice(5)}: ` : ""}{p.message}
+                    </Button>
+                  </li>)}
+                </ul>
+              </div>
+            )}
+            <TabList size="small" aria-label="GKQL views" selectedValue={side} onTabSelect={(_, { value }) => setSide(String(value))}><Tab value="operation">Operation</Tab><Tab value="source">GKQL</Tab></TabList>
+            {side === "source" ? sourceView : selectedVerb ? (
+              <Operation key={selectedVerb.id} program={program} node={selectedVerb} readOnly={frozen} change={(next) => dispatch({ t: "change", program: next })} remove={() => removeAndFocus(verbFocus(selectedVerb.id))} />
+            ) : model.selected?.startsWith("wire:") ? (
+              <WirePanel focus={model.selected} readOnly={frozen} remove={() => removeAndFocus(model.selected!)} />
+            ) : (
+              <>
+                <Text as="h2" weight="semibold" size={400}>Inputs</Text>
+                {program.inputs.length ? <div className={s.row}>{program.inputs.map((input) => <Badge key={input.name} color="informative" appearance="outline">{input.name}{input.rows ? ` · rows ${input.rows}` : input.ontology ? ` · ${input.ontology}` : ""}</Badge>)}</div> : <Text>No inputs.</Text>}
+                <Text size={200}>Select a step or a card to edit it.</Text>
+              </>
+            )}
           </section>
         </div>
       )}

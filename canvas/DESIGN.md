@@ -121,7 +121,7 @@ A cool-neutral paper and ink scale with a single blue accent. Light and dark are
 
 ## Layout
 
-The editor is one column: the projection bar and the toolbar, the projection's GKQL graph or its text (tabs Graph and GKQL), and the draft details below (at least 140px, 28% of the height). The shell is a four row grid at 100dvh: header, view tabs, content, status bar.
+The editor is one column: the projection bar and the toolbar, the projection's steps, its GKQL graph and a side panel with the selected operation or the text (tabs Operation and GKQL), and the draft details below (at least 140px, 28% of the height). The shell is a four row grid at 100dvh: header, view tabs, content, status bar.
 
 Toolbars and tab lists that overflow scroll horizontally and fade their last 32px, so a cut label reads as scrollable. The header wraps; the view tabs scroll under the same fade below 700px.
 
@@ -142,6 +142,9 @@ Flat by default. Depth is drawn with rule weights, not shadow: card outline 1.5p
 Near square. Corners are 1px (small), 2px (medium), 3px (large), 4px (extra large). Cards are fully square. Badges have medium (2px) corners and an outline.
 
 ## Components
+
+### Verb card
+Square, paper fill, 1.5px ink outline, 150 by 58px: the verb in an outline badge over the operation's id in semibold. A card that reads an input of the program (graph match, rows) has a dashed outline. Selected: brand tint and a 2px drafting blue stroke. A card with a problem: 2px dashed red outline, the problem as its description. A 16px square handle on the right edge starts a wire; while a wire is being made the other cards take a dashed drafting blue ring. Wires are 1px ink curves, 2px drafting blue when selected, dashed red with a problem.
 
 ### Badges
 Outline, 2px corners (the pill shape is overridden once in `canvas.css`), informative (neutral) color. A badge names a role, a count or a reference: `projection`, `8 supporting`, `ontology acme.ops@1.0.0`. Only a state or a diagnostic takes a status color (Healthy, Unhealthy, origin, a meter over its threshold). Fluent's default badge color is brand, so every badge states its color. It never stretches: badges are capped to their content width.

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { readGkql, type GkqlProgram } from "../src/editor/gkql";
 import { EditorService } from "../src/editor/service";
 import GkqlEditor from "../src/ui/editor/GkqlEditor";
@@ -42,10 +42,10 @@ it("loads the tutorial starter as an editable local change", async () => {
   expect(store).toHaveBeenCalledWith(starter);
 });
 
-function editor() {
+function editor(program: GkqlProgram = base) {
   const save = vi.fn();
   function Draft() {
-    const [source, setSource] = useState(JSON.stringify(base));
+    const [source, setSource] = useState(JSON.stringify(program));
     return <GkqlEditor file={metadata} source={source} port={new EditorService("http://localhost/engine")} store={async (text) => {
       save(readGkql(text));
       setSource(text);
@@ -70,6 +70,7 @@ it("draws authored operations and stores a reconnected wire", async () => {
 it("starts a match with a typed pattern node", async () => {
   const { save, user } = editor();
   await user.click(screen.getByRole("button", { name: "Add operation" }));
+  await user.click(await screen.findByRole("menuitem", { name: "graph-match" }));
   await user.click(screen.getByRole("button", { name: "Add node" }));
   await user.type(screen.getByRole("textbox", { name: "Node type" }), "Resource");
   await user.click(screen.getByRole("button", { name: "Check & store" }));
@@ -92,4 +93,78 @@ it("edits the two hysteresis recovery settings through the Canvas fields", async
   await user.click(screen.getByRole("button", { name: "Check & store" }));
   await waitFor(() => expect(save).toHaveBeenCalledOnce());
   expect(save.mock.calls[0][0].verbs.at(-1).hysteresis).toMatchObject({ above: 8, enterAfter: 2, below: 5, exitAfter: 3 });
+});
+
+describe("every action works from the keyboard and every view follows", () => {
+  const unwired = { ...base, wires: [{ from: "choose", to: "cpuState" }] };
+  const card = (name: string) => screen.getByRole("button", { name });
+
+  it("connects two operations with Enter on a handle and then on a card", async () => {
+    const { save, user } = editor(unwired);
+    card("Connect from live").focus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByText(/Connecting from live/)).toBeTruthy();
+    card("where choose").focus();
+    await user.keyboard("{Enter}");
+    await user.click(card("Check & store"));
+    await waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save.mock.calls[0][0].wires).toContainEqual({ from: "live", to: "choose" });
+  });
+
+  it.each(["{Delete}", "{Backspace}"])("%s removes the selected card with its wires, and Ctrl+Z brings both back", async (press) => {
+    const { user } = editor();
+    await user.click(card("where choose"));
+    await user.keyboard(press);
+    expect(screen.queryByRole("button", { name: "where choose" })).toBeNull();
+    // the step and the wires that read it are gone: cpuState now reads nothing
+    expect(screen.getByRole("listbox", { name: "Steps" }).textContent).not.toContain("choose");
+    expect(document.activeElement?.getAttribute("aria-label")).toBe("GKQL operations and wires");
+    await user.keyboard("{Control>}z{/Control}");
+    expect(card("where choose")).toBeTruthy();
+    await user.keyboard("{Control>}{Shift>}z{/Shift}{/Control}");
+    expect(screen.queryByRole("button", { name: "where choose" })).toBeNull();
+  });
+
+  it("Delete acts on the focused card, not on the one selected before", async () => {
+    const { user } = editor();
+    await user.click(card("graph-match all"));
+    card("where choose").focus();
+    await user.keyboard("{Delete}");
+    expect(screen.queryByRole("button", { name: "where choose" })).toBeNull();
+    expect(card("graph-match all")).toBeTruthy();
+  });
+
+  it("Delete on a toolbar button removes nothing", async () => {
+    const { user } = editor();
+    await user.click(card("where choose"));
+    screen.getByRole("tab", { name: "Operation" }).focus();
+    await user.keyboard("{Backspace}");
+    expect(card("where choose")).toBeTruthy();
+  });
+
+  it.each([["{ArrowDown}", "live", "graph-match live"], ["{End}", "cpuState", "hysteresis cpuState"]])("%s in the steps selects %s on the graph too", async (press, id, name) => {
+    const { user } = editor();
+    const steps = screen.getByRole("listbox", { name: "Steps" });
+    within(steps).getAllByRole("option")[0].focus();
+    await user.keyboard(press);
+    expect(within(steps).getByRole("option", { selected: true }).textContent).toContain(id);
+    expect(card(name).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("an invalid text says why and keeps the last good graph", async () => {
+    const { user } = editor();
+    await user.click(screen.getByRole("tab", { name: "GKQL" }));
+    await user.type(screen.getByRole("textbox", { name: "GKQL source" }), "{{");
+    expect(screen.getByText(/The text is not a GKQL program/)).toBeTruthy();
+    expect(card("where choose")).toBeTruthy();
+    expect((card("Check & store") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a problem sits on its card and selecting it selects the card", async () => {
+    const { user } = editor(unwired);
+    const choose = card("where choose");
+    expect(document.getElementById(choose.getAttribute("aria-describedby")!)?.textContent).toBe("the input of choose is not connected");
+    await user.click(card("choose: the input of choose is not connected"));
+    expect(choose.getAttribute("aria-pressed")).toBe("true");
+  });
 });

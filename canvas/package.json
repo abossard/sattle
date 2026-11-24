@@ -15,15 +15,8 @@
     "demo": "node scripts/make-demo.mjs"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "6.20.4",
-    "@codemirror/commands": "6.11.1",
-    "@codemirror/language": "6.13.1",
-    "@codemirror/lint": "6.9.7",
-    "@codemirror/state": "6.7.6",
-    "@codemirror/view": "6.43.15",
     "@fluentui/react-components": "^9.75.1",
     "@fluentui/react-icons": "^2.0.345",
-    "@lezer/highlight": "1.2.5",
     "ajv": "^8.20.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
