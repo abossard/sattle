@@ -148,12 +148,12 @@ const chapters: readonly Lesson[] = [
     prompt: "Read scripts/tutorial.sh. Help me prepare my capture and start the engine, then Canvas. Ask for the output after each command.",
   },
   {
-    id: "adapter", title: "Build an adapter", goal: "Read source data into typed rows that GKQL can use.", action: "Open Adapters.cs and find the Azure resource ID in the emitted row.",
+    id: "adapter", title: "Build an adapter", goal: "Read source data into typed rows that GKQL can use.", action: "Open RecordAdapter.cs and follow a keyed record into the row its type declares.",
     check: "In master, a Resource node has the same armId as its scrubbed Azure export row.",
-    view: "editor", graph: "master", projection: "ingest", flow: [[source], [["C# adapter", "input"]], [["GKQL ingest", "rule"]], [master]],
-    files: ["Adapters.cs", "tutorial.module.gkql.json", "tutorial.ingest.gkql.json"],
+    view: "editor", graph: "master", projection: "ingest", flow: [[source], [["Record adapter", "input"]], [["GKQL ingest", "rule"]], [master]],
+    files: ["RecordAdapter.cs", "tutorial.module.gkql.json", "tutorial.ingest.gkql.json"],
     commands: [{ label: "Rebuild and check the adapter", code: "./scripts/tutorial.sh verify" }],
-    prompt: "Use AzureResourceGraphAdapter as a template. Trace one ID from Azure JSON through the C# row contract, registration, and GKQL ingest mapping. Give me one small mapping edit and a command to verify it.",
+    prompt: "Read RecordAdapter. Trace one key from a records:<RowType> envelope through the row contract the space declares and the GKQL ingest mapping. Give me one small mapping edit and a command to verify it.",
   },
   {
     id: "explore", title: "Explore the master graph", goal: "Follow a relationship between two captured objects.", action: "Click Private link and read both endpoints in Inspector.",

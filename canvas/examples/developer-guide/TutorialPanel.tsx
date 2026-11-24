@@ -21,7 +21,7 @@ import { formatHash } from "../../src/state/url";
 import { useRevision, type GraphRevision } from "../../src/ui/common";
 import projectFlowOntology from "../../../lab/health-mirror/projects/ahm-model-demo/flows.json?raw";
 import metricCatalog from "../../../lab/health-mirror/projects/ahm-model-demo/metrics.json?raw";
-import adapters from "../../../engine/src/Sattle.Runtime/Adapters.cs?raw";
+import recordAdapter from "../../../engine/src/Sattle.Runtime/RecordAdapter.cs?raw";
 import documentModule from "../../../engine/tutorial/sattle.doc.module.gkql.json?raw";
 import health from "../../../engine/tutorial/tutorial.health.gkql.json?raw";
 import ingest from "../../../engine/tutorial/tutorial.ingest.gkql.json?raw";
@@ -33,11 +33,9 @@ import signals from "../../../engine/tutorial/tutorial.signals.gkql.json?raw";
 import tree from "../../../engine/tutorial/tutorial.tree.gkql.json?raw";
 import workloadHealth from "../../../engine/tutorial/tutorial.workloadHealth.gkql.json?raw";
 
-const adapterStart = adapters.indexOf("public sealed class AzureResourceGraphAdapter");
-const adapterEnd = adapters.indexOf("public sealed class ", adapterStart + 1);
 const sources: Readonly<Record<string, string>> = {
   ...projectionSources,
-  "Adapters.cs": adapters.slice(adapterStart, adapterEnd === -1 ? undefined : adapterEnd),
+  "RecordAdapter.cs": recordAdapter,
   "sattle.doc.module.gkql.json": documentModule,
   "tutorial.health.gkql.json": health,
   "tutorial.ingest.gkql.json": ingest,

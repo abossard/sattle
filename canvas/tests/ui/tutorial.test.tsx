@@ -56,14 +56,14 @@ describe("developer guide", () => {
     expect(guide.getByRole("link", { name: "Open projection editor" }).getAttribute("href")).toContain("view=editor");
   });
 
-  it("shows the repository's Azure adapter code and a copyable AI prompt", async () => {
+  it("shows the repository's record adapter code and a copyable AI prompt", async () => {
     const user = userEvent.setup();
     const guide = within(await openWithoutEngine("adapter"));
-    await user.click(guide.getByText("Adapters.cs"));
-    expect((await guide.findByLabelText("Adapters.cs")).textContent).toContain("public sealed class AzureResourceGraphAdapter");
+    await user.click(guide.getByText("RecordAdapter.cs"));
+    expect((await guide.findByLabelText("RecordAdapter.cs")).textContent).toContain("public sealed class RecordAdapter");
     await user.click(guide.getByText("Ask your AI assistant"));
     await user.click(guide.getByRole("button", { name: "Copy AI prompt" }));
-    expect(await navigator.clipboard.readText()).toContain("AzureResourceGraphAdapter");
+    expect(await navigator.clipboard.readText()).toContain("RecordAdapter");
   });
 
   it("shows threshold rules read from the starter projection", async () => {
