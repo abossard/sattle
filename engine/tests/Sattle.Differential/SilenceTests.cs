@@ -28,7 +28,7 @@ public class SilenceTests
         { "the report arrives after the advance: the windows are covered from then on", [.. On, Advance(300), Reported(300)], "off" },
         { "data return after more than the look-back: a new episode, which starts in the initial state", [.. On, Advance(300), Hits("k0", 2, 310), Advance(360)], "off" },
         { "data return and reach the threshold", [.. On, Advance(300), Hits("k0", 5, 310), Advance(360)], "on" },
-        { "an item that appears is not in no data before its time to live has passed", [Advance(60), Item("k1"), Advance(120), Advance(300)], "" },
+        { "an item that appears is not in no data before its time to live has passed", [Advance(60), Item("k1"), Advance(120), Advance(240)], "" },       // present since 60 s, when it arrived (#159 G3)
         { "an item that went and returns has existed again only since it returned: its old record does not put it into no data at once", [.. On, Item("k0", -1), Advance(120), Item("k0"), Advance(280)], "on" },
         { "and it is in no data once it has been back for longer than the time to live", [.. On, Item("k0", -1), Advance(120), Item("k0"), Advance(240), Advance(430)], "silent" },
         { "an item that has existed for longer than the time to live without a record is in no data", [Advance(60), Item("k1"), Advance(120), Advance(360)], "silent" },
