@@ -18,7 +18,6 @@ const useStyles = makeStyles({
   scroll: { overflow: "auto", minHeight: 0, position: "relative" },
   cell: { display: "flex", alignItems: "center", columnGap: tokens.spacingHorizontalS, flexWrap: "nowrap", whiteSpace: "nowrap" },
   label: { overflow: "hidden", textOverflow: "ellipsis" },
-  changed: { color: tokens.colorPaletteMarigoldForeground2 },
   grow: { flexGrow: 1 },
 });
 
@@ -204,7 +203,7 @@ export function TreeView({ graph }: { graph: string }) {
                         {n.critical && <Badge size="small" appearance="filled" color="important" title="Marked critical">critical</Badge>}
                         {n.curatedBy && <Badge size="small" appearance="outline" color="informative" title={`Curated by record ${n.curatedBy}`}><span aria-hidden="true">✎ </span>curated by {n.curatedBy}</Badge>}
                         {n.hidden && <Badge size="small" appearance="outline" color="informative" title="Hidden by curation">hidden</Badge>}
-                        {changed && <Badge size="small" appearance="outline" className={s.changed} title={`${changed} in this revision`}><span aria-hidden="true">Δ </span>{changed} in this revision</Badge>}
+                        {changed && <Badge size="small" appearance="outline" color="informative" title={`${changed} in this revision`}><span aria-hidden="true">Δ </span>{changed} in this revision</Badge>}
                         {showOwn(n) && <StateBadge cell={n.own!} label="own state" />}
                         {n.rolled && <StateBadge cell={n.rolled} label="state" />}
                       </span>}>
