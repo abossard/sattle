@@ -67,6 +67,9 @@ public class RestartSmokeTests
         Assert.Equal(whole, r.StateDigest());
     }
 
+    /// <summary>The sum of the heads of the graphs `GET /health` serves, the catalog left out.</summary>
+    static long Heads(SpaceHost h) => h.Liveness()["graphs"]!.AsArray().Where(g => g!["name"]!.GetValue<string>() != "catalog").Sum(g => long.Parse(g!["head"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture));
+
     static (string Path, string Digest) SealedSqlite()
     {
         var path = Path.Combine(Path.GetTempPath(), "sattle-verify-" + Guid.NewGuid().ToString("N") + ".db");
@@ -87,15 +90,15 @@ public class RestartSmokeTests
             using var fromSeal = SpaceHost.OpenDurable(s1, null, Options);
             Assert.True(fromSeal.Restart!.FromSeal);
             Assert.True(fromSeal.Restart!.SealedRevisions > 0);
-            Assert.Equal(fromSeal.Engine.Graphs.Sum(g => g.Head), fromSeal.Restart!.SealedRevisions + fromSeal.Restart!.Recomputed);        // the heads are the sealed revisions plus those the tail recomputed
-            Assert.True(fromSeal.Restart!.Recomputed < fromSeal.Engine.Graphs.Sum(g => g.Head));
+            Assert.Equal(Heads(fromSeal), fromSeal.Restart!.SealedRevisions + fromSeal.Restart!.Recomputed);        // the heads are the sealed revisions plus those the tail recomputed
+            Assert.True(fromSeal.Restart!.Recomputed < Heads(fromSeal));
             var text = fromSeal.RestoreSummary();
             Assert.Contains("loaded from the seal at journal entry", text); Assert.Contains("were not recomputed", text); Assert.Contains("entries before the seal were not read", text);
             Assert.DoesNotContain("reproduced and equal", text);
             using var s2 = new SqliteGraphStore(path);
             using var verified = SpaceHost.OpenDurable(s2, null, Options with { VerifyJournal = true });
             Assert.False(verified.Restart!.FromSeal); Assert.True(verified.Restart!.SealChecked);
-            Assert.Equal(verified.Engine.Graphs.Sum(g => g.Head), verified.Restart!.Recomputed);                                     // everything recomputed
+            Assert.Equal(Heads(verified), verified.Restart!.Recomputed);                                     // everything recomputed
             Assert.Equal(digest, verified.StateDigest());
             Assert.Contains("replayed all", verified.RestoreSummary()); Assert.Contains("equals the seal's digest", verified.RestoreSummary());
         }

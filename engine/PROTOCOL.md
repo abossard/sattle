@@ -242,7 +242,7 @@ Evaluates the draft without committing or activating. A fresh engine with its ow
   "milliseconds": "840" }
 ```
 `identity` is the identity effect of the preview: identities are resolved once per space, so the counters are the previewed space's (`preview`), next to the live space's (`live`). `minted` are new identities, `aliased` keys bound to an existing identity by a `Link`, `merged` two identities joined by a `Link` or by late evidence, `conflicts` links refused (different entity types). `difference` is preview minus live and is present only when `comparable` (the preview saw every retained input, as for `diff`); a draft that adds a `Link` shows up as more `aliased` or `merged`. Integers are strings.
-`diff` is present only when `scope.complete` is true (the preview saw all retained inputs, so it is comparable with the live outputs); otherwise `null`. New graphs diff against empty; removed graphs are listed with `removed: true`. Invalid drafts answer `422 Invalid` with diagnostics and nothing evaluated.
+`diff` is present only when `scope.complete` is true (the preview saw all retained inputs, so it is comparable with the live outputs); otherwise `null`. New graphs diff against empty; removed graphs are listed with `removed: true`. Invalid drafts answer `422 Invalid` with diagnostics and nothing evaluated. A space whose inputs are not to be had answers `422 InputsNotRetained` (see the reactivation budget under `POST /definitions/{module}`).
 
 ## v3: refactoring (removed in 3.46)
 Pure functions on the definition text of a draft, returned as draft patches (nothing is applied until the client applies the returned patch to the draft). All three are limited to projections of one module.

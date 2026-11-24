@@ -127,8 +127,9 @@ public class SealTests
         d.Close();
         using var r = RestartTests.Reopen(d.Open(), Options(30));
         Assert.True(r.Restart!.FromSeal, r.Restart.SealRefusal);
-        var master = r.Engine.Master.State.Digest();
-        Assert.True(r.Engine.Master.State.EntityCount > 0);
+        string Master() => r.Liveness()["graphs"]!.AsArray().Single(g => g!["name"]!.GetValue<string>() == "master")!["digest"]!.GetValue<string>();
+        var master = Master();
+        Assert.NotEmpty(r.Snapshot("master", null)["extent"]!["entities"]!.AsArray());
         var feed = r.Subscribe(null, false, r.Seq);
         List<System.Text.Json.Nodes.JsonNode> Published() { var l = new List<System.Text.Json.Nodes.JsonNode>(); while (feed.Messages.Reader.TryRead(out var m)) l.Add(System.Text.Json.Nodes.JsonNode.Parse(m)!); return l; }
         var draft = r.CreateDraft(null)["draft"]!.GetValue<string>();
@@ -139,7 +140,7 @@ public class SealTests
         const string Readiness = "acme.readiness.readiness.gkql.json";
         var edited = Files.First(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal)).Text.Replace("\"minReady\", \"kind\": \"Integer\", \"default\": 0", "\"minReady\", \"kind\": \"Integer\", \"default\": 1");
         r.Commit(Readiness, edited, r.CatalogRevision);                                 // a parameter of a view: the master must not change
-        Assert.Equal(master, r.Engine.Master.State.Digest());
+        Assert.Equal(master, Master());
         var published = Published();
         Assert.Single(published, e => e["type"]!.GetValue<string>() == "activation");
         Assert.Contains(published, e => e["type"]!.GetValue<string>() == "patch" && e["graph"]!.GetValue<string>() == "catalog");
@@ -151,12 +152,12 @@ public class SealTests
     public void A_restart_from_a_seal_replays_only_the_tail_and_gives_the_same_space(string kind)
     {
         using var d = new RestartTests.Durable(kind);
-        string digest, space; long seq, entries;
+        string digest, space, graphs; long seq, entries;
         var store = d.Open();
         using (var h = SpaceHost.OpenDurable(store, Files, Options(25)))
         {
             Feed(h); h.Finish();
-            digest = h.StateDigest(); space = Space(h); seq = h.Seq;
+            digest = h.StateDigest(); space = Space(h); seq = h.Seq; graphs = RestartTests.Graphs(h);
             entries = ((IJournalStore)store).JournalCount;
         }
         d.Close();
@@ -167,7 +168,7 @@ public class SealTests
         Assert.Equal(space, Space(r));
         Assert.Equal(seq, r.Seq);
         Assert.True(r.Done);
-        Assert.All(r.Engine.Graphs, g => Assert.Equal(r.Head(g.Name), g.Head));
+        Assert.Equal(graphs, RestartTests.Graphs(r));
         var up = r.Subscribe(null, false, seq); Assert.Empty(Drain(up)); r.Unsubscribe(up);
     }
 

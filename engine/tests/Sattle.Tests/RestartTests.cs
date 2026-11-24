@@ -63,15 +63,18 @@ public class RestartTests
 
     static string Space(SpaceHost h) => h.SpaceInfo().ToJsonString();
 
+    /// <summary>Head and digest of every graph, as `GET /health` serves them.</summary>
+    internal static string Graphs(SpaceHost h) => h.Liveness()["graphs"]!.ToJsonString();
+
     [Theory, MemberData(nameof(Stores))]
     public void A_restarted_space_has_the_same_state_digest_space_and_sequence(string kind)
     {
         using var d = new Durable(kind);
-        string digest, space; long seq;
+        string digest, space, graphs; long seq;
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options))
         {
             Feed(h); h.Finish();
-            digest = h.StateDigest(); space = Space(h); seq = h.Seq;
+            digest = h.StateDigest(); space = Space(h); seq = h.Seq; graphs = Graphs(h);
             Assert.Null(h.Restart);
         }
         d.Close();
@@ -82,7 +85,7 @@ public class RestartTests
         Assert.Equal(seq, r.Seq);
         Assert.True(r.Done);
         Assert.True(r.Restart!.Verified > 0);
-        Assert.All(r.Engine.Graphs, g => Assert.Equal(r.Head(g.Name), g.Head));
+        Assert.Equal(graphs, Graphs(r));
     }
 
     [Theory, MemberData(nameof(Stores))]
