@@ -1,5 +1,5 @@
 // Ontology browser: types as a Fluent Tree beside the ontology drawn as a graph; for engine sources the module text sits next to it.
-import { Badge, Field, Select, Subtitle2, Text, Textarea, Tree, TreeItem, TreeItemLayout, makeStyles, tokens } from "@fluentui/react-components";
+import { Field, Select, Subtitle2, Text, Textarea, Tree, TreeItem, TreeItemLayout, makeStyles, tokens } from "@fluentui/react-components";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DataPane } from "../app/data-pane";
 import { History } from "../app/history";
@@ -14,7 +14,9 @@ import { useRevision, useWorkspace } from "./common";
 
 const useStyles = makeStyles({
   root: { display: "grid", gridTemplateColumns: "minmax(240px, 320px) minmax(0, 1fr)", minHeight: 0, height: "100%", "@media (max-width: 800px)": { gridTemplateColumns: "1fr", gridTemplateRows: "auto minmax(300px, 1fr)" } },
-  side: { padding: tokens.spacingHorizontalM, overflow: "auto", display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS },
+  side: { padding: tokens.spacingHorizontalM, overflow: "auto", display: "flex", flexDirection: "column", rowGap: tokens.spacingVerticalS, borderRight: `1px solid ${tokens.colorNeutralStroke2}`, "& .fui-Select": { width: "100%", minWidth: 0 } },
+  name: { fontFamily: tokens.fontFamilyMonospace },
+  detail: { display: "block", fontFamily: tokens.fontFamilyMonospace, color: tokens.colorNeutralForeground3 },
   main: { display: "grid", gridTemplateRows: "minmax(0, 1fr) auto", minHeight: 0 },
   stage: { minHeight: 0, backgroundColor: tokens.colorNeutralBackground3, "& > div": { height: "100%" } },
 });
@@ -88,11 +90,11 @@ export function OntologyView({ initialModule = "" }: { initialModule?: string } 
         <Text size={200}>{content.summary}</Text>
         <Subtitle2 as="h2">Entity types</Subtitle2>
         <Tree aria-label="Entity types">
-          {content.entities.map((t) => <TreeItem key={t.id} itemType="leaf" value={t.id} aria-current={picked === t.id || undefined} onClick={() => pick(t.id)}><TreeItemLayout>{picked === t.id ? <b>{t.label}</b> : t.label} <Text size={200}>{t.detail}</Text></TreeItemLayout></TreeItem>)}
+          {content.entities.map((t) => <TreeItem key={t.id} itemType="leaf" value={t.id} aria-current={picked === t.id || undefined} onClick={() => pick(t.id)}><TreeItemLayout><span className={s.name}>{picked === t.id ? <b>{t.label}</b> : t.label}</span><Text size={200} className={s.detail}>{t.detail}</Text></TreeItemLayout></TreeItem>)}
         </Tree>
         <Subtitle2 as="h2">Relationship types</Subtitle2>
         <Tree aria-label="Relationship types">
-          {content.rels.map((r) => <TreeItem key={r.id} itemType="leaf" value={r.id}><TreeItemLayout>{r.label} <Badge appearance="outline" color="informative">{r.detail}</Badge></TreeItemLayout></TreeItem>)}
+          {content.rels.map((r) => <TreeItem key={r.id} itemType="leaf" value={r.id}><TreeItemLayout><span className={s.name}>{r.label}</span><Text size={200} className={s.detail}>{r.detail}</Text></TreeItemLayout></TreeItem>)}
         </Tree>
       </div>
       <div className={s.main}>
