@@ -1,6 +1,6 @@
 // One shared time axis: revisions at commit time, telemetry frames at window start. Fluent Slider and toolbar, all through actions.
 import { Badge, Button, Field, Select, Slider, SpinButton, Text, Toolbar, ToolbarButton, makeStyles, tokens } from "@fluentui/react-components";
-import { Next20Regular, Pause20Regular, Play20Regular, Previous20Regular } from "@fluentui/react-icons";
+import { ChevronLeft20Regular, ChevronRight20Regular, Next20Regular, Pause20Regular, Play20Regular, Previous20Regular } from "@fluentui/react-icons";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { countAtOrBefore, formatTime } from "../core/time-axis";
 import type { StreamControls as Controls } from "../source/types";
@@ -60,9 +60,9 @@ export function Timeline({ graph, compact = false }: { graph: string; compact?: 
       <div className={s.row}>
         <Toolbar size="small" aria-label="Time navigation">
           <ToolbarButton aria-label="Start" icon={<Previous20Regular />} disabled={index === 0} onClick={() => go(0)} />
-          <ToolbarButton aria-label="Previous point in time" disabled={index === 0} onClick={() => go(index - 1)}>◀</ToolbarButton>
+          <ToolbarButton aria-label="Previous point in time" icon={<ChevronLeft20Regular />} disabled={index === 0} onClick={() => go(index - 1)} />
           <ToolbarButton aria-label={playing ? "Pause" : "Play"} aria-pressed={playing} icon={playing ? <Pause20Regular /> : <Play20Regular />} disabled={points.length <= 1} onClick={() => { if (!playing && index >= points.length - 1) go(0); setPlaying(!playing); }} />
-          <ToolbarButton aria-label="Next point in time" disabled={index >= points.length - 1} onClick={() => go(index + 1)}>▶</ToolbarButton>
+          <ToolbarButton aria-label="Next point in time" icon={<ChevronRight20Regular />} disabled={index >= points.length - 1} onClick={() => go(index + 1)} />
           <ToolbarButton aria-label="Latest" icon={<Next20Regular />} disabled={index >= points.length - 1} onClick={() => go(points.length - 1)} />
         </Toolbar>
         <Slider className={s.grow} min={0} max={Math.max(points.length - 1, 0)} step={1} value={index} disabled={points.length <= 1} aria-label="Time of the graph space: revision and telemetry" aria-valuetext={`${formatTime(time.now)}, revision ${rev}`} onChange={(_, d) => go(d.value)} />
@@ -70,7 +70,7 @@ export function Timeline({ graph, compact = false }: { graph: string; compact?: 
       </div>
       {!compact && (
         <div className={s.row}>
-          <Badge appearance="outline" color="success">+ {k.added} added</Badge><Badge appearance="outline" color="danger">− {k.removed} removed</Badge><Badge appearance="outline" color="warning">Δ {k.changed} changed</Badge>
+          {([["+", k.added, "added"], ["−", k.removed, "removed"], ["Δ", k.changed, "changed"]] as const).map(([glyph, n, word]) => <Badge key={word} appearance={n ? "outline" : "ghost"} color="informative">{glyph} {n} {word}</Badge>)}
           {hist.cursor > 0 && <Text size={200}>cause {hist.patches[hist.cursor - 1].cause.inputs.join(", ")} · catalog revision {hist.patches[hist.cursor - 1].cause.configurationVersion}</Text>}
           <span style={{ flexGrow: 1 }} />
           <Field label="Highlight" orientation="horizontal"><Select size="small" value={fs.hlMode} onChange={(_, d) => dispatch({ type: "filter/set", graph, filter: { hlMode: d.value as typeof fs.hlMode } })}><option value="step">This revision</option><option value="since">Since revision…</option><option value="off">Off</option></Select></Field>
