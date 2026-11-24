@@ -26,8 +26,8 @@ public class SealTests
         var t = new DateTimeOffset(2026, 1, 1, 10, 20, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() * 1_000_000L;
         for (var i = 0; i < 6; i++)
         {
-            w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("cluster", "synth"); w.Text("verdict", i % 2 == 0 ? "FORWARDED" : "DROPPED");
-            w.Text("srcNamespace", "shop"); w.Text("srcPod", "web-7d4-1"); w.Text("dstNamespace", "shop"); w.Text("dstPod", "api-5c9-1");
+            w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("site", "synth"); w.Text("verdict", i % 2 == 0 ? "FORWARDED" : "DROPPED");
+            w.Text("srcNamespace", "shop"); w.Text("srcInstance", "web-7d4-1"); w.Text("dstNamespace", "shop"); w.Text("dstInstance", "api-5c9-1");
         }
         h.Ingest("flows", w.Build()!, 9_000_000);
         h.Advance(t + 5 * Min, 9_000_001);
@@ -39,17 +39,17 @@ public class SealTests
     public void Projection_files_stay_with_the_space_through_a_commit_of_one_and_a_restart(long sealEvery)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions);
-        Assert.Contains(files, f => !f.Path.EndsWith(".sattle", StringComparison.Ordinal));
+        Assert.Contains(files, f => !f.Path.EndsWith(".module.gkql.json", StringComparison.Ordinal));
         var options = Options(sealEvery);
         using var d = new RestartTests.Durable("memory");
         string catalog, state;
-        const string Kql = "acme.deployhealth.deploymentHealth.kql";
-        var edited = files.First(f => f.Path.EndsWith(Kql, StringComparison.Ordinal)).Text.Replace("minReady:long = 0", "minReady:long = 1");
+        const string Readiness = "acme.readiness.readiness.gkql.json";
+        var edited = files.First(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal)).Text.Replace("\"minReady\", \"kind\": \"Integer\", \"default\": 0", "\"minReady\", \"kind\": \"Integer\", \"default\": 1");
         using (var h = SpaceHost.OpenDurable(d.Open(), files, options))
         {
             Feed(h);
             var svc = h.Catalog.Modules["acme.svc"].Digest;
-            h.Commit(Kql, edited, h.CatalogRevision);
+            h.Commit(Readiness, edited, h.CatalogRevision);
             Assert.Equal(svc, h.Catalog.Modules["acme.svc"].Digest);                               // a commit of another projection's file keeps the others
             catalog = h.Catalog.Graph.Digest(); state = h.StateDigest();
         }
@@ -64,15 +64,15 @@ public class SealTests
         Assert.Contains("has no projection source", Assert.Throws<InvalidOperationException>(() => new SpaceHost(files, Options(0) with { Projections = null })).Message);
     }
 
-    /// <summary>Six flows between two pods at a given minute, with the given verdicts.</summary>
+    /// <summary>Six flows between two instances at a given minute, with the given verdicts.</summary>
     static void Flows(SpaceHost h, int minute, long seq, params string[] verdicts)
     {
         var w = new RowWriter(h.RowLayout("flows"), h.Interner);
         var t = new DateTimeOffset(2026, 1, 1, 10, minute, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() * 1_000_000L;
         for (var i = 0; i < verdicts.Length; i++)
         {
-            w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("cluster", "synth"); w.Text("verdict", verdicts[i]);
-            w.Text("srcNamespace", "shop"); w.Text("srcPod", "web-7d4-1"); w.Text("dstNamespace", "shop"); w.Text("dstPod", "api-5c9-1");
+            w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("site", "synth"); w.Text("verdict", verdicts[i]);
+            w.Text("srcNamespace", "shop"); w.Text("srcInstance", "web-7d4-1"); w.Text("dstNamespace", "shop"); w.Text("dstInstance", "api-5c9-1");
         }
         h.Ingest("flows", w.Build()!, seq);
         h.Advance(t + 5 * Min, seq + 1);
@@ -83,7 +83,8 @@ public class SealTests
     [InlineData(false)] [InlineData(true)]
     public void A_host_restored_from_a_seal_continues_like_one_that_was_not_restarted(bool afterCommit)
     {
-        var edited = Files.First(f => f.Path.EndsWith("acme.ops.sattle", StringComparison.Ordinal)).Text.Replace("if(verdict == \"DROPPED\"", "if(verdict == \"REDIRECTED\"");
+        const string Ingest = "acme.ops.ingest.gkql.json";
+        var edited = Files.First(f => f.Path.EndsWith(Ingest, StringComparison.Ordinal)).Text.Replace("{\"lit\": \"DROPPED\"}", "{\"lit\": \"REDIRECTED\"}");
         (string Digest, string Space) Run(bool restart)
         {
             using var d = new RestartTests.Durable("memory");
@@ -91,7 +92,7 @@ public class SealTests
             try
             {
                 Feed(h);
-                if (afterCommit) h.Commit("acme.ops", edited, h.CatalogRevision);
+                if (afterCommit) h.Commit(Ingest, edited, h.CatalogRevision);
                 Flows(h, 20, 9_000_000, "REDIRECTED", "REDIRECTED", "FORWARDED", "DROPPED");
                 if (restart)
                 {
@@ -132,8 +133,9 @@ public class SealTests
         var preview = r.Preview(draft, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("master") });
         Assert.True(preview["scope"]!["complete"]!.GetValue<bool>());
         Assert.Equal(master, preview["graphs"]![0]!["digest"]!.GetValue<string>());                // the draft changes nothing: the preview rebuilds the master as it is
-        var edited = Files.First(f => f.Path.EndsWith("acme.deployhealth.sattle", StringComparison.Ordinal)).Text.Replace("param Integer = 0", "param Integer = 1");
-        r.Commit("acme.deployhealth", edited, r.CatalogRevision);                                  // a parameter of a view: the master must not change
+        const string Readiness = "acme.readiness.readiness.gkql.json";
+        var edited = Files.First(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal)).Text.Replace("\"minReady\", \"kind\": \"Integer\", \"default\": 0", "\"minReady\", \"kind\": \"Integer\", \"default\": 1");
+        r.Commit(Readiness, edited, r.CatalogRevision);                                 // a parameter of a view: the master must not change
         Assert.Equal(master, r.Engine.Master.State.Digest());
     }
 
@@ -231,10 +233,10 @@ public class SealTests
         Assert.Equal(digest, r.StateDigest());
         Assert.Equal(rev, r.CatalogRevision);
         Assert.Equal(space, Space(r));
-        Assert.Contains("minReady: 1", r.Definition(RestartTests.SpaceModule));
+        Assert.Contains("\"minReady\": {\"lit\": 1}", r.Definition(RestartTests.SpaceModule));
         // whether the seal was used or the journal replayed, a further definition commit works (it needs the retained inputs, which are read back from the journal)
         r.Commit(RestartTests.SpaceModule, RestartTests.BoundTo(r, 2), r.CatalogRevision);
-        Assert.Contains("minReady: 2", r.Definition(RestartTests.SpaceModule));
+        Assert.Contains("\"minReady\": {\"lit\": 2}", r.Definition(RestartTests.SpaceModule));
     }
 
     [Fact]
@@ -244,13 +246,13 @@ public class SealTests
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(25)))
         {
             Feed(h);
-            // a last input after the last seal that commits: calls between two pods that never called each other make a new relationship of the master
+            // a last input after the last seal that commits: calls between two instances that never called each other make a new relationship of the master
             var w = new RowWriter(h.RowLayout("flows"), h.Interner);
             var t = new DateTimeOffset(2026, 1, 1, 10, 30, 0, TimeSpan.Zero).ToUnixTimeMilliseconds() * 1_000_000L;
             for (var i = 0; i < 3; i++)
             {
-                w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("cluster", "synth"); w.Text("verdict", "FORWARDED");
-                w.Text("srcNamespace", "shop"); w.Text("srcPod", "web-7d4-3"); w.Text("dstNamespace", "shop"); w.Text("dstPod", "api-5c9-2");
+                w.Begin(); w.Instant("time", t + i * 1_000_000_000L); w.Text("site", "synth"); w.Text("verdict", "FORWARDED");
+                w.Text("srcNamespace", "shop"); w.Text("srcInstance", "web-7d4-3"); w.Text("dstNamespace", "shop"); w.Text("dstInstance", "api-5c9-2");
             }
             h.Ingest("flows", w.Build()!, 9_000_000);
             h.Advance(t + 5 * Min, 9_000_001);

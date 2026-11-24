@@ -1,0 +1,20 @@
+{
+  "module": "acme.biz",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+    {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null},
+    {"module": "acme.svc", "alias": "svc", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "BizCapability", "properties": [{"name": "name", "type": "Text", "label": true}, {"name": "serviceCount", "type": "Integer", "optional": true}]}
+  ],
+  "relationships": [
+    {"name": "Under", "from": "BizCapability", "to": "BizCapability", "kind": "composition"},
+    {"name": "DependsOn", "from": "BizCapability", "to": "BizCapability", "kind": "communication", "properties": [{"name": "callStatus", "type": "Text", "optional": true}, {"name": "callFlows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDrops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "callDropRatio", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
+  ],
+  "constraints": [
+    {"kind": "cardinality", "type": "Under", "side": "source", "min": 0, "max": 1},
+    {"kind": "acyclic", "type": "Under"}
+  ]
+}

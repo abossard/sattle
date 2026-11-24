@@ -29,8 +29,8 @@ public class CommitVisibilityTests
             }
         };
 
-        // The first advance creates both report graphs' fixed document elements.
+        // The first advance creates the report graph's fixed document elements.
         engine.Advance(0);
-        Assert.True(published.Values.Count(count => count > 0) >= 2);
+        Assert.True(published["readinessReport"] > 0);
     }
 }

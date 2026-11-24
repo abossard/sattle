@@ -8,65 +8,83 @@ namespace Sattle.Tests;
 public class AuthoredGraphTests
 {
     const string Base = """
-        module t.base @ 1.0.0;
-        entity Item { k: Text; a: Text; d: Text; status: Text; }
-        relationship Under (Item) -> (Item);
-        entity Seen { name: Text; }
-        identity item for Item version "1" { k: Text by exact; }
-        identity seen for Seen version "1" { name: Text by exact; }
-        /// the row shapes of the authoring adapter
-        rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
-        rows RealizesRow { capId: Text; cluster: Text; namespace: Text; service: Text; }
+        {"module": "t.base", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "a", "type": "Text"}, {"name": "d", "type": "Text"}, {"name": "status", "type": "Text"}]},
+                      {"name": "Seen", "properties": [{"name": "name", "type": "Text"}]}],
+         "relationships": [{"name": "Under", "from": "Item", "to": "Item"}],
+         "identities": [{"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},
+                        {"name": "seen", "type": "Seen", "components": [{"name": "name", "type": "Text"}]}],
+         "rows": [{"name": "CapabilityRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "parentId", "type": "Text", "optional": true}]},
+                  {"name": "RealizesRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "service", "type": "Text"}]}]}
         """;
 
     const string Ingest = """
-        graph ingest : t.base;
-        input obs : RealizesRow;
-        nodes Seen on s with (rule = "observed", description = "what was observed") = obs | project s = identity("seen", service), name = service;
+        {"graph": "ingest", "ontology": "t.base", "inputs": [{"name": "obs", "rows": "t.base.RealizesRow"}], "parameters": [],
+         "verbs": [
+           {"id": "obs", "verb": "rows", "source": "obs"},
+           {"id": "seen", "verb": "nodes", "rule": "observed", "target": {"nodes": [
+             {"var": "s", "label": "Seen", "id": {"identity": "seen", "args": [{"ref": "service"}]}, "props": {"name": {"ref": "service"}}}]}}],
+         "wires": [{"from": "obs", "to": "seen"}],
+         "rules": [{"name": "observed", "description": "what was observed"}]}
         """;
 
     const string Authored = """
-        graph authored : t.base;
-        input items : CapabilityRow;
-        nodes Item on i with (rule = "written", accept = "create, delete", update = "k, a, d, status") = items | project i = identity("item", capId), k = capId, a = name, d = owner, status;
-        edges Under from i to p with (rule = "written") = items | project i = identity("item", capId), p = identity("item", parentId);
+        {"graph": "authored", "ontology": "t.base", "inputs": [{"name": "items", "rows": "t.base.CapabilityRow"}], "parameters": [],
+         "verbs": [
+           {"id": "items", "verb": "rows", "source": "items"},
+           {"id": "item", "verb": "nodes", "rule": "written", "target": {"nodes": [
+             {"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}, "props": {"k": {"ref": "capId"}, "a": {"ref": "name"}, "d": {"ref": "owner"}, "status": {"ref": "status"}}}]}},
+           {"id": "under", "verb": "edges", "rule": "written", "target": {
+             "nodes": [{"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}},
+                       {"var": "p", "label": "Item", "id": {"identity": "item", "args": [{"ref": "parentId"}]}}],
+             "edges": [{"var": "u", "label": "Under", "from": "i", "to": "p"}]}}],
+         "wires": [{"from": "items", "to": "item"}, {"from": "items", "to": "under"}],
+         "rules": [{"name": "written", "accept": ["create", "delete"], "update": ["k", "a", "d", "status"]}]}
         """;
 
     const string View = """
-        module t.view @ 1.0.0;
-        import t.base @ 1.0.0 sha256:… as base;
-        entity V { a: Text; }
+        {"module": "t.view", "version": "1.0.0", "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}],
+         "entities": [{"name": "V", "properties": [{"name": "a", "type": "Text"}]}]}
         """;
 
     const string Lens = """
-        graph v : t.view;
-        input authored : t.base;
-        let shown = graph("authored") | graph-match (i) where labels(i) has "Item" project i;
-        nodes V on i with (rule = "items", update = "a") = shown | project i = i.id, a = i.a;
+        {"graph": "v", "ontology": "t.view", "inputs": [{"name": "authored", "ontology": "t.base"}], "parameters": [],
+         "verbs": [
+           {"id": "shown", "verb": "graph-match", "graph": "authored", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
+           {"id": "items", "verb": "nodes", "rule": "items", "target": {"nodes": [{"var": "v", "label": "V", "id": {"ref": "i"}, "props": {"a": {"ref": "i.a"}}}]}}],
+         "wires": [{"from": "shown", "to": "items"}],
+         "rules": [{"name": "items", "update": ["a"]}]}
         """;
 
-    static string Space(string graphs) => $$"""
-        module t.space @ 1.0.0;
-        import t.base @ 1.0.0 sha256:… as base;
-        import t.view @ 1.0.0 sha256:… as view;
-        space s {
-          source items adapter "record" rows base.CapabilityRow;
-          source obs adapter "record" rows base.RealizesRow;
-          {{graphs}}
-        }
+    static string Space(string graphs, string sources = "") => $$$"""
+        {"module": "t.space", "version": "1.0.0",
+         "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}, {"module": "t.view", "alias": "view", "version": "1.0.0", "digest": null}],
+         "space": {"name": "s",
+                   "sources": [{"name": "items", "adapter": "record", "rows": "base.CapabilityRow"}, {"name": "obs", "adapter": "record", "rows": "base.RealizesRow"}{{{sources}}}],
+                   "graphs": [{{{graphs}}}]}}
         """;
 
     const string Graphs = """
-        master graph master = base.ingest(obs: obs);
-          graph authored = base.authored(items: items);
-          graph view = view.v(authored: authored);
+        {"name": "master", "projection": "base.ingest", "master": true, "inputs": {"obs": "obs"}},
+        {"name": "authored", "projection": "base.authored", "inputs": {"items": "items"}},
+        {"name": "view", "projection": "view.v", "inputs": {"authored": "authored"}}
         """;
 
-    /// <summary>The definitions: the base module with `types` added, its two ingestion projections with `observed` and `written` added, the lens view and the space with `graphs`.</summary>
-    static SourceFile[] Files(string types = "", string observed = "", string written = "", string graphs = Graphs) =>
+    /// <summary>`document` with the arrays of the object `more` appended to its arrays of the same name, and its other members added.</summary>
+    static string With(string document, string more)
+    {
+        var d = JsonNode.Parse(document)!.AsObject();
+        foreach (var (name, value) in JsonNode.Parse(more)!.AsObject())
+            if (d[name] is JsonArray items) foreach (var x in value!.AsArray()) items.Add(x!.DeepClone());
+            else d[name] = value!.DeepClone();
+        return d.ToJsonString();
+    }
+
+    /// <summary>The definitions: the base module with the members of `types` added, its two ingestion projections with the verbs, wires, inputs and rules of `observed` and `written` added, the lens view and the space with `graphs`.</summary>
+    static SourceFile[] Files(string types = "{}", string observed = "{}", string written = "{}", string graphs = Graphs, string sources = "") =>
     [
-        new("t.base.sattle", Base + "\n" + types), new("t.base.ingest.kql", Ingest + "\n" + observed), new("t.base.authored.kql", Authored + "\n" + written),
-        new("t.view.sattle", View), new("t.view.v.kql", Lens), new("t.space.sattle", Space(graphs)),
+        new("t.base.module.gkql.json", With(Base, types)), new("t.base.ingest.gkql.json", With(Ingest, observed)), new("t.base.authored.gkql.json", With(Authored, written)),
+        new("t.view.module.gkql.json", View), new("t.view.v.gkql.json", Lens), new("t.space.module.gkql.json", Space(graphs, sources)),
     ];
 
     static SpaceHost Host()
@@ -76,7 +94,7 @@ public class AuthoredGraphTests
         foreach (var k in new[] { "k1", "k2" }) { rw.Begin(); rw.Text("capId", k); rw.Text("name", "a-" + k); rw.Text("owner", "d"); rw.Text("status", "live"); }
         h.Ingest("items", rw.Build()!, 1);
         var ow = new RowWriter(h.RowLayout("obs"), h.Interner);
-        ow.Begin(); ow.Text("capId", "k1"); ow.Text("cluster", "c"); ow.Text("namespace", "n"); ow.Text("service", "web");
+        ow.Begin(); ow.Text("capId", "k1"); ow.Text("site", "c"); ow.Text("namespace", "n"); ow.Text("service", "web");
         h.Ingest("obs", ow.Build()!, 2);
         return h;
     }
@@ -124,21 +142,38 @@ public class AuthoredGraphTests
 
     /// <summary>What a graph other than the master that ingests may not do: share a source, link identities, write telemetry.</summary>
     [Theory]
-    [InlineData("a source bound twice", "", "", "bound by more than one graph")]
-    [InlineData("a link in authored", "identity itemName for Item version \"1\" { name: Text by exact; }\nequivalence itemKeyIsName between item, itemName assert threshold 1.0;\n",
-        "link itemKeyIsName from i to n with (rule = \"linked\", confidence = 1.0, description = \"names\") = items | project i = identity(\"item\", capId), n = identity(\"itemName\", name);\n", "links no identities")]
-    [InlineData("telemetry in authored", "entity Level { k: Text; level?: Decimal telemetry gauge max every 60s; }\nidentity level for Level version \"1\" { k: Text by exact; }\nrows LevelRow { k: Text; time: Instant; v: Decimal; }\n",
-        "input levels : LevelRow;\nnodes Level on l with (rule = \"levels\", description = \"levels\") = levels | summarize level = max(v) by k, windowStart = bin(['time'], 60s) | project l = identity(\"level\", k), windowStart, k, level;\n", "writes no telemetry")]
+    [InlineData("a source bound twice", "{}", "{}", "bound by more than one graph")]
+    [InlineData("a link in authored", """
+        {"identities": [{"name": "itemName", "type": "Item", "components": [{"name": "name", "type": "Text"}]}],
+         "equivalences": [{"name": "itemKeyIsName", "left": "item", "right": "itemName", "mode": "assert", "threshold": 1.0}]}
+        """, """
+        {"verbs": [{"id": "linked", "verb": "link", "rule": "linked", "link": {"policy": "itemKeyIsName", "left": {"identity": "item", "args": [{"ref": "capId"}]}, "right": {"identity": "itemName", "args": [{"ref": "name"}]}, "confidence": 1.0}}],
+         "wires": [{"from": "items", "to": "linked"}],
+         "rules": [{"name": "linked", "description": "names"}]}
+        """, "links no identities")]
+    [InlineData("telemetry in authored", """
+        {"entities": [{"name": "Level", "properties": [{"name": "k", "type": "Text"}, {"name": "level", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "60s"}}]}],
+         "identities": [{"name": "level", "type": "Level", "components": [{"name": "k", "type": "Text"}]}],
+         "rows": [{"name": "LevelRow", "fields": [{"name": "k", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "v", "type": "Decimal"}]}]}
+        """, """
+        {"inputs": [{"name": "levels", "rows": "t.base.LevelRow"}],
+         "verbs": [{"id": "levelRows", "verb": "rows", "source": "levels"},
+                   {"id": "minutes", "verb": "window", "window": {"time": "time", "period": "1m"}},
+                   {"id": "highest", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"level": {"fn": "max", "args": [{"ref": "v"}]}}},
+                   {"id": "levels", "verb": "nodes", "rule": "levels", "target": {"nodes": [{"var": "l", "label": "Level", "id": {"identity": "level", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "level": {"ref": "level"}}}]}}],
+         "wires": [{"from": "levelRows", "to": "minutes"}, {"from": "minutes", "to": "highest"}, {"from": "highest", "to": "levels"}],
+         "rules": [{"name": "levels", "description": "levels"}]}
+        """, "writes no telemetry")]
     public void A_graph_other_than_the_master_that_ingests_is_refused_what_belongs_to_the_master(string what, string types, string written, string message)
     {
-        var graphs = what switch
+        var (graphs, sources) = what switch
         {
-            "a source bound twice" => "master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items);\n  graph again = base.authored(items: items);\n  graph view = view.v(authored: authored);",
+            "a source bound twice" => (Graphs + """, {"name": "again", "projection": "base.authored", "inputs": {"items": "items"}}""", ""),
             // these rows come from no adapter: the space is only loaded, never run
-            "telemetry in authored" => "source levels adapter \"test\" rows base.LevelRow;\n  master graph master = base.ingest(obs: obs);\n  graph authored = base.authored(items: items, levels: levels);\n  graph view = view.v(authored: authored);",
-            _ => Graphs,
+            "telemetry in authored" => (Graphs.Replace("""{"items": "items"}""", """{"items": "items", "levels": "levels"}"""), """, {"name": "levels", "adapter": "test", "rows": "base.LevelRow"}"""),
+            _ => (Graphs, ""),
         };
-        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs), Repo.Projections));
+        var e = Assert.Throws<InvalidOperationException>(() => SpaceHost.LoadDefinitions(Files(types, written: written, graphs: graphs, sources: sources), Repo.Projections));
         Assert.True(e.Message.Contains(message, StringComparison.Ordinal), $"{what}: {e.Message}");
     }
 
@@ -150,12 +185,26 @@ public class AuthoredGraphTests
     [InlineData("only a view creates the type", "Loose", "loose", true, true)]
     public void An_edge_end_that_a_sibling_ingestion_projection_creates_is_not_deferred(string what, string endType, string identity, bool view, bool deferred)
     {
-        var types = $"entity Loose {{ name: Text; }}\nidentity loose for Loose version \"1\" {{ name: Text by exact; }}\nrelationship Marks ({endType}) -> (Item);\n";
-        var marks = $"edges Marks from m to i with (rule = \"marks\", description = \"marks\") = items | project m = identity(\"{identity}\", owner), i = identity(\"item\", capId);\n";
-        SourceFile[] files = [.. Files(types, written: marks), .. view ? new[] { new SourceFile("t.base.looseView.kql", """
-            graph looseView : t.base;
-            input g : t.base;
-            nodes Loose on l with (rule = "made", description = "loose") = graph("g") | graph-match (i) where labels(i) has "Item" project l = identity("loose", i.k), name = i.k;
+        var types = $$"""
+            {"entities": [{"name": "Loose", "properties": [{"name": "name", "type": "Text"}]}],
+             "identities": [{"name": "loose", "type": "Loose", "components": [{"name": "name", "type": "Text"}]}],
+             "relationships": [{"name": "Marks", "from": "{{endType}}", "to": "Item"}]}
+            """;
+        var marks = $$$"""
+            {"verbs": [{"id": "marks", "verb": "edges", "rule": "marks", "target": {
+               "nodes": [{"var": "m", "label": "{{{endType}}}", "id": {"identity": "{{{identity}}}", "args": [{"ref": "owner"}]}},
+                         {"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}}],
+               "edges": [{"var": "e", "label": "Marks", "from": "m", "to": "i"}]}}],
+             "wires": [{"from": "items", "to": "marks"}],
+             "rules": [{"name": "marks", "description": "marks"}]}
+            """;
+        SourceFile[] files = [.. Files(types, written: marks), .. view ? new[] { new SourceFile("t.base.looseView.gkql.json", """
+            {"graph": "looseView", "ontology": "t.base", "inputs": [{"name": "g", "ontology": "t.base"}], "parameters": [],
+             "verbs": [
+               {"id": "items", "verb": "graph-match", "graph": "g", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
+               {"id": "made", "verb": "nodes", "rule": "made", "target": {"nodes": [{"var": "l", "label": "Loose", "id": {"identity": "loose", "args": [{"ref": "i.k"}]}, "props": {"name": {"ref": "i.k"}}}]}}],
+             "wires": [{"from": "items", "to": "made"}],
+             "rules": [{"name": "made", "description": "loose"}]}
             """) } : []];
         var res = new Catalog(Repo.Projections).Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
@@ -168,10 +217,22 @@ public class AuthoredGraphTests
     public void A_graph_that_ingests_follows_a_merge()
     {
         var files = Files(
-            "entity Note { n?: Text; }\nidentity noteKey for Note version \"1\" { k: Text by exact; }\nidentity noteName for Note version \"1\" { name: Text by exact; }\nequivalence noteKeyIsName between noteKey, noteName assert threshold 1.0;\n",
-            "link noteKeyIsName from k to n with (rule = \"observed\", confidence = 1.0) = obs | project k = identity(\"noteKey\", capId), n = identity(\"noteName\", service);\n",
-            "nodes Note on n with (rule = \"notes\", description = \"a note per item, by key and by name\") = items | project n = identity(\"noteKey\", capId);\n"
-            + "nodes Note on n with (rule = \"notes\") = items | project n = identity(\"noteName\", name);\n");
+            """
+            {"entities": [{"name": "Note", "properties": [{"name": "n", "type": "Text", "optional": true}]}],
+             "identities": [{"name": "noteKey", "type": "Note", "components": [{"name": "k", "type": "Text"}]},
+                            {"name": "noteName", "type": "Note", "components": [{"name": "name", "type": "Text"}]}],
+             "equivalences": [{"name": "noteKeyIsName", "left": "noteKey", "right": "noteName", "mode": "assert", "threshold": 1.0}]}
+            """,
+            """
+            {"verbs": [{"id": "linked", "verb": "link", "rule": "observed", "link": {"policy": "noteKeyIsName", "left": {"identity": "noteKey", "args": [{"ref": "capId"}]}, "right": {"identity": "noteName", "args": [{"ref": "service"}]}, "confidence": 1.0}}],
+             "wires": [{"from": "obs", "to": "linked"}]}
+            """,
+            """
+            {"verbs": [{"id": "byKey", "verb": "nodes", "rule": "notes", "target": {"nodes": [{"var": "n", "label": "Note", "id": {"identity": "noteKey", "args": [{"ref": "capId"}]}}]}},
+                       {"id": "byName", "verb": "nodes", "rule": "notes", "target": {"nodes": [{"var": "n", "label": "Note", "id": {"identity": "noteName", "args": [{"ref": "name"}]}}]}}],
+             "wires": [{"from": "items", "to": "byKey"}, {"from": "items", "to": "byName"}],
+             "rules": [{"name": "notes", "description": "a note per item, by key and by name"}]}
+            """);
         using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections});
         int Notes() => h.Entities("authored", "Note").Count;
         var rw = new RowWriter(h.RowLayout("items"), h.Interner);
@@ -179,7 +240,7 @@ public class AuthoredGraphTests
         h.Ingest("items", rw.Build()!, 1);
         Assert.Equal(2, Notes());                                       // one note under two keys, not yet known to be one
         var ow = new RowWriter(h.RowLayout("obs"), h.Interner);
-        ow.Begin(); ow.Text("capId", "k1"); ow.Text("cluster", "c"); ow.Text("namespace", "n"); ow.Text("service", "a-k1");
+        ow.Begin(); ow.Text("capId", "k1"); ow.Text("site", "c"); ow.Text("namespace", "n"); ow.Text("service", "a-k1");
         h.Ingest("obs", ow.Build()!, 2);
         Assert.Equal(1, Notes());                                       // the link merged the two ids, and the graph that ingested them followed
     }

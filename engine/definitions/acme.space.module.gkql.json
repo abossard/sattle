@@ -1,0 +1,47 @@
+{
+  "module": "acme.space",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "sattle.source.platform", "alias": "platform", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.flowlog", "alias": "flowlog", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.cloud", "alias": "cloudsrc", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.metrics", "alias": "metrics", "version": "1.0.0", "digest": null},
+    {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null},
+    {"module": "acme.svc", "alias": "svc", "version": "1.0.0", "digest": null},
+    {"module": "acme.readiness", "alias": "dh", "version": "1.0.0", "digest": null},
+    {"module": "acme.report", "alias": "rpt", "version": "1.0.0", "digest": null},
+    {"module": "acme.biz", "alias": "biz", "version": "1.0.0", "digest": null}
+  ],
+  "space": {
+    "name": "operations",
+    "sources": [
+      {"name": "instances", "adapter": "record", "rows": "platform.InstanceRow"},
+      {"name": "accounts", "adapter": "record", "rows": "platform.AccountRow"},
+      {"name": "hostRefs", "adapter": "record", "rows": "platform.HostReferenceRow"},
+      {"name": "services", "adapter": "record", "rows": "platform.ServiceRow"},
+      {"name": "units", "adapter": "record", "rows": "platform.UnitRow"},
+      {"name": "endpoints", "adapter": "record", "rows": "platform.EndpointRow"},
+      {"name": "selections", "adapter": "record", "rows": "platform.SelectsRow"},
+      {"name": "flows", "adapter": "record", "rows": "flowlog.FlowRow"},
+      {"name": "nodes", "adapter": "record", "rows": "platform.HostRow"},
+      {"name": "events", "adapter": "record", "rows": "platform.EventRow"},
+      {"name": "resources", "adapter": "record", "rows": "cloudsrc.ResourceRow"},
+      {"name": "metrics", "adapter": "record", "rows": "metrics.MetricRow"},
+      {"name": "activity", "adapter": "record", "rows": "cloudsrc.ActivityRow"},
+      {"name": "diagActivity", "adapter": "record", "rows": "cloudsrc.DiagnosticActivityRow"},
+      {"name": "audit", "adapter": "record", "rows": "cloudsrc.AuditRow"},
+      {"name": "resourceMetrics", "adapter": "record", "rows": "cloudsrc.ResourceMetricRow"},
+      {"name": "flowLogs", "adapter": "record", "rows": "cloudsrc.FlowLogRow"},
+      {"name": "caps", "adapter": "record", "rows": "ops.CapabilityRow"},
+      {"name": "realizes", "adapter": "record", "rows": "ops.RealizesRow"}
+    ],
+    "graphs": [
+      {"name": "master", "projection": "ops.ingest", "master": true, "inputs": {"instances": "instances", "services": "services", "accounts": "accounts", "hostRefs": "hostRefs", "units": "units", "endpoints": "endpoints", "selections": "selections", "flows": "flows", "nodes": "nodes", "events": "events", "resources": "resources", "metrics": "metrics", "activity": "activity", "diagActivity": "diagActivity", "audit": "audit", "resourceMetrics": "resourceMetrics", "flowLogs": "flowLogs"}},
+      {"name": "authored", "projection": "ops.authored", "master": false, "inputs": {"caps": "caps", "realizes": "realizes"}},
+      {"name": "serviceTree", "projection": "svc.serviceDeps", "master": false, "inputs": {"master": "master"}},
+      {"name": "capabilities", "projection": "biz.capabilityView", "master": false, "inputs": {"authored": "authored", "tree": "serviceTree"}},
+      {"name": "readiness", "projection": "dh.readiness", "master": false, "inputs": {"master": "master"}},
+      {"name": "readinessReport", "projection": "rpt.readinessReport", "master": false, "inputs": {"health": "readiness"}}
+    ]
+  }
+}

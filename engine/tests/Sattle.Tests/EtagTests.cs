@@ -19,13 +19,13 @@ public class EtagTests
     }
 
     static IReadOnlyList<Sattle.Language.SourceFile> WithRole(string role) =>
-        [.. Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.workload.sattle", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("\"Degraded\": warning", "\"Degraded\": " + role) } : f)];
+        [.. Sattle.Language.Catalog.ReadDirectory(Repo.Definitions).Select(f => f.Path.EndsWith("acme.readiness.module.gkql.json", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("\"NotReady\": \"danger\"", "\"NotReady\": \"" + role + "\"") } : f)];
 
     [Fact]
     public async Task Two_hosts_whose_definitions_differ_in_one_value_role_answer_different_ETags_for_the_ontology_at_the_same_catalog_revision()
     {
         static Task<(string Revision, string Tag, string Again)> Ask(SpaceHost host) => ServerTests.Serving(host, async http =>
-            (JsonNode.Parse((await Get(http, "/space")).Body)!["catalogRevision"]!.GetValue<string>(), (await Get(http, "/graphs/workload/ontology")).Tag, (await Get(http, "/graphs/workload/ontology")).Tag));
+            (JsonNode.Parse((await Get(http, "/space")).Body)!["catalogRevision"]!.GetValue<string>(), (await Get(http, "/graphs/readiness/ontology")).Tag, (await Get(http, "/graphs/readiness/ontology")).Tag));
         using var a = new SpaceHost(WithRole("warning"), Options);
         using var b = new SpaceHost(WithRole("danger"), Options);
         var (first, second) = (await Ask(a), await Ask(b));
@@ -39,8 +39,8 @@ public class EtagTests
     public async Task The_same_content_has_the_same_ETag_after_a_restart_from_a_store_and_in_another_host_instance()
     {
         var fixture = Path.Combine(Repo.Root, "engine", "tests", "Sattle.Tests", "fixtures", "deploy-health");
-        string[] paths = ["/graphs/workload/ontology", "/graphs/deploymentHealth/snapshot", "/graphs/deploymentHealth/patches", "/graphs/master/snapshot?revision=1", "/definitions",
-            "/graphs/deploymentReport/document", "/graphs/deploymentReport/document?format=json"];
+        string[] paths = ["/graphs/readiness/ontology", "/graphs/readiness/snapshot", "/graphs/readiness/patches", "/graphs/master/snapshot?revision=1", "/definitions",
+            "/graphs/readinessReport/document", "/graphs/readinessReport/document?format=json"];
         static Task<string[]> Tags(SpaceHost host, string[] paths) => ServerTests.Serving(host, async http => { var tags = new List<string>(); foreach (var p in paths) { var (status, tag, _) = await Get(http, p); Assert.Equal(200, status); tags.Add(tag); } return tags.ToArray(); });
         var store = new InMemoryGraphStore();
         string[] before;

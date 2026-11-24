@@ -1,0 +1,16 @@
+{
+  "module": "sattle.source.platform",
+  "version": "1.0.0",
+  "imports": [],
+  "rows": [
+    {"name": "InstanceRow", "fields": [{"name": "site", "type": "Text"}, {"name": "uid", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "phase", "type": "Text", "optional": true}, {"name": "teamLabel", "type": "Text", "optional": true}, {"name": "hostName", "type": "Text", "optional": true}, {"name": "restarts", "type": "Integer", "optional": true}, {"name": "ready", "type": "Boolean", "optional": true}, {"name": "account", "type": "Text", "optional": true}, {"name": "unit", "type": "Text", "optional": true}]},
+    {"name": "UnitRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "replicas", "type": "Integer", "optional": true}]},
+    {"name": "ServiceRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "externalName", "type": "Text", "optional": true}, {"name": "address", "type": "Text", "optional": true}]},
+    {"name": "AccountRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "clientId", "type": "Text", "optional": true}]},
+    {"name": "HostReferenceRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "unit", "type": "Text"}, {"name": "variable", "type": "Text"}, {"name": "host", "type": "Text"}]},
+    {"name": "EndpointRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "service", "type": "Text"}, {"name": "address", "type": "Text"}, {"name": "instanceUid", "type": "Text", "optional": true}]},
+    {"name": "SelectsRow", "fields": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "service", "type": "Text"}, {"name": "unit", "type": "Text"}]},
+    {"name": "HostRow", "fields": [{"name": "site", "type": "Text"}, {"name": "uid", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "resourceId", "type": "Text", "optional": true}, {"name": "pool", "type": "Text", "optional": true}]},
+    {"name": "EventRow", "fields": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "kind", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "reason", "type": "Text"}, {"name": "type", "type": "Text"}, {"name": "count", "type": "Integer"}, {"name": "message", "type": "Text", "optional": true}]}
+  ]
+}

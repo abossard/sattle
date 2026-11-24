@@ -1,5 +1,5 @@
 using System.Text.Json;
-using System.Text.RegularExpressions;
+using System.Text.Json.Nodes;
 using Sattle.Core;
 using Sattle.Language;
 using Sattle.Runtime;
@@ -14,9 +14,7 @@ public class ProjectionEdgesTests
     /// <summary>Graphs of the space that declare relationship types in their output ontology and are exempt from "has relationships on the estate", with the reason. Everything else must have them.</summary>
     internal static readonly Dictionary<string, string> Exempt = new()
     {
-        ["deploymentReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
-        ["healthReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
-        ["treeSignals"] = "a list of signals: a signal names its element in a property, the hierarchy and the evidence edges are in the other graphs of the tree",
+        ["readinessReport"] = "a document: ordered blocks, its ontology (sattle.doc) declares no relationship type",
     };
 
     public static IEnumerable<object[]> Graphs() => Repo.LoadExamples(out _).Spaces.Values.Single().Graphs.Select(g => new object[] { g.Name });
@@ -71,7 +69,7 @@ public class ProjectionEdgesTests
         Assert.Equal(["Ordering -> Commerce", "Storefront -> Commerce"], under);
         var lifted = Summed(e, "capabilities", "callFlows", "capabilities");
         var service = Summed(e, "serviceTree", "flows", "serviceTree");
-        Assert.Single(lifted);                                                                           // database has no pods, so nothing calls into data-platform
+        Assert.Single(lifted);                                                                           // database has no instances, so nothing calls into data-platform
         Assert.Equal(service["web -> api"], lifted["Storefront -> Ordering"]);
         Assert.True(lifted.Values.All(v => v > 0));
     }
@@ -107,7 +105,7 @@ public class ProjectionEdgesTests
         var services = new[] { "web", "api", "db" }; var realizes = new List<string>();
         for (var i = 0; i < 3; i++)
             foreach (var cap in (realizesWebApiDb[i] ?? "").Split('|', StringSplitOptions.RemoveEmptyEntries))
-                realizes.Add(Record("RealizesRow", 0.6, 100 + i * 10 + Array.IndexOf((realizesWebApiDb[i] ?? "").Split('|'), cap), $"realizes/{cap}/{services[i]}", new { capId = cap, cluster = "synth", @namespace = "shop", service = services[i] }));
+                realizes.Add(Record("RealizesRow", 0.6, 100 + i * 10 + Array.IndexOf((realizesWebApiDb[i] ?? "").Split('|'), cap), $"realizes/{cap}/{services[i]}", new { capId = cap, site = "synth", @namespace = "shop", service = services[i] }));
         File.WriteAllLines(Path.Combine(dir, "records", "realizes.ndjson"), realizes);
         AddDb(dir, extraWebToDb);
         return dir;
@@ -119,25 +117,25 @@ public class ProjectionEdgesTests
     static string Record(string type, double sec, long seq, string key, object values) =>
         JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = "records:" + type, ["capturedAt"] = At(sec), ["seq"] = seq, ["key"] = $"records:{type}/{key}", ["meta"] = null, ["payload"] = new { key, values } });
 
-    /// <summary>A third service behind api for the lift tests: Deployment, Service and pod `db` and its endpoint, flows from both api pods to the db pod every 5 s for ten minutes (every other one dropped in minutes 4 to 7), and with `extraWebToDb` the same flows from web-7d4-1 too. The shipped estate's database is an ExternalName Service without pods.</summary>
+    /// <summary>A third service behind api for the lift tests: Unit, Service and instance `db` and its endpoint, flows from both api instances to the db instance every 5 s for ten minutes (every other one dropped in minutes 4 to 7), and with `extraWebToDb` the same flows from web-7d4-1 too. The shipped estate's database is an ExternalName Service without instances.</summary>
     static void AddDb(string dir, bool extraWebToDb)
     {
-        var k8s = new List<string>
+        var platform = new List<string>
         {
-            Record("DeploymentRow", 0.2, 0, "deployment/shop/db", new { cluster = "synth", @namespace = "shop", name = "db", replicas = 1 }),
-            Record("ServiceRow", 0.4, 0, "service/shop/db", new { cluster = "synth", @namespace = "shop", name = "db" }),
-            Record("PodRow", 1, 0, "pod/uid-db-6b8-1", new { cluster = "synth", uid = "uid-db-6b8-1", @namespace = "shop", name = "db-6b8-1", phase = "Running", nodeName = "node-b", deployment = "db" }),
-            Record("EndpointRow", 2, 0, "endpoint/shop/db/10.0.2.1", new { cluster = "synth", @namespace = "shop", service = "db", address = "10.0.2.1", podUid = "uid-db-6b8-1" }),
+            Record("UnitRow", 0.2, 0, "unit/shop/db", new { site = "synth", @namespace = "shop", name = "db", replicas = 1 }),
+            Record("ServiceRow", 0.4, 0, "service/shop/db", new { site = "synth", @namespace = "shop", name = "db" }),
+            Record("InstanceRow", 1, 0, "instance/uid-db-6b8-1", new { site = "synth", uid = "uid-db-6b8-1", @namespace = "shop", name = "db-6b8-1", phase = "Running", hostName = "node-b", unit = "db" }),
+            Record("EndpointRow", 2, 0, "endpoint/shop/db/10.0.2.1", new { site = "synth", @namespace = "shop", service = "db", address = "10.0.2.1", instanceUid = "uid-db-6b8-1" }),
         };
         var flows = new List<string>(); var n = 0;
         for (var sec = 10; sec < 600; sec += 5)
             foreach (var src in extraWebToDb ? new[] { "api-5c9-1", "api-5c9-2", "web-7d4-1" } : ["api-5c9-1", "api-5c9-2"])
             {
                 var verdict = sec is >= 240 and < 420 && sec / 5 % 2 == 0 ? "DROPPED" : "FORWARDED";
-                flows.Add(Record("FlowRow", sec + 0.0005, 0, $"flow-db-{n}", new { time = At(sec + 0.0005), cluster = "synth", verdict, srcNamespace = "shop", srcPod = src, dstNamespace = "shop", dstPod = "db-6b8-1" }));
+                flows.Add(Record("FlowRow", sec + 0.0005, 0, $"flow-db-{n}", new { time = At(sec + 0.0005), site = "synth", verdict, srcNamespace = "shop", srcInstance = src, dstNamespace = "shop", dstInstance = "db-6b8-1" }));
                 n++;
             }
-        File.WriteAllLines(Path.Combine(dir, "records", "db-kubernetes.ndjson"), k8s);
+        File.WriteAllLines(Path.Combine(dir, "records", "db-platform.ndjson"), platform);
         File.WriteAllLines(Path.Combine(dir, "records", "db-flows.ndjson"), flows);
     }
 
@@ -166,86 +164,78 @@ public class ProjectionEdgesTests
         finally { Directory.Delete(dir, true); }
     }
 
-    // ---- a capture names its workload in an arguments file; the tracked space takes those values ---------------------------------------
-
-    static string WithoutBinding(string text) => Regex.Replace(Regex.Replace(text, @"(workloadNamespace|clusterLabel|aksName|nodeResourceGroup|hubResourceGroup): ""[^""]*""", "$1: \"_\""), @"sha256:[0-9a-f]{64}", "sha256:_");
-
-    [Fact]
-    public void The_arguments_file_of_a_capture_gives_the_tracked_space_its_values_by_name()
-    {
-        var dir = Path.Combine(Path.GetTempPath(), "sattle-args-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(dir);
-        try
-        {
-            Assert.Null(Sattle.Cli.Program.ArgumentsOf(dir));                                          // no file: the tracked arguments, as on a fresh clone
-            File.WriteAllText(Path.Combine(dir, Sattle.Cli.Program.SpaceArguments), """{ "workloadNamespace": "other", "aksName": "a \"quoted\" name", "notAnArgument": "ignored" }""");
-            var tracked = File.ReadAllText(Path.Combine(Repo.Definitions, "acme.space.sattle"));
-            var files = Repo.DefinitionFilesFor(dir);
-            var space = files.Single(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal)).Text;
-            Assert.Equal(WithoutBinding(tracked), WithoutBinding(space));                               // nothing but argument values differs
-            Assert.Equal(Regex.Matches(tracked, @"workloadNamespace: ").Count, Regex.Matches(space, @"workloadNamespace: ""other""").Count);       // every use of the name
-            Assert.Contains(@"aksName: ""a \u0022quoted\u0022 name""", space);                                                                  // a value is written as a text literal of the language
-            Assert.DoesNotContain("notAnArgument", space);
-            var cat = Repo.CatalogFor(dir, out var res);
-            Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-            Assert.Contains(cat.Spaces.Values.Single().Graphs, g => g.Name == "workload");
-        }
-        finally { Directory.Delete(dir, true); }
-    }
-
     // ---- the image is a function: policy for a node with two images, composition of two lifts, ratio and state of a lifted edge -------------
 
-    static ReplayTests.Run RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graphLine)
+    static ReplayTests.Run RunWith(string dir, string? module, SourceFile[] moduleFiles, string? graph)
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
-        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        var space = files[i].Text;
-        if (module is not null) space = space.Replace("import acme.biz ", $"import {module} @ 1.0.0 sha256:… as extra;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  " + graphLine);
-        files[i] = files[i] with { Text = space };
+        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.module.gkql.json", StringComparison.Ordinal));
+        var space = JsonNode.Parse(files[i].Text)!;
+        if (module is not null)
+        {
+            space["imports"]!.AsArray().Add(new JsonObject { ["module"] = module, ["alias"] = "extra", ["version"] = "1.0.0", ["digest"] = null });
+            space["space"]!["graphs"]!.AsArray().Add(JsonNode.Parse(graph!));
+        }
+        files[i] = files[i] with { Text = space.ToJsonString() };
         files.AddRange(moduleFiles);
         var cat = new Catalog(Repo.Projections); var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
         return ReplayTests.Replay(dir, 200, o: new EngineOptions { Tenant = "lab", LateHorizonWindows = 1_000_000 }, cat: cat);
     }
 
-    /// <summary>One step from the pods straight to the capabilities: the composition of the two lifts, written as one.</summary>
+    /// <summary>One step from the instances straight to the capabilities: the composition of the two lifts, written as one.</summary>
     const string OneStep = """
-        module acme.onestep @ 1.0.0;
-        import sattle.infra @ 1.0.0 sha256:… as infra;
-        import acme.ops     @ 1.0.0 sha256:… as ops;
-        import acme.biz     @ 1.0.0 sha256:… as biz;
+        {"module": "acme.onestep", "version": "1.0.0",
+         "imports": [{"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+                     {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null},
+                     {"module": "acme.biz", "alias": "biz", "version": "1.0.0", "digest": null}]}
         """;
 
     const string OneStepGraph = """
-        graph oneStep : acme.biz with (history = 4);
-        input master : acme.ops;
-        input authored : acme.ops;
-
-        let realized = graph("authored")
-            | graph-match (s)-[r]->(c) where labels(r) has "Realizes" and c.status != "retired"
-              project service = s.id, capability = c.id;
-        let edges = graph("master")
-            | graph-match (a)-[k]->(b), (a)-[x]->(s), (b)-[y]->(t)
-              where labels(a) has "Pod" and labels(k) has "Calls" and labels(b) has "Pod" and labels(x) has "Backs" and labels(s) has "Service" and labels(y) has "Backs" and labels(t) has "Service"
-              project k = k.id, s = s.id, t = t.id
-            | join kind=inner (realized | project sa = service, ca = capability) on $left.s == $right.sa
-            | join kind=inner (realized | project sb = service, cb = capability) on $left.t == $right.sb
-            | where ca != cb;
-        edges DependsOn from ca to cb with (key = "one") = edges | project ca, cb;
-        extend edges DependsOn from ca to cb with (key = "one") = edges
-            | join kind=inner (telemetry("master", 24h) | where property in ("flows", "drops") | project k = id, windowStart, property, value) on k
-            | summarize callFlows = sumif(value, property == "flows"), callDrops = sumif(value, property == "drops") by ca, cb, windowStart;
+        {"graph": "oneStep", "ontology": "acme.biz", "history": 4,
+         "inputs": [{"name": "master", "ontology": "acme.ops"}, {"name": "authored", "ontology": "acme.ops"}], "parameters": [],
+         "verbs": [
+           {"id": "realized_1", "verb": "graph-match", "graph": "authored", "pattern": {"nodes": [{"var": "s", "label": "Service"}, {"var": "c", "label": "Capability"}], "edges": [{"var": "r", "label": "Realizes", "from": "s", "to": "c"}]}},
+           {"id": "realized_2", "verb": "where", "condition": {"fn": "!=", "args": [{"fn": "coalesce", "args": [{"ref": "c.status"}, {"lit": ""}]}, {"lit": "retired"}]}},
+           {"id": "realized_3", "verb": "project", "columns": {"service": {"ref": "s"}, "capability": {"ref": "c"}}},
+           {"id": "fromImage", "verb": "project", "columns": {"sa": {"fn": "id", "args": [{"ref": "service"}]}, "ca": {"ref": "capability"}}},
+           {"id": "toImage", "verb": "project", "columns": {"sb": {"fn": "id", "args": [{"ref": "service"}]}, "cb": {"ref": "capability"}}},
+           {"id": "edges_1", "verb": "graph-match", "graph": "master", "pattern": {
+             "nodes": [{"var": "a", "label": "Instance"}, {"var": "b", "label": "Instance"}, {"var": "s", "label": "Service"}, {"var": "t", "label": "Service"}],
+             "edges": [{"var": "k", "label": "Calls", "from": "a", "to": "b"}, {"var": "x", "label": "Backs", "from": "a", "to": "s"}, {"var": "y", "label": "Backs", "from": "b", "to": "t"}]}},
+           {"id": "edges_2", "verb": "project", "columns": {"k": {"ref": "k"}, "s": {"fn": "id", "args": [{"ref": "s"}]}, "t": {"fn": "id", "args": [{"ref": "t"}]}}},
+           {"id": "edges_3", "verb": "join", "kind": "inner", "on": [{"left": "s", "right": "sa"}]},
+           {"id": "edges_4", "verb": "join", "kind": "inner", "on": [{"left": "t", "right": "sb"}]},
+           {"id": "edges_5", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "ca"}, {"ref": "cb"}]}},
+           {"id": "calls_1", "verb": "series", "graph": "master", "series": {"element": "k", "lookback": "24h", "properties": ["flows", "drops"]}},
+           {"id": "calls_2", "verb": "summarize", "by": {"ca": {"ref": "ca"}, "cb": {"ref": "cb"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"callFlows": {"fn": "sum", "args": [{"ref": "flows"}]}, "callDrops": {"fn": "sum", "args": [{"ref": "drops"}]}}},
+           {"id": "one_1", "verb": "edges", "rule": "one", "target": {
+             "nodes": [{"var": "s", "label": "BizCapability", "id": {"ref": "ca"}}, {"var": "t", "label": "BizCapability", "id": {"ref": "cb"}}],
+             "edges": [{"var": "e", "label": "DependsOn", "from": "s", "to": "t", "key": "one"}]}},
+           {"id": "one_2", "verb": "edges", "rule": "one", "target": {
+             "nodes": [{"var": "s", "label": "BizCapability", "id": {"ref": "ca"}}, {"var": "t", "label": "BizCapability", "id": {"ref": "cb"}}],
+             "edges": [{"var": "e", "label": "DependsOn", "from": "s", "to": "t", "key": "one", "extend": true, "props": {"callFlows": {"ref": "callFlows"}, "callDrops": {"ref": "callDrops"}}}]}}],
+         "wires": [
+           {"from": "realized_1", "to": "realized_2"}, {"from": "realized_2", "to": "realized_3"},
+           {"from": "realized_3", "to": "fromImage"}, {"from": "realized_3", "to": "toImage"},
+           {"from": "edges_1", "to": "edges_2"},
+           {"from": "edges_2", "to": "edges_3", "port": "left"}, {"from": "fromImage", "to": "edges_3", "port": "right"},
+           {"from": "edges_3", "to": "edges_4", "port": "left"}, {"from": "toImage", "to": "edges_4", "port": "right"},
+           {"from": "edges_4", "to": "edges_5"},
+           {"from": "edges_5", "to": "one_1"}, {"from": "edges_5", "to": "calls_1"},
+           {"from": "calls_1", "to": "calls_2"}, {"from": "calls_2", "to": "one_2"}]}
         """;
 
     [Theory]
     [InlineData("storefront,ordering,data-platform", false)]               // each service one capability
     [InlineData("storefront,ordering,ordering", true)]                     // two service edges between the same capabilities, one self-loop
-    public void The_composition_of_two_lifts_gives_the_same_edges_and_sums_as_the_one_step_lift_from_the_pods(string realizes, bool extraWebToDb)
+    public void The_composition_of_two_lifts_gives_the_same_edges_and_sums_as_the_one_step_lift_from_the_instances(string realizes, bool extraWebToDb)
     {
         var dir = Copy([.. realizes.Split(',')], extraWebToDb, null);
         try
         {
-            var e = RunWith(dir, "acme.onestep", [new SourceFile("acme.onestep.sattle", OneStep), new SourceFile("acme.onestep.oneStep.kql", OneStepGraph)], "graph oneStep = extra.oneStep(master: master, authored: authored);");
+            var e = RunWith(dir, "acme.onestep", [new SourceFile("acme.onestep.module.gkql.json", OneStep), new SourceFile("acme.onestep.oneStep.gkql.json", OneStepGraph)],
+                """{"name": "oneStep", "projection": "extra.oneStep", "master": false, "inputs": {"master": "master", "authored": "authored"}}""");
             foreach (var prop in new[] { "callFlows", "callDrops" })
             {
                 var twoSteps = Summed(e, "capabilities", prop, "capabilities");

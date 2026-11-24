@@ -95,26 +95,26 @@ public class LineageTests
             var rev = h.LineageReverse(s!["graph"]!.GetValue<string>(), s["element"]!.GetValue<string>());
             Assert.Contains(rev["partOf"]!.AsArray(), p => p!["graph"]!.GetValue<string>() == "capabilities" && p["element"]!.GetValue<string>() == lifted && p["role"]!.GetValue<string>() == s["role"]!.GetValue<string>());
         }
-        // a pod is part of the service dependency it calls through, and that one of the capability edge
+        // an instance is part of the service dependency it calls through, and that one of the capability edge
         var tree = h.Snapshot("serviceTree", null)["extent"]!["relationships"]!.AsArray().First(r => r!["type"]!["value"]!.GetValue<string>().EndsWith("DependsOn", StringComparison.Ordinal))!["id"]!["value"]!.GetValue<string>();
         Assert.NotEmpty(h.LineageReverse("serviceTree", tree)["partOf"]!.AsArray());
         Assert.Equal("0", h.LineageReverse("capabilities", lifted)["count"]!.GetValue<string>());     // nothing is built on the capability edge
     }
 
-    /// <summary>Code review 2, defect 22: on the estate every pod of the master has a lineage, also the pods whose first id a link forwarded to the id of their name. Before, 1 pod in 5 had none.</summary>
+    /// <summary>Code review 2, defect 22: on the estate every instance of the master has a lineage, also the instances whose first id a link forwarded to the id of their name. Before, 1 instance in 5 had none.</summary>
     [Fact]
-    public void Every_pod_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id()
+    public void Every_instance_of_the_master_has_a_lineage_also_one_that_a_link_forwarded_to_another_id()
     {
         var h = OnEstate.Value;
         Assert.True(h.Engine.Identities.Merges > 0, "no identity merged on the estate");          // the protocol does not serve the number of merges: the one read inside the engine
-        var pods = h.Entities("master", "Pod");
-        var without = pods.Count(p => h.Lineage("master", p["id"].Id())["rule"] is null);
-        Assert.True(pods.Count > 0 && without == 0, $"{without} of {pods.Count} pods have no lineage");
+        var instances = h.Entities("master", "Instance");
+        var without = instances.Count(p => h.Lineage("master", p["id"].Id())["rule"] is null);
+        Assert.True(instances.Count > 0 && without == 0, $"{without} of {instances.Count} instances have no lineage");
     }
 
-    /// <summary>Code review 2: every block of a report that counts or lists elements names them. Before, the count blocks of the two reports named no source. The two blocks without a source are the heading and the table header, which the text of the projection gives as values.</summary>
+    /// <summary>Code review 2: every block of a report that counts or lists elements names them. Before, the count blocks of the reports named no source. The two blocks without a source are the heading and the table header, which the projection gives as values.</summary>
     [Theory]
-    [InlineData("deploymentReport")] [InlineData("healthReport")]
+    [InlineData("readinessReport")]
     public void Every_block_of_a_report_that_counts_or_lists_elements_names_them(string graph)
     {
         var h = OnEstate.Value;
@@ -166,9 +166,9 @@ public class LineageTests
                 var reverse = File.ReadAllLines(Path.Combine(dir, g.Value["lineageReverse"]!.GetValue<string>())).Select(l => JsonNode.Parse(l)!).ToList();
                 Assert.All(reverse.Take(50), r => Assert.Equal(h.LineageReverse(name, r["element"]!.GetValue<string>(), int.MaxValue - 1).ToJsonString(), r.ToJsonString()));
             });
-            var doc = h.Document("deploymentReport", null);
-            Assert.Equal(doc.Markdown, File.ReadAllText(Path.Combine(dir, manifest["deploymentReport"]!["document"]!.GetValue<string>())));
-            Assert.Equal(doc.Json["digest"]!.GetValue<string>(), JsonNode.Parse(File.ReadAllText(Path.Combine(dir, manifest["deploymentReport"]!["documentJson"]!.GetValue<string>())))!["digest"]!.GetValue<string>());
+            var doc = h.Document("readinessReport", null);
+            Assert.Equal(doc.Markdown, File.ReadAllText(Path.Combine(dir, manifest["readinessReport"]!["document"]!.GetValue<string>())));
+            Assert.Equal(doc.Json["digest"]!.GetValue<string>(), JsonNode.Parse(File.ReadAllText(Path.Combine(dir, manifest["readinessReport"]!["documentJson"]!.GetValue<string>())))!["digest"]!.GetValue<string>());
             Assert.Null(manifest["serviceTree"]!["document"]);
             var meters = JsonNode.Parse(File.ReadAllText(Path.Combine(dir, manifest["serviceTree"]!["meters"]!.GetValue<string>())))!;
             Assert.Contains(meters["meters"]!.AsArray(), m => m!["id"]!.GetValue<string>() == "dropRatio" && m["temporality"]!.GetValue<string>() == "gauge" && m["periodSeconds"]!.GetValue<long>() == 60);
@@ -179,35 +179,47 @@ public class LineageTests
 
     // ---- elements emitted from a group ----------------------------------------------------------------------------------------------
 
-    /// <summary>The service dependencies of the master written as a quotient through `summarize`: one edge per pair of services, made of every pod call between them.</summary>
+    /// <summary>The service dependencies of the master written as a quotient through `summarize`: one edge per pair of services, made of every instance call between them.</summary>
     const string ByGroup = """
-        module acme.bygroup @ 1.0.0;
-        import sattle.infra @ 1.0.0 sha256:… as infra;
-        import acme.ops     @ 1.0.0 sha256:… as ops;
-        import acme.svc     @ 1.0.0 sha256:… as svc;
+        {"module": "acme.bygroup", "version": "1.0.0",
+         "imports": [{"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+                     {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null},
+                     {"module": "acme.svc", "alias": "svc", "version": "1.0.0", "digest": null}]}
         """;
 
     const string Pairs = """
-        graph pairs : acme.svc with (history = 4);
-        input master : acme.ops;
-
-        let backing = graph("master") | graph-match (p)-[k]->(v) where labels(k) has "Backs" project pod = p.id, service = v.id;
-        edges DependsOn from s to t with (key = "pair") = graph("master")
-            | graph-match (a)-[c]->(b) where labels(c) has "Calls" project c = c.id, fromPod = a.id, toPod = b.id
-            | join kind=inner (backing | project fromPod = pod, s = service) on fromPod
-            | join kind=inner (backing | project toPod = pod, t = service) on toPod
-            | where s != t
-            | summarize n = count() by s, t
-            | project s, t;
+        {"graph": "pairs", "ontology": "acme.svc", "history": 4, "inputs": [{"name": "master", "ontology": "acme.ops"}], "parameters": [],
+         "verbs": [
+           {"id": "backing", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "p", "label": "Instance"}, {"var": "v", "label": "Service"}], "edges": [{"var": "k", "label": "Backs", "from": "p", "to": "v"}]}},
+           {"id": "backed", "verb": "project", "columns": {"instance": {"ref": "p"}, "service": {"ref": "v"}}},
+           {"id": "calls", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "a", "label": "Instance"}, {"var": "b", "label": "Instance"}], "edges": [{"var": "c", "label": "Calls", "from": "a", "to": "b"}]}},
+           {"id": "called", "verb": "project", "columns": {"c": {"ref": "c"}, "fromInstance": {"ref": "a"}, "toInstance": {"ref": "b"}}},
+           {"id": "sources", "verb": "project", "columns": {"fromInstance1": {"ref": "instance"}, "s": {"ref": "service"}}},
+           {"id": "bySource", "verb": "join", "kind": "inner", "on": [{"left": "fromInstance", "right": "fromInstance1"}]},
+           {"id": "targets", "verb": "project", "columns": {"toInstance1": {"ref": "instance"}, "t": {"ref": "service"}}},
+           {"id": "byTarget", "verb": "join", "kind": "inner", "on": [{"left": "toInstance", "right": "toInstance1"}]},
+           {"id": "apart", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "s"}, {"ref": "t"}]}},
+           {"id": "grouped", "verb": "summarize", "by": {"s": {"ref": "s"}, "t": {"ref": "t"}}, "aggregates": {"n": {"fn": "count"}}},
+           {"id": "ends", "verb": "project", "columns": {"s": {"ref": "s"}, "t": {"ref": "t"}}},
+           {"id": "emit", "verb": "edges", "target": {
+             "nodes": [{"var": "x", "label": "ServiceNode", "id": {"ref": "s"}}, {"var": "y", "label": "ServiceNode", "id": {"ref": "t"}}],
+             "edges": [{"var": "e", "label": "DependsOn", "from": "x", "to": "y", "key": "pair"}]}}],
+         "wires": [{"from": "backing", "to": "backed"}, {"from": "calls", "to": "called"}, {"from": "backed", "to": "sources"}, {"from": "backed", "to": "targets"},
+                   {"from": "called", "to": "bySource", "port": "left"}, {"from": "sources", "to": "bySource", "port": "right"},
+                   {"from": "bySource", "to": "byTarget", "port": "left"}, {"from": "targets", "to": "byTarget", "port": "right"},
+                   {"from": "byTarget", "to": "apart"}, {"from": "apart", "to": "grouped"}, {"from": "grouped", "to": "ends"}, {"from": "ends", "to": "emit"}]}
         """;
 
     [Fact]
     public void An_edge_emitted_from_a_group_names_every_row_of_the_group_forward_and_reverse_like_a_row_level_emit()
     {
         var files = EstateFiles();
-        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.bygroup @ 1.0.0 sha256:… as bg;\nimport acme.biz ").Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph byGroup = bg.pairs(master: master);") };
-        files.AddRange([new SourceFile("acme.bygroup.sattle", ByGroup), new SourceFile("acme.bygroup.pairs.kql", Pairs)]);
+        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.module.gkql.json", StringComparison.Ordinal));
+        var space = JsonNode.Parse(files[i].Text)!;
+        space["imports"]!.AsArray().Add(new JsonObject { ["module"] = "acme.bygroup", ["alias"] = "bg", ["version"] = "1.0.0", ["digest"] = null });
+        space["space"]!["graphs"]!.AsArray().Add(new JsonObject { ["name"] = "byGroup", ["projection"] = "bg.pairs", ["inputs"] = new JsonObject { ["master"] = "master" } });
+        files[i] = files[i] with { Text = space.ToJsonString() };
+        files.AddRange([new SourceFile("acme.bygroup.module.gkql.json", ByGroup), new SourceFile("acme.bygroup.pairs.gkql.json", Pairs)]);
         var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 1_000_000 });
         using (h)
         {
@@ -221,7 +233,7 @@ public class LineageTests
                 var id = edge!["id"]!["value"]!.GetValue<string>();
                 var l = h.Lineage("byGroup", id);
                 Assert.True(l["complete"]!.GetValue<bool>());
-                Assert.Equal("3", l["contributions"]!.GetValue<string>());                                         // three pod calls make up the service dependency
+                Assert.Equal("3", l["contributions"]!.GetValue<string>());                                         // three instance calls make up the service dependency
                 Assert.Equal(3, l["sources"]!.AsArray().Count(s => s!["role"]!.GetValue<string>() == "c"));      // the three Calls relationships of the master
                 var peer = rowLevel.Single(r => r!["source"]!["value"]!.GetValue<string>() == edge["source"]!["value"]!.GetValue<string>() && r["target"]!["value"]!.GetValue<string>() == edge["target"]!["value"]!.GetValue<string>());
                 var rl = h.Lineage("serviceTree", peer!["id"]!["value"]!.GetValue<string>());
@@ -236,44 +248,47 @@ public class LineageTests
     // ---- lineage through the steps of a projection, on a small world of items and tags ----------------------------------------------
 
     const string MiniBase = """
-        module t.base @ 1.0.0;
-        entity Item { key: Text; group: Text; score: Text; }
-        entity Tag { key: Text; label: Text; }
-        identity item for Item version "1" { key: Text by exact; }
-        identity tag for Tag version "1" { key: Text by exact; }
-        /// the row types CapabilityRow and RealizesRow, the rows a host takes from a test: an item is a capability row (its name the group, its owner the score), a tag a realizes row (its cluster the label)
-        rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
-        rows RealizesRow { capId: Text; cluster: Text; namespace: Text; service: Text; }
+        {"module": "t.base", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Item", "properties": [{"name": "key", "type": "Text"}, {"name": "group", "type": "Text"}, {"name": "score", "type": "Text"}]},
+                      {"name": "Tag", "properties": [{"name": "key", "type": "Text"}, {"name": "label", "type": "Text"}]}],
+         "identities": [{"name": "item", "type": "Item", "components": [{"name": "key", "type": "Text"}]},
+                        {"name": "tag", "type": "Tag", "components": [{"name": "key", "type": "Text"}]}],
+         "rows": [{"name": "CapabilityRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "parentId", "type": "Text", "optional": true}]},
+                  {"name": "RealizesRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "service", "type": "Text"}]}]}
         """;
 
+    /// <summary>The row types CapabilityRow and RealizesRow, the rows a host takes from a test: an item is a capability row (its name the group, its owner the score), a tag a realizes row (its site the label).</summary>
     const string MiniIngest = """
-        graph ingest : t.base;
-        input items : CapabilityRow;
-        input tags : RealizesRow;
-        nodes Item on item with (rule = "observed", description = "test") = items | project item = identity("item", capId), key = capId, group = name, score = owner;
-        nodes Tag on tag with (rule = "observed") = tags | project tag = identity("tag", capId), key = capId, label = cluster;
+        {"graph": "ingest", "ontology": "t.base", "inputs": [{"name": "items", "rows": "t.base.CapabilityRow"}, {"name": "tags", "rows": "t.base.RealizesRow"}], "parameters": [],
+         "verbs": [
+           {"id": "items", "verb": "rows", "source": "items"},
+           {"id": "tags", "verb": "rows", "source": "tags"},
+           {"id": "item", "verb": "nodes", "rule": "observed", "target": {"nodes": [
+             {"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}, "props": {"key": {"ref": "capId"}, "group": {"ref": "name"}, "score": {"ref": "owner"}}}]}},
+           {"id": "tag", "verb": "nodes", "rule": "observed", "target": {"nodes": [
+             {"var": "t", "label": "Tag", "id": {"identity": "tag", "args": [{"ref": "capId"}]}, "props": {"key": {"ref": "capId"}, "label": {"ref": "site"}}}]}}],
+         "wires": [{"from": "items", "to": "item"}, {"from": "tags", "to": "tag"}]}
         """;
 
-    /// <summary>A host over the small world: items and tags as authored rows in the master, the module `t.view` with `ontology` and its projection `roll` with `steps`, the space with `graphs`; `imports` and `more` add a module.</summary>
-    static SpaceHost Mini(string ontology, string steps, string graphs = "graph rolled = v.roll(master: master);", string imports = "", params SourceFile[] more) =>
+    const string Rolled = """{"name": "rolled", "projection": "v.roll", "inputs": {"master": "master"}}""";
+
+    /// <summary>A host over the small world: items and tags as authored rows in the master, the module `t.view` with the members `view` (its entities, relationships and identities) and its projection `roll` with `verbs` (its verbs and wires), the space with `graphs`; `imports` and `more` add a module.</summary>
+    static SpaceHost Mini(string view, string verbs, string graphs = Rolled, string imports = "", params SourceFile[] more) =>
         new(
         [
-            new("t.base.sattle", MiniBase), new("t.base.ingest.kql", MiniIngest),
-            new("t.view.sattle", $"module t.view @ 1.0.0;\nimport t.base @ 1.0.0 sha256:… as base;\n{ontology}\n"),
-            new("t.view.roll.kql", "graph roll : t.view;\ninput master : t.base;\n" + steps),
+            new("t.base.module.gkql.json", MiniBase), new("t.base.ingest.gkql.json", MiniIngest),
+            new("t.view.module.gkql.json", """{"module": "t.view", "version": "1.0.0", "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}], """ + view + "}"),
+            new("t.view.roll.gkql.json", """{"graph": "roll", "ontology": "t.view", "inputs": [{"name": "master", "ontology": "t.base"}], "parameters": [], """ + verbs + "}"),
             .. more,
-            new("t.space.sattle", $$"""
-                module t.space @ 1.0.0;
-                import t.base @ 1.0.0 sha256:… as base;
-                import t.view @ 1.0.0 sha256:… as v;
-                {{imports}}
-                space s {
-                  source items adapter "record" rows base.CapabilityRow;
-                  source tags adapter "record" rows base.RealizesRow;
-                  master graph master = base.ingest(items: items, tags: tags);
-                  {{graphs}}
-                }
-                """),
+            new("t.space.module.gkql.json", """
+                {"module": "t.space", "version": "1.0.0",
+                 "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}, {"module": "t.view", "alias": "v", "version": "1.0.0", "digest": null}
+                """ + imports + """
+                 ],
+                 "space": {"name": "s",
+                   "sources": [{"name": "items", "adapter": "record", "rows": "base.CapabilityRow"}, {"name": "tags", "adapter": "record", "rows": "base.RealizesRow"}],
+                   "graphs": [{"name": "master", "projection": "base.ingest", "master": true, "inputs": {"items": "items", "tags": "tags"}},
+                """ + graphs + "]}}"),
         ], new HostOptions { Projections = Repo.Projections});
 
     static void Items(SpaceHost h, long seq, params (string Key, string Group, string Score, long W)[] rows)
@@ -283,21 +298,70 @@ public class LineageTests
         h.Ingest("items", rw.Build()!, seq);
     }
 
-    const string Summary = "entity Summary { group: Text; best?: Integer; }\nidentity summary for Summary version \"1\" { group: Text by exact; }";
+    const string Summary = """
+        "entities": [{"name": "Summary", "properties": [{"name": "group", "type": "Text"}, {"name": "best", "type": "Integer", "optional": true}]}],
+        "identities": [{"name": "summary", "type": "Summary", "components": [{"name": "group", "type": "Text"}]}]
+        """;
 
-    /// <summary>The items of the master with their properties.</summary>
-    const string Matched = "graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project key = i.key, group = i.group, score = i.score";
+    /// <summary>The items of the master with their properties, then `steps` one after the other: the verbs of a projection whose wires run in their order.</summary>
+    static string Matched(string steps)
+    {
+        var verbs = new JsonArray(
+            JsonNode.Parse("""{"verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}}"""),
+            JsonNode.Parse("""{"verb": "project", "columns": {"key": {"ref": "i.key"}, "group": {"ref": "i.group"}, "score": {"ref": "i.score"}}}"""));
+        foreach (var step in JsonNode.Parse(steps)!.AsArray().ToList()) verbs.Add(step!.DeepClone());
+        var wires = new JsonArray();
+        for (var n = 0; n < verbs.Count; n++)
+        {
+            verbs[n]!["id"] = "s" + n;
+            if (n > 0) wires.Add(new JsonObject { ["from"] = "s" + (n - 1), ["to"] = "s" + n });
+        }
+        return $"\"verbs\": {verbs.ToJsonString()}, \"wires\": {wires.ToJsonString()}";
+    }
 
     /// <summary>Code review 2, defect 16: an element names the elements it is made of also when a `project` or a `where` stands between the match and the summary, between the summary and the step, or between the match and the step. Before, only the first shape named anything.</summary>
     [Theory]
-    [InlineData("the summary read directly", "items | summarize best = count() by group | project x = identity(\"summary\", group), group, best", "a=a1+a2 b=b1", "a=a1 b=b1")]
-    [InlineData("a project and a where before the summary", "items | project grp = group, s = score | where s != \"0\" | summarize best = count() by group = grp | project x = identity(\"summary\", group), group, best", "a=a1+a2 b=b1", "a=a1 b=b1")]
-    [InlineData("a project and a where after the summary", "items | summarize best = count() by group | project name = group, n = best | where n > 0 | project x = identity(\"summary\", name), group = name, best = n", "a=a1+a2 b=b1", "a=a1 b=b1")]
-    [InlineData("projects on both sides, the second without the key as it was", "items | project grp = group | summarize best = count() by group = grp | project name = strcat(group, \"!\"), n = best | project name, n | project x = identity(\"summary\", name), group = name, best = n", "a!=a1+a2 b!=b1", "a!=a1 b!=b1")]
-    [InlineData("row by row through a project", "items | project k = key, s = score | where s != \"0\" | project x = identity(\"summary\", k), group = k", "a1=a1 a2=a2 b1=b1", "a1=a1 b1=b1")]
-    public void An_element_names_what_it_is_made_of_through_project_and_where(string shape, string query, string named, string afterOneWent)
+    [InlineData("the summary read directly",
+            """
+            [{"verb": "summarize", "by": {"group": {"ref": "group"}}, "aggregates": {"best": {"fn": "count"}}},
+             {"verb": "nodes", "target": {"nodes": [{"var": "x", "label": "Summary", "id": {"identity": "summary", "args": [{"ref": "group"}]}, "props": {"group": {"ref": "group"}, "best": {"ref": "best"}}}]}}]
+            """,
+        "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a project and a where before the summary",
+            """
+            [{"verb": "project", "columns": {"grp": {"ref": "group"}, "s": {"ref": "score"}}},
+             {"verb": "where", "condition": {"fn": "!=", "args": [{"ref": "s"}, {"lit": "0"}]}},
+             {"verb": "summarize", "by": {"group": {"ref": "grp"}}, "aggregates": {"best": {"fn": "count"}}},
+             {"verb": "nodes", "target": {"nodes": [{"var": "x", "label": "Summary", "id": {"identity": "summary", "args": [{"ref": "group"}]}, "props": {"group": {"ref": "group"}, "best": {"ref": "best"}}}]}}]
+            """,
+        "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("a project and a where after the summary",
+            """
+            [{"verb": "summarize", "by": {"group": {"ref": "group"}}, "aggregates": {"best": {"fn": "count"}}},
+             {"verb": "project", "columns": {"name": {"ref": "group"}, "n": {"ref": "best"}}},
+             {"verb": "where", "condition": {"fn": ">", "args": [{"ref": "n"}, {"lit": 0}]}},
+             {"verb": "nodes", "target": {"nodes": [{"var": "x", "label": "Summary", "id": {"identity": "summary", "args": [{"ref": "name"}]}, "props": {"group": {"ref": "name"}, "best": {"ref": "n"}}}]}}]
+            """,
+        "a=a1+a2 b=b1", "a=a1 b=b1")]
+    [InlineData("projects on both sides, the second without the key as it was",
+            """
+            [{"verb": "project", "columns": {"grp": {"ref": "group"}}},
+             {"verb": "summarize", "by": {"group": {"ref": "grp"}}, "aggregates": {"best": {"fn": "count"}}},
+             {"verb": "project", "columns": {"name": {"fn": "concat", "args": [{"ref": "group"}, {"lit": "!"}]}, "n": {"ref": "best"}}},
+             {"verb": "project", "columns": {"name": {"ref": "name"}, "n": {"ref": "n"}}},
+             {"verb": "nodes", "target": {"nodes": [{"var": "x", "label": "Summary", "id": {"identity": "summary", "args": [{"ref": "name"}]}, "props": {"group": {"ref": "name"}, "best": {"ref": "n"}}}]}}]
+            """,
+        "a!=a1+a2 b!=b1", "a!=a1 b!=b1")]
+    [InlineData("row by row through a project",
+            """
+            [{"verb": "project", "columns": {"k": {"ref": "key"}, "s": {"ref": "score"}}},
+             {"verb": "where", "condition": {"fn": "!=", "args": [{"ref": "s"}, {"lit": "0"}]}},
+             {"verb": "nodes", "target": {"nodes": [{"var": "x", "label": "Summary", "id": {"identity": "summary", "args": [{"ref": "k"}]}, "props": {"group": {"ref": "k"}}}]}}]
+            """,
+        "a1=a1 a2=a2 b1=b1", "a1=a1 b1=b1")]
+    public void An_element_names_what_it_is_made_of_through_project_and_where(string shape, string steps, string named, string afterOneWent)
     {
-        using var h = Mini(Summary, $"let items = {Matched};\nnodes Summary on x = {query};\n");
+        using var h = Mini(Summary, Matched(steps));
         string Named()
         {
             var keyOf = h.Entities("master").ToDictionary(x => x["id"].Id(), x => x.Prop("key")!);
@@ -317,22 +381,42 @@ public class LineageTests
     public void A_reference_is_named_in_the_graph_that_holds_it(bool masterToo, string named)
     {
         const string top = """
-            module t.top @ 1.0.0;
-            import t.base @ 1.0.0 sha256:… as base;
-            import t.view @ 1.0.0 sha256:… as v;
-            entity Top { n: Integer; }
-            identity top for Top version "1" { name: Text by exact; }
-            relationship Seen (base.Item) -> (base.Tag);
+            {"module": "t.top", "version": "1.0.0",
+             "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}, {"module": "t.view", "alias": "v", "version": "1.0.0", "digest": null}],
+             "relationships": [{"name": "Seen", "from": "base.Item", "to": "base.Tag"}]}
             """;
-        using var h = Mini(Summary + "\nrelationship Paired (base.Item) -> (base.Tag);",
-            "edges Paired from item to t = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project item = i.id, g = i.group"
-            + " | join kind=inner (graph(\"master\") | graph-match (t) where labels(t) has \"Tag\" project t = t.id, tk = t.key) on $left.g == $right.tk | project item, t;\n",
-            $"graph rolled = v.roll(master: master);\n  graph top = t2.top(rolled: rolled{(masterToo ? ", master: master" : "")});", "import t.top @ 1.0.0 sha256:… as t2;",
-            new SourceFile("t.top.sattle", top),
-            new SourceFile("t.top.top.kql", "graph top : t.top;\ninput rolled : t.view;\n" + (masterToo ? "input master : t.base;\n" : "")
-                + "let pairs = graph(\"rolled\") | graph-match (i)-[p]->(t) where labels(i) has \"Item\" and labels(p) has \"Paired\" and labels(t) has \"Tag\" project i = i.id, t = t.id;\nedges Seen from i to t = pairs;\n"));
+        const string paired = """
+            "verbs": [
+              {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
+              {"id": "byGroup", "verb": "project", "columns": {"item": {"ref": "i"}, "g": {"ref": "i.group"}}},
+              {"id": "tags", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "t", "label": "Tag"}]}},
+              {"id": "byKey", "verb": "project", "columns": {"t": {"ref": "t"}, "tk": {"ref": "t.key"}}},
+              {"id": "matched", "verb": "join", "kind": "inner", "on": [{"left": "g", "right": "tk"}]},
+              {"id": "ends", "verb": "project", "columns": {"item": {"ref": "item"}, "t": {"ref": "t"}}},
+              {"id": "paired", "verb": "edges", "target": {
+                "nodes": [{"var": "a", "label": "Item", "id": {"ref": "item"}}, {"var": "b", "label": "Tag", "id": {"ref": "t"}}],
+                "edges": [{"var": "e", "label": "Paired", "from": "a", "to": "b"}]}}],
+            "wires": [{"from": "items", "to": "byGroup"}, {"from": "tags", "to": "byKey"}, {"from": "byGroup", "to": "matched", "port": "left"}, {"from": "byKey", "to": "matched", "port": "right"},
+                      {"from": "matched", "to": "ends"}, {"from": "ends", "to": "paired"}]
+            """;
+        var seenOf = """
+            {"graph": "top", "ontology": "t.top", "parameters": [],
+             "verbs": [
+               {"id": "pairs", "verb": "graph-match", "graph": "rolled", "pattern": {"nodes": [{"var": "i", "label": "Item"}, {"var": "t", "label": "Tag"}], "edges": [{"var": "p", "label": "Paired", "from": "i", "to": "t"}]}},
+               {"id": "ends", "verb": "project", "columns": {"i": {"ref": "i"}, "t": {"ref": "t"}}},
+               {"id": "seen", "verb": "edges", "target": {
+                 "nodes": [{"var": "a", "label": "Item", "id": {"ref": "i"}}, {"var": "b", "label": "Tag", "id": {"ref": "t"}}],
+                 "edges": [{"var": "e", "label": "Seen", "from": "a", "to": "b"}]}}],
+             "wires": [{"from": "pairs", "to": "ends"}, {"from": "ends", "to": "seen"}],
+             "inputs": [{"name": "rolled", "ontology": "t.view"}
+            """ + (masterToo ? """, {"name": "master", "ontology": "t.base"}""" : "") + "]}";
+        using var h = Mini(Summary + """, "relationships": [{"name": "Paired", "from": "base.Item", "to": "base.Tag"}]""", paired,
+            Rolled + """, {"name": "top", "projection": "t2.top", "inputs": {"rolled": "rolled" """ + (masterToo ? """, "master": "master" """ : "") + "}}",
+            """, {"module": "t.top", "alias": "t2", "version": "1.0.0", "digest": null}""",
+            new SourceFile("t.top.module.gkql.json", top),
+            new SourceFile("t.top.top.gkql.json", seenOf));
         var tags = new RowWriter(h.RowLayout("tags"), h.Interner);
-        tags.Begin(1); tags.Text("capId", "g1"); tags.Text("cluster", "L"); tags.Text("namespace", "n"); tags.Text("service", "s");
+        tags.Begin(1); tags.Text("capId", "g1"); tags.Text("site", "L"); tags.Text("namespace", "n"); tags.Text("service", "s");
         h.Ingest("tags", tags.Build()!, 1);
         Items(h, 2, ("a1", "g1", "1", 1));
         var seen = h.Relationships("top", "Seen").Single()["id"].Id();

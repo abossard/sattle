@@ -3,7 +3,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>The replays of the scenarios, shared by the whole test assembly. A scenario is a recorded input (a tracked fixture, `lab/fixtures`, a real capture) replayed with the settings of `sattle replay` (the cluster its records carry, every window revisable, tenant lab, its catalog with the overlay): one run per (scenario, chunk size). The run at chunk 100000 keeps its engine for the tests that read graphs, telemetry or references; a run at another chunk size keeps only its summary and is disposed. The state digests of the tracked scenarios are pinned in one file.</summary>
+/// <summary>The replays of the scenarios, shared by the whole test assembly. A scenario is a recorded input (a tracked fixture, `lab/fixtures`, a real capture) replayed with the settings of `sattle replay` (the site its records carry, every window revisable, tenant lab, its catalog with the overlay): one run per (scenario, chunk size). The run at chunk 100000 keeps its engine for the tests that read graphs, telemetry or references; a run at another chunk size keeps only its summary and is disposed. The state digests of the tracked scenarios are pinned in one file.</summary>
 public static class Scenarios
 {
     /// <summary>The folder of a tracked scenario: `estate`, `estate-wide` or `deploy-health`.</summary>

@@ -1,5 +1,0 @@
-/// Worked example of a document projection: a Markdown report of Deployment health, a table with one keyed row per Deployment and a summary, produced from the graph of acme.deployhealth.
-module acme.report @ 1.0.0;
-
-import sattle.doc        @ 1.0.0 sha256:d08f49763c2dd278261b4cadfd33f9c3209421773074c005dbd00fe95466ee4f as doc;
-import acme.deployhealth @ 1.0.0 sha256:39023f1fe98a10e7a902f20edb1edeeede45034066de35cf96604c13b30905f0 as dh;

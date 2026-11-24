@@ -416,7 +416,7 @@ public class TelemetryStoreTests
     [Fact]
     public void Telemetry_never_touches_graph_revisions()
     {
-        // a second window of flows between the same pods changes telemetry only: the windows grow, the revisions of the master and the stored head do not move
+        // a second window of flows between the same instances changes telemetry only: the windows grow, the revisions of the master and the stored head do not move
         using var h = HostTests.NewHost();
         HostTests.Drive(h, windows: 2);
         long Windows() => ((InMemoryTelemetryStore)h.Engine.Telemetry).Dump(h.Engine.Master.Key).Count;

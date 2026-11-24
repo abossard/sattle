@@ -10,28 +10,32 @@ public class ReferencesTests
 {
     static string Estate => EstateTests.EstateDir;
 
-    /// <summary>A module whose projection `calls` emits only the `Calls` relationships of the master: its endpoints are pods of the master, none of them an entity of this graph.</summary>
+    /// <summary>A module whose projection `calls` emits only the `Calls` relationships of the master: its endpoints are instances of the master, none of them an entity of this graph.</summary>
     const string CallsView = """
-        module acme.callsview @ 1.0.0;
-        import sattle.infra @ 1.0.0 sha256:… as infra;
-        import acme.ops     @ 1.0.0 sha256:… as ops;
+        {"module": "acme.callsview", "version": "1.0.0",
+         "imports": [{"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+                     {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null}]}
         """;
 
     const string Calls = """
-        graph calls : sattle.infra with (history = 4);
-        input master : acme.ops;
-
-        edges Calls from a to b with (key = "c") = graph("master")
-            | graph-match (x)-[k]->(y) where labels(x) has "Pod" and labels(k) has "Calls" and labels(y) has "Pod" project a = x.id, b = y.id;
+        {"graph": "calls", "ontology": "sattle.infra", "history": 4, "inputs": [{"name": "master", "ontology": "acme.ops"}], "parameters": [],
+         "verbs": [
+           {"id": "calls", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "x", "label": "Instance"}, {"var": "y", "label": "Instance"}], "edges": [{"var": "k", "label": "Calls", "from": "x", "to": "y"}]}},
+           {"id": "emit", "verb": "edges", "target": {
+             "nodes": [{"var": "a", "label": "Instance", "id": {"ref": "x"}}, {"var": "b", "label": "Instance", "id": {"ref": "y"}}],
+             "edges": [{"var": "e", "label": "Calls", "from": "a", "to": "b", "key": "c"}]}}],
+         "wires": [{"from": "calls", "to": "emit"}]}
         """;
 
     static List<SourceFile> Files()
     {
         var files = Catalog.ReadDirectory(Repo.Definitions).ToList();
-        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.sattle", StringComparison.Ordinal));
-        files[i] = files[i] with { Text = files[i].Text.Replace("import acme.biz ", "import acme.callsview @ 1.0.0 sha256:… as cv;\nimport acme.biz ")
-            .Replace("  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");", "  graph workload = wl.workloadHealth(master: master, authored: authored, structure: workloadStructure, workloadNamespace: \"shop\");\n  graph callsOnly = cv.calls(master: master);") };
-        files.AddRange([new SourceFile("acme.callsview.sattle", CallsView), new SourceFile("acme.callsview.calls.kql", Calls)]);
+        var i = files.FindIndex(f => f.Path.EndsWith("acme.space.module.gkql.json", StringComparison.Ordinal));
+        var space = JsonNode.Parse(files[i].Text)!;
+        space["imports"]!.AsArray().Add(new JsonObject { ["module"] = "acme.callsview", ["alias"] = "cv", ["version"] = "1.0.0", ["digest"] = null });
+        space["space"]!["graphs"]!.AsArray().Add(new JsonObject { ["name"] = "callsOnly", ["projection"] = "cv.calls", ["inputs"] = new JsonObject { ["master"] = "master" } });
+        files[i] = files[i] with { Text = space.ToJsonString() };
+        files.AddRange([new SourceFile("acme.callsview.module.gkql.json", CallsView), new SourceFile("acme.callsview.calls.gkql.json", Calls)]);
         return files;
     }
 
@@ -45,7 +49,7 @@ public class ReferencesTests
 
     static JsonNode Entry(JsonNode space, string graph) => space["graphs"]!.AsArray().Single(g => g!["id"]!.GetValue<string>() == graph)!;
 
-    /// <summary>The estate's flows only: the pods they name were never listed.</summary>
+    /// <summary>The estate's flows only: the instances they name were never listed.</summary>
     static string FlowsOnly()
     {
         var dir = Path.Combine(Path.GetTempPath(), "sattle-refs-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(Path.Combine(dir, "records"));
@@ -77,7 +81,7 @@ public class ReferencesTests
     }
 
     [Fact]
-    public void A_pod_a_flow_names_and_no_source_listed_is_a_reference_absent_from_every_graph_with_the_key_it_was_minted_from()
+    public void An_instance_a_flow_names_and_no_source_listed_is_a_reference_absent_from_every_graph_with_the_key_it_was_minted_from()
     {
         var dir = FlowsOnly();
         try
@@ -91,13 +95,13 @@ public class ReferencesTests
                 {
                     Assert.Equal("absent", r!["state"]!.GetValue<string>());
                     Assert.Null(r["graph"]);
-                    Assert.Equal("Pod", r["entityType"]!.GetValue<string>());
+                    Assert.Equal("Instance", r["entityType"]!.GetValue<string>());
                     var key = r["identity"]!["key"]!.AsObject();
                     Assert.Equal("shop", key["namespace"]!.GetValue<string>());
                     Assert.Contains(key["name"]!.GetValue<string>(), new[] { "web-7d4-1", "web-7d4-2", "web-7d4-3", "api-5c9-1", "api-5c9-2" });
                 });
                 var by = Entry(space, "master")["danglingBy"]!.AsArray();
-                Assert.All(by, x => { Assert.Contains(x!["relationshipType"]!.GetValue<string>(), new[] { "Calls", "Sends" }); Assert.Equal("absent", x["state"]!.GetValue<string>()); });       // the calls between pods and the flows of a pod to an address outside
+                Assert.All(by, x => { Assert.Contains(x!["relationshipType"]!.GetValue<string>(), new[] { "Calls", "Sends" }); Assert.Equal("absent", x["state"]!.GetValue<string>()); });       // the calls between instances and the flows of an instance to an address outside
                 Assert.Equal(["source", "target"], by.Select(x => x!["end"]!.GetValue<string>()).Order().Distinct().ToArray());
                 var dangling = long.Parse(Entry(space, "master")["dangling"]!.GetValue<string>());
                 Assert.True(dangling > 0 && by.Sum(x => long.Parse(x!["relationships"]!.GetValue<string>())) >= dangling);   // a relationship with both ends missing counts once in `dangling` and once per end in `danglingBy`
@@ -114,19 +118,8 @@ public class ReferencesTests
         {
             var refs = h.Snapshot("callsOnly", null)["extent"]!["references"]!.AsArray();
             Assert.NotEmpty(refs);
-            Assert.All(refs, r => { Assert.Equal("inOtherGraph", r!["state"]!.GetValue<string>()); Assert.Equal("master", r["graph"]!.GetValue<string>()); Assert.Equal("Pod", r["entityType"]!.GetValue<string>()); });
+            Assert.All(refs, r => { Assert.Equal("inOtherGraph", r!["state"]!.GetValue<string>()); Assert.Equal("master", r["graph"]!.GetValue<string>()); Assert.Equal("Instance", r["entityType"]!.GetValue<string>()); });
             Assert.All(Entry(space, "callsOnly")["danglingBy"]!.AsArray(), x => { Assert.Equal("inOtherGraph", x!["state"]!.GetValue<string>()); Assert.Equal("master", x["graph"]!.GetValue<string>()); });
-        }
-    }
-
-    [Fact]
-    public void The_estate_workload_graphs_have_no_edge_to_a_component_outside_the_model()
-    {
-        var e = Scenarios.Run(Estate);
-        foreach (var graph in new[] { "workloadStructure", "workload" })
-        {
-            var ids = e.Entities(graph).Select(x => x["id"].Id()).ToHashSet();
-            Assert.DoesNotContain(e.Relationships(graph), r => !ids.Contains(r["source"].Id()) || !ids.Contains(r["target"].Id()));
         }
     }
 

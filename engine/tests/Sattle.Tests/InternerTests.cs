@@ -8,25 +8,29 @@ namespace Sattle.Tests;
 public class InternerTests
 {
     const string Base = """
-        module t.base @ 1.0.0;
-        entity Event { id: Text; tag: Text; }
-        identity event for Event version "1" { id: Text by exact; }
-        rows EventRow { id: Text; kind: Text; }
+        {"module": "t.base", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Event", "properties": [{"name": "id", "type": "Text"}, {"name": "tag", "type": "Text"}]}],
+         "identities": [{"name": "event", "type": "Event", "components": [{"name": "id", "type": "Text"}]}],
+         "rows": [{"name": "EventRow", "fields": [{"name": "id", "type": "Text"}, {"name": "kind", "type": "Text"}]}]}
         """;
 
     const string Ingest = """
-        graph ingest : t.base;
-        input events : EventRow;
-        nodes Event on ev with (rule = "observed") = events | project id, kind, tag = strcat(id, "!") | where kind == "kept" | project ev = identity("event", id), id, tag;
+        {"graph": "ingest", "ontology": "t.base", "inputs": [{"name": "events", "rows": "t.base.EventRow"}], "parameters": [],
+         "verbs": [
+           {"id": "events", "verb": "rows", "source": "events"},
+           {"id": "tagged", "verb": "project", "columns": {"id": {"ref": "id"}, "kind": {"ref": "kind"}, "tag": {"fn": "concat", "args": [{"ref": "id"}, {"lit": "!"}]}}},
+           {"id": "kept", "verb": "where", "condition": {"fn": "==", "args": [{"ref": "kind"}, {"lit": "kept"}]}},
+           {"id": "observed", "verb": "nodes", "rule": "observed", "target": {"nodes": [
+             {"var": "ev", "label": "Event", "id": {"identity": "event", "args": [{"ref": "id"}]}, "props": {"id": {"ref": "id"}, "tag": {"ref": "tag"}}}]}}],
+         "wires": [{"from": "events", "to": "tagged"}, {"from": "tagged", "to": "kept"}, {"from": "kept", "to": "observed"}]}
         """;
 
     const string Space = """
-        module t.space @ 1.0.0;
-        import t.base @ 1.0.0 sha256:… as base;
-        space s {
-          source events adapter "record" rows base.EventRow;
-          master graph master = base.ingest(events: events);
-        }
+        {"module": "t.space", "version": "1.0.0",
+         "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}],
+         "space": {"name": "s",
+           "sources": [{"name": "events", "adapter": "record", "rows": "base.EventRow"}],
+           "graphs": [{"name": "master", "projection": "base.ingest", "master": true, "inputs": {"events": "events"}}]}}
         """;
 
     /// <summary>Every text reads back as written and interns to one code, whatever form it is stored in: an element id packed, a text near one stored as it is, a wide text, an empty one, one longer than a page; and the same after a restore from the slots.</summary>
@@ -62,7 +66,7 @@ public class InternerTests
     static Engine Start()
     {
         var cat = new Catalog(Repo.Projections);
-        var res = cat.Load([new SourceFile("t.base.sattle", Base), new SourceFile("t.base.ingest.kql", Ingest), new SourceFile("t.space.sattle", Space)], updatePins: true);
+        var res = cat.Load([new SourceFile("t.base.module.gkql.json", Base), new SourceFile("t.base.ingest.gkql.json", Ingest), new SourceFile("t.space.module.gkql.json", Space)], updatePins: true);
         Assert.Empty(res.Diagnostics.Where(d => d.IsError).Select(d => d.ToString()));
         return new Engine(cat, cat.Spaces.Keys.Single());
     }

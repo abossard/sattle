@@ -1,0 +1,58 @@
+{
+  "graph": "readiness",
+  "ontology": "acme.readiness",
+  "description": "The Unit of the workload and the traffic between them, each with a state: a Unit is Ready while enough of its instances are ready.",
+  "history": 4,
+  "inputs": [
+    {"name": "master", "ontology": "acme.ops"}
+  ],
+  "parameters": [
+    {"name": "minReady", "kind": "Integer", "default": 0}
+  ],
+  "verbs": [
+    {"id": "units_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "d", "label": "Unit"}], "edges": []}},
+    {"id": "units_2", "verb": "project", "columns": {"unit": {"ref": "d"}, "site": {"ref": "d.site"}, "namespace": {"ref": "d.namespace"}, "name": {"ref": "d.name"}, "replicas": {"ref": "d.replicas"}}},
+    {"id": "emit_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Workload", "id": {"ref": "unit"}, "props": {"site": {"ref": "site"}, "name": {"ref": "name"}, "namespace": {"ref": "namespace"}, "replicas": {"ref": "replicas"}}}]}},
+    {"id": "emit_2", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Workload", "id": {"identity": "unitName", "args": [{"ref": "site"}, {"ref": "namespace"}, {"ref": "name"}]}, "extend": true, "props": {"readyInstances": {"ref": "readyInstances"}, "state": {"ref": "state"}}}]}},
+    {"id": "emit_3", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Workload", "id": {"identity": "unitName", "args": [{"ref": "sc"}, {"ref": "sn"}, {"ref": "sm"}]}}, {"var": "t", "label": "Workload", "id": {"identity": "unitName", "args": [{"ref": "tc"}, {"ref": "tn"}, {"ref": "tm"}]}}], "edges": [{"var": "e", "label": "Talks", "from": "s", "to": "t", "props": {"state": {"fn": "iff", "args": [{"fn": "or", "args": [{"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "srcState"}, {"lit": ""}]}, {"lit": "NotReady"}]}, {"fn": "==", "args": [{"fn": "coalesce", "args": [{"ref": "dstState"}, {"lit": ""}]}, {"lit": "NotReady"}]}]}, {"lit": "NotReady"}, {"lit": "Ready"}]}}}]}},
+    {"id": "status_1", "verb": "project", "columns": {"site": {"ref": "site"}, "namespace": {"ref": "namespace"}, "name": {"ref": "name"}, "n": {"lit": 0}}},
+    {"id": "status_2", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "d", "label": "Unit"}, {"var": "p", "label": "Instance"}], "edges": [{"var": "c", "label": "ControlledBy", "from": "p", "to": "d"}]}},
+    {"id": "status_3", "verb": "where", "condition": {"fn": "coalesce", "args": [{"ref": "p.ready"}, {"lit": false}]}},
+    {"id": "status_4", "verb": "project", "columns": {"site": {"ref": "d.site"}, "namespace": {"ref": "d.namespace"}, "name": {"ref": "d.name"}, "n": {"lit": 1}}},
+    {"id": "status_5", "verb": "union"},
+    {"id": "status_6", "verb": "summarize", "by": {"site": {"ref": "site"}, "name": {"ref": "name"}, "namespace": {"ref": "namespace"}}, "aggregates": {"readyInstances": {"fn": "sum", "args": [{"ref": "n"}]}}},
+    {"id": "status_7", "verb": "project", "columns": {"site": {"ref": "site"}, "namespace": {"ref": "namespace"}, "name": {"ref": "name"}, "readyInstances": {"ref": "readyInstances"}, "state": {"fn": "iff", "args": [{"fn": ">", "args": [{"ref": "readyInstances"}, {"param": "minReady"}]}, {"lit": "Ready"}, {"lit": "NotReady"}]}}},
+    {"id": "talks_1", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "a", "label": "Instance"}, {"var": "b", "label": "Instance"}, {"var": "da", "label": "Unit"}, {"var": "db", "label": "Unit"}], "edges": [{"var": "k", "label": "Calls", "from": "a", "to": "b"}, {"var": "x", "label": "ControlledBy", "from": "a", "to": "da"}, {"var": "y", "label": "ControlledBy", "from": "b", "to": "db"}]}},
+    {"id": "talks_2", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "da"}, {"ref": "db"}]}},
+    {"id": "talks_3", "verb": "project", "columns": {"sc": {"ref": "da.site"}, "sn": {"ref": "da.namespace"}, "sm": {"ref": "da.name"}, "tc": {"ref": "db.site"}, "tn": {"ref": "db.namespace"}, "tm": {"ref": "db.name"}}},
+    {"id": "talks_4", "verb": "project", "columns": {"sc": {"ref": "site"}, "sn": {"ref": "namespace"}, "sm": {"ref": "name"}, "srcState": {"ref": "state"}}},
+    {"id": "talks_5", "verb": "project", "columns": {"sc1": {"ref": "sc"}, "sn1": {"ref": "sn"}, "sm1": {"ref": "sm"}, "srcState": {"ref": "srcState"}}},
+    {"id": "talks_6", "verb": "join", "kind": "inner", "on": [{"left": "sc", "right": "sc1"}, {"left": "sn", "right": "sn1"}, {"left": "sm", "right": "sm1"}]},
+    {"id": "talks_7", "verb": "project", "columns": {"tc": {"ref": "site"}, "tn": {"ref": "namespace"}, "tm": {"ref": "name"}, "dstState": {"ref": "state"}}},
+    {"id": "talks_8", "verb": "project", "columns": {"tc1": {"ref": "tc"}, "tn1": {"ref": "tn"}, "tm1": {"ref": "tm"}, "dstState": {"ref": "dstState"}}},
+    {"id": "talks_9", "verb": "join", "kind": "inner", "on": [{"left": "tc", "right": "tc1"}, {"left": "tn", "right": "tn1"}, {"left": "tm", "right": "tm1"}]}
+  ],
+  "wires": [
+    {"from": "units_1", "to": "units_2"},
+    {"from": "units_2", "to": "emit_1"},
+    {"from": "status_7", "to": "emit_2"},
+    {"from": "talks_9", "to": "emit_3"},
+    {"from": "units_2", "to": "status_1"},
+    {"from": "status_2", "to": "status_3"},
+    {"from": "status_3", "to": "status_4"},
+    {"from": "status_1", "to": "status_5"},
+    {"from": "status_4", "to": "status_5"},
+    {"from": "status_5", "to": "status_6"},
+    {"from": "status_6", "to": "status_7"},
+    {"from": "talks_1", "to": "talks_2"},
+    {"from": "talks_2", "to": "talks_3"},
+    {"from": "status_7", "to": "talks_4"},
+    {"from": "talks_4", "to": "talks_5"},
+    {"from": "talks_3", "to": "talks_6", "port": "left"},
+    {"from": "talks_5", "to": "talks_6", "port": "right"},
+    {"from": "status_7", "to": "talks_7"},
+    {"from": "talks_7", "to": "talks_8"},
+    {"from": "talks_6", "to": "talks_9", "port": "left"},
+    {"from": "talks_8", "to": "talks_9", "port": "right"}
+  ]
+}

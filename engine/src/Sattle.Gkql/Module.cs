@@ -51,10 +51,19 @@ public sealed partial class GkqlSource
         }
     }
 
+    /// <summary>The module text with the digests of its imports replaced by the pins; only the digest values change, the layout stays.</summary>
     public string? RebindPins(SourceFile file, IReadOnlyDictionary<string, string> pins)
     {
         if (!IsModuleFile(file.Path)) return null;
         var root = JsonNode.Parse(file.Text, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip })!.AsObject();
+        var text = file.Text;
+        foreach (var import in root["imports"]?.AsArray() ?? [])
+            if (import?["module"]?.GetValue<string>() is { } module && pins.TryGetValue(module, out var digest))
+                text = System.Text.RegularExpressions.Regex.Replace(text,
+                    $@"(""module""\s*:\s*""{System.Text.RegularExpressions.Regex.Escape(module)}""[^{{}}]*?""digest""\s*:\s*)(?:null|""[^""]*"")",
+                    m => m.Groups[1].Value + JsonSerializer.Serialize(digest));
+        if (JsonNode.Parse(text)!["imports"]?.AsArray().All(i => i?["module"]?.GetValue<string>() is not { } m || !pins.TryGetValue(m, out var d) || i["digest"]?.GetValue<string>() == d) != false) return text;
+        // an import without a digest member: write the document again
         foreach (var import in root["imports"]!.AsArray())
             if (pins.TryGetValue(import!["module"]!.GetValue<string>(), out var digest)) import["digest"] = digest;
         return root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) + "\n";
@@ -79,7 +88,7 @@ public sealed partial class GkqlSource
     static VType ValueType(string kind) => new(kind, null, null, At);
 
     static List<Member> Members(List<PropertyDocument>? properties) => (properties ?? []).Select(p =>
-        new Member(p.Name, null, p.Optional, ValueType(p.Type), false, null,
+        new Member(p.Name, null, p.Optional, ValueType(p.Type), false, p.Unit,
             p.Telemetry is { } t ? new TeleMod(t.Temporality, t.Combine, Lexer.DurationNs(t.Period)) : null, null, At,
             p.Roles?.Select(kv => (Value.Text(kv.Key), kv.Value)).ToList(), PropertyTreeRole(p), p.Label)).ToList();
 
@@ -97,7 +106,7 @@ public sealed partial class GkqlSource
     sealed record ImportDocument(string Module, string Alias, string Version, string? Digest);
     sealed record EntityDocument(string Name, List<PropertyDocument>? Properties);
     sealed record PropertyDocument(string Name, string Type, bool Optional, bool Label, TelemetryDocument? Telemetry,
-        string? TreeRole, string? TreeCount, Dictionary<string, string>? Roles);
+        string? TreeRole, string? TreeCount, Dictionary<string, string>? Roles, string? Unit = null);
     sealed record TelemetryDocument(string Temporality, string Combine, string Period);
     /// <summary>`Super`: the relationship type this one is a sub-type of, so a pattern or a traverse over the super-type also follows it.</summary>
     sealed record RelationshipDocument(string Name, string From, string To, string? Kind, bool Hierarchy, bool Rollup, List<PropertyDocument>? Properties, string? Super = null);

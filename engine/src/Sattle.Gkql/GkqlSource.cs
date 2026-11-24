@@ -31,7 +31,11 @@ public sealed record ValuesSpec(Dictionary<string, string> Columns, List<Diction
 /// <summary>Windows of the rows' own time: `period` wide, one every `hop` (the period when not given), so a row is in period / hop windows.</summary>
 public sealed record WindowSpec(string Time, string Period, string? Hop = null);
 /// <summary>`fill`: the value of a window in which the element reported nothing.</summary>
-public sealed record SeriesSpec(string Element, string Property, string Lookback, string? Freshness = null, decimal? Fill = null);
+public sealed record SeriesSpec(string Element, string Lookback, string? Property = null, string[]? Properties = null, string? Freshness = null, decimal? Fill = null)
+{
+    /// <summary>The metric properties the series reads: `property` names one, `properties` several of the same element.</summary>
+    public string[] Read => Properties ?? (Property is { } p ? [p] : []);
+}
 /// <summary>`aboveBy`, `enterBy`, `belowBy`, `exitBy`: a threshold or dwell time read from the row, in place of the constant.</summary>
 public sealed record HysteresisSpec(string[] By, string Value, decimal Above, long EnterAfter, decimal Below, long ExitAfter,
     string High, string Low, string Initial, string? NoData = null, bool EvidenceWindow = false,
@@ -107,6 +111,9 @@ public static class Lowering
         readonly Dictionary<string, int> opNo = new(StringComparer.Ordinal);
         /// <summary>Per rule, the type of the element its nodes sink is named by: the element a create or a delete through the rule acts on.</summary>
         readonly Dictionary<string, string> masters = new(StringComparer.Ordinal);
+        readonly Dictionary<OntologyView, string> owners = new(ReferenceEqualityComparer.Instance);
+        /// <summary>The rules with a nodes sink: a create through them makes an element, so they name its identity domain.</summary>
+        readonly HashSet<string> nodeRules = new(StringComparer.Ordinal), lenses = new(StringComparer.Ordinal);
 
         public void Run()
         {
@@ -166,11 +173,12 @@ public static class Lowering
             if (accept.FirstOrDefault(a => a is not ("create" or "delete")) is { } other) throw new Refused(spec.Name, $"a rule accepts create and delete, not '{other}': an update names its properties in update", null);
             var cls = accept.Count + update.Count == 0 ? "readonly" : ingestion ? "bijective" : "lens";
             if (cls != "lens" && (spec.Create ?? (object?)spec.Delete) is not null) throw new Refused(spec.Name, "create and delete belong to an editable rule of a view", null);
-            if (cls == "lens" && accept.Contains("create") != spec.Create is not null) throw new Refused(spec.Name, "a rule that accepts create names the identity domain of a new element in create, and only then", null);
+            if (spec.Create is not null && !accept.Contains("create")) throw new Refused(spec.Name, "create says what a create makes, so the rule accepts create", null);
             if (spec.Delete is not null && !accept.Contains("delete")) throw new Refused(spec.Name, "delete says what a delete sets, so the rule accepts delete", null);
             List<(string, Value)> props = [("name", T(spec.Name)), ("class", T(cls)), ("putput", Value.Boolean(false)), .. spec.Description is { } d ? [("reason", T(d))] : Array.Empty<(string, Value)>()];
             if (cls == "lens")
             {
+                lenses.Add(spec.Name);
                 props.Add(("accept", Value.List([.. accept.Select(Value.Text), .. update.Count > 0 ? [Value.Text("update(" + string.Join(",", update) + ")")] : Array.Empty<Value>()])));
                 if (spec.Delete is not null) props.Add(("onDelete", T("set")));
                 else if (accept.Contains("delete")) props.Add(("onDelete", T("remove")));
@@ -182,6 +190,8 @@ public static class Lowering
         /// nodes sink reads, each a constant or a component of the key (`key.name`).</summary>
         void EditDefaults(RuleSpec spec)
         {
+            if (nodeRules.Contains(spec.Name) && (spec.Accept ?? []).Contains("create") && spec.Create is null && lenses.Contains(spec.Name))
+                throw new Refused(spec.Name, "a rule whose nodes sink accepts create names the identity domain of a new element in create", null);
             if (spec.Create is null && spec.Delete is null) return;
             if (!masters.TryGetValue(spec.Name, out var type)) throw new Refused(spec.Name, "create and delete belong to a rule whose nodes sink is named by an element of a graph", null);
             var rid = Ids.Child(Pid, "rule", spec.Name);
@@ -369,13 +379,15 @@ public static class Lowering
         Rows Series(VerbNode v, Rows r)
         {
             if (v.Series is not { } s || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)
-                || !r.Types.ContainsKey(s.Element)) throw new Refused(v.Id, "series names a graph, an element column, a metric property and a lookback");
+                || !r.Types.ContainsKey(s.Element) || s.Read.Length == 0 || s.Property is not null && s.Properties is not null)
+                throw new Refused(v.Id, "series names a graph, an element column, a metric property (or a list of properties) and a lookback");
             var op = Op("Series", v.Id, [("within", Value.Integer(Duration(v.Id, s.Lookback))),
                 .. s.Freshness is { } ttl ? new[] { ("ttl", Value.Integer(Duration(v.Id, ttl))) } : []]);
             B.Edge(port, "wire", P(op, "graph"));
             B.Edge(r.Port, "wire", P(op, "in"));
-            B.Contain(op, "read", "#0", "FieldRef", 0, [("path", T($"{s.Element}.{s.Property}")), .. s.Fill is { } fill ? new[] { ("fill", Value.Decimal(fill)) } : []]);
-            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", s.Property, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Telemetry = true };
+            for (var i = 0; i < s.Read.Length; i++)
+                B.Contain(op, "read", $"#{i}", "FieldRef", i, [("path", T($"{s.Element}.{s.Read[i]}")), .. s.Fill is { } fill ? new[] { ("fill", Value.Decimal(fill)) } : []]);
+            return r with { Port = P(op, "out"), Cols = [.. r.Cols, "windowStart", "windowEnd", .. s.Read, .. s.Freshness is null ? Array.Empty<string>() : [TThreshold.NoDataColumn]], Telemetry = true };
         }
 
         Rows Threshold(VerbNode v, Rows r)
@@ -467,7 +479,9 @@ public static class Lowering
             if (keep) cols.AddRange(r.Cols.Select(c => (c, (Expr)new Ref(c))));
             foreach (var (name, x) in v.Columns ?? throw new Refused(v.Id, $"{v.Verb} names its columns"))
             {
-                var i = cols.FindIndex(c => c.Name == Column(v.Id, name)); var e = Read(v.Id, x);
+                var e = Read(v.Id, x);
+                // a window's start passes through under its own name; no other value may take that name
+                var i = cols.FindIndex(c => c.Name == (name == "windowStart" && e is Ref { Path: "windowStart" } && r.Cols.Contains(name) ? name : Column(v.Id, name)));
                 if (i >= 0) cols[i] = (name, e); else cols.Add((name, e));
             }
             return Assigns(v.Id, r, cols);
@@ -582,7 +596,8 @@ public static class Lowering
             Sink(v.Id, r, sink, type, view, n.Props);
             var id = Read(v.Id, n.Id ?? throw new Refused(v.Id, "a target node has an id: a function of the match"));
             Write(v.Id, r, id, sink, "id", 0);
-            if (v.Rule is { } rule && !n.Extend && id is Ref { Path: var path } && !path.Contains('.') && r.Types.TryGetValue(path, out var master)) masters[rule] = master;
+            if (v.Rule is { } rule && !n.Extend) nodeRules.Add(rule);
+            if (v.Rule is { } rule2 && !n.Extend && id is Ref { Path: var path } && !path.Contains('.') && r.Types.TryGetValue(path, out var master)) masters[rule2] = master;
             return null;
         }
 
@@ -641,13 +656,16 @@ public static class Lowering
             if (views.TryGetValue(m, out var v)) return v;
             var seen = new HashSet<string>(StringComparer.Ordinal) { Ids.KernelModule }; var todo = new Stack<string>([m]); var defs = new DefView(catalog);
             while (todo.Count > 0) { var x = todo.Pop(); if (seen.Add(x)) foreach (var t in defs.Targets(Ids.Module(x), "imports")) todo.Push(Ids.ModuleOf(t)); }
-            return views[m] = OntologyView.Build(catalog, seen);
+            var built = OntologyView.Build(catalog, seen); owners[built] = m;
+            return views[m] = built;
         }
 
-        static string TypeOf(string at, OntologyView view, string label, bool rel)
+        /// <summary>The type a label names: a type of the view's own module before an imported one of the same name.</summary>
+        string TypeOf(string at, OntologyView view, string label, bool rel)
         {
             var hits = view.Types.Values.Where(t => t.Name == label && t.IsRel == rel).Select(t => t.Id).ToList();
             if (hits.Count > 1) hits.RemoveAll(t => Ids.ModuleOf(t) == Ids.KernelModule);
+            if (hits.Count > 1 && hits.Where(t => Ids.ModuleOf(t) == owners[view]).ToList() is [var own]) hits = [own];
             return hits is [var one] ? one : throw new Refused(at, $"'{label}' is {(hits.Count == 0 ? "no" : "more than one")} {(rel ? "relationship" : "entity")} type");
         }
 

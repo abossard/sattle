@@ -37,7 +37,7 @@ public class ProcessKillTests
         try
         {
             var target = rnd.Next(15, 160);
-            var psi = new ProcessStartInfo("dotnet", $"\"{Cli}\" serve \"{EstateTests.EstateDir}\" --cluster synth --store sqlite={path} --port 0 {(sealEvery > 0 ? $"--seal-every {sealEvery}" : "--no-seal")}")
+            var psi = new ProcessStartInfo("dotnet", $"\"{Cli}\" serve \"{EstateTests.EstateDir}\" --store sqlite={path} --port 0 {(sealEvery > 0 ? $"--seal-every {sealEvery}" : "--no-seal")}")
             { WorkingDirectory = Path.Combine(Repo.Root, "engine"), RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             var output = new System.Text.StringBuilder();
             void Keep(string? line) { if (line is not null) lock (output) output.AppendLine(line); }

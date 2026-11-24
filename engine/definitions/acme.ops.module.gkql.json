@@ -1,0 +1,36 @@
+{
+  "module": "acme.ops",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.platform", "alias": "platform", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.flowlog", "alias": "flowlog", "version": "1.0.0", "digest": null},
+    {"module": "sattle.cloud", "alias": "cloud", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.cloud", "alias": "cloudsrc", "version": "1.0.0", "digest": null},
+    {"module": "sattle.source.metrics", "alias": "metrics", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Capability", "properties": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}]},
+    {"name": "Meter", "properties": [{"name": "meterKey", "type": "Text"}, {"name": "meter", "type": "Text", "label": true}, {"name": "reading", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]}
+  ],
+  "relationships": [
+    {"name": "PartOf", "from": "Capability", "to": "Capability", "kind": "composition"},
+    {"name": "Realizes", "from": "infra.Service", "to": "Capability", "kind": "composition"},
+    {"name": "MeterOfResource", "from": "Meter", "to": "cloud.Resource", "kind": "support"},
+    {"name": "MeterOfHost", "from": "Meter", "to": "infra.Host", "kind": "support"},
+    {"name": "MeterOfInstance", "from": "Meter", "to": "infra.Instance", "kind": "support"}
+  ],
+  "identities": [
+    {"name": "capability", "type": "Capability", "components": [{"name": "id", "type": "Text"}]},
+    {"name": "meter", "type": "Meter", "components": [{"name": "key", "type": "Text"}, {"name": "meter", "type": "Text"}]}
+  ],
+  "rows": [
+    {"name": "CapabilityRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "parentId", "type": "Text", "optional": true}]},
+    {"name": "RealizesRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "service", "type": "Text"}]}
+  ],
+  "constraints": [
+    {"kind": "cardinality", "type": "PartOf", "side": "source", "min": 0, "max": 1},
+    {"kind": "cardinality", "type": "Realizes", "side": "source", "min": 0, "max": 1},
+    {"kind": "acyclic", "type": "PartOf"}
+  ]
+}

@@ -100,54 +100,35 @@ public static class Program
         throw new ArgumentException("definitions directory not found; pass --defs DIR");
     }
 
-    /// <summary>The definitions directory, with `--overlay FILE[,FILE]` replacing the module of the same name (a different space binding for a synthetic capture, for example). Committed edits are written back to the original files, not to an overlay.</summary>
+    /// <summary>The definitions directory, with `--overlay FILE[,FILE]` replacing the module document of the same name (a different space binding for a synthetic capture, for example). Committed edits are written back to the original files, not to an overlay.</summary>
     public static IReadOnlyList<SourceFile> ReadDefinitions(Options o)
     {
         var files = Catalog.ReadDirectory(FindDefinitions(o)).ToList();
         var overlay = o.Get("overlay") ?? LocalCaptureOverlay(o);
-        if (overlay is null)
-        {
-            // a capture that says which workload it holds: the tracked space with those values
-            string? dir = null; if (o.Positional.Count > 0) try { dir = FindCapture(o.Positional[0]); } catch (ArgumentException) { }
-            return dir is not null && ArgumentsOf(dir) is { } arguments ? WithArguments(files, arguments) : files;
-        }
+        if (overlay is null) return files;
         foreach (var path in overlay.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             var text = File.ReadAllText(path);
-            var module = System.Text.RegularExpressions.Regex.Match(text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } m ? m.Groups[1].Value : throw new ArgumentException($"overlay {path} has no module header");
-            var i = files.FindIndex(f => System.Text.RegularExpressions.Regex.Match(f.Text, @"^module\s+(\S+?)\s*(?:@|;)", System.Text.RegularExpressions.RegexOptions.Multiline) is { Success: true } fm && fm.Groups[1].Value == module);
+            var module = ModuleName(text) ?? throw new ArgumentException($"overlay {path} is not a gkql module document (no \"module\" name)");
+            var i = files.FindIndex(f => f.Path.EndsWith(".module.gkql.json", StringComparison.Ordinal) && ModuleName(f.Text) == module);
             if (i < 0) throw new ArgumentException($"no module {module} in the definitions to overlay");
             files[i] = files[i] with { Text = text };
         }
         return files;
     }
 
-    /// <summary>The definition files whose text is not the text of their file: a space bound with a capture's arguments, a module replaced by an overlay. A commit writes every definition back, so with `--write-definitions` these would put a capture's values into the definitions folder.</summary>
+    /// <summary>The name a gkql module document declares, or null when the text is not one.</summary>
+    static string? ModuleName(string text)
+    {
+        try { return JsonNode.Parse(text) is JsonObject o && o["module"] is JsonValue v && v.TryGetValue<string>(out var name) ? name : null; }
+        catch (JsonException) { return null; }
+    }
+
+    /// <summary>The definition files whose text is not the text of their file: a module replaced by an overlay. A commit writes every definition back, so with `--write-definitions` these would put an overlay into the tracked files.</summary>
     public static List<string> NotAsOnDisk(IReadOnlyList<SourceFile> files) =>
         [.. files.Where(f => !File.Exists(f.Path) || File.ReadAllText(f.Path) != f.Text).Select(f => Path.GetFileName(f.Path))];
 
-    /// <summary>The file a capture directory may hold beside its data: the values of the arguments of the space for that capture, by name (`{ "workloadNamespace": "...", ... }`). `lab/fixtures/build.sh` writes it for the fixtures.</summary>
-    public const string SpaceArguments = "space-arguments.json";
-
-    /// <summary>The arguments file of a capture directory, or null when it has none.</summary>
-    public static IReadOnlyDictionary<string, string>? ArgumentsOf(string captureDir)
-    {
-        var path = Path.Combine(captureDir, SpaceArguments);
-        if (!File.Exists(path)) return null;
-        using var doc = JsonDocument.Parse(File.ReadAllText(path));
-        return doc.RootElement.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.String).ToDictionary(p => p.Name, p => p.Value.GetString()!, StringComparer.Ordinal);
-    }
-
-    /// <summary>The text of a space with other values for its arguments: every `name: "value"` whose name is given takes the given value. A name the text does not have changes nothing, an argument that is not given keeps its value.</summary>
-    public static string WithArguments(string spaceText, IReadOnlyDictionary<string, string> arguments) =>
-        arguments.OrderBy(a => a.Key, StringComparer.Ordinal).Aggregate(spaceText, (text, a) =>
-            System.Text.RegularExpressions.Regex.Replace(text, $@"\b{System.Text.RegularExpressions.Regex.Escape(a.Key)}: ""(?:[^""\\]|\\.)*""", _ => $"{a.Key}: {JsonSerializer.Serialize(a.Value)}"));
-
-    /// <summary>The definitions with the arguments applied to the modules that declare a space.</summary>
-    public static List<SourceFile> WithArguments(IReadOnlyList<SourceFile> files, IReadOnlyDictionary<string, string> arguments) =>
-        [.. files.Select(f => System.Text.RegularExpressions.Regex.IsMatch(f.Text, @"^space\s", System.Text.RegularExpressions.RegexOptions.Multiline) ? f with { Text = WithArguments(f.Text, arguments) } : f)];
-
-    /// <summary>The space binding for a capture that the tracked `acme.space` does not fit, applied when no `--overlay` was given. For a capture under `lab/captures` it is the gitignored `lab/captures/space-overlay.sattle` (the real workload arguments, never committed). For any other capture directory NAME it is the tracked `engine/overlays/NAME.space.sattle` when it exists (`lab/fixtures` has `fixtures.space.sattle`): the tracked space file binds the invented estate, so a capture of another cluster needs its own arguments.</summary>
+    /// <summary>The space binding for a capture that the tracked `acme.space` does not fit, applied when no `--overlay` was given. For a capture under `lab/captures` it is the gitignored `lab/captures/acme.space.module.gkql.json`.</summary>
     static string? LocalCaptureOverlay(Options o)
     {
         if (o.Positional.Count == 0) return null;
@@ -156,7 +137,7 @@ public static class Program
         var parent = Path.GetDirectoryName(full);
         if (Path.GetFileName(parent) == "captures")
         {
-            var local = Path.Combine(parent!, "space-overlay.sattle");
+            var local = Path.Combine(parent!, "acme.space.module.gkql.json");
             return File.Exists(local) ? local : null;
         }
         return null;
@@ -243,7 +224,7 @@ public static class Program
         if (resumeOnly) return Serve(o, "", output);
         var files = ReadDefinitions(o);
         if (serve && o.Flags.Contains("write-definitions") && NotAsOnDisk(files) is { Count: > 0 } bound)
-            return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the values of the capture's {SpaceArguments} or of an overlay, not as the file is. Serve without --write-definitions, or without the arguments file and the overlay.");
+            return Fail($"--write-definitions is refused: {string.Join(", ", bound)} would be written with the text of an overlay, not as the file is. Serve without --write-definitions, or without the overlay.");
         var cat = new Catalog(Program.Projections);
         var load = cat.Load(files, updatePins: true);
         if (load.HasErrors) { Print(load.Diagnostics); return 1; }

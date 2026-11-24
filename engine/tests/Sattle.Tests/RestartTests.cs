@@ -50,11 +50,11 @@ public class RestartTests
     /// <summary>The module that binds the graphs of the space.</summary>
     internal const string SpaceModule = "acme.space";
 
-    /// <summary>The space module of a host with the deployment health graph bound to `minReady`: a definition commit that changes a value of the definitions, written in no projection language (Proposition 5.8, a parameter is a constant of the binding).</summary>
+    /// <summary>The space module of a host with the readiness graph bound to `minReady`: a definition commit that changes a value of the definitions, written in no projection language (Proposition 5.8, a parameter is a constant of the binding).</summary>
     internal static string BoundTo(SpaceHost h, int minReady)
     {
         var text = h.Definition(SpaceModule);
-        var bound = System.Text.RegularExpressions.Regex.Replace(text, @"dh\.deploymentHealth\(master: master(, minReady: \d+)?\)", $"dh.deploymentHealth(master: master, minReady: {minReady})");
+        var bound = System.Text.RegularExpressions.Regex.Replace(text, @"(""projection"":\s*""dh\.readiness"",\s*""master"":\s*false,\s*""inputs"":\s*\{""master"":\s*""master"")(,\s*""minReady"":\s*\{""lit"":\s*\d+\})?\}", $"$1, \"minReady\": {{\"lit\": {minReady}}}}}");
         Assert.NotEqual(text, bound);
         return bound;
     }
@@ -138,7 +138,7 @@ public class RestartTests
             Assert.Equal(digest, r.StateDigest());
             Assert.Equal(rev, r.CatalogRevision);
             Assert.Equal(seq, r.Seq);
-            Assert.Contains("minReady: 1", r.Definition(SpaceModule));
+            Assert.Contains("\"minReady\": {\"lit\": 1}", r.Definition(SpaceModule));
             r.Advance(100 * 365 * 24 * 60 * Min, 1_000_000);          // the restored space accepts more input and journals it
             digest = r.StateDigest(); seq = r.Seq;
         }
@@ -196,14 +196,14 @@ public class RestartTests
     [InlineData("progress", """{"k":"g","s":"flows","u":120000000000,"q":8}""")]
     [InlineData("loss", """{"k":"l","t":120000000000,"n":5,"r":"sourceLoss"}""")]
     [InlineData("finish", """{"k":"f"}""")]
-    [InlineData("liveStart", """{"k":"L","o":"{\u0022c\u0022:40,\u0022a\u0022:60000000000,\u0022l\u0022:60000000000,\u0022f\u0022:false,\u0022k\u0022:\u0022synth\u0022}"}""")]
+    [InlineData("liveStart", """{"k":"L","o":"{\u0022c\u0022:40,\u0022a\u0022:60000000000,\u0022l\u0022:60000000000,\u0022f\u0022:false}"}""")]
     [InlineData("envelope", """{"k":"e","s":"hub","t":"{}","p":"{\u0022n\u0022:3}"}""")]
     [InlineData("skipped", """{"k":"p","s":"hub","p":"{\u0022n\u0022:4}"}""")]
     [InlineData("flush", """{"k":"F"}""")]
     [InlineData("sequenceStep", """{"k":"s"}""")]
-    [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;","acme.svc.serviceDeps.kql":null}}""")]
+    [InlineData("commit", """{"k":"c","e":12,"t":{"acme.svc":"module acme.svc @ 1.0.0;","acme.svc.serviceDeps.gkql.json":null}}""")]
     [InlineData("commitRefused", """{"k":"x"}""")]
-    [InlineData("header", """{"k":"h","tenant":"lab","lateHorizon":null,"cluster":"synth","space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
+    [InlineData("header", """{"k":"h","tenant":"lab","lateHorizon":null,"space":"operations","mode":"replay","generation":0,"files":[{"p":"a.sattle","t":"module a @ 1.0.0;"}]}""")]
     public void A_journal_entry_has_the_stored_form_it_always_had_and_reads_back(string kind, string stored)
     {
         Entry entry = kind switch
@@ -217,7 +217,7 @@ public class RestartTests
             "skipped" => new Entry.Skipped("hub", "{\"n\":4}"),
             "flush" => new Entry.Flush(),
             "sequenceStep" => new Entry.SequenceStep(),
-            "commit" => new Entry.Commit(12, new Dictionary<string, string?> { ["acme.svc"] = "module acme.svc @ 1.0.0;", ["acme.svc.serviceDeps.kql"] = null }),
+            "commit" => new Entry.Commit(12, new Dictionary<string, string?> { ["acme.svc"] = "module acme.svc @ 1.0.0;", ["acme.svc.serviceDeps.gkql.json"] = null }),
             "commitRefused" => new Entry.CommitRefused(),
             _ => new Entry.Header("lab", null, "operations", "replay", [new Sattle.Language.SourceFile("a.sattle", "module a @ 1.0.0;")]),
         };
@@ -258,16 +258,16 @@ public class RestartTests
     public void The_journal_codec_round_trips_text_numbers_booleans_presence_and_weights()
     {
         using var h = HostTests.NewHost();
-        var it = h.Interner; var layout = h.RowLayout("pods");
+        var it = h.Interner; var layout = h.RowLayout("instances");
         var w = new RowWriter(layout, it);
-        w.Begin(); w.Text("cluster", "c"); w.Text("uid", "u1"); w.Text("namespace", "ns"); w.Text("name", "p1"); w.Int(w.Col("restarts"), 3_000_000_000_000_000_000); w.Absent(w.Col("phase"));
-        w.Begin(-1); w.Text("cluster", "c"); w.Text("uid", "u2"); w.Text("namespace", "ns"); w.Text("name", "\u00fc\"q\n"); w.Int(w.Col("ready"), 1); w.Text("phase", "Running");
+        w.Begin(); w.Text("site", "c"); w.Text("uid", "u1"); w.Text("namespace", "ns"); w.Text("name", "p1"); w.Int(w.Col("restarts"), 3_000_000_000_000_000_000); w.Absent(w.Col("phase"));
+        w.Begin(-1); w.Text("site", "c"); w.Text("uid", "u2"); w.Text("namespace", "ns"); w.Text("name", "\u00fc\"q\n"); w.Int(w.Col("ready"), 1); w.Text("phase", "Running");
         var b = w.Build()!;
-        var body = BatchCodec.Encode("pods", 7, b, it);
+        var body = BatchCodec.Encode("instances", 7, b, it);
         var other = new Interner();
         var (src, seq, back) = BatchCodec.Decode(body, h.RowLayout, other);
-        Assert.Equal(("pods", 7L), (src, seq));
-        Assert.Equal(body, BatchCodec.Encode("pods", 7, back, other));
+        Assert.Equal(("instances", 7L), (src, seq));
+        Assert.Equal(body, BatchCodec.Encode("instances", 7, back, other));
         Assert.Equal(-1, back.Weight(1));
         Assert.False(back.Cols[layout.Index("phase")].Present(0));
     }

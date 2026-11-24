@@ -1,0 +1,11 @@
+{
+  "module": "sattle.doc",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Block", "properties": [{"name": "kind", "type": "Text"}, {"name": "order", "type": "Text"}, {"name": "text", "type": "Text", "optional": true}, {"name": "level", "type": "Integer", "optional": true}, {"name": "a", "type": "Text", "optional": true}, {"name": "b", "type": "Text", "optional": true}, {"name": "c", "type": "Text", "optional": true}, {"name": "d", "type": "Text", "optional": true}, {"name": "n", "type": "Integer", "optional": true}]}
+  ],
+  "identities": [
+    {"name": "block", "type": "Block", "components": [{"name": "rule", "type": "Text"}, {"name": "key", "type": "Text"}]}
+  ]
+}

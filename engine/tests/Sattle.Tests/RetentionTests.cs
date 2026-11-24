@@ -4,7 +4,7 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>Evidence retention is a declaration in the projection (`|> retain on time for 24h`): the master keeps an event while the logical frontier is less than its time plus the age, and not longer. The retained state is a function of the frontier, so it does not depend on the chunk size. The tests write the age into the text of the ingest projection: `ago()` takes a literal, and a parameter cannot be a duration.</summary>
+/// <summary>Evidence retention is a declaration in the projection (the verb `retain` with `"age": "24h"`): the master keeps an event while the logical frontier is less than its time plus the age, and not longer. The retained state is a function of the frontier, so it does not depend on the chunk size. The tests write the age into the ingest program: an age is a literal, and a parameter cannot be a duration.</summary>
 public class RetentionTests
 {
     const long Min = 60_000_000_000;
@@ -12,7 +12,7 @@ public class RetentionTests
 
     static Catalog Catalog(string age)
     {
-        var files = Repo.DefinitionFiles().Select(f => f.Path.EndsWith("acme.ops.ingest.kql", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("ago(24h)", $"ago({age})") } : f).ToList();
+        var files = Repo.DefinitionFiles().Select(f => f.Path.EndsWith("acme.ops.ingest.gkql.json", StringComparison.Ordinal) ? f with { Text = f.Text.Replace("\"age\": \"24h\"", $"\"age\": \"{age}\"") } : f).ToList();
         var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: true);
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);

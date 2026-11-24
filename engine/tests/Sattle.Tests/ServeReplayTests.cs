@@ -45,24 +45,22 @@ public class ServeReplayTests
         Assert.Equal(replayed, Scenarios.Of(Estate, Scenarios.Full).StateDigest);                   // the shared scenario runs have the settings of `sattle replay`
     }
 
-    /// <summary>Code review 2, defect 5: `serve CAPTURE --write-definitions` is refused when a definition is not the text of its file, here the space bound with the capture's arguments file or replaced by an overlay. A commit writes every definition back, so the capture's values would be written into the definitions folder. Temporary folders, invented values.</summary>
-    [Theory]
-    [InlineData("arguments")] [InlineData("overlay")]
-    public void Serve_refuses_to_write_definitions_back_when_one_is_not_the_text_of_its_file(string bound)
+    /// <summary>Code review 2, defect 5: `serve CAPTURE --write-definitions` is refused when a definition is not the text of its file, here the space replaced by an overlay. A commit writes every definition back, so the overlay would be written into the definitions folder. Temporary folders, invented values.</summary>
+    [Fact]
+    public void Serve_refuses_to_write_definitions_back_when_one_is_not_the_text_of_its_file()
     {
         string Temp(string name) { var d = Path.Combine(Path.GetTempPath(), $"sattle-{name}-" + Guid.NewGuid().ToString("N")); Directory.CreateDirectory(d); return d; }
         var defs = Temp("defs"); var cap = Temp("cap");
         try
         {
-            foreach (var f in Directory.EnumerateFiles(Repo.Definitions, "*.sattle")) File.Copy(f, Path.Combine(defs, Path.GetFileName(f)));
-            var spaceFile = Path.Combine(defs, "acme.space.sattle"); var space = File.ReadAllText(spaceFile);
-            var overlay = Path.Combine(cap, "overlay.sattle");
-            var other = Program.WithArguments(space, new Dictionary<string, string> { ["workloadNamespace"] = "other" });
+            foreach (var f in Directory.EnumerateFiles(Repo.Definitions, "*.gkql.json")) File.Copy(f, Path.Combine(defs, Path.GetFileName(f)));
+            var spaceFile = Path.Combine(defs, "acme.space.module.gkql.json"); var space = File.ReadAllText(spaceFile);
+            var overlay = Path.Combine(cap, "overlay.module.gkql.json");
+            var other = space.Replace("\"projection\": \"dh.readiness\", \"master\": false, \"inputs\": {\"master\": \"master\"}", "\"projection\": \"dh.readiness\", \"master\": false, \"inputs\": {\"master\": \"master\", \"minReady\": {\"lit\": 1}}");
             Assert.NotEqual(space, other);
-            if (bound == "arguments") File.WriteAllText(Path.Combine(cap, Program.SpaceArguments), "{ \"workloadNamespace\": \"other\" }");
-            else File.WriteAllText(overlay, other);
-            string[] args = bound == "arguments" ? [cap, "--defs", defs, "--write-definitions"] : [cap, "--defs", defs, "--write-definitions", "--overlay", overlay];
-            Assert.Equal(["acme.space.sattle"], Program.NotAsOnDisk(Program.ReadDefinitions(Program.Options.Parse(args))));
+            File.WriteAllText(overlay, other);
+            string[] args = [cap, "--defs", defs, "--write-definitions", "--overlay", overlay];
+            Assert.Equal(["acme.space.module.gkql.json"], Program.NotAsOnDisk(Program.ReadDefinitions(Program.Options.Parse(args))));
             Assert.Empty(Program.NotAsOnDisk(Program.ReadDefinitions(Program.Options.Parse(["--defs", defs]))));
             Assert.Equal(2, Program.Main(["serve", .. args]));                                 // refused before a host exists
             Assert.Equal(space, File.ReadAllText(spaceFile));

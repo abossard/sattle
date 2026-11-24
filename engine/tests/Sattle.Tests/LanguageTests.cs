@@ -3,7 +3,7 @@ using Sattle.Language;
 
 namespace Sattle.Tests;
 
-/// <summary>Step 3: the .sattle front end of the modules. Parser, lowering to the catalog graph, canonical printer, checks K1 to K11, typing judgments, release digests. The projections come from their `.kql` files.</summary>
+/// <summary>Step 3: the modules as gkql documents (`.module.gkql.json`). Lowering to the catalog graph, checks K1 to K11, typing judgments, release digests. The projections come from their gkql programs.</summary>
 public class LanguageTests
 {
     static Dictionary<string, string> Sources() => Catalog.ReadDirectory(Repo.Definitions).ToDictionary(f => Path.GetFileName(f.Path), f => f.Text);
@@ -24,28 +24,12 @@ public class LanguageTests
     }
 
     [Fact]
-    public void Authored_tree_count_labels_round_trip_through_text_and_catalog()
-    {
-        const string source = """
-            module workflow @1.0.0;
-            entity Queue { waiting?: Integer treerole count "Needs review"; }
-            """;
-        var first = Load(new() { ["workflow.sattle"] = source });
-        Assert.DoesNotContain(first.Result.Diagnostics, d => d.IsError);
-        var text = Printer.Print(first.Cat.Graph, "workflow");
-        Assert.Contains("treerole count \"Needs review\"", text);
-        var second = Load(new() { ["workflow.sattle"] = text });
-        Assert.DoesNotContain(second.Result.Diagnostics, d => d.IsError);
-        Assert.Equal(first.Cat.Modules["workflow"].Digest, second.Cat.Modules["workflow"].Digest);
-    }
-
-    [Fact]
     public void Examples_parse_check_and_activate_cleanly()
     {
         var (cat, res) = Load(Sources());
         Assert.Empty(res.Diagnostics);
-        Assert.Equal(18, cat.Modules.Count);                               // the kernel and the seventeen modules of the definitions
-        Assert.Equal(13, cat.Projections.Count);
+        Assert.Equal(14, cat.Modules.Count);                               // the kernel and the thirteen modules of the definitions
+        Assert.Equal(6, cat.Projections.Count);
         Assert.Single(cat.Spaces);
         Assert.All(cat.Modules.Values, m => Assert.StartsWith("sha256:", m.Digest));
     }
@@ -64,50 +48,36 @@ public class LanguageTests
         var (a, _) = Load(Sources());
         var (b, _) = Load(Sources());
         Assert.All(a.Modules.Keys, k => Assert.Equal(a.Modules[k].Digest, b.Modules[k].Digest));
-        var (c, _) = Mutated("sattle.infra.sattle", "phase?: Text; ready?: Boolean; serviceAccount?: Text;\n", "phase?: Text; ready?: Boolean; serviceAccount?: Text; zone?: Text;\n");
+        var (c, _) = Mutated("sattle.infra.module.gkql.json", "{\"name\": \"Instance\", \"properties\": [", "{\"name\": \"Instance\", \"properties\": [{\"name\": \"zone\", \"type\": \"Text\", \"optional\": true}, ");
         Assert.NotEqual(a.Modules["sattle.infra"].Digest, c.Modules["sattle.infra"].Digest);
     }
 
     [Fact]
     public void Import_pins_are_verified_and_can_be_fixed()
     {
-        var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:…") }).ToList();
+        var files = Catalog.ReadDirectory(Repo.Definitions).Select(f => f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "\"sha256:[0-9a-f]{64}\"", "null") }).ToList();
         var cat = new Catalog(Repo.Projections);
         var res = cat.Load(files, updatePins: false);
         Assert.Contains(res.Diagnostics, d => d.Code == "ImportPinMissing" && d.Line > 0);
         res = new Catalog(Repo.Projections).Load(files, updatePins: true);
         Assert.NotEmpty(res.PinFixes);
-        var fixedText = Catalog.ApplyPinFixes(files, res.PinFixes);
+        var fixedText = Catalog.ApplyPinFixes(files, res.PinFixes, Repo.Projections);
         var fixedFiles = files.Select(f => fixedText.TryGetValue(f.Path, out var t) ? f with { Text = t } : f).ToList();
         var again = new Catalog(Repo.Projections).Load(fixedFiles, updatePins: false);
         Assert.Empty(again.Diagnostics);
-        var wrong = fixedFiles.Select(f => f.Path.EndsWith("acme.svc.sattle") ? f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:" + new string('0', 64)) } : f).ToList();
+        var wrong = fixedFiles.Select(f => f.Path.EndsWith("acme.svc.module.gkql.json") ? f with { Text = System.Text.RegularExpressions.Regex.Replace(f.Text, "sha256:[0-9a-f]{64}", "sha256:" + new string('0', 64)) } : f).ToList();
         Assert.Contains(new Catalog(Repo.Projections).Load(wrong, updatePins: false).Diagnostics, d => d.Code is "ImportPinMismatch");
     }
 
-    [Fact]
-    public void Print_then_parse_reproduces_the_graph_and_printing_is_idempotent()
-    {
-        var sources = Sources();
-        var (cat, _) = Load(sources);
-        var printed = Printed(cat);
-        var (cat2, res2) = Load(printed.Concat(sources.Where(kv => kv.Key.EndsWith(".kql", StringComparison.Ordinal))).ToDictionary(), updatePins: false);
-        Assert.Empty(res2.Diagnostics);
-        foreach (var m in cat.Modules.Keys) Assert.Equal(cat.Modules[m].Digest, cat2.Modules[m].Digest); // equal digests = equal module facts
-        Assert.Equal(printed, Printed(cat2));
-    }
-
-    /// <summary>Each module of a catalog printed: its text, without the projections its `.kql` files give.</summary>
-    static Dictionary<string, string> Printed(Catalog cat) =>
-        cat.Modules.Keys.Where(m => m != Ids.KernelModule).ToDictionary(m => m + ".sattle", m => Printer.Print(cat.Graph, m));
+    const string FlowsOut = "{\"name\": \"flowsOut\", \"type\": \"Integer\", \"optional\": true, \"telemetry\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
+    const string Flows = "{\"name\": \"flows\", \"type\": \"Integer\", \"optional\": true, \"telemetry\": {\"temporality\": \"delta\", \"combine\": \"sum\", \"period\": \"1m\"}}";
 
     public static IEnumerable<object[]> Negative() =>
     [
-        ["combine provenance mismatch", "acme.svc.sattle", "flowsOut?: Integer telemetry delta sum every 60s;", "flowsOut?: Integer telemetry delta max every 60s;", "Set"],
-        ["syntax error", "sattle.infra.sattle", "module sattle.infra @ 1.0.0;", "module sattle.infra @ 1.0.0", "Syntax"],
-        ["property declared twice with different kinds", "sattle.infra.sattle", "entity Service { cluster: Text;", "entity Service { cluster: Integer;", "PropertyDisagrees"],
-        ["constraint on a non-text property", "sattle.infra.sattle", "constraint enum Pod.phase", "constraint enum Pod.nonexistent", "UnknownProperty"],
-        ["cumulative telemetry cannot sum", "sattle.infra.sattle", "flows?: Integer telemetry delta sum every 60s;", "flows?: Integer telemetry cumulative sum every 60s;", "K11"],
+        ["combine provenance mismatch", "acme.svc.module.gkql.json", FlowsOut, FlowsOut.Replace("\"combine\": \"sum\"", "\"combine\": \"max\""), "Set"],
+        ["syntax error", "sattle.infra.module.gkql.json", "\"module\": \"sattle.infra\",", "\"module\": \"sattle.infra\"", "Syntax"],
+        ["property declared twice with different kinds", "sattle.infra.module.gkql.json", "{\"name\": \"Service\", \"properties\": [{\"name\": \"site\", \"type\": \"Text\"}", "{\"name\": \"Service\", \"properties\": [{\"name\": \"site\", \"type\": \"Integer\"}", "PropertyDisagrees"],
+        ["cumulative telemetry cannot sum", "sattle.infra.module.gkql.json", Flows, Flows.Replace("\"delta\"", "\"cumulative\""), "K11"],
     ];
 
     [Theory, MemberData(nameof(Negative))]
@@ -126,8 +96,8 @@ public class LanguageTests
     {
         var (_, res) = Load(new Dictionary<string, string>
         {
-            ["a.sattle"] = "module a @ 1.0.0;\nimport b @ 1.0.0 sha256:… as b;\n",
-            ["b.sattle"] = "module b @ 1.0.0;\nimport a @ 1.0.0 sha256:… as a;\n",
+            ["a.module.gkql.json"] = """{"module": "a", "version": "1.0.0", "imports": [{"module": "b", "alias": "b", "version": "1.0.0", "digest": null}]}""",
+            ["b.module.gkql.json"] = """{"module": "b", "version": "1.0.0", "imports": [{"module": "a", "alias": "a", "version": "1.0.0", "digest": null}]}""",
         });
         Assert.Contains(res.Diagnostics, d => d.Code == "K5" && d.Message.Contains("cycle"));
     }
@@ -135,7 +105,7 @@ public class LanguageTests
     [Fact]
     public void Dependents_of_a_broken_module_are_not_activated()
     {
-        var (cat, res) = Mutated("sattle.infra.sattle", "relationship Backs (Pod)", "relationship Backs (Podd)");
+        var (cat, res) = Mutated("sattle.infra.module.gkql.json", "{\"name\": \"Backs\", \"from\": \"Instance\"", "{\"name\": \"Backs\", \"from\": \"Podd\"");
         Assert.Contains(res.Diagnostics, d => d.Code == "UnknownReference");
         Assert.DoesNotContain("acme.ops", cat.Modules.Keys);
         Assert.Empty(cat.Spaces);
@@ -145,7 +115,7 @@ public class LanguageTests
     static object[] KB(string code, Func<Graph, string, List<Edit>> f, string module) => [code, f, module];
     public static IEnumerable<object[]> KernelBreaks() =>
     [
-        KB("K1", (g, m) => { var c = g.Rel(Ids.Rel(Ids.Module(m), "contains", Ids.Child(Ids.Module(m), "entity", "Pod")))!; return [Edit.Remove(c)]; }, "sattle.infra"),
+        KB("K1", (g, m) => { var c = g.Rel(Ids.Rel(Ids.Module(m), "contains", Ids.Child(Ids.Module(m), "entity", "Instance")))!; return [Edit.Remove(c)]; }, "sattle.infra"),
         KB("K9", (g, m) => { var p = g.Entities.First(e => e.Id.StartsWith(Ids.Child(Ids.Module(m), "projection", "serviceDeps") + "/op:", StringComparison.Ordinal) && e.Id.EndsWith("/port:in", StringComparison.Ordinal)); return [Edit.Remove(g.Rel(Ids.Rel(p.Id[..p.Id.LastIndexOf("/port:", StringComparison.Ordinal)], "contains", p.Id))!), Edit.Remove(p)]; }, "acme.svc"),
         KB("K11", (g, m) => { var p = g.Entity(Ids.Child(Ids.Module(m), "prop", "flows"))!; return [Edit.Change(p, p with { Props = p.Props.With(Ids.KProp("period"), Value.Text("x")).Without(Ids.KProp("combine")) })]; }, "sattle.infra"),
     ];
@@ -161,28 +131,21 @@ public class LanguageTests
     }
 
     [Theory]
-    [InlineData("kind dependency;", false)]
-    [InlineData("rollup kind dependency;", true)]
-    [InlineData("hierarchy rollup kind composition;", true)]
-    public void The_rollup_marker_says_a_relationship_type_restates_others_and_prints_back(string tail, bool rollup)
+    [InlineData("\"kind\": \"dependency\"", false)]
+    [InlineData("\"kind\": \"dependency\", \"rollup\": true", true)]
+    [InlineData("\"kind\": \"composition\", \"hierarchy\": true, \"rollup\": true", true)]
+    public void The_rollup_marker_says_a_relationship_type_restates_others(string marks, bool rollup)
     {
-        var (cat, res) = Mutated("acme.tree.sattle", "relationship Rolls (Element) -> (Element) kind dependency;", "relationship Rolls (Element) -> (Element) " + tail);
+        var (cat, res) = Load(new Dictionary<string, string>
+        {
+            ["marks.module.gkql.json"] = $$"""
+                {"module": "marks", "version": "1.0.0", "imports": [],
+                 "entities": [{"name": "Element", "properties": [{"name": "name", "type": "Text", "label": true}]}],
+                 "relationships": [{"name": "Rolls", "from": "Element", "to": "Element", {{marks}} }]}
+                """,
+        });
         Assert.DoesNotContain(res.Diagnostics, d => d.IsError);
-        var rolls = Ids.Child(Ids.Module("acme.tree"), "rel", "Rolls");
-        Assert.Equal(rollup, new DefView(cat.Graph).Bool(rolls, "rollup"));
-        Assert.Contains("relationship Rolls (Element) -> (Element) " + tail.TrimEnd(';'), Printer.Print(cat.Graph, "acme.tree"));
-    }
-
-    [Fact]
-    public void Was_clause_keeps_the_old_id()
-    {
-        var s = Sources();
-        s["sattle.infra.sattle"] = s["sattle.infra.sattle"].Replace("entity Service {", "entity Svc was Service {");
-        var (cat, res) = Load(s);
-        Assert.DoesNotContain(res.Diagnostics, d => d.IsError && d.File == "sattle.infra.sattle");     // a KQL text names a type by its name, so the projections that read Service would need the new name
-        var node = cat.Graph.Entity(Ids.Child(Ids.Module("sattle.infra"), "entity", "Service"));
-        Assert.Equal("Svc", node!.Props.Text(Ids.KProp("name")));
-        Assert.Contains("entity Svc was Service", Printer.Print(cat.Graph, "sattle.infra"));
+        Assert.Equal(rollup, new DefView(cat.Graph).Bool(Ids.Child(Ids.Module("marks"), "rel", "Rolls"), "rollup"));
     }
 
     [Fact]
@@ -192,9 +155,9 @@ public class LanguageTests
         var d = new DefView(cat.Graph);
         var proj = Ids.Child(Ids.Module("acme.svc"), "projection", "serviceDeps");
         Assert.Equal(Ids.Module("acme.svc"), d.Container(proj));
-        Assert.NotNull(cat.Graph.Entity(proj + "/op:services_1/node:s"));
-        Assert.NotNull(cat.Graph.Entity(proj + "/op:emit.5/source:#0"));
-        Assert.Equal(proj + "/op:services_1", d.Container(proj + "/op:services_1/node:s"));
+        Assert.NotNull(cat.Graph.Entity(proj + "/op:services_1_1/node:s"));
+        Assert.NotNull(cat.Graph.Entity(proj + "/op:emit_5_1/source:#0"));
+        Assert.Equal(proj + "/op:services_1_1", d.Container(proj + "/op:services_1_1/node:s"));
         Assert.All(cat.Graph.Entities.Where(e => d.TypeName(e.Id) != "Release"), e => Assert.DoesNotContain('@', e.Id));
     }
 }

@@ -1,0 +1,8 @@
+{
+  "module": "sattle.source.flowlog",
+  "version": "1.0.0",
+  "imports": [],
+  "rows": [
+    {"name": "FlowRow", "fields": [{"name": "time", "type": "Instant"}, {"name": "site", "type": "Text"}, {"name": "verdict", "type": "Text"}, {"name": "srcNamespace", "type": "Text", "optional": true}, {"name": "srcInstance", "type": "Text", "optional": true}, {"name": "dstNamespace", "type": "Text", "optional": true}, {"name": "dstInstance", "type": "Text", "optional": true}, {"name": "dstAddress", "type": "Text", "optional": true}, {"name": "dstName", "type": "Text", "optional": true}]}
+  ]
+}

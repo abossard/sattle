@@ -17,28 +17,28 @@ public class DocumentTests
     }
 
     [Fact]
-    public void The_deployment_report_is_a_markdown_document_with_one_keyed_row_per_deployment()
+    public void The_readiness_report_is_a_markdown_document_with_one_keyed_row_per_unit()
     {
         using var h = Replayed();
-        var doc = h.Document("deploymentReport", null);
-        Assert.StartsWith("# Deployment health\n\n- Deployments: 2\n- Unhealthy deployments: 0\n\n| Namespace | Deployment | State | Ready pods |\n| --- | --- | --- | --- |\n", doc.Markdown);
-        Assert.Contains("| shop | db | Healthy | 1 |\n| shop | web | Healthy | 1 |\n", doc.Markdown);    // rows in key order; web ends with one ready pod
+        var doc = h.Document("readinessReport", null);
+        Assert.StartsWith("# Unit readiness\n\n- Units: 2\n- Units not ready: 0\n\n| Namespace | Unit | State | Ready instances |\n| --- | --- | --- | --- |\n", doc.Markdown);
+        Assert.Contains("| shop | db | Ready | 1 |\n| shop | web | Ready | 1 |\n", doc.Markdown);    // rows in key order; web ends with one ready instance
         Assert.EndsWith("|\n", doc.Markdown);
         Assert.Equal("sha256:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(doc.Markdown))), doc.Digest);      // computed here, not by the helper under test
-        Assert.True(h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "deploymentReport")!["document"]!.GetValue<bool>());
+        Assert.True(h.SpaceInfo()["graphs"]!.AsArray().First(g => g!["id"]!.GetValue<string>() == "readinessReport")!["document"]!.GetValue<bool>());
     }
 
     [Fact]
-    public void A_document_is_a_function_of_the_graph_state_and_has_a_digest_per_revision_that_follows_the_health_changes()
+    public void A_document_is_a_function_of_the_graph_state_and_has_a_digest_per_revision_that_follows_the_readiness_changes()
     {
         using var a = Replayed(); using var b = Replayed();
-        var head = a.Document("deploymentReport", null).Revision;
+        var head = a.Document("readinessReport", null).Revision;
         Assert.True(head > 3);
-        var digests = Enumerable.Range(1, (int)head).Select(r => a.Document("deploymentReport", r).Digest).ToList();
-        Assert.Equal(digests, Enumerable.Range(1, (int)head).Select(r => b.Document("deploymentReport", r).Digest));   // same inputs, same bytes at every revision
-        Assert.Contains(digests.Zip(digests.Skip(1)), p => p.First != p.Second);                                         // the document changes when a Deployment turns Unhealthy
-        Assert.Contains(Enumerable.Range(1, (int)head).Select(r => a.Document("deploymentReport", r).Markdown), m => m.Contains("- Unhealthy deployments: 1") || m.Contains("- Unhealthy deployments: 2"));
-        var last = a.Document("deploymentReport", null);
+        var digests = Enumerable.Range(1, (int)head).Select(r => a.Document("readinessReport", r).Digest).ToList();
+        Assert.Equal(digests, Enumerable.Range(1, (int)head).Select(r => b.Document("readinessReport", r).Digest));   // same inputs, same bytes at every revision
+        Assert.Contains(digests.Zip(digests.Skip(1)), p => p.First != p.Second);                                         // the document changes when a Unit turns NotReady
+        Assert.Contains(Enumerable.Range(1, (int)head).Select(r => a.Document("readinessReport", r).Markdown), m => m.Contains("- Units not ready: 1") || m.Contains("- Units not ready: 2"));
+        var last = a.Document("readinessReport", null);
         Assert.Equal(digests[^1], last.Digest);
     }
 
@@ -47,7 +47,7 @@ public class DocumentTests
     {
         using var h = HostTests.NewHost();
         Assert.Equal("NotADocument", Assert.Throws<HostError>(() => h.Document("master", null)).Code);
-        Assert.Equal("UnknownRevision", Assert.Throws<HostError>(() => h.Document("deploymentReport", 99)).Code);
+        Assert.Equal("UnknownRevision", Assert.Throws<HostError>(() => h.Document("readinessReport", 99)).Code);
     }
 
     [Theory]

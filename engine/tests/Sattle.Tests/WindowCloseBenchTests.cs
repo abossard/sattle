@@ -12,7 +12,7 @@ public class WindowCloseBenchTests
         var capture = Directory.CreateTempSubdirectory("sattle-close-");
         try
         {
-            // Six consecutive minute markers: the heartbeats of the Kubernetes row types at second 59. One optional reading belongs to the first minute and closes at the third advance.
+            // Six consecutive minute markers: the heartbeats of the platform row types at second 59. One optional reading belongs to the first minute and closes at the third advance.
             var records = Path.Combine(EstateTests.EstateDir, "records", "records.ndjson");
             var markers = File.ReadLines(records)
                 .Where(line => line.Contains("\"payload\":{}", StringComparison.Ordinal) && line.Contains(":59.000000000Z\"", StringComparison.Ordinal))

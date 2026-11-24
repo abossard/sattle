@@ -18,11 +18,11 @@ public class BatchInvarianceTests
     static string Line(string type, string at, long seq, string key, object values) =>
         System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, object?> { ["v"] = 1, ["source"] = "records:" + type, ["capturedAt"] = at, ["seq"] = seq, ["key"] = $"records:{type}/{seq}", ["meta"] = null, ["payload"] = new { key, values } });
 
-    static string Pod(string at, string uid, string name, long seq) => Line("PodRow", at, seq, uid,
-        new { cluster = "synth", uid, @namespace = "x", name, phase = "Running" });
+    static string Instance(string at, string uid, string name, long seq) => Line("InstanceRow", at, seq, uid,
+        new { site = "synth", uid, @namespace = "x", name, phase = "Running" });
 
     static string Flow(string at, string src, string dst, long seq) => Line("FlowRow", at, seq, $"flow/{seq}",
-        new { time = at, cluster = "synth", verdict = "FORWARDED", srcNamespace = "x", srcPod = src, dstNamespace = "x", dstPod = dst });
+        new { time = at, site = "synth", verdict = "FORWARDED", srcNamespace = "x", srcInstance = src, dstNamespace = "x", dstInstance = dst });
 
     static string Capture(IEnumerable<string> lines)
     {
@@ -32,20 +32,20 @@ public class BatchInvarianceTests
         return dir;
     }
 
-    /// <summary>Pods a-1 and b-1 and 12 flows between them in minute 0, a flow in minute 3 that closes minute 0. The pod rows arrive before the flows, or after minute 0 is closed (the closed window then bound the pod names to provisional identities and the pod rows merge them).</summary>
-    static IEnumerable<string> Lines(bool podsFirst)
+    /// <summary>Instances a-1 and b-1 and 12 flows between them in minute 0, a flow in minute 3 that closes minute 0. The instance rows arrive before the flows, or after minute 0 is closed (the closed window then bound the instance names to provisional identities and the instance rows merge them).</summary>
+    static IEnumerable<string> Lines(bool instancesFirst)
     {
-        var pods = new[] { Pod(podsFirst ? "2026-11-10T10:00:01.000Z" : "2026-11-10T10:04:00.000Z", "ua", "a-1", 1), Pod(podsFirst ? "2026-11-10T10:00:02.000Z" : "2026-11-10T10:04:01.000Z", "ub", "b-1", 2) };
+        var instances = new[] { Instance(instancesFirst ? "2026-11-10T10:00:01.000Z" : "2026-11-10T10:04:00.000Z", "ua", "a-1", 1), Instance(instancesFirst ? "2026-11-10T10:00:02.000Z" : "2026-11-10T10:04:01.000Z", "ub", "b-1", 2) };
         var flows = Enumerable.Range(0, 12).Select(i => Flow($"2026-11-10T10:00:{10 + i:D2}.000Z", i % 2 == 0 ? "a-1" : "b-1", i % 2 == 0 ? "b-1" : "a-1", 100 + i)).Append(Flow("2026-11-10T10:03:30.000Z", "a-1", "b-1", 200));
-        return podsFirst ? pods.Concat(flows) : flows.Concat(pods);
+        return instancesFirst ? instances.Concat(flows) : flows.Concat(instances);
     }
 
-    /// <summary>The premise of the batch-invariance theorem for identities: binding order is not part of the result. Here the pod row binds a key before the flows that name the pod, or after them (then the flows bind a provisional identity and the pod row merges it); every chunk size.</summary>
+    /// <summary>The premise of the batch-invariance theorem for identities: binding order is not part of the result. Here the instance row binds a key before the flows that name the instance, or after them (then the flows bind a provisional identity and the instance row merges it); every chunk size.</summary>
     [Theory]
     [InlineData(1)] [InlineData(2)] [InlineData(5)] [InlineData(2000)]
     public void The_result_does_not_depend_on_the_order_in_which_identity_keys_are_bound(int chunk)
     {
-        var a = Capture(Lines(podsFirst: true)); var b = Capture(Lines(podsFirst: false));
+        var a = Capture(Lines(instancesFirst: true)); var b = Capture(Lines(instancesFirst: false));
         try
         {
             var opts = new EngineOptions { LateHorizonWindows = 1_000_000 };
@@ -85,7 +85,7 @@ public class BatchInvarianceTests
     }
 
     static Dictionary<long, decimal> Changes(Engine e) =>
-        ((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key).Where(x => e.Interner.Get(x.Prop) == "d:sattle.azure/prop:changes").ToDictionary(x => x.Ws, x => x.Value);
+        ((InMemoryTelemetryStore)e.Telemetry).Dump(e.Master.Key).Where(x => e.Interner.Get(x.Prop) == "d:sattle.cloud/prop:changes").ToDictionary(x => x.Ws, x => x.Value);
 
     /// <summary>B1: the Activity Log writes one resource under two spellings of its id. The group is keyed by the lowercased id, so every batching gives one aggregate for the element and window; keyed by the raw text it gave two and the telemetry store kept the last one written.</summary>
     [Theory]
@@ -128,25 +128,26 @@ public class BatchInvarianceTests
     }
 
     const string Wide = """
-        module d @ 1.0.0;
-        entity Day { k: Text; hits?: Integer; }
-        identity day for Day version "1" { k: Text by exact; }
-        rows R { k: Text; t: Instant; }
+        {"module": "d", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Day", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true}]}],
+         "identities": [{"name": "day", "type": "Day", "components": [{"name": "k", "type": "Text"}]}],
+         "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}, {"name": "t", "type": "Instant"}]}]}
         """;
     const string WideIngest = """
-        graph ingest : d;
-        input a : R;
-        nodes Day on day with (rule = "observed", description = "test") = a
-            | summarize hits = count() by k, windowStart = bin(t, WIDTH)
-            | project day = identity("day", k), windowStart, k, hits;
+        {"graph": "ingest", "ontology": "d", "inputs": [{"name": "a", "rows": "d.R"}], "parameters": [],
+         "verbs": [
+           {"id": "a", "verb": "rows", "source": "a"},
+           {"id": "windows", "verb": "window", "window": {"time": "t", "period": "WIDTH"}},
+           {"id": "counted", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"hits": {"fn": "count"}}},
+           {"id": "days", "verb": "nodes", "rule": "observed", "target": {"nodes": [
+             {"var": "day", "label": "Day", "id": {"identity": "day", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}, "hits": {"ref": "hits"}}}]}}],
+         "wires": [{"from": "a", "to": "windows"}, {"from": "windows", "to": "counted"}, {"from": "counted", "to": "days"}],
+         "rules": [{"name": "observed", "description": "test"}]}
         """;
     const string WideSpace = """
-        module ds @ 1.0.0;
-        import d @ 1.0.0 sha256:… as d;
-        space s {
-          source a adapter "record" rows d.R;
-          master graph master = d.ingest(a: a);
-        }
+        {"module": "ds", "version": "1.0.0", "imports": [{"module": "d", "alias": "d", "version": "1.0.0", "digest": null}],
+         "space": {"name": "s", "sources": [{"name": "a", "adapter": "record", "rows": "d.R"}],
+                   "graphs": [{"name": "master", "projection": "d.ingest", "master": true, "inputs": {"a": "a"}}]}}
         """;
 
     /// <summary>Code review 2, defect 17: a window of any width takes its row and closes, with no late horizon (a replay) and with one of 1,000,000 windows. Before, the width times 1,000,000 passed the greatest time from 2 h 33 min on, so every row counted as too late and was dropped.</summary>
@@ -157,7 +158,7 @@ public class BatchInvarianceTests
     public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
     {
         var cat = new Sattle.Language.Catalog(Repo.Projections);
-        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.sattle", Wide), new Sattle.Language.SourceFile("d.ingest.kql", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.sattle", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
+        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.module.gkql.json", Wide), new Sattle.Language.SourceFile("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.module.gkql.json", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
         using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
         var w = Sattle.Language.Lexer.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
         e.Advance(start + 1);                                    // a replay advances before its first row

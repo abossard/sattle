@@ -1,0 +1,13 @@
+{
+  "module": "sattle.source.cloud",
+  "version": "1.0.0",
+  "imports": [],
+  "rows": [
+    {"name": "ResourceRow", "fields": [{"name": "id", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "type", "type": "Text"}, {"name": "location", "type": "Text", "optional": true}, {"name": "resourceGroup", "type": "Text", "optional": true}, {"name": "subscriptionId", "type": "Text", "optional": true}, {"name": "parentId", "type": "Text", "optional": true}, {"name": "address", "type": "Text", "optional": true}, {"name": "linkedId", "type": "Text", "optional": true}, {"name": "clientId", "type": "Text", "optional": true}, {"name": "principalId", "type": "Text", "optional": true}, {"name": "scope", "type": "Text", "optional": true}]},
+    {"name": "ActivityRow", "fields": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "resourceId", "type": "Text"}, {"name": "operation", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "caller", "type": "Text", "optional": true}]},
+    {"name": "DiagnosticActivityRow", "fields": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "resourceId", "type": "Text"}, {"name": "operation", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "caller", "type": "Text", "optional": true}]},
+    {"name": "AuditRow", "fields": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "verb", "type": "Text"}, {"name": "resource", "type": "Text"}, {"name": "namespace", "type": "Text", "optional": true}, {"name": "name", "type": "Text", "optional": true}, {"name": "user", "type": "Text", "optional": true}, {"name": "code", "type": "Integer", "optional": true}]},
+    {"name": "FlowLogRow", "fields": [{"name": "time", "type": "Instant"}, {"name": "networkId", "type": "Text"}, {"name": "rule", "type": "Text"}, {"name": "direction", "type": "Text"}, {"name": "state", "type": "Text"}, {"name": "protocol", "type": "Integer"}, {"name": "srcIp", "type": "Text"}, {"name": "dstIp", "type": "Text"}, {"name": "srcPort", "type": "Integer"}, {"name": "dstPort", "type": "Integer"}, {"name": "packets", "type": "Integer"}, {"name": "bytes", "type": "Integer"}, {"name": "packetsBack", "type": "Integer"}, {"name": "bytesBack", "type": "Integer"}]},
+    {"name": "ResourceMetricRow", "fields": [{"name": "time", "type": "Instant"}, {"name": "resourceId", "type": "Text"}, {"name": "metric", "type": "Text"}, {"name": "value", "type": "Decimal"}]}
+  ]
+}

@@ -940,23 +940,25 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     (string Path, string Text)[] SourceList(IReadOnlyDictionary<string, string?> texts)
     {
         var list = sources.ToDictionary(kv => kv.Key, kv => kv.Value);
-        foreach (var (module, text) in ModuleTexts(texts)) list[module] = (list.TryGetValue(module, out var old) ? old.Path : module + ".sattle", text);
+        foreach (var (module, text) in ModuleTexts(texts)) list[module] = (list.TryGetValue(module, out var old) ? old.Path : module + ".module.gkql.json", text);
         return [.. list.Values];
     }
 
-    static readonly System.Text.RegularExpressions.Regex ModuleHeader = new(@"^module\s+(\S+?)\s*(?:@\s*(\S+?)\s*)?;", System.Text.RegularExpressions.RegexOptions.Multiline);
+    /// <summary>The version a module document declares, or null when the text is not one.</summary>
+    static string? VersionOf(string text)
+    {
+        try { return JsonNode.Parse(text) is JsonObject o && o["version"] is JsonValue v && v.TryGetValue<string>(out var version) ? version : null; }
+        catch (System.Text.Json.JsonException) { return null; }
+    }
 
-    /// <summary>A module whose version changes is imported as `m @ old` by its dependents; the candidate rewrites those import versions (the pins are re-sealed by the loader), so a version bump commits as one change.</summary>
+    /// <summary>A module whose version changes is imported as `{"module": m, ..., "version": old}` by its dependents; the candidate rewrites those import versions (the pins are re-sealed by the loader), so a version bump commits as one change.</summary>
     Dictionary<string, string?> WithImportVersions(IReadOnlyDictionary<string, string?> texts)
     {
         var res = new Dictionary<string, string?>(texts);
         foreach (var (module, text) in ModuleTexts(texts))
         {
-            var m = ModuleHeader.Match(text);
-            var version = m.Success && m.Groups[2].Success ? m.Groups[2].Value : "1.0.0";
-            if (!sources.TryGetValue(module, out var old) || ModuleHeader.Match(old.Text) is not { Success: true } om || (om.Groups[2].Success ? om.Groups[2].Value : "1.0.0") == version) continue;
-            var oldVersion = om.Groups[2].Success ? om.Groups[2].Value : "1.0.0";
-            var rx = new System.Text.RegularExpressions.Regex($@"^(import\s+{System.Text.RegularExpressions.Regex.Escape(module)}\s*@\s*){System.Text.RegularExpressions.Regex.Escape(oldVersion)}(?=\s)", System.Text.RegularExpressions.RegexOptions.Multiline);
+            if (VersionOf(text) is not { } version || !sources.TryGetValue(module, out var old) || VersionOf(old.Text) is not { } oldVersion || oldVersion == version) continue;
+            var rx = new System.Text.RegularExpressions.Regex($@"(""module""\s*:\s*""{System.Text.RegularExpressions.Regex.Escape(module)}""[^{{}}]*?""version""\s*:\s*""){System.Text.RegularExpressions.Regex.Escape(oldVersion)}(?="")");
             foreach (var (dep, src) in sources.ToList())
             {
                 if (dep == module || texts.ContainsKey(dep)) continue;
@@ -1011,17 +1013,16 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>The name of the definition file a path is: its module for a module text, its file name for another file.</summary>
     string? FileNameOf(string? path) => path is null ? null : sources.FirstOrDefault(kv => kv.Value.Path == path).Key ?? Path.GetFileName(path);
 
-    string ParseModuleName(string module, string text)
+    /// <summary>The module a text declares: a gkql module document sent under its own `module` name. A text that is no JSON document is left to the
+    /// loader, which reports where it breaks.</summary>
+    static string ParseModuleName(string module, string text)
     {
-        try
-        {
-            var ast = sources.TryGetValue(module, out var f) && options.Projections?.IsModuleFile(f.Path) == true
-                ? options.Projections.ReadModule(new SourceFile(f.Path, text))
-                : Parser.Parse(text);
-            if (ast.Name != module) throw new HostError("ModuleMismatch", $"text declares module {ast.Name}, not {module}", 422);
-            return ast.Name;
-        }
-        catch (SyntaxError) { return module; }
+        JsonNode? doc;
+        try { doc = JsonNode.Parse(text); } catch (System.Text.Json.JsonException) { return module; }
+        if (doc is not JsonObject o || o["module"] is not JsonValue v || !v.TryGetValue<string>(out var name))
+            throw new HostError("ModuleText", $"module {module} is not a gkql module document", 422);
+        if (name != module) throw new HostError("ModuleMismatch", $"text declares module {name}, not {module}", 422);
+        return name;
     }
 
     public JsonNode Check(string module, string text) => CheckTexts(new Dictionary<string, string?> { [module] = text });
@@ -1137,7 +1138,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var catPatch = new Patch("catalog", catalogHistory.Count, catalogHistory.Count + 1, Graph.Diff(Catalog.Graph, cand.Graph));
             // swap
             Engine = fresh; Catalog = cand;
-            foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".sattle", t);
+            foreach (var (m, t) in ModuleTexts(texts)) sources[m] = (sources.TryGetValue(m, out var oldSrc) ? oldSrc.Path : m + ".module.gkql.json", t);
             foreach (var kv in fixedTexts) { var m = ModuleOfPath(kv.Key); if (m.Length > 0) sources[m] = (kv.Key, kv.Value); }
             var withFiles = OthersWith(texts); var removed = others.Where(f => texts.TryGetValue(Path.GetFileName(f.Path), out var t) && t is null).ToList(); others.Clear(); others.AddRange(withFiles);
             if (WriteDefinitions && DefinitionsDir is not null && phase != Phase.Replaying)

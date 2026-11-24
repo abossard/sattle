@@ -1,0 +1,8 @@
+{
+  "module": "acme.report",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "sattle.doc", "alias": "doc", "version": "1.0.0", "digest": null},
+    {"module": "acme.readiness", "alias": "dh", "version": "1.0.0", "digest": null}
+  ]
+}

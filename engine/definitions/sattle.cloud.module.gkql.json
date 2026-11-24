@@ -1,0 +1,16 @@
+{
+  "module": "sattle.cloud",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Resource", "properties": [{"name": "resourceId", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "type", "type": "Text"}, {"name": "location", "type": "Text", "optional": true}, {"name": "resourceGroup", "type": "Text", "optional": true}, {"name": "subscriptionId", "type": "Text", "optional": true}, {"name": "parentId", "type": "Text", "optional": true}, {"name": "address", "type": "Text", "optional": true}, {"name": "linkedId", "type": "Text", "optional": true}, {"name": "clientId", "type": "Text", "optional": true}, {"name": "principalId", "type": "Text", "optional": true}, {"name": "scope", "type": "Text", "optional": true}, {"name": "changes", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "cpuPercent", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "memoryPercent", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "vipAvailability", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "serverErrors", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "deniedFlows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "newFlows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "ActivityEvent", "properties": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "operation", "type": "Text", "label": true}, {"name": "status", "type": "Text"}, {"name": "caller", "type": "Text", "optional": true}]}
+  ],
+  "relationships": [
+    {"name": "Concerns", "from": "ActivityEvent", "to": "Resource", "kind": "support"}
+  ],
+  "identities": [
+    {"name": "activityEvent", "type": "ActivityEvent", "components": [{"name": "id", "type": "Text"}]},
+    {"name": "resource", "type": "Resource", "components": [{"name": "id", "type": "Text", "normalize": "lowerInvariant"}]}
+  ]
+}

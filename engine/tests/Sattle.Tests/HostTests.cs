@@ -20,21 +20,21 @@ public class HostTests
     /// <summary>The same with another late horizon: 1,000,000 windows for a recorded input whose every window stays revisable, as `sattle replay` sets it.</summary>
     public static SpaceHost NewHost(int? lateHorizon) => new(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = lateHorizon }, Shared.Value.Loaded);
 
-    /// <summary>Services 0 to 2, flows pod-0 to pod-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
+    /// <summary>Services 0 to 2, flows instance-0 to instance-1 with 10 percent drops for 3 windows, then none: the health status degrades and recovers.</summary>
     internal static void Drive(SpaceHost h, int windows = 9)
     {
         new SyntheticWorld2(h).Load();
         for (var win = 0; win < windows; win++) Flows(h, win);
     }
 
-    /// <summary>The ten flows of one window from pod-0 to pod-1, and the advance that closes it.</summary>
+    /// <summary>The ten flows of one window from instance-0 to instance-1, and the advance that closes it.</summary>
     internal static void Flows(SpaceHost h, int window)
     {
         var rw = new RowWriter(h.RowLayout("flows"), h.Interner);
         for (var i = 0; i < 10; i++)
         {
-            rw.Begin(); rw.Instant("time", T0 + window * Min + i * 1_000_000_000L); rw.Text("cluster", "synth"); rw.Text("verdict", window < 3 && i == 0 ? "DROPPED" : "FORWARDED");
-            rw.Text("srcNamespace", "ns0"); rw.Text("srcPod", "pod-0"); rw.Text("dstNamespace", "ns1"); rw.Text("dstPod", "pod-1");
+            rw.Begin(); rw.Instant("time", T0 + window * Min + i * 1_000_000_000L); rw.Text("site", "synth"); rw.Text("verdict", window < 3 && i == 0 ? "DROPPED" : "FORWARDED");
+            rw.Text("srcNamespace", "ns0"); rw.Text("srcInstance", "instance-0"); rw.Text("dstNamespace", "ns1"); rw.Text("dstInstance", "instance-1");
         }
         h.Ingest("flows", rw.Build()!, 100 + window);
         h.Advance(T0 + (window + 1) * Min + 1, 200 + window);
@@ -101,18 +101,18 @@ public class HostTests
         var good = h.Check(File, Text(File));
         Assert.True(good["ok"]!.GetValue<bool>());
         Assert.Empty(good["patch"]!["edits"]!.AsArray());
-        var bad = h.Check(File, Text(File).Replace("drops / flows", "drops / nosuch"));
+        var bad = h.Check(File, Text(File).Replace("{\"ref\": \"drops\"}, {\"ref\": \"flows\"}", "{\"ref\": \"drops\"}, {\"ref\": \"nosuch\"}"));
         Assert.False(bad["ok"]!.GetValue<bool>());
         var d = bad["diagnostics"]!.AsArray().First(x => x!["severity"]!.GetValue<string>() == "error")!;      // the column is unknown; which code names it is the language's
         Assert.True(d["line"]!.GetValue<int>() > 0 && d["column"]!.GetValue<int>() > 0);
         Assert.Equal(File, d["file"]!.GetValue<string>());
-        var changed = h.Check(File, Text(File).Replace("above = 0.05", "above = 0.5"));
+        var changed = h.Check(File, Text(File).Replace("\"above\": 0.05", "\"above\": 0.5"));
         Assert.True(changed["ok"]!.GetValue<bool>());
         Assert.NotEmpty(changed["patch"]!["edits"]!.AsArray());
         Assert.Contains("acme.svc", changed["affected"]!["modules"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Contains("serviceTree", changed["affected"]!["graphs"]!.AsArray().Select(x => x!.GetValue<string>()));
         Assert.Equal(h.CatalogRevision.ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());                 // nothing committed
-        Assert.Throws<HostError>(() => h.Check("acme.other", Text("acme.svc.sattle")));
+        Assert.Throws<HostError>(() => h.Check("acme.other", Text("acme.svc.module.gkql.json")));
     }
 
     [Fact]
@@ -127,7 +127,7 @@ public class HostTests
         var masterHead = Head(h, "master");
         // initial 3 windows of 10 percent drops: lower the entry threshold so the status ends degraded
         var File = h.ProjectionFile("acme.svc.serviceDeps");
-        var edited = Text(File).Replace("above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3", "above = 0.05, enterAfter = 3, below = 0.0, exitAfter = 30");
+        var edited = Text(File).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30");
         Assert.NotEqual(Text(File), edited);
         var rev0 = h.CatalogRevision;
         var res = h.Commit(File, edited, rev0);
@@ -145,8 +145,8 @@ public class HostTests
         Assert.Equal(fresh.StateDigest(), h.StateDigest());
         AssertHistoryGivesTheSnapshot(h, "serviceTree");
         // stale and invalid edits
-        Assert.Equal(409, Assert.Throws<HostError>(() => h.Commit("acme.svc", Text("acme.svc.sattle"), rev0)).Status);
-        var invalid = Assert.Throws<HostError>(() => h.Commit("acme.svc", edited.Replace("drops / flows", "drops / nosuch"), rev0 + 1));
+        Assert.Equal(409, Assert.Throws<HostError>(() => h.Commit("acme.svc", Text("acme.svc.module.gkql.json"), rev0)).Status);
+        var invalid = Assert.Throws<HostError>(() => h.Commit(File, edited.Replace("{\"ref\": \"drops\"}, {\"ref\": \"flows\"}", "{\"ref\": \"drops\"}, {\"ref\": \"nosuch\"}"), rev0 + 1));
         Assert.Equal("Invalid", invalid.Code);
         Assert.Equal((rev0 + 1).ToString(), h.SpaceInfo()["catalogRevision"]!.GetValue<string>());
     }
@@ -158,7 +158,7 @@ public class HostTests
         using var h = NewHost();
         Drive(h, 3);
         var file = h.ProjectionFile("acme.svc.serviceDeps");
-        var texts = new[] { Text(file), Text(file).Replace("above = 0.05, enterAfter = 3, below = 0.02, exitAfter = 3", "above = 0.05, enterAfter = 3, below = 0.0, exitAfter = 30") };
+        var texts = new[] { Text(file), Text(file).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30") };
         var replaced = new List<WeakReference>(); var rev0 = h.CatalogRevision;
         for (var i = 1; i <= 3; i++) replaced.Add(CommitAndForget(h, file, texts[i % 2]));
         Assert.Equal(rev0 + 3, h.CatalogRevision);
@@ -179,7 +179,7 @@ public class HostTests
     {
         using var h = NewHost();
         Drive(h, 3);
-        var res = h.Commit("acme.svc", Text("acme.svc.sattle"), h.CatalogRevision);
+        var res = h.Commit("acme.svc", Text("acme.svc.module.gkql.json"), h.CatalogRevision);
         Assert.Equal(h.CatalogRevision.ToString(), res["catalogRevision"]!.GetValue<string>());
     }
 
@@ -194,7 +194,7 @@ public class HostTests
         Assert.Equal("snapshot", f["type"]!.GetValue<string>());
         var asOf = long.Parse(f["seq"]!.GetValue<string>());
         Assert.Equal(h.Seq, asOf);
-        new SyntheticWorld(h, 7, 3).LoadStructure(10);          // more pods and services than before: events after the snapshot
+        new SyntheticWorld(h, 7, 3).LoadStructure(10);          // more instances and services than before: events after the snapshot
         var seqs = new List<long>();
         // the snapshot event and the patch events after it fold into a replica of the graph (Ch. 12, structural replica)
         static IEnumerable<(string Key, JsonNode? State)> Extent(JsonNode extent) =>
@@ -237,14 +237,14 @@ public class HostTests
         h.Unsubscribe(snap);
     }
 
-    /// <summary>The service tree of the example definitions on six pods of three services in three namespaces, with flows between two of them: a node per service with its two pods as a structural fact, a group per namespace that contains its service, one dependency.</summary>
+    /// <summary>The service tree of the example definitions on six instances of three services in three namespaces, with flows between two of them: a node per service with its two instances as a structural fact, a group per namespace that contains its service, one dependency.</summary>
     [Fact]
-    public void The_service_tree_has_a_node_per_service_with_its_pods_a_group_per_namespace_and_the_dependency_the_flows_show()
+    public void The_service_tree_has_a_node_per_service_with_its_instances_a_group_per_namespace_and_the_dependency_the_flows_show()
     {
         var h = Driven.Value;
         var nodes = h.Entities("serviceTree", "ServiceNode");
         Assert.Equal(3, nodes.Count);
-        Assert.All(nodes, x => Assert.Equal("2", x.Prop("pods")));
+        Assert.All(nodes, x => Assert.Equal("2", x.Prop("instances")));
         Assert.Equal((3, 3, 1), (h.Entities("serviceTree", "ServiceGroup").Count, h.Relationships("serviceTree", "Contains").Count, h.Relationships("serviceTree", "DependsOn").Count));
     }
 
@@ -309,27 +309,27 @@ public class HostTests
     [Fact]
     public void The_catalog_has_empty_meters() => Assert.Empty(Fresh.Value.Meters("catalog")["meters"]!.AsArray());
 
-    /// <summary>Review: Export.cs:296. The thresholds document states the thresholds that apply. A parameter that is read from the rule row has no one value: it is null and `byRow` names the column it is read from, never the literal 0.</summary>
-    [Fact]
-    public void An_exported_threshold_never_claims_to_enter_after_zero_windows()
+    /// <summary>Review: Export.cs:296. The thresholds document states the thresholds that apply: a threshold of the estate enters after one window or more, and has no parameter read from a row.</summary>
+    [Theory]
+    [InlineData("serviceTree")] [InlineData("capabilities")]
+    public void An_exported_threshold_never_claims_to_enter_after_zero_windows(string graph)
     {
-        var h = Fresh.Value;
-        var thresholds = h.Meters("treeSignals")["thresholds"]!.AsArray();
+        var thresholds = Fresh.Value.Meters(graph)["thresholds"]!.AsArray();
         Assert.NotEmpty(thresholds);
-        Assert.All(thresholds, t => Assert.True(t!["enterAfter"] is null ? t["byRow"]?["enterAfter"] is not null : t["enterAfter"]!.GetValue<long>() >= 1, t.ToJsonString()));
-        Assert.All(h.Meters("serviceTree")["thresholds"]!.AsArray(), t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
+        Assert.All(thresholds, t => Assert.True(t!["enterAfter"]!.GetValue<long>() >= 1 && t["byRow"] is null, t.ToJsonString()));
     }
 
     [Fact]
     public void A_version_bump_commits_with_the_import_versions_and_pins_of_its_dependents_rewritten()
     {
         using var h = NewHost();
-        var text = h.Definition("acme.svc").Replace("module acme.svc @ 1.0.0;", "module acme.svc @ 1.1.0;");
-        Assert.Contains("@ 1.1.0", text);
+        var text = h.Definition("acme.svc").Replace("\"module\": \"acme.svc\",\n  \"version\": \"1.0.0\"", "\"module\": \"acme.svc\",\n  \"version\": \"1.1.0\"");
+        Assert.Contains("\"version\": \"1.1.0\"", text);
         h.Commit("acme.svc", text, h.CatalogRevision);
         var served = h.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "acme.svc")!;
         Assert.Equal("1.1.0", served["version"]!.GetValue<string>());
-        Assert.Contains("import acme.svc @ 1.1.0 sha256:" + served["digest"]!.GetValue<string>()[7..], h.Definition("acme.space"));
+        var import = JsonNode.Parse(h.Definition("acme.space"))!["imports"]!.AsArray().Single(i => i!["module"]!.GetValue<string>() == "acme.svc")!;
+        Assert.Equal(("1.1.0", served["digest"]!.GetValue<string>()), (import["version"]!.GetValue<string>(), import["digest"]!.GetValue<string>()));
     }
 
     /// <summary>#57: every revision of a graph has its commit time, the engine's logical time when it was committed: served by the revisions route and sent with the revision's patch event. Revisions before the first advance have none; a revision an advance commits is at that advance's time.</summary>

@@ -1,0 +1,8 @@
+{
+  "module": "sattle.source.metrics",
+  "version": "1.0.0",
+  "imports": [],
+  "rows": [
+    {"name": "MetricRow", "fields": [{"name": "time", "type": "Instant"}, {"name": "site", "type": "Text"}, {"name": "metric", "type": "Text"}, {"name": "series", "type": "Text"}, {"name": "instance", "type": "Text", "optional": true}, {"name": "value", "type": "Decimal"}]}
+  ]
+}

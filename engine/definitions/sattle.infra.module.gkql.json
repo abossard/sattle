@@ -1,0 +1,42 @@
+{
+  "module": "sattle.infra",
+  "version": "1.0.0",
+  "imports": [],
+  "entities": [
+    {"name": "Instance", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "phase", "type": "Text", "optional": true}, {"name": "ready", "type": "Boolean", "optional": true}, {"name": "account", "type": "Text", "optional": true}, {"name": "team", "type": "Text", "optional": true}, {"name": "warnings", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "Host", "properties": [{"name": "site", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "resourceId", "type": "Text", "optional": true}, {"name": "pool", "type": "Text", "optional": true}, {"name": "forwardRate", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}, {"name": "dropRate", "type": "Decimal", "optional": true, "telemetry": {"temporality": "gauge", "combine": "max", "period": "1m"}}]},
+    {"name": "Unit", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "replicas", "type": "Integer", "optional": true}]},
+    {"name": "Service", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "externalName", "type": "Text", "optional": true}, {"name": "address", "type": "Text", "optional": true}]},
+    {"name": "Account", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "clientId", "type": "Text", "optional": true}]},
+    {"name": "HostReference", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "unit", "type": "Text"}, {"name": "variable", "type": "Text"}, {"name": "host", "type": "Text", "label": true}]},
+    {"name": "Destination", "properties": [{"name": "site", "type": "Text"}, {"name": "address", "type": "Text", "label": true}, {"name": "hostName", "type": "Text", "optional": true}]},
+    {"name": "WarningEvent", "properties": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "reason", "type": "Text", "label": true}, {"name": "message", "type": "Text", "optional": true}, {"name": "count", "type": "Integer"}]},
+    {"name": "AuditEvent", "properties": [{"name": "eventId", "type": "Text"}, {"name": "time", "type": "Instant"}, {"name": "verb", "type": "Text"}, {"name": "resource", "type": "Text", "label": true}, {"name": "namespace", "type": "Text", "optional": true}, {"name": "name", "type": "Text", "optional": true}, {"name": "user", "type": "Text", "optional": true}, {"name": "code", "type": "Integer", "optional": true}]}
+  ],
+  "relationships": [
+    {"name": "Configures", "from": "HostReference", "to": "Unit", "kind": "composition"},
+    {"name": "Sends", "from": "Instance", "to": "Destination", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]},
+    {"name": "RunsAs", "from": "Instance", "to": "Account", "kind": "dependency"},
+    {"name": "Backs", "from": "Instance", "to": "Service", "kind": "composition"},
+    {"name": "Selects", "from": "Service", "to": "Unit", "kind": "composition"},
+    {"name": "RunsOn", "from": "Instance", "to": "Host", "kind": "composition"},
+    {"name": "ControlledBy", "from": "Instance", "to": "Unit", "kind": "composition"},
+    {"name": "About", "from": "WarningEvent", "to": "Instance", "kind": "support"},
+    {"name": "Calls", "from": "Instance", "to": "Instance", "kind": "communication", "properties": [{"name": "flows", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}, {"name": "drops", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "1m"}}]}
+  ],
+  "identities": [
+    {"name": "warningEvent", "type": "WarningEvent", "components": [{"name": "id", "type": "Text"}]},
+    {"name": "auditEvent", "type": "AuditEvent", "components": [{"name": "id", "type": "Text"}]},
+    {"name": "instanceUid", "type": "Instance", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "uid", "type": "Text"}]},
+    {"name": "instanceName", "type": "Instance", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}]},
+    {"name": "hostName", "type": "Host", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "name", "type": "Text"}]},
+    {"name": "unitName", "type": "Unit", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}]},
+    {"name": "serviceName", "type": "Service", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}]},
+    {"name": "accountName", "type": "Account", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text"}]},
+    {"name": "hostReference", "type": "HostReference", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "namespace", "type": "Text"}, {"name": "unit", "type": "Text"}, {"name": "variable", "type": "Text"}]},
+    {"name": "destination", "type": "Destination", "components": [{"name": "site", "type": "Text", "normalize": "lowerInvariant"}, {"name": "address", "type": "Text"}]}
+  ],
+  "equivalences": [
+    {"name": "instanceUidIsName", "left": "instanceUid", "right": "instanceName", "mode": "assert", "threshold": 1.0}
+  ]
+}

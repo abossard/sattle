@@ -10,52 +10,68 @@ namespace Sattle.Tests;
 public class LensLawTests
 {
     const string Base = """
-        module t.base @ 1.0.0;
-        entity Item { k: Text; a: Text; d: Text; status: Text; }
-        relationship Under (Item) -> (Item);
-        identity item for Item version "1" { k: Text by exact; }
-        /// the row shape of the authoring adapter
-        rows CapabilityRow { capId: Text; name: Text; owner: Text; status: Text; parentId?: Text; }
+        {"module": "t.base", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "a", "type": "Text"}, {"name": "d", "type": "Text"}, {"name": "status", "type": "Text"}]}],
+         "relationships": [{"name": "Under", "from": "Item", "to": "Item"}],
+         "identities": [{"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]}],
+         "rows": [{"name": "CapabilityRow", "fields": [{"name": "capId", "type": "Text"}, {"name": "name", "type": "Text"}, {"name": "owner", "type": "Text"}, {"name": "status", "type": "Text"}, {"name": "parentId", "type": "Text", "optional": true}]}]}
         """;
 
+    /// <summary>The row shape of the authoring adapter, written back one for one.</summary>
     const string Ingest = """
-        graph ingest : t.base;
-        input items : CapabilityRow;
-        nodes Item on i with (rule = "authored", accept = "create, delete", update = "k, a, d, status") = items | project i = identity("item", capId), k = capId, a = name, d = owner, status;
-        edges Under from i to p with (rule = "authored") = items | project i = identity("item", capId), p = identity("item", parentId);
+        {"graph": "ingest", "ontology": "t.base", "inputs": [{"name": "items", "rows": "t.base.CapabilityRow"}], "parameters": [],
+         "verbs": [
+           {"id": "items", "verb": "rows", "source": "items"},
+           {"id": "item", "verb": "nodes", "rule": "authored", "target": {"nodes": [
+             {"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}, "props": {"k": {"ref": "capId"}, "a": {"ref": "name"}, "d": {"ref": "owner"}, "status": {"ref": "status"}}}]}},
+           {"id": "under", "verb": "edges", "rule": "authored", "target": {
+             "nodes": [{"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "capId"}]}}, {"var": "p", "label": "Item", "id": {"identity": "item", "args": [{"ref": "parentId"}]}}],
+             "edges": [{"var": "u", "label": "Under", "from": "i", "to": "p"}]}}],
+         "wires": [{"from": "items", "to": "item"}, {"from": "items", "to": "under"}],
+         "rules": [{"name": "authored", "accept": ["create", "delete"], "update": ["k", "a", "d", "status"]}]}
         """;
 
-    const string Filtered = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" and i.status != \"gone\" project i;";
-    const string Retiring = "let newItem = (k:string) { print k = k, d = \"none\", status = \"live\" };\nlet goneItem = () { print status = \"gone\" };";
-    const string RetiringRule = "rule = \"items\", accept = \"create, delete\", update = \"a\", onCreate = \"newItem\", onDelete = \"goneItem\"";
+    const string Shown = """{"id": "shown", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}}""";
+    const string Live = """{"id": "live", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "i.status"}, {"lit": "gone"}]}}""";
+    const string Kept = """{"id": "kept", "verb": "project", "columns": {"i": {"ref": "i"}, "a": {"ref": "i.a"}}}""";
+    /// <summary>A create makes a live item with no owner under the key it names, a delete retires the item.</summary>
+    const string Retiring = """{"name": "items", "accept": ["create", "delete"], "update": ["a"], "create": {"key": "item", "set": {"k": {"ref": "key.k"}, "d": {"lit": "none"}, "status": {"lit": "live"}}}, "delete": {"set": {"status": {"lit": "gone"}}}}""";
+    const string Updating = """{"name": "items", "update": ["a"]}""";
 
-    /// <summary>The lens of each step kind: its lets and its step.</summary>
+    static string Sink(string props) => """{"id": "items", "verb": "nodes", "rule": "items", "target": {"nodes": [{"var": "v", "label": "V", "id": {"ref": "i"}, "props": """ + props + "}]}}";
+
+    /// <summary>The program `v`: the verbs in a chain, each wired to the next, and its one rule.</summary>
+    static string Program(string rule, params string[] verbs)
+    {
+        var ids = verbs.Select(v => JsonNode.Parse(v)!["id"]!.GetValue<string>()).ToList();
+        var wires = ids.Zip(ids.Skip(1), (from, to) => $$"""{"from": "{{from}}", "to": "{{to}}"}""");
+        return """{"graph": "v", "ontology": "t.view", "inputs": [{"name": "master", "ontology": "t.base"}], "parameters": [], "verbs": ["""
+            + string.Join(", ", verbs) + """], "wires": [""" + string.Join(", ", wires) + """], "rules": [""" + rule + "]}";
+    }
+
+    /// <summary>The lens of each step kind.</summary>
     static readonly Dictionary<string, string> Lenses = new()
     {
-        ["filter"] = $"{Filtered}\n{Retiring}\nnodes V on i with ({RetiringRule}) = shown | project i = i.id, a = i.a;",
-        ["match"] = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i;\nnodes V on i with (rule = \"items\", update = \"a\") = shown | project i = i.id, a = i.a;",
-        ["literal"] = $"{Filtered}\n{Retiring}\nnodes V on i with ({RetiringRule}) = shown | project i = i.id, a = i.a, tag = \"seen\";",
-        ["map"] = "let shown = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i = i.id, a = i.a;\nnodes V on i with (rule = \"items\", update = \"a\") = shown | project i, a;",
+        ["filter"] = Program(Retiring, Shown, Live, Sink("""{"a": {"ref": "i.a"}}""")),
+        ["match"] = Program(Updating, Shown, Sink("""{"a": {"ref": "i.a"}}""")),
+        ["literal"] = Program(Retiring, Shown, Live, Sink("""{"a": {"ref": "i.a"}, "tag": {"lit": "seen"}}""")),
+        ["map"] = Program(Updating, Shown, Kept, Sink("""{"a": {"ref": "a"}}""")),
     };
 
     static SourceFile[] Files(string step) =>
     [
-        new("t.base.sattle", Base), new("t.base.ingest.kql", Ingest),
-        new("t.view.sattle", """
-            module t.view @ 1.0.0;
-            import t.base @ 1.0.0 sha256:… as base;
-            entity V { a: Text; tag?: Text; }
+        new("t.base.module.gkql.json", Base), new("t.base.ingest.gkql.json", Ingest),
+        new("t.view.module.gkql.json", """
+            {"module": "t.view", "version": "1.0.0", "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}],
+             "entities": [{"name": "V", "properties": [{"name": "a", "type": "Text"}, {"name": "tag", "type": "Text", "optional": true}]}]}
             """),
-        new("t.view.v.kql", "graph v : t.view;\ninput master : t.base;\n" + Lenses[step] + "\n"),
-        new("t.space.sattle", """
-            module t.space @ 1.0.0;
-            import t.base @ 1.0.0 sha256:… as base;
-            import t.view @ 1.0.0 sha256:… as view;
-            space s {
-              source items adapter "record" rows base.CapabilityRow;
-              master graph master = base.ingest(items: items);
-              graph view = view.v(master: master);
-            }
+        new("t.view.v.gkql.json", Lenses[step]),
+        new("t.space.module.gkql.json", """
+            {"module": "t.space", "version": "1.0.0",
+             "imports": [{"module": "t.base", "alias": "base", "version": "1.0.0", "digest": null}, {"module": "t.view", "alias": "view", "version": "1.0.0", "digest": null}],
+             "space": {"name": "s", "sources": [{"name": "items", "adapter": "record", "rows": "base.CapabilityRow"}],
+                       "graphs": [{"name": "master", "projection": "base.ingest", "master": true, "inputs": {"items": "items"}},
+                                  {"name": "view", "projection": "view.v", "inputs": {"master": "master"}}]}}
             """),
     ];
 

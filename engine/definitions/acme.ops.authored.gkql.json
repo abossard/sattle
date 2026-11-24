@@ -1,0 +1,27 @@
+{
+  "graph": "authored",
+  "ontology": "acme.ops",
+  "description": "What people wrote: the capabilities and the services that realize them. An edit of a capability in a view lands here.",
+  "history": 8,
+  "inputs": [
+    {"name": "caps", "rows": "acme.ops.CapabilityRow"},
+    {"name": "realizes", "rows": "acme.ops.RealizesRow"}
+  ],
+  "parameters": [],
+  "verbs": [
+    {"id": "caps", "verb": "rows", "source": "caps"},
+    {"id": "authoredCapabilities_1", "verb": "nodes", "target": {"nodes": [{"var": "n", "label": "Capability", "id": {"identity": "capability", "args": [{"ref": "capId"}]}, "props": {"capId": {"ref": "capId"}, "name": {"ref": "name"}, "owner": {"ref": "owner"}, "status": {"ref": "status"}}}]}, "rule": "authoredCapabilities"},
+    {"id": "authoredCapabilities_2", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Capability", "id": {"identity": "capability", "args": [{"ref": "capId"}]}}, {"var": "t", "label": "Capability", "id": {"identity": "capability", "args": [{"ref": "parentId"}]}}], "edges": [{"var": "e", "label": "PartOf", "from": "s", "to": "t"}]}, "rule": "authoredCapabilities"},
+    {"id": "realizes", "verb": "rows", "source": "realizes"},
+    {"id": "authoredRealizes_1", "verb": "edges", "target": {"nodes": [{"var": "s", "label": "Service", "id": {"identity": "serviceName", "args": [{"ref": "site"}, {"ref": "namespace"}, {"ref": "service"}]}}, {"var": "t", "label": "Capability", "id": {"identity": "capability", "args": [{"ref": "capId"}]}}], "edges": [{"var": "e", "label": "Realizes", "from": "s", "to": "t"}]}, "rule": "authoredRealizes"}
+  ],
+  "wires": [
+    {"from": "caps", "to": "authoredCapabilities_1"},
+    {"from": "caps", "to": "authoredCapabilities_2"},
+    {"from": "realizes", "to": "authoredRealizes_1"}
+  ],
+  "rules": [
+    {"name": "authoredCapabilities", "accept": ["create", "delete"]},
+    {"name": "authoredRealizes", "accept": ["create", "delete"]}
+  ]
+}

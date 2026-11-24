@@ -96,12 +96,12 @@ public class LensTests
     {
         using var h = NewHost();
         new SyntheticWorld(h, 4, 2).LoadStructure();
-        var pod = h.Engine.Master.State.Entities.First(e => Ids.Name(e.Type) == "Pod");
-        var node = new JsonObject { ["id"] = V(pod.Id), ["type"] = V("Pod"), ["properties"] = new JsonArray() };
+        var instance = h.Engine.Master.State.Entities.First(e => Ids.Name(e.Type) == "Instance");
+        var node = new JsonObject { ["id"] = V(instance.Id), ["type"] = V("Instance"), ["properties"] = new JsonArray() };
         var edit = new JsonObject
         {
             ["baseRevisions"] = new JsonObject { ["master"] = Heads(h, "master") },
-            ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = pod.Id, ["before"] = node, ["after"] = null }),
+            ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = instance.Id, ["before"] = node, ["after"] = null }),
         };
         var digest = h.StateDigest();
         Assert.Equal("NotEditable", Assert.Throws<HostError>(() => h.ApplyEdits("master", edit)).Code);   // authored rows go to the authored graph
@@ -212,25 +212,64 @@ public class LensTests
         Assert.True(accepted > 5, $"accepted {accepted}, rejected {rejected}, last {lastMsg}");
     }
 
+    /// <summary>The rules of a program lower to the class of their edits: an editable rule over the rows of a source is bijective, over graphs a lens. A lens's `create` names the identity domain of a new element and what it sets, its `delete` what a delete sets. An edges sink accepts create without `create`: its ends name the elements.</summary>
+    [Theory]
+    [InlineData("acme.ops", "authored", "authoredCapabilities", "bijective", null, null, new string[0], new string[0])]
+    [InlineData("acme.biz", "capabilityView", "capabilities", "lens", "set", "d:acme.ops/identity:capability", new[] { "capId", "owner", "status" }, new[] { "status" })]
+    [InlineData("acme.biz", "capabilityView", "tree", "lens", "remove", null, new string[0], new string[0])]
+    [InlineData("acme.biz", "capabilityView", "counts", "readonly", null, null, new string[0], new string[0])]
+    public void A_rule_lowers_to_its_class_and_what_its_edits_make(string module, string projection, string rule, string cls, string? onDelete, string? createKey, string[] created, string[] deleted)
+    {
+        var d = new DefView(Repo.LoadExamples(out _).Graph);
+        var rid = Ids.Child(Ids.Child(Ids.Module(module), "projection", projection), "rule", rule);
+        Assert.Equal((cls, onDelete), (d.Text(rid, "class"), d.Text(rid, "onDelete")));
+        Assert.Equal(createKey, d.Target(rid, "createKey"));
+        Assert.Equal(created, d.Children(rid, "createDefault").Select(Ids.Name).Order(StringComparer.Ordinal));
+        Assert.Equal(deleted, d.Children(rid, "deleteSet").Select(Ids.Name).Order(StringComparer.Ordinal));
+    }
+
+    /// <summary>The capability rule of the capability view with `patch` merged in (a null removes the field).</summary>
+    public static TheoryData<string, string, string> RulesRefused => new()
+    {
+        { "a rule with create that does not accept create", """{"accept": ["delete"]}""", "create says what a create makes, so the rule accepts create" },
+        { "a lens whose nodes sink accepts create without create", """{"create": null}""", "a rule whose nodes sink accepts create names the identity domain of a new element in create" },
+    };
+
+    [Theory, MemberData(nameof(RulesRefused))]
+    public void A_rule_that_does_not_say_what_its_edits_make_is_refused(string what, string patch, string says)
+    {
+        var files = Catalog.ReadDirectory(Repo.Definitions);
+        var i = files.FindIndex(f => Path.GetFileName(f.Path) == "acme.biz.capabilityView.gkql.json");
+        var program = JsonNode.Parse(files[i].Text)!;
+        var rule = program["rules"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "capabilities")!.AsObject();
+        foreach (var (name, value) in JsonNode.Parse(patch)!.AsObject().ToList()) if (value is null) rule.Remove(name); else rule[name] = value.DeepClone();
+        files[i] = files[i] with { Text = program.ToJsonString() };
+        var errors = new Catalog(Repo.Projections).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError).ToList();
+        Assert.True(errors.Any(e => e.Code == "Program" && e.Message.Contains(says, StringComparison.Ordinal)), $"{what}: {string.Join("; ", errors)}");
+    }
+
     /// <summary>The capability lens of acme.ops with a second key of a capability, its name, and an equivalence of the two: authored rows with one name give one capability, whose identity then has two keys in the domain of the emit.</summary>
     static SpaceHost WithNamedCapabilities()
     {
         var files = Catalog.ReadDirectory(Repo.Definitions);
-        string Text(string name) => files.Single(f => f.Path.EndsWith(name, StringComparison.Ordinal)).Text;
-        var ops = Text("acme.ops.sattle"); var ingest = Text("acme.ops.ingest.kql"); var space = Text("acme.space.sattle");
-        const string Domain = "identity capability for Capability version \"1\" { id: Text by exact; }";
-        const string Input = "input flowLogs : azsrc.FlowLogRow;";
-        const string Before = "// ---- observed by the Kubernetes adapter ----";
-        var editedOps = ops.Replace(Domain, Domain + "\nidentity capabilityName for Capability version \"1\" { name: Text by exact; }\nequivalence capabilityIsNamed between capability, capabilityName assert threshold 1.0;");
-        // a link rule belongs to the master's projection: it reads the capability rows from a source of its own
-        var editedIngest = ingest
-            .Replace(Input, Input + "\ninput capNames : CapabilityRow;")
-            .Replace(Before, "// a capability is the one its name names\nlink capabilityIsNamed from byId to byName with (confidence = 1.0, rule = \"namedCapabilities\") = capNames\n    | project byId = identity(\"capability\", capId), byName = identity(\"capabilityName\", name);\n\n" + Before);
-        var editedSpace = space
-            .Replace("  source caps ", "  source capNames adapter \"sattle.authoring\" rows ops.CapabilityRow;\n  source caps ")
-            .Replace("flowLogs: flowLogs)", "flowLogs: flowLogs, capNames: capNames)");
-        Assert.NotEqual(ops, editedOps); Assert.NotEqual(ingest, editedIngest); Assert.NotEqual(space, editedSpace);
-        var edited = new Dictionary<string, string> { ["acme.ops.sattle"] = editedOps, ["acme.ops.ingest.kql"] = editedIngest, ["acme.space.sattle"] = editedSpace };
+        JsonNode Doc(string name) => JsonNode.Parse(files.Single(f => Path.GetFileName(f.Path) == name).Text)!;
+        var ops = Doc("acme.ops.module.gkql.json"); var ingest = Doc("acme.ops.ingest.gkql.json"); var space = Doc("acme.space.module.gkql.json");
+        ops["identities"]!.AsArray().Add(JsonNode.Parse("""{"name": "capabilityName", "type": "Capability", "components": [{"name": "name", "type": "Text"}]}"""));
+        ops["equivalences"] = new JsonArray(JsonNode.Parse("""{"name": "capabilityIsNamed", "left": "capability", "right": "capabilityName", "mode": "assert", "threshold": 1.0}"""));
+        // a link rule belongs to the master's projection: it reads capability rows from a source of its own, with a row type of its own
+        var capRow = ops["rows"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "CapabilityRow")!.DeepClone();
+        capRow["name"] = "CapabilityNameRow";
+        ops["rows"]!.AsArray().Add(capRow);
+        ingest["inputs"]!.AsArray().Add(JsonNode.Parse("""{"name": "capNames", "rows": "acme.ops.CapabilityNameRow"}"""));
+        ingest["verbs"]!.AsArray().Add(JsonNode.Parse("""{"id": "capNames", "verb": "rows", "source": "capNames"}"""));
+        ingest["verbs"]!.AsArray().Add(JsonNode.Parse("""
+            {"id": "namedCapabilities", "verb": "link", "rule": "namedCapabilities",
+             "link": {"policy": "capabilityIsNamed", "left": {"identity": "capability", "args": [{"ref": "capId"}]}, "right": {"identity": "capabilityName", "args": [{"ref": "name"}]}, "confidence": 1.0}}
+            """));
+        ingest["wires"]!.AsArray().Add(JsonNode.Parse("""{"from": "capNames", "to": "namedCapabilities"}"""));
+        space["space"]!["sources"]!.AsArray().Add(JsonNode.Parse("""{"name": "capNames", "adapter": "record", "rows": "ops.CapabilityNameRow"}"""));
+        space["space"]!["graphs"]!.AsArray().Single(g => g!["name"]!.GetValue<string>() == "master")!["inputs"]!["capNames"] = "capNames";
+        var edited = new Dictionary<string, string> { ["acme.ops.module.gkql.json"] = ops.ToJsonString(), ["acme.ops.ingest.gkql.json"] = ingest.ToJsonString(), ["acme.space.module.gkql.json"] = space.ToJsonString() };
         return new SpaceHost([.. files.Select(f => edited.TryGetValue(Path.GetFileName(f.Path), out var t) ? f with { Text = t } : f)], new HostOptions { Projections = Repo.Projections});
     }
 

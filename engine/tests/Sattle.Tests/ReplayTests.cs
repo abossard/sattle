@@ -36,7 +36,7 @@ public class ReplayTests
     {
         var r = Scenarios.Run(dir);
         Assert.Equal(0, r.Stats.Rejected);
-        string[] sources = ["flows", "pods", "resources", "metrics", "events", "activity", "resourceMetrics"];
+        string[] sources = ["flows", "instances", "resources", "metrics", "events", "activity", "resourceMetrics"];
         Assert.All(sources, s => Assert.True(r.Stats.Rows.GetValueOrDefault(s) > 0, $"no rows of source {s}"));
         Assert.True(r.Engine.Master.State.EntityCount > 0);
         Assert.True(r.Engine.Graph("serviceTree").State.EntityCount > 0);
@@ -61,7 +61,7 @@ public class ReplayTests
         }
     }
 
-    /// <summary>The command line is the same function: `sattle replay` of the estate with a copy of the definitions folder prints the pinned state digest, and prints another one after the title in the projection file of the deployment report changed. So a replay reads the definition files of the folder it is given, the projection files of whatever language among them, and a test on a replay cannot pass without them.</summary>
+    /// <summary>The command line is the same function: `sattle replay` of the estate with a copy of the definitions folder prints the pinned state digest, and prints another one after the title in the projection file of the readiness report changed. So a replay reads the definition files of the folder it is given, the projection files of whatever language among them, and a test on a replay cannot pass without them.</summary>
     [Fact]
     public void Sattle_replay_prints_the_pinned_digest_of_the_estate_and_another_one_after_a_projection_file_changed()
     {
@@ -79,10 +79,10 @@ public class ReplayTests
             }
             var pinned = Digest();
             Scenarios.AssertPinned(dir, pinned);
-            var report = Directory.EnumerateFiles(defs, "acme.report.deploymentReport.*").Single();
+            var report = Directory.EnumerateFiles(defs, "acme.report.readinessReport.*").Single();
             var text = File.ReadAllText(report);
-            Assert.Contains("\"Deployment health\"", text);
-            File.WriteAllText(report, text.Replace("\"Deployment health\"", "\"Deployment health, changed\""));
+            Assert.Contains("\"Unit readiness\"", text);
+            File.WriteAllText(report, text.Replace("\"Unit readiness\"", "\"Unit readiness, changed\""));
             Assert.NotEqual(pinned, Digest());
         }
         finally { Directory.Delete(defs, true); }

@@ -15,22 +15,11 @@ public static class Repo
     /// <summary>The definitions.</summary>
     public static List<SourceFile> DefinitionFiles() => DefinitionFilesFor(null);
 
-    /// <summary>The definitions `sattle replay DIR` reads for `dir`: with the arguments file of the directory when it has one (`space-arguments.json`).</summary>
-    public static List<SourceFile> DefinitionFilesFor(string? dir, string? folder = null)
-    {
-        var files = Catalog.ReadDirectory(folder ?? Definitions).ToList();
-        return dir is not null && Sattle.Cli.Program.ArgumentsOf(dir) is { } arguments ? Sattle.Cli.Program.WithArguments(files, arguments) : files;
-    }
+    /// <summary>The definitions `sattle replay DIR` reads: the definitions folder (`folder` names another one).</summary>
+    public static List<SourceFile> DefinitionFilesFor(string? dir, string? folder = null) => Catalog.ReadDirectory(folder ?? Definitions).ToList();
 
-    static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Lazy<(Catalog Cat, LoadResult Result)>> WithArguments = new();
-
-    /// <summary>The checked catalog for replaying `dir`: the examples, or with the arguments file of the directory when it has one.</summary>
-    public static Catalog CatalogFor(string dir, out LoadResult result)
-    {
-        if (Sattle.Cli.Program.ArgumentsOf(dir) is null) return LoadExamples(out result);
-        var loaded = WithArguments.GetOrAdd(Path.GetFullPath(dir), _ => new(() => { var cat = new Catalog(Projections); var res = cat.Load(DefinitionFilesFor(dir), updatePins: true); return (cat, res); })).Value;
-        result = loaded.Result; return loaded.Cat;
-    }
+    /// <summary>The checked catalog for replaying `dir`: the examples.</summary>
+    public static Catalog CatalogFor(string dir, out LoadResult result) => LoadExamples(out result);
 
     static string FindRoot()
     {

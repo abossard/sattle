@@ -4,11 +4,13 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>PROTOCOL.md v3, drafts (Proposition 4.10, 9.9, 9.10): a draft is edited by patches with inverse-patch undo and by the text of a projection file, is checked against its base, previewed without touching anything live (T-PREVIEW), committed, and every release is listed and restorable. The tests that drive a world are `Slow`.</summary>
+/// <summary>PROTOCOL.md v3, drafts (Proposition 4.10, 9.9, 9.10): a draft is edited by the texts of its module documents and projection files, with undo as an inverse edit, is checked against its base, previewed without touching anything live (T-PREVIEW), committed, and every release is listed and restorable. The tests that drive a world are `Slow`.</summary>
 public class DraftTests
 {
-    const string Cardinality = "d:acme.svc/constraint:cardinality-Contains";          // a service is in exactly one group: `per target 1 .. 1`
-    const string FlowsOut = "d:acme.svc/prop:flowsOut";                               // the flows a service or a group sends, a delta telemetry property
+    const string Cardinality = "d:acme.svc/constraint:cardinality-Contains";          // a service is in exactly one group: `max` 1 per target
+    /// <summary>The cardinality of `Contains` in the module of the service tree, and the same with two groups allowed per service.</summary>
+    const string OneGroup = """{"kind": "cardinality", "type": "Contains", "side": "target", "min": 1, "max": 1}""";
+    const string TwoGroups = """{"kind": "cardinality", "type": "Contains", "side": "target", "min": 1, "max": 2}""";
     /// <summary>The file of the service tree, with the threshold that gives a dependency its status.</summary>
     static string Deps(SpaceHost h) => h.ProjectionFile("acme.svc.serviceDeps");
 
@@ -22,65 +24,60 @@ public class DraftTests
         return (h, d);
     }
 
-    /// <summary>A GraphPatch that sets one property of one definition node, and its inverse.</summary>
-    static (JsonNode Do, JsonNode Undo) SetProp(SpaceHost h, string draft, string node, string prop, JsonNode newValue)
+    /// <summary>The module document of the service tree with two groups allowed per service.</summary>
+    static string WithTwoGroups(SpaceHost h)
     {
-        var snap = h.DraftSnapshot(draft);
-        var before = snap["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == node)!;
-        var after = before.DeepClone();
-        var props = after["properties"]!.AsArray();
-        var existing = props.FirstOrDefault(p => p!["property"]!["value"]!.GetValue<string>() == prop);
-        if (existing is not null) existing["value"] = newValue.DeepClone();
-        else props.Add(new JsonObject { ["property"] = new JsonObject { ["value"] = prop }, ["value"] = newValue.DeepClone() });
-        JsonNode P(JsonNode b, JsonNode a) => new JsonObject { ["edits"] = new JsonArray(new JsonObject { ["kind"] = "entity", ["id"] = node, ["before"] = b.DeepClone(), ["after"] = a.DeepClone() }) };
-        return (P(before, after), P(after, before));
+        var text = h.Definition("acme.svc");
+        Assert.Contains(OneGroup, text);
+        return text.Replace(OneGroup, TwoGroups);
     }
-    static JsonNode Dec(string v) => new JsonObject { ["kind"] = "decimal", ["value"] = v };
 
     /// <summary>The service tree's text with a threshold that never recovers: below 0.0 for 30 windows keeps the degraded state.</summary>
     static string NeverRecovers(SpaceHost h)
     {
         var text = h.Definition(Deps(h));
-        Assert.Contains("below = 0.02, exitAfter = 3", text);
-        return text.Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
+        Assert.Contains("\"below\": 0.02, \"exitAfter\": 3", text);
+        return text.Replace("\"below\": 0.02, \"exitAfter\": 3", "\"below\": 0.0, \"exitAfter\": 30");
     }
 
-    /// <summary>Code review 2, defect 7: a draft patch that the check cannot read is refused and not recorded, so the draft stays usable. Before, the patch was recorded first: an Integer beyond 64 bits answered 500, and so did every later check, preview and commit of that draft.</summary>
+    /// <summary>Code review 2, defect 7, for a module written as a document: a structural patch of it is refused and not recorded, so the draft stays usable; the module changes by its draft text.</summary>
     [Fact]
-    public void A_draft_patch_that_cannot_be_checked_is_refused_and_leaves_the_draft_as_it_was()
+    public void A_structural_patch_of_a_module_document_is_refused_and_leaves_the_draft_as_it_was()
     {
-        var (h, d) = NewDraft(); using var hostGuard = h;
-        var patch = SetProp(h, d, FlowsOut, "period", new JsonObject { ["kind"] = "integer", ["value"] = "99999999999999999999" }).Do;
-        var failure = Record.Exception(() => h.ApplyDraftPatch(d, patch, 0));
-        Assert.True(failure is null or HostError, $"{failure?.GetType().Name}: {failure?.Message}");
-        Assert.Equal(failure is null ? "1" : "0", h.DraftInfo(d)["revision"]!.GetValue<string>());
-        var check = h.CheckDraft(d);                                                   // the draft still answers
-        if (failure is null) Assert.False(check["ok"]!.GetValue<bool>());            // accepted and recorded: then it is a diagnostic of the draft
-        else Assert.True(check["ok"]!.GetValue<bool>());
+        var h = Fresh.Value;
+        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        var ent = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == Cardinality)!;
+        JsonNode Edit(JsonNode? before, JsonNode? after) => new JsonObject { ["kind"] = "entity", ["id"] = Cardinality, ["before"] = before?.DeepClone(), ["after"] = after?.DeepClone() };
+        var e = Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(Edit(ent, null)) }, 0));
+        Assert.Equal(("ModuleText", 422), (e.Code, e.Status));
+        Assert.Equal("0", h.DraftInfo(d)["revision"]!.GetValue<string>());
+        var check = h.CheckDraft(d);                                                   // the draft still answers, unchanged
+        Assert.True(check["ok"]!.GetValue<bool>());
+        Assert.False(check["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
+        h.DiscardDraft(d);
     }
 
+    /// <summary>A module changes in a draft by the text of its document, and undo is the inverse edit applied forward as a new revision, not a rewind: the patches are kept, the committed log is untouched, and an edit against an old revision is stale.</summary>
     [Fact]
-    public void Structural_edits_print_canonically_and_undo_is_an_inverse_patch_not_a_rewind()
+    public void A_module_edit_is_a_draft_text_and_undo_is_an_inverse_edit_not_a_rewind()
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         var rev0 = h.CatalogRevision;
         var before = h.Definition("acme.svc");
-        var (doit, undo) = SetProp(h, d, Cardinality, "max", Dec("2"));
-        var r1 = h.ApplyDraftPatch(d, doit, 0);
+        var edited = WithTwoGroups(h);
+        var r1 = h.SetDraftText(d, "acme.svc", edited, 0);
         Assert.True(r1["ok"]!.GetValue<bool>(), r1["diagnostics"]!.ToJsonString());
-        Assert.Contains("per target 1 .. 2;", r1["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
+        Assert.Contains(TwoGroups, r1["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.True(r1["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
-        var r2 = h.ApplyDraftPatch(d, undo, 1);                              // undo = the inverse patch, applied forward as revision 2
+        var r2 = h.SetDraftText(d, "acme.svc", before, 1);                     // undo = the inverse edit, applied forward as revision 2
         Assert.Equal("2", r2["revision"]!.GetValue<string>());
         Assert.Equal(before, r2["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.False(r2["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
-        var r3 = h.ApplyDraftPatch(d, doit, 2);                              // redo
-        Assert.Contains("per target 1 .. 2;", r3["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
+        var r3 = h.SetDraftText(d, "acme.svc", edited, 2);                     // redo
+        Assert.Contains(TwoGroups, r3["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
         Assert.Equal(rev0, h.CatalogRevision);                                // the committed log is untouched
         Assert.Equal(3, h.DraftPatches(d, 0).Count);
-        // guards: the same patch twice is a conflict and changes nothing
-        Assert.Equal("GuardFailed", Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, doit, 3)).Code);
-        Assert.Equal("StaleRevision", Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, undo, 1)).Code);
+        Assert.Equal("StaleRevision", Assert.Throws<HostError>(() => h.SetDraftText(d, "acme.svc", before, 1)).Code);
         Assert.Equal("3", h.DraftInfo(d)["revision"]!.GetValue<string>());
     }
 
@@ -88,10 +85,11 @@ public class DraftTests
     public void Invalid_structure_is_reported_by_definition_element_id()
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
-        var (bad, _) = SetProp(h, d, FlowsOut, "temporality", new JsonObject { ["kind"] = "text", ["value"] = "bogus" });
-        var r = h.ApplyDraftPatch(d, bad, 0);
+        var bad = h.Definition("acme.svc").Replace("\"temporality\": \"delta\"", "\"temporality\": \"bogus\"");
+        Assert.NotEqual(h.Definition("acme.svc"), bad);
+        var r = h.SetDraftText(d, "acme.svc", bad, 0);
         Assert.False(r["ok"]!.GetValue<bool>());
-        Assert.Contains(r["diagnostics"]!.AsArray(), x => x!["severity"]!.GetValue<string>() == "error" && x["module"]!.GetValue<string>() == "acme.svc");
+        Assert.Contains(r["diagnostics"]!.AsArray(), x => x!["severity"]!.GetValue<string>() == "error" && x["module"]?.GetValue<string>() == "acme.svc");
     }
 
     [Fact]
@@ -101,10 +99,9 @@ public class DraftTests
         string Digest() => h.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "acme.svc")!["digest"]!.GetValue<string>();
         var originalDigest = Digest();
         var originalText = h.Definition("acme.svc");
-        var (doit, _) = SetProp(h, d, Cardinality, "max", Dec("2"));
-        h.ApplyDraftPatch(d, doit, 0);
+        h.SetDraftText(d, "acme.svc", WithTwoGroups(h), 0);
         var res = h.CommitDraft(d, h.CatalogRevision);
-        Assert.Equal("acme.svc", res["modules"]![0]!.GetValue<string>());
+        Assert.Contains(res["modules"]!.AsArray(), m => m!.GetValue<string>() == "acme.svc");
         Assert.NotEqual(originalDigest, Digest());
         Assert.Throws<HostError>(() => h.DraftInfo(d));                       // committed drafts are discarded
         var rels = h.Releases("acme.svc").AsArray();
@@ -112,7 +109,7 @@ public class DraftTests
         Assert.Equal(originalDigest, rels[1]!["supersedes"]!.GetValue<string>());
         var diff = h.ReleaseDiff(originalDigest, Digest());
         Assert.Single(diff["edits"]!.AsArray(), e => e!["id"]!["value"]!.GetValue<string>() == Cardinality);
-        Assert.Contains("per target 1 .. 2;", h.ReleaseText(Digest()));
+        Assert.Contains(TwoGroups, h.ReleaseText(Digest()));
         Assert.Equal(originalText, h.ReleaseText(originalDigest));
         // restore the first release into a new draft and commit it: the digest comes back
         var d2 = h.CreateDraft(null)["draft"]!.GetValue<string>();
@@ -163,8 +160,7 @@ public class DraftTests
         var with = h.Subscribe(null, true, null); var without = h.Subscribe(null, false, null);
         while (with.Messages.Reader.TryRead(out _)) { }
         while (without.Messages.Reader.TryRead(out _)) { }
-        var (doit, _) = SetProp(h, d, Cardinality, "max", Dec("2"));
-        h.ApplyDraftPatch(d, doit, 0);
+        h.SetDraftText(d, "acme.svc", WithTwoGroups(h), 0);
         Assert.True(with.Messages.Reader.TryRead(out var m));
         Assert.Equal("draft", JsonNode.Parse(m)!["type"]!.GetValue<string>());
         Assert.False(without.Messages.Reader.TryRead(out _));
@@ -179,8 +175,8 @@ public class DraftTests
         // the operators are found by the columns they hold: the names a language's lowering gives them are not the engine's
         static JsonNode? Col(JsonNode? op, string n) => op!["columns"]!.AsArray().FirstOrDefault(c => c!["name"]!.GetValue<string>() == n);
         Assert.Contains(ops, o => Col(o, "s") is { } s && s["kind"]!.GetValue<string>() == "Entity" && s["type"]!.GetValue<string>().EndsWith("Service", StringComparison.Ordinal) && s["role"]!.GetValue<string>() == "data");
-        var node = ops.First(o => o!["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()).SequenceEqual(["service", "pods"]));
-        Assert.Equal("Integer", Col(node, "pods")!["kind"]!.GetValue<string>());
+        var node = ops.First(o => o!["columns"]!.AsArray().Select(c => c!["name"]!.GetValue<string>()).SequenceEqual(["service", "instances"]));
+        Assert.Equal("Integer", Col(node, "instances")!["kind"]!.GetValue<string>());
         Assert.Contains(ops, o => Col(o, "flows") is { } flows && flows["role"]!.GetValue<string>() == "telemetry" && flows["period"] is not null);
         Assert.All(ops, o => Assert.StartsWith("d:acme.svc/projection:serviceDeps/op:", o!["op"]!.GetValue<string>()));
     }
@@ -194,7 +190,7 @@ public class DraftTests
         HostTests.Drive(h);
         var p = h.Preview(d, new JsonObject { ["graphs"] = new JsonArray("serviceTree"), ["include"] = new JsonArray("counts", "rows"), ["rowLimit"] = rowLimit });
         var ops = p["graphs"]![0]!["operators"]!.AsArray();
-        string[] columns = ["s", "s.cluster", "s.name", "s.namespace"];                              // the typed column and the properties the plan reads from it
+        string[] columns = ["s", "s.name", "s.namespace", "s.site"];                              // the typed column and the properties the plan reads from it
         var services = ops.First(o => o!["columns"] is { } c && c.AsArray().Select(x => x!.GetValue<string>()).SequenceEqual(columns))!;
         var live = h.Entities("serviceTree", "ServiceNode").Count;
         Assert.Equal(live.ToString(), services["rows"]!.GetValue<string>());
@@ -216,7 +212,7 @@ public class DraftTests
     {
         var (h, d) = NewDraft(); using var hostGuard = h;
         HostTests.Drive(h);
-        var text = draft == "a threshold that never recovers" ? NeverRecovers(h) : h.Definition(Deps(h)).Replace("telemetry(\"master\", 24h)", "telemetry(\"master\", 2h)");
+        var text = draft == "a threshold that never recovers" ? NeverRecovers(h) : h.Definition(Deps(h)).Replace("\"lookback\": \"24h\"", "\"lookback\": \"2h\"");
         Assert.True(h.SetDraftText(d, Deps(h), text, 0)["ok"]!.GetValue<bool>());
         var p = h.Preview(d, new JsonObject { ["include"] = new JsonArray("counts") });
         Assert.True(p["scope"]!["complete"]!.GetValue<bool>());
@@ -233,32 +229,17 @@ public class DraftTests
 
     // ---- a draft against its base and the head ----
 
+    /// <summary>Restoring a release of a module written as a document gives the draft the texts the release was made from: a release equal to the draft changes nothing, and the draft's check is returned.</summary>
     [Fact]
-    public void Restore_returns_the_patch_it_applied()
+    public void Restore_of_a_release_equal_to_the_draft_changes_nothing()
     {
         var h = Fresh.Value;
         var digest = h.Definitions().AsArray().Single(m => m!["name"]!.GetValue<string>() == "acme.svc")!["digest"]!.GetValue<string>();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var res = h.Restore(d, digest);                          // already equal: an empty patch, still returned
-        Assert.NotNull(res["patch"]);
-        Assert.Empty(res["patch"]!["edits"]!.AsArray());
-        h.DiscardDraft(d);
-    }
-
-    [Fact]
-    public void A_patch_that_removes_and_recreates_an_element_is_one_edit_and_changes_nothing()
-    {
-        var h = Fresh.Value;
-        var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var ent = h.DraftSnapshot(d)["extent"]!["entities"]!.AsArray().First(e => e!["id"]!["value"]!.GetValue<string>() == Cardinality)!;
-        JsonNode Edit(JsonNode? before, JsonNode? after) => new JsonObject { ["kind"] = "entity", ["id"] = Cardinality, ["before"] = before?.DeepClone(), ["after"] = after?.DeepClone() };
-        var res = h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(Edit(ent, null), Edit(null, ent)) }, 0);
-        Assert.True(res["ok"]!.GetValue<bool>());
+        var res = h.Restore(d, digest);                          // already equal: no edit, still the check
+        Assert.True(res["ok"]!.GetValue<bool>(), res["diagnostics"]!.ToJsonString());
+        Assert.Equal("0", res["revision"]!.GetValue<string>());
         Assert.False(res["modules"]!["acme.svc"]!["changed"]!.GetValue<bool>());
-        Assert.Equal(h.Definition("acme.svc"), res["modules"]!["acme.svc"]!["text"]!.GetValue<string>());
-        // a patch that cannot apply is a typed error, never an empty 500
-        var bad = Assert.Throws<HostError>(() => h.ApplyDraftPatch(d, new JsonObject { ["edits"] = new JsonArray(Edit(null, ent)) }, 1));
-        Assert.Contains(bad.Code, new[] { "GuardFailed", "BadPatch" });
         h.DiscardDraft(d);
     }
 
@@ -269,8 +250,8 @@ public class DraftTests
         using var h = HostTests.NewHost();
         var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var text = h.Definition(Deps(h));
-        Assert.Contains("above = 0.05", text);
-        h.Commit(Deps(h), text.Replace("above = 0.05", "above = 0.06"), h.CatalogRevision);
+        Assert.Contains("\"above\": 0.05", text);
+        h.Commit(Deps(h), text.Replace("\"above\": 0.05", "\"above\": 0.06"), h.CatalogRevision);
         var changed = h.CheckDraft(draft)["modules"]!.AsObject().Where(m => m.Value!["changed"]?.GetValue<bool>() == true).Select(m => m.Key);
         Assert.Empty(changed);
     }
@@ -280,9 +261,13 @@ public class DraftTests
     /// <summary>The service tree without the services of one namespace: an edit of the projection's text that changes its graph.</summary>
     static string WithoutShop(SpaceHost h)
     {
-        var text = h.Definition(Deps(h));
-        Assert.Contains("edges Contains from group to service = services |", text);
-        return text.Replace("edges Contains from group to service = services |", "edges Contains from group to service = services | where namespace != \"shop\" |");
+        var program = JsonNode.Parse(h.Definition(Deps(h)))!;
+        var sink = program["verbs"]!.AsArray().Single(v => v!["target"]?["edges"]?.AsArray().Any(e => e!["label"]!.GetValue<string>() == "Contains") == true)!["id"]!.GetValue<string>();
+        var wire = program["wires"]!.AsArray().Single(w => w!["to"]!.GetValue<string>() == sink)!;
+        program["verbs"]!.AsArray().Add(JsonNode.Parse("""{"id": "outsideShop", "verb": "where", "condition": {"fn": "!=", "args": [{"ref": "namespace"}, {"lit": "shop"}]}}"""));
+        program["wires"]!.AsArray().Add(new JsonObject { ["from"] = "outsideShop", ["to"] = sink });
+        wire["to"] = "outsideShop";
+        return program.ToJsonString();
     }
 
     /// <summary>A draft edits the text of a projection file: its check is the text's, its module texts stay without the projection, and its commit changes the graph as a commit of the file does.</summary>
@@ -310,7 +295,7 @@ public class DraftTests
     {
         var h = Fresh.Value;
         var file = Deps(h);
-        var wrong = h.Definition(file).Replace("name = s.name", "name = s.title");
+        var wrong = h.Definition(file).Replace("\"name\": {\"ref\": \"s.name\"}", "\"name\": {\"ref\": \"s.title\"}");
         Assert.NotEqual(h.Definition(file), wrong);
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var check = h.SetDraftText(d, file, wrong, 0);
@@ -321,13 +306,14 @@ public class DraftTests
         h.DiscardDraft(d);
     }
 
-    /// <summary>A draft text is read by its file: a module name is a bad request, since a module of a draft changes by patches.</summary>
+    /// <summary>A module written as a document is read in a draft by its name, as the text of its document; a draft cannot remove a module.</summary>
     [Fact]
-    public void A_draft_text_of_a_module_is_a_bad_request()
+    public void A_draft_text_of_a_module_is_its_document_and_cannot_be_removed()
     {
         var h = Fresh.Value;
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var e = Assert.Throws<HostError>(() => h.DraftText(d, "acme.svc"));
+        Assert.Equal(h.Definition("acme.svc"), h.DraftText(d, "acme.svc"));
+        var e = Assert.Throws<HostError>(() => h.SetDraftText(d, "acme.svc", null, 0));
         Assert.Equal(("BadRequest", 400), (e.Code, e.Status));
         h.DiscardDraft(d);
     }
@@ -354,72 +340,64 @@ public class DraftTests
     {
         using var h = HostTests.NewHost();
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var (elsewhere, revision) = (h.ProjectionFile("acme.deployhealth.deploymentHealth"), h.CatalogRevision);
-        Assert.Contains("minReady:long = 0", h.Definition(elsewhere));
-        h.Commit(elsewhere, h.Definition(elsewhere).Replace("minReady:long = 0", "minReady:long = 1"), revision);
+        var (elsewhere, revision) = (h.ProjectionFile("acme.readiness.readiness"), h.CatalogRevision);
+        const string MinReady = "\"minReady\", \"kind\": \"Integer\", \"default\": ";
+        Assert.Contains(MinReady + "0", h.Definition(elsewhere));
+        h.Commit(elsewhere, h.Definition(elsewhere).Replace(MinReady + "0", MinReady + "1"), revision);
         Assert.Equal(revision + 1, h.CatalogRevision);
         var check = h.SetDraftText(d, Deps(h), WithoutShop(h), 0);
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
         var ids = h.DraftPatches(d, 0).SelectMany(p => p["edits"]!.AsArray()).Select(e => e!["id"]!["value"]!.GetValue<string>()).ToList();
         Assert.NotEmpty(ids);
-        Assert.DoesNotContain(ids, id => id.StartsWith("d:acme.deployhealth", StringComparison.Ordinal));
+        Assert.DoesNotContain(ids, id => id.StartsWith("d:acme.readiness", StringComparison.Ordinal));
     }
 
-    /// <summary>#36: a draft removes a projection file (a null text) and the space's graph it produces (a patch of the space). The removal alone does not check, since the space still binds the projection; with the graph gone too, the commit drops the graph and the file.</summary>
+    /// <summary>The space module of the draft without the graph `name`.</summary>
+    static string SpaceWithout(SpaceHost h, string draft, string name)
+    {
+        var space = JsonNode.Parse(h.DraftText(draft, "acme.space"))!;
+        var graphs = space["space"]!["graphs"]!.AsArray();
+        graphs.Remove(graphs.Single(g => g!["name"]!.GetValue<string>() == name));
+        return space.ToJsonString();
+    }
+
+    /// <summary>#36: a draft removes a projection file (a null text) and the space's graph it produces (an edit of the space module). The removal alone does not check, since the space still binds the projection; with the graph gone too, the commit drops the graph and the file.</summary>
     [Fact]
     public void A_draft_removes_a_projection_file_and_the_commit_drops_its_graph()
     {
         using var h = HostTests.NewHost();
-        var file = h.ProjectionFile("acme.report.deploymentReport");
+        var file = h.ProjectionFile("acme.report.readinessReport");
         string[] Graphs() => [.. h.SpaceInfo()["graphs"]!.AsArray().Select(g => g!["id"]!.GetValue<string>())];
-        Assert.Contains("deploymentReport", Graphs());
+        Assert.Contains("readinessReport", Graphs());
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
         var alone = h.SetDraftText(d, file, null, 0);
         Assert.False(alone["ok"]!.GetValue<bool>());
-        Assert.Contains(alone["diagnostics"]!.AsArray(), x => x!["module"]!.GetValue<string>() == "acme.space");
+        Assert.Contains(alone["diagnostics"]!.AsArray(), x => x!["module"]?.GetValue<string>() == "acme.space");
         Assert.Equal("UnknownModule", Assert.Throws<HostError>(() => h.DraftText(d, file)).Code);
-        var extent = h.DraftSnapshot(d)["extent"]!;
-        static string V(JsonNode? n) => n!["value"]!.GetValue<string>();
-        var g = V(extent["relationships"]!.AsArray().First(r => V(r!["type"]) == "producedBy" && V(r["target"]) == "d:acme.report/projection:deploymentReport")!["source"]);
-        var bindings = g.Replace("/graph:", "/binding:") + ".";
-        bool Mine(string id) => id == g || id.StartsWith(g + "/", StringComparison.Ordinal) || id.StartsWith(bindings, StringComparison.Ordinal);
-        var patch = new JsonObject { ["edits"] = new JsonArray([
-            .. extent["relationships"]!.AsArray().Where(r => Mine(V(r!["source"])) || Mine(V(r["target"]))).Select(r => (JsonNode)new JsonObject { ["kind"] = "relationship", ["id"] = V(r!["id"]), ["before"] = r.DeepClone() }),
-            .. extent["entities"]!.AsArray().Where(e => Mine(V(e!["id"]))).Select(e => (JsonNode)new JsonObject { ["kind"] = "entity", ["id"] = V(e!["id"]), ["before"] = e.DeepClone() })]) };
-        var check = h.ApplyDraftPatch(d, patch, 1);
+        var check = h.SetDraftText(d, "acme.space", SpaceWithout(h, d, "readinessReport"), 1);
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
-        Assert.DoesNotContain("graph deploymentReport", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
+        Assert.DoesNotContain("\"readinessReport\"", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
         Assert.Equal((null, true), (check["modules"]![file]!["text"], check["modules"]![file]!["changed"]!.GetValue<bool>()));
-        Assert.Contains("deploymentReport", Graphs());                    // the draft changes nothing live
+        Assert.Contains("readinessReport", Graphs());                    // the draft changes nothing live
         var res = h.CommitDraft(d, h.CatalogRevision);
         Assert.Contains(res["modules"]!.AsArray(), m => m!.GetValue<string>() == file);
-        Assert.DoesNotContain("deploymentReport", Graphs());
+        Assert.DoesNotContain("readinessReport", Graphs());
         Assert.Equal("UnknownModule", Assert.Throws<HostError>(() => h.Definition(file)).Code);
         Assert.DoesNotContain(h.DefinitionFiles(), f => Path.GetFileName(f.Path) == file);
     }
 
-    /// <summary>An edge from outside into a projection whose text is a file belongs to the other text: a patch that adds a graph to the space, produced by that projection, is accepted.</summary>
+    /// <summary>A projection written in a file produces a second graph of the space: a draft of the space module that binds it again checks, and changes the space module only.</summary>
     [Fact]
-    public void A_patch_adding_a_graph_produced_by_a_projection_written_in_a_file_is_accepted()
+    public void A_draft_of_the_space_adding_a_graph_produced_by_a_projection_written_in_a_file_is_accepted()
     {
         var h = Fresh.Value;
         var d = h.CreateDraft(null)["draft"]!.GetValue<string>();
-        var extent = h.DraftSnapshot(d)["extent"]!;
-        static string V(JsonNode? n) => n!["value"]!.GetValue<string>();
-        var g = V(extent["relationships"]!.AsArray().First(r => V(r!["type"]) == "producedBy" && V(r["target"]) == "d:acme.svc/projection:serviceDeps")!["source"]);
-        // the graph, and its bindings, which sit beside it in the space: `binding:serviceTree.master`
-        var bindings = g.Replace("/graph:", "/binding:") + ".";
-        bool Mine(string id) => id == g || id.StartsWith(g + "/", StringComparison.Ordinal) || id.StartsWith(bindings, StringComparison.Ordinal);
-        JsonNode Copy(JsonNode e) => JsonNode.Parse(e.ToJsonString().Replace(g, g + "Two").Replace(bindings, bindings[..^1] + "Two."))!;
-        var entities = extent["entities"]!.AsArray().Where(e => Mine(V(e!["id"]))).Select(e => Copy(e!)).ToList();
-        foreach (var p in entities.Single(e => V(e["id"]) == g + "Two")["properties"]!.AsArray().Where(p => V(p!["property"]) == "name")) p!["value"]!["value"] = "serviceTreeTwo";
-        var rels = extent["relationships"]!.AsArray().Where(r => Mine(V(r!["source"])) || V(r["type"]) == "contains" && Mine(V(r["target"]))).Select(r => Copy(r!)).ToList();
-        Assert.Contains(rels, r => V(r["type"]) == "producedBy");
-        var patch = new JsonObject { ["edits"] = new JsonArray([.. entities.Select(e => (JsonNode)new JsonObject { ["kind"] = "entity", ["id"] = V(e["id"]), ["after"] = e }),
-            .. rels.Select(r => (JsonNode)new JsonObject { ["kind"] = "relationship", ["id"] = V(r["id"]), ["after"] = r })]) };
-        var check = h.ApplyDraftPatch(d, patch, 0);
+        var space = JsonNode.Parse(h.DraftText(d, "acme.space"))!;
+        space["space"]!["graphs"]!.AsArray().Add(JsonNode.Parse("""{"name": "serviceTreeTwo", "projection": "svc.serviceDeps", "master": false, "inputs": {"master": "master"}}"""));
+        var check = h.SetDraftText(d, "acme.space", space.ToJsonString(), 0);
         Assert.True(check["ok"]!.GetValue<bool>(), check["diagnostics"]!.ToJsonString());
-        Assert.Contains("graph serviceTreeTwo = svc.serviceDeps(master: master);", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
+        Assert.Contains("\"serviceTreeTwo\"", check["modules"]!["acme.space"]!["text"]!.GetValue<string>());
+        Assert.Equal(["acme.space"], check["modules"]!.AsObject().Where(m => m.Value!["changed"]!.GetValue<bool>()).Select(m => m.Key));
         h.DiscardDraft(d);
     }
 }

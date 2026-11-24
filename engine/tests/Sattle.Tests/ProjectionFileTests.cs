@@ -9,7 +9,7 @@ public class ProjectionFileTests
     static readonly Lazy<SpaceHost> Fresh = new(HostTests.NewHost);
     static HostOptions Options => new() { Projections = Repo.Projections};
     static string Text(string file) => File.ReadAllText(Path.Combine(Repo.Definitions, file));
-    static bool IsProjectionFile(string path) => !path.EndsWith(".sattle", StringComparison.Ordinal);
+    static bool IsProjectionFile(string path) => !path.EndsWith(".module.gkql.json", StringComparison.Ordinal);
     static string Deps => Fresh.Value.ProjectionFile("acme.svc.serviceDeps");
 
     /// <summary>Every projection file of the folder is served under its module with the text of the file; the module is printed without the projection, and the printed text checks as no change.</summary>
@@ -30,7 +30,7 @@ public class ProjectionFileTests
             foreach (var p in files)
             {
                 var file = p!["file"]!.GetValue<string>();
-                Assert.DoesNotContain($"projection {p["projection"]!.GetValue<string>()[(name.Length + 1)..]} ", text);
+                Assert.DoesNotContain("\"verbs\"", text);
                 Assert.Equal(Text(file), h.Definition(file));
                 served.Add(file);
             }
@@ -95,11 +95,11 @@ public class ProjectionFileTests
         {
             foreach (var f in Directory.EnumerateFiles(Repo.Definitions)) File.Copy(f, Path.Combine(dir, Path.GetFileName(f)));
             using var h = new SpaceHost(Catalog.ReadDirectory(dir), Options) { DefinitionsDir = dir, WriteDefinitions = true };
-            var edited = Text(Deps).Replace("below = 0.02, exitAfter = 3", "below = 0.0, exitAfter = 30");
+            var edited = Text(Deps).Replace("\"below\": 0.02, \"exitAfter\": 3", "\"below\": 0.0, \"exitAfter\": 30");
             Assert.NotEqual(Text(Deps), edited);
             h.Commit(Deps, edited, h.CatalogRevision);
             Assert.Equal(edited, File.ReadAllText(Path.Combine(dir, Deps)));
-            Assert.All(Directory.EnumerateFiles(dir, "*.sattle"), f => Assert.DoesNotContain("\nprojection ", File.ReadAllText(f)));
+            Assert.All(Directory.EnumerateFiles(dir, "*.module.gkql.json"), f => Assert.DoesNotContain("\"verbs\"", File.ReadAllText(f)));
             using var again = new SpaceHost(Catalog.ReadDirectory(dir), Options);
             Assert.Equal(h.Snapshot("catalog", null)["extent"]!.ToJsonString(), again.Snapshot("catalog", null)["extent"]!.ToJsonString());
         }

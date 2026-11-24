@@ -4,39 +4,58 @@ using Sattle.Runtime;
 
 namespace Sattle.Tests;
 
-/// <summary>A Rollup aggregates telemetry, and what it may do depends on the temporality of the value: a delta (counts per window) sums and takes extremes; a gauge (a level) does too; a cumulative (a counter that only grows) does neither until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality. KQL combines telemetry windows with sum, min and max only.</summary>
+/// <summary>A Rollup aggregates telemetry, and what it may do depends on the temporality of the value: a delta (counts per window) sums and takes extremes; a gauge (a level) does too; a cumulative (a counter that only grows) does neither until `Delta` makes it a delta. The palette declares this per aggregate (`requires`); the checker must agree with the declaration for every temporality. The matrix covers the aggregates sum, min and max.</summary>
 public class RollupTemporalityTests
 {
-    const string Delta = "telemetry delta sum every 60s", Gauge = "telemetry gauge max every 60s", Cumulative = "telemetry cumulative last every 60s";
+    const string Delta = """{"temporality": "delta", "combine": "sum", "period": "60s"}""", Gauge = """{"temporality": "gauge", "combine": "max", "period": "60s"}""", Cumulative = """{"temporality": "cumulative", "combine": "last", "period": "60s"}""";
+
+    /// <summary>`Item.hits` with the telemetry `TEMPORALITY`, `Load.x` a delta.</summary>
+    const string Module = """
+        {"module": "t", "version": "1.0.0", "imports": [],
+         "entities": [{"name": "Item", "properties": [{"name": "k", "type": "Text"}, {"name": "hits", "type": "Integer", "optional": true, "telemetry": TEMPORALITY}]},
+                      {"name": "Load", "properties": [{"name": "k", "type": "Text"}, {"name": "x", "type": "Integer", "optional": true, "telemetry": {"temporality": "delta", "combine": "sum", "period": "60s"}}]}],
+         "identities": [{"name": "item", "type": "Item", "components": [{"name": "k", "type": "Text"}]},
+                        {"name": "load", "type": "Load", "components": [{"name": "k", "type": "Text"}]}],
+         "rows": [{"name": "R", "fields": [{"name": "k", "type": "Text"}]}]}
+        """;
+
+    const string Ingest = """
+        {"graph": "ingest", "ontology": "t", "inputs": [{"name": "a", "rows": "t.R"}], "parameters": [],
+         "verbs": [
+           {"id": "a", "verb": "rows", "source": "a"},
+           {"id": "observed", "verb": "nodes", "rule": "observed", "target": {"nodes": [{"var": "i", "label": "Item", "id": {"identity": "item", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}}],
+         "wires": [{"from": "a", "to": "observed"}]}
+        """;
+
+    /// <summary>The hits of each item rolled up per window by `FN` into the load of the item.</summary>
+    const string View = """
+        {"graph": "view", "ontology": "t", "inputs": [{"name": "master", "ontology": "t"}], "parameters": [],
+         "verbs": [
+           {"id": "items", "verb": "graph-match", "graph": "master", "pattern": {"nodes": [{"var": "i", "label": "Item"}]}},
+           {"id": "keyed", "verb": "project", "columns": {"i": {"ref": "i"}, "k": {"ref": "i.k"}}},
+           {"id": "load", "verb": "nodes", "target": {"nodes": [{"var": "l", "label": "Load", "id": {"identity": "load", "args": [{"ref": "k"}]}, "props": {"k": {"ref": "k"}}}]}},
+           {"id": "hits", "verb": "series", "graph": "master", "series": {"element": "i", "property": "hits", "lookback": "3m"}},
+           {"id": "rolled", "verb": "summarize", "by": {"k": {"ref": "k"}, "windowStart": {"ref": "windowStart"}}, "aggregates": {"x": {"fn": "FN", "args": [{"ref": "hits"}]}}},
+           {"id": "loadX", "verb": "nodes", "target": {"nodes": [{"var": "l", "label": "Load", "id": {"identity": "load", "args": [{"ref": "k"}]}, "extend": true, "props": {"x": {"ref": "x"}}}]}}],
+         "wires": [{"from": "items", "to": "keyed"}, {"from": "keyed", "to": "load"}, {"from": "keyed", "to": "hits"}, {"from": "hits", "to": "rolled"}, {"from": "rolled", "to": "loadX"}]}
+        """;
+
+    const string Space = """
+        {"module": "s", "version": "1.0.0", "imports": [{"module": "t", "alias": "t", "version": "1.0.0", "digest": null}],
+         "space": {"name": "s", "sources": [{"name": "a", "adapter": "record", "rows": "t.R"}],
+                   "graphs": [{"name": "master", "projection": "t.ingest", "master": true, "inputs": {"a": "a"}},
+                              {"name": "view", "projection": "t.view", "inputs": {"master": "master"}}]}}
+        """;
 
     /// <summary>`Item.hits` declared with the temporality under test, rolled up per item by `fn` in the view `t.view`; the checker's refusals of that aggregate.</summary>
     static IReadOnlyList<Diagnostic> Diagnostics(string temporality, string fn)
     {
         SourceFile[] files =
         [
-            new("t.sattle", $$"""
-                module t @ 1.0.0;
-                entity Item { k: Text; hits?: Integer {{temporality}}; }
-                entity Load { k: Text; x?: Integer telemetry delta sum every 60s; }
-                identity item for Item version "1" { k: Text by exact; }
-                identity load for Load version "1" { k: Text by exact; }
-                rows R { k: Text; }
-                """),
-            new("t.ingest.kql", "graph ingest : t;\ninput a : R;\nnodes Item on i with (rule = \"observed\", description = \"test\") = a | project i = identity(\"item\", k), k;\n"),
-            new("t.view.kql", "graph view : t;\ninput master : t;\n"
-                + "let items = graph(\"master\") | graph-match (i) where labels(i) has \"Item\" project i = i.id, k = i.k;\n"
-                + "nodes Load on l = items | project l = identity(\"load\", k), k;\n"
-                + "extend nodes Load on l = items | join kind=inner (telemetry(\"master\", 3m) | where property == \"hits\" | project i = id, windowStart, property, value) on i\n"
-                + $"    | summarize x = {fn}(value) by k, windowStart | project l = identity(\"load\", k), windowStart, x;\n"),
-            new("s.sattle", """
-                module s @ 1.0.0;
-                import t @ 1.0.0 sha256:… as t;
-                space s {
-                  source a adapter "record" rows t.R;
-                  master graph master = t.ingest(a: a);
-                  graph view = t.view(master: master);
-                }
-                """),
+            new("t.module.gkql.json", Module.Replace("TEMPORALITY", temporality)),
+            new("t.ingest.gkql.json", Ingest),
+            new("t.view.gkql.json", View.Replace("\"FN\"", "\"" + fn + "\"")),
+            new("s.module.gkql.json", Space),
         ];
         return [.. new Catalog(Repo.Projections).Load(files, updatePins: true).Diagnostics.Where(d => d.IsError && d.Code == "Aggregate")];
     }
@@ -71,7 +90,7 @@ public class RollupTemporalityTests
     {
         var d = Assert.Single(Diagnostics(Cumulative, fn));
         Assert.Contains("Delta", d.Message);
-        Assert.Equal("t.view.kql", d.File);
+        Assert.Equal("t.view.gkql.json", d.File);
         Assert.True(d.Line > 0);
     }
 }

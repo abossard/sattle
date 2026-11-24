@@ -1,0 +1,14 @@
+{
+  "module": "acme.readiness",
+  "version": "1.0.0",
+  "imports": [
+    {"module": "sattle.infra", "alias": "infra", "version": "1.0.0", "digest": null},
+    {"module": "acme.ops", "alias": "ops", "version": "1.0.0", "digest": null}
+  ],
+  "entities": [
+    {"name": "Workload", "properties": [{"name": "site", "type": "Text"}, {"name": "namespace", "type": "Text"}, {"name": "name", "type": "Text", "label": true}, {"name": "replicas", "type": "Integer", "optional": true}, {"name": "readyInstances", "type": "Integer", "optional": true}, {"name": "state", "type": "Text", "optional": true, "roles": {"Ready": "ok", "NotReady": "danger"}}]}
+  ],
+  "relationships": [
+    {"name": "Talks", "from": "Workload", "to": "Workload", "kind": "communication", "properties": [{"name": "state", "type": "Text", "optional": true, "roles": {"Ready": "ok", "NotReady": "danger"}}]}
+  ]
+}
