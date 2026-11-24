@@ -329,7 +329,7 @@ function BuildSteps({ lesson, build, available }: { lesson: Lesson; build: NonNu
     </ol>
     {lesson.id === "first-projection" && <details className={s.details}>
       <summary>Try removing Service calls</summary>
-      <Text block size={200}>In <strong>Graph</strong>, select <code>serviceCalls</code> and click <strong>Remove operation</strong>.</Text>
+      <Text block size={200}>On the graph, select <code>serviceCalls</code> and press <kbd>Delete</kbd>, or click <strong>Remove operation</strong>.</Text>
       <Text block size={200}>Check and preview again. Expect 17 Deployment calls and zero Service calls.</Text>
     </details>}
     {lesson.id === "second-projection" && active && inputs.some(({ graph }) => graph === "firstWorkloads") &&
@@ -337,7 +337,7 @@ function BuildSteps({ lesson, build, available }: { lesson: Lesson; build: NonNu
         <summary>Test a change in the upstream draft</summary>
         <ol className={s.recipe}>
           <li>Preview placement and note the relationship count.</li>
-          <li>Open <Link href={href(lessonOf("first-projection")!)}>your workloads draft</Link>. In <strong>Graph</strong>, remove <code>scheduling</code> and check it.</li>
+          <li>Open <Link href={href(lessonOf("first-projection")!)}>your workloads draft</Link>. On the graph, select <code>scheduling</code>, press <kbd>Delete</kbd> and check it.</li>
           <li>Return here and preview again. The placement links disappear.</li>
           <li>To restore the starter, click <strong>Copy GKQL</strong> in the workloads lesson. Paste over the source and check again.</li>
         </ol>
