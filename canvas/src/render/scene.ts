@@ -12,7 +12,7 @@ export const St = {
   Selected: 1, Hover: 2, Related: 4, Match: 8, Added: 16, Removed: 32, Changed: 64, Identity: 128,
 } as const;
 /** extra flags (meta byte 2) */
-/** `Blame`: on the way from the top to the part that is to blame (nodes: a thick coral ring; edges: thick and coral) */
+/** `Blame`: on the way from the top to the part that is to blame (nodes: a thick danger ring; edges: thick, in the danger color) */
 export const Ex = { Source: 1, Aggregate: 2, Bidirectional: 4, Error: 8, Warning: 16, Port: 32, Reference: 64, Blame: 128 } as const;
 
 export const WORDS_NODE = 5;

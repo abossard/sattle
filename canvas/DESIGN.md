@@ -98,6 +98,13 @@ A cool-neutral paper and ink scale with a single blue accent. Light and dark are
 - Fluent's palette red border marks an errored card (dashed outline). Fluent's warning intent marks notices. Neither is used for decoration.
 - Status colors (success, warning, danger) belong to states and diagnostics only. Roles, counts and changes are neutral.
 
+### Graph floor (WebGL, `src/render/theme.ts`)
+- Floor and panel: Paper 3 and Paper in light, Night 3 and Night in dark. Labels in Ink or Chalk, quiet labels in Ink 3 or Chalk 3, edges in Rule or Night Rule.
+- Drafting blue (#1d5fa6, dark #8fb0d4): the selection and hover outline, search matches, the same element in other graphs (solid ring above, dashed ring below, and their edges), and the live telemetry flow and gauge.
+- Ink (Ink, dark Chalk): an element added, changed or removed in the highlighted revision. The ring says which: solid, double, dashed ghost.
+- Fluent's danger and warning foregrounds (from Fluent's own light or dark theme): error and warning rings, the way to the part to blame, telemetry over its threshold.
+- Category tints, for entity types, edge kinds and the developer guide's roles: OKLCH at one lightness and low chroma (light L 0.55 C 0.08, dark L 0.78 C 0.075; edge kinds L 0.66 C 0.07 in both, with composition, the structure, in a neutral), hues teal 195, violet 300, clay 55, mauve 350, olive 110 and sage 160, plus a neutral. None is blue, so they never read as selected; their low chroma keeps them apart from the status colors. Shape, pattern and label repeat every one.
+
 ### Named Rules
 **The One Blue Rule.** Drafting blue means selected, focused or live. Any other use of blue is wrong.
 
@@ -185,5 +192,4 @@ Paper strip with a 1px top rule, small text, wrapping. It says what the user loo
 
 ## Not canonized
 
-- The WebGL renderer palette (`src/render/theme.ts`) keeps its older role hues (added, removed, changed, identity, source, and the per-kind hues). Only its background and panel match the sheet. They are not part of this system until aligned. The developer guide's role squares use these hues.
 - The 9px caption and 9px port label sizes are below Fluent's smallest text token. They are recorded because the build uses them, not as a size to add elsewhere.

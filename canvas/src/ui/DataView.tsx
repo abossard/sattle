@@ -45,7 +45,7 @@ export function Legend({ graph }: { graph: string }) {
   return (
     <Popover><PopoverTrigger disableButtonEnhancement><Button size="small">Legend</Button></PopoverTrigger>
       <PopoverSurface aria-label="How to read the canvas"><div style={{ display: "grid", rowGap: 4, maxWidth: "64ch" }}>
-        <Text>+ added: solid ring</Text><Text>Δ changed: double ring</Text><Text>− removed: dashed ghost</Text><Text>Same entity elsewhere: pink ring</Text><Text>Source element: dashed ring</Text><Text>Shape and label give the type; color repeats it</Text>
+        <Text>+ added: solid ring</Text><Text>Δ changed: double ring</Text><Text>− removed: dashed ghost</Text><Text>Same entity elsewhere: blue ring</Text><Text>Source element: dashed blue ring</Text><Text>Shape and label give the type; color repeats it</Text>
         {kinds.length > 0 && <Text weight="semibold">Edges</Text>}
         {kinds.map(({ kind, types }) => (
           <div key={kind} style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr)", columnGap: 8, alignItems: "baseline" }}><KindSample kind={kind} /><Text>{KIND_WORD[kind].word}: {types.map((t) => t.slice(t.lastIndexOf(".") + 1)).join(", ")}. {KIND_WORD[kind].help}</Text></div>

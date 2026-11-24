@@ -17,11 +17,11 @@ export interface RenderParams {
   arrows: boolean;
   wires: boolean;           // bezier wires (node editor) instead of straight edges
   background: [number, number, number];
-  colors: { selected: [number, number, number]; added: [number, number, number]; removed: [number, number, number]; changed: [number, number, number]; identity: [number, number, number]; source: [number, number, number] };
+  colors: { selected: [number, number, number]; change: [number, number, number]; danger: [number, number, number]; warning: [number, number, number] };
   minNodePx: number;
   /** draw every n-th edge (hash sampled); adaptive level of detail while the camera moves */
   edgeSkip: number;
-  telemetry: { on: boolean; warnNode: number; warnEdge: number; flow: boolean; time: number; flowColor: [number, number, number] };
+  telemetry: { on: boolean; warnNode: number; warnEdge: number; flow: boolean; time: number };
 }
 
 const COMMON = `#version 300 es
@@ -67,7 +67,7 @@ const NODE_FS = `#version 300 es
 precision highp float; precision highp int;
 in vec2 vP; in vec4 vColor; in vec2 vHalf; flat in uint vMeta; in vec3 vTel;
 uniform float uDim; uniform int uTel;
-uniform vec3 uSel; uniform vec3 uAdded; uniform vec3 uRemoved; uniform vec3 uChanged; uniform vec3 uIdentity; uniform vec3 uSource;
+uniform vec3 uSel; uniform vec3 uChange; uniform vec3 uDanger; uniform vec3 uWarning;
 out vec4 outColor;
 float sdBox(vec2 p, vec2 b){ vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
 float sdTri(vec2 p, float r){
@@ -100,21 +100,21 @@ void main(){
   vec3 rgb = col.rgb;
   // state rings (outside the shape). added: solid, changed: double, removed: dashed, identity: thick, selected: thick halo
   float ang = atan(vP.y, vP.x);
-  if((st & 16u) != 0u){ float rd = abs(d - 3.0); float m = 1.0 - smoothstep(0.6, 1.6, rd); rgb = mix(rgb, uAdded, m * (1.0 - fill)); a = max(a, m); if(fill > 0.5) rgb = mix(rgb, uAdded, 0.0); }
-  if((st & 64u) != 0u){ float m1 = 1.0 - smoothstep(0.5, 1.4, abs(d - 3.0)); float m2 = 1.0 - smoothstep(0.5, 1.4, abs(d - 6.0)); float m = max(m1, m2); rgb = mix(rgb, uChanged, m * (1.0 - fill)); a = max(a, m); }
-  if((st & 32u) != 0u){ float dash = step(0.0, sin(ang * 8.0 + d)); float m = (1.0 - smoothstep(0.6, 1.6, abs(d - 3.0))) * dash; rgb = mix(rgb, uRemoved, m * (1.0 - fill)); a = max(a, m); }
+  if((st & 16u) != 0u){ float rd = abs(d - 3.0); float m = 1.0 - smoothstep(0.6, 1.6, rd); rgb = mix(rgb, uChange, m * (1.0 - fill)); a = max(a, m); }
+  if((st & 64u) != 0u){ float m1 = 1.0 - smoothstep(0.5, 1.4, abs(d - 3.0)); float m2 = 1.0 - smoothstep(0.5, 1.4, abs(d - 6.0)); float m = max(m1, m2); rgb = mix(rgb, uChange, m * (1.0 - fill)); a = max(a, m); }
+  if((st & 32u) != 0u){ float dash = step(0.0, sin(ang * 8.0 + d)); float m = (1.0 - smoothstep(0.6, 1.6, abs(d - 3.0))) * dash; rgb = mix(rgb, uChange, m * (1.0 - fill)); a = max(a, m); }
   // reference (a stub for an endpoint the graph does not hold): hollow, with a dashed outline
   if((ex & 64u) != 0u){ float dash = step(0.0, sin(ang * 10.0)); float m = (1.0 - smoothstep(0.5, 1.4, abs(d - 0.0))) * dash; a = a * 0.35; rgb = mix(rgb, vec3(0.78, 0.82, 0.88), m * 0.9); a = max(a, m); }
-  if((st & 128u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 4.0)); rgb = mix(rgb, uIdentity, m * (1.0 - fill)); a = max(a, m); }
-  if((ex & 1u) != 0u){ float dash = step(0.0, sin(ang * 5.0)); float m = (1.0 - smoothstep(0.7, 1.7, abs(d - 5.0))) * dash; rgb = mix(rgb, uSource, m * (1.0 - fill)); a = max(a, m); }
+  if((st & 128u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 4.0)); rgb = mix(rgb, uSel, m * (1.0 - fill)); a = max(a, m); }
+  if((ex & 1u) != 0u){ float dash = step(0.0, sin(ang * 5.0)); float m = (1.0 - smoothstep(0.7, 1.7, abs(d - 5.0))) * dash; rgb = mix(rgb, uSel, m * (1.0 - fill)); a = max(a, m); }
   if((st & 8u) != 0u){ float m = 1.0 - smoothstep(0.7, 1.7, abs(d - 8.5)); rgb = mix(rgb, uSel, m * (1.0 - fill) * 0.7); a = max(a, m * 0.7); }
   // outline: selected thick, hover medium
   if((st & 1u) != 0u){ float m = 1.0 - smoothstep(1.2, 2.2, abs(d + 0.5)); rgb = mix(rgb, uSel, m); a = max(a, m); float halo = 1.0 - smoothstep(0.0, 6.0, d); a = max(a, halo * 0.25 * step(0.0, d)); }
   if((st & 2u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.6, abs(d + 0.2)); rgb = mix(rgb, uSel, m); a = max(a, m); }
-  if((ex & 8u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uRemoved, m * (1.0 - fill)); a = max(a, m); }
+  if((ex & 8u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uDanger, m * (1.0 - fill)); a = max(a, m); }
   // on the way to the part to blame: a thick ring, apart from the shape, so it reads beside the state colors
-  if((ex & 128u) != 0u){ float m = 1.0 - smoothstep(1.4, 2.6, abs(d - 5.0)); rgb = mix(rgb, uRemoved, m * (1.0 - fill)); a = max(a, m); }
-  if((ex & 16u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uChanged, m * (1.0 - fill)); a = max(a, m); }
+  if((ex & 128u) != 0u){ float m = 1.0 - smoothstep(1.4, 2.6, abs(d - 5.0)); rgb = mix(rgb, uDanger, m * (1.0 - fill)); a = max(a, m); }
+  if((ex & 16u) != 0u){ float m = 1.0 - smoothstep(0.8, 1.8, abs(d - 3.0)); rgb = mix(rgb, uWarning, m * (1.0 - fill)); a = max(a, m); }
   if(uTel == 1 && shape != 6u){
     // ring gauge: track plus an arc from the top, clockwise, filled to the channel value; warning state is thicker and segmented
     float warn = vTel.z;
@@ -124,13 +124,13 @@ void main(){
     float ang = (atan(vP.x, -vP.y) + 3.14159265) / 6.2831853;
     float on = step(ang, vTel.x);
     float seg = warn > 0.5 ? step(0.0, sin(ang * 90.0)) : 1.0;
-    vec3 gc = warn > 0.5 ? uRemoved : uChanged;
+    vec3 gc = warn > 0.5 ? uDanger : uSel;
     if(d > 0.0 && vHalf.x >= 3.0){
       rgb = mix(rgb, uSel, track * 0.22 * (1.0 - fill)); a = max(a, track * 0.22);
       float arc = track * on * seg;
       rgb = mix(rgb, gc, arc * (1.0 - fill)); a = max(a, arc);
     }
-    if(warn > 0.5) rgb = mix(rgb, uRemoved, 0.55 * fill);
+    if(warn > 0.5) rgb = mix(rgb, uDanger, 0.55 * fill);
   }
   // light dark edge to separate shapes from edges below
   float rim = (1.0 - smoothstep(-1.4, -0.4, d)) * 0.0;
@@ -202,8 +202,8 @@ void main(){
 const EDGE_FS = `#version 300 es
 precision highp float; precision highp int;
 in vec4 vColor; in float vDist; in float vSide; flat in uint vMeta; in vec2 vTel;
-uniform float uDim; uniform vec3 uSel; uniform vec3 uAdded; uniform vec3 uRemoved; uniform vec3 uChanged; uniform vec3 uIdentity; uniform float uWidth;
-uniform int uTel; uniform float uTime; uniform int uFlowOn; uniform vec3 uFlowColor;
+uniform float uDim; uniform vec3 uSel; uniform vec3 uChange; uniform vec3 uDanger; uniform vec3 uWarning; uniform float uWidth;
+uniform int uTel; uniform float uTime; uniform int uFlowOn;
 out vec4 outColor;
 void main(){
   uint style = vMeta & 255u; uint st = (vMeta >> 8) & 255u;
@@ -215,23 +215,21 @@ void main(){
   vec3 rgb = vColor.rgb; float a = vColor.a * edge;
   if(uTel == 1){
     if(vTel.y > 0.5){
-      // warning state: coral and dashed, so the state does not rely on color
+      // warning state: danger and dashed, so the state does not rely on color
       if(fract(vDist / 14.0) > 0.6) discard;
-      rgb = mix(rgb, uRemoved, 0.92); a = max(a, 0.85 * edge);
+      rgb = mix(rgb, uDanger, 0.92); a = max(a, 0.85 * edge);
     } else if(uFlowOn == 1 && vTel.x > 0.02){
       // moving pulses; speed follows the flow channel
       float phase = fract(vDist / 22.0 - uTime * (0.25 + vTel.x * 2.4));
       float pulse = smoothstep(0.0, 0.12, phase) * (1.0 - smoothstep(0.12, 0.5, phase));
-      rgb = mix(rgb, uFlowColor, pulse * 0.85); a = a * (0.6 + 0.4 * pulse);
+      rgb = mix(rgb, uSel, pulse * 0.85); a = a * (0.6 + 0.4 * pulse);
     }
   }
-  if((st & 16u) != 0u) rgb = uAdded;
-  if((st & 32u) != 0u) rgb = uRemoved;
-  if((st & 64u) != 0u) rgb = uChanged;
-  if((st & 128u) != 0u) rgb = uIdentity;
+  if((st & 112u) != 0u) rgb = uChange;
+  if((st & 128u) != 0u) rgb = uSel;
   if((st & 5u) != 0u) rgb = mix(rgb, uSel, 0.75);
   if((st & 240u) != 0u) a = max(a, 0.85 * edge);
-  if(((vMeta >> 16) & 128u) != 0u){ rgb = mix(rgb, uRemoved, 0.85); a = max(a, 0.95 * edge); }
+  if(((vMeta >> 16) & 128u) != 0u){ rgb = mix(rgb, uDanger, 0.85); a = max(a, 0.95 * edge); }
   a *= uDim;
   if(a < 0.01) discard;
   outColor = vec4(rgb, a);
@@ -274,15 +272,13 @@ void main(){
 const ARROW_FS = `#version 300 es
 precision highp float; precision highp int;
 in vec4 vColor; flat in uint vMeta;
-uniform float uDim; uniform vec3 uSel; uniform vec3 uAdded; uniform vec3 uRemoved; uniform vec3 uChanged; uniform vec3 uIdentity;
+uniform float uDim; uniform vec3 uSel; uniform vec3 uChange; uniform vec3 uDanger; uniform vec3 uWarning;
 out vec4 outColor;
 void main(){
   uint st = (vMeta >> 8) & 255u;
   vec3 rgb = vColor.rgb; float a = vColor.a;
-  if((st & 16u) != 0u) rgb = uAdded;
-  if((st & 32u) != 0u) rgb = uRemoved;
-  if((st & 64u) != 0u) rgb = uChanged;
-  if((st & 128u) != 0u) { rgb = uIdentity; a = 1.0; }
+  if((st & 112u) != 0u) rgb = uChange;
+  if((st & 128u) != 0u) { rgb = uSel; a = 1.0; }
   if((st & 5u) != 0u) { rgb = mix(rgb, uSel, 0.75); a = 1.0; }
   a *= uDim;
   outColor = vec4(rgb, a);
@@ -332,10 +328,10 @@ export class GraphRenderer {
     const gl = canvas.getContext("webgl2", { antialias: false, alpha: false, powerPreference: "high-performance", preserveDrawingBuffer: false });
     if (!gl) throw new Error("WebGL2 is not available");
     this.gl = gl;
-    const common = ["uPos", "uRes", "uCenter", "uZoom", "uDim", "uSel", "uAdded", "uRemoved", "uChanged"];
-    this.nodeProg = compile(gl, NODE_VS, NODE_FS, [...common, "uMinPx", "uIdentity", "uSource", "uTel", "uWarnN"]);
-    this.edgeProg = compile(gl, EDGE_VS, EDGE_FS, [...common, "uIdentity", "uWidth", "uEdgeAlpha", "uWire", "uSegments", "uSkip", "uTel", "uWarnE", "uTime", "uFlowOn", "uFlowColor"]);
-    this.arrowProg = compile(gl, ARROW_VS, ARROW_FS, [...common, "uIdentity", "uEdgeAlpha", "uArrowSize"]);
+    const common = ["uPos", "uRes", "uCenter", "uZoom", "uDim", "uSel", "uChange", "uDanger", "uWarning"];
+    this.nodeProg = compile(gl, NODE_VS, NODE_FS, [...common, "uMinPx", "uTel", "uWarnN"]);
+    this.edgeProg = compile(gl, EDGE_VS, EDGE_FS, [...common, "uWidth", "uEdgeAlpha", "uWire", "uSegments", "uSkip", "uTel", "uWarnE", "uTime", "uFlowOn"]);
+    this.arrowProg = compile(gl, ARROW_VS, ARROW_FS, [...common, "uEdgeAlpha", "uArrowSize"]);
     this.nodes = this.makeNodeBuffer(); this.hotNodes = this.makeNodeBuffer();
     this.edges = this.makeEdgeBuffer(); this.hotEdges = this.makeEdgeBuffer();
     this.arrows = this.makeEdgeBuffer(this.edges); this.hotArrows = this.makeEdgeBuffer(this.hotEdges);
@@ -499,10 +495,9 @@ export class GraphRenderer {
       gl.uniform1f(pr.u.uZoom, p.camera.zoom);
       gl.uniform1f(pr.u.uDim, dim);
       gl.uniform3fv(pr.u.uSel, p.colors.selected);
-      gl.uniform3fv(pr.u.uAdded, p.colors.added);
-      gl.uniform3fv(pr.u.uRemoved, p.colors.removed);
-      gl.uniform3fv(pr.u.uChanged, p.colors.changed);
-      gl.uniform3fv(pr.u.uIdentity, p.colors.identity);
+      gl.uniform3fv(pr.u.uChange, p.colors.change);
+      gl.uniform3fv(pr.u.uDanger, p.colors.danger);
+      gl.uniform3fv(pr.u.uWarning, p.colors.warning);
     };
     const edgeVerts = p.wires ? BEZIER_SEGMENTS * 2 + 2 : 4;
     const drawEdges = (ib: InstanceBuffer, count: number, dim: number) => {
@@ -517,7 +512,6 @@ export class GraphRenderer {
       gl.uniform1f(this.edgeProg.u.uWarnE, p.telemetry.warnEdge / 255 - 0.001);
       gl.uniform1f(this.edgeProg.u.uTime, p.telemetry.time);
       gl.uniform1i(this.edgeProg.u.uFlowOn, p.telemetry.flow ? 1 : 0);
-      gl.uniform3fv(this.edgeProg.u.uFlowColor, p.telemetry.flowColor);
       gl.bindVertexArray(ib.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, edgeVerts, count);
     };
@@ -535,8 +529,6 @@ export class GraphRenderer {
       gl.uniform1f(this.nodeProg.u.uMinPx, p.minNodePx);
       gl.uniform1i(this.nodeProg.u.uTel, p.telemetry.on ? 1 : 0);
       gl.uniform1f(this.nodeProg.u.uWarnN, p.telemetry.warnNode / 255 - 0.001);
-      gl.uniform3fv(this.nodeProg.u.uIdentity, p.colors.identity);
-      gl.uniform3fv(this.nodeProg.u.uSource, p.colors.source);
       gl.bindVertexArray(ib.vao);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     };

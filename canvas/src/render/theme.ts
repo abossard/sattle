@@ -1,21 +1,31 @@
-// Semantic colors. Role hues are the ones the explanatory site uses (brainstorm/tools/story.py, brainstorm/dist/atlas-next.css):
-// input amber, master teal, projection blue, rule purple, identity pink, document lime, diff coral.
+// The renderer's half of the Drawing Sheet (DESIGN.md): paper and ink, drafting blue for the selection and what follows from it
+// (the same element in other graphs, the live telemetry flow), ink for a revision's changes (the ring pattern says which),
+// Fluent's status colors for errors and warnings, and muted tints for the categories (types, roles, edge kinds), none of them blue.
 // Color never carries meaning alone: shapes, ring patterns, glyphs and labels repeat every distinction.
+import { webDarkTheme, webLightTheme } from "@fluentui/react-components";
 import { Shape, parseColor } from "./scene";
 
+type Rgb = [number, number, number];
 export interface Theme {
   name: "dark" | "light";
-  bg: string; bgRgb: [number, number, number];
+  bg: string; bgRgb: Rgb;
   panel: string; text: string; muted: string; line: string;
-  selected: [number, number, number];
-  added: [number, number, number]; removed: [number, number, number]; changed: [number, number, number];
-  identity: [number, number, number]; source: [number, number, number];
+  /** drafting blue: selection, hover, matches, the selection's identity in other graphs, the live flow */
+  selected: Rgb;
+  /** ink: an element added, changed or removed in the highlighted revision */
+  change: Rgb;
+  danger: Rgb; warning: Rgb;
   edge: string;
+  /** muted categorical tints by role, also the type palette */
   hue: Record<string, string>;
 }
 
-const HUES_DARK = { input: "#ffcf7c", master: "#83ead1", projection: "#8ec8ff", rule: "#c2a5ff", identity: "#f3a8d4", document: "#d7e68f", diff: "#ff9b9e" };
-const rgb01 = (hex: string): [number, number, number] => {
+// OKLCH tints at one lightness and low chroma (light L 0.55 C 0.08, dark L 0.78 C 0.075): they sort categories without reading
+// as a state. Hues: projection teal 195, master violet 300, rule clay 55, identity mauve 350, document olive 110, input sage 160,
+// diff neutral (a change is ink).
+const HUES_LIGHT = { input: "#448061", master: "#79679a", projection: "#2a8080", rule: "#966543", identity: "#955e78", document: "#74763c", diff: "#717171" };
+const HUES_DARK = { input: "#8dc7a7", master: "#beade1", projection: "#7bc7c6", rule: "#deab8a", identity: "#dda4be", document: "#babc84", diff: "#b7b7b7" };
+const rgb01 = (hex: string): Rgb => {
   const h = hex.replace("#", "");
   return [parseInt(h.slice(0, 2), 16) / 255, parseInt(h.slice(2, 4), 16) / 255, parseInt(h.slice(4, 6), 16) / 255];
 };
@@ -26,17 +36,19 @@ export function shade(hex: string, factor: number): string {
 }
 
 export const darkTheme: Theme = {
-  name: "dark", bg: "#121316", bgRgb: rgb01("#121316"), panel: "#1b1d20", text: "#e8eef4", muted: "#9aa9b8", line: "#2a3a48",
-  selected: [1, 1, 1], added: rgb01("#83ead1"), removed: rgb01("#ff9b9e"), changed: rgb01("#ffcf7c"), identity: rgb01("#f3a8d4"), source: rgb01("#8ec8ff"),
-  edge: "#7f93a6", hue: HUES_DARK,
+  name: "dark", bg: "#121316", bgRgb: rgb01("#121316"), panel: "#1b1d20", text: "#e6e7e9", muted: "#a4a7ad", line: "#3a3d42",
+  selected: rgb01("#8fb0d4"), change: rgb01("#e6e7e9"),
+  danger: rgb01(webDarkTheme.colorStatusDangerForeground1), warning: rgb01(webDarkTheme.colorStatusWarningForeground1),
+  edge: "#80838a", hue: HUES_DARK,
 };
 export const lightTheme: Theme = {
-  name: "light", bg: "#eceef1", bgRgb: rgb01("#eceef1"), panel: "#ffffff", text: "#16212b", muted: "#52626f", line: "#cfd8e0",
-  selected: rgb01("#0b1a26"), added: rgb01("#0d8a6c"), removed: rgb01("#c43d45"), changed: rgb01("#b87a00"), identity: rgb01("#b83d8a"), source: rgb01("#1a63a6"),
-  edge: "#7c8c9a", hue: Object.fromEntries(Object.entries(HUES_DARK).map(([k, v]) => [k, shade(v, 0.62)])),
+  name: "light", bg: "#eceef1", bgRgb: rgb01("#eceef1"), panel: "#ffffff", text: "#202124", muted: "#5f6268", line: "#c9cbd0",
+  selected: rgb01("#1d5fa6"), change: rgb01("#202124"),
+  danger: rgb01(webLightTheme.colorStatusDangerForeground1), warning: rgb01(webLightTheme.colorStatusWarningForeground1),
+  edge: "#868990", hue: HUES_LIGHT,
 };
 
-// categorical palette for entity types (coral is reserved for removal and errors)
+// categorical palette for entity types (the diff tint stays out: a neutral type would read as a change)
 const PALETTE = ["projection", "master", "rule", "identity", "document", "input"] as const;
 const SHAPES = [Shape.Circle, Shape.Square, Shape.Diamond, Shape.Triangle, Shape.Hexagon] as const;
 export const SHAPE_NAME: Record<number, string> = { [Shape.Circle]: "circle", [Shape.Square]: "square", [Shape.Diamond]: "diamond", [Shape.Triangle]: "triangle", [Shape.Hexagon]: "hexagon", [Shape.Card]: "card" };
@@ -61,7 +73,9 @@ export function styleForType(type: string, theme: Theme): TypeStyle {
 /** Relationship color: muted neutral, with a small stable hue shift per type so parallel types stay distinguishable. */
 /** The color of an edge of a declared kind (engine 3.17). It repeats what the line pattern and the head say; it never says it alone. */
 export const KIND_EDGE_COLOR: Record<"composition" | "dependency" | "communication" | "support", string> = {
-  composition: "#8ea4c4", dependency: "#e3a33b", communication: "#3fb5c9", support: "#8b949e",
+  // OKLCH, readable on both floors: composition, the structure, in a neutral (L 0.58); dependency clay and communication teal
+  // (L 0.66 C 0.07); support a lighter neutral (L 0.66), drawn thin and faint
+  composition: "#7a7a7a", dependency: "#b48769", communication: "#5ba09f", support: "#929292",
 };
 
 /** Cached per base color and type: the function runs for every edge on every refresh, and its answer depends on nothing else. */

@@ -593,7 +593,7 @@ export class DataPane {
         else if (c.kind === "changed" && slot !== undefined) nC.push(slot);
         else if (c.kind === "removed" && c.before) {
           const p = this.lastPos.get(id) ?? this.guessPosition(c.before, changes);
-          if (p) this.ghostList.push({ x: p[0], y: p[1], r: this.styleOf(c.before.type).radius, color: this.cssColor("removed"), label: this.#graph.label(c.before), shape: 1 });
+          if (p) this.ghostList.push({ x: p[0], y: p[1], r: this.styleOf(c.before.type).radius, color: this.cssColor("change"), label: this.#graph.label(c.before), shape: 1 });
         }
       }
       for (const [id, c] of changes.relationships) {
@@ -602,7 +602,7 @@ export class DataPane {
         else if (c.kind === "changed" && slot !== undefined) eC.push(slot);
         else if (c.kind === "removed" && c.before) {
           const a = this.posOfEntity(c.before.source), b = this.posOfEntity(c.before.target);
-          if (a && b) this.ghostList.push({ x: a[0], y: a[1], r: 0, color: this.cssColor("removed"), label: c.before.type, shape: 0, edge: { x2: b[0], y2: b[1] } });
+          if (a && b) this.ghostList.push({ x: a[0], y: a[1], r: 0, color: this.cssColor("change"), label: c.before.type, shape: 0, edge: { x2: b[0], y2: b[1] } });
         }
       }
     }
@@ -612,9 +612,8 @@ export class DataPane {
     this.view.requestRender();
   }
 
-  private cssColor(kind: "removed"): string {
-    const c = this.theme.removed;
-    void kind;
+  private cssColor(kind: "change"): string {
+    const c = this.theme[kind];
     return `rgb(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)})`;
   }
   private posOfEntity(id: string): [number, number] | null {
@@ -770,7 +769,7 @@ export class DataPane {
 
   /**
    * Cross-graph highlighting: `above` are the elements in this graph that the selection is part of (and the same entity elsewhere),
-   * `below` the ones it stands for. Nodes get a ring (pink for above, dashed for below); edges of either are drawn in the identity color.
+   * `below` the ones it stands for. Nodes get a ring in the selection color (solid for above, dashed for below); edges of either are drawn in it.
    */
   setCross(above: { nodes: ReadonlySet<string>; edges: ReadonlySet<string> }, below: { nodes: ReadonlySet<string>; edges: ReadonlySet<string> }): void {
     const g = this.#graph;

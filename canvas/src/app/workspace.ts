@@ -249,7 +249,7 @@ export class Workspace {
   /** Shape and color of a type as the canvas draws it (a neutral circle when there is no pane). */
   styleOf(graph: string, type: string): { shape: string; color: string } {
     const pane = this.panes.get(graph);
-    return pane ? { shape: pane.shapeName(type), color: pane.colorCss(type) } : { shape: "circle", color: "#8ec8ff" };
+    return pane ? { shape: pane.shapeName(type), color: pane.colorCss(type) } : { shape: "circle", color: this.theme.hue.diff };
   }
 
   /** Counts per colored value over the nodes or the edges (see `tally`), how many have none, and the hint that maps the values to roles. */

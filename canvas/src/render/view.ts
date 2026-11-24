@@ -435,8 +435,8 @@ export class GraphView {
       width: this.width, height: this.height, dpr: this.dpr, camera: this.camera, dim: this.dim,
       edgeAlpha, edgeWidth: dense && rel < 2 ? 1 : 1.4, arrows: this.wires ? false : this.avgEdgeLen * this.camera.zoom > 26,
       wires: this.wires, background: th.bgRgb, minNodePx: dense ? 1.4 : 2.2, edgeSkip: Math.round(this.edgeSkip),
-      telemetry: { on: s.telemetry.on, warnNode: s.telemetry.warnNode, warnEdge: s.telemetry.warnEdge, flow: flowActive, time: (now / 1000) % 1000, flowColor: th.source },
-      colors: { selected: th.selected, added: th.added, removed: th.removed, changed: th.changed, identity: th.identity, source: th.source },
+      telemetry: { on: s.telemetry.on, warnNode: s.telemetry.warnNode, warnEdge: s.telemetry.warnEdge, flow: flowActive, time: (now / 1000) % 1000 },
+      colors: { selected: th.selected, change: th.change, danger: th.danger, warning: th.warning },
     };
     this.renderer.render(params);
     const t1 = performance.now();
@@ -592,7 +592,7 @@ export class GraphView {
         const [x, y] = toS(s.positions[2 * i], s.positions[2 * i + 1]);
         const r = Math.max(s.radius[i] * z, 1.4) * 1.5;
         if (r < 5 || !inView(x, y, 20)) continue;
-        ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText("!", x - r - 4, y - r); ctx.fillStyle = `rgb(${th.removed.map((v) => Math.round(v * 255)).join(",")})`; ctx.fillText("!", x - r - 4, y - r);
+        ctx.lineWidth = 3; ctx.strokeStyle = th.bg; ctx.strokeText("!", x - r - 4, y - r); ctx.fillStyle = `rgb(${th.danger.map((v) => Math.round(v * 255)).join(",")})`; ctx.fillText("!", x - r - 4, y - r);
         marks++;
       }
     }
