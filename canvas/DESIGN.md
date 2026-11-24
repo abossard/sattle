@@ -50,10 +50,10 @@ components:
     textColor: "{colors.ink}"
     rounded: "0px"
     width: "210px"
-  badge-direction:
+  badge:
     backgroundColor: "{colors.paper}"
     textColor: "{colors.ink-2}"
-    rounded: "{rounded.sm}"
+    rounded: "{rounded.md}"
 ---
 
 # Design System: Sattle canvas
@@ -96,6 +96,7 @@ A cool-neutral paper and ink scale with a single blue accent. Light and dark are
 
 ### Diagnostics
 - Fluent's palette red border marks an errored card (dashed outline). Fluent's warning intent marks notices. Neither is used for decoration.
+- Status colors (success, warning, danger) belong to states and diagnostics only. Roles, counts and changes are neutral.
 
 ### Named Rules
 **The One Blue Rule.** Drafting blue means selected, focused or live. Any other use of blue is wrong.
@@ -140,7 +141,7 @@ Flat by default. Depth is drawn with rule weights, not shadow: card outline 1.5p
 
 ## Shapes
 
-Near square. Corners are 1px (small), 2px (medium), 3px (large), 4px (extra large). Cards are fully square. Badges use the square shape with an outline.
+Near square. Corners are 1px (small), 2px (medium), 3px (large), 4px (extra large). Cards are fully square. Badges have medium (2px) corners and an outline.
 
 Dash vocabulary on the sheet: 4 3 for the frame around steps of one type; an input card has a dashed outline.
 
@@ -149,8 +150,13 @@ Dash vocabulary on the sheet: 4 3 for the frame around steps of one type; an inp
 ### Wires card
 Square, paper fill, 1.5px ink outline, 210 by 40px, the statement's title in semibold (Fluent size 200) over what it reads in the smallest size, ink 3. An input card has a dashed outline; the selected card takes the brand tint and the drafting blue stroke. Wires are 1px ink curves from what a statement reads to the statement, 2px drafting blue for the selected card. A card selects its statement in the text.
 
-### Direction badge
-Outline badge, square, informative color, a glyph and a label for the direction class of a projection (forward only, bidirectional, mixed). It never stretches: badges are capped to their content width.
+### Badges
+Outline, 2px corners (the pill shape is overridden once in `canvas.css`), informative (neutral) color. A badge names a role, a count or a reference: `projection`, `8 supporting`, `ontology acme.ops@1.0.0`. Only a state or a diagnostic takes a status color (Healthy, Unhealthy, origin, a meter over its threshold). Fluent's default badge color is brand, so every badge states its color. It never stretches: badges are capped to their content width.
+
+The direction badge adds a glyph to the label for the direction class of a projection (forward only, bidirectional, mixed).
+
+### Revision counts
+The timeline's `+ added`, `− removed` and `Δ changed` are neutral badges; the glyph and the word carry the meaning. A zero count drops its outline (ghost appearance).
 
 ### Header, tabs, toolbars
 Paper header with a 1px rule underneath, a 16px sheet mark (a frame with zone ticks, stroked in current color) beside the product name, Fluent tab list for the views. Toolbars are small, with subtle icon buttons; the draft toolbar holds the single primary button, Commit, at the right.
@@ -173,9 +179,11 @@ Paper strip with a 1px top rule, small text, wrapping.
 - **Don't** put amber or red on anything that is not a diagnostic or an error.
 - **Don't** use soft large shadows, gradients as fills, or rounded cards.
 - **Don't** let a badge stretch to the width of its column.
+- **Don't** leave a badge on Fluent's default brand color, or put a sentence in a badge.
+- **Don't** mark a role or a kind with a colored side stripe; use a small square swatch before the label, as the type legend does.
 - **Don't** introduce a second accent hue.
 
 ## Not canonized
 
-- The WebGL renderer palette (`src/render/theme.ts`) keeps its older role hues (added, removed, changed, identity, source, and the per-kind hues). Only its background and panel match the sheet. They are not part of this system until aligned.
+- The WebGL renderer palette (`src/render/theme.ts`) keeps its older role hues (added, removed, changed, identity, source, and the per-kind hues). Only its background and panel match the sheet. They are not part of this system until aligned. The developer guide's role squares use these hues.
 - The 9px caption and 9px port label sizes are below Fluent's smallest text token. They are recorded because the build uses them, not as a size to add elsewhere.
