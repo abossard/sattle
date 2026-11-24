@@ -8,7 +8,7 @@ namespace Sattle.Runtime;
 public sealed class RecordAdapter : ISourceAdapter, IRedelivery
 {
     public const string AdapterId = "record";
-    const string Prefix = "records:";
+    public const string Prefix = "records:";
     readonly Dictionary<string, RowContract> rows = new(StringComparer.Ordinal);
     readonly Dictionary<(string Type, string Key), (long At, object?[]? Values)> current = [];
     public string Id => AdapterId;
@@ -39,6 +39,19 @@ public sealed class RecordAdapter : ISourceAdapter, IRedelivery
     public void Consume(Envelope envelope, IRowSink sink)
     {
         var type = envelope.Source[Prefix.Length..];
+        if (envelope.Payload.ValueKind == JsonValueKind.Object && envelope.Payload.P("key") is null)
+        {
+            // without a key: `{}` is a heartbeat, progress of the source and no row; `{"lost": n}` is a loss mark (Def. 10.4) at `time`, else at the capture time
+            if (envelope.Payload.P("lost") is { } lost)
+            {
+                if (lost.ValueKind != JsonValueKind.Number || !lost.TryGetInt64(out var count) || count < 0) { sink.Rejected(Id, $"Expected a count of lost records for {type}"); return; }
+                var at = envelope.Payload.S("time") is { } time ? Norm.TryParseInstant(time, out var ns) ? ns : (long?)null : envelope.CapturedNs;
+                if (at is null) { sink.Rejected(Id, $"Expected an instant as the time of a loss for {type}"); return; }
+                sink.SourceLoss(at.Value, count, envelope.Payload.S("reason") ?? "sourceLoss");
+            }
+            else if (envelope.Payload.EnumerateObject().Any()) sink.Rejected(Id, $"Expected a key, a count of lost records or an empty heartbeat for {type}");
+            return;
+        }
         if (!rows.TryGetValue(type, out var row) || envelope.Payload.S("key") is not { Length: > 0 } key)
         {
             sink.Rejected(Id, $"Expected a declared row type and a nonempty key for {type}");

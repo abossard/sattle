@@ -181,7 +181,13 @@ public sealed class Replay : IRowSink
     {
         this.engine = engine; this.adapters = adapters; opt = options; this.gate = gate ?? new object();
         foreach (var s in space.Sources) sourceOfRowType[s.Adapter + "|" + Ids.Name(s.RowTypeId)] = s.Name;   // the same row type can come from two adapters into two sources
-        foreach (var s in space.Sources) { if (!sourcesOfAdapter.TryGetValue(s.Adapter, out var names)) sourcesOfAdapter[s.Adapter] = names = []; names.Add(s.Name); }
+        // a record envelope is progress of the sources of its row type only; an envelope of any other adapter of all the sources of that adapter
+        foreach (var s in space.Sources)
+        {
+            var by = s.Adapter == RecordAdapter.AdapterId ? s.Adapter + "|" + Ids.Name(s.RowTypeId) : s.Adapter;
+            if (!sourcesOfAdapter.TryGetValue(by, out var names)) sourcesOfAdapter[by] = names = [];
+            names.Add(s.Name);
+        }
     }
 
     // ---- IRowSink ----
@@ -236,7 +242,7 @@ public sealed class Replay : IRowSink
         ISourceAdapter? adapter = null;
         foreach (var a in adapters) if (a.Handles(e.Source)) { adapter = a; break; }
         if (adapter is null) { Stats.Skipped++; return true; }
-        if (engine.WantsProgress && sourcesOfAdapter.TryGetValue(adapter.Id, out var fed))
+        if (engine.WantsProgress && (adapter is RecordAdapter ? sourcesOfAdapter.TryGetValue(adapter.Id + "|" + e.Source[RecordAdapter.Prefix.Length..], out var fed) : sourcesOfAdapter.TryGetValue(adapter.Id, out fed)))
             foreach (var source in fed) reported[source] = Math.Max(reported.GetValueOrDefault(source, long.MinValue), e.CapturedNs - opt.LatenessNs);       // every envelope of an adapter is progress of its sources, a marker or a heartbeat without rows as well
         var lambda = e.CapturedNs / opt.AdvanceEveryNs * opt.AdvanceEveryNs - opt.LatenessNs;
         if (lambda > lastLambda)
