@@ -18,7 +18,7 @@ public class LineageTests
         return h;
     }
 
-    static readonly Lazy<SpaceHost> OnEstate = new(() => Serve(Estate));
+    internal static readonly Lazy<SpaceHost> OnEstate = new(() => Serve(Estate));
 
     static JsonNode LiftedEdge(SpaceHost h, string graph, string from, string to)
     {

@@ -82,9 +82,8 @@ var results = new List<(string Source, string Graph, string Prop, long Element, 
 
 void Collect(string source, Engine e)
 {
-    var mem = (InMemoryTelemetryStore)e.Telemetry;
     foreach (var g in e.Graphs)
-        foreach (var (el, p, ws, v) in mem.Dump(g.Key)) results.Add((source, g.Name, Short(e.Interner.Get(p)), el, ws, v));
+        e.Telemetry.ScanGraph(g.Key, (el, p, ws, v) => results.Add((source, g.Name, Short(e.Interner.Get(p)), el, ws, v)));
 }
 static string Short(string p) { var i = Math.Max(p.LastIndexOf("/prop:", StringComparison.Ordinal) + 6, p.LastIndexOf('.') + 1); return i > 0 && i <= p.Length ? p[i..] : p; }
 

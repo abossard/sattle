@@ -70,20 +70,25 @@ public class BatchInvarianceTests
     static readonly long T0 = 1_794_300_000_000_000_000 / Min * Min;
     const string Resource = "/subscriptions/s/resourcegroups/rg/providers/microsoft.storage/storageaccounts/acct";
 
-    static void Resources(Engine e)
+    /// <summary>A host on the example definitions: the late rows are read where it serves them.</summary>
+    static SpaceHost NewHost() => HostTests.NewHost();
+    static long LateRows(SpaceHost h) => long.Parse(h.Liveness()["counters"]!["lateRows"]!.GetValue<string>());
+
+    static void Resources(IEngineInput e)
     {
         var rw = new RowWriter(e.RowLayout("resources"), e.Interner);
         rw.Begin(); rw.Text("id", Resource); rw.Text("name", "acct"); rw.Text("type", "microsoft.storage/storageaccounts"); rw.Text("location", null); rw.Text("resourceGroup", null); rw.Text("subscriptionId", null); rw.Text("parentId", null);
         e.Ingest("resources", rw.Build()!, 1);
     }
 
-    static void Activity(Engine e, long seq, string id, long offsetNs, int count)
+    static void Activity(IEngineInput e, long seq, string id, long offsetNs, int count)
     {
         var rw = new RowWriter(e.RowLayout("activity"), e.Interner);
         for (var i = 0; i < count; i++) { rw.Begin(); rw.Instant("time", T0 + offsetNs + i * 1_000_000_000L); rw.Text("resourceId", id); rw.Text("operation", "op"); rw.Text("status", "Succeeded"); }
         e.Ingest("activity", rw.Build()!, seq);
     }
 
+    static Dictionary<long, decimal> Changes(SpaceHost h) => Changes(h.Engine);
     static Dictionary<long, decimal> Changes(Engine e)
     {
         var changes = new Dictionary<long, decimal>();
@@ -119,16 +124,16 @@ public class BatchInvarianceTests
     [InlineData(1, 10)] [InlineData(4, 10)] [InlineData(1, 30)] [InlineData(2, 5)]
     public void A_row_for_a_window_beyond_the_late_horizon_is_dropped_and_counted_and_never_replaces_what_was_emitted(int lateRows, int laterMinutes)
     {
-        using var e = NewEngine();
+        using var e = NewHost();
         Resources(e);
         Activity(e, 2, Resource, 0, 3);
-        e.Advance(T0 + 2 * Min);                                               // the window closes with 3
+        e.Advance(T0 + 2 * Min, 10);                                               // the window closes with 3
         Assert.Equal(3m, Changes(e).Single().Value);
-        e.Advance(T0 + laterMinutes * Min);                                    // beyond the horizon: the window's state is dropped
+        e.Advance(T0 + laterMinutes * Min, 11);                                    // beyond the horizon: the window's state is dropped
         Activity(e, 3, Resource, 5_000_000_000L, lateRows);                     // late rows for it
-        e.Advance(T0 + (laterMinutes + 2) * Min);
+        e.Advance(T0 + (laterMinutes + 2) * Min, 12);
         Assert.Equal(3m, Changes(e).Single().Value);
-        Assert.True(e.Counters().LateRows >= lateRows);
+        Assert.True(LateRows(e) >= lateRows);
     }
 
     const string Wide = """
@@ -162,16 +167,17 @@ public class BatchInvarianceTests
     public void A_window_of_any_width_takes_its_rows_and_closes_whatever_the_late_horizon(string width, int? horizon)
     {
         var cat = new Sattle.Language.Catalog(Repo.Projections);
-        Assert.Empty(cat.Load([new Sattle.Language.SourceFile("d.module.gkql.json", Wide), new Sattle.Language.SourceFile("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width)), new Sattle.Language.SourceFile("ds.module.gkql.json", WideSpace)], updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
-        using var e = new Engine(cat, cat.Spaces.Keys.Single(), new EngineOptions { LateHorizonWindows = horizon });
+        List<Sattle.Language.SourceFile> files = [new("d.module.gkql.json", Wide), new("d.ingest.gkql.json", WideIngest.Replace("WIDTH", width)), new("ds.module.gkql.json", WideSpace)];
+        Assert.Empty(cat.Load(files, updatePins: true).Diagnostics.Where(x => x.IsError).Select(x => x.ToString()));
+        using var h = new SpaceHost(files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = horizon });
         var w = Norm.DurationNs(width); var start = 1_794_300_000_000_000_000 / w * w;
-        e.Advance(start + 1);                                    // a replay advances before its first row
-        var rw = new RowWriter(e.RowLayout("a"), e.Interner);
+        h.Advance(start + 1, 1);                                 // a replay advances before its first row
+        var rw = new RowWriter(h.RowLayout("a"), h.Interner);
         rw.Begin(); rw.Text("k", "a"); rw.Instant("t", start + 2);
-        e.Ingest("a", rw.Build()!, 1);
-        e.Advance(start + w + 1);                                // the window [start, start + w) closes
-        Assert.Equal(0, e.Counters().LateRows);
-        Assert.Single(e.Master.State.Entities);
+        h.Ingest("a", rw.Build()!, 2);
+        h.Advance(start + w + 1, 3);                             // the window [start, start + w) closes
+        Assert.Equal(0, LateRows(h));
+        Assert.Single(h.Engine.Master.State.Entities);
     }
 
     /// <summary>The other side of B2: a late row inside the horizon revises the window (the horizon is the only thing that decides).</summary>
@@ -179,13 +185,13 @@ public class BatchInvarianceTests
     [InlineData(1)] [InlineData(2)]
     public void A_row_for_a_window_inside_the_late_horizon_revises_it(int lateRows)
     {
-        using var e = NewEngine();
+        using var e = NewHost();
         Resources(e);
         Activity(e, 2, Resource, 0, 3);
-        e.Advance(T0 + 2 * Min);
+        e.Advance(T0 + 2 * Min, 10);
         Activity(e, 3, Resource, 5_000_000_000L, lateRows);
-        e.Advance(T0 + 4 * Min);
+        e.Advance(T0 + 4 * Min, 11);
         Assert.Equal(3m + lateRows, Changes(e).Single().Value);
-        Assert.Equal(0, e.Counters().LateRows);
+        Assert.Equal(0, LateRows(e));
     }
 }

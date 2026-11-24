@@ -157,8 +157,9 @@ public class EstateTests
     public void A_Link_merges_identities_a_union_has_two_sources_and_the_retained_evidence_is_there()
     {
         var e = Plain.Value;
-        Assert.True(e.Engine.Counters().Merged > 0, "no identity merged: the second api instance's row arrives after the flows that name it");
-        Assert.Equal(0, e.Engine.Counters().Conflicts);
+        var identity = LineageTests.OnEstate.Value.Liveness()["counters"]!["identity"]!;          // the counters a host of the estate serves
+        Assert.True(long.Parse(identity["merged"]!.GetValue<string>()) > 0, "no identity merged: the second api instance's row arrives after the flows that name it");
+        Assert.Equal("0", identity["conflicts"]!.GetValue<string>());
         Assert.Equal(18, e.Entities("master", "ActivityEvent").Count);  // 10 from the management API and 8 from the diagnostic setting: the two sources of the Union in observedActivityEvents
         Assert.NotEmpty(e.Entities("master", "WarningEvent"));
     }

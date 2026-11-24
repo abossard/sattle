@@ -73,10 +73,18 @@ public class ServerTests
     [Theory]
     [InlineData("", "mode,done,seq,digest,catalogRevision,graphs,lag,counters")]
     [InlineData("graphs", "name,head,digest")]
+    [InlineData("counters", "identity,lateRows,faults")]
+    [InlineData("counters.identity", "minted,aliased,merged,conflicts")]
+    [InlineData("counters.faults", "divisionByZero,overflow,invalidParameter")]
     public async Task Health_serves_only_operational_keys(string part, string keys)
     {
         var body = await Serving(async http => JsonNode.Parse(await http.GetStringAsync("/health"))!.AsObject());
-        var shown = part == "" ? body : body[part]!.AsArray().Select(g => g!.AsObject()).First();
+        var shown = part switch
+        {
+            "" => body,
+            "graphs" => body[part]!.AsArray().Select(g => g!.AsObject()).First(),
+            _ => part.Split('.').Aggregate((JsonNode)body, (node, key) => node[key]!).AsObject(),
+        };
         Assert.Equal(keys.Split(','), shown.Select(x => x.Key));
     }
 
