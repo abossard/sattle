@@ -55,16 +55,16 @@ flowchart TB
     SRC["sources<br/>Kubernetes, Hubble, Azure,<br/>Prometheus, authoring"]
     ENV["envelopes<br/>capture files or Event Hub"]
     AD["adapters<br/>Adapters.cs"]
-    ROWS["typed rows<br/>sattle.source.*.sattle"]
+    ROWS["typed rows<br/>sattle.source.*.module.gkql.json"]
     SRC --> ENV --> AD --> ROWS
   end
-  subgraph DEF["Definitions"]
-    ONT["ontology modules .sattle<br/>domain knowledge,<br/>identity domains"]
-    KQL["projections .kql<br/>rules in KQL"]
-    SP["graph space<br/>acme.space.sattle"]
+  subgraph DEF["Definitions in gkql"]
+    ONT["ontology modules<br/>*.module.gkql.json<br/>domain knowledge,<br/>identity domains"]
+    PRJ["projections<br/>*.gkql.json<br/>verbs and wires"]
+    SP["graph space<br/>acme.space.module.gkql.json"]
   end
   ENG["engine<br/>Engine.cs, Operators.cs, Identity.cs<br/>computes on changes only"]
-  G["graphs<br/>master, serviceTree,<br/>workloadStructure, workload, ..."]
+  G["graphs<br/>master, serviceTree,<br/>capabilities, readiness, ..."]
   HOST["host and server<br/>Host.cs, Server.cs<br/>protocol v3: HTTP history, /ws stream"]
   CV["canvas<br/>EngineSource, store, views"]
   ROWS --> ENG
@@ -142,32 +142,29 @@ dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll serve engine/tests/S
 npm --prefix canvas run dev
 ```
 
-### 3. Follow a failure down to its cause
+### 3. Look at the graphs
 
 - Open http://localhost:5173/#source=engine&view=data. The Data graph view shows one graph at a time; pick it in the "Graph" box.
-- `master`: everything the sources reported, one entity per thing. `serviceTree`: the services and who calls whom, lifted from the calls between pods. `workloadStructure`: what the workload is made of and what each part depends on, with evidence. `workload`: its health.
-- In `workload`, the graph follows the replay: the cache is overloaded at 10:05, the database server is down at 10:11, the storage account stops reporting at the end. Drag the timeline under the graph to any of them.
-
-![The workload graph during the replay: the cache overloaded at 10:05](docs/screenshots/timeline-replay.png)
-
-- Drag the timeline to 10:11 (revision 11) and open the Tree tab. It opens on the path to what is wrong: the database server `pg-shop` carries the origin mark, and every row above it says through which part it is affected.
-- Click a row. The same entity is highlighted in every graph, and the Inspector shows it in the master and the other graphs and what it was derived from.
+- `master`: everything the sources reported, one entity per thing. `serviceTree`: the services and who calls whom, lifted from the calls between instances. `capabilities`: the business capabilities and the calls between them. `readiness`: each Unit with its ready instances and a state, `Ready` or `NotReady`. `readinessReport`: a document with the counts and one line per Unit.
+- Click an element. The same entity is highlighted in every graph, and the Inspector shows it in the master and the other graphs and what it was derived from.
 
 ### 4. The other views
 
 - http://localhost:5173/#view=space: the graph space, every graph side by side and which ones are built from which.
 - http://localhost:5173/#view=ontology: the ontology modules, their types and relationships, drawn as the graph they are stored as.
-- http://localhost:5173/#view=editor: the projection editor, a projection's KQL text with its steps, outline and wires.
+- http://localhost:5173/#view=editor: the projection editor.
 
 ### Read how a graph is defined
 
-Projections are written in KQL, the query language of Azure Data Explorer and Log Analytics. Read them in this order:
+Every definition is a gkql document (JSON). A projection is a graph of verbs (`graph-match`, `where`, `summarize`, `join`, `nodes`, ...) joined by wires. The verbs are listed in [engine/README.md](engine/README.md#gkql). Read the projections in this order:
 
-1. [`acme.svc.serviceDeps.kql`](engine/definitions/acme.svc.serviceDeps.kql): calls between pods become dependencies between services (graph `serviceTree`).
-2. [`acme.workload.workloadStructure.kql`](engine/definitions/acme.workload.workloadStructure.kql): what a workload is made of and what each part depends on, with evidence.
-3. [`acme.workload.workloadHealth.kql`](engine/definitions/acme.workload.workloadHealth.kql): health from signals, rolled up to the workload (graph `workload`).
+1. [`acme.ops.ingest.gkql.json`](engine/definitions/acme.ops.ingest.gkql.json): the rows of the sources become the master graph (instances, services, units, hosts, cloud resources, calls, events).
+2. [`acme.svc.serviceDeps.gkql.json`](engine/definitions/acme.svc.serviceDeps.gkql.json): calls between instances become dependencies between services, with flows, drops and a status by hysteresis (graph `serviceTree`).
+3. [`acme.biz.capabilityView.gkql.json`](engine/definitions/acme.biz.capabilityView.gkql.json): service dependencies lifted to the capabilities the services realize (graph `capabilities`).
+4. [`acme.readiness.readiness.gkql.json`](engine/definitions/acme.readiness.readiness.gkql.json): a Unit is `Ready` while its ready instances exceed the parameter `minReady` (graph `readiness`).
+5. [`acme.report.readinessReport.gkql.json`](engine/definitions/acme.report.readinessReport.gkql.json): the readiness as a document (graph `readinessReport`).
 
-The space that binds them to graphs is [`acme.space.sattle`](engine/definitions/acme.space.sattle); the ontology they write is [`acme.workload.sattle`](engine/definitions/acme.workload.sattle).
+The space that binds them to graphs is [`acme.space.module.gkql.json`](engine/definitions/acme.space.module.gkql.json).
 
 ### Change a projection and see the effect
 
@@ -176,22 +173,18 @@ dotnet engine/src/Sattle.Cli/bin/Release/net11.0/sattle.dll replay engine/tests/
 ```
 
 - It prints the elements of each graph and a state digest.
-- Change a rule in one of the `.kql` files and run it again. The counts and the digest show what changed. An error names the line in the `.kql` file.
-- The Projection editor does the same on a running engine: it stores the text in a draft, checks it, previews the rows after each step, and commits.
+- Change a verb in one of the projection documents and run it again. The counts and the digest show what changed. An error names the file, and the verb when one is at fault.
+- A draft does the same on a running engine: `PUT /drafts/{id}/text/{file}` sets a projection document, the draft is checked, previewed and committed ([PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions)).
 
 ### Learn why it works
 
 - [paper/README.md](paper/README.md), then core chapters [1](paper/core/ch01-problem-and-model.md) (the problem), [3](paper/core/ch03-graphs-type-graphs-revisions.md) (graphs and revisions), [5](paper/ch05-projection-language.md) (projections) and [7](paper/ch07-telemetry-plane.md) (telemetry and health). The [glossary](paper/glossary.md) explains every term.
-- [Research note 10](paper/research/10-existing-graph-languages.md): why projections are written in KQL.
+- [Research note 10](paper/research/10-existing-graph-languages.md): why projections were first written in KQL.
 
 ### Run the tests
 
 ```bash
 dotnet test engine/Sattle.slnx
-```
-
-```bash
-dotnet test engine/tests/Sattle.Kql.Tests
 ```
 
 ```bash
@@ -212,27 +205,21 @@ npm --prefix canvas test
 
 ## The graph space
 
-The 13 graphs of [`acme.space.sattle`](engine/definitions/acme.space.sattle). Each arrow into a graph is a projection, labelled `module.projection`.
+The 6 graphs of [`acme.space.module.gkql.json`](engine/definitions/acme.space.module.gkql.json). Each arrow into a graph is a projection, labelled `module.projection`.
 
 ```mermaid
 flowchart LR
   ROWS["rows of the sources"] -->|"ops.ingest"| master
-  AUTH["authored rows<br/>capabilities, signal thresholds,<br/>policies, curations"] -->|"ops.authored"| authored
+  AUTH["authored rows<br/>capabilities, realizes"] -->|"ops.authored"| authored
   master -->|"svc.serviceDeps"| serviceTree
   serviceTree -->|"biz.capabilityView"| capabilities
   authored --> capabilities
-  master -->|"wl.workloadStructure"| workloadStructure
-  master -->|"wl.workloadHealth"| workload
-  workloadStructure --> workload
-  authored --> workload
-  master -->|"dh.deploymentHealth"| deploymentHealth
-  deploymentHealth -->|"rpt.deploymentReport"| deploymentReport
-  master -->|"tr, th, trep"| TREE["treeStructure, treeSignals, treeRollup,<br/>healthTree, healthReport<br/>(estate tree, paused)"]
-  authored --> TREE
+  master -->|"dh.readiness"| readiness
+  readiness -->|"rpt.readinessReport"| readinessReport
 ```
 
-- Health is not built into the engine: it is the ontology module [`acme.workload`](engine/definitions/acme.workload.sattle) and two projections, [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql) and [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql).
-- Edge lifting (an edge between two pods becomes an edge between their services) is a join: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql), theory in [Ch. 5](paper/ch05-projection-language.md).
+- Readiness is not built into the engine: it is the ontology module [`acme.readiness`](engine/definitions/acme.readiness.module.gkql.json) and the projection [`readiness`](engine/definitions/acme.readiness.readiness.gkql.json).
+- Edge lifting (an edge between two instances becomes an edge between their services) is a join: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.gkql.json), theory in [Ch. 5](paper/ch05-projection-language.md).
 
 ## Portfolio
 
@@ -244,49 +231,27 @@ Screenshots of the running engine on the synthetic estate ([records](engine/test
 
 ![The master graph from every source, Azure included: a database that depends on a storage account (live, 2026-11-17)](docs/evidence/97/2-master-graph-all-sources.png)
 
-- Everything the sources reported, one entity per thing: [`acme.ops.ingest.kql`](engine/definitions/acme.ops.ingest.kql) under [`sattle.infra`](engine/definitions/sattle.infra.sattle) and [`sattle.azure`](engine/definitions/sattle.azure.sattle). Theory: [core Ch. 2](paper/core/ch02-values-and-identity.md), [Ch. 3](paper/ch03-graphs-and-revisions.md).
+- Everything the sources reported, one entity per thing: [`acme.ops.ingest.gkql.json`](engine/definitions/acme.ops.ingest.gkql.json) under [`sattle.infra`](engine/definitions/sattle.infra.module.gkql.json) and [`sattle.cloud`](engine/definitions/sattle.cloud.module.gkql.json). Theory: [core Ch. 2](paper/core/ch02-values-and-identity.md), [core Ch. 3](paper/core/ch03-graphs-type-graphs-revisions.md).
 
 ### 2. Services
 
 ![The service graph serviceTree](docs/screenshots/service-tree.png)
 
-- Calls between pods lifted to dependencies between services, flows summed per pair: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql).
+- Calls between instances lifted to dependencies between services, flows summed per pair: [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.gkql.json).
 
 ### 3. Capabilities
 
 ![Capabilities](docs/screenshots/capabilities.png)
 
-- Service dependencies lifted again to the capabilities the services realize: [`capabilityView`](engine/definitions/acme.biz.capabilityView.kql).
+- Service dependencies lifted again to the capabilities the services realize: [`capabilityView`](engine/definitions/acme.biz.capabilityView.gkql.json).
 
-### 4. What a workload is made of and depends on
-
-![Workload structure](docs/screenshots/workload-structure.png)
-
-- Composition top to bottom, dependencies to the right, communication dotted; every dependency carries its evidence: [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql), tests in [`WorkloadTests.cs`](engine/tests/Sattle.Tests/WorkloadTests.cs).
-
-### 5. Its health, and which part is to blame
-
-![Workload health at 10:11, the database server down](docs/screenshots/workload-health.png)
-
-- The path from the workload to the origin (`⚑`, the database server) in red; a state is the worst over what a part contains and depends on: [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql). Colors are value roles of the ontology. Theory: [Ch. 7](paper/ch07-telemetry-plane.md).
-
-![The same state as a tree of causes](docs/screenshots/workload-tree.png)
-
-- The same graph drawn by its hierarchy, with the Inspector's lineage of the origin: [`tree-model.ts`](canvas/src/app/tree-model.ts), [`TreeView.tsx`](canvas/src/ui/TreeView.tsx).
-
-### 6. A document is a graph too
+### 4. A document is a graph too
 
 ![Report document](docs/screenshots/report-document.png)
 
-- A graph of [`sattle.doc`](engine/definitions/sattle.doc.sattle) blocks rendered to Markdown with a digest per revision: [`deploymentReport`](engine/definitions/acme.report.deploymentReport.kql), [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
+- A graph of [`sattle.doc`](engine/definitions/sattle.doc.module.gkql.json) blocks rendered to Markdown with a digest per revision: [`readinessReport`](engine/definitions/acme.report.readinessReport.gkql.json), [`Documents.cs`](engine/src/Sattle.Runtime/Documents.cs).
 
-### 7. Editing a projection
-
-![The projection editor on workloadHealth: the KQL text and its steps](docs/screenshots/editor-kql.png)
-
-- KQL text with three notations (Steps, Outline, Wires) that edit the same text, in a draft the engine checks and commits: [`EditorView.tsx`](canvas/src/ui/EditorView.tsx), [`kql-edit.ts`](canvas/src/editor/kql-edit.ts), tests in [`kql-references.test.tsx`](canvas/tests/engine/kql-references.test.tsx), protocol in [PROTOCOL.md](engine/PROTOCOL.md#checking-and-editing-definitions).
-
-### 8. Ontology modules are graphs
+### 5. Ontology modules are graphs
 
 ![Ontology view](docs/screenshots/ontology.png)
 
@@ -333,18 +298,19 @@ Research notes behind the paper:
 | Part | Where |
 | --- | --- |
 | Value algebra, compact graph, kernel table | [`Sattle.Core`](engine/src/Sattle.Core): [`Algebra.cs`](engine/src/Sattle.Core/Algebra.cs), [`Graph.cs`](engine/src/Sattle.Core/Graph.cs), [`Kernel.cs`](engine/src/Sattle.Core/Kernel.cs) |
-| Language: parser, checker, lowering, printer | [`Sattle.Language`](engine/src/Sattle.Language): [`Syntax.cs`](engine/src/Sattle.Language/Syntax.cs), [`Checker.cs`](engine/src/Sattle.Language/Checker.cs), [`Lowering.cs`](engine/src/Sattle.Language/Lowering.cs), [`Printer.cs`](engine/src/Sattle.Language/Printer.cs) |
+| Language: syntax tree, checker, lowering, catalog | [`Sattle.Language`](engine/src/Sattle.Language): [`Syntax.cs`](engine/src/Sattle.Language/Syntax.cs), [`Checker.cs`](engine/src/Sattle.Language/Checker.cs), [`Lowering.cs`](engine/src/Sattle.Language/Lowering.cs), [`Catalog.cs`](engine/src/Sattle.Language/Catalog.cs) |
+| gkql reader: module and projection documents | [`Sattle.Gkql`](engine/src/Sattle.Gkql): [`GkqlSource.cs`](engine/src/Sattle.Gkql/GkqlSource.cs), [`Module.cs`](engine/src/Sattle.Gkql/Module.cs) |
 | Runtime: operators, output, identity, journal, drafts | [`Sattle.Runtime`](engine/src/Sattle.Runtime): [`Operators.cs`](engine/src/Sattle.Runtime/Operators.cs), [`Output.cs`](engine/src/Sattle.Runtime/Output.cs), [`Identity.cs`](engine/src/Sattle.Runtime/Identity.cs), [`Journal.cs`](engine/src/Sattle.Runtime/Journal.cs), [`Drafts.cs`](engine/src/Sattle.Runtime/Drafts.cs), [`LineageReader.cs`](engine/src/Sattle.Runtime/LineageReader.cs) |
 | Command line and server | [`Sattle.Cli`](engine/src/Sattle.Cli): [`Program.cs`](engine/src/Sattle.Cli/Program.cs), [`Server.cs`](engine/src/Sattle.Cli/Server.cs) |
 | Wire protocol | [PROTOCOL.md](engine/PROTOCOL.md): [reads](engine/PROTOCOL.md#reads), [telemetry](engine/PROTOCOL.md#telemetry), [lineage](engine/PROTOCOL.md#lineage), [editing definitions](engine/PROTOCOL.md#checking-and-editing-definitions) |
 | Measurements | [PERF.md](engine/PERF.md) |
 
-Definitions in [`engine/definitions`](engine/definitions), all plain text and all loaded as graphs:
+Definitions in [`engine/definitions`](engine/definitions), all gkql documents and all loaded as graphs:
 
-- Ontology modules (`.sattle`): [`sattle.infra`](engine/definitions/sattle.infra.sattle), [`sattle.azure`](engine/definitions/sattle.azure.sattle), [`sattle.doc`](engine/definitions/sattle.doc.sattle), and one per example: [`acme.ops`](engine/definitions/acme.ops.sattle), [`acme.svc`](engine/definitions/acme.svc.sattle), [`acme.biz`](engine/definitions/acme.biz.sattle), [`acme.deployhealth`](engine/definitions/acme.deployhealth.sattle), [`acme.workload`](engine/definitions/acme.workload.sattle), [`acme.report`](engine/definitions/acme.report.sattle).
-- Row types of the sources: [Kubernetes](engine/definitions/sattle.source.k8s.sattle), [Hubble flows](engine/definitions/sattle.source.hubble.sattle), [Prometheus](engine/definitions/sattle.source.prometheus.sattle), [Azure](engine/definitions/sattle.source.azure.sattle).
-- Projections (`.kql`), one file each: [`ingest`](engine/definitions/acme.ops.ingest.kql) (the master) and [`authored`](engine/definitions/acme.ops.authored.kql), [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.kql), [`capabilityView`](engine/definitions/acme.biz.capabilityView.kql), [`deploymentHealth`](engine/definitions/acme.deployhealth.deploymentHealth.kql), [`workloadStructure`](engine/definitions/acme.workload.workloadStructure.kql), [`workloadHealth`](engine/definitions/acme.workload.workloadHealth.kql), [`deploymentReport`](engine/definitions/acme.report.deploymentReport.kql), and the paused estate tree (`acme.tree*`).
-- The graph space that binds them into 13 graphs: [`acme.space`](engine/definitions/acme.space.sattle).
+- Ontology modules (`*.module.gkql.json`): [`sattle.infra`](engine/definitions/sattle.infra.module.gkql.json), [`sattle.cloud`](engine/definitions/sattle.cloud.module.gkql.json), [`sattle.doc`](engine/definitions/sattle.doc.module.gkql.json), and one per example: [`acme.ops`](engine/definitions/acme.ops.module.gkql.json), [`acme.svc`](engine/definitions/acme.svc.module.gkql.json), [`acme.biz`](engine/definitions/acme.biz.module.gkql.json), [`acme.readiness`](engine/definitions/acme.readiness.module.gkql.json), [`acme.report`](engine/definitions/acme.report.module.gkql.json).
+- Row types of the sources: [platform](engine/definitions/sattle.source.platform.module.gkql.json), [flow log](engine/definitions/sattle.source.flowlog.module.gkql.json), [cloud](engine/definitions/sattle.source.cloud.module.gkql.json), [metrics](engine/definitions/sattle.source.metrics.module.gkql.json).
+- Projections (`*.gkql.json`), one file each: [`ingest`](engine/definitions/acme.ops.ingest.gkql.json) (the master) and [`authored`](engine/definitions/acme.ops.authored.gkql.json), [`serviceDeps`](engine/definitions/acme.svc.serviceDeps.gkql.json), [`capabilityView`](engine/definitions/acme.biz.capabilityView.gkql.json), [`readiness`](engine/definitions/acme.readiness.readiness.gkql.json), [`readinessReport`](engine/definitions/acme.report.readinessReport.gkql.json).
+- The graph space that binds them into 6 graphs: [`acme.space`](engine/definitions/acme.space.module.gkql.json).
 
 How it is tested:
 
