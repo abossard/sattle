@@ -108,10 +108,10 @@ public class SealTests
         Assert.Equal(Run(restart: false), Run(restart: true));
     }
 
-    /// <summary>Code review 2, defects 3 and 27: after a restart from a seal the inputs are not in memory, and a preview and a definition commit read them back from the journal. A live run journals its envelopes, not rows: they are run through the adapters again. Before, a preview was refused, and a commit on a live space rebuilt every graph from nothing (the master went to 0 entities).</summary>
+    /// <summary>Code review 2, defects 3 and 27: after a restart from a seal the inputs are not in memory, and a preview and a definition commit read them back from the journal. A live run journals its envelopes, not rows: they are run through the adapters again. Before, a preview was refused, and a commit on a live space rebuilt every graph from nothing (the master went to 0 entities). #158: the one lifecycle test of journal, publication and preview: the preview publishes nothing, the commit publishes the catalog patch and one activation, and no patch of the unchanged master.</summary>
     [Theory]
     [InlineData(false)] [InlineData(true)]
-    public void After_a_restart_from_a_seal_a_preview_and_a_definition_commit_see_every_input_so_far(bool live)
+    public void After_a_restart_from_a_seal_a_preview_and_a_definition_commit_see_every_input_so_far_and_only_the_commit_is_published(bool live)
     {
         using var d = new RestartTests.Durable("memory");
         using (var h = SpaceHost.OpenDurable(d.Open(), Files, Options(30)))
@@ -129,14 +129,22 @@ public class SealTests
         Assert.True(r.Restart!.FromSeal, r.Restart.SealRefusal);
         var master = r.Engine.Master.State.Digest();
         Assert.True(r.Engine.Master.State.EntityCount > 0);
+        var feed = r.Subscribe(null, false, r.Seq);
+        List<System.Text.Json.Nodes.JsonNode> Published() { var l = new List<System.Text.Json.Nodes.JsonNode>(); while (feed.Messages.Reader.TryRead(out var m)) l.Add(System.Text.Json.Nodes.JsonNode.Parse(m)!); return l; }
         var draft = r.CreateDraft(null)["draft"]!.GetValue<string>();
         var preview = r.Preview(draft, new System.Text.Json.Nodes.JsonObject { ["graphs"] = new System.Text.Json.Nodes.JsonArray("master") });
         Assert.True(preview["scope"]!["complete"]!.GetValue<bool>());
         Assert.Equal(master, preview["graphs"]![0]!["digest"]!.GetValue<string>());                // the draft changes nothing: the preview rebuilds the master as it is
+        Assert.Empty(Published());                                                       // a preview leaves the live space and its feed alone
         const string Readiness = "acme.readiness.readiness.gkql.json";
         var edited = Files.First(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal)).Text.Replace("\"minReady\", \"kind\": \"Integer\", \"default\": 0", "\"minReady\", \"kind\": \"Integer\", \"default\": 1");
         r.Commit(Readiness, edited, r.CatalogRevision);                                 // a parameter of a view: the master must not change
         Assert.Equal(master, r.Engine.Master.State.Digest());
+        var published = Published();
+        Assert.Single(published, e => e["type"]!.GetValue<string>() == "activation");
+        Assert.Contains(published, e => e["type"]!.GetValue<string>() == "patch" && e["graph"]!.GetValue<string>() == "catalog");
+        Assert.DoesNotContain(published, e => e["type"]!.GetValue<string>() == "patch" && e["graph"]!.GetValue<string>() == "master");
+        r.Unsubscribe(feed);
     }
 
     [Theory, MemberData(nameof(Stores))]

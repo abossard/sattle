@@ -115,6 +115,28 @@ public class HostTests
         Assert.Throws<HostError>(() => h.Check("acme.other", Text("acme.svc.module.gkql.json")));
     }
 
+    /// <summary>#158 (from #157): a space without a journal whose inputs passed the row cap has no inputs to activate a changed definition on. A commit and a preview are refused with `InputsNotRetained` (422) and a message that names the way out; the catalog, the sequence and the state stay as they were, and the space takes input after it.</summary>
+    [Theory]
+    [InlineData("commit")]
+    [InlineData("preview")]
+    public void Beyond_the_row_cap_without_a_journal_a_reactivation_is_refused_and_changes_nothing(string call)
+    {
+        using var h = new SpaceHost(Shared.Value.Files, new HostOptions { Projections = Repo.Projections, LateHorizonWindows = 3, InputRowCap = 10 }, Shared.Value.Loaded);
+        Drive(h);
+        var file = h.ProjectionFile("acme.svc.serviceDeps");
+        var edited = Text(file).Replace("\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.02, \"exitAfter\": 3", "\"above\": 0.05, \"enterAfter\": 3, \"below\": 0.0, \"exitAfter\": 30");
+        Assert.NotEqual(Text(file), edited);
+        var draft = call == "preview" ? h.CreateDraft(null)["draft"]!.GetValue<string>() : null;
+        if (draft is not null) Assert.True(h.SetDraftText(draft, file, edited, 0)["ok"]!.GetValue<bool>());
+        var (revision, seq, digest) = (h.CatalogRevision, h.Seq, h.StateDigest());
+        var refused = Assert.Throws<HostError>(() => draft is null ? h.Commit(file, edited, revision) : h.Preview(draft, new JsonObject()));
+        Assert.Equal(("InputsNotRetained", 422), (refused.Code, refused.Status));
+        Assert.Contains("restart", refused.Message);
+        Assert.Equal((revision, seq, digest), (h.CatalogRevision, h.Seq, h.StateDigest()));
+        Flows(h, window: 9);
+        Assert.NotEqual(digest, h.StateDigest());
+    }
+
     [Fact]
     public void A_definition_edit_reactivates_the_space_and_emits_only_the_final_diff()
     {

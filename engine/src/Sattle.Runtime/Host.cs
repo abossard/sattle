@@ -126,15 +126,15 @@ public abstract record EngineInput
     }
 }
 
-/// <summary>Where a host is in its life. `Replaying`: it reads its journal back; nothing is written to the journal, no seal is taken, and each commit the engine makes is compared with the stored one. `Running`: what enters is written to the journal first. `Finished`: as `Running`, and the recorded input has ended.</summary>
-public enum Phase { Replaying, Running, Finished }
-
 /// <summary>What opening a space did on a store that already had its journal: whether a seal was loaded and at which entry, how many entries were replayed after it, how many revisions came from the seal and how many were recomputed and compared with the stored log, whether the state at the seal's entry was checked (`VerifyJournal`), why a seal was not used, and the times.</summary>
 public sealed record Restart(bool FromSeal, long SealPosition, long EntriesReplayed, long SealedRevisions, long Recomputed, long Verified, bool SealChecked, string? SealRefusal, long SealLoadMilliseconds, long TailMilliseconds);
 
 /// <summary>The running space as a service: catalog and engine under one lock, served history per graph, definition edits with re-activation, subscriptions. The HTTP layer is a thin skin over this class.</summary>
 public sealed partial class SpaceHost : IEngineInput, IDisposable
 {
+    /// <summary>Where a host is in its life. `Replaying`: it reads its journal back; nothing is written to the journal, no seal is taken, and each commit the engine makes is compared with the stored one. `Running`: what enters is written to the journal first. `Finished`: as `Running`, and the recorded input has ended.</summary>
+    enum Phase { Replaying, Running, Finished }
+
     public object Gate { get; } = new();
     readonly HostOptions options;
     readonly Interner interner = new();
@@ -192,7 +192,6 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     public IReadOnlyList<ISourceAdapter> Adapters { get; private set; } = [];
     /// <summary>"live" once a live input was started, else "replay".</summary>
     public string Mode => live is null ? "replay" : "live";
-    public Phase Phase => phase;
     /// <summary>What opening this space did, when its store already had a journal; null for a space that was started new.</summary>
     public Restart? Restart { get; private set; }
     /// <summary>The late horizon the space runs with (a restart takes it from the store).</summary>

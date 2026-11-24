@@ -156,4 +156,31 @@ public class InternerTests
         h.LiveFlush();
         Assert.False(h.Interner.Holding);
     }
+
+    /// <summary>#158 (from #157): the engine of a preview and of a commit shares the host's interner and reads the kept batches again. Whatever the cut of the input into batches, a preview of an edited view shows, and its commit gives, the state of a space that ran the edited view from the start.</summary>
+    [Theory, Trait("Category", "Slow")]
+    [InlineData(1)] [InlineData(30)] [InlineData(2000)]
+    public void A_reactivation_on_the_shared_interner_gives_the_edited_space_whatever_the_batch_cut(int chunk)
+    {
+        const string Readiness = "acme.readiness.readiness.gkql.json";
+        var files = EstateTests.Files(demo: true);
+        var edited = files.Single(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal)).Text.Replace("\"minReady\", \"kind\": \"Integer\", \"default\": 0", "\"minReady\", \"kind\": \"Integer\", \"default\": 1000");          // no workload has that many ready instances: every state turns NotReady
+        SpaceHost Run(IReadOnlyList<SourceFile> definitions)
+        {
+            var h = new SpaceHost(definitions, new HostOptions { Projections = Repo.Projections });
+            new Replay(h, h.Space, h.Adapters, new ReplayOptions { ChunkRows = chunk, AdvanceEveryNs = 60_000_000_000, LatenessNs = 60_000_000_000 }).Run(EstateTests.EstateDir);
+            return h;
+        }
+        using var fromStart = Run([.. files.Select(f => f.Path.EndsWith(Readiness, StringComparison.Ordinal) ? f with { Text = edited } : f)]);
+        using var h = Run(files);
+        Assert.NotEqual(fromStart.StateDigest(), h.StateDigest());          // the edit changes the space
+        var draft = h.CreateDraft(null)["draft"]!.GetValue<string>();
+        Assert.True(h.SetDraftText(draft, Readiness, edited, 0)["ok"]!.GetValue<bool>());
+        var preview = h.Preview(draft, new System.Text.Json.Nodes.JsonObject { ["include"] = new System.Text.Json.Nodes.JsonArray("counts") });
+        Assert.True(preview["scope"]!["complete"]!.GetValue<bool>());
+        var expected = fromStart.Liveness()["graphs"]!.AsArray().Where(g => g!["name"]!.GetValue<string>() != "catalog").ToDictionary(g => g!["name"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>());
+        Assert.Equal(expected, preview["graphs"]!.AsArray().ToDictionary(g => g!["id"]!.GetValue<string>(), g => g!["digest"]!.GetValue<string>()));
+        h.Commit(Readiness, edited, h.CatalogRevision);
+        Assert.Equal(fromStart.StateDigest(), h.StateDigest());
+    }
 }

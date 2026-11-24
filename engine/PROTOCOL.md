@@ -105,7 +105,9 @@ Commits the catalog patch and re-activates the space as a configuration edit (AD
 - `200 { "catalogRevision": "11", "activation": { "graphs": [ { "id": "serviceTree", "from": "44", "to": "45", "edits": "12" } ], "replayedRows": "243457", "milliseconds": "3100" } }`. The same facts are pushed on the WebSocket (`catalog` patch, graph patches, `activation`).
 - `409 { "error": { "code": "StaleRevision", "actual": "11" } }` when `expectedRevision` is not the catalog head. Nothing changes.
 - `422 { "error": { "code": "Invalid", "diagnostics": [ ... as /check ... ] } }`. Nothing changes.
-- `422 { "error": { "code": "ActivationRejected", "message": "..." } }` when the new definitions do not activate (for example a source with no adapter) or the retained inputs no longer cover the replay (`InputsNotRetained`). Nothing changes.
+- `422 { "error": { "code": "ActivationRejected", "message": "..." } }` when the new definitions do not activate (for example a source with no adapter). Nothing changes.
+- `422 { "error": { "code": "InputsNotRetained", "message": "..." } }` when the inputs are not to be had (see the reactivation budget below). Refused before anything is journaled; nothing changes, and the space keeps taking input.
+- **Reactivation budget (commit and preview alike).** Both build a fresh engine and replay every input so far, in order. The inputs come from memory while their rows fit the row cap (`HostOptions.InputRowCap`, 40,000,000 rows), else from the journal. A space without a journal whose inputs passed the cap refuses both with `InputsNotRetained`; a restart activates the change. A commit replays all inputs and answers `replayedRows` and `milliseconds`; a preview replays at most `scope.maxRows` and answers `scope.rows`, `scope.totalRows`, `scope.complete` and `milliseconds`.
 - `PUT`-style creation of a new module uses the same call.
 Canvas `evaluate(definition)` = `POST /check` for the diagnostics and diff, then `POST /definitions/{module}` to run it; `GET /graphs/{g}/snapshot` afterwards is the output.
 
