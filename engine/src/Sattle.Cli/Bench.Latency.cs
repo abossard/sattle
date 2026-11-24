@@ -226,7 +226,7 @@ static partial class Bench
             var sw = Stopwatch.StartNew(); rig.Replay.Run(capture); wallLoad = sw.Elapsed.TotalSeconds;
             graphs = rig.Engine.Graphs.Select(x => (x.Key, x.Head)).ToList();
         }
-        Console.WriteLine($"log written: {graphs.Count} graphs, {graphs.Sum(x => x.Head):N0} revisions in total ({string.Join(", ", graphs.Select(x => $"{x.Key.Graph}={x.Head}"))}), SQLite file {new FileInfo(path).Length / 1e6:F1} MB, capture replayed in {wallLoad:F1} s");
+        Console.WriteLine($"log written: {graphs.Count} graphs, {graphs.Sum(x => x.Head):N0} revisions in total ({string.Join(", ", graphs.Select(x => $"{x.Key.GraphId}={x.Head}"))}), SQLite file {new FileInfo(path).Length / 1e6:F1} MB, capture replayed in {wallLoad:F1} s");
         var snap = new List<double>(); var follow = new List<double>(); long snapElems = 0, patches = 0, edits = 0;
         for (var run = 0; run < runs; run++)
         {

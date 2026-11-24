@@ -260,7 +260,7 @@ public static class PlanCompiler
 
 public sealed record GraphResult(Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Revision);
 /// <summary>`Conflicts`: the conflicts of Def. 6.4 that appeared, changed or ended with this commit (an ended one has kind `resolved`).</summary>
-public sealed record CommitEvent(string Graph, Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Lambda, long Seq, Interner Interner)
+public sealed record CommitEvent(string GraphId, Patch? Patch, IReadOnlyList<WindowChange> Telemetry, long Lambda, long Seq, Interner Interner)
 {
     public IReadOnlyList<Conflict> Conflicts { get; init; } = [];
 }
@@ -306,7 +306,7 @@ public sealed class Engine : IDisposable, IEngineInput
     readonly IGraphStore store;
     readonly Dictionary<string, GraphRuntime> byName = [];
     readonly List<GraphRuntime> graphs = [];
-    readonly Dictionary<string, (string Graph, string Port)> sourcePort = new(StringComparer.Ordinal);
+    readonly Dictionary<string, (string GraphId, string Port)> sourcePort = new(StringComparer.Ordinal);
     long epochId;
     long lambda = long.MinValue;
 
@@ -452,10 +452,10 @@ public sealed class Engine : IDisposable, IEngineInput
 
     /// <summary>Def. 7.14: the sources that feed a telemetry property of a graph. From every sink that sets it, everything upstream: a rows port gives the source bound to it, a Series gives the sources that feed what it reads, a graph that is only matched gives none.</summary>
     /// The lag is how much later than its grid window a window of the property ends: a window of length w on the grid of its hop h ends w − h after its grid window (#111), so it is covered that much later.
-    (SortedSet<string> Sources, long Lag) Feeding(string graph, string propId)
+    (SortedSet<string> Sources, long Lag) Feeding(string graphId, string propId)
     {
         var found = new SortedSet<string>(StringComparer.Ordinal); long lag = 0;
-        if (!byName.TryGetValue(graph, out var g)) return (found, lag);
+        if (!byName.TryGetValue(graphId, out var g)) return (found, lag);
         var plan = g.Typed; var seen = new HashSet<string>(StringComparer.Ordinal);
         void Walk(TOp op)
         {
@@ -648,7 +648,7 @@ public sealed class Engine : IDisposable, IEngineInput
     public string StateDigest() => StateDigests().State;
 
     /// <summary>The state digest and, from the same pass, per graph dig(G) of Def. 3.5 (its written pairs, no telemetry), the digest a preview gives per graph.</summary>
-    public (string State, IReadOnlyList<(string Graph, string Digest)> Graphs) StateDigests()
+    public (string State, IReadOnlyList<(string GraphId, string Digest)> Graphs) StateDigests()
     {
         var all = new Digests.Set(); var sb = new StringBuilder(); var perGraph = new List<(string, string)>(graphs.Count);
         foreach (var g in graphs)

@@ -452,7 +452,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     {
         public Engine.StateRoot Engine = null!;
         public Dictionary<string, Served> Served = null!;
-        public List<(long Seq, string? Graph, string Kind, string Text)> Ring = null!;
+        public List<(long Seq, string? GraphId, string Kind, string Text)> Ring = null!;
         public List<Patch> CatalogHistory = null!;
         public List<(long Revision, string Module, string Document, string? Text)> Documents = null!;
         public Dictionary<string, (string Path, string Text)> Sources = null!;
@@ -598,27 +598,27 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     // ---- commit events ----
     void OnCommit(CommitEvent e)
     {
-        var sg = served[e.Graph];
+        var sg = served[e.GraphId];
         if (e.Patch is not null)
         {
-            var p = new Patch(e.Graph, e.Patch.From + sg.Offset, e.Patch.To + sg.Offset, e.Patch.Edits, e.Patch.Cause);
+            var p = new Patch(e.GraphId, e.Patch.From + sg.Offset, e.Patch.To + sg.Offset, e.Patch.Edits, e.Patch.Cause);
             sg.Add(p, lambdaSeen); Trim(sg);
-            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.Graph, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, e.Graph, telemetry: false);
+            Publish(new JsonObject { ["type"] = "patch", ["graph"] = e.GraphId, ["patch"] = export.Patch(p), ["time"] = TimeJson(lambdaSeen) }, e.GraphId, telemetry: false);
         }
         // Def. 6.4: a conflict is reported with the commit it appeared, changed or ended in
         if (e.Conflicts.Count > 0)
             Publish(new JsonObject
             {
-                ["type"] = "conflicts", ["graph"] = e.Graph,
+                ["type"] = "conflicts", ["graph"] = e.GraphId,
                 ["conflicts"] = new JsonArray([.. e.Conflicts.Select(c => (JsonNode)new JsonObject
                 {
                     ["kind"] = c.Kind, ["element"] = c.Element, ["property"] = c.Property is null ? null : export.PropNameOf(c.Property), ["windowStart"] = c.WindowStart is { } ws ? Norm.Instant(ws) : null,
                     ["values"] = new JsonArray([.. c.Values.Select(v => (JsonNode)v)]),
                 })]),
-            }, e.Graph);
+            }, e.GraphId);
         if (e.Telemetry.Count > 0)
             foreach (var grp in e.Telemetry.GroupBy(c => (c.Key.WindowStart, c.Key.Prop)))
-                Publish(new JsonObject { ["type"] = "telemetry", ["graph"] = e.Graph, ["batch"] = TelemetryBatch(e.Graph, grp.Key.WindowStart, grp.Key.Prop, grp.Where(c => c.New is not null).Select(c => (c.Key.Element, c.New!.Value)), grp.Where(c => c.New is null).Select(c => c.Key.Element)) }, e.Graph, telemetry: true);
+                Publish(new JsonObject { ["type"] = "telemetry", ["graph"] = e.GraphId, ["batch"] = TelemetryBatch(e.GraphId, grp.Key.WindowStart, grp.Key.Prop, grp.Where(c => c.New is not null).Select(c => (c.Key.Element, c.New!.Value)), grp.Where(c => c.New is null).Select(c => c.Key.Element)) }, e.GraphId, telemetry: true);
     }
 
     /// <summary>Drops the oldest patches of a graph when the retained ones are 10 percent over the declared retention (in one cut, not one at a time).</summary>
@@ -630,18 +630,18 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     }
 
     /// <summary>One window of one property: the elements with a (new) value, and under `removed` the elements whose window was retracted.</summary>
-    JsonNode TelemetryBatch(string graph, long ws, int prop, IEnumerable<(int Element, decimal Value)> items, IEnumerable<int>? removed = null)
+    JsonNode TelemetryBatch(string graphId, long ws, int prop, IEnumerable<(int Element, decimal Value)> items, IEnumerable<int>? removed = null)
     {
         var gone = (removed ?? []).Select(interner.Get).ToList();
-        var sg = served[graph];
+        var sg = served[graphId];
         if (sg.FirstWindow == long.MinValue || ws < sg.FirstWindow) sg.FirstWindow = ws;
         var list = items.ToList();
         var propId = interner.Get(prop);
-        var period = Period(graph, propId);
+        var period = Period(graphId, propId);
         var ids = list.Select(i => interner.Get(i.Element)).ToList();
         var batch = new JsonObject
         {
-            ["graph"] = graph, ["tick"] = (ws - sg.FirstWindow) / Math.Max(period, 1) + 1, ["t"] = (ws - sg.FirstWindow) / 1e9, ["windowStart"] = Norm.Instant(ws),
+            ["graph"] = graphId, ["tick"] = (ws - sg.FirstWindow) / Math.Max(period, 1) + 1, ["t"] = (ws - sg.FirstWindow) / 1e9, ["windowStart"] = Norm.Instant(ws),
             ["target"] = ids.Concat(gone).FirstOrDefault()?.StartsWith("r:", StringComparison.Ordinal) == true ? "edge" : "node", ["property"] = export.PropNameOf(propId),
             ["ids"] = new JsonArray([.. ids.Select(i => (JsonNode)i)]), ["values"] = new JsonArray([.. list.Select(i => (JsonNode)(double)i.Value)]),
         };
@@ -649,25 +649,25 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         return batch;
     }
 
-    long Period(string graph, string propId) => Catalog.OntologyOf(Engine.Graph(graph).Typed.OutputModule).Props.TryGetValue(propId, out var p) ? p.Period : 60_000_000_000;
+    long Period(string graphId, string propId) => Catalog.OntologyOf(Engine.Graph(graphId).Typed.OutputModule).Props.TryGetValue(propId, out var p) ? p.Period : 60_000_000_000;
 
     // ---- subscriptions: one ordered event stream (PROTOCOL.md v3) ----
-    readonly List<(long Seq, string? Graph, string Kind, string Text)> ring = [];
+    readonly List<(long Seq, string? GraphId, string Kind, string Text)> ring = [];
     public long Seq { get; private set; }
 
     /// <summary>Appends an event to the ordered log and delivers it to matching subscriptions. Events of type time are delivered but not logged.</summary>
-    void Publish(JsonNode msg, string? graph, bool telemetry = false)
+    void Publish(JsonNode msg, string? graphId, bool telemetry = false)
     {
         var kind = msg["type"]!.GetValue<string>();
         if (kind == "draft") Append(new Entry.SequenceStep());   // drafts are not stored; the sequence number they consumed is
         if (kind != "time") { msg["seq"] = (++Seq).ToString(CultureInfo.InvariantCulture); }
         var text = msg.ToJsonString();
-        if (kind != "time") { ring.Add((Seq, graph, kind, text)); if (options.RetainEvents > 0 && ring.Count > options.RetainEvents + options.RetainEvents / 10) ring.RemoveRange(0, ring.Count - options.RetainEvents); }
-        foreach (var s in subs.ToList()) if (!s.Closed && Matches(s, graph, kind)) Enqueue(s, text);
+        if (kind != "time") { ring.Add((Seq, graphId, kind, text)); if (options.RetainEvents > 0 && ring.Count > options.RetainEvents + options.RetainEvents / 10) ring.RemoveRange(0, ring.Count - options.RetainEvents); }
+        foreach (var s in subs.ToList()) if (!s.Closed && Matches(s, graphId, kind)) Enqueue(s, text);
     }
 
-    static bool Matches(Subscription s, string? graph, string kind) =>
-        kind is "time" or "end" || (kind == "draft" ? s.Drafts : graph is null ? kind is "activation" : s.Graphs is null || s.Graphs.Contains(graph));
+    static bool Matches(Subscription s, string? graphId, string kind) =>
+        kind is "time" or "end" || (kind == "draft" ? s.Drafts : graphId is null ? kind is "activation" : s.Graphs is null || s.Graphs.Contains(graphId));
 
     void Enqueue(Subscription s, string text)
     {
@@ -695,7 +695,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
                 if (after is >= 0) Enqueue(s, new JsonObject { ["type"] = "gap", ["firstSeq"] = (ring.Count == 0 ? Seq + 1 : ring[0].Seq).ToString(CultureInfo.InvariantCulture) }.ToJsonString());
                 foreach (var g in wanted) Enqueue(s, new JsonObject { ["type"] = "snapshot", ["graph"] = g, ["seq"] = Seq.ToString(CultureInfo.InvariantCulture), ["snapshot"] = Snapshot(g, null) }.ToJsonString());
             }
-            else foreach (var e in ring.Where(e => e.Seq > after && Matches(s, e.Graph, e.Kind))) Enqueue(s, e.Text);
+            else foreach (var e in ring.Where(e => e.Seq > after && Matches(s, e.GraphId, e.Kind))) Enqueue(s, e.Text);
             subs.Add(s);
             return s;
         }
@@ -747,7 +747,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
         {
             var info = SpaceInfo();
             var (state, perGraph) = Engine.StateDigests();
-            var digestOf = perGraph.ToDictionary(x => x.Graph, x => x.Digest);
+            var digestOf = perGraph.ToDictionary(x => x.GraphId, x => x.Digest);
             var c = Engine.Counters();
             return new JsonObject
             {
@@ -877,11 +877,11 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
     /// <summary>The relationships of a graph that name an endpoint it does not hold, by cause: relationship type, the end, the type of the missing entity and whether another graph holds it (`inOtherGraph`, with the graph) or no graph does (`absent`). Empty when every endpoint is in the graph.</summary>
     JsonArray DanglingBy(GraphRuntime g)
     {
-        var rows = export.Unresolved(g).SelectMany(u => u.Uses.Select(x => (u, x))).GroupBy(t => (t.x.RelType, t.x.End, t.u.EntityType, t.u.State, t.u.Graph))
+        var rows = export.Unresolved(g).SelectMany(u => u.Uses.Select(x => (u, x))).GroupBy(t => (t.x.RelType, t.x.End, t.u.EntityType, t.u.State, t.u.GraphId))
             .OrderBy(t => t.Key.RelType, StringComparer.Ordinal).ThenBy(t => t.Key.End, StringComparer.Ordinal).ThenBy(t => t.Key.EntityType, StringComparer.Ordinal);
         return new JsonArray([.. rows.Select(t => (JsonNode)new JsonObject
         {
-            ["relationshipType"] = t.Key.RelType, ["end"] = t.Key.End, ["entityType"] = t.Key.EntityType is null ? null : export.TypeLabel(t.Key.EntityType), ["state"] = t.Key.State, ["graph"] = t.Key.Graph,
+            ["relationshipType"] = t.Key.RelType, ["end"] = t.Key.End, ["entityType"] = t.Key.EntityType is null ? null : export.TypeLabel(t.Key.EntityType), ["state"] = t.Key.State, ["graph"] = t.Key.GraphId,
             ["relationships"] = Rev(t.Sum(x => x.x.N)), ["endpoints"] = Rev(t.Count()),
         })]);
     }
@@ -1150,7 +1150,7 @@ public sealed partial class SpaceHost : IEngineInput, IDisposable
             var changed = new List<(string Id, long From, long To, int Edits)>();
             var old = Engine; var oldNames = old.Graphs.Select(g => g.Name).ToHashSet();
             old.Committed -= OnCommit;
-            var newPatches = new List<(string Graph, Patch Patch)>();
+            var newPatches = new List<(string GraphId, Patch Patch)>();
             foreach (var g in fresh.Graphs)
             {
                 if (!served.TryGetValue(g.Name, out var sg)) served[g.Name] = sg = new Served();

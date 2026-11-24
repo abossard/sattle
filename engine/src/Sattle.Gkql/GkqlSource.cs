@@ -9,7 +9,7 @@ namespace Sattle.Gkql;
 
 /// <summary>A program: the graphs it reads, its parameters, its verbs and the wires between them. Wires carry rows with named columns; a pattern
 /// variable is a column that holds an element.</summary>
-public sealed record ProgramGraph(string Graph, string Ontology, string? Description, long History, List<Input> Inputs, List<Parameter> Parameters, List<VerbNode> Verbs, List<Wire> Wires, List<RuleSpec>? Rules = null);
+public sealed record ProgramGraph([property: JsonPropertyName("graph")] string GraphId, string Ontology, string? Description, long History, List<Input> Inputs, List<Parameter> Parameters, List<VerbNode> Verbs, List<Wire> Wires, List<RuleSpec>? Rules = null);
 /// <summary>A rule the sinks of a program name, and what may be edited through it: none (readonly, the default for a rule only a sink names), create, delete and
 /// the properties an update may change. Over the rows of a source an editable rule is written back one for one; over graphs it is a view edited by its stated
 /// rules: `create` names the identity domain of a new element and what it sets, `delete` what a delete sets (without it, a delete removes the element).</summary>
@@ -21,9 +21,9 @@ public sealed record Parameter(string Name, string Kind, JsonElement? Default);
 /// <summary>A wire from a verb's output to a named input port of another verb: `in`, or `left` and `right` of a join.</summary>
 public sealed record Wire(string From, string To, string Port = "in");
 public sealed record On(string Left, string Right);
-/// <summary>A verb. Which fields it uses depends on `Verb`: graph-match (Graph, Pattern), where (Condition), project and extend (Columns), union,
-/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (Graph, Traverse), link (Link).</summary>
-public sealed record VerbNode(string Id, string Verb, string? Graph, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
+/// <summary>A verb. Which fields it uses depends on `Verb`: graph-match (GraphId, Pattern), where (Condition), project and extend (Columns), union,
+/// summarize (Aggregates, By), join (Kind, On), nodes and edges (Target), retain (Retain), traverse (GraphId, Traverse), link (Link).</summary>
+public sealed record VerbNode(string Id, string Verb, [property: JsonPropertyName("graph")] string? GraphId, Drawing? Pattern, JsonElement? Condition, Dictionary<string, JsonElement>? Columns,
     Dictionary<string, JsonElement>? Aggregates, Dictionary<string, JsonElement>? By, string? Kind, List<On>? On, Drawing? Target,
     string? Source = null, WindowSpec? Window = null, SeriesSpec? Series = null, HysteresisSpec? Hysteresis = null, string? Rule = null, ValuesSpec? Values = null,
     RetainSpec? Retain = null, TraverseSpec? Traverse = null, LinkSpec? Link = null);
@@ -125,8 +125,8 @@ public static class Lowering
                 if (!specs.TryAdd(spec.Name, spec)) throw new Refused(spec.Name, "every rule is listed once", null);
                 if (!rules.Contains(spec.Name)) throw new Refused(spec.Name, "a listed rule labels a sink", null);
             }
-            Pid = B.Contain(Ids.Module(module), "projection", p.Graph, "Projection", null,
-                [("name", T(p.Graph)), ("purpose", T(ingestion ? "ingestion" : "view")),
+            Pid = B.Contain(Ids.Module(module), "projection", p.GraphId, "Projection", null,
+                [("name", T(p.GraphId)), ("purpose", T(ingestion ? "ingestion" : "view")),
                     ("retain", Value.Integer(p.History)), ("forward", Value.Boolean(rules.Count == 0)), .. p.Description is { } d ? [("description", T(d))] : Array.Empty<(string, Value)>()]);
             B.Edge(Pid, "outputOntology", Ids.Module(p.Ontology));
             foreach (var rule in rules)
@@ -236,7 +236,7 @@ public static class Lowering
             while (order.Count < p.Verbs.Count)
             {
                 var next = p.Verbs.FirstOrDefault(v => !done.Contains(v.Id) && p.Wires.Where(x => x.To == v.Id).All(x => done.Contains(x.From)))
-                    ?? throw new Refused(p.Graph, "the wires make a loop: a program graph has none, recursion is a bounded path on a pattern edge", null);
+                    ?? throw new Refused(p.GraphId, "the wires make a loop: a program graph has none, recursion is a bounded path on a pattern edge", null);
                 order.Add(next); done.Add(next.Id);
             }
             return order;
@@ -344,7 +344,7 @@ public static class Lowering
 
         Rows Traverse(VerbNode v, Rows r)
         {
-            if (v.Traverse is not { } t || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port))
+            if (v.Traverse is not { } t || v.GraphId is not { } g || !graphPorts.TryGetValue(g, out var port))
                 throw new Refused(v.Id, "traverse names a graph the program reads and an edge type, a start column, a new column, a direction and the bounds of the path");
             if (!r.Types.TryGetValue(t.From, out var start)) throw new Refused(v.Id, $"'{t.From}' is no column that holds an element");
             if (r.Cols.Contains(Column(v.Id, t.To))) throw new Refused(v.Id, $"the rows have a column '{t.To}' already");
@@ -378,7 +378,7 @@ public static class Lowering
 
         Rows Series(VerbNode v, Rows r)
         {
-            if (v.Series is not { } s || v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)
+            if (v.Series is not { } s || v.GraphId is not { } g || !graphPorts.TryGetValue(g, out var port)
                 || !r.Types.ContainsKey(s.Element) || s.Read.Length == 0 || s.Property is not null && s.Properties is not null)
                 throw new Refused(v.Id, "series names a graph, an element column, a metric property (or a list of properties) and a lookback");
             var op = Op("Series", v.Id, [("within", Value.Integer(Duration(v.Id, s.Lookback))),
@@ -414,7 +414,7 @@ public static class Lowering
 
         Rows Match(VerbNode v)
         {
-            if (v.Graph is not { } g || !graphPorts.TryGetValue(g, out var port)) throw new Refused(v.Id, "graph-match names a graph the program reads");
+            if (v.GraphId is not { } g || !graphPorts.TryGetValue(g, out var port)) throw new Refused(v.Id, "graph-match names a graph the program reads");
             var nodes = v.Pattern?.Nodes ?? []; var edges = v.Pattern?.Edges ?? [];
             if (nodes.Count == 0) throw new Refused(v.Id, "a pattern has at least one node");
             var view = View(p.Inputs.Single(i => i.Name == g).Ontology!);

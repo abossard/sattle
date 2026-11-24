@@ -1237,8 +1237,8 @@ public sealed class SpaceChecker(Graph defs)
         var ingests = graphs.Where(g => projections.GetValueOrDefault(g.ProjectionId)?.Purpose == "ingestion").Select(g => g.Name).ToHashSet(StringComparer.Ordinal);
         bool Reaches(string n, HashSet<string> v) { if (ingests.Contains(n)) return true; if (!v.Add(n)) return false; return edges.GetValueOrDefault(n)?.Any(x => Reaches(x, v)) ?? false; }
         foreach (var g in graphs.Where(g => !ingests.Contains(g.Name) && !Reaches(g.Name, []))) Err("S3", spaceId, $"graph {g.Name} is not reachable from a graph that ingests");
-        foreach (var src in graphs.SelectMany(g => g.Bindings.Values.Where(sources.Select(s => s.Name).Contains).Select(s => (Source: s, Graph: g.Name))).GroupBy(x => x.Source).Where(x => x.Select(y => y.Graph).Distinct().Count() > 1))
-            Err("S2", spaceId, $"source {src.Key} is bound by more than one graph ({string.Join(", ", src.Select(x => x.Graph).Distinct())})");
+        foreach (var src in graphs.SelectMany(g => g.Bindings.Values.Where(sources.Select(s => s.Name).Contains).Select(s => (Source: s, GraphId: g.Name))).GroupBy(x => x.Source).Where(x => x.Select(y => y.GraphId).Distinct().Count() > 1))
+            Err("S2", spaceId, $"source {src.Key} is bound by more than one graph ({string.Join(", ", src.Select(x => x.GraphId).Distinct())})");
         // a graph other than the master that ingests writes no telemetry (windows, loss marks and coverage stay with the master) and links no identities (a merge reaches the sinks of the graphs that step after the one that links)
         foreach (var g in graphs.Where(g => !g.Master && ingests.Contains(g.Name)))
         {

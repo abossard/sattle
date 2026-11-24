@@ -8,8 +8,8 @@ public sealed class LineageReader(Engine engine)
 {
     public const int DefaultLimit = 100;
 
-    sealed record Source(string Role, bool IsRel, string Graph, string Element);
-    sealed record Part(string Graph, string Element, bool IsRel, string Role, string? Sink, string? Rule);
+    sealed record Source(string Role, bool IsRel, string GraphId, string Element);
+    sealed record Part(string GraphId, string Element, bool IsRel, string Role, string? Sink, string? Rule);
 
     static string Rev(long r) => r.ToString(System.Globalization.CultureInfo.InvariantCulture);
     Interner It => engine.Interner;
@@ -28,7 +28,7 @@ public sealed class LineageReader(Engine engine)
         return (last, l.Total == 0 ? rt.Ingests : last.Count > 0, last.Count);
     }
 
-    static JsonNode SourceJson(Source s) => new JsonObject { ["graph"] = s.Graph, ["element"] = s.Element, ["kind"] = s.IsRel ? "relationship" : "entity", ["role"] = s.Role };
+    static JsonNode SourceJson(Source s) => new JsonObject { ["graph"] = s.GraphId, ["element"] = s.Element, ["kind"] = s.IsRel ? "relationship" : "entity", ["role"] = s.Role };
 
     /// <summary>`GET /graphs/{g}/lineage`: where the element comes from. `limit` sources per page after the cursor `after` (the `next` of the previous page).</summary>
     public JsonNode Forward(string g, string element, int limit = DefaultLimit, string? after = null) => ForwardOf(GraphOf(g), element, limit, after);
@@ -94,10 +94,10 @@ public sealed class LineageReader(Engine engine)
                 var (sources, complete, _) = SourcesOf(rt, info);
                 foreach (var s in sources)
                 {
-                    if (!by.TryGetValue(s.Graph, out var byElem)) by[s.Graph] = byElem = new Dictionary<string, List<Part>>(StringComparer.Ordinal);
+                    if (!by.TryGetValue(s.GraphId, out var byElem)) by[s.GraphId] = byElem = new Dictionary<string, List<Part>>(StringComparer.Ordinal);
                     if (!byElem.TryGetValue(s.Element, out var parts)) byElem[s.Element] = parts = [];
                     parts.Add(new Part(rt.Name, elem, isRel, s.Role, info.Sink, info.Rule));
-                    if (!complete) { if (!incomplete.TryGetValue(s.Graph, out var set)) incomplete[s.Graph] = set = []; set.Add(rt.Name); }
+                    if (!complete) { if (!incomplete.TryGetValue(s.GraphId, out var set)) incomplete[s.GraphId] = set = []; set.Add(rt.Name); }
                 }
             }
         }
@@ -118,14 +118,14 @@ public sealed class LineageReader(Engine engine)
     {
         var (by, incomplete) = ReverseIndex();
         var parts = by.GetValueOrDefault(rt.Name)?.GetValueOrDefault(element) ?? [];
-        var ordered = parts.OrderBy(p => p.Graph, StringComparer.Ordinal).ThenBy(p => p.Element, StringComparer.Ordinal).ThenBy(p => p.Role, StringComparer.Ordinal).Select(p => (Key: p.Graph + "\u001f" + p.Element + "\u001f" + p.Role, P: p)).ToList();
+        var ordered = parts.OrderBy(p => p.GraphId, StringComparer.Ordinal).ThenBy(p => p.Element, StringComparer.Ordinal).ThenBy(p => p.Role, StringComparer.Ordinal).Select(p => (Key: p.GraphId + "\u001f" + p.Element + "\u001f" + p.Role, P: p)).ToList();
         var page = ordered.Where(x => after is null || string.CompareOrdinal(x.Key, after) > 0).Take(Math.Max(limit, 1) + 1).ToList();
         var more = page.Count > Math.Max(limit, 1);
         if (more) page.RemoveAt(page.Count - 1);
         return new JsonObject
         {
             ["graph"] = rt.Name, ["element"] = element, ["kind"] = isRel ? "relationship" : "entity",
-            ["partOf"] = new JsonArray([.. page.Select(x => (JsonNode)new JsonObject { ["graph"] = x.P.Graph, ["element"] = x.P.Element, ["kind"] = x.P.IsRel ? "relationship" : "entity", ["role"] = x.P.Role, ["sink"] = x.P.Sink, ["rule"] = x.P.Rule })]),
+            ["partOf"] = new JsonArray([.. page.Select(x => (JsonNode)new JsonObject { ["graph"] = x.P.GraphId, ["element"] = x.P.Element, ["kind"] = x.P.IsRel ? "relationship" : "entity", ["role"] = x.P.Role, ["sink"] = x.P.Sink, ["rule"] = x.P.Rule })]),
             ["count"] = Rev(ordered.Count), ["next"] = more ? page[^1].Key : null,
             ["incompleteIn"] = new JsonArray([.. (incomplete.GetValueOrDefault(rt.Name) ?? []).Order(StringComparer.Ordinal).Select(x => (JsonNode)x)]),
         };

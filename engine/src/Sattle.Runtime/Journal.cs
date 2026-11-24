@@ -180,7 +180,7 @@ public sealed class DurableView(IGraphHistory inner, int generation, Func<bool> 
     sealed record StoredLog(long Base, List<CommittedPatch> Patches);
     readonly Dictionary<string, StoredLog> stored = new(StringComparer.Ordinal);
     public long Verified { get; private set; }
-    GraphKey Map(GraphKey g) => generation == 0 ? g : g with { Graph = g.Graph + "@" + generation.ToString(CultureInfo.InvariantCulture) };
+    GraphKey Map(GraphKey g) => generation == 0 ? g : g with { GraphId = g.GraphId + "@" + generation.ToString(CultureInfo.InvariantCulture) };
 
     /// <summary>The revision interval and the edits; the graph name differs between generations, the cause is a label.</summary>
     static bool SameChange(Patch stored, Patch recomputed) => stored.From == recomputed.From && stored.To == recomputed.To && stored.Edits.AsSpan().SequenceEqual(recomputed.Edits.AsSpan());
@@ -193,14 +193,14 @@ public sealed class DurableView(IGraphHistory inner, int generation, Func<bool> 
         if (recovering())
         {
             // the stored commits after the head the engine starts from (the whole log after a restart from nothing, the tail after a seal)
-            if (!stored.TryGetValue(key.Graph + "|" + key.Tenant, out var log)) stored[key.Graph + "|" + key.Tenant] = log = new StoredLog(b.ExpectedHead, [.. inner.Follow(key, b.ExpectedHead)]);
+            if (!stored.TryGetValue(key.GraphId + "|" + key.Tenant, out var log)) stored[key.GraphId + "|" + key.Tenant] = log = new StoredLog(b.ExpectedHead, [.. inner.Follow(key, b.ExpectedHead)]);
             if (b.ExpectedHead - log.Base < log.Patches.Count)
             {
                 for (var i = 0; i < b.Patches.Count; i++)
                 {
                     var at = b.ExpectedHead + i - log.Base;
-                    if (at >= log.Patches.Count) return new CommitResult.Rejected($"the stored log of {key.Graph} ends at revision {log.Base + log.Patches.Count}, the recomputation commits {b.ExpectedHead + b.Patches.Count}");
-                    if (!SameChange(log.Patches[(int)at].Patch, b.Patches[i])) return new CommitResult.Rejected($"the commit at revision {b.ExpectedHead + i + 1} of {key.Graph} differs from the stored one");
+                    if (at >= log.Patches.Count) return new CommitResult.Rejected($"the stored log of {key.GraphId} ends at revision {log.Base + log.Patches.Count}, the recomputation commits {b.ExpectedHead + b.Patches.Count}");
+                    if (!SameChange(log.Patches[(int)at].Patch, b.Patches[i])) return new CommitResult.Rejected($"the commit at revision {b.ExpectedHead + i + 1} of {key.GraphId} differs from the stored one");
                 }
                 Verified += b.Patches.Count;
                 return new CommitResult.Committed(b.ExpectedHead + b.Patches.Count);

@@ -18,12 +18,12 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
     /// <summary>Subscribe before the first ingest to record patch and telemetry history per graph.</summary>
     public void Attach() => engine.Committed += e =>
     {
-        if (!events.TryGetValue(e.Graph, out var l)) events[e.Graph] = l = [];
+        if (!events.TryGetValue(e.GraphId, out var l)) events[e.GraphId] = l = [];
         l.Add((e.Patch, e.Telemetry, e.Lambda));
-        if (e.Patch is not null) { if (!patches.TryGetValue(e.Graph, out var p)) patches[e.Graph] = p = []; p.Add(e.Patch); }
+        if (e.Patch is not null) { if (!patches.TryGetValue(e.GraphId, out var p)) patches[e.GraphId] = p = []; p.Add(e.Patch); }
     };
 
-    public IReadOnlyList<Patch> PatchesOf(string graph) => patches.GetValueOrDefault(graph) ?? [];
+    public IReadOnlyList<Patch> PatchesOf(string graphId) => patches.GetValueOrDefault(graphId) ?? [];
 
     // ---- names ----
     string TypeName(string id)
@@ -63,7 +63,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
         _ => null,
     };
 
-    JsonNode Version(string graph, long revision) => new JsonObject { ["tenant"] = Id(Tenant), ["graph"] = Id(graph), ["revision"] = Id(revision.ToString(CultureInfo.InvariantCulture)) };
+    JsonNode Version(string graphId, long revision) => new JsonObject { ["tenant"] = Id(Tenant), ["graph"] = Id(graphId), ["revision"] = Id(revision.ToString(CultureInfo.InvariantCulture)) };
     string OutputModule(GraphRuntime g) => g.Typed.OutputModule;
 
     JsonNode OntologyRef(GraphRuntime g)
@@ -79,12 +79,12 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
 
     // ---- references: endpoints of relationships that are not entities of the graph ----
 
-    /// <summary>One endpoint a relationship of a graph names and the graph does not hold. State `inOtherGraph` (the entity is in `Graph`, first the master, then the others in order: draw it or resolve it there) or `absent` (no graph holds it: the source never listed the element, or its row left). Identity: the key the id was minted from (the domain, the identified entity type, the components), so a viewer can label a stub. Uses: how many relationships of which type name it, at which end.</summary>
-    public sealed record Reference(string Id, string State, string? Graph, string? EntityType, string? Domain, IReadOnlyList<(string Name, string Value)> Key, IReadOnlyList<(string RelType, string End, int N)> Uses)
+    /// <summary>One endpoint a relationship of a graph names and the graph does not hold. State `inOtherGraph` (the entity is in `GraphId`, first the master, then the others in order: draw it or resolve it there) or `absent` (no graph holds it: the source never listed the element, or its row left). Identity: the key the id was minted from (the domain, the identified entity type, the components), so a viewer can label a stub. Uses: how many relationships of which type name it, at which end.</summary>
+    public sealed record Reference(string Id, string State, string? GraphId, string? EntityType, string? Domain, IReadOnlyList<(string Name, string Value)> Key, IReadOnlyList<(string RelType, string End, int N)> Uses)
     {
         public JsonNode ToJson(Func<string?, string?> typeName) => new JsonObject
         {
-            ["id"] = new JsonObject { ["value"] = Id }, ["state"] = State, ["graph"] = Graph, ["entityType"] = typeName(EntityType),
+            ["id"] = new JsonObject { ["value"] = Id }, ["state"] = State, ["graph"] = GraphId, ["entityType"] = typeName(EntityType),
             ["identity"] = Domain is null ? null : new JsonObject { ["domain"] = Domain, ["key"] = new JsonObject([.. Key.Select(k => KeyValuePair.Create(k.Name, (JsonNode?)k.Value))]) },
             ["uses"] = new JsonArray([.. Uses.Select(u => (JsonNode)new JsonObject { ["relationshipType"] = u.RelType, ["end"] = u.End, ["count"] = u.N })]),
         };
@@ -137,7 +137,7 @@ public sealed class CanvasExport(Engine engine, Catalog catalog, bool plain = fa
 
     public JsonNode Patch(Patch p, string tenant = "") => new JsonObject
     {
-        ["schemaVersion"] = "1.0", ["from"] = Version(p.Graph, p.From), ["to"] = Version(p.Graph, p.To), ["projection"] = Id(engine is null ? p.Graph : engine.Graph(p.Graph).Typed.Name), ["profile"] = "extensionalFinite",
+        ["schemaVersion"] = "1.0", ["from"] = Version(p.GraphId, p.From), ["to"] = Version(p.GraphId, p.To), ["projection"] = Id(engine is null ? p.GraphId : engine.Graph(p.GraphId).Typed.Name), ["profile"] = "extensionalFinite",
         ["edits"] = new JsonArray([.. p.Edits.Where(e => e.Key.Kind != 'o').Select(e => (JsonNode)new JsonObject
         {
             ["kind"] = e.Key.Kind == 'e' ? "entity" : "relationship", ["id"] = Id(e.Key.Id), ["before"] = State(e.Before), ["after"] = State(e.After),

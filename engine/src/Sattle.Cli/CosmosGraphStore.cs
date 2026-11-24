@@ -53,7 +53,7 @@ public sealed class CosmosGraphStore : IDurableStore
 
     static string R20(long r) => r.ToString("D20", CultureInfo.InvariantCulture);
     static string Seg(long rev) => "seg:" + (rev >> 16).ToString(CultureInfo.InvariantCulture);
-    static PartitionKey Pk(GraphKey g, string leaf) => new PartitionKeyBuilder().Add(g.Tenant).Add(g.Graph).Add(leaf).Build();
+    static PartitionKey Pk(GraphKey g, string leaf) => new PartitionKeyBuilder().Add(g.Tenant).Add(g.GraphId).Add(leaf).Build();
 
     static T Wait<T>(Task<T> t) => t.GetAwaiter().GetResult();
 
@@ -103,7 +103,7 @@ public sealed class CosmosGraphStore : IDurableStore
         if (leaseUntil.TryGetValue(g, out var until) && until - now > LeaseMillis / 2) return true;
         var doc = ReadDoc(leases, g, "lease", "lease", out var etag);
         if (doc is not null && (string)doc["owner"]! != owner && (long)doc["expires"]! > now) return false;
-        var next = new JObject { ["id"] = "lease", ["t"] = g.Tenant, ["g"] = g.Graph, ["n"] = "lease", ["owner"] = owner, ["expires"] = now + LeaseMillis };
+        var next = new JObject { ["id"] = "lease", ["t"] = g.Tenant, ["g"] = g.GraphId, ["n"] = "lease", ["owner"] = owner, ["expires"] = now + LeaseMillis };
         using var res = doc is null
             ? Wait(leases.CreateItemStreamAsync(Stream(next), Pk(g, "lease")))
             : Wait(leases.ReplaceItemStreamAsync(Stream(next), "lease", Pk(g, "lease"), new ItemRequestOptions { IfMatchEtag = etag }));
@@ -135,7 +135,7 @@ public sealed class CosmosGraphStore : IDurableStore
         lock (gate)
         {
             var m = Get(b.Graph);
-            if (!EnsureLease(b.Graph)) return new CommitResult.Rejected($"another writer holds the lease of {b.Graph.Graph} (at most {LeaseMillis / 1000} s)");
+            if (!EnsureLease(b.Graph)) return new CommitResult.Rejected($"another writer holds the lease of {b.Graph.GraphId} (at most {LeaseMillis / 1000} s)");
             if (m.Head != b.ExpectedHead) return new CommitResult.Conflict(m.Head);
             var applied = new List<Patch>();
             for (var i = 0; i < b.Patches.Count; i++)
@@ -173,7 +173,7 @@ public sealed class CosmosGraphStore : IDurableStore
             foreach (var domain in b.Bindings.GroupBy(x => x.Domain))
                 foreach (var chunk in domain.Chunk(BatchLimit))
                 {
-                    var docs = chunk.Select(bind => new JObject { ["id"] = bind.KeyHash, ["t"] = b.Graph.Tenant, ["g"] = b.Graph.Graph, ["d"] = bind.Domain, ["entity"] = bind.Entity, ["components"] = bind.ComponentsJson }).ToList();
+                    var docs = chunk.Select(bind => new JObject { ["id"] = bind.KeyHash, ["t"] = b.Graph.Tenant, ["g"] = b.Graph.GraphId, ["d"] = bind.Domain, ["entity"] = bind.Entity, ["components"] = bind.ComponentsJson }).ToList();
                     var batch = identity.CreateTransactionalBatch(Pk(b.Graph, domain.Key));
                     foreach (var d in docs) batch.CreateItem(d);
                     using var res = Wait(batch.ExecuteAsync());
@@ -195,7 +195,7 @@ public sealed class CosmosGraphStore : IDurableStore
 
     void WriteWatermark(GraphKey g, Mirror m)
     {
-        Upsert(leases, g, "wm", new JObject { ["id"] = "wm", ["t"] = g.Tenant, ["g"] = g.Graph, ["n"] = "wm", ["rev"] = m.Head });
+        Upsert(leases, g, "wm", new JObject { ["id"] = "wm", ["t"] = g.Tenant, ["g"] = g.GraphId, ["n"] = "wm", ["rev"] = m.Head });
         m.SinceWatermark = 0;
     }
 
@@ -283,13 +283,13 @@ public sealed class CosmosGraphStore : IDurableStore
         chunks = [];
         var doc = new JObject
         {
-            ["id"] = "c:" + R20(p.To), ["t"] = g.Tenant, ["g"] = g.Graph, ["s"] = Seg(p.To), ["kind"] = "commit", ["rev"] = p.To, ["graph"] = p.Graph,
+            ["id"] = "c:" + R20(p.To), ["t"] = g.Tenant, ["g"] = g.GraphId, ["s"] = Seg(p.To), ["kind"] = "commit", ["rev"] = p.To, ["graph"] = p.GraphId,
             ["cause"] = new JArray(p.Cause.Inputs.Select(x => (object)x)), ["frontier"] = ElementJson.EncodeFrontier(f),
         };
         if (edits.Length <= InlineLimit) { doc["edits"] = edits; return doc; }
         doc["chunks"] = (edits.Length + ChunkChars - 1) / ChunkChars;
         for (var i = 0; i * ChunkChars < edits.Length; i++)
-            chunks.Add(new JObject { ["id"] = $"p:{R20(p.To)}:{i:D5}", ["t"] = g.Tenant, ["g"] = g.Graph, ["s"] = Seg(p.To), ["kind"] = "chunk", ["rev"] = p.To, ["i"] = i, ["data"] = edits.Substring(i * ChunkChars, Math.Min(ChunkChars, edits.Length - i * ChunkChars)) });
+            chunks.Add(new JObject { ["id"] = $"p:{R20(p.To)}:{i:D5}", ["t"] = g.Tenant, ["g"] = g.GraphId, ["s"] = Seg(p.To), ["kind"] = "chunk", ["rev"] = p.To, ["i"] = i, ["data"] = edits.Substring(i * ChunkChars, Math.Min(ChunkChars, edits.Length - i * ChunkChars)) });
         return doc;
     }
 
@@ -300,7 +300,7 @@ public sealed class CosmosGraphStore : IDurableStore
         var it = log.GetItemQueryIterator<JObject>(new QueryDefinition("SELECT c.i, c.data FROM c WHERE c.kind = 'chunk' AND c.rev = @r ORDER BY c.i").WithParameter("@r", rev), requestOptions: new QueryRequestOptions { PartitionKey = Pk(g, Seg(rev)) });
         var sb = new System.Text.StringBuilder(); var got = 0;
         while (it.HasMoreResults) { var page = Wait(it.ReadNextAsync()); Charge("follow", page.RequestCharge); foreach (var c in page) if (got < n) { sb.Append((string)c["data"]!); got++; } }
-        return got == n ? sb.ToString() : throw new InvalidOperationException($"commit record {rev} of {g.Graph} names {n} chunks, {got} found");
+        return got == n ? sb.ToString() : throw new InvalidOperationException($"commit record {rev} of {g.GraphId} names {n} chunks, {got} found");
     }
 
     static MemoryStream Stream(JObject o) => new(System.Text.Encoding.UTF8.GetBytes(o.ToString(Newtonsoft.Json.Formatting.None)));
@@ -324,12 +324,12 @@ public sealed class CosmosGraphStore : IDurableStore
 
     JObject Ver(GraphKey g, string k, long from, long? to, Element state) => new()
     {
-        ["id"] = to is null ? "cur" : "v@" + R20(from), ["t"] = g.Tenant, ["g"] = g.Graph, ["k"] = k, ["kind"] = "ver", ["rf"] = from, ["open"] = to is null, ["rt"] = to ?? 0L, ["state"] = ElementJson.Encode(state),
+        ["id"] = to is null ? "cur" : "v@" + R20(from), ["t"] = g.Tenant, ["g"] = g.GraphId, ["k"] = k, ["kind"] = "ver", ["rf"] = from, ["open"] = to is null, ["rt"] = to ?? 0L, ["state"] = ElementJson.Encode(state),
     };
 
     JObject Adj(GraphKey g, string endpoint, Rel r, string dir, long from, long? to) => new()
     {
-        ["id"] = $"a:{dir}:{r.Id}@{R20(from)}", ["t"] = g.Tenant, ["g"] = g.Graph, ["k"] = "e:" + endpoint, ["kind"] = "adj", ["rel"] = r.Id, ["other"] = dir == "out" ? r.Target : r.Source, ["type"] = r.Type, ["dir"] = dir, ["rf"] = from, ["open"] = to is null, ["rt"] = to ?? 0L,
+        ["id"] = $"a:{dir}:{r.Id}@{R20(from)}", ["t"] = g.Tenant, ["g"] = g.GraphId, ["k"] = "e:" + endpoint, ["kind"] = "adj", ["rel"] = r.Id, ["other"] = dir == "out" ? r.Target : r.Source, ["type"] = r.Type, ["dir"] = dir, ["rf"] = from, ["open"] = to is null, ["rt"] = to ?? 0L,
     };
 
     /// <summary>One idempotent batch per element partition. The skip test of Theorem 11.4: an update or create finds `cur.from = r`, a delete finds no `cur` and a history row with `to = r`.</summary>
@@ -432,7 +432,7 @@ public sealed class CosmosGraphStore : IDurableStore
     IEnumerable<CommittedPatch> FollowRaw(GraphKey g, long after)
     {
         var res = new List<CommittedPatch>();
-        var it = log.GetItemQueryIterator<JObject>(new QueryDefinition("SELECT * FROM c WHERE c.t = @t AND c.g = @g AND c.kind = 'commit' AND c.rev > @a ORDER BY c.rev").WithParameter("@t", g.Tenant).WithParameter("@g", g.Graph).WithParameter("@a", after));
+        var it = log.GetItemQueryIterator<JObject>(new QueryDefinition("SELECT * FROM c WHERE c.t = @t AND c.g = @g AND c.kind = 'commit' AND c.rev > @a ORDER BY c.rev").WithParameter("@t", g.Tenant).WithParameter("@g", g.GraphId).WithParameter("@a", after));
         while (it.HasMoreResults)
         {
             var page = Wait(it.ReadNextAsync()); Charge("follow", page.RequestCharge);
@@ -450,7 +450,7 @@ public sealed class CosmosGraphStore : IDurableStore
     Graph StateAt(GraphKey g, long rev)
     {
         var edits = new List<Edit>();
-        var it = state.GetItemQueryIterator<JObject>(new QueryDefinition("SELECT * FROM c WHERE c.t = @t AND c.g = @g AND c.kind = 'ver' AND c.rf <= @r AND (c.open = true OR c.rt > @r)").WithParameter("@t", g.Tenant).WithParameter("@g", g.Graph).WithParameter("@r", rev));
+        var it = state.GetItemQueryIterator<JObject>(new QueryDefinition("SELECT * FROM c WHERE c.t = @t AND c.g = @g AND c.kind = 'ver' AND c.rf <= @r AND (c.open = true OR c.rt > @r)").WithParameter("@t", g.Tenant).WithParameter("@g", g.GraphId).WithParameter("@r", rev));
         while (it.HasMoreResults) { var page = Wait(it.ReadNextAsync()); Charge("scan", page.RequestCharge); edits.AddRange(page.Select(d => Edit.Create(ElementJson.Decode((string)d["state"]!)))); }
         var gr = new Graph();
         var err = gr.Apply(edits);
@@ -472,7 +472,7 @@ public sealed class CosmosGraphStore : IDurableStore
 
     public long BindingCount(GraphKey g)
     {
-        var it = identity.GetItemQueryIterator<long>(new QueryDefinition("SELECT VALUE COUNT(1) FROM c WHERE c.t = @t AND c.g = @g").WithParameter("@t", g.Tenant).WithParameter("@g", g.Graph));
+        var it = identity.GetItemQueryIterator<long>(new QueryDefinition("SELECT VALUE COUNT(1) FROM c WHERE c.t = @t AND c.g = @g").WithParameter("@t", g.Tenant).WithParameter("@g", g.GraphId));
         long n = 0; while (it.HasMoreResults) foreach (var x in Wait(it.ReadNextAsync())) n += x;
         return n;
     }

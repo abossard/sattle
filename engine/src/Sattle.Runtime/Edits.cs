@@ -25,8 +25,8 @@ public sealed partial class SpaceHost
 
     sealed record ViewEdit(char Kind, string? Id, Element? Before, Element? After, JsonNode? Key);
 
-    HostError Reject(string code, string message, string graph, string? element = null, string? rule = null, int status = 422) =>
-        new(code, message, status, new JsonObject { ["graph"] = graph, ["element"] = element, ["rule"] = rule });
+    HostError Reject(string code, string message, string graphId, string? element = null, string? rule = null, int status = 422) =>
+        new(code, message, status, new JsonObject { ["graph"] = graphId, ["element"] = element, ["rule"] = rule });
 
     /// <summary>The inverse of a bijective ingestion rule over an authored rows port: row field per entity property, key field, and the parent field carried by a relationship.</summary>
     sealed record RowInverse(string Source, string RelTypeId, string EntityTypeId, string KeyField, string ParentField, Dictionary<string, string> FieldProp, string Rule, string Owner);
@@ -79,12 +79,12 @@ public sealed partial class SpaceHost
         return rows;
     }
 
-    Element? Decode(JsonNode? n, Catalog cat, string graph)
+    Element? Decode(JsonNode? n, Catalog cat, string graphId)
     {
         if (n is null) return null;
-        var view = cat.OntologyOf(graph == "master" ? Engine.Master.Typed.OutputModule : Engine.Graph(graph).Typed.OutputModule);
-        string TypeId(string name) => view.Types.Values.FirstOrDefault(t => TypeLabel(cat, t.Id) == name)?.Id ?? throw Reject("BadEdit", $"unknown type '{name}'", graph);
-        string PropId(string type, string name) => view.PropsOf(type).Keys.FirstOrDefault(k => view.Props.TryGetValue(k, out var p) && (export.PropNameOf(k) == name || p.Name == name)) ?? throw Reject("BadEdit", $"{TypeLabel(cat, type)} has no property '{name}'", graph);
+        var view = cat.OntologyOf(graphId == "master" ? Engine.Master.Typed.OutputModule : Engine.Graph(graphId).Typed.OutputModule);
+        string TypeId(string name) => view.Types.Values.FirstOrDefault(t => TypeLabel(cat, t.Id) == name)?.Id ?? throw Reject("BadEdit", $"unknown type '{name}'", graphId);
+        string PropId(string type, string name) => view.PropsOf(type).Keys.FirstOrDefault(k => view.Props.TryGetValue(k, out var p) && (export.PropNameOf(k) == name || p.Name == name)) ?? throw Reject("BadEdit", $"{TypeLabel(cat, type)} has no property '{name}'", graphId);
         Props Props(string type, JsonNode? arr) => Core.Props.Of((arr?.AsArray() ?? []).Select(x => KeyValuePair.Create(PropId(type, x!["property"]!["value"]!.GetValue<string>()), DecodeValue(x["value"]!))));
         var id = n["id"]!["value"]!.GetValue<string>(); var type = TypeId(n["type"]!["value"]!.GetValue<string>());
         return n["source"] is null ? new Entity(id, type, Props(type, n["properties"])) : new Rel(id, n["source"]!["value"]!.GetValue<string>(), n["target"]!["value"]!.GetValue<string>(), type, Props(type, n["properties"]));

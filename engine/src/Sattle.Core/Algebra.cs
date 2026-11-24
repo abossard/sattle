@@ -7,16 +7,16 @@ namespace Sattle.Core;
 /// <summary>Ch. 4, Def. 4.1: p = (g, r, r', E, cause). Edits are a set with distinct keys, kept in canonical order.</summary>
 public sealed class Patch : IEquatable<Patch>
 {
-    public string Graph { get; }
+    public string GraphId { get; }
     public long From { get; }
     public long To { get; }
     public ImmutableArray<Edit> Edits { get; }
     public Cause Cause { get; }
     readonly Dictionary<ElementKey, Edit> byKey;
 
-    public Patch(string graph, long from, long to, IEnumerable<Edit> edits, Cause? cause = null)
+    public Patch(string graphId, long from, long to, IEnumerable<Edit> edits, Cause? cause = null)
     {
-        Graph = graph; From = from; To = to; Cause = cause ?? Cause.None;
+        GraphId = graphId; From = from; To = to; Cause = cause ?? Cause.None;
         var list = edits.ToList();
         byKey = new Dictionary<ElementKey, Edit>(list.Count);
         foreach (var e in list)
@@ -34,7 +34,7 @@ public sealed class Patch : IEquatable<Patch>
     /// <summary>Def. 4.2. Undefined (null) unless to(p) = from(q) and every shared key composes. Guard-only results are kept.</summary>
     public Patch? Then(Patch q)
     {
-        if (Graph != q.Graph || To != q.From) return null;
+        if (GraphId != q.GraphId || To != q.From) return null;
         var merged = new List<Edit>();
         foreach (var e in Edits)
         {
@@ -46,17 +46,17 @@ public sealed class Patch : IEquatable<Patch>
             else merged.Add(e);
         }
         foreach (var f in q.Edits) if (!byKey.ContainsKey(f.Key)) merged.Add(f);
-        return new Patch(Graph, From, q.To, merged, new Cause([.. Cause.Inputs, .. q.Cause.Inputs], q.Cause.Configuration));
+        return new Patch(GraphId, From, q.To, merged, new Cause([.. Cause.Inputs, .. q.Cause.Inputs], q.Cause.Configuration));
     }
 
     public Patch ThenOrThrow(Patch q) => Then(q) ?? throw new AlgebraRejected("p then q is undefined");
 
     /// <summary>Def. 4.3: swaps from and to, and the before and after state of every edit.</summary>
-    public Patch Inverse() => new(Graph, To, From, Edits.Select(e => e.Inverted()), Cause);
+    public Patch Inverse() => new(GraphId, To, From, Edits.Select(e => e.Inverted()), Cause);
     /// <summary>The guard identity: same keys, before = after = before.</summary>
-    public Patch Epsilon() => new(Graph, From, From, Edits.Select(e => new Edit(e.Key, e.Before, e.Before)), Cause);
+    public Patch Epsilon() => new(GraphId, From, From, Edits.Select(e => new Edit(e.Key, e.Before, e.Before)), Cause);
     /// <summary>Def. 4.4: removes guard-only edits.</summary>
-    public Patch Net() => new(Graph, From, To, Edits.Where(e => e.Effective), Cause);
+    public Patch Net() => new(GraphId, From, To, Edits.Where(e => e.Effective), Cause);
 
     /// <summary>apply(p, G): partial; the result is a new graph, G is untouched.</summary>
     public Graph? ApplyTo(Graph g)
@@ -76,9 +76,9 @@ public sealed class Patch : IEquatable<Patch>
         return d;
     }
 
-    public bool Equals(Patch? o) => o is not null && Graph == o.Graph && From == o.From && To == o.To && Edits.AsSpan().SequenceEqual(o.Edits.AsSpan());
+    public bool Equals(Patch? o) => o is not null && GraphId == o.GraphId && From == o.From && To == o.To && Edits.AsSpan().SequenceEqual(o.Edits.AsSpan());
     public override bool Equals(object? o) => o is Patch p && Equals(p);
-    public override int GetHashCode() => HashCode.Combine(Graph, From, To, Edits.Length);
+    public override int GetHashCode() => HashCode.Combine(GraphId, From, To, Edits.Length);
 }
 
 /// <summary>Def. 4.5: a fact is a key with a state.</summary>
@@ -123,13 +123,13 @@ public sealed class Delta : IEquatable<Delta>
     }
 
     /// <summary>Def. 4.9 toPatch: the canonical net transition, defined iff materialization is.</summary>
-    public static Patch? ToPatch(Delta z, Graph b, string graph, long from, long to)
+    public static Patch? ToPatch(Delta z, Graph b, string graphId, long from, long to)
     {
         var m = Materialize(b, z);
         if (m is null) return null;
         var keys = z.w.Keys.Select(f => f.Key).Distinct();
         var edits = keys.Select(k => new Edit(k, b.Get(k), m.Get(k))).Where(e => e.Effective);
-        return new Patch(graph, from, to, edits);
+        return new Patch(graphId, from, to, edits);
     }
 
     /// <summary>squash(p1..pn) = net(p1 then ... then pn) with a loss report.</summary>
@@ -163,11 +163,11 @@ public sealed class Delta : IEquatable<Delta>
 }
 
 /// <summary>The commit rule of Def. 3.9 and the revision log of Def. 3.8, as a pure model. Stores implement the same rule.</summary>
-public sealed class GraphLog(string graph)
+public sealed class GraphLog(string graphId)
 {
     readonly List<(Patch Patch, Frontier Frontier)> commits = [];
     readonly Graph head = new();
-    public string GraphId { get; } = graph;
+    public string GraphId { get; } = graphId;
     public long Head => commits.Count;
     public Graph State => head;
     public IReadOnlyList<(Patch Patch, Frontier Frontier)> Commits => commits;

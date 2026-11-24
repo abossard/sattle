@@ -42,7 +42,7 @@ public class PreparationTests
         {
             Assert.Equal(writer, Environment.CurrentManagedThreadId);
             var windows = string.Join("\n", c.Telemetry.Select(w => $"{e.Interner.Get(w.Key.Element)}|{e.Interner.Get(w.Key.Prop)}|{w.Key.WindowStart}|{w.Old}|{w.New}"));
-            events.Add(new(c.Graph, c.Seq, c.Lambda, c.Patch, c.Patch is { } patch ? string.Join(",", patch.Cause.Inputs) : null, c.Patch?.Cause.Configuration,
+            events.Add(new(c.GraphId, c.Seq, c.Lambda, c.Patch, c.Patch is { } patch ? string.Join(",", patch.Cause.Inputs) : null, c.Patch?.Cause.Configuration,
                 windows, string.Join("\n", c.Conflicts.Select(x => x.Text)), string.Join(",", e.Graphs.Select(g => $"{g.Name}/{g.Head}/{g.TelemetryPosition}")), e.StateDigest()));
         };
         return events;
@@ -114,7 +114,7 @@ public class PreparationTests
             using var e = Open(workers);
             var seen = Watch(e);
             var failed = new InvalidOperationException("subscriber failed");
-            e.Committed += c => { if (c.Graph == "first") throw failed; };
+            e.Committed += c => { if (c.GraphId == "first") throw failed; };
             Samples(e, Keys, 1, 3, 20, false);
             Assert.Same(failed, Assert.Throws<InvalidOperationException>(() => e.Advance(Minute, 21)));
             Assert.Equal(new[] { "master", "first" }, seen.Select(c => c.Graph));
@@ -145,7 +145,7 @@ public class PreparationTests
             var canvas = new CanvasExport(e, Catalog.Value);
             e.Committed += change =>
             {
-                if (change.Graph != "first") return;
+                if (change.GraphId != "first") return;
                 var pending = canvas.Snapshot(e.Graph("second"));
                 Assert.Empty(pending["extent"]!["entities"]!.AsArray());
                 Assert.Empty(pending["extent"]!["relationships"]!.AsArray());
@@ -237,8 +237,8 @@ public class PreparationTests
             var events = new List<string>();
             e.Committed += change =>
             {
-                events.Add(change.Graph);
-                if (change.Graph != "master") return;
+                events.Add(change.GraphId);
+                if (change.GraphId != "master") return;
                 var edits = change.Patch!.Edits;
                 void Corrupt(Rel edge, bool overflow)
                 {

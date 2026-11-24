@@ -16,7 +16,7 @@ public class ConflictReportTests
         var folded = new Dictionary<string, string>(StringComparer.Ordinal);
         engine.Committed += e =>
         {
-            if (e.Graph != "master") return;
+            if (e.GraphId != "master") return;
             foreach (var c in e.Conflicts)
             {
                 if (c.Kind == "resolved") { Assert.True(folded.Remove(c.Element), $"seed {seed}: {c.Element} ended without having been reported"); continue; }

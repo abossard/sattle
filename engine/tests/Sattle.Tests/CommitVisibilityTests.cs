@@ -17,15 +17,15 @@ public class CommitVisibilityTests
             foreach (var edit in patch.Edits)
             {
                 if (edit.Key.Kind is not ('e' or 'r')) continue;
-                if (edit.Before is null) published[change.Graph]++;
-                if (edit.After is null) published[change.Graph]--;
+                if (edit.Before is null) published[change.GraphId]++;
+                if (edit.After is null) published[change.GraphId]--;
             }
             foreach (var graph in engine.Graphs)
             {
                 var extent = export.Snapshot(graph)["extent"]!;
                 var visible = extent["entities"]!.AsArray().Count + extent["relationships"]!.AsArray().Count;
                 Assert.True(visible == published[graph.Name],
-                    $"During {change.Graph}'s commit, {graph.Name} exposes {visible} elements, but {published[graph.Name]} have been published.");
+                    $"During {change.GraphId}'s commit, {graph.Name} exposes {visible} elements, but {published[graph.Name]} have been published.");
             }
         };
 

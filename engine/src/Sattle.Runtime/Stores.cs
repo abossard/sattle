@@ -8,9 +8,9 @@ using Sattle.Core;
 
 namespace Sattle.Runtime;
 
-public readonly record struct GraphKey(string Tenant, string Graph)
+public readonly record struct GraphKey(string Tenant, string GraphId)
 {
-    public override string ToString() => Tenant + "/" + Graph;
+    public override string ToString() => Tenant + "/" + GraphId;
 }
 
 public sealed record HeadInfo(long Head, long Watermark);
@@ -219,7 +219,7 @@ public sealed class InMemoryGraphStore : IDurableStore
                     if (e.Before is not null) { var last = list[^1]; list[^1] = last with { To = rev }; if (e.Before is Rel br) CloseAdj(g, br, rev); }
                     if (e.After is not null) { list.Add(new Version(rev, null, e.After)); if (e.After is Rel ar) OpenAdj(g, ar, rev); }
                 }
-                g.Commits.Add(new CommittedPatch(new Patch(p.Graph, p.From, p.To, p.Edits.Where(e => e.Effective), p.Cause), b.Frontiers[i]));
+                g.Commits.Add(new CommittedPatch(new Patch(p.GraphId, p.From, p.To, p.Edits.Where(e => e.Effective), p.Cause), b.Frontiers[i]));
             }
             foreach (var x in b.Bindings) g.Bindings.Add(new IdentityBinding(x.Domain, x.KeyHash, x.Entity, x.ComponentsJson));
             return new CommitResult.Committed(g.Commits.Count);
@@ -371,14 +371,14 @@ public sealed class SqliteGraphStore : IDurableStore
         }
     }
 
-    long HeadOf(GraphKey g) => Scalar<long?>("SELECT MAX(rev) FROM \"commit\" WHERE t=$t AND g=$g", ("$t", g.Tenant), ("$g", g.Graph)) ?? 0;
+    long HeadOf(GraphKey g) => Scalar<long?>("SELECT MAX(rev) FROM \"commit\" WHERE t=$t AND g=$g", ("$t", g.Tenant), ("$g", g.GraphId)) ?? 0;
     public HeadInfo Head(GraphKey g) { lock (gate) { var h = HeadOf(g); return new HeadInfo(h, h); } }
 
     Element? Current(GraphKey g, ElementKey k)
     {
         using var c = db.CreateCommand();
         c.CommandText = "SELECT state_json FROM element_version WHERE t=$t AND g=$g AND key=$k AND to_rev IS NULL";
-        c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.Graph); c.Parameters.AddWithValue("$k", k.ToString());
+        c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.GraphId); c.Parameters.AddWithValue("$k", k.ToString());
         var r = c.ExecuteScalar();
         return r is string s ? ElementJson.Decode(s) : null;
     }
@@ -405,23 +405,23 @@ public sealed class SqliteGraphStore : IDurableStore
                     }
                     foreach (var e in edits.Where(e => e.Before is not null))
                     {
-                        Exec("UPDATE element_version SET to_rev=$r WHERE t=$t AND g=$g AND key=$k AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$k", e.Key.ToString()));
+                        Exec("UPDATE element_version SET to_rev=$r WHERE t=$t AND g=$g AND key=$k AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$k", e.Key.ToString()));
                         if (e.Before is Rel br)
                         {
-                            Exec("UPDATE adjacency SET to_rev=$r WHERE t=$t AND g=$g AND rel_id=$id AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$id", br.Id));
-                            Exec("UPDATE rel_unique SET to_rev=$r WHERE t=$t AND g=$g AND rel_id=$id AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$id", br.Id));
+                            Exec("UPDATE adjacency SET to_rev=$r WHERE t=$t AND g=$g AND rel_id=$id AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$id", br.Id));
+                            Exec("UPDATE rel_unique SET to_rev=$r WHERE t=$t AND g=$g AND rel_id=$id AND to_rev IS NULL", ("$r", rev), ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$id", br.Id));
                         }
                     }
                     foreach (var e in edits.Where(e => e.After is not null))
                     {
                         try
                         {
-                            Exec("INSERT INTO element_version VALUES($t,$g,$k,$r,NULL,$s)", ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$k", e.Key.ToString()), ("$r", rev), ("$s", ElementJson.Encode(e.After!)));
+                            Exec("INSERT INTO element_version VALUES($t,$g,$k,$r,NULL,$s)", ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$k", e.Key.ToString()), ("$r", rev), ("$s", ElementJson.Encode(e.After!)));
                             if (e.After is Rel ar)
                             {
-                                Exec("INSERT INTO rel_unique VALUES($t,$g,$s,$x,$ty,$r,NULL,$id)", ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$s", ar.Source), ("$x", ar.Target), ("$ty", ar.Type), ("$r", rev), ("$id", ar.Id));
-                                Exec("INSERT INTO adjacency VALUES($t,$g,$e,0,$id,$r,NULL,$ty,$o)", ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$e", ar.Source), ("$id", ar.Id), ("$r", rev), ("$ty", ar.Type), ("$o", ar.Target));
-                                Exec("INSERT INTO adjacency VALUES($t,$g,$e,1,$id,$r,NULL,$ty,$o)", ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$e", ar.Target), ("$id", ar.Id), ("$r", rev), ("$ty", ar.Type), ("$o", ar.Source));
+                                Exec("INSERT INTO rel_unique VALUES($t,$g,$s,$x,$ty,$r,NULL,$id)", ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$s", ar.Source), ("$x", ar.Target), ("$ty", ar.Type), ("$r", rev), ("$id", ar.Id));
+                                Exec("INSERT INTO adjacency VALUES($t,$g,$e,0,$id,$r,NULL,$ty,$o)", ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$e", ar.Source), ("$id", ar.Id), ("$r", rev), ("$ty", ar.Type), ("$o", ar.Target));
+                                Exec("INSERT INTO adjacency VALUES($t,$g,$e,1,$id,$r,NULL,$ty,$o)", ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$e", ar.Target), ("$id", ar.Id), ("$r", rev), ("$ty", ar.Type), ("$o", ar.Source));
                             }
                         }
                         catch (SqliteException ex) when (ex.SqliteErrorCode == 19)
@@ -430,7 +430,7 @@ public sealed class SqliteGraphStore : IDurableStore
                             return new CommitResult.Rejected($"edit {e.Key}: uniqueness violated (U): {ex.Message}");
                         }
                     }
-                    Exec("INSERT INTO \"commit\" VALUES($t,$g,$r,$f,$c,$e)", ("$t", b.Graph.Tenant), ("$g", b.Graph.Graph), ("$r", rev), ("$f", ElementJson.EncodeFrontier(b.Frontiers[i])), ("$c", string.Join("\n", p.Cause.Inputs)), ("$e", ElementJson.EncodeEdits(edits)));
+                    Exec("INSERT INTO \"commit\" VALUES($t,$g,$r,$f,$c,$e)", ("$t", b.Graph.Tenant), ("$g", b.Graph.GraphId), ("$r", rev), ("$f", ElementJson.EncodeFrontier(b.Frontiers[i])), ("$c", string.Join("\n", p.Cause.Inputs)), ("$e", ElementJson.EncodeEdits(edits)));
                 }
                 foreach (var bd in b.Bindings)
                     Exec("INSERT OR IGNORE INTO identity_binding VALUES($t,$d,$k,$r,$e,$c)", ("$t", b.Graph.Tenant), ("$d", bd.Domain), ("$k", bd.KeyHash), ("$r", head + b.Patches.Count), ("$e", bd.Entity), ("$c", bd.ComponentsJson));
@@ -451,7 +451,7 @@ public sealed class SqliteGraphStore : IDurableStore
             {
                 using var c = db.CreateCommand();
                 c.CommandText = "SELECT state_json, from_rev, to_rev FROM element_version WHERE t=$t AND g=$g AND key=$k AND from_rev<=$r AND (to_rev IS NULL OR $r<to_rev)";
-                c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.Graph); c.Parameters.AddWithValue("$k", k.ToString()); c.Parameters.AddWithValue("$r", revision);
+                c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.GraphId); c.Parameters.AddWithValue("$k", k.ToString()); c.Parameters.AddWithValue("$r", revision);
                 using var r = c.ExecuteReader();
                 res.Add(r.Read() ? new ReadResult.Present(ElementJson.Decode(r.GetString(0)), r.GetInt64(1), r.IsDBNull(2) ? null : r.GetInt64(2)) : new ReadResult.Absent());
             }
@@ -465,7 +465,7 @@ public sealed class SqliteGraphStore : IDurableStore
         {
             using var c = db.CreateCommand();
             c.CommandText = "SELECT rel_id, other, type FROM adjacency WHERE t=$t AND g=$g AND endpoint=$e AND dir=$d AND from_rev<=$r AND (to_rev IS NULL OR $r<to_rev) AND ($ty IS NULL OR type=$ty) AND ($c IS NULL OR rel_id>$c) ORDER BY rel_id COLLATE BINARY LIMIT $n";
-            c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.Graph); c.Parameters.AddWithValue("$e", endpoint); c.Parameters.AddWithValue("$d", dir == Direction.Out ? 0 : 1);
+            c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.GraphId); c.Parameters.AddWithValue("$e", endpoint); c.Parameters.AddWithValue("$d", dir == Direction.Out ? 0 : 1);
             c.Parameters.AddWithValue("$r", revision); c.Parameters.AddWithValue("$ty", (object?)type ?? DBNull.Value); c.Parameters.AddWithValue("$c", (object?)continuation ?? DBNull.Value); c.Parameters.AddWithValue("$n", pageSize + 1);
             var all = new List<AdjEntry>();
             using (var r = c.ExecuteReader()) while (r.Read()) all.Add(new AdjEntry(r.GetString(0), r.GetString(1), r.GetString(2), dir));
@@ -481,13 +481,13 @@ public sealed class SqliteGraphStore : IDurableStore
         {
             using var c = db.CreateCommand();
             c.CommandText = "SELECT rev, frontier, cause, edits_json FROM \"commit\" WHERE t=$t AND g=$g AND rev>$a ORDER BY rev";
-            c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.Graph); c.Parameters.AddWithValue("$a", after);
+            c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.GraphId); c.Parameters.AddWithValue("$a", after);
             using var r = c.ExecuteReader();
             while (r.Read())
             {
                 var rev = r.GetInt64(0);
                 var cause = new Cause([.. r.GetString(2).Split('\n', StringSplitOptions.RemoveEmptyEntries)], "0");
-                res.Add(new CommittedPatch(new Patch(g.Graph, rev - 1, rev, ElementJson.DecodeEdits(r.GetString(3)), cause), ElementJson.DecodeFrontier(r.GetString(1))));
+                res.Add(new CommittedPatch(new Patch(g.GraphId, rev - 1, rev, ElementJson.DecodeEdits(r.GetString(3)), cause), ElementJson.DecodeFrontier(r.GetString(1))));
             }
         }
         return res;
@@ -498,7 +498,7 @@ public sealed class SqliteGraphStore : IDurableStore
         var edits = new List<Edit>();
         using var c = db.CreateCommand();
         c.CommandText = "SELECT state_json FROM element_version WHERE t=$t AND g=$g AND from_rev<=$r AND (to_rev IS NULL OR $r<to_rev)";
-        c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.Graph); c.Parameters.AddWithValue("$r", rev);
+        c.Parameters.AddWithValue("$t", g.Tenant); c.Parameters.AddWithValue("$g", g.GraphId); c.Parameters.AddWithValue("$r", rev);
         using (var r = c.ExecuteReader()) while (r.Read()) edits.Add(Edit.Create(ElementJson.Decode(r.GetString(0))));
         var gr = new Graph();
         var err = gr.Apply(edits);
@@ -510,7 +510,7 @@ public sealed class SqliteGraphStore : IDurableStore
         lock (gate)
         {
             var gr = StateAt(g, revision);
-            var fr = revision == 0 ? Frontier.Empty : ElementJson.DecodeFrontier(Scalar<string>("SELECT frontier FROM \"commit\" WHERE t=$t AND g=$g AND rev=$r", ("$t", g.Tenant), ("$g", g.Graph), ("$r", revision))!);
+            var fr = revision == 0 ? Frontier.Empty : ElementJson.DecodeFrontier(Scalar<string>("SELECT frontier FROM \"commit\" WHERE t=$t AND g=$g AND rev=$r", ("$t", g.Tenant), ("$g", g.GraphId), ("$r", revision))!);
             return new SealInfo(revision, gr.Digest(), gr.Count, fr);
         }
     }
@@ -684,7 +684,7 @@ public sealed class InMemoryTelemetryStore(int logCapacity = 4_000_000) : ITelem
     GraphKey lastKey; Plane? last;
     Plane Get(GraphKey g)
     {
-        if (last is not null && ReferenceEquals(lastKey.Tenant, g.Tenant) && ReferenceEquals(lastKey.Graph, g.Graph)) return last;
+        if (last is not null && ReferenceEquals(lastKey.Tenant, g.Tenant) && ReferenceEquals(lastKey.GraphId, g.GraphId)) return last;
         if (!planes.TryGetValue(g, out var p)) planes[g] = p = new Plane();
         (lastKey, last) = (g, p);
         return p;

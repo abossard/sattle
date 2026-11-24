@@ -87,7 +87,7 @@ public class AlgebraTests
         Assert.Equal(-p.Delta(), p.Inverse().Delta());                               // 3
         Assert.True(p.Epsilon().Delta().IsZero);                                     // 4
         Assert.True(Delta.Materialize(b, p.Delta())!.SameAs(gp));                    // 8.1
-        var back = Delta.ToPatch(p.Delta(), b, p.Graph, p.From, p.To)!;
+        var back = Delta.ToPatch(p.Delta(), b, p.GraphId, p.From, p.To)!;
         Assert.Equal(p.Net(), back);                                                 // 8.2
         Assert.Equal(p.Net().Delta(), p.Delta());                                    // 8.3
     });

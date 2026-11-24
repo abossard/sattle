@@ -22,7 +22,7 @@ public class SealRestoreTests
     static byte[] Bytes(Engine e) => StateSnapshot.Save(e.StateRootOf());
 
     /// <summary>A commit as text: graph, revision range, the edits, the window changes with their values (interned keys read back), and the conflicts.</summary>
-    static string Text(CommitEvent c) => string.Join("|", c.Graph, c.Patch is { } p ? $"{p.From}->{p.To}:" + string.Join(";", p.Edits.Select(e => $"{e.Key}:{e.Before}=>{e.After}")) : "-",
+    static string Text(CommitEvent c) => string.Join("|", c.GraphId, c.Patch is { } p ? $"{p.From}->{p.To}:" + string.Join(";", p.Edits.Select(e => $"{e.Key}:{e.Before}=>{e.After}")) : "-",
         string.Join(";", c.Telemetry.Select(w => $"{c.Interner.Get(w.Key.Element)}/{c.Interner.Get(w.Key.Prop)}/{w.Key.WindowStart}:{w.Old}=>{w.New}")), string.Join(";", c.Conflicts.Select(x => x.Text)));
 
     /// <summary>A store that accepts every commit and keeps nothing: the engine's state is under test here, not the commit log.</summary>

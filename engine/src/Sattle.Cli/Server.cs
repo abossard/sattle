@@ -202,7 +202,7 @@ public static class Server
                     var sb = new StringBuilder(); WebSocketReceiveResult r;
                     do { r = await ws.ReceiveAsync(buf, CancellationToken.None); if (r.MessageType == WebSocketMessageType.Close) goto done; sb.Append(Encoding.UTF8.GetString(buf, 0, r.Count)); } while (!r.EndOfMessage);
                     JsonNode? msg; try { msg = JsonNode.Parse(sb.ToString()); } catch (JsonException) { await Send(Err("BadRequest", "not JSON")); continue; }
-                    var op = msg?["op"]?.GetValue<string>(); var graph = msg?["graph"]?.GetValue<string>();
+                    var op = msg?["op"]?.GetValue<string>(); var graphId = msg?["graph"]?.GetValue<string>();
                     try
                     {
                         switch (op)
@@ -210,7 +210,7 @@ public static class Server
                             case "subscribe":
                                 {
                                     if (sub is not null) host.Unsubscribe(sub);
-                                    var gs = msg!["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToList() ?? (graph is null ? null : [graph]);
+                                    var gs = msg!["graphs"]?.AsArray().Select(x => x!.GetValue<string>()).ToList() ?? (graphId is null ? null : [graphId]);
                                     sub = host.Subscribe(gs, msg["drafts"]?.GetValue<bool>() ?? false, Rev(msg["after"]?.GetValue<string>()));
                                     var s = sub;
                                     _ = Task.Run(async () => { try { await foreach (var m in s.Messages.Reader.ReadAllAsync()) await Send(m); } catch (Exception) { /* closed */ } });
@@ -221,7 +221,7 @@ public static class Server
                             default: await Send(Err("BadRequest", $"unknown op {op}")); break;
                         }
                     }
-                    catch (HostError e) { await Send(new JsonObject { ["type"] = "error", ["code"] = e.Code, ["message"] = e.Message, ["graph"] = graph }.ToJsonString()); }
+                    catch (HostError e) { await Send(new JsonObject { ["type"] = "error", ["code"] = e.Code, ["message"] = e.Message, ["graph"] = graphId }.ToJsonString()); }
                 }
             done:;
             }

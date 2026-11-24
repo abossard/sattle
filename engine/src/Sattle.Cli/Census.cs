@@ -73,12 +73,12 @@ static class Census
         public readonly Dictionary<string, Acc> ByLabel = [], ByGraph = [], ByType = [];
         public readonly Dictionary<(string, string), Acc> ByLabelType = [];
         readonly Stack<object> stack = new();
-        string label = "", graph = "";
+        string label = "", graphId = "";
 
         public void Root(string lbl, string g, object? root)
         {
             if (root is null) return;
-            label = lbl; graph = g;
+            label = lbl; graphId = g;
             Push(root);
             while (stack.Count > 0) Visit(stack.Pop());
         }
@@ -100,7 +100,7 @@ static class Census
             if (!t.IsValueType)
             {
                 var size = ObjectSize(o); var tn = TypeName(t);
-                Bump(ByLabel, label, size); Bump(ByGraph, graph, size); Bump(ByType, tn, size);
+                Bump(ByLabel, label, size); Bump(ByGraph, graphId, size); Bump(ByType, tn, size);
                 var key = (label, tn); if (!ByLabelType.TryGetValue(key, out var a)) ByLabelType[key] = a = new Acc(); a.Objects++; a.Bytes += size;
             }
             if (t.IsArray)
@@ -122,7 +122,7 @@ static class Census
     }
 
     /// <summary>The roots of an engine: shared lookups first, then the state of every graph (before the store, which may read the engine's own graphs), the stores, the output layers of every graph (each field on its own), the operator state by operator kind.</summary>
-    public static List<(string Label, string Graph, object? Root)> EngineRoots(Engine e, params (string Label, object? Root)[] extra)
+    public static List<(string Label, string GraphId, object? Root)> EngineRoots(Engine e, params (string Label, object? Root)[] extra)
     {
         var roots = new List<(string, string, object?)>
         {
@@ -172,7 +172,7 @@ static class Census
         return GC.GetGCMemoryInfo().PromotedBytes;
     }
 
-    public static void Run(string title, IReadOnlyList<(string Label, string Graph, object? Root)> roots, long masterEntities, long masterRels, TextWriter w)
+    public static void Run(string title, IReadOnlyList<(string Label, string GraphId, object? Root)> roots, long masterEntities, long masterRels, TextWriter w)
     {
         var live = LiveBytes();
         var gc = GC.GetTotalMemory(true);

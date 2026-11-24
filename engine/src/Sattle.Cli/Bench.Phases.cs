@@ -90,7 +90,7 @@ static partial class Bench
             }
         }
         public void RecordLoss(long timeNs, long count, string reason = "sourceLoss") => e.RecordLoss(timeNs, count, reason);
-        static double GraphMillis(Engine e, string graph) => e.OperatorMillis.Where(x => x.Key.StartsWith(graph + "/", StringComparison.Ordinal)).Sum(x => x.Value);
+        static double GraphMillis(Engine e, string graphId) => e.OperatorMillis.Where(x => x.Key.StartsWith(graphId + "/", StringComparison.Ordinal)).Sum(x => x.Value);
     }
     /// <summary>One close includes the progress records that precede its advance and the resulting commits.</summary>
     sealed record Close(long Lambda, double Ms, double CpuMs, double ProcessCpuMs, double AllocMb, double PauseMs, long WindowChanges, long Series, long PreparedRanges, long WorkerRanges, bool EmptyFinalAdvance, double? MatchMs, List<(string Name, double Ms)> Top);
